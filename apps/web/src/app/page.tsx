@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import {
@@ -21,13 +22,21 @@ export default async function Home() {
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-8 px-6 py-16">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E1 foundation
+          E1 foundation · E2.1 membership
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
           Workflow control plane UI. This page is the deployable shell — no
           canvas or authoring yet. Product contracts live in{" "}
-          <code className="font-mono text-sm">docs/</code>.
+          <code className="font-mono text-sm">docs/</code>. Exercise workspace
+          membership and roles from the{" "}
+          <Link
+            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+            href="/membership"
+          >
+            membership operator
+          </Link>
+          .
         </p>
       </header>
 
@@ -37,6 +46,24 @@ export default async function Home() {
         publicHealthUrl={getPublicHealthUrl()}
         publicReadinessUrl={getPublicReadinessUrl()}
       />
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Membership operator</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E2.1 UI for jonny&apos;s workspace identity contract:
+          bootstrap a tenant/workspace, inspect roles and permissions, and
+          manage members. Problem responses stay visible (title, detail, code,
+          request_id).
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/membership"
+          >
+            Open membership and roles
+          </Link>
+        </p>
+      </section>
 
       <ApiDocsLinks
         swaggerUrl={getPublicSwaggerUrl()}

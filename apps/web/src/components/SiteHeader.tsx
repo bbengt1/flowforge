@@ -6,11 +6,17 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-zinc-200 bg-white/80">
-      <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-4 px-6 py-3">
+      <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
         <Link href="/" className="text-sm font-semibold tracking-tight">
           FlowForge
         </Link>
-        <nav aria-label="Operator">
+        <nav aria-label="Operator" className="flex items-center gap-4">
+          <Link
+            href="/membership"
+            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
+          >
+            Membership
+          </Link>
           <a
             className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
             href={swaggerUrl}
