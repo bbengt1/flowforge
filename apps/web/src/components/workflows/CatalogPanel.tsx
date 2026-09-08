@@ -1,8 +1,13 @@
 "use client";
 
 import {
+  catalogExcludesTriggerNodes,
   familyLabel,
   filterPaletteEntries,
+  formatBounds,
+  formatPolicy,
+  formatPort,
+  formatRedaction,
   type CoreNeutralPaletteEntry,
 } from "@/lib/workflow-core-nodes";
 import type { WorkflowCatalog } from "@/lib/workflow-types";
@@ -28,6 +33,8 @@ export function CatalogPanel({
 }: CatalogPanelProps) {
   const visible = filterPaletteEntries(entries, query);
   const groups = ["control", "data", "lifecycle"] as const;
+  const triggersWorkflowLevel = catalogExcludesTriggerNodes(catalog);
+  const fromCatalog = entries.some((entry) => entry.source === "catalog");
 
   return (
     <section
@@ -40,10 +47,10 @@ export function CatalogPanel({
             Core nodes
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Placeable E3.3 palette. Consumes{" "}
-            <code className="font-mono text-xs">GET /workflows/catalog</code>{" "}
-            when loaded; otherwise the documented action-catalog mirror.
-            Triggers stay on <code className="font-mono text-xs">spec.triggers</code>.
+            Placeable E3.3 palette from{" "}
+            <code className="font-mono text-xs">GET /workflows/catalog</code>.
+            Triggers stay on <code className="font-mono text-xs">spec.triggers</code>
+            {triggersWorkflowLevel ? " (rules.triggersAreWorkflowLevel)." : "."}
           </p>
         </div>
         <button
@@ -61,15 +68,15 @@ export function CatalogPanel({
         <input
           value={query}
           onChange={(event) => onQuery(event.target.value)}
-          placeholder="type, name, port…"
+          placeholder="type, allowedWith, port…"
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
         />
       </label>
 
       <p className="mt-2 text-xs text-zinc-500">
-        {catalog
-          ? "Ports and requiredWith come from the catalog API. Policy/redaction/classification hints use catalog fields when present."
-          : "Showing documented mirror until the catalog API is loaded."}
+        {fromCatalog
+          ? "allowedWith, policy, bounds, redaction, and port classification/maxBytes come from the catalog contract."
+          : "Showing the published #32 contract fallback until GET /workflows/catalog is available locally."}
       </p>
 
       <div className="mt-4 space-y-4">
@@ -103,22 +110,37 @@ export function CatalogPanel({
                     </div>
                     <p className="mt-1 font-mono text-xs text-zinc-500">
                       {[
-                        ...(entry.inputs ?? []).map((port) => `in:${port.name}`),
-                        ...(entry.outputs ?? []).map((port) => `out:${port.name}`),
+                        ...(entry.inputs ?? []).map((port) => formatPort(port, "in")),
+                        ...(entry.outputs ?? []).map((port) => formatPort(port, "out")),
                       ].join(" · ") || "no ports"}
                     </p>
-                    {entry.requiredWith.length > 0 ? (
+                    {entry.allowedWith.length > 0 ? (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        allowedWith:{" "}
+                        {entry.allowedWith
+                          .map((field) => (field.required ? `${field.name}*` : field.name))
+                          .join(", ")}
+                      </p>
+                    ) : entry.requiredWith.length > 0 ? (
                       <p className="mt-0.5 text-xs text-zinc-500">
                         requiredWith: {entry.requiredWith.join(", ")}
                       </p>
                     ) : null}
-                    <p className="mt-1 text-xs text-zinc-600">{entry.policy}</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      redaction: {entry.redaction}
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      classification: {entry.classification}
-                    </p>
+                    {formatPolicy(entry.policy) ? (
+                      <p className="mt-1 text-xs text-zinc-600">
+                        policy: {formatPolicy(entry.policy)}
+                      </p>
+                    ) : null}
+                    {formatBounds(entry.bounds) ? (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        bounds: {formatBounds(entry.bounds)}
+                      </p>
+                    ) : null}
+                    {formatRedaction(entry.redaction) ? (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        redaction: {formatRedaction(entry.redaction)}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ul>

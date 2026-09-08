@@ -211,8 +211,8 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 
 - **Action palette:** `flow.condition`, `flow.delay`, `data.set`, `data.map`, `data.validate`, `flow.stop`, `flow.fail`. Filterable by name, type, family, and ports. Insert writes a canonical `spec.nodes[]` object (`id`, `type`, `name`, `with`).
 - **Triggers:** remain workflow-level `spec.triggers`. They are not graph nodes and are not insertable from the action palette.
-- **Catalog adapter:** prefer `GET /workflows/catalog` ports / `requiredWith` / optional `name`, `policy`, `redaction`, `classification`. When those hint fields are absent (current E3.1 catalog on main), `apps/web/src/lib/workflow-core-nodes.ts` mirrors [action-catalog.md](action-catalog.md). TODO: shrink the mirror once the API publishes those fields.
-- **Inspector:** bounded `with` forms only — condition `op`/`path`/`compare`, delay ISO-8601 `duration`, `data.set` typed literal fields, `data.map` from/to paths, `data.validate` schema ref, stop/fail `status`/`code`/`message`. No expression evaluation and no secrets in YAML.
+- **Catalog adapter:** consume jonny's #32 catalog contract (`title`, `allowedWith[]`, object `policy` / `bounds` / `redaction`, port `classification` / `maxBytes`, root `rules`). Fall back to that published contract only when `GET /workflows/catalog` is unavailable locally. Do not invent extra API fields.
+- **Inspector:** bounded `with` forms only — condition `op`/`path`/`compare` (`compare` required unless `op=exists`), delay ISO-8601 `duration` (weeks/days/time, max `P7D`), `data.set` literal fields + optional `public`/`internal` classification, `data.map` dest→from object (`convert` optional), `data.validate` JSON-schema subset object, `flow.stop` `status`/`message`, `flow.fail` required `code` + `message`. No expression evaluation and no secrets in YAML.
 - **Unchanged:** E3.1 validate/normalize/catalog proxies and E3.2 draft/publish/compare/run. Cookie session + CSRF and tenant + workbench identity stay the same.
 
 ## E3.2 draft / publish / compare operator

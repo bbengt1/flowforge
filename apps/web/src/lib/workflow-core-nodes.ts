@@ -1,7 +1,11 @@
 import {
   CATALOG_PHASE_CORE,
   type CatalogNode,
+  type CatalogNodeBounds,
+  type CatalogNodePolicy,
   type CatalogPort,
+  type CatalogRedaction,
+  type CatalogWithField,
   type WorkflowCatalog,
 } from "./workflow-types.ts";
 
@@ -23,16 +27,18 @@ export type CoreNeutralFamily = "control" | "data" | "lifecycle";
 export type CoreNeutralPaletteEntry = {
   type: CoreNeutralNodeType;
   name: string;
+  description: string;
   phase: typeof CATALOG_PHASE_CORE;
   family: CoreNeutralFamily;
   inputs: CatalogPort[];
   outputs: CatalogPort[];
   requiredWith: string[];
-  policy: string;
-  redaction: string;
-  classification: string;
-  /** `catalog` when GET /workflows/catalog listed the type as phase: core. */
-  source: "catalog" | "documented-mirror";
+  allowedWith: CatalogWithField[];
+  policy: CatalogNodePolicy | null;
+  bounds: CatalogNodeBounds | null;
+  redaction: CatalogRedaction | null;
+  /** `catalog` when GET /workflows/catalog listed the type with E3.3 fields. */
+  source: "catalog" | "contract-fallback";
 };
 
 export const CONDITION_OPS = [
@@ -52,112 +58,283 @@ export const STOP_STATUSES = ["success", "failure", "canceled"] as const;
 
 export type StopStatus = (typeof STOP_STATUSES)[number];
 
-type DocumentedCoreNode = {
-  type: CoreNeutralNodeType;
-  name: string;
-  family: CoreNeutralFamily;
-  inputs: CatalogPort[];
-  outputs: CatalogPort[];
-  requiredWith: string[];
-  policy: string;
-  redaction: string;
-  classification: string;
-};
+export const MAP_CONVERT_KINDS = ["string", "integer", "boolean", "object"] as const;
+
+/** From jonny's E3.3 limits (`MaxDelaySeconds` = 7d). */
+export const MAX_DELAY_SECONDS = 7 * 24 * 60 * 60;
+
+export const DEFAULT_CATALOG_RULES = {
+  triggersAreWorkflowLevel: true,
+  graphNodesExcludeTriggers: true,
+  unsupportedPhasesRejected: true,
+} as const;
+
+const inherit = (name: string, kind: string, required: boolean, description: string): CatalogPort => ({
+  name,
+  kind,
+  required,
+  classification: "inherit",
+  maxBytes: 16 * 1024,
+  description,
+});
+
+const publicObject = (name: string, description: string): CatalogPort => ({
+  name,
+  kind: "object",
+  classification: "public",
+  maxBytes: 16 * 1024,
+  description,
+});
+
+const defaultPolicy = (): CatalogNodePolicy => ({
+  permissions: ["workflow.execute"],
+  retrySafe: true,
+  sideEffects: false,
+  idempotent: true,
+  cancellation: "path-local",
+  verification: "none",
+  defaultMaxAttempts: 1,
+});
+
+const defaultBounds = (maxDurationSeconds?: number): CatalogNodeBounds => ({
+  maxInputBytes: 16 * 1024,
+  maxOutputBytes: 16 * 1024,
+  maxWithBytes: 16 * 1024,
+  maxAggregationItems: 32,
+  ...(maxDurationSeconds ? { maxDurationSeconds } : {}),
+});
 
 /**
- * Documented E3.3 contracts from docs/reference/action-catalog.md plus the
- * E3.1 catalog ports/requiredWith jonny already exposes.
- *
- * TODO(jonny): when GET /workflows/catalog grows name/policy/redaction/
- * classification (and richer with-schema), prefer those fields and shrink
- * this mirror to defaults only.
+ * Offline fallback copied from jonny's #32 contract
+ * (`docs/reference/core-node-contracts.md` / `contract.go`).
+ * Used only when GET /workflows/catalog is unavailable locally.
  */
-export const DOCUMENTED_CORE_NEUTRAL_NODES: readonly DocumentedCoreNode[] = [
-  {
+const CONTRACT_FALLBACK: Record<CoreNeutralNodeType, CatalogNode> = {
+  "flow.condition": {
     type: "flow.condition",
-    name: "Condition",
-    family: "control",
-    inputs: [{ name: "value", kind: "any", required: true }],
+    phase: CATALOG_PHASE_CORE,
+    title: "Condition",
+    description:
+      "Declarative comparison only. Routes the inbound value to true or false. No expression language.",
+    inputs: [inherit("value", "any", true, "Value to compare.")],
     outputs: [
-      { name: "true", kind: "any" },
-      { name: "false", kind: "any" },
+      inherit("true", "any", false, "Inbound value when the comparison is true."),
+      inherit("false", "any", false, "Inbound value when the comparison is false."),
     ],
     requiredWith: ["op"],
-    policy: "Declarative comparison only; no arbitrary expression evaluation.",
-    redaction: "Compare literals and field paths only; never secret handles.",
-    classification: "Preserves the inbound value classification on both ports.",
+    allowedWith: [
+      {
+        name: "op",
+        kind: "enum",
+        required: true,
+        enum: [...CONDITION_OPS],
+        description: "Declarative comparison operator.",
+      },
+      {
+        name: "compare",
+        kind: "any",
+        description: "Literal compare value. Required except when op is exists.",
+      },
+      {
+        name: "path",
+        kind: "string",
+        description: "Optional dotted identifier path into value. No expressions.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["op", "matched", "classification"],
+      redactInputs: true,
+      redactOutputs: true,
+      strategy: "mask-classified",
+    },
   },
-  {
+  "flow.delay": {
     type: "flow.delay",
-    name: "Delay",
-    family: "control",
-    inputs: [{ name: "input", kind: "any" }],
-    outputs: [{ name: "result", kind: "object" }],
+    phase: CATALOG_PHASE_CORE,
+    title: "Delay",
+    description: "Computes a durable wake-up time from an ISO-8601 duration. Workers must not sleep.",
+    inputs: [inherit("input", "any", false, "Optional passthrough payload.")],
+    outputs: [inherit("result", "object", false, "Passthrough of input, or an empty object.")],
     requiredWith: ["duration"],
-    policy: "Durable ISO-8601 wake-up; no worker sleeps or in-memory timers.",
-    redaction: "Duration and safe passthrough only.",
-    classification: "Non-sensitive timing metadata; payload classification unchanged.",
+    allowedWith: [
+      {
+        name: "duration",
+        kind: "duration",
+        required: true,
+        description: "ISO-8601 duration using weeks, days, and time units. Max P7D.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(MAX_DELAY_SECONDS),
+    redaction: {
+      auditFields: ["durationSeconds"],
+      redactInputs: true,
+      redactOutputs: true,
+      strategy: "mask-classified",
+    },
   },
-  {
+  "data.set": {
     type: "data.set",
-    name: "Set data",
-    family: "data",
+    phase: CATALOG_PHASE_CORE,
+    title: "Set data",
+    description: "Create a typed literal object. Schema-validated; public or internal fields only; no secrets.",
     inputs: [],
-    outputs: [{ name: "result", kind: "object" }],
+    outputs: [publicObject("result", "The constructed object.")],
     requiredWith: ["value"],
-    policy: "Schema-validated literal object; unknown fields fail closed.",
-    redaction: "No secrets, credential keys, or secret-shaped values in YAML.",
-    classification: "Fields must be non-sensitive; denied keys/values are rejected.",
+    allowedWith: [
+      {
+        name: "value",
+        kind: "object",
+        required: true,
+        description: "Literal object. Secret keys and values are rejected.",
+      },
+      {
+        name: "schema",
+        kind: "schema",
+        description: "Optional JSON-schema subset used to type and classify fields.",
+      },
+      {
+        name: "classification",
+        kind: "enum",
+        enum: ["public", "internal"],
+        description: "Default classification when schema does not set one.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["fieldCount", "classification"],
+      redactInputs: true,
+      redactOutputs: true,
+      strategy: "mask-classified",
+    },
   },
-  {
+  "data.map": {
     type: "data.map",
-    name: "Map fields",
-    family: "data",
-    inputs: [{ name: "input", kind: "object", required: true }],
-    outputs: [{ name: "result", kind: "object" }],
+    phase: CATALOG_PHASE_CORE,
+    title: "Map data",
+    description: "Declarative field mapping with optional type conversion. No general expression language.",
+    inputs: [inherit("input", "object", true, "Object to map from.")],
+    outputs: [
+      inherit("result", "object", false, "Mapped object. Classification is preserved per field."),
+    ],
     requiredWith: ["mapping"],
-    policy: "Explicit field paths and type conversions only; no expression language.",
-    redaction: "Paths and safe converted values; classification follows the source field.",
-    classification: "Sensitive source fields stay classified after mapping.",
+    allowedWith: [
+      {
+        name: "mapping",
+        kind: "mapping",
+        required: true,
+        description: "dest.path -> source.path or {from, convert}.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["mappedFields", "classification"],
+      redactInputs: true,
+      redactOutputs: true,
+      strategy: "mask-classified",
+    },
   },
-  {
+  "data.validate": {
     type: "data.validate",
-    name: "Validate data",
-    family: "data",
-    inputs: [{ name: "value", kind: "any", required: true }],
-    outputs: [{ name: "result", kind: "object" }],
+    phase: CATALOG_PHASE_CORE,
+    title: "Validate data",
+    description: "Validate a value against a declared schema. Errors name fields, never secret content.",
+    inputs: [inherit("value", "any", true, "Value to validate.")],
+    outputs: [inherit("result", "object", false, "The validated value.")],
     requiredWith: ["schema"],
-    policy: "Validate against a declared schema reference.",
-    redaction: "Safe field errors identify paths, not secret content.",
-    classification: "Does not downgrade inbound classification.",
+    allowedWith: [
+      {
+        name: "schema",
+        kind: "schema",
+        required: true,
+        description: "JSON-schema subset (type, properties, required, enum, bounds).",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["valid", "failedPaths"],
+      redactInputs: true,
+      redactOutputs: true,
+      strategy: "mask-classified",
+    },
   },
-  {
+  "flow.stop": {
     type: "flow.stop",
-    name: "Stop path",
-    family: "lifecycle",
-    inputs: [{ name: "input", kind: "any" }],
-    outputs: [{ name: "result", kind: "object" }],
+    phase: CATALOG_PHASE_CORE,
+    title: "Stop path",
+    description: "End the current execution path only. Cannot stop another execution.",
+    inputs: [inherit("input", "any", false, "Optional path payload. Not copied onto the result.")],
+    outputs: [publicObject("result", "Safe {status, message} summary.")],
     requiredWith: [],
-    policy: "Ends the current path with success, failure, or canceled. Not a remote stop.",
-    redaction: "Status/code/message must stay operator-safe.",
-    classification: "Terminal metadata only; no payload export of secrets.",
+    allowedWith: [
+      {
+        name: "status",
+        kind: "enum",
+        enum: [...STOP_STATUSES],
+        description: "success, failure, or canceled. Defaults to success.",
+      },
+      {
+        name: "message",
+        kind: "string",
+        description: "Optional operator-safe message. Secrets and stack traces are rejected.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["status"],
+      redactInputs: true,
+      redactOutputs: false,
+      strategy: "drop-secrets",
+    },
   },
-  {
+  "flow.fail": {
     type: "flow.fail",
-    name: "Fail path",
-    family: "lifecycle",
-    inputs: [{ name: "input", kind: "any" }],
-    outputs: [{ name: "result", kind: "object" }],
-    requiredWith: [],
-    policy: "Ends the current path with a safe operator-facing failure.",
-    redaction: "Error code/message must not expose internals or secrets.",
-    classification: "Failure metadata is non-sensitive by construction.",
+    phase: CATALOG_PHASE_CORE,
+    title: "Fail path",
+    description:
+      "End the current path with a safe operator-facing failure. Code and message must not expose internals.",
+    inputs: [inherit("input", "any", false, "Optional path payload. Not copied onto the result.")],
+    outputs: [publicObject("result", "Safe {status, code, message} summary.")],
+    requiredWith: ["code"],
+    allowedWith: [
+      {
+        name: "code",
+        kind: "string",
+        required: true,
+        description: "Operator-facing failure code (DNS label or dotted token).",
+      },
+      {
+        name: "message",
+        kind: "string",
+        description: "Optional safe message. Secrets and stack traces are rejected.",
+      },
+    ],
+    policy: defaultPolicy(),
+    bounds: defaultBounds(),
+    redaction: {
+      auditFields: ["status", "code"],
+      redactInputs: true,
+      redactOutputs: false,
+      strategy: "drop-secrets",
+    },
   },
-];
+};
 
-const DOCUMENTED_BY_TYPE = new Map(
-  DOCUMENTED_CORE_NEUTRAL_NODES.map((item) => [item.type, item]),
-);
+const FAMILY_BY_TYPE: Record<CoreNeutralNodeType, CoreNeutralFamily> = {
+  "flow.condition": "control",
+  "flow.delay": "control",
+  "data.set": "data",
+  "data.map": "data",
+  "data.validate": "data",
+  "flow.stop": "lifecycle",
+  "flow.fail": "lifecycle",
+};
 
 export function isCoreNeutralNodeType(type: string): type is CoreNeutralNodeType {
   return (CORE_NEUTRAL_NODE_TYPES as readonly string[]).includes(type);
@@ -169,6 +346,18 @@ export function isConditionOp(value: string): value is ConditionOp {
 
 export function isStopStatus(value: string): value is StopStatus {
   return (STOP_STATUSES as readonly string[]).includes(value);
+}
+
+export function catalogExcludesTriggerNodes(
+  catalog: Pick<WorkflowCatalog, "rules"> | null | undefined,
+): boolean {
+  const rules = catalog?.rules;
+  if (!rules) {
+    return true;
+  }
+  return (
+    rules.triggersAreWorkflowLevel !== false && rules.graphNodesExcludeTriggers !== false
+  );
 }
 
 /** Action palette: phase core AND one of the seven E3.3 types. Triggers excluded. */
@@ -186,29 +375,51 @@ export function catalogHasNonNeutralCore(
   );
 }
 
-function firstString(...values: Array<string | undefined>): string {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return "";
+function hasE33Contract(node: CatalogNode | undefined): boolean {
+  return Boolean(
+    node &&
+      ((node.allowedWith && node.allowedWith.length > 0) ||
+        node.policy ||
+        node.bounds ||
+        node.redaction),
+  );
 }
 
-function mergePorts(
-  fromCatalog: CatalogPort[] | undefined,
-  documented: CatalogPort[],
-): CatalogPort[] {
-  if (fromCatalog && fromCatalog.length > 0) {
-    return fromCatalog;
-  }
-  return documented;
+function toPaletteEntry(
+  type: CoreNeutralNodeType,
+  fromApi: CatalogNode | undefined,
+): CoreNeutralPaletteEntry {
+  const fallback = CONTRACT_FALLBACK[type];
+  const useCatalog = hasE33Contract(fromApi);
+  const source = fromApi && useCatalog ? fromApi : fromApi ? { ...fallback, ...fromApi } : fallback;
+  const node = useCatalog && fromApi ? fromApi : source;
+  return {
+    type,
+    name: node.title || fallback.title || type,
+    description: node.description || fallback.description || "",
+    phase: CATALOG_PHASE_CORE,
+    family: FAMILY_BY_TYPE[type],
+    inputs: node.inputs && node.inputs.length > 0 ? node.inputs : fallback.inputs ?? [],
+    outputs: node.outputs && node.outputs.length > 0 ? node.outputs : fallback.outputs ?? [],
+    requiredWith:
+      node.requiredWith && node.requiredWith.length > 0
+        ? node.requiredWith
+        : fallback.requiredWith ?? [],
+    allowedWith:
+      node.allowedWith && node.allowedWith.length > 0
+        ? node.allowedWith
+        : fallback.allowedWith ?? [],
+    policy: node.policy ?? fallback.policy ?? null,
+    bounds: node.bounds ?? fallback.bounds ?? null,
+    redaction: node.redaction ?? fallback.redaction ?? null,
+    source: fromApi && useCatalog ? "catalog" : "contract-fallback",
+  };
 }
 
 /**
- * Build the placeable palette from GET /workflows/catalog when present,
- * falling back to the documented action-catalog mirror so the UI ships
- * before jonny's richer E3.3 catalog fields land.
+ * Build the placeable palette from GET /workflows/catalog.
+ * Falls back to the published #32 contract only when the catalog is missing
+ * or a node still lacks E3.3 fields (local without API).
  */
 export function adaptCoreNeutralPalette(
   catalog: WorkflowCatalog | null | undefined,
@@ -217,26 +428,7 @@ export function adaptCoreNeutralPalette(
   for (const item of filterCoreNeutralNodes(catalog?.nodes)) {
     byType.set(item.type, item);
   }
-
-  return DOCUMENTED_CORE_NEUTRAL_NODES.map((documented) => {
-    const fromApi = byType.get(documented.type);
-    return {
-      type: documented.type,
-      name: firstString(fromApi?.name, documented.name),
-      phase: CATALOG_PHASE_CORE,
-      family: documented.family,
-      inputs: mergePorts(fromApi?.inputs, documented.inputs),
-      outputs: mergePorts(fromApi?.outputs, documented.outputs),
-      requiredWith:
-        fromApi?.requiredWith && fromApi.requiredWith.length > 0
-          ? fromApi.requiredWith
-          : documented.requiredWith,
-      policy: firstString(fromApi?.policy, documented.policy),
-      redaction: firstString(fromApi?.redaction, documented.redaction),
-      classification: firstString(fromApi?.classification, documented.classification),
-      source: fromApi ? "catalog" : "documented-mirror",
-    };
-  });
+  return CORE_NEUTRAL_NODE_TYPES.map((type) => toPaletteEntry(type, byType.get(type)));
 }
 
 export function filterPaletteEntries(
@@ -251,11 +443,14 @@ export function filterPaletteEntries(
     const haystack = [
       entry.type,
       entry.name,
+      entry.description,
       entry.family,
-      entry.policy,
       ...entry.requiredWith,
-      ...entry.inputs.map((port) => port.name),
-      ...entry.outputs.map((port) => port.name),
+      ...entry.allowedWith.map((field) => field.name),
+      ...entry.inputs.map((port) => `${port.name} ${port.classification ?? ""}`),
+      ...entry.outputs.map((port) => `${port.name} ${port.classification ?? ""}`),
+      ...(entry.policy?.permissions ?? []),
+      entry.redaction?.strategy ?? "",
     ]
       .join(" ")
       .toLowerCase();
@@ -274,9 +469,59 @@ export function familyLabel(family: CoreNeutralFamily): string {
 }
 
 export function defaultNodeName(type: CoreNeutralNodeType): string {
-  return DOCUMENTED_BY_TYPE.get(type)?.name ?? type;
+  return CONTRACT_FALLBACK[type].title ?? type;
 }
 
-export function defaultRequiredWith(type: CoreNeutralNodeType): string[] {
-  return DOCUMENTED_BY_TYPE.get(type)?.requiredWith ?? [];
+export function formatPolicy(policy: CatalogNodePolicy | null): string {
+  if (!policy) {
+    return "";
+  }
+  const parts = [
+    ...(policy.permissions ?? []),
+    policy.retrySafe ? "retry-safe" : "not-retry-safe",
+    policy.sideEffects ? "side-effects" : "no side-effects",
+    policy.cancellation,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+export function formatRedaction(redaction: CatalogRedaction | null): string {
+  if (!redaction) {
+    return "";
+  }
+  const audit = redaction.auditFields?.length
+    ? `audit ${redaction.auditFields.join(", ")}`
+    : "";
+  return [redaction.strategy, audit].filter(Boolean).join(" · ");
+}
+
+export function formatBounds(bounds: CatalogNodeBounds | null): string {
+  if (!bounds) {
+    return "";
+  }
+  const parts: string[] = [];
+  if (bounds.maxInputBytes) {
+    parts.push(`${bounds.maxInputBytes}B in`);
+  }
+  if (bounds.maxOutputBytes) {
+    parts.push(`${bounds.maxOutputBytes}B out`);
+  }
+  if (bounds.maxDurationSeconds) {
+    parts.push(`max duration ${bounds.maxDurationSeconds}s (P7D)`);
+  }
+  return parts.join(" · ");
+}
+
+export function formatPort(port: CatalogPort, direction: "in" | "out"): string {
+  const bits = [
+    `${direction}:${port.name}`,
+    port.kind,
+    port.classification,
+    port.maxBytes ? `≤${port.maxBytes}B` : "",
+  ].filter(Boolean);
+  return bits.join(" ");
+}
+
+export function allowedWithNames(entry: CoreNeutralPaletteEntry): string[] {
+  return entry.allowedWith.map((field) => field.name);
 }

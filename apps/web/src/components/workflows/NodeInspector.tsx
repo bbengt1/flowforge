@@ -3,8 +3,14 @@
 import { useState } from "react";
 import {
   CONDITION_OPS,
+  MAP_CONVERT_KINDS,
   STOP_STATUSES,
+  formatBounds,
+  formatPolicy,
+  formatPort,
+  formatRedaction,
   isCoreNeutralNodeType,
+  type CoreNeutralPaletteEntry,
 } from "@/lib/workflow-core-nodes";
 import {
   configFromNode,
@@ -18,6 +24,7 @@ import {
 type NodeInspectorProps = {
   nodes: YamlWorkflowNode[];
   selectedId: string | null;
+  entries: CoreNeutralPaletteEntry[];
   pending: boolean;
   onSelect: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
@@ -26,12 +33,17 @@ type NodeInspectorProps = {
 export function NodeInspector({
   nodes,
   selectedId,
+  entries,
   pending,
   onSelect,
   onApply,
 }: NodeInspectorProps) {
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
   const placeable = nodes.filter((node) => isCoreNeutralNodeType(node.type));
+  const catalogEntry =
+    selected && isCoreNeutralNodeType(selected.type)
+      ? entries.find((entry) => entry.type === selected.type)
+      : undefined;
 
   return (
     <section
@@ -42,7 +54,8 @@ export function NodeInspector({
         Node config
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Bounded <code className="font-mono text-xs">with</code> fields only. No
+        Bounded <code className="font-mono text-xs">with</code> fields from
+        catalog <code className="font-mono text-xs">allowedWith</code>. No
         expression language and no secrets in YAML.
       </p>
 
@@ -76,6 +89,7 @@ export function NodeInspector({
         <NodeConfigForm
           key={selected.id}
           node={selected}
+          entry={catalogEntry}
           pending={pending}
           onApply={onApply}
         />
@@ -90,10 +104,12 @@ export function NodeInspector({
 
 function NodeConfigForm({
   node,
+  entry,
   pending,
   onApply,
 }: {
   node: YamlWorkflowNode;
+  entry?: CoreNeutralPaletteEntry;
   pending: boolean;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
 }) {
@@ -120,6 +136,7 @@ function NodeConfigForm({
       }}
     >
       <p className="font-mono text-xs text-zinc-500">{node.type}</p>
+      {entry ? <CatalogHints entry={entry} /> : null}
       <label className="block text-sm">
         <span className="text-zinc-600">Name</span>
         <input
@@ -147,6 +164,32 @@ function NodeConfigForm({
   );
 }
 
+function CatalogHints({ entry }: { entry: CoreNeutralPaletteEntry }) {
+  return (
+    <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+      <p className="font-mono">
+        {[
+          ...(entry.inputs ?? []).map((port) => formatPort(port, "in")),
+          ...(entry.outputs ?? []).map((port) => formatPort(port, "out")),
+        ].join(" · ") || "no ports"}
+      </p>
+      {entry.allowedWith.length > 0 ? (
+        <p className="mt-1">
+          allowedWith:{" "}
+          {entry.allowedWith
+            .map((field) => (field.required ? `${field.name}*` : field.name))
+            .join(", ")}
+        </p>
+      ) : null}
+      {formatPolicy(entry.policy) ? <p className="mt-1">policy: {formatPolicy(entry.policy)}</p> : null}
+      {formatBounds(entry.bounds) ? <p>bounds: {formatBounds(entry.bounds)}</p> : null}
+      {formatRedaction(entry.redaction) ? (
+        <p>redaction: {formatRedaction(entry.redaction)}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function ConfigFields({
   config,
   onChange,
@@ -162,22 +205,30 @@ function ConfigFields({
             label="op"
             value={config.op}
             options={CONDITION_OPS}
-            onChange={(op) => onChange({ ...config, op: op as typeof config.op })}
+            onChange={(op) =>
+              onChange({
+                ...config,
+                op: op as typeof config.op,
+                compare: op === "exists" ? "" : config.compare,
+              })
+            }
           />
           <TextField
             label="path"
             value={config.path}
-            hint="Field path only — not an expression."
+            hint="Optional dotted identifier path — not an expression."
             onChange={(path) => onChange({ ...config, path })}
           />
           {config.op !== "exists" ? (
             <TextField
               label="compare"
               value={config.compare}
-              hint="Literal compare value."
+              hint="Required literal compare value unless op is exists."
               onChange={(compare) => onChange({ ...config, compare })}
             />
-          ) : null}
+          ) : (
+            <p className="text-xs text-zinc-500">exists must not include compare.</p>
+          )}
         </>
       );
     case "flow.delay":
@@ -185,16 +236,24 @@ function ConfigFields({
         <TextField
           label="duration"
           value={config.duration}
-          hint="ISO-8601 duration, for example PT5M."
+          hint="ISO-8601 weeks/days/time only. Max P7D. Years and months are rejected."
           onChange={(duration) => onChange({ ...config, duration })}
         />
       );
     case "data.set":
       return (
-        <SetFieldsEditor
-          fields={config.fields}
-          onChange={(fields) => onChange({ ...config, fields })}
-        />
+        <>
+          <SetFieldsEditor
+            fields={config.fields}
+            onChange={(fields) => onChange({ ...config, fields })}
+          />
+          <SelectField
+            label="classification"
+            value={config.classification || ""}
+            options={["", "public", "internal"]}
+            onChange={(classification) => onChange({ ...config, classification })}
+          />
+        </>
       );
     case "data.map":
       return (
@@ -205,15 +264,26 @@ function ConfigFields({
       );
     case "data.validate":
       return (
-        <TextField
-          label="schema"
-          value={config.schema}
-          hint="Declared schema reference (UUID when the workspace has one)."
-          onChange={(schema) => onChange({ ...config, schema })}
-        />
+        <>
+          <SelectField
+            label="schema.type"
+            value={config.schemaType}
+            options={["object", "array", "string", "integer", "boolean"]}
+            onChange={(schemaType) => onChange({ ...config, schemaType })}
+          />
+          <label className="flex items-center gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={config.additionalProperties}
+              onChange={(event) =>
+                onChange({ ...config, additionalProperties: event.target.checked })
+              }
+            />
+            additionalProperties
+          </label>
+        </>
       );
     case "flow.stop":
-    case "flow.fail":
       return (
         <>
           <SelectField
@@ -225,14 +295,26 @@ function ConfigFields({
             }
           />
           <TextField
+            label="message"
+            value={config.message}
+            hint="Operator-facing; no internals or secrets. allowedWith is status + message only."
+            onChange={(message) => onChange({ ...config, message })}
+          />
+        </>
+      );
+    case "flow.fail":
+      return (
+        <>
+          <TextField
             label="code"
             value={config.code}
+            hint="Required. DNS label or 2–4 dotted labels (for example tenant.denied)."
             onChange={(code) => onChange({ ...config, code })}
           />
           <TextField
             label="message"
             value={config.message}
-            hint="Operator-facing; no internals or secrets."
+            hint="Optional operator-facing message. Do not emit status — unknown-field."
             onChange={(message) => onChange({ ...config, message })}
           />
         </>
@@ -321,27 +403,47 @@ function MapFieldsEditor({
 }) {
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm text-zinc-600">mapping paths</legend>
+      <legend className="text-sm text-zinc-600">mapping dest → from</legend>
       {mapping.map((row, index) => (
-        <div key={`${row.from}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
+        <div key={`${row.dest}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
+          <input
+            aria-label={`Mapping ${index + 1} dest`}
+            value={row.dest}
+            placeholder="dest.path"
+            onChange={(event) =>
+              onChange(replaceAt(mapping, index, { ...row, dest: event.target.value }))
+            }
+            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
+          />
           <input
             aria-label={`Mapping ${index + 1} from`}
             value={row.from}
-            placeholder="from path"
+            placeholder="source.path"
             onChange={(event) =>
               onChange(replaceAt(mapping, index, { ...row, from: event.target.value }))
             }
             className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
           />
-          <input
-            aria-label={`Mapping ${index + 1} to`}
-            value={row.to}
-            placeholder="to path"
+          <select
+            aria-label={`Mapping ${index + 1} convert`}
+            value={row.convert ?? ""}
             onChange={(event) =>
-              onChange(replaceAt(mapping, index, { ...row, to: event.target.value }))
+              onChange(
+                replaceAt(mapping, index, {
+                  ...row,
+                  convert: event.target.value || undefined,
+                }),
+              )
             }
-            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
-          />
+            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+          >
+            <option value="">no convert</option>
+            {MAP_CONVERT_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => onChange(mapping.filter((_, item) => item !== index))}
@@ -353,10 +455,10 @@ function MapFieldsEditor({
       ))}
       <button
         type="button"
-        onClick={() => onChange([...mapping, { from: "", to: "" }])}
+        onClick={() => onChange([...mapping, { dest: "", from: "" }])}
         className="text-sm text-teal-800 underline decoration-teal-200 underline-offset-2"
       >
-        Add path
+        Add mapping
       </button>
     </fieldset>
   );
@@ -406,8 +508,8 @@ function SelectField({
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
       >
         {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option key={option || "unset"} value={option}>
+            {option || "(unset)"}
           </option>
         ))}
       </select>

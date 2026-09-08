@@ -717,6 +717,7 @@ export function WorkflowOperator() {
           <NodeInspector
             nodes={yamlNodes}
             selectedId={selectedNodeId}
+            entries={palette}
             pending={pending !== null}
             onSelect={setSelectedNodeId}
             onApply={applyNodeConfig}

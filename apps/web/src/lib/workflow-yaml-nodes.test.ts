@@ -99,10 +99,17 @@ describe("config serialization", () => {
     );
     const mapped = serializeCoreWith({
       type: "data.map",
-      mapping: [{ from: "input.status", to: "result.state" }],
+      mapping: [{ dest: "result.state", from: "input.status" }],
     });
     assert.deepEqual(mapped.with, {
-      mapping: [{ from: "input.status", to: "result.state" }],
+      mapping: { "result.state": "input.status" },
+    });
+    const converted = serializeCoreWith({
+      type: "data.map",
+      mapping: [{ dest: "result.count", from: "input.n", convert: "integer" }],
+    });
+    assert.deepEqual(converted.with, {
+      mapping: { "result.count": { from: "input.n", convert: "integer" } },
     });
 
     const secret = serializeCoreWith({
@@ -120,18 +127,62 @@ describe("config serialization", () => {
 
     const expr = serializeCoreWith({
       type: "data.map",
-      mapping: [{ from: "{{ input.status }}", to: "result.state" }],
+      mapping: [{ dest: "result.state", from: "{{ input.status }}" }],
     });
     assert.ok(expr.errors.some((error) => /expression/.test(error)));
 
     const fail = serializeCoreWith({
       type: "flow.fail",
-      status: "failure",
       code: "operator-failed",
       message: "Stopped by operator policy.",
     });
     assert.equal(fail.errors.length, 0);
     assert.equal(fail.with.code, "operator-failed");
+    assert.equal("status" in fail.with, false);
+
+    const missingFail = serializeCoreWith({
+      type: "flow.fail",
+      code: "",
+      message: "nope",
+    });
+    assert.ok(missingFail.errors.some((error) => /with\.code/.test(error)));
+
+    const missingCompare = serializeCoreWith({
+      type: "flow.condition",
+      op: "eq",
+      path: "status",
+      compare: "",
+    });
+    assert.ok(missingCompare.errors.some((error) => /compare/.test(error)));
+
+    const existsWithCompare = serializeCoreWith({
+      type: "flow.condition",
+      op: "exists",
+      path: "status",
+      compare: "ready",
+    });
+    assert.ok(existsWithCompare.errors.some((error) => /exists/.test(error)));
+
+    const overDelay = serializeCoreWith({ type: "flow.delay", duration: "P8D" });
+    assert.ok(overDelay.errors.some((error) => /P7D/.test(error)));
+    const yearDelay = serializeCoreWith({ type: "flow.delay", duration: "P1Y" });
+    assert.ok(yearDelay.errors.some((error) => /year|month/i.test(error)));
+
+    const stop = serializeCoreWith({
+      type: "flow.stop",
+      status: "success",
+      message: "Stopped",
+    });
+    assert.equal("code" in stop.with, false);
+
+    const validated = serializeCoreWith({
+      type: "data.validate",
+      schemaType: "object",
+      additionalProperties: true,
+    });
+    assert.deepEqual(validated.with, {
+      schema: { type: "object", additionalProperties: true },
+    });
   });
 
   it("updates an existing node block from the inspector config", () => {
@@ -174,9 +225,10 @@ describe("config serialization", () => {
       id: "validate",
       type: "data.validate",
       name: "Validate data",
-      with: { schema: "88888888-8888-4888-8888-888888888888" },
+      with: { schema: { type: "object", additionalProperties: true } },
     });
     assert.match(block, /type: data\.validate/);
-    assert.match(block, /schema: 88888888-8888-4888-8888-888888888888/);
+    assert.match(block, /type: object/);
+    assert.match(block, /additionalProperties: true/);
   });
 });
