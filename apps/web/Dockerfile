@@ -12,6 +12,8 @@ RUN pnpm install --filter @flowforge/web --frozen-lockfile
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV DOCKER_BUILD=1
+ENV NEXT_TELEMETRY_DISABLED=1
 COPY apps/web apps/web
 RUN pnpm --filter @flowforge/web build
 

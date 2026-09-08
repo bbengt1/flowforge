@@ -39,8 +39,9 @@ export async function checkApiHealth(): Promise<HealthCheck> {
       error: response.ok ? null : `HTTP ${response.status}`,
     };
   } catch (error) {
+    const raw = error instanceof Error ? error.message : "";
     const message =
-      error instanceof Error ? error.message : "Control plane unreachable";
+      !raw || raw === "fetch failed" ? "Control plane unreachable" : raw;
     return {
       ok: false,
       statusCode: null,
