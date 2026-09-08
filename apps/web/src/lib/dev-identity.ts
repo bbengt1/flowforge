@@ -1,7 +1,7 @@
 import {
   emptyDevIdentity,
   type DevIdentity,
-} from "./identity-headers";
+} from "./identity-headers.ts";
 
 /** Tab-scoped bootstrap identity. E2.3 sessions replace this. Never secrets. */
 export const DEV_IDENTITY_STORAGE_KEY = "flowforge.dev-identity.v1";
@@ -22,19 +22,48 @@ export function parseDevIdentity(value: unknown): DevIdentity {
   };
 }
 
+const EMPTY_IDENTITY = emptyDevIdentity();
+
+let cachedRaw: string | null = null;
+let cachedIdentity: DevIdentity = EMPTY_IDENTITY;
+
+/** Stable snapshot for useSyncExternalStore. */
 export function loadDevIdentity(): DevIdentity {
   if (typeof sessionStorage === "undefined") {
-    return emptyDevIdentity();
+    return EMPTY_IDENTITY;
   }
   try {
     const raw = sessionStorage.getItem(DEV_IDENTITY_STORAGE_KEY);
-    if (!raw) {
-      return emptyDevIdentity();
+    if (raw === cachedRaw) {
+      return cachedIdentity;
     }
-    return parseDevIdentity(JSON.parse(raw));
+    cachedRaw = raw;
+    cachedIdentity = raw ? parseDevIdentity(JSON.parse(raw)) : EMPTY_IDENTITY;
+    return cachedIdentity;
   } catch {
-    return emptyDevIdentity();
+    cachedRaw = null;
+    cachedIdentity = EMPTY_IDENTITY;
+    return EMPTY_IDENTITY;
   }
+}
+
+export function emptyStoredIdentity(): DevIdentity {
+  return EMPTY_IDENTITY;
+}
+
+const listeners = new Set<() => void>();
+
+function emitDevIdentity() {
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+export function subscribeDevIdentity(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function saveDevIdentity(identity: DevIdentity): void {
@@ -45,6 +74,7 @@ export function saveDevIdentity(identity: DevIdentity): void {
     DEV_IDENTITY_STORAGE_KEY,
     JSON.stringify(parseDevIdentity(identity)),
   );
+  emitDevIdentity();
 }
 
 export function clearDevIdentity(): void {
@@ -52,6 +82,7 @@ export function clearDevIdentity(): void {
     return;
   }
   sessionStorage.removeItem(DEV_IDENTITY_STORAGE_KEY);
+  emitDevIdentity();
 }
 
 function readString(value: unknown): string {

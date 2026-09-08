@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { IdentityBootstrap } from "@/components/membership/IdentityBootstrap";
 import { MembersPanel } from "@/components/membership/MembersPanel";
 import { PermissionMatrixTable } from "@/components/membership/PermissionMatrixTable";
-import { clearDevIdentity, loadDevIdentity, saveDevIdentity } from "@/lib/dev-identity";
+import {
+  clearDevIdentity,
+  emptyStoredIdentity,
+  loadDevIdentity,
+  saveDevIdentity,
+  subscribeDevIdentity,
+} from "@/lib/dev-identity";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { emptyDevIdentity, type DevIdentity } from "@/lib/identity-headers";
 import type {
@@ -30,8 +36,11 @@ const EXAMPLE_IDENTITY: DevIdentity = {
 };
 
 export function MembershipOperator() {
-  const [identity, setIdentity] = useState<DevIdentity>(emptyDevIdentity);
-  const [ready, setReady] = useState(false);
+  const identity = useSyncExternalStore(
+    subscribeDevIdentity,
+    loadDevIdentity,
+    emptyStoredIdentity,
+  );
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -49,13 +58,7 @@ export function MembershipOperator() {
   const [workspaceTenantSlug, setWorkspaceTenantSlug] = useState("");
   const [workspaceKey, setWorkspaceKey] = useState("ops");
 
-  useEffect(() => {
-    setIdentity(loadDevIdentity());
-    setReady(true);
-  }, []);
-
   const updateIdentity = useCallback((next: DevIdentity) => {
-    setIdentity(next);
     saveDevIdentity(next);
   }, []);
 
@@ -194,7 +197,7 @@ export function MembershipOperator() {
     }
   }
 
-  function useMembership(item: Membership) {
+  function selectMembership(item: Membership) {
     updateIdentity({
       ...identity,
       tenantId: item.tenant.id,
@@ -217,14 +220,6 @@ export function MembershipOperator() {
       roles: item.roles,
       permissions: item.permissions,
     });
-  }
-
-  if (!ready) {
-    return (
-      <p className="text-sm text-zinc-600" role="status">
-        Loading local identity…
-      </p>
-    );
   }
 
   const canAdminister =
@@ -394,7 +389,7 @@ export function MembershipOperator() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => useMembership(item)}
+                  onClick={() => selectMembership(item)}
                   className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
                 >
                   Use tenant + workbench

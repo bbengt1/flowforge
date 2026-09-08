@@ -1,5 +1,5 @@
-import { getApiInternalUrl } from "./config";
-import { pickForwardedIdentityHeaders } from "./identity-headers";
+import { getApiInternalUrl } from "./config.ts";
+import { pickForwardedIdentityHeaders } from "./identity-headers.ts";
 import {
   isProblemContentType,
   isProblemDetails,
@@ -7,8 +7,8 @@ import {
   type ProblemDetails,
   unreachableProblem,
   upstreamProblem,
-} from "./problem";
-import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id";
+} from "./problem.ts";
+import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.ts";
 
 const API_PREFIX = "/api/v1";
 const PROXY_PREFIX = "/api/control-plane";
