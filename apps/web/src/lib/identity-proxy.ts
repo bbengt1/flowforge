@@ -90,6 +90,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },
   { methods: ["GET"], match: (s) => eq(s, ["session", "audit-events"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["workflows", "catalog"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */

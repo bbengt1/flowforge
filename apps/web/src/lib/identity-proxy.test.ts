@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 describe("resolveIdentityProxyTarget", () => {
-  it("maps the documented E2.1 and E2.2 routes onto /api/v1", () => {
+  it("maps the documented E2.1, E2.2, E2.3, and E3.1 routes onto /api/v1", () => {
     const cases: Array<[string, string[], string]> = [
       ["GET", ["permission-matrix"], "/api/v1/permission-matrix"],
       ["GET", ["roles"], "/api/v1/roles"],
@@ -85,6 +85,9 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
       ["POST", ["session", "logout"], "/api/v1/session/logout"],
       ["GET", ["session", "audit-events"], "/api/v1/session/audit-events"],
+      ["GET", ["workflows", "catalog"], "/api/v1/workflows/catalog"],
+      ["POST", ["workflows", "validate"], "/api/v1/workflows/validate"],
+      ["POST", ["workflows", "normalize"], "/api/v1/workflows/normalize"],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -113,6 +116,29 @@ describe("resolveIdentityProxyTarget", () => {
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
     );
+  });
+
+  it("does not offer draft persistence or unknown workflow paths", () => {
+    const unknown = [
+      ["workflows"],
+      ["workflows", "draft"],
+      ["workflows", "11111111-1111-4111-8111-111111111111", "draft"],
+    ];
+    for (const segments of unknown) {
+      const target = resolveIdentityProxyTarget("PUT", segments);
+      assert.equal("status" in target, true, segments.join("/"));
+      if ("status" in target) {
+        assert.equal(target.status, 404);
+      }
+    }
+    const catalogWrite = resolveIdentityProxyTarget("POST", [
+      "workflows",
+      "catalog",
+    ]);
+    assert.equal("status" in catalogWrite, true);
+    if ("status" in catalogWrite) {
+      assert.equal(catalogWrite.status, 405);
+    }
   });
 
   it("does not offer a workspace-id-only lookup path", () => {
@@ -212,6 +238,55 @@ describe("fetchIdentityControlPlane", () => {
       assert.equal(result.problem.code, "unauthenticated");
       assert.equal(result.problem.request_id, "echoed-request-16");
       assert.equal(result.requestId, "echoed-request-16");
+    }
+  });
+
+  it("preserves invalid-workflow errors[] on problem+json", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:invalid-workflow",
+          title: "Invalid Workflow",
+          status: 400,
+          detail: "The workflow definition is not valid.",
+          instance: "/api/v1/workflows/validate",
+          code: "invalid-workflow",
+          request_id: "wf-proxy-error-16",
+          errors: [
+            {
+              path: "spec.nodes[0].id",
+              line: 8,
+              column: 5,
+              code: "invalid-id",
+              message: "Node IDs must be DNS labels.",
+            },
+          ],
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            [REQUEST_ID_HEADER]: "wf-proxy-error-16",
+          },
+        },
+      )) as typeof fetch;
+
+    const result = await fetchIdentityControlPlane({
+      method: "POST",
+      apiPath: "/api/v1/workflows/validate",
+      instance: "/api/control-plane/workflows/validate",
+      requestId: "wf-proxy-error-16",
+      identityHeaders: new Headers(),
+      body: JSON.stringify({ definitionYaml: "kind: Workflow" }),
+      contentType: "application/json",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.problem.code, "invalid-workflow");
+      assert.equal(result.problem.errors?.[0]?.path, "spec.nodes[0].id");
+      assert.equal(result.problem.errors?.[0]?.line, 8);
+      assert.equal(result.problem.errors?.[0]?.code, "invalid-id");
     }
   });
 

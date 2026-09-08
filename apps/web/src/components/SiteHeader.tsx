@@ -14,6 +14,12 @@ export function SiteHeader() {
         <nav aria-label="Operator" className="flex items-center gap-4">
           <SessionStatusChip />
           <Link
+            href="/workflows"
+            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
+          >
+            Workflows
+          </Link>
+          <Link
             href="/membership"
             className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
           >
