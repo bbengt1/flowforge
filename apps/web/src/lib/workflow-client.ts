@@ -220,21 +220,12 @@ export async function validateWorkflowYaml(
     return failure(result);
   }
   if (!isValidateResponse(result.data)) {
-    return {
-      ok: false,
-      statusCode: result.statusCode,
-      requestId: result.requestId,
-      problem: {
-        type: "urn:flowforge:problem:upstream-error",
-        title: "Upstream Error",
-        status: result.statusCode,
-        detail: "Validate returned a payload that is not a valid summary.",
-        instance: WORKFLOW_VALIDATE_PATH,
-        code: "upstream-error",
-        request_id: result.requestId,
-      },
-      errors: [],
-    };
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      WORKFLOW_VALIDATE_PATH,
+      "Validate returned a payload that is not a valid summary.",
+    );
   }
   return {
     ok: true,
@@ -259,39 +250,21 @@ export async function normalizeWorkflowYaml(
     return failure(result);
   }
   if (!isNormalizeResponse(result.data)) {
-    return {
-      ok: false,
-      statusCode: result.statusCode,
-      requestId: result.requestId,
-      problem: {
-        type: "urn:flowforge:problem:upstream-error",
-        title: "Upstream Error",
-        status: result.statusCode,
-        detail: "Normalize returned a payload without definitionYaml and digest.",
-        instance: WORKFLOW_NORMALIZE_PATH,
-        code: "upstream-error",
-        request_id: result.requestId,
-      },
-      errors: [],
-    };
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      WORKFLOW_NORMALIZE_PATH,
+      "Normalize returned a payload without definitionYaml and digest.",
+    );
   }
   const applied = applyNormalizeResponse(result.data);
   if (!applied) {
-    return {
-      ok: false,
-      statusCode: result.statusCode,
-      requestId: result.requestId,
-      problem: {
-        type: "urn:flowforge:problem:upstream-error",
-        title: "Upstream Error",
-        status: result.statusCode,
-        detail: "Normalize response could not replace the editor buffer.",
-        instance: WORKFLOW_NORMALIZE_PATH,
-        code: "upstream-error",
-        request_id: result.requestId,
-      },
-      errors: [],
-    };
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      WORKFLOW_NORMALIZE_PATH,
+      "Normalize response could not replace the editor buffer.",
+    );
   }
   return {
     ok: true,
