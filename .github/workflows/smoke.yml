@@ -20,14 +20,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # Compose requires POSTGRES_PASSWORD (see docker-compose.yml / env-template.txt).
-      # Disposable local-only values — not repository secrets. Do not echo them.
       POSTGRES_USER: flowforge
-      POSTGRES_PASSWORD: flowforge-ci
       POSTGRES_DB: flowforge
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Compose requires POSTGRES_PASSWORD (docker-compose.yml / env-template.txt).
+      # Generate a disposable value, mask it, then export — never echo it.
+      - name: Set local Compose Postgres password
+        run: |
+          pass="$(openssl rand -hex 12)"
+          echo "::add-mask::${pass}"
+          echo "POSTGRES_PASSWORD=${pass}" >> "$GITHUB_ENV"
 
       - name: Start Postgres and API
         run: docker compose up --build -d --wait --wait-timeout 180 postgres api
