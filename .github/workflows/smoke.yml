@@ -1,0 +1,52 @@
+# E1.1 done gate: prove the Go API boots against Compose Postgres
+# and that /health vs /readiness behave as specified.
+name: smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-health:
+    name: API health and readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      POSTGRES_USER: flowforge
+      POSTGRES_DB: flowforge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Compose requires POSTGRES_PASSWORD (docker-compose.yml / env-template.txt).
+      # Generate a disposable value, mask it, then export — never echo it.
+      - name: Set local Compose Postgres password
+        run: |
+          pass="$(openssl rand -hex 12)"
+          echo "::add-mask::${pass}"
+          echo "POSTGRES_PASSWORD=${pass}" >> "$GITHUB_ENV"
+
+      - name: Start Postgres and API
+        run: docker compose up --build -d --wait --wait-timeout 180 postgres api
+
+      - name: Assert health and readiness
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:8080
+          SMOKE_CHECK_DB_DOWN: "1"
+        run: bash scripts/smoke-api.sh
+
+      - name: Compose logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail=200 postgres api
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
