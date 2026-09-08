@@ -109,7 +109,7 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, and the E3.1 YAML validate/normalize operator:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, and the E3.1 YAML validate/normalize operator. E3.2 draft/publish APIs are on the Go control plane for the pair UI story:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -172,9 +172,31 @@ Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Se
 | `POST` | `/api/v1/session/logout` | required | Revoke; clear cookies |
 | `GET` | `/api/v1/session/audit-events` | no | Secret-free audit rows |
 
+## E3.2 draft / publish / version API (jonny → Chloe)
+
+The Go API now persists drafts and immutable versions. Chloe owns the draft/publish/compare UI; do not treat `/workflows` E3.1 operator as the product editor. Contract details live in `docs/reference/backend-api-map.md` (E3.2). JSON is camelCase.
+
+| Method | Path | Perm | Body / notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/workflows` | `workflow.view` | `{items}` summaries |
+| `POST` | `/api/v1/workflows` | `workflow.edit` | `{definitionYaml, slug?, name?}` → `201` `{workflow,draft}` |
+| `GET` | `/api/v1/workflows/{workflowId}` | `workflow.view` | summary + `draftRevision` / latest version |
+| `GET` | `/api/v1/workflows/{workflowId}/draft` | `workflow.view` | `{revision,definitionYaml,digest,summary}` |
+| `PUT` | `/api/v1/workflows/{workflowId}/draft` | `workflow.edit` | `{revision,definitionYaml}` or YAML + `If-Match`. `409` if stale. Replace editor with returned YAML. |
+| `POST` | `/api/v1/workflows/{workflowId}/publish` | `workflow.publish` | `{revision?,note?}` → `201` `{workflow,version}` |
+| `GET` | `/api/v1/workflows/{workflowId}/versions` | `workflow.view` | newest first |
+| `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}` | `workflow.view` | frozen snapshot |
+| `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | `workflow.view` | JSON export or `Accept: application/yaml` |
+| `POST` | `/api/v1/workflows/{workflowId}/compare` | `workflow.view` | `{left,right}` where `kind` is `draft` or `version` (`versionId` or `versionNumber`) |
+| `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | `workflow.edit` | `{expectedRevision?}` → new draft revision; version unchanged |
+| `POST` | `/api/v1/workflows/{workflowId}/executions` | `workflow.execute` | **must** send `{workflowVersionId}`. Drafts cannot run. |
+| `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | `execution.view` | pin is stable after later draft edits |
+
+Suggested Next proxies (when the UI story lands): `/api/control-plane/workflows` plus `/api/control-plane/workflows/{workflowId}`, `.../draft`, `.../publish`, `.../compare`, `.../versions`, `.../versions/{versionId}`, `.../versions/{versionId}/export`, `.../versions/{versionId}/restore`, `.../executions`, `.../executions/{executionId}`. Forward session cookies, CSRF, tenant + workbench headers, and `X-Request-ID`; preserve `application/problem+json` including `errors[]`.
+
 ## E3.1 workflow YAML operator
 
-`/workflows` is Chloe's minimal operator for jonny's E3.1 catalog / validate / normalize API. It is not the E6 canvas and does not persist drafts (E3.2).
+`/workflows` is Chloe's minimal operator for jonny's E3.1 catalog / validate / normalize API. It is not the E6 canvas. Draft persistence is E3.2 (API above).
 
 - **Same identity as E2.3 / E2.1:** cookie session + `X-CSRF-Token` on POST; workspace lookup is tenant + workbench key. Header-only local-dev fallback is unchanged.
 - **Editor:** YAML textarea with line numbers. Debounced `POST /workflows/validate` shows valid + warnings, or linked `errors[]` (`path`, `line`, `column`, `code`, `message`). Invalid YAML never renders a guessed graph.

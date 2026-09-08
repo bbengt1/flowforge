@@ -31,6 +31,16 @@ GRANT USAGE ON SCHEMA app TO flowforge_app;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO flowforge_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO flowforge_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO flowforge_app;
+DO $$
+BEGIN
+    IF to_regclass('public.workflow_versions') IS NOT NULL THEN
+        REVOKE UPDATE, DELETE ON workflow_versions FROM flowforge_app;
+    END IF;
+    IF to_regclass('public.executions') IS NOT NULL THEN
+        REVOKE UPDATE, DELETE ON executions FROM flowforge_app;
+    END IF;
+END
+$$;
 `
 
 type execer interface {

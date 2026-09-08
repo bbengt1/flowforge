@@ -76,9 +76,9 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 
 ## Workflow YAML contract (E3.1)
 
-Ephemeral parse/normalize/validate only. Draft persistence and publish are E3.2 (`PUT /api/v1/workflows/{workflowId}/draft` is not implemented here). Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
+Ephemeral parse/normalize/validate. Persistence is E3.2 below. Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
 
-**UI route map (Chloe):** `/workflows` is the E3.1 YAML operator (not the E6 canvas). Debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Show digest + `summary` counts; do not guess a graph on `invalid-workflow` — render `errors[]` (`path`, `line`, `column`, `code`, `message`). Catalog palette is `phase: core` only (`next` / `provider` fail closed). Do not persist credentials or host-supplied workspace IDs in YAML.
+**UI route map (Chloe):** `/workflows` remains the E3.1 YAML operator for catalog/validate/normalize. Debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Show digest + `summary` counts; do not guess a graph on `invalid-workflow` — render `errors[]` (`path`, `line`, `column`, `code`, `message`). Catalog palette is `phase: core` only (`next` / `provider` fail closed). Do not persist credentials or host-supplied workspace IDs in YAML.
 
 The Next UI proxies these routes under `/api/control-plane/workflows/{catalog,validate,normalize}` with session cookies, CSRF on POST, workspace tenant + workbench headers, and preserved `application/problem+json` including `errors[]`.
 
@@ -92,6 +92,40 @@ Parser limits: 256 KiB document, 4096 YAML nodes, depth 32, 64 KiB scalars, 128 
 
 Digest format: `sha256:<hex>` of normalized YAML. Normalization sorts labels, triggers, nodes, edges, and outputs by id/name and emits a single trailing newline. Literal blocks (`manifests`, `source`) keep inner text except trailing-newline normalization.
 
+## Drafts, publish, and versions (E3.2)
+
+Server-derived workspace scope, FORCE RLS, and composite `(workspace_id, id)` FKs apply. Only **normalized** YAML is stored. Published `workflow_versions` rows are immutable (trigger + `flowforge_app` has INSERT/SELECT only). Execution start is a pin stub, not the E5 engine.
+
+**UI route map (Chloe):** persist drafts through these shapes. Do not rewrite `apps/web` in this story; add proxies under `/api/control-plane/workflows/...` when the draft/publish UI lands. JSON field names are camelCase (`definitionYaml`, `draftRevision`, `workflowVersionId`). Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Cookie sessions send `X-CSRF-Token` on POST/PUT.
+
+Suggested UI flow:
+
+1. `POST /workflows` (import/create) → keep `workflow.id` and `draft.revision`.
+2. Debounced `POST /workflows/validate` while editing; Save calls `PUT /workflows/{id}/draft` with the last seen `revision`.
+3. On `200`, replace the editor buffer with `draft.definitionYaml` and store `draft.revision` / `draft.digest`.
+4. On `409` `conflict`, `GET` the draft and offer reload (stale tab).
+5. Publish: `POST /workflows/{id}/publish` `{revision, note}` (`workflow.publish`).
+6. History: `GET /workflows/{id}/versions`; export `GET .../versions/{versionId}/export`; compare `POST /workflows/{id}/compare`; restore `POST .../versions/{versionId}/restore`.
+7. Run: only `POST /workflows/{id}/executions` `{workflowVersionId}`. Never send `draft: true` / omit the version.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?}`. Requires `workflow.edit`. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `409` (slug) |
+| `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, latest version. | `200` workflow | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/draft` | Current mutable draft. | `200` `{workflowId,revision,definitionYaml,digest,summary,warnings,validationState}` | `401` `403` `404` |
+| `PUT /api/v1/workflows/{workflowId}/draft` | Conflict-safe save. JSON `{revision,definitionYaml}` or YAML + `If-Match: <revision>`. Requires `workflow.edit`. | `200` `{workflow,draft}` (revision incremented) | `400` `invalid-workflow` / `409` revision mismatch / `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/publish` | Copy current draft to an immutable version. JSON `{revision?,note?}`. Requires `workflow.publish`. | `201` `{workflow,version}` | `409` duplicate digest or stale revision / `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/versions` | Version history, newest first. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/versions/{versionId}` | One frozen snapshot (includes YAML). | `200` version | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable export. JSON `{filename,definitionYaml,digest,...}`; `Accept: application/yaml` returns raw YAML. | `200` | `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/compare` | Diff two refs. `{left:{kind:"draft"}, right:{kind:"version",versionId}}` (or `versionNumber`). | `200` `{equal,digestMatch,left,right,leftDigest,rightDigest,changes[]}` | `400` `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore version as a **new** draft revision. JSON `{expectedRevision?}`. Requires `workflow.edit`. Version is unchanged. | `200` `{workflow,draft}` | `409` stale draft / `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/executions` | Stub start. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. | `201` execution | `400` drafts cannot run / `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Read the pin. Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
+
+RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
+
 Every request receives `X-Request-ID`. A caller-supplied value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same identifier is present on the response header, in `application/problem+json` as `request_id`, and in structured request logs so an API flow can be traced end to end.
 
 Errors use `application/problem+json` and include `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes:
@@ -103,7 +137,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `unauthenticated` | 401 | Missing or invalid credentials |
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
-| `conflict` | 409 | Unique `(tenant_id, workbench_key)` / tenant slug collision, or last-admin protection |
+| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, or duplicate published digest |
 | `method-not-allowed` | 405 | Known path, unsupported method |
 | `request-too-large` | 413 | Body exceeds 1048576 bytes |
 | `internal-error` | 500 | Unexpected failure |
