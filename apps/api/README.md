@@ -15,4 +15,4 @@ See `docs/reference/backend-api-map.md` and `docs/deployment.md`.
 
 ## Compose
 
-`docker-compose.yml` builds `image: flowforge-api:local` from this folder and injects `DATABASE_URL` plus `POSTGRES_*` from the root `.env` (copied from `env-template.txt`). Replace this `Dockerfile` with the real multi-stage Go image; keep the build context as `./apps/api` unless you update Compose.
+`docker-compose.yml` builds `image: flowforge-api:local` from this folder (`context: ./apps/api`) and injects `DATABASE_URL` plus `POSTGRES_*` from the root `.env` (copied from `env-template.txt`). The process must listen on `:8080`. Replace this `Dockerfile` with the real multi-stage Go image; keep the build context as `./apps/api`.

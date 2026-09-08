@@ -26,11 +26,11 @@ Serves [http://localhost:3000](http://localhost:3000) and checks `http://localho
 
 | Path | Role |
 | --- | --- |
-| `apps/web` | Next.js App Router UI |
-| `apps/api` | Go control-plane hook (placeholder image) |
+| `apps/web` | Next.js App Router UI (Compose `web` build context) |
+| `apps/api` | Go control-plane hook (Compose `api` build context, listen `:8080`) |
 | `docs/` | Normative architecture and implementation plan |
 
-pnpm workspace root is ready for more packages later.
+Compose builds `web` from `./apps/web` and `api` from `./apps/api`. pnpm workspace root is ready for more packages later.
 
 ## E1.1 ownership
 
