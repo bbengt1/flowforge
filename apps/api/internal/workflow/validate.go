@@ -289,7 +289,11 @@ func validateNode(n Node, path string) ErrorList {
 			errs = append(errs, fieldError(path+".inputs."+k, n.pos.Line, n.pos.Column, CodeInvalidPort, fmt.Sprintf("Node type %q has no input port %q.", n.Type, k)))
 		}
 	}
-	errs = append(errs, validateNodeWith(n, path)...)
+	if isCoreNeutral(n.Type) {
+		errs = append(errs, validateCoreNeutralNode(n, path)...)
+	} else {
+		errs = append(errs, validateNodeWith(n, path)...)
+	}
 	return errs
 }
 
@@ -378,20 +382,6 @@ func validateNodeWith(n Node, path string) ErrorList {
 			}
 		}
 		errs = append(errs, validateTimeout(n.With, path)...)
-	case "flow.delay":
-		if v, ok := n.With["duration"]; ok {
-			s, ok := v.(string)
-			if !ok || !validISODuration(s) {
-				errs = append(errs, fieldError(path+".with.duration", n.pos.Line, n.pos.Column, CodeInvalidWith, "duration must be an ISO-8601 duration."))
-			}
-		}
-	case "flow.condition":
-		if v, ok := n.With["op"]; ok {
-			s, ok := v.(string)
-			if !ok || !oneOf(s, "eq", "ne", "gt", "lt", "gte", "lte", "exists", "contains") {
-				errs = append(errs, fieldError(path+".with.op", n.pos.Line, n.pos.Column, CodeInvalidWith, "op must be a declarative comparison operator."))
-			}
-		}
 	case "flow.approval":
 		if v, ok := n.With["expiresIn"]; ok {
 			s, ok := v.(string)
@@ -403,12 +393,6 @@ func validateNodeWith(n Node, path string) ErrorList {
 			s, ok := v.(string)
 			if !ok || strings.TrimSpace(s) == "" {
 				errs = append(errs, fieldError(path+".with.approverRole", n.pos.Line, n.pos.Column, CodeInvalidType, "approverRole must be a string."))
-			}
-		}
-	case "flow.fail":
-		if v, ok := n.With["message"]; ok {
-			if s, ok := v.(string); ok && pemOrTokenRE.MatchString(s) {
-				errs = append(errs, fieldError(path+".with.message", n.pos.Line, n.pos.Column, CodeSecretForbidden, "Failure message must not contain secret material."))
 			}
 		}
 	}

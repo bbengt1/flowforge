@@ -263,3 +263,81 @@ func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+func TestCoreNeutralDraftPublishAndPin(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	ws, tenant := currentWorkspace(t, h, admin)
+	src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: core-neutral-persist
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: constants
+      type: data.set
+      name: Constants
+      with:
+        value:
+          env: staging
+    - id: mapped
+      type: data.map
+      name: Map
+      with:
+        mapping:
+          environment: env
+    - id: checked
+      type: data.validate
+      name: Validate
+      with:
+        schema:
+          type: object
+          properties:
+            environment: {type: string}
+          required: [environment]
+    - id: gate
+      type: flow.condition
+      name: Gate
+      with:
+        op: eq
+        compare: staging
+        path: environment
+    - id: pause
+      type: flow.delay
+      name: Pause
+      with:
+        duration: PT5M
+    - id: done
+      type: flow.stop
+      name: Done
+    - id: failed
+      type: flow.fail
+      name: Failed
+      with:
+        code: env-mismatch
+  edges:
+    - from: constants.result
+      to: mapped.input
+    - from: mapped.result
+      to: checked.value
+    - from: checked.result
+      to: gate.value
+    - from: gate.true
+      to: pause.input
+    - from: pause.result
+      to: done.input
+    - from: gate.false
+      to: failed.input
+`
+	created := createWorkflow(t, h, admin, tenant, ws, src)
+	if created.Draft.Summary.Name != "core-neutral-persist" || len(created.Draft.Summary.Nodes) != 7 {
+		t.Fatalf("create summary = %+v", created.Draft.Summary)
+	}
+	pub := publishWorkflow(t, h, admin, tenant, ws, created.Workflow.ID, created.Draft.Revision, "core nodes")
+	exec := startExecution(t, h, admin, tenant, ws, created.Workflow.ID, pub.Version.ID)
+	if exec.WorkflowDigest != pub.Version.Digest {
+		t.Fatalf("pin = %+v digest %s", exec, pub.Version.Digest)
+	}
+}

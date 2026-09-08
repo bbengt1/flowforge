@@ -1,12 +1,19 @@
 package workflow
 
-// CoreCatalog is the E3.1 typed graph vocabulary. Next/provider entries are
-// listed so the parser can reject them with an actionable unsupported-* code.
+// CoreCatalog is the typed graph vocabulary. E3.3 fills policy, bounds,
+// redaction, classification, and allowlisted `with` on the core neutral
+// nodes. Next/provider entries are listed so the parser can reject them
+// with an actionable unsupported-* code. Triggers are workflow-level.
 func CoreCatalog() Catalog {
 	return Catalog{
 		APIVersion: APIVersionV1,
-		Triggers:   triggerTypes(),
-		Nodes:      coreNodeTypes(),
+		Rules: CatalogRules{
+			TriggersAreWorkflowLevel:  true,
+			GraphNodesExcludeTriggers: true,
+			UnsupportedPhasesRejected: true,
+		},
+		Triggers: triggerTypes(),
+		Nodes:    coreNodeTypes(),
 	}
 }
 
@@ -25,29 +32,12 @@ func triggerTypes() []TriggerType {
 
 func coreNodeTypes() []NodeType {
 	result := Port{Name: "result", Kind: PortObject}
+	neutral := coreNeutralTypes()
 	return []NodeType{
-		{
-			Type: "flow.stop", Phase: PhaseCore,
-			Inputs:  []Port{{Name: "input", Kind: PortAny}},
-			Outputs: []Port{result},
-		},
-		{
-			Type: "flow.fail", Phase: PhaseCore,
-			Inputs:  []Port{{Name: "input", Kind: PortAny}},
-			Outputs: []Port{result},
-		},
-		{
-			Type: "flow.condition", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "value", Kind: PortAny, Required: true}},
-			Outputs:      []Port{{Name: "true", Kind: PortAny}, {Name: "false", Kind: PortAny}},
-			RequiredWith: []string{"op"},
-		},
-		{
-			Type: "flow.delay", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "input", Kind: PortAny}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"duration"},
-		},
+		neutral["flow.stop"],
+		neutral["flow.fail"],
+		neutral["flow.condition"],
+		neutral["flow.delay"],
 		{
 			Type: "flow.approval", Phase: PhaseCore,
 			Inputs: []Port{{Name: "request", Kind: PortObject}},
@@ -58,24 +48,9 @@ func coreNodeTypes() []NodeType {
 			},
 			RequiredWith: []string{"approverRole", "expiresIn"},
 		},
-		{
-			Type: "data.set", Phase: PhaseCore,
-			Inputs:       []Port{},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"value"},
-		},
-		{
-			Type: "data.map", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "input", Kind: PortObject, Required: true}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"mapping"},
-		},
-		{
-			Type: "data.validate", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "value", Kind: PortAny, Required: true}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"schema"},
-		},
+		neutral["data.set"],
+		neutral["data.map"],
+		neutral["data.validate"],
 		{
 			Type: "http.request", Phase: PhaseCore,
 			Inputs:       []Port{{Name: "payload", Kind: PortObject}},
