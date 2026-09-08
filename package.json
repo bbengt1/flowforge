@@ -6,6 +6,7 @@
     "dev": "pnpm --filter @flowforge/web dev",
     "build": "pnpm --filter @flowforge/web build",
     "lint": "pnpm --filter @flowforge/web lint",
+    "test": "pnpm --filter @flowforge/web test",
     "start": "pnpm --filter @flowforge/web start"
   }
 }

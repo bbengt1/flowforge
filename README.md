@@ -11,7 +11,9 @@ This README only covers how to start the local stack. It does not define product
 3. Open the UI at [http://localhost:3000](http://localhost:3000).
 4. With the Go module from [PR #2](https://github.com/bbengt1/flowforge/pull/2) present, verify [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health) then [http://localhost:8080/api/v1/readiness](http://localhost:8080/api/v1/readiness).
 
-The UI calls `GET /api/v1/health` (compose network `http://api:8080`). Until the API is running, the home page reports that the control plane is not up yet.
+The UI proxies `GET /api/v1/health` and `GET /api/v1/readiness` (compose network `http://api:8080`). Proxies forward or generate `X-Request-ID` and preserve `application/problem+json` on failure. Until the API is running, the home page shows those problem details instead of a private error string.
+
+Operator OpenAPI links on the home/shell point at the public control plane (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
 
 ## UI only (optional)
 
@@ -32,9 +34,9 @@ Serves [http://localhost:3000](http://localhost:3000) and checks `http://localho
 
 Compose builds `web` from `./apps/web` and `api` from `./apps/api`. This PR does not add `apps/api` files so it cannot clobber PR #2. Either merge order works: #2 first (compose then has a real context) or #1 first (compose assumes `apps/api` from #2). pnpm workspace root is ready for more packages later.
 
-## E1.1 ownership
+## E1 ownership
 
 | Slice | Owner |
 | --- | --- |
-| Next.js UI, `env-template.txt`, `docker-compose.yml`, this README | Chloe |
-| Go API, PostgreSQL connection/migration harness, `/api/v1/health` and `/api/v1/readiness` | jonny |
+| Next.js UI, health/readiness proxies, `X-Request-ID` + problem+json mapping, OpenAPI/Swagger links, `env-template.txt`, `docker-compose.yml`, this README | Chloe |
+| Go API, PostgreSQL connection/migration harness, correlation IDs, structured logs, RFC 9457, OpenAPI publish, metrics | jonny |

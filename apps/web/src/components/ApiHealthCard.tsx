@@ -1,36 +1,61 @@
 "use client";
 
 import { useState } from "react";
-import type { HealthCheck } from "@/lib/health";
+import type { ControlPlaneProbe } from "@/lib/control-plane";
+import { probeFromProxyResponse } from "@/lib/control-plane";
+import { safeProblemDetail } from "@/lib/problem";
+import { generateRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
 
 type ApiHealthCardProps = {
-  initial: HealthCheck;
+  initialHealth: ControlPlaneProbe;
+  initialReadiness: ControlPlaneProbe;
   publicHealthUrl: string;
   publicReadinessUrl: string;
 };
 
 export function ApiHealthCard({
-  initial,
+  initialHealth,
+  initialReadiness,
   publicHealthUrl,
   publicReadinessUrl,
 }: ApiHealthCardProps) {
-  const [health, setHealth] = useState(initial);
+  const [health, setHealth] = useState(initialHealth);
+  const [readiness, setReadiness] = useState(initialReadiness);
   const [pending, setPending] = useState(false);
 
   async function refresh() {
     setPending(true);
     try {
-      const response = await fetch("/api/control-plane/health", {
-        cache: "no-store",
-      });
-      const body = (await response.json()) as HealthCheck;
-      setHealth(body);
+      const requestId = generateRequestId();
+      const [nextHealth, nextReadiness] = await Promise.all([
+        refreshProxy("/api/control-plane/health", requestId),
+        refreshProxy("/api/control-plane/readiness", requestId),
+      ]);
+      setHealth(nextHealth);
+      setReadiness(nextReadiness);
     } catch {
-      setHealth({
+      const requestId = generateRequestId();
+      const fallback: ControlPlaneProbe = {
         ok: false,
         statusCode: null,
         status: null,
-        error: "Could not reach the UI health proxy",
+        requestId,
+        problem: {
+          type: "urn:flowforge:problem:control-plane-unreachable",
+          title: "Control Plane Unreachable",
+          status: 503,
+          detail: "Could not reach the UI health proxy.",
+          instance: "/api/control-plane/health",
+          code: "control-plane-unreachable",
+          request_id: requestId,
+        },
+      };
+      setHealth(fallback);
+      setReadiness({
+        ...fallback,
+        problem: fallback.problem
+          ? { ...fallback.problem, instance: "/api/control-plane/readiness" }
+          : null,
       });
     } finally {
       setPending(false);
@@ -48,7 +73,7 @@ export function ApiHealthCard({
             Control plane
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Checks{" "}
+            Liveness is{" "}
             <a
               className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
               href={publicHealthUrl}
@@ -61,8 +86,9 @@ export function ApiHealthCard({
               href={publicReadinessUrl}
             >
               {publicReadinessUrl}
-            </a>{" "}
-            once migrations finish.
+            </a>
+            . Failures keep RFC 9457 problem details and{" "}
+            <code className="font-mono text-xs">X-Request-ID</code>.
           </p>
         </div>
         <button
@@ -75,25 +101,96 @@ export function ApiHealthCard({
         </button>
       </div>
 
-      <p
-        role="status"
-        className="mt-4 rounded-xl bg-zinc-50 px-4 py-3 text-sm leading-6"
-      >
-        {health.ok ? (
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ProbeStatus
+          label="Health"
+          expected="ok"
+          probe={health}
+        />
+        <ProbeStatus
+          label="Readiness"
+          expected="ready"
+          probe={readiness}
+        />
+      </div>
+    </section>
+  );
+}
+
+async function refreshProxy(
+  path: string,
+  requestId: string,
+): Promise<ControlPlaneProbe> {
+  const response = await fetch(path, {
+    cache: "no-store",
+    headers: { [REQUEST_ID_HEADER]: requestId },
+  });
+  return probeFromProxyResponse(response, requestId);
+}
+
+function ProbeStatus({
+  label,
+  expected,
+  probe,
+}: {
+  label: string;
+  expected: string;
+  probe: ControlPlaneProbe;
+}) {
+  const problem = probe.problem;
+  const headingId = `${label.toLowerCase()}-status-heading`;
+
+  return (
+    <article
+      aria-labelledby={headingId}
+      className="rounded-xl bg-zinc-50 px-4 py-3 text-sm leading-6"
+    >
+      <h3 id={headingId} className="font-medium text-zinc-900">
+        {label}
+      </h3>
+      <p role="status" className="mt-1">
+        {probe.ok ? (
           <>
-            <span className="font-medium text-emerald-800">Healthy.</span>{" "}
-            API returned <code className="font-mono">{health.status}</code>
-            {health.statusCode ? ` (${health.statusCode})` : null}.
+            <span className="font-medium text-emerald-800">
+              {expected === "ready" ? "Ready." : "Healthy."}
+            </span>{" "}
+            API returned <code className="font-mono">{probe.status}</code>
+            {probe.statusCode ? ` (${probe.statusCode})` : null}.
           </>
         ) : (
           <>
-            <span className="font-medium text-amber-800">Not available yet.</span>{" "}
-            The Go control plane at{" "}
-            <code className="font-mono">http://api:8080</code> is not reachable
-            yet. {health.error ? `(${health.error})` : null}
+            <span className="font-medium text-amber-800">
+              {problem ? `${problem.title}.` : "Not available yet."}
+            </span>{" "}
+            {problem ? (
+              <>
+                {safeProblemDetail(problem.detail)}
+                {probe.statusCode ? ` (${probe.statusCode})` : null}.
+              </>
+            ) : (
+              "The Go control plane is not reachable yet."
+            )}
           </>
         )}
       </p>
-    </section>
+      {problem ? (
+        <dl className="mt-3 space-y-1 font-mono text-xs text-zinc-600">
+          <div>
+            <dt className="inline text-zinc-500">code </dt>
+            <dd className="inline">{problem.code}</dd>
+          </div>
+          {problem.request_id ? (
+            <div>
+              <dt className="inline text-zinc-500">request_id </dt>
+              <dd className="inline break-all">{problem.request_id}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : probe.requestId ? (
+        <p className="mt-3 font-mono text-xs text-zinc-500">
+          request_id {probe.requestId}
+        </p>
+      ) : null}
+    </article>
   );
 }
