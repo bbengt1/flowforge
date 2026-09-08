@@ -7,8 +7,12 @@ import { REQUEST_ID_HEADER } from "./request-id.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { STARTER_WORKFLOW_YAML } from "./workflow.ts";
 import {
+  createWorkflow,
   fetchWorkflowCatalog,
+  IF_MATCH_HEADER,
   normalizeWorkflowYaml,
+  saveWorkflowDraft,
+  startWorkflowExecution,
   validateWorkflowYaml,
 } from "./workflow-client.ts";
 
@@ -159,6 +163,151 @@ describe("workflow client", () => {
       assert.equal(result.applied.yaml, normalized);
       assert.equal(result.applied.digest, "sha256:deadbeef");
       assert.equal(result.applied.summary.name, "validate-example");
+    }
+  });
+
+  it("creates a workflow without host-supplied id or workspaceId", async () => {
+    withSession();
+    const seen: { url?: string; body?: string } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.body = typeof init?.body === "string" ? init.body : "";
+      return new Response(
+        JSON.stringify({
+          workflow: {
+            id: "11111111-1111-4111-8111-111111111111",
+            slug: "validate-example",
+            name: "validate-example",
+            status: "draft",
+            draftRevision: 1,
+            draftDigest: "sha256:one",
+            latestVersionNumber: 0,
+            createdAt: "2026-09-08T21:00:00.000Z",
+            updatedAt: "2026-09-08T21:00:00.000Z",
+          },
+          draft: {
+            workflowId: "11111111-1111-4111-8111-111111111111",
+            revision: 1,
+            definitionYaml: STARTER_WORKFLOW_YAML,
+            digest: "sha256:one",
+            summary,
+            warnings: [],
+            validationState: "valid",
+            updatedAt: "2026-09-08T21:00:00.000Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await createWorkflow(identity, {
+      definitionYaml: STARTER_WORKFLOW_YAML,
+      slug: "validate-example",
+    });
+    assert.equal(seen.url, "/api/v1/workflows");
+    assert.match(seen.body ?? "", /definitionYaml/);
+    assert.doesNotMatch(seen.body ?? "", /"id"/);
+    assert.doesNotMatch(seen.body ?? "", /workspaceId/);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.applied.revision, 1);
+      assert.equal(result.applied.yaml, STARTER_WORKFLOW_YAML);
+    }
+  });
+
+  it("saves with revision + If-Match and offers conflict reload on 409", async () => {
+    withSession();
+    const seen: { url?: string; headers?: Headers; body?: string } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.headers = new Headers(init?.headers);
+      seen.body = typeof init?.body === "string" ? init.body : "";
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "Draft revision is stale.",
+          instance: "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+          code: "conflict",
+          request_id: "wf-save-conflict16",
+        }),
+        {
+          status: 409,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            [REQUEST_ID_HEADER]: "wf-save-conflict16",
+          },
+        },
+      );
+    }) as typeof fetch;
+
+    const result = await saveWorkflowDraft(
+      identity,
+      "11111111-1111-4111-8111-111111111111",
+      STARTER_WORKFLOW_YAML,
+      1,
+    );
+    assert.equal(
+      seen.url,
+      "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+    );
+    assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
+    assert.equal(seen.headers?.get(IF_MATCH_HEADER), "1");
+    assert.match(seen.body ?? "", /"revision":1/);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.conflict, true);
+      assert.equal(result.problem.code, "conflict");
+    }
+  });
+
+  it("starts an execution with workflowVersionId only — never draft: true", async () => {
+    withSession();
+    const seen: { url?: string; body?: string } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.body = typeof init?.body === "string" ? init.body : "";
+      return new Response(
+        JSON.stringify({
+          id: "33333333-3333-4333-8333-333333333333",
+          workflowId: "11111111-1111-4111-8111-111111111111",
+          workflowVersionId: "22222222-2222-4222-8222-222222222222",
+          workflowDigest: "sha256:v1",
+          status: "pinned",
+          createdAt: "2026-09-08T21:00:00.000Z",
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const rejected = await startWorkflowExecution(
+      identity,
+      "11111111-1111-4111-8111-111111111111",
+      "draft",
+    );
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.match(rejected.problem.detail, /Drafts cannot be executed/);
+    }
+
+    const result = await startWorkflowExecution(
+      identity,
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    );
+    assert.equal(
+      seen.url,
+      "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions",
+    );
+    assert.match(seen.body ?? "", /workflowVersionId/);
+    assert.doesNotMatch(seen.body ?? "", /"draft"/);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(
+        result.execution.workflowVersionId,
+        "22222222-2222-4222-8222-222222222222",
+      );
     }
   });
 });

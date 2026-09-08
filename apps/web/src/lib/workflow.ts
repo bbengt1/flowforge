@@ -5,14 +5,26 @@ import {
 } from "./problem.ts";
 import {
   CATALOG_PHASE_CORE,
+  COMPARE_KIND_DRAFT,
+  COMPARE_KIND_VERSION,
+  CONFLICT_CODE,
   INVALID_WORKFLOW_CODE,
   type CatalogNode,
   type CatalogTrigger,
+  type CompareKind,
+  type CompareRef,
+  type CompareWorkflowResult,
   type NormalizeResponse,
+  type StartExecutionBody,
   type ValidateResponse,
   type WorkflowCatalog,
+  type WorkflowDraft,
+  type WorkflowExecution,
+  type WorkflowExport,
   type WorkflowFieldError,
+  type WorkflowRecord,
   type WorkflowSummary,
+  type WorkflowVersion,
 } from "./workflow-types.ts";
 
 export const VALIDATE_DEBOUNCE_MS = 450;
@@ -222,4 +234,191 @@ export function offsetForLine(yaml: string, line: number): number {
     offset += (lines[index] ?? "").length + 1;
   }
   return offset;
+}
+
+const RESOURCE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isResourceId(value: string | undefined | null): boolean {
+  return Boolean(value && RESOURCE_ID.test(value));
+}
+
+export function isConflictProblem(problem: ProblemDetails): boolean {
+  return problem.status === 409 || problem.code === CONFLICT_CODE;
+}
+
+export type AppliedDraft = {
+  yaml: string;
+  revision: number;
+  digest: string;
+  summary: WorkflowSummary;
+  warnings: WorkflowFieldError[];
+};
+
+/** Replace the editor buffer from a saved/fetched draft only. */
+export function applyDraftResponse(draft: WorkflowDraft): AppliedDraft | null {
+  const yaml = draft.definitionYaml;
+  const digest = draft.digest;
+  if (typeof yaml !== "string" || !yaml || typeof digest !== "string" || !digest) {
+    return null;
+  }
+  if (typeof draft.revision !== "number" || !Number.isInteger(draft.revision)) {
+    return null;
+  }
+  if (!isWorkflowSummary(draft.summary)) {
+    return null;
+  }
+  return {
+    yaml,
+    revision: draft.revision,
+    digest,
+    summary: draft.summary,
+    warnings: Array.isArray(draft.warnings) ? draft.warnings : [],
+  };
+}
+
+export function isWorkflowRecord(value: unknown): value is WorkflowRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.id === "string" &&
+    isResourceId(body.id) &&
+    typeof body.slug === "string" &&
+    typeof body.name === "string" &&
+    typeof body.status === "string" &&
+    typeof body.draftRevision === "number"
+  );
+}
+
+export function isWorkflowDraft(value: unknown): value is WorkflowDraft {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.workflowId === "string" &&
+    typeof body.revision === "number" &&
+    typeof body.definitionYaml === "string" &&
+    typeof body.digest === "string" &&
+    isWorkflowSummary(body.summary)
+  );
+}
+
+export function isWorkflowVersion(value: unknown): value is WorkflowVersion {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.id === "string" &&
+    isResourceId(body.id) &&
+    typeof body.workflowId === "string" &&
+    typeof body.versionNumber === "number" &&
+    typeof body.digest === "string"
+  );
+}
+
+export function isWorkflowExport(value: unknown): value is WorkflowExport {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.filename === "string" &&
+    typeof body.definitionYaml === "string" &&
+    typeof body.digest === "string" &&
+    typeof body.versionId === "string"
+  );
+}
+
+export function isWorkflowExecution(value: unknown): value is WorkflowExecution {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.id === "string" &&
+    typeof body.workflowId === "string" &&
+    typeof body.workflowVersionId === "string" &&
+    typeof body.workflowDigest === "string"
+  );
+}
+
+export function isCompareResult(value: unknown): value is CompareWorkflowResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.equal === "boolean" &&
+    typeof body.digestMatch === "boolean" &&
+    typeof body.leftDigest === "string" &&
+    typeof body.rightDigest === "string" &&
+    Array.isArray(body.changes)
+  );
+}
+
+/** Run control: published version UUID only. Never a draft sentinel. */
+export function executionStartBody(
+  workflowVersionId: string | null | undefined,
+): StartExecutionBody | null {
+  const id = workflowVersionId?.trim() ?? "";
+  if (!isResourceId(id)) {
+    return null;
+  }
+  return { workflowVersionId: id };
+}
+
+export function publishedVersions(versions: WorkflowVersion[]): WorkflowVersion[] {
+  return versions.filter((version) => isResourceId(version.id));
+}
+
+export function draftCompareRef(): CompareRef {
+  return { kind: COMPARE_KIND_DRAFT };
+}
+
+export function versionCompareRef(versionId: string): CompareRef | null {
+  if (!isResourceId(versionId)) {
+    return null;
+  }
+  return { kind: COMPARE_KIND_VERSION, versionId };
+}
+
+export function compareRefLabel(
+  kind: CompareKind | string,
+  version?: Pick<WorkflowVersion, "versionNumber" | "id"> | null,
+): string {
+  if (kind === COMPARE_KIND_DRAFT) {
+    return "Current draft";
+  }
+  if (version) {
+    return `v${version.versionNumber}`;
+  }
+  return "Published version";
+}
+
+export function shortDigest(digest: string | null | undefined): string {
+  if (!digest) {
+    return "";
+  }
+  if (digest.length <= 19) {
+    return digest;
+  }
+  return `${digest.slice(0, 15)}…`;
+}
+
+export function optionalCreateFields(slug: string, name: string): {
+  slug?: string;
+  name?: string;
+} {
+  const out: { slug?: string; name?: string } = {};
+  if (slug.trim()) {
+    out.slug = slug.trim();
+  }
+  if (name.trim()) {
+    out.name = name.trim();
+  }
+  return out;
 }

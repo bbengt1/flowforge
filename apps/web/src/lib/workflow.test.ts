@@ -2,19 +2,31 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { problemFieldErrors } from "./problem.ts";
 import {
+  applyDraftResponse,
   applyNormalizeResponse,
   canShowSummary,
   coreCatalog,
+  draftCompareRef,
+  executionStartBody,
+  isConflictProblem,
   isCorePhase,
   isInvalidWorkflowProblem,
   isNormalizeResponse,
   isValidateResponse,
   offsetForLine,
+  optionalCreateFields,
+  publishedVersions,
   STARTER_WORKFLOW_YAML,
   summaryCounts,
+  versionCompareRef,
   workflowErrorsFromProblem,
 } from "./workflow.ts";
-import type { WorkflowCatalog, WorkflowSummary } from "./workflow-types.ts";
+import type {
+  WorkflowCatalog,
+  WorkflowDraft,
+  WorkflowSummary,
+  WorkflowVersion,
+} from "./workflow-types.ts";
 
 const summary: WorkflowSummary = {
   apiVersion: "flowforge/v1",
@@ -156,5 +168,78 @@ describe("yaml line offsets", () => {
     assert.equal(offsetForLine(yaml, 1), 0);
     assert.equal(offsetForLine(yaml, 2), 4);
     assert.equal(offsetForLine(yaml, 3), 8);
+  });
+});
+
+const draft: WorkflowDraft = {
+  workflowId: "11111111-1111-4111-8111-111111111111",
+  revision: 2,
+  definitionYaml: STARTER_WORKFLOW_YAML,
+  digest: "sha256:saved",
+  summary,
+  warnings: [],
+  validationState: "valid",
+  updatedAt: "2026-09-08T21:00:00.000Z",
+};
+
+describe("applyDraftResponse", () => {
+  it("replaces the editor buffer from the saved draft YAML and revision", () => {
+    const applied = applyDraftResponse(draft);
+    assert.ok(applied);
+    assert.equal(applied.yaml, STARTER_WORKFLOW_YAML);
+    assert.equal(applied.revision, 2);
+    assert.equal(applied.digest, "sha256:saved");
+  });
+
+  it("rejects a draft payload that cannot replace the buffer", () => {
+    assert.equal(
+      applyDraftResponse({ ...draft, definitionYaml: "" }),
+      null,
+    );
+  });
+});
+
+describe("draft conflict and run guards", () => {
+  it("treats 409 conflict as a reload signal", () => {
+    assert.equal(
+      isConflictProblem({
+        type: "urn:flowforge:problem:conflict",
+        title: "Conflict",
+        status: 409,
+        detail: "Draft revision is stale.",
+        instance: "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+        code: "conflict",
+        request_id: "wf-conflict-req16",
+      }),
+      true,
+    );
+  });
+
+  it("requires a published workflowVersionId and never a draft sentinel", () => {
+    assert.equal(executionStartBody(null), null);
+    assert.equal(executionStartBody("draft"), null);
+    assert.equal(executionStartBody(""), null);
+    assert.deepEqual(
+      executionStartBody("22222222-2222-4222-8222-222222222222"),
+      { workflowVersionId: "22222222-2222-4222-8222-222222222222" },
+    );
+    const versions: WorkflowVersion[] = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        workflowId: draft.workflowId,
+        versionNumber: 1,
+        digest: "sha256:v1",
+        publishNote: "first",
+        publishedAt: "2026-09-08T21:00:00.000Z",
+      },
+    ];
+    assert.equal(publishedVersions(versions).length, 1);
+    assert.deepEqual(draftCompareRef(), { kind: "draft" });
+    assert.deepEqual(versionCompareRef(versions[0]!.id), {
+      kind: "version",
+      versionId: versions[0]!.id,
+    });
+    assert.equal(versionCompareRef("draft"), null);
+    assert.deepEqual(optionalCreateFields("  slug  ", ""), { slug: "slug" });
   });
 });

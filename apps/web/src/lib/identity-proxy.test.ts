@@ -11,6 +11,7 @@ import {
   fetchIdentityControlPlane,
   methodNotAllowedProblem,
   notFoundProblem,
+  pickConditionalHeaders,
   pickSessionCredentialHeaders,
   resolveIdentityProxyTarget,
   withRequestSearch,
@@ -26,7 +27,7 @@ afterEach(() => {
 });
 
 describe("resolveIdentityProxyTarget", () => {
-  it("maps the documented E2.1, E2.2, E2.3, and E3.1 routes onto /api/v1", () => {
+  it("maps the documented E2.1, E2.2, E2.3, E3.1, and E3.2 routes onto /api/v1", () => {
     const cases: Array<[string, string[], string]> = [
       ["GET", ["permission-matrix"], "/api/v1/permission-matrix"],
       ["GET", ["roles"], "/api/v1/roles"],
@@ -88,6 +89,85 @@ describe("resolveIdentityProxyTarget", () => {
       ["GET", ["workflows", "catalog"], "/api/v1/workflows/catalog"],
       ["POST", ["workflows", "validate"], "/api/v1/workflows/validate"],
       ["POST", ["workflows", "normalize"], "/api/v1/workflows/normalize"],
+      ["GET", ["workflows"], "/api/v1/workflows"],
+      ["POST", ["workflows"], "/api/v1/workflows"],
+      [
+        "GET",
+        ["workflows", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "GET",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "PUT",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "POST",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "publish"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/publish",
+      ],
+      [
+        "POST",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "compare"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/compare",
+      ],
+      [
+        "GET",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "versions"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions",
+      ],
+      [
+        "GET",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "GET",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+          "export",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/export",
+      ],
+      [
+        "POST",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+          "restore",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/restore",
+      ],
+      [
+        "POST",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "executions"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions",
+      ],
+      [
+        "GET",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -118,11 +198,10 @@ describe("resolveIdentityProxyTarget", () => {
     );
   });
 
-  it("does not offer draft persistence or unknown workflow paths", () => {
+  it("does not treat reserved E3.1 paths as workflow ids", () => {
     const unknown = [
-      ["workflows"],
       ["workflows", "draft"],
-      ["workflows", "11111111-1111-4111-8111-111111111111", "draft"],
+      ["workflows", "not-a-uuid", "draft"],
     ];
     for (const segments of unknown) {
       const target = resolveIdentityProxyTarget("PUT", segments);
@@ -138,6 +217,14 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in catalogWrite, true);
     if ("status" in catalogWrite) {
       assert.equal(catalogWrite.status, 405);
+    }
+    const catalogAsId = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      "catalog",
+    ]);
+    assert.equal("apiPath" in catalogAsId, true);
+    if ("apiPath" in catalogAsId) {
+      assert.equal(catalogAsId.apiPath, "/api/v1/workflows/catalog");
     }
   });
 
@@ -367,6 +454,33 @@ describe("fetchIdentityControlPlane", () => {
     }
   });
 
+  it("forwards If-Match on draft PUT", async () => {
+    const seen: { headers?: Headers } = {};
+    globalThis.fetch = (async (_input, init) => {
+      seen.headers = new Headers(init?.headers);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    await fetchIdentityControlPlane({
+      method: "PUT",
+      apiPath: "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+      instance: "/api/control-plane/workflows/11111111-1111-4111-8111-111111111111/draft",
+      requestId: "draft-if-match-16x",
+      identityHeaders: new Headers({
+        "If-Match": "2",
+        Authorization: "Bearer secret",
+      }),
+      body: JSON.stringify({ revision: 2, definitionYaml: "kind: Workflow" }),
+      contentType: "application/json",
+    });
+
+    assert.equal(seen.headers?.get("If-Match"), "2");
+    assert.equal(seen.headers?.get("Authorization"), null);
+  });
+
   it("forwards Cookie and CSRF, rewrites Set-Cookie, and never forwards Authorization", async () => {
     const seen: { headers?: Headers } = {};
     globalThis.fetch = (async (_input, init) => {
@@ -417,6 +531,19 @@ describe("fetchIdentityControlPlane", () => {
       assert.doesNotMatch(result.setCookies[0] ?? "", /Domain=/);
       assert.doesNotMatch(result.setCookies[0] ?? "", /Secure/);
     }
+  });
+});
+
+describe("pickConditionalHeaders", () => {
+  it("forwards If-Match and never Authorization", () => {
+    const forwarded = pickConditionalHeaders(
+      new Headers({
+        "If-Match": " 3 ",
+        Authorization: "Bearer secret",
+      }),
+    );
+    assert.equal(forwarded.get("If-Match"), "3");
+    assert.equal(forwarded.get("Authorization"), null);
   });
 });
 

@@ -78,9 +78,9 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 
 Ephemeral parse/normalize/validate. Persistence is E3.2 below. Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
 
-**UI route map (Chloe):** `/workflows` remains the E3.1 YAML operator for catalog/validate/normalize. Debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Show digest + `summary` counts; do not guess a graph on `invalid-workflow` — render `errors[]` (`path`, `line`, `column`, `code`, `message`). Catalog palette is `phase: core` only (`next` / `provider` fail closed). Do not persist credentials or host-supplied workspace IDs in YAML.
+**UI route map (Chloe):** `/workflows` is the E3.1 YAML operator plus the E3.2 draft/publish/history operator (not the E6 canvas). Debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Show digest + `summary` counts; do not guess a graph on `invalid-workflow` — render `errors[]` (`path`, `line`, `column`, `code`, `message`). Catalog palette is `phase: core` only (`next` / `provider` fail closed). Do not persist credentials or host-supplied workspace IDs in YAML.
 
-The Next UI proxies these routes under `/api/control-plane/workflows/{catalog,validate,normalize}` with session cookies, CSRF on POST, workspace tenant + workbench headers, and preserved `application/problem+json` including `errors[]`.
+The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,validate,normalize}` and E3.2 routes under `/api/control-plane/workflows`, `/{workflowId}`, `.../draft`, `.../publish`, `.../compare`, `.../versions`, `.../export`, `.../restore`, and `.../executions` with session cookies, CSRF on POST/PUT, `If-Match` on draft save, workspace tenant + workbench headers, and preserved `application/problem+json` including `errors[]`.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
@@ -96,7 +96,7 @@ Digest format: `sha256:<hex>` of normalized YAML. Normalization sorts labels, tr
 
 Server-derived workspace scope, FORCE RLS, and composite `(workspace_id, id)` FKs apply. Only **normalized** YAML is stored. Published `workflow_versions` rows are immutable (trigger + `flowforge_app` has INSERT/SELECT only). Execution start is a pin stub, not the E5 engine.
 
-**UI route map (Chloe):** persist drafts through these shapes. Do not rewrite `apps/web` in this story; add proxies under `/api/control-plane/workflows/...` when the draft/publish UI lands. JSON field names are camelCase (`definitionYaml`, `draftRevision`, `workflowVersionId`). Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Cookie sessions send `X-CSRF-Token` on POST/PUT.
+**UI route map (Chloe):** persist drafts through these shapes. `/workflows` and the Next proxies under `/api/control-plane/workflows/...` are in place. JSON field names are camelCase (`definitionYaml`, `draftRevision`, `workflowVersionId`). Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Cookie sessions send `X-CSRF-Token` on POST/PUT.
 
 Suggested UI flow:
 

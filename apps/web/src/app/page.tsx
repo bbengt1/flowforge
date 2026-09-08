@@ -22,7 +22,7 @@ export default async function Home() {
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-8 px-6 py-16">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E1 foundation · E2 identity · E3.1 YAML
+          E1 foundation · E2 identity · E3 YAML
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -43,12 +43,13 @@ export default async function Home() {
           >
             isolation exercise
           </Link>
-          , or exercise canonical YAML validate/normalize on the{" "}
+          , or exercise YAML validate/normalize plus draft/publish/history on
+          the{" "}
           <Link
             className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
             href="/workflows"
           >
-            workflow YAML operator
+            workflow operator
           </Link>
           .
         </p>
@@ -99,18 +100,19 @@ export default async function Home() {
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Workflow YAML operator</h2>
+        <h2 className="text-lg font-semibold">Workflow operator</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E3.1 UI for jonny&apos;s catalog / validate / normalize
-          contract. Invalid YAML shows field errors only. Normalize replaces
-          the editor buffer with the API digest. Draft persistence is E3.2.
+          Chloe&apos;s E3.1 / E3.2 UI for jonny&apos;s YAML and version
+          contract. Validate and normalize stay on the editor. Drafts save
+          with revision / If-Match, 409 offers reload, publish is immutable,
+          and run accepts only a published version id.
         </p>
         <p className="mt-4">
           <Link
             className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
             href="/workflows"
           >
-            Open YAML editor
+            Open draft / publish operator
           </Link>
         </p>
       </section>

@@ -93,6 +93,73 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, ["workflows", "catalog"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },
+  { methods: ["GET", "POST"], match: (s) => eq(s, ["workflows"]) },
+  {
+    methods: ["GET"],
+    match: (s) => s.length === 2 && s[0] === "workflows" && isResourceId(s[1]),
+  },
+  {
+    methods: ["GET", "PUT"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "draft",
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      (s[2] === "publish" || s[2] === "compare" || s[2] === "executions"),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "versions",
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 4 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]) &&
+      s[4] === "export",
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]) &&
+      s[4] === "restore",
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 4 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "executions" &&
+      isResourceId(s[3]),
+  },
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -103,6 +170,14 @@ export function withRequestSearch(apiPath: string, requestUrl: string): string {
   } catch {
     return apiPath;
   }
+}
+
+const RESOURCE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Workflow/version/execution path ids are UUIDs — never catalog/validate/normalize. */
+export function isResourceId(value: string | undefined): boolean {
+  return Boolean(value && RESOURCE_ID.test(value));
 }
 
 function eq(segments: string[], expected: string[]): boolean {
@@ -225,6 +300,7 @@ export async function fetchIdentityControlPlane(options: {
   const url = `${getApiInternalUrl()}${options.apiPath}`;
   const headers = pickIsolationForwardedHeaders(options.identityHeaders);
   pickSessionCredentialHeaders(options.identityHeaders, headers);
+  pickConditionalHeaders(options.identityHeaders, headers);
   headers.set(REQUEST_ID_HEADER, requestId);
   headers.set("Accept", "application/json, application/problem+json");
   if (options.body && options.method !== "GET" && options.method !== "HEAD") {
@@ -323,6 +399,20 @@ export async function fetchIdentityControlPlane(options: {
       csrfToken: null,
     };
   }
+}
+
+const IF_MATCH_HEADER = "If-Match";
+
+/** Forwards If-Match so draft PUT can use revision + header concurrency. */
+export function pickConditionalHeaders(
+  source: Headers,
+  target = new Headers(),
+): Headers {
+  const ifMatch = source.get(IF_MATCH_HEADER)?.trim();
+  if (ifMatch) {
+    target.set(IF_MATCH_HEADER, ifMatch);
+  }
+  return target;
 }
 
 /** Cookie + CSRF only. Authorization / bearer tokens are never forwarded. */
