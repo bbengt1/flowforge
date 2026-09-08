@@ -32,8 +32,13 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
+| `POST` | `/api/v1/session` | Create browser session; sets `ff_session` + `ff_csrf`. |
+| `GET` | `/api/v1/session` | Current browser session (cookie required). |
+| `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
+| `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
+| `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
 
-Subject identity (until E2.3 sessions) uses `X-FlowForge-Issuer` and `X-FlowForge-Subject`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
+Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 
@@ -61,6 +66,9 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). Probe paths `/api/v1/health` and `/api/v1/readiness` stay reachable over plain HTTP for kubelet. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. |
+| `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
+| `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
+| `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -95,6 +103,9 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
+      SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
     depends_on:
       postgres:
         condition: service_healthy

@@ -34,6 +34,11 @@ type Config struct {
 	RequireTLS  bool
 	TLSCertFile string
 	TLSKeyFile  string
+	// CORSAllowedOrigins is an exact allowlist. Empty is fail-closed for
+	// cross-origin browser calls. Wildcard origins are rejected at load.
+	CORSAllowedOrigins     []string
+	SessionIdleTimeout     time.Duration
+	SessionAbsoluteTimeout time.Duration
 }
 
 // Load reads configuration from the process environment.
@@ -46,16 +51,23 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
 	}
+	origins, err := parseOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if err != nil {
+		return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS: %w", err)
+	}
 
 	cfg := Config{
-		HTTPAddr:       listenAddr(),
-		DatabaseURL:    databaseURL(),
-		ShutdownWait:   durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
-		MigrateTimeout: durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
-		TrustedProxies: proxies,
-		RequireTLS:     boolEnv("REQUIRE_TLS", false),
-		TLSCertFile:    strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
-		TLSKeyFile:     strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
+		HTTPAddr:               listenAddr(),
+		DatabaseURL:            databaseURL(),
+		ShutdownWait:           durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
+		MigrateTimeout:         durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
+		TrustedProxies:         proxies,
+		RequireTLS:             boolEnv("REQUIRE_TLS", false),
+		TLSCertFile:            strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
+		TLSKeyFile:             strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
+		CORSAllowedOrigins:     origins,
+		SessionIdleTimeout:     durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
+		SessionAbsoluteTimeout: durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")
@@ -63,7 +75,47 @@ func Load() (Config, error) {
 	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
 		return Config{}, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
 	}
+	if cfg.SessionIdleTimeout > cfg.SessionAbsoluteTimeout {
+		cfg.SessionIdleTimeout = cfg.SessionAbsoluteTimeout
+	}
 	return cfg, nil
+}
+
+// parseOrigins parses a comma-separated exact Origin allowlist.
+// Empty input is valid (fail closed). Wildcard and null origins are rejected.
+func parseOrigins(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var out []string
+	seen := map[string]struct{}{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if part == "*" || strings.EqualFold(part, "null") {
+			return nil, fmt.Errorf("wildcard CORS origins are not allowed")
+		}
+		u, err := url.Parse(part)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("invalid CORS origin %q", part)
+		}
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return nil, fmt.Errorf("invalid CORS origin %q", part)
+		}
+		if u.Path != "" && u.Path != "/" {
+			return nil, fmt.Errorf("invalid CORS origin %q", part)
+		}
+		origin := u.Scheme + "://" + u.Host
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+	return out, nil
 }
 
 // parseCIDRs parses a comma-separated list of CIDRs. Empty input is valid.

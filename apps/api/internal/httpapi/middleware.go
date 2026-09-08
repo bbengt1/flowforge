@@ -13,13 +13,37 @@ import (
 	"unicode"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
-// Security is the TLS/proxy policy applied at the HTTP boundary.
+// Security is the TLS/proxy/CORS/session policy applied at the HTTP boundary.
 // Empty TrustedProxies means X-Forwarded-* headers are ignored.
+// Empty AllowedOrigins means only same-origin or Origin-less callers (fail closed).
 type Security struct {
 	TrustedProxies []*net.IPNet
 	RequireTLS     bool
+	AllowedOrigins []string
+	Session        SessionPolicy
+}
+
+// SessionPolicy is idle/absolute lifetime for browser sessions.
+type SessionPolicy struct {
+	IdleTimeout     time.Duration
+	AbsoluteTimeout time.Duration
+}
+
+func (s Security) sessionPolicy() SessionPolicy {
+	p := s.Session
+	if p.IdleTimeout <= 0 {
+		p.IdleTimeout = session.DefaultIdleTimeout
+	}
+	if p.AbsoluteTimeout <= 0 {
+		p.AbsoluteTimeout = session.DefaultAbsoluteTimeout
+	}
+	if p.IdleTimeout > p.AbsoluteTimeout {
+		p.IdleTimeout = p.AbsoluteTimeout
+	}
+	return p
 }
 
 func (s Security) requestIsHTTPS(r *http.Request) bool {
@@ -58,6 +82,7 @@ type contextKey int
 const (
 	requestIDKey contextKey = iota + 1
 	metaKey
+	principalKey
 )
 
 type requestMeta struct {
@@ -95,7 +120,7 @@ func withSecureHeaders(sec Security, next http.Handler) http.Handler {
 			return
 		}
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
 		h.Set("X-Content-Type-Options", "nosniff")
