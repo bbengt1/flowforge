@@ -37,7 +37,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
 | `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
-| `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). |
+| `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). Probe paths `/api/v1/health` and `/api/v1/readiness` stay reachable over plain HTTP for kubelet. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. |
 
 Suggested local URL (compose service hostname `postgres`):

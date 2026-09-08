@@ -82,10 +82,15 @@ func withRequestID(next http.Handler) http.Handler {
 	})
 }
 
+func tlsProbePath(path string) bool {
+	return path == "/api/v1/health" || path == "/api/v1/readiness"
+}
+
 func withSecureHeaders(sec Security, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		https := sec.requestIsHTTPS(r)
-		if sec.RequireTLS && !https {
+		// Kubelet HTTP probes hit the pod directly (no Ingress TLS).
+		if sec.RequireTLS && !https && !tlsProbePath(r.URL.Path) {
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS is required.")
 			return
 		}
