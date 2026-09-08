@@ -1,0 +1,11 @@
+{
+  "name": "flowforge",
+  "private": true,
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "pnpm --filter @flowforge/web dev",
+    "build": "pnpm --filter @flowforge/web build",
+    "lint": "pnpm --filter @flowforge/web lint",
+    "start": "pnpm --filter @flowforge/web start"
+  }
+}
