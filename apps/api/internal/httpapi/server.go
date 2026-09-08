@@ -152,6 +152,9 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
 	mux.HandleFunc("POST /api/v1/session/logout", s.logoutSession)
 	mux.HandleFunc("GET /api/v1/session/audit-events", s.listSessionAudit)
+	mux.HandleFunc("GET /api/v1/workflows/catalog", s.getWorkflowCatalog)
+	mux.HandleFunc("POST /api/v1/workflows/validate", s.validateWorkflow)
+	mux.HandleFunc("POST /api/v1/workflows/normalize", s.normalizeWorkflow)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {

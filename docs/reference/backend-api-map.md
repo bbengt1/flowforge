@@ -74,6 +74,22 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 | `POST /api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. Requires `workflow.view`. | `200` | `401` `403` `404` |
 | `GET /api/v1/workspace/audit-events` | List audit hooks. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
 
+## Workflow YAML contract (E3.1)
+
+Ephemeral parse/normalize/validate only. Draft persistence and publish are E3.2 (`PUT /api/v1/workflows/{workflowId}/draft` is not implemented here). Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
+
+**UI route map (Chloe):** debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Render `summary` onto the canvas. On `invalid-workflow`, show `errors[]` (`path`, `line`, `column`, `code`, `message`) and do not guess a graph. Catalog drives the node palette and port wiring. Do not persist credentials or host-supplied workspace IDs in YAML.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. Requires `workflow.view`. | `200` `{apiVersion,triggers,nodes}` | `401` `403` |
+| `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
+| `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
+
+Parser limits: 256 KiB document, 4096 YAML nodes, depth 32, 64 KiB scalars, 128 workflow nodes. Rejected: custom tags, aliases, merge keys, duplicate keys, multiple documents, templates (`{{`, `${`, `{%`), unknown fields, next/provider node types, cycles, disconnected nodes, invalid/incompatible ports, non-UUID resource refs, secret/credential keys, Secret manifests, raw SSH commands.
+
+Digest format: `sha256:<hex>` of normalized YAML. Normalization sorts labels, triggers, nodes, edges, and outputs by id/name and emits a single trailing newline. Literal blocks (`manifests`, `source`) keep inner text except trailing-newline normalization.
+
 Every request receives `X-Request-ID`. A caller-supplied value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same identifier is present on the response header, in `application/problem+json` as `request_id`, and in structured request logs so an API flow can be traced end to end.
 
 Errors use `application/problem+json` and include `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes:
@@ -81,6 +97,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | Code | Status | When |
 | --- | --- | --- |
 | `invalid-request` | 400 | Malformed JSON, missing body, or unsupported `Content-Type` |
+| `invalid-workflow` | 400 | Workflow YAML failed parse/normalize/validation; `errors` lists path/line/column/code/message |
 | `unauthenticated` | 401 | Missing or invalid credentials |
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |

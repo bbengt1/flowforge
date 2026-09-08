@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -13,9 +13,11 @@ info:
       (`type`, `title`, `status`, `detail`, `instance`) plus `code` and
       `request_id`. Problem details never echo request bodies, credentials,
       or other secret material.
-    - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
-      Authenticated-but-failed flows use `unauthenticated` (401) and
-      `forbidden` (403). Unique identity collisions use `conflict` (409).
+      - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
+      Invalid workflow YAML uses `invalid-workflow` (400) with an `errors`
+      array (path, line, column, code, message). Authenticated-but-failed
+      flows use `unauthenticated` (401) and `forbidden` (403). Unique
+      identity collisions use `conflict` (409).
     - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
       `POST /session`. State-changing cookie requests require `X-CSRF-Token`.
       Non-browser callers may keep using `X-FlowForge-Issuer` /
@@ -332,6 +334,129 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+  /workflows/catalog:
+    get:
+      operationId: getWorkflowCatalog
+      summary: Core node and trigger catalog
+      description: |
+        Typed graph vocabulary for the YAML editor and canvas. Requires
+        `workflow.view`. Next/provider types are listed so the UI can
+        reject them; only `phase: core` is publishable in MVP.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /workflows/validate:
+    post:
+      operationId: validateWorkflowDefinition
+      summary: Validate workflow YAML
+      description: |
+        Ephemeral parse and graph validation. Does not persist a draft
+        (E3.2). Requires `workflow.edit`. Accepts `application/yaml` or
+        JSON `{definitionYaml}`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinitionEnvelope"
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: Definition is valid
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowValidateResult"
+        "400":
+          $ref: "#/components/responses/InvalidWorkflow"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+  /workflows/normalize:
+    post:
+      operationId: normalizeWorkflowDefinition
+      summary: Normalize workflow YAML and compute digest
+      description: |
+        Validates, emits deterministic YAML, and returns `sha256:<hex>`.
+        Does not persist (E3.2 consumes this payload). Requires
+        `workflow.edit`. Accepts `application/yaml` or JSON
+        `{definitionYaml}`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinitionEnvelope"
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: Normalized definition
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowNormalizeResult"
+        "400":
+          $ref: "#/components/responses/InvalidWorkflow"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
   /permission-matrix:
     get:
       operationId: getPermissionMatrix
@@ -1201,8 +1326,14 @@ components:
             - request-too-large
             - internal-error
             - dependency-unavailable
+            - invalid-workflow
         request_id:
           type: string
+        errors:
+          type: array
+          description: Field-level workflow validation errors (invalid-workflow only).
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
     Tenant:
       type: object
       required: [id, slug, name, status]
@@ -1343,6 +1474,165 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SessionAuditEvent"
+    WorkflowFieldError:
+      type: object
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          example: spec.nodes[0].with.namespace
+        line:
+          type: integer
+        column:
+          type: integer
+        code:
+          type: string
+          example: invalid-uuid
+        message:
+          type: string
+    WorkflowPort:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [object, string, integer, boolean, any]
+        required:
+          type: boolean
+    WorkflowCatalog:
+      type: object
+      required: [apiVersion, triggers, nodes]
+      properties:
+        apiVersion:
+          type: string
+          example: flowforge/v1
+        triggers:
+          type: array
+          items:
+            type: object
+            required: [type, phase]
+            properties:
+              type:
+                type: string
+              phase:
+                type: string
+                enum: [core, next, provider]
+              outputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [type, phase]
+            properties:
+              type:
+                type: string
+              phase:
+                type: string
+                enum: [core, next, provider]
+              inputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+              outputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+              requiredWith:
+                type: array
+                items:
+                  type: string
+    WorkflowDefinitionEnvelope:
+      type: object
+      required: [definitionYaml]
+      properties:
+        definitionYaml:
+          type: string
+          description: Canonical flowforge/v1 YAML document
+    WorkflowSummary:
+      type: object
+      required: [apiVersion, name, triggers, nodes, edges, outputs]
+      properties:
+        apiVersion:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        triggers:
+          type: array
+          items:
+            type: object
+            required: [id, type]
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, type, name]
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+              name:
+                type: string
+        edges:
+          type: array
+          items:
+            type: object
+            required: [from, to]
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [name, from]
+            properties:
+              name:
+                type: string
+              from:
+                type: string
+    WorkflowValidateResult:
+      type: object
+      required: [valid, summary, warnings]
+      properties:
+        valid:
+          type: boolean
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+    WorkflowNormalizeResult:
+      type: object
+      required: [definitionYaml, digest, summary, warnings]
+      properties:
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+          description: sha256 digest of normalized YAML
+          example: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]
@@ -1524,6 +1814,29 @@ components:
               key:
                 type: string
   responses:
+    InvalidWorkflow:
+      description: Workflow YAML failed parse, normalization, or graph validation
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:invalid-workflow
+            title: Invalid Workflow
+            status: 400
+            detail: The workflow definition is not valid.
+            instance: /api/v1/workflows/validate
+            code: invalid-workflow
+            request_id: 0123456789abcdef0123456789abcdef
+            errors:
+              - path: spec.edges[0].from
+                line: 24
+                column: 11
+                code: cycle
+                message: Workflow graph contains a cycle.
     InvalidRequest:
       description: Malformed JSON, missing body, or unsupported Content-Type
       headers:

@@ -37,12 +37,15 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
+| `GET` | `/api/v1/workflows/catalog` | Core node/trigger catalog (`workflow.view`). |
+| `POST` | `/api/v1/workflows/validate` | Ephemeral YAML validation (`workflow.edit`). |
+| `POST` | `/api/v1/workflows/normalize` | Normalize YAML + digest (`workflow.edit`). |
 
 Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 
-Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `conflict` (409), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
+Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `invalid-workflow` (400, with `errors` path/line/column/code/message), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `conflict` (409), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
 
 The process boots even if PostgreSQL is down. Health stays 200; readiness tracks the database. On connect, the API applies forward-only migrations recorded in `schema_migrations`.
 

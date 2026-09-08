@@ -223,6 +223,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/workspace/members", "/workspace/records", "/workspace/credentials/{id}/use",
 		"/workspace/artifacts/{id}", "/workspace/jobs", "/workspace/cache/{key}",
 		"/workspace/realtime/channels/{id}/subscribe", "/workspace/audit-events",
+		"/workflows/catalog", "/workflows/validate", "/workflows/normalize",
 	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)
@@ -254,6 +255,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeInvalidRequest: true, CodeUnauthenticated: true, CodeForbidden: true,
 		CodeNotFound: true, CodeConflict: true, CodeMethodNotAllowed: true, CodeRequestTooLarge: true,
 		CodeInternalError: true, CodeDependencyUnavailable: true,
+		CodeInvalidWorkflow: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)
