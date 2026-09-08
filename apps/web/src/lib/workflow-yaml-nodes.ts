@@ -1,4 +1,6 @@
 import {
+  MAP_CONVERT_KINDS,
+  MAX_DELAY_SECONDS,
   defaultNodeName,
   isConditionOp,
   isCoreNeutralNodeType,
@@ -25,18 +27,19 @@ export type SetField = {
 };
 
 export type MapPath = {
+  dest: string;
   from: string;
-  to: string;
+  convert?: string;
 };
 
 export type CoreNodeWith =
   | { type: "flow.condition"; op: ConditionOp; path: string; compare: string }
   | { type: "flow.delay"; duration: string }
-  | { type: "data.set"; fields: SetField[] }
+  | { type: "data.set"; fields: SetField[]; classification?: string }
   | { type: "data.map"; mapping: MapPath[] }
-  | { type: "data.validate"; schema: string }
-  | { type: "flow.stop"; status: StopStatus; code: string; message: string }
-  | { type: "flow.fail"; status: StopStatus; code: string; message: string };
+  | { type: "data.validate"; schemaType: string; additionalProperties: boolean }
+  | { type: "flow.stop"; status: StopStatus; message: string }
+  | { type: "flow.fail"; code: string; message: string };
 
 export type YamlWorkflowNode = {
   id: string;
@@ -85,15 +88,15 @@ export function allocateNodeId(
 export function defaultCoreWith(type: CoreNeutralNodeType): Record<string, unknown> {
   switch (type) {
     case "flow.condition":
-      return { op: "eq" };
+      return { op: "eq", compare: "ready" };
     case "flow.delay":
       return { duration: "PT5M" };
     case "data.set":
       return { value: { status: "ready" } };
     case "data.map":
-      return { mapping: [{ from: "input.status", to: "result.state" }] };
+      return { mapping: { "result.state": "input.status" } };
     case "data.validate":
-      return { schema: "88888888-8888-4888-8888-888888888888" };
+      return { schema: { type: "object", additionalProperties: true } };
     case "flow.stop":
       return { status: "success" };
     case "flow.fail":
@@ -197,6 +200,12 @@ export function serializeCoreWith(config: CoreNodeWith): {
       if (looksLikeSecretValue(config.compare) || looksLikeSecretValue(config.path)) {
         errors.push("Condition fields must not contain secret material.");
       }
+      if (config.op !== "exists" && !config.compare.trim()) {
+        errors.push("Condition needs compare unless op is exists.");
+      }
+      if (config.op === "exists" && config.compare.trim()) {
+        errors.push("exists must not include compare.");
+      }
       const withValue: Record<string, unknown> = { op: config.op };
       if (config.path.trim()) {
         withValue.path = config.path.trim();
@@ -208,8 +217,15 @@ export function serializeCoreWith(config: CoreNodeWith): {
     }
     case "flow.delay": {
       const duration = config.duration.trim();
-      if (!isIsoDuration(duration)) {
-        errors.push("duration must be an ISO-8601 duration such as PT5M.");
+      const seconds = isoDurationSeconds(duration);
+      if (seconds == null) {
+        errors.push(
+          "duration must be ISO-8601 using weeks, days, or time units (for example PT5M or P7D). Years and months are not allowed.",
+        );
+      } else if (seconds <= 0) {
+        errors.push("duration must be greater than zero.");
+      } else if (seconds > MAX_DELAY_SECONDS) {
+        errors.push("duration must be at most P7D.");
       }
       return { with: { duration }, errors };
     }
@@ -242,75 +258,81 @@ export function serializeCoreWith(config: CoreNodeWith): {
       if (Object.keys(value).length === 0) {
         errors.push("data.set requires at least one non-secret field.");
       }
-      return { with: { value }, errors };
+      const withValue: Record<string, unknown> = { value };
+      if (config.classification === "public" || config.classification === "internal") {
+        withValue.classification = config.classification;
+      }
+      return { with: withValue, errors };
     }
     case "data.map": {
-      const mapping: Array<{ from: string; to: string }> = [];
+      const mapping: Record<string, unknown> = {};
       for (const pair of config.mapping) {
+        const dest = pair.dest.trim();
         const from = pair.from.trim();
-        const to = pair.to.trim();
-        if (!from && !to) {
+        const convert = pair.convert?.trim() ?? "";
+        if (!dest && !from) {
           continue;
         }
-        if (!from || !to) {
-          errors.push("Each mapping needs both from and to paths.");
+        if (!dest || !from) {
+          errors.push("Each mapping needs dest and from paths.");
           continue;
         }
-        if (looksLikeExpression(from) || looksLikeExpression(to)) {
+        if (looksLikeExpression(dest) || looksLikeExpression(from)) {
           errors.push("Mapping paths must be field paths, not expressions.");
           continue;
         }
-        mapping.push({ from, to });
+        if (convert && !(MAP_CONVERT_KINDS as readonly string[]).includes(convert)) {
+          errors.push("convert must be string, integer, boolean, or object.");
+          continue;
+        }
+        mapping[dest] = convert ? { from, convert } : from;
       }
-      if (mapping.length === 0) {
-        errors.push("data.map requires at least one from/to path.");
+      if (Object.keys(mapping).length === 0) {
+        errors.push("data.map requires at least one dest → from mapping.");
       }
       return { with: { mapping }, errors };
     }
     case "data.validate": {
-      const schema = config.schema.trim();
-      if (!schema) {
-        errors.push("data.validate requires a schema reference.");
-      } else if (looksLikeSecretValue(schema) || isForbiddenYamlKey(schema)) {
-        errors.push("schema must be a non-secret schema reference.");
+      const schemaType = config.schemaType.trim() || "object";
+      if (looksLikeSecretValue(schemaType) || isForbiddenYamlKey(schemaType)) {
+        errors.push("schema type must be a non-secret JSON-schema type.");
       }
-      return { with: { schema }, errors };
+      return {
+        with: {
+          schema: {
+            type: schemaType,
+            additionalProperties: config.additionalProperties !== false,
+          },
+        },
+        errors,
+      };
     }
     case "flow.stop": {
       if (!isStopStatus(config.status)) {
         errors.push("status must be success, failure, or canceled.");
       }
-      if (looksLikeSecretValue(config.code) || looksLikeSecretValue(config.message)) {
-        errors.push("Stop code/message must not contain secret material.");
+      if (looksLikeSecretValue(config.message)) {
+        errors.push("Stop message must not contain secret material.");
       }
       const withValue: Record<string, unknown> = { status: config.status };
-      if (config.code.trim()) {
-        withValue.code = config.code.trim();
-      }
       if (config.message.trim()) {
         withValue.message = config.message.trim();
       }
       return { with: withValue, errors };
     }
     case "flow.fail": {
-      if (config.status && !isStopStatus(config.status)) {
-        errors.push("status must be success, failure, or canceled.");
+      const code = config.code.trim();
+      if (!code) {
+        errors.push("Fail requires with.code.");
+      } else if (!validFailCode(code)) {
+        errors.push("Fail code must be a DNS label or 2–4 dotted labels (for example tenant.denied).");
       }
-      if (looksLikeSecretValue(config.code) || looksLikeSecretValue(config.message)) {
+      if (looksLikeSecretValue(code) || looksLikeSecretValue(config.message)) {
         errors.push("Failure code/message must not contain secret material.");
       }
-      const withValue: Record<string, unknown> = {};
-      if (config.status) {
-        withValue.status = config.status;
-      }
-      if (config.code.trim()) {
-        withValue.code = config.code.trim();
-      }
+      const withValue: Record<string, unknown> = { code };
       if (config.message.trim()) {
         withValue.message = config.message.trim();
-      }
-      if (!withValue.code && !withValue.message) {
-        errors.push("flow.fail needs a safe code or message.");
       }
       return { with: withValue, errors };
     }
@@ -337,39 +359,44 @@ export function configFromNode(node: YamlWorkflowNode): CoreNodeWith | null {
         type: "flow.delay",
         duration: stringField(withValue.duration) || "PT5M",
       };
-    case "data.set":
+    case "data.set": {
+      const classification = stringField(withValue.classification);
       return {
         type: "data.set",
         fields: objectToSetFields(withValue.value),
+        classification: classification === "public" || classification === "internal" ? classification : "",
       };
+    }
     case "data.map":
       return {
         type: "data.map",
         mapping: toMapPaths(withValue.mapping),
       };
-    case "data.validate":
+    case "data.validate": {
+      const schema =
+        withValue.schema && typeof withValue.schema === "object" && !Array.isArray(withValue.schema)
+          ? (withValue.schema as Record<string, unknown>)
+          : {};
       return {
         type: "data.validate",
-        schema: stringField(withValue.schema),
+        schemaType: stringField(schema.type) || "object",
+        additionalProperties: schema.additionalProperties !== false,
       };
+    }
     case "flow.stop": {
       const statusRaw = stringField(withValue.status) || "success";
       return {
         type: "flow.stop",
         status: isStopStatus(statusRaw) ? statusRaw : "success",
-        code: stringField(withValue.code),
         message: stringField(withValue.message),
       };
     }
-    case "flow.fail": {
-      const statusRaw = stringField(withValue.status);
+    case "flow.fail":
       return {
         type: "flow.fail",
-        status: isStopStatus(statusRaw) ? statusRaw : "failure",
         code: stringField(withValue.code),
         message: stringField(withValue.message),
       };
-    }
   }
 }
 
@@ -422,22 +449,36 @@ function objectToSetFields(value: unknown): SetField[] {
 }
 
 function toMapPaths(value: unknown): MapPath[] {
-  if (!Array.isArray(value)) {
-    return [{ from: "input.status", to: "result.state" }];
-  }
-  const mapping = value
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const mapping = Object.entries(value as Record<string, unknown>).map(([dest, spec]) => {
+      if (typeof spec === "string") {
+        return { dest, from: spec };
       }
-      const row = item as Record<string, unknown>;
-      return {
-        from: stringField(row.from),
-        to: stringField(row.to),
-      };
-    })
-    .filter((item): item is MapPath => Boolean(item));
-  return mapping.length > 0 ? mapping : [{ from: "input.status", to: "result.state" }];
+      if (spec && typeof spec === "object" && !Array.isArray(spec)) {
+        const row = spec as Record<string, unknown>;
+        const convert = stringField(row.convert);
+        return convert ? { dest, from: stringField(row.from), convert } : { dest, from: stringField(row.from) };
+      }
+      return { dest, from: "" };
+    });
+    return mapping.length > 0 ? mapping : [{ dest: "result.state", from: "input.status" }];
+  }
+  if (Array.isArray(value)) {
+    const mapping = value
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const row = item as Record<string, unknown>;
+        const dest = stringField(row.to) || stringField(row.dest);
+        const from = stringField(row.from);
+        const convert = stringField(row.convert);
+        return convert ? { dest, from, convert } : { dest, from };
+      })
+      .filter((item): item is MapPath => Boolean(item));
+    return mapping.length > 0 ? mapping : [{ dest: "result.state", from: "input.status" }];
+  }
+  return [{ dest: "result.state", from: "input.status" }];
 }
 
 function parseSetFieldValue(field: SetField): { value: YamlScalar; error?: string } {
@@ -464,8 +505,55 @@ function looksLikeExpression(value: string): boolean {
   return /[{}$]|{{|}}|\?\s|:|\|\||&&/.test(value);
 }
 
-function isIsoDuration(value: string): boolean {
-  return /^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+S)?)?$/.test(value);
+function validDNSLabel(value: string): boolean {
+  return /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value);
+}
+
+function validFailCode(value: string): boolean {
+  if (validDNSLabel(value)) {
+    return true;
+  }
+  const parts = value.split(".");
+  if (parts.length < 2 || parts.length > 4) {
+    return false;
+  }
+  return parts.every(validDNSLabel);
+}
+
+/** Jonny's E3.3 delay parser: weeks/days/time only, no years/months. */
+function isoDurationSeconds(value: string): number | null {
+  if (!value || value[0] !== "P") {
+    return null;
+  }
+  const rest = value.slice(1);
+  const tIndex = rest.indexOf("T");
+  const date = tIndex >= 0 ? rest.slice(0, tIndex) : rest;
+  const timePart = tIndex >= 0 ? rest.slice(tIndex + 1) : "";
+  if (/Y/.test(rest) || /M/.test(date)) {
+    return null;
+  }
+  if (!date && !timePart) {
+    return null;
+  }
+  const dateMatch = /^(?:(\d+)W)?(?:(\d+)D)?$/.exec(date);
+  if (!dateMatch) {
+    return null;
+  }
+  if (tIndex >= 0) {
+    const timeMatch = /^(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(timePart);
+    if (!timeMatch || timePart === "") {
+      return null;
+    }
+    const hours = Number(timeMatch[1] ?? 0);
+    const minutes = Number(timeMatch[2] ?? 0);
+    const seconds = Number(timeMatch[3] ?? 0);
+    const weeks = Number(dateMatch[1] ?? 0);
+    const days = Number(dateMatch[2] ?? 0);
+    return weeks * 7 * 24 * 3600 + days * 24 * 3600 + hours * 3600 + minutes * 60 + seconds;
+  }
+  const weeks = Number(dateMatch[1] ?? 0);
+  const days = Number(dateMatch[2] ?? 0);
+  return weeks * 7 * 24 * 3600 + days * 24 * 3600;
 }
 
 type ListItemRange = {

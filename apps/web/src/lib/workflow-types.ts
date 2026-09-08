@@ -10,6 +10,9 @@ export type CatalogPort = {
   name: string;
   kind: string;
   required?: boolean;
+  classification?: string;
+  maxBytes?: number;
+  description?: string;
 };
 
 export type CatalogTrigger = {
@@ -18,25 +21,63 @@ export type CatalogTrigger = {
   outputs?: CatalogPort[];
 };
 
+/** Allowlisted `with` key from jonny's E3.3 catalog (#32). */
+export type CatalogWithField = {
+  name: string;
+  kind: string;
+  required?: boolean;
+  enum?: string[];
+  description?: string;
+};
+
+export type CatalogNodePolicy = {
+  permissions?: string[];
+  retrySafe?: boolean;
+  sideEffects?: boolean;
+  idempotent?: boolean;
+  cancellation?: string;
+  verification?: string;
+  defaultMaxAttempts?: number;
+};
+
+export type CatalogNodeBounds = {
+  maxInputBytes?: number;
+  maxOutputBytes?: number;
+  maxWithBytes?: number;
+  maxAggregationItems?: number;
+  maxDurationSeconds?: number;
+};
+
+export type CatalogRedaction = {
+  auditFields?: string[];
+  redactInputs?: boolean;
+  redactOutputs?: boolean;
+  strategy?: string;
+};
+
+export type CatalogRules = {
+  triggersAreWorkflowLevel?: boolean;
+  graphNodesExcludeTriggers?: boolean;
+  unsupportedPhasesRejected?: boolean;
+};
+
 export type CatalogNode = {
   type: string;
   phase: CatalogPhase;
+  title?: string;
+  description?: string;
   inputs?: CatalogPort[];
   outputs?: CatalogPort[];
   requiredWith?: string[];
-  /**
-   * Optional catalog hints. E3.1 GET /workflows/catalog on main returns
-   * type/phase/ports/requiredWith only. Prefer these when jonny's E3.3
-   * contract adds them; otherwise the UI adapter mirrors action-catalog.md.
-   */
-  name?: string;
-  policy?: string;
-  redaction?: string;
-  classification?: string;
+  allowedWith?: CatalogWithField[];
+  policy?: CatalogNodePolicy;
+  bounds?: CatalogNodeBounds;
+  redaction?: CatalogRedaction;
 };
 
 export type WorkflowCatalog = {
   apiVersion: string;
+  rules?: CatalogRules;
   triggers: CatalogTrigger[];
   nodes: CatalogNode[];
 };
