@@ -24,11 +24,67 @@ const (
 	PortAny     PortKind = "any"
 )
 
+// Data classification labels. Secret is never a legal port payload.
+const (
+	ClassPublic       = "public"
+	ClassInternal     = "internal"
+	ClassConfidential = "confidential"
+	ClassSecret       = "secret"
+	ClassInherit      = "inherit"
+)
+
 // Port is a named typed input or output on a node.
 type Port struct {
-	Name     string   `json:"name"`
-	Kind     PortKind `json:"kind"`
-	Required bool     `json:"required"`
+	Name           string   `json:"name"`
+	Kind           PortKind `json:"kind"`
+	Required       bool     `json:"required"`
+	Classification string   `json:"classification,omitempty"`
+	MaxBytes       int      `json:"maxBytes,omitempty"`
+	Description    string   `json:"description,omitempty"`
+}
+
+// WithField is an allowlisted node configuration key.
+type WithField struct {
+	Name        string   `json:"name"`
+	Kind        string   `json:"kind"`
+	Required    bool     `json:"required"`
+	Enum        []string `json:"enum,omitempty"`
+	Description string   `json:"description,omitempty"`
+}
+
+// NodePolicy is the publish-time permission and retry contract.
+type NodePolicy struct {
+	Permissions        []string `json:"permissions"`
+	RetrySafe          bool     `json:"retrySafe"`
+	SideEffects        bool     `json:"sideEffects"`
+	Idempotent         bool     `json:"idempotent"`
+	Cancellation       string   `json:"cancellation"`
+	Verification       string   `json:"verification,omitempty"`
+	DefaultMaxAttempts int      `json:"defaultMaxAttempts"`
+}
+
+// NodeBounds caps inputs, outputs, configuration, and aggregation.
+type NodeBounds struct {
+	MaxInputBytes       int `json:"maxInputBytes"`
+	MaxOutputBytes      int `json:"maxOutputBytes"`
+	MaxWithBytes        int `json:"maxWithBytes"`
+	MaxAggregationItems int `json:"maxAggregationItems"`
+	MaxDurationSeconds  int `json:"maxDurationSeconds,omitempty"`
+}
+
+// RedactionPolicy describes what a node may persist or audit.
+type RedactionPolicy struct {
+	AuditFields   []string `json:"auditFields"`
+	RedactInputs  bool     `json:"redactInputs"`
+	RedactOutputs bool     `json:"redactOutputs"`
+	Strategy      string   `json:"strategy"`
+}
+
+// CatalogRules are stable authoring constraints for the UI.
+type CatalogRules struct {
+	TriggersAreWorkflowLevel  bool `json:"triggersAreWorkflowLevel"`
+	GraphNodesExcludeTriggers bool `json:"graphNodesExcludeTriggers"`
+	UnsupportedPhasesRejected bool `json:"unsupportedPhasesRejected"`
 }
 
 // TriggerType describes an allowlisted trigger.
@@ -40,16 +96,23 @@ type TriggerType struct {
 
 // NodeType describes an allowlisted action node.
 type NodeType struct {
-	Type         string   `json:"type"`
-	Phase        string   `json:"phase"`
-	Inputs       []Port   `json:"inputs"`
-	Outputs      []Port   `json:"outputs"`
-	RequiredWith []string `json:"requiredWith,omitempty"`
+	Type         string           `json:"type"`
+	Phase        string           `json:"phase"`
+	Title        string           `json:"title,omitempty"`
+	Description  string           `json:"description,omitempty"`
+	Inputs       []Port           `json:"inputs"`
+	Outputs      []Port           `json:"outputs"`
+	RequiredWith []string         `json:"requiredWith,omitempty"`
+	AllowedWith  []WithField      `json:"allowedWith,omitempty"`
+	Policy       *NodePolicy      `json:"policy,omitempty"`
+	Bounds       *NodeBounds      `json:"bounds,omitempty"`
+	Redaction    *RedactionPolicy `json:"redaction,omitempty"`
 }
 
 // Catalog is the typed graph vocabulary published to the UI.
 type Catalog struct {
 	APIVersion string        `json:"apiVersion"`
+	Rules      CatalogRules  `json:"rules"`
 	Triggers   []TriggerType `json:"triggers"`
 	Nodes      []NodeType    `json:"nodes"`
 }

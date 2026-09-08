@@ -149,7 +149,12 @@ The engine passes only the selected, schema-validated port value across an edge.
 | `kubernetes.rolloutStatus` | `resource` | `result`, `status` |
 | `ssh.run` | `parameters` | `result`, `stdout`, `exitCode` |
 | `script.python` / `script.go` | `input` | `result`, declared outputs |
-| Condition | `value` | `true`, `false` |
+| Condition (`flow.condition`) | `value` | `true`, `false` (inbound value on the matching branch) |
+| `flow.delay` | optional `input` | `result` (passthrough object) |
+| `data.set` | none | `result` (literal object) |
+| `data.map` | `input` | `result` |
+| `data.validate` | `value` | `result` (validated value) |
+| `flow.stop` / `flow.fail` | optional `input` | `result` (`{status, message?}` / `{status, code, message?}`) |
 | Notification/webhook | `payload` | `result` |
 
 `result` is a safe structured summary. Every declared output has a schema,

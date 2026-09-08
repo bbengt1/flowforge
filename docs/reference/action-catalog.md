@@ -20,8 +20,8 @@ This catalog distinguishes **core** nodes (first implementation target), **next*
 | Node | Phase | Purpose | Key rules |
 | --- | --- | --- | --- |
 | `workflow.call` | Next | Start a pinned child workflow version. | Declared schemas, policy checks, no recursion, full lineage audit. |
-| `flow.stop` | Core | End the current execution path with success, failure, or canceled status. | Stops only the current path; it cannot silently stop another execution. |
-| `flow.fail` | Core | End the current execution path with a safe operator-facing failure. | Error code/message must not expose internals or secrets. |
+| `flow.stop` | Core | End the current execution path with success, failure, or canceled status. | Optional `status` (`success` default) and safe `message`. Stops only the current path; it cannot silently stop another execution. |
+| `flow.fail` | Core | End the current execution path with a safe operator-facing failure. | Required operator `code` (DNS label or dotted token) and optional safe `message`. Must not expose internals or secrets. |
 
 There is no generic `start` action inside a workflow: a trigger starts it. A trigger emits only its validated `event` and `context` ports into the workflow entry point. `workflow.call` is the explicit, version-pinned way to start another workflow. There is no unrestricted `stop` action for remote systems; operational stop/restart behavior belongs to an approved Kubernetes, SSH, or provider action. Cancellation of another execution is a separately authorized API/UI command, never a YAML node or port value; it requires current `execution.cancel` permission, same-workspace authorization, an idempotent audit record, and cannot cancel an approval, parent, or ancestor run unless policy explicitly permits it. Retry is a bounded policy on the action being retried, not an independently runnable `flow.retry` node; a policy is valid only for an action explicitly marked retry-safe with verification behavior, bounded attempts/backoff/jitter, and an indeterminate terminal state when verification cannot establish the outcome.
 
@@ -29,11 +29,11 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 
 | Node | Phase | Inputs → outputs | Policy and behavior |
 | --- | --- | --- | --- |
-| `flow.condition` | Core | `value` → `true`, `false` | Declarative comparison only; no arbitrary expression evaluation. |
+| `flow.condition` | Core | `value` → `true`, `false` | Declarative `op` (`eq`/`ne`/`gt`/`lt`/`gte`/`lte`/`exists`/`contains`) plus literal `compare` (except `exists`) and optional dotted `path`. No expression language. Matching branch receives the inbound value. |
 | `flow.switch` | Next | `value` → named cases/default | Ordered declarative cases with exactly one selected route. |
 | `flow.parallel` / `flow.join` | Next | `input` → branch/join result | Explicit concurrency limit, join mode, and failure handling. |
 | `flow.forEach` | Next | `items` → item results | Maximum item count/concurrency and bounded aggregation. |
-| `flow.delay` | Core | `input` → `result` | Durable wake-up time; no worker sleeps or in-memory timers. |
+| `flow.delay` | Core | `input` → `result` | ISO-8601 `duration` (weeks/days/time only, max `P7D`). Durable wake-up time; no worker sleeps or in-memory timers. |
 | `flow.waitForEvent` | Next | correlation input → event/timeout | Durable subscription, timeout, and source verification. |
 | `flow.approval` | Core | request → `approved`, `rejected`, `expired` | Workspace role, approver separation (no requester self-approval), policy/version/target pinning, expiry, and audit. |
 
@@ -41,9 +41,9 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 
 | Node | Phase | Purpose | Key rules |
 | --- | --- | --- | --- |
-| `data.set` | Core | Create a typed literal object. | Schema-validated fields; no secrets. |
-| `data.map` | Core | Declaratively map selected fields between schemas. | Explicit paths/type conversions; no general expression language in MVP. |
-| `data.validate` | Core | Validate a value against a declared schema. | Safe errors identify fields, not secret content. |
+| `data.set` | Core | Create a typed literal object. | Required `value` object; optional JSON-schema subset and `classification` (`public`/`internal` only). Secret keys/values rejected. |
+| `data.map` | Core | Declaratively map selected fields between schemas. | `mapping` of `dest: source` or `dest: {from, convert}`. Explicit dotted paths; no general expression language. Classification preserved. |
+| `data.validate` | Core | Validate a value against a declared schema. | Required `schema` (JSON-schema subset). Safe errors identify fields, not secret content. |
 | `data.merge` | Next | Combine explicitly selected typed objects. | Deterministic precedence required. |
 | `data.filter` / `data.sort` | Next | Bound collections for downstream work. | Max item/output size and stable ordering. |
 | `artifact.write` | Next | Persist an allowed generated file/payload. | Redaction/scan before upload, content classification, size limit, digest, retention, and encryption; reject content that cannot be safely retained. |
@@ -129,7 +129,7 @@ cannot select an arbitrary endpoint, recipient, template, or schema at runtime.
 
 ## Shared execution rules
 
-- This catalog is an inventory, not a replacement for a node's normative contract. A core action cannot ship until its contract defines required permissions, exact `with` schema and UUID references, input/output schemas and data classifications, byte/time/rate/concurrency limits, idempotency/retry/verification/cancellation behavior, policy snapshot, and redacted audit fields.
+- This catalog is an inventory, not a replacement for a node's normative contract. A core action cannot ship until its contract defines required permissions, exact `with` schema and UUID references, input/output schemas and data classifications, byte/time/rate/concurrency limits, idempotency/retry/verification/cancellation behavior, policy snapshot, and redacted audit fields. The E3.3 [core neutral node contracts](core-node-contracts.md) are that normative `with`/port/policy map for `flow.condition`, `flow.delay`, `data.set`, `data.map`, `data.validate`, `flow.stop`, and `flow.fail`; the live catalog is `GET /api/v1/workflows/catalog`.
 - Every provider action uses a workspace-scoped connection/target/profile reference and resolves credentials only inside the worker.
 - References to workspace-owned resources are UUIDs; labels, hostnames, recipient addresses, and provider URLs are display or policy data, never authorization keys.
 - `data.set` accepts only fields classified non-sensitive by schema; secret handles/references and policy-denied literal keys or values are rejected. Classification is preserved through maps, merges, filters, and sorts and blocks unauthorized HTTP or notification delivery.

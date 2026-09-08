@@ -343,6 +343,14 @@ paths:
         Typed graph vocabulary for the YAML editor and canvas. Requires
         `workflow.view`. Next/provider types are listed so the UI can
         reject them; only `phase: core` is publishable in MVP.
+
+        E3.3 adds full contracts for the core neutral nodes
+        (`flow.condition`, `flow.delay`, `data.set`, `data.map`,
+        `data.validate`, `flow.stop`, `flow.fail`): typed ports with
+        classification and byte bounds, allowlisted `with` fields,
+        policy/redaction metadata, and aggregation limits. Triggers
+        remain workflow-level `spec.triggers` entries (`rules` on the
+        catalog), never graph nodes.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -1986,6 +1994,75 @@ components:
           enum: [object, string, integer, boolean, any]
         required:
           type: boolean
+        classification:
+          type: string
+          enum: [public, internal, confidential, secret, inherit]
+          description: Port data classification. `inherit` copies the inbound label. `secret` is never a legal payload.
+        maxBytes:
+          type: integer
+        description:
+          type: string
+    WorkflowWithField:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        required:
+          type: boolean
+        enum:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+    WorkflowNodePolicy:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+        retrySafe:
+          type: boolean
+        sideEffects:
+          type: boolean
+        idempotent:
+          type: boolean
+        cancellation:
+          type: string
+        verification:
+          type: string
+        defaultMaxAttempts:
+          type: integer
+    WorkflowNodeBounds:
+      type: object
+      properties:
+        maxInputBytes:
+          type: integer
+        maxOutputBytes:
+          type: integer
+        maxWithBytes:
+          type: integer
+        maxAggregationItems:
+          type: integer
+        maxDurationSeconds:
+          type: integer
+    WorkflowRedactionPolicy:
+      type: object
+      properties:
+        auditFields:
+          type: array
+          items:
+            type: string
+        redactInputs:
+          type: boolean
+        redactOutputs:
+          type: boolean
+        strategy:
+          type: string
     WorkflowCatalog:
       type: object
       required: [apiVersion, triggers, nodes]
@@ -1993,6 +2070,15 @@ components:
         apiVersion:
           type: string
           example: flowforge/v1
+        rules:
+          type: object
+          properties:
+            triggersAreWorkflowLevel:
+              type: boolean
+            graphNodesExcludeTriggers:
+              type: boolean
+            unsupportedPhasesRejected:
+              type: boolean
         triggers:
           type: array
           items:
@@ -2019,6 +2105,10 @@ components:
               phase:
                 type: string
                 enum: [core, next, provider]
+              title:
+                type: string
+              description:
+                type: string
               inputs:
                 type: array
                 items:
@@ -2031,6 +2121,16 @@ components:
                 type: array
                 items:
                   type: string
+              allowedWith:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowWithField"
+              policy:
+                $ref: "#/components/schemas/WorkflowNodePolicy"
+              bounds:
+                $ref: "#/components/schemas/WorkflowNodeBounds"
+              redaction:
+                $ref: "#/components/schemas/WorkflowRedactionPolicy"
     WorkflowDefinitionEnvelope:
       type: object
       required: [definitionYaml]

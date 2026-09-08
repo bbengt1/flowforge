@@ -7,6 +7,7 @@
 - [MVP workflow model](reference/workflow-model.md): resources, node types, and acceptance criteria.
 - [Workflow YAML schema](reference/workflow-yaml-schema.md): canonical saved workflow definition and UI round-trip rules.
 - [Standard action catalog](reference/action-catalog.md): core workflow nodes and their safe contracts.
+- [Core neutral node contracts](reference/core-node-contracts.md): E3.3 typed ports, `with` schemas, bounds, policy, and catalog deltas for the UI.
 - [Frontend UI](reference/frontend-ui.md): workflow canvas, action wizard, credential vault, and UX requirements.
 - [Database specification](reference/database.md): PostgreSQL entities, isolation, execution durability, and retention.
 - [Security model](reference/security-model.md): trust boundaries, sessions, triggers, secret handling, and security verification.

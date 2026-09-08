@@ -58,6 +58,27 @@ func TestWorkflowCatalogRequiresView(t *testing.T) {
 	if cat.APIVersion != workflow.APIVersionV1 || len(cat.Nodes) == 0 {
 		t.Fatalf("catalog = %+v", cat)
 	}
+	if !cat.Rules.TriggersAreWorkflowLevel || !cat.Rules.GraphNodesExcludeTriggers {
+		t.Fatalf("catalog rules = %+v", cat.Rules)
+	}
+	found := false
+	for _, n := range cat.Nodes {
+		if n.Type == "flow.condition" {
+			found = true
+			if n.Policy == nil || n.Bounds == nil || n.Redaction == nil || len(n.AllowedWith) == 0 {
+				t.Fatalf("flow.condition contract incomplete: %+v", n)
+			}
+			if n.Inputs[0].Classification == "" || n.Inputs[0].MaxBytes == 0 {
+				t.Fatalf("flow.condition ports: %+v", n.Inputs)
+			}
+		}
+		if n.Type == "workflow.call" && n.Phase != workflow.PhaseNext {
+			t.Fatalf("workflow.call should remain next-phase: %+v", n)
+		}
+	}
+	if !found {
+		t.Fatal("catalog missing flow.condition")
+	}
 }
 
 func TestWorkflowValidateAndNormalize(t *testing.T) {
@@ -145,6 +166,79 @@ spec:
 		h.ServeHTTP(rec, req)
 		p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "caller-request-16")
 		if !problemHasCode(p, workflow.CodeCycle) {
+			t.Fatalf("errors = %+v", p.Errors)
+		}
+	})
+
+	t.Run("core neutral contracts", func(t *testing.T) {
+		src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: core-neutral-http
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: constants
+      type: data.set
+      name: Constants
+      with:
+        value:
+          env: staging
+    - id: gate
+      type: flow.condition
+      name: Gate
+      with:
+        op: eq
+        compare: staging
+        path: env
+    - id: pause
+      type: flow.delay
+      name: Pause
+      with:
+        duration: PT1M
+    - id: done
+      type: flow.stop
+      name: Done
+      with:
+        status: success
+    - id: failed
+      type: flow.fail
+      name: Failed
+      with:
+        code: env-mismatch
+  edges:
+    - from: constants.result
+      to: gate.value
+    - from: gate.true
+      to: pause.input
+    - from: pause.result
+      to: done.input
+    - from: gate.false
+      to: failed.input
+`
+		body, _ := json.Marshal(map[string]string{"definitionYaml": src})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/workflows/normalize", body, admin, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("normalize core: %d %s", rec.Code, rec.Body.String())
+		}
+		var payload normalizeResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Summary.Name != "core-neutral-http" || len(payload.Summary.Nodes) != 5 {
+			t.Fatalf("summary = %+v", payload.Summary)
+		}
+
+		bad, _ := json.Marshal(map[string]string{"definitionYaml": strings.Replace(src, "PT1M", "P30D", 1)})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/workflows/validate", bad, admin, tenant, ws)
+		h.ServeHTTP(rec, req)
+		p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "caller-request-16")
+		if !problemHasCode(p, workflow.CodeDurationLimit) {
 			t.Fatalf("errors = %+v", p.Errors)
 		}
 	})

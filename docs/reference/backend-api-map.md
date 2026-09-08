@@ -84,11 +84,13 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. Requires `workflow.view`. | `200` `{apiVersion,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
 Parser limits: 256 KiB document, 4096 YAML nodes, depth 32, 64 KiB scalars, 128 workflow nodes. Rejected: custom tags, aliases, merge keys, duplicate keys, multiple documents, templates (`{{`, `${`, `{%`), unknown fields, next/provider node types, cycles, disconnected nodes, invalid/incompatible ports, non-UUID resource refs, secret/credential keys, Secret manifests, raw SSH commands.
+
+**E3.3 core neutral contracts** (`flow.condition`, `flow.delay`, `data.set`, `data.map`, `data.validate`, `flow.stop`, `flow.fail`): allowlisted `with` only; 16 KiB port/`with` caps; 32 aggregation items; delay max `P7D`; `data.set` public/internal literals only; mapping/condition paths are dotted identifiers (no expression language); `flow.fail` requires `code`. New field codes: `classification-denied`, `output-too-large`, `aggregation-limit`, `invalid-schema`, `duration-limit`, `expression-forbidden`. Triggers remain `spec.triggers`, never graph nodes. Full catalog/schema map: [core node contracts](core-node-contracts.md). Evaluation is a Go contract package (deterministic, no durable worker sleep) used by validate when literal inputs are present — not the E5 engine.
 
 Digest format: `sha256:<hex>` of normalized YAML. Normalization sorts labels, triggers, nodes, edges, and outputs by id/name and emits a single trailing newline. Literal blocks (`manifests`, `source`) keep inner text except trailing-newline normalization.
 

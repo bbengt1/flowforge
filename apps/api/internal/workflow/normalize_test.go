@@ -101,4 +101,8 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 	if !found {
 		t.Fatal("core catalog missing kubernetes.apply")
 	}
+	cond, ok := lookupNode("flow.condition")
+	if !ok || cond.Policy == nil || cond.Policy.SideEffects {
+		t.Fatalf("flow.condition contract = %+v", cond.Policy)
+	}
 }

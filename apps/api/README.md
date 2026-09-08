@@ -37,7 +37,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
-| `GET` | `/api/v1/workflows/catalog` | Core node/trigger catalog (`workflow.view`). |
+| `GET` | `/api/v1/workflows/catalog` | Core node/trigger catalog (`workflow.view`). E3.3 adds `rules` and full contracts (ports/classification/bounds/policy/redaction/`allowedWith`) for condition, delay, data set/map/validate, and flow stop/fail. |
 | `POST` | `/api/v1/workflows/validate` | Ephemeral YAML validation (`workflow.edit`). |
 | `POST` | `/api/v1/workflows/normalize` | Normalize YAML + digest (`workflow.edit`). |
 | `GET` / `POST` | `/api/v1/workflows` | List / create workflow + draft (`workflow.view` / `workflow.edit`). |

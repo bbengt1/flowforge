@@ -232,6 +232,7 @@ spec:
       name: Gate
       with:
         op: eq
+        compare: ready
   edges: []
 `
 	_, errs := Parse([]byte(src))
