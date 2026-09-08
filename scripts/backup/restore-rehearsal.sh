@@ -54,9 +54,12 @@ docker run -d --name "$ISOLATED" \
   -e POSTGRES_DB="$POSTGRES_DB" \
   postgres:16-alpine >/dev/null
 
+# pg_isready only means the postmaster accepts connections. Wait until
+# POSTGRES_DB exists — CREATE DATABASE races the first client otherwise.
 ready=0
 for _ in $(seq 1 40); do
-  if docker exec "$ISOLATED" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+  if docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$ISOLATED" \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT 1' >/dev/null 2>&1; then
     ready=1
     break
   fi

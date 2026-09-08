@@ -88,7 +88,7 @@ jobs:
         run: docker build -t flowforge-api:ci ./apps/api
 
       - name: Application dependency scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
           scan-ref: apps/api
@@ -99,7 +99,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Image scan (fixed CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: image
           image-ref: flowforge-api:ci
@@ -108,7 +108,7 @@ jobs:
           ignore-unfixed: true
 
       - name: SPDX SBOM
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: image
           image-ref: flowforge-api:ci
