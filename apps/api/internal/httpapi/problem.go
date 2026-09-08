@@ -23,22 +23,42 @@ const (
 	CodeRequestTooLarge       = "request-too-large"
 	CodeInternalError         = "internal-error"
 	CodeDependencyUnavailable = "dependency-unavailable"
+	CodeInvalidWorkflow       = "invalid-workflow"
 )
+
+// FieldError is a YAML-path validation failure returned on invalid-workflow.
+type FieldError struct {
+	Path    string `json:"path"`
+	Line    int    `json:"line,omitempty"`
+	Column  int    `json:"column,omitempty"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
 
 // Problem is an RFC 9457 problem details document with FlowForge extensions.
 type Problem struct {
-	Type      string `json:"type"`
-	Title     string `json:"title"`
-	Status    int    `json:"status"`
-	Detail    string `json:"detail"`
-	Instance  string `json:"instance"`
-	Code      string `json:"code"`
-	RequestID string `json:"request_id"`
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Status    int          `json:"status"`
+	Detail    string       `json:"detail"`
+	Instance  string       `json:"instance"`
+	Code      string       `json:"code"`
+	RequestID string       `json:"request_id"`
+	Errors    []FieldError `json:"errors,omitempty"`
 }
 
 // WriteProblem writes an application/problem+json response. Detail must not
 // include secret material or raw request bodies.
 func WriteProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail string) {
+	writeProblem(w, r, status, code, title, detail, nil)
+}
+
+// WriteProblemErrors writes a problem document with a field-level errors array.
+func WriteProblemErrors(w http.ResponseWriter, r *http.Request, status int, code, title, detail string, errors []FieldError) {
+	writeProblem(w, r, status, code, title, detail, errors)
+}
+
+func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail string, errors []FieldError) {
 	p := Problem{
 		Type:      problemTypePrefix + code,
 		Title:     title,
@@ -47,6 +67,7 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, status int, code, titl
 		Instance:  r.URL.Path,
 		Code:      code,
 		RequestID: RequestIDFromContext(r.Context()),
+		Errors:    errors,
 	}
 	body, err := json.Marshal(p)
 	if err != nil {
