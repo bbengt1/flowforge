@@ -87,34 +87,41 @@ jobs:
       - name: Build API image
         run: docker build -t flowforge-api:ci ./apps/api
 
+      # Install the scanner binary. Do not use aquasecurity/trivy-action
+      # version tags here — GitHub could not resolve @0.28.0 or @0.36.0.
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: "0.74.0"
+        run: |
+          set -euo pipefail
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin trivy
+          trivy --version
+
       - name: Application dependency scan
-        uses: aquasecurity/trivy-action@0.36.0
-        with:
-          scan-type: fs
-          scan-ref: apps/api
-          scanners: vuln
-          pkg-types: library
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
+        run: >
+          trivy fs
+          --scanners vuln
+          --pkg-types library
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          apps/api
 
       - name: Image scan (fixed CRITICAL)
-        uses: aquasecurity/trivy-action@0.36.0
-        with:
-          scan-type: image
-          image-ref: flowforge-api:ci
-          severity: CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
+        run: >
+          trivy image
+          --severity CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          flowforge-api:ci
 
       - name: SPDX SBOM
-        uses: aquasecurity/trivy-action@0.36.0
-        with:
-          scan-type: image
-          image-ref: flowforge-api:ci
-          format: spdx-json
-          output: api-sbom.spdx.json
-          exit-code: "0"
+        run: >
+          trivy image
+          --format spdx-json
+          --output api-sbom.spdx.json
+          flowforge-api:ci
 
       - name: Provenance statement
         run: bash scripts/write-provenance.sh flowforge-api:ci api-provenance.json
