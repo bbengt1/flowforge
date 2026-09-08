@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   CONDITION_OPS,
   STOP_STATUSES,
@@ -31,20 +31,6 @@ export function NodeInspector({
   onApply,
 }: NodeInspectorProps) {
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
-  const initial = useMemo(
-    () => (selected ? configFromNode(selected) : null),
-    [selected],
-  );
-  const [name, setName] = useState(selected?.name ?? "");
-  const [config, setConfig] = useState<CoreNodeWith | null>(initial);
-  const [errors, setErrors] = useState<string[]>([]);
-
-  useEffect(() => {
-    setName(selected?.name ?? "");
-    setConfig(initial);
-    setErrors([]);
-  }, [selected, initial]);
-
   const placeable = nodes.filter((node) => isCoreNeutralNodeType(node.type));
 
   return (
@@ -86,45 +72,78 @@ export function NodeInspector({
         </ul>
       )}
 
-      {selected && config && isCoreNeutralNodeType(selected.type) ? (
-        <form
-          className="mt-4 space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setErrors(onApply(selected.id, name, config));
-          }}
-        >
-          <p className="font-mono text-xs text-zinc-500">{selected.type}</p>
-          <label className="block text-sm">
-            <span className="text-zinc-600">Name</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <ConfigFields config={config} onChange={setConfig} />
-          {errors.length > 0 ? (
-            <ul className="space-y-1 text-sm text-amber-900">
-              {errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
-          ) : null}
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-          >
-            Write YAML
-          </button>
-        </form>
+      {selected && isCoreNeutralNodeType(selected.type) ? (
+        <NodeConfigForm
+          key={selected.id}
+          node={selected}
+          pending={pending}
+          onApply={onApply}
+        />
       ) : selected && !isCoreNeutralNodeType(selected.type) ? (
         <p className="mt-4 text-sm text-zinc-600">
           {selected.type} is not an E3.3 core neutral node. Edit it in YAML.
         </p>
       ) : null}
     </section>
+  );
+}
+
+function NodeConfigForm({
+  node,
+  pending,
+  onApply,
+}: {
+  node: YamlWorkflowNode;
+  pending: boolean;
+  onApply: (id: string, name: string, config: CoreNodeWith) => string[];
+}) {
+  const parsed = configFromNode(node);
+  const [name, setName] = useState(node.name);
+  const [config, setConfig] = useState<CoreNodeWith | null>(parsed);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  if (!config) {
+    return (
+      <p className="mt-4 text-sm text-zinc-600">
+        Could not read bounded <code className="font-mono text-xs">with</code>{" "}
+        fields for this node.
+      </p>
+    );
+  }
+
+  return (
+    <form
+      className="mt-4 space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setErrors(onApply(node.id, name, config));
+      }}
+    >
+      <p className="font-mono text-xs text-zinc-500">{node.type}</p>
+      <label className="block text-sm">
+        <span className="text-zinc-600">Name</span>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+        />
+      </label>
+      <ConfigFields config={config} onChange={setConfig} />
+      {errors.length > 0 ? (
+        <ul className="space-y-1 text-sm text-amber-900">
+          {errors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      ) : null}
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+      >
+        Write YAML
+      </button>
+    </form>
   );
 }
 
