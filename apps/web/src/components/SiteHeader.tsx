@@ -20,6 +20,12 @@ export function SiteHeader() {
             Workflows
           </Link>
           <Link
+            href="/credentials"
+            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
+          >
+            Credentials
+          </Link>
+          <Link
             href="/membership"
             className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
           >

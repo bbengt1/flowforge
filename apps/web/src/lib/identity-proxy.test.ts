@@ -168,6 +168,42 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333",
       ],
+      ["GET", ["credentials"], "/api/v1/credentials"],
+      ["POST", ["credentials"], "/api/v1/credentials"],
+      [
+        "GET",
+        ["credentials", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["credentials", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "DELETE",
+        ["credentials", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "POST",
+        ["credentials", "11111111-1111-4111-8111-111111111111", "rotate"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111/rotate",
+      ],
+      [
+        "POST",
+        ["credentials", "11111111-1111-4111-8111-111111111111", "test"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111/test",
+      ],
+      [
+        "GET",
+        [
+          "credentials",
+          "11111111-1111-4111-8111-111111111111",
+          "deletion-impact",
+        ],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111/deletion-impact",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -196,6 +232,19 @@ describe("resolveIdentityProxyTarget", () => {
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
     );
+  });
+
+  it("does not treat reserved credential actions as vault ids", () => {
+    const unknown = resolveIdentityProxyTarget("GET", ["credentials", "rotate"]);
+    assert.equal("status" in unknown, true);
+    if ("status" in unknown) {
+      assert.equal(unknown.status, 404);
+    }
+    const listWrite = resolveIdentityProxyTarget("DELETE", ["credentials"]);
+    assert.equal("status" in listWrite, true);
+    if ("status" in listWrite) {
+      assert.equal(listWrite.status, 405);
+    }
   });
 
   it("does not treat reserved E3.1 paths as workflow ids", () => {
