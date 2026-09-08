@@ -13,34 +13,37 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
 	"gopkg.in/yaml.v3"
 )
 
 // Server is the versioned control-plane HTTP API.
 type Server struct {
-	db       postgres.Checker
-	store    identity.Store
-	scoped   isolation.Store
-	cache    *isolation.Cache
-	sessions session.Store
-	log      *slog.Logger
-	registry *observability.Registry
-	sec      Security
-	clock    func() time.Time
+	db        postgres.Checker
+	store     identity.Store
+	scoped    isolation.Store
+	cache     *isolation.Cache
+	sessions  session.Store
+	workflows wfstore.Store
+	log       *slog.Logger
+	registry  *observability.Registry
+	sec       Security
+	clock     func() time.Time
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
-	DB       postgres.Checker
-	Store    identity.Store
-	Scoped   isolation.Store
-	Sessions session.Store
-	Cache    *isolation.Cache
-	Log      *slog.Logger
-	Registry *observability.Registry
-	Security Security
-	Now      func() time.Time
+	DB        postgres.Checker
+	Store     identity.Store
+	Scoped    isolation.Store
+	Sessions  session.Store
+	Workflows wfstore.Store
+	Cache     *isolation.Cache
+	Log       *slog.Logger
+	Registry  *observability.Registry
+	Security  Security
+	Now       func() time.Time
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -50,13 +53,14 @@ func New(db postgres.Checker) http.Handler {
 
 // NewWithSecurity returns a handler with TLS/proxy/CORS/session policy applied.
 func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
-	idStore, scoped, sessions := inferStores(db)
+	idStore, scoped, sessions, workflows := inferStores(db)
 	return NewWithDeps(Deps{
-		DB:       db,
-		Store:    idStore,
-		Scoped:   scoped,
-		Sessions: sessions,
-		Security: sec,
+		DB:        db,
+		Store:     idStore,
+		Scoped:    scoped,
+		Sessions:  sessions,
+		Workflows: workflows,
+		Security:  sec,
 	})
 }
 
@@ -70,7 +74,7 @@ func NewWithStores(db postgres.Checker, store identity.Store, scoped isolation.S
 	if scoped == nil {
 		scoped = isolation.NewMemory()
 	}
-	return NewWithDeps(Deps{DB: db, Store: store, Scoped: scoped, Sessions: session.NewMemory()})
+	return NewWithDeps(Deps{DB: db, Store: store, Scoped: scoped, Sessions: session.NewMemory(), Workflows: wfstore.NewMemory()})
 }
 
 // NewWithDeps returns a handler with explicit dependencies.
@@ -78,11 +82,11 @@ func NewWithDeps(d Deps) http.Handler {
 	return newServer(d)
 }
 
-func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.Store) {
+func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.Store, wfstore.Store) {
 	if p, ok := db.(*postgres.Pool); ok {
-		return identity.NewPostgres(p), isolation.NewPostgres(p), session.NewPostgres(p)
+		return identity.NewPostgres(p), isolation.NewPostgres(p), session.NewPostgres(p), wfstore.NewPostgres(p)
 	}
-	return nil, isolation.NewMemory(), session.NewMemory()
+	return nil, isolation.NewMemory(), session.NewMemory(), wfstore.NewMemory()
 }
 
 func newServer(d Deps) http.Handler {
@@ -102,20 +106,25 @@ func newServer(d Deps) http.Handler {
 	if sessions == nil {
 		sessions = session.NewMemory()
 	}
+	workflows := d.Workflows
+	if workflows == nil {
+		workflows = wfstore.NewMemory()
+	}
 	clock := d.Now
 	if clock == nil {
 		clock = time.Now
 	}
 	s := &Server{
-		db:       d.DB,
-		store:    d.Store,
-		scoped:   d.Scoped,
-		cache:    cache,
-		sessions: sessions,
-		log:      log,
-		registry: registry,
-		sec:      d.Security,
-		clock:    clock,
+		db:        d.DB,
+		store:     d.Store,
+		scoped:    d.Scoped,
+		cache:     cache,
+		sessions:  sessions,
+		workflows: workflows,
+		log:       log,
+		registry:  registry,
+		sec:       d.Security,
+		clock:     clock,
 	}
 
 	mux := http.NewServeMux()
@@ -155,6 +164,19 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/workflows/catalog", s.getWorkflowCatalog)
 	mux.HandleFunc("POST /api/v1/workflows/validate", s.validateWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/normalize", s.normalizeWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows", s.listWorkflows)
+	mux.HandleFunc("POST /api/v1/workflows", s.createWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}", s.getWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/draft", s.getWorkflowDraft)
+	mux.HandleFunc("PUT /api/v1/workflows/{workflowId}/draft", s.putWorkflowDraft)
+	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/publish", s.publishWorkflow)
+	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/compare", s.compareWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions", s.listWorkflowVersions)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}", s.getWorkflowVersion)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/export", s.exportWorkflowVersion)
+	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore", s.restoreWorkflowVersion)
+	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/executions", s.startWorkflowExecution)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions/{executionId}", s.getWorkflowExecution)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {

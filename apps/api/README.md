@@ -40,6 +40,16 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/workflows/catalog` | Core node/trigger catalog (`workflow.view`). |
 | `POST` | `/api/v1/workflows/validate` | Ephemeral YAML validation (`workflow.edit`). |
 | `POST` | `/api/v1/workflows/normalize` | Normalize YAML + digest (`workflow.edit`). |
+| `GET` / `POST` | `/api/v1/workflows` | List / create workflow + draft (`workflow.view` / `workflow.edit`). |
+| `GET` | `/api/v1/workflows/{workflowId}` | Workflow summary. |
+| `GET` / `PUT` | `/api/v1/workflows/{workflowId}/draft` | Read or conflict-safe save (`If-Match` or JSON `revision`). |
+| `POST` | `/api/v1/workflows/{workflowId}/publish` | Immutable version (`workflow.publish`). |
+| `POST` | `/api/v1/workflows/{workflowId}/compare` | Draft/version structured diff. |
+| `GET` | `/api/v1/workflows/{workflowId}/versions` | Version history. |
+| `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}` | Frozen snapshot. |
+| `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable YAML export. |
+| `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore as a new draft revision. |
+| `POST` / `GET` | `/api/v1/workflows/{workflowId}/executions` | Stub start pins version/digest; drafts cannot run. |
 
 Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 

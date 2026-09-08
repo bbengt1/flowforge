@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -17,7 +17,8 @@ info:
       Invalid workflow YAML uses `invalid-workflow` (400) with an `errors`
       array (path, line, column, code, message). Authenticated-but-failed
       flows use `unauthenticated` (401) and `forbidden` (403). Unique
-      identity collisions use `conflict` (409).
+      identity collisions, draft revision mismatches, and duplicate
+      published digests use `conflict` (409).
     - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
       `POST /session`. State-changing cookie requests require `X-CSRF-Token`.
       Non-browser callers may keep using `X-FlowForge-Issuer` /
@@ -457,6 +458,476 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workspace workflows
+      description: Requires `workflow.view`. Returns summaries without YAML bodies.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Workflow list
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createWorkflow
+      summary: Create workflow and first draft
+      description: |
+        Parses and normalizes YAML, then persists only the normalized
+        document as revision 1. Requires `workflow.edit`. Body `id` /
+        `workspace_id` / `workspaceId` is rejected.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowRequest"
+      responses:
+        "201":
+          description: Workflow and draft
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDetail"
+        "400":
+          $ref: "#/components/responses/InvalidWorkflow"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workflows/{workflowId}:
+    get:
+      operationId: getWorkflow
+      summary: Get workflow summary
+      description: Requires `workflow.view`. Foreign-workspace UUIDs are 404.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      responses:
+        "200":
+          description: Workflow
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRecord"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/draft:
+    get:
+      operationId: getWorkflowDraft
+      summary: Get current draft
+      description: Requires `workflow.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      responses:
+        "200":
+          description: Draft
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDraft"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveWorkflowDraft
+      summary: Conflict-safe draft save
+      description: |
+        Requires `workflow.edit`. JSON `{revision,definitionYaml}` or
+        `application/yaml` plus `If-Match: <revision>`. Only normalized
+        YAML is persisted. Stale revision is `409` `conflict`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Required for raw YAML bodies; current draft revision.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveDraftRequest"
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: Saved draft
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDetail"
+        "400":
+          $ref: "#/components/responses/InvalidWorkflow"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workflows/{workflowId}/publish:
+    post:
+      operationId: publishWorkflow
+      summary: Publish immutable version
+      description: |
+        Copies the current normalized draft into a new immutable version.
+        Requires `workflow.publish`. Duplicate digest is `409`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishWorkflowRequest"
+      responses:
+        "201":
+          description: Published version
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishWorkflowResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workflows/{workflowId}/compare:
+    post:
+      operationId: compareWorkflow
+      summary: Compare draft or versions
+      description: Requires `workflow.view`. `kind` is `draft` or `version`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompareWorkflowRequest"
+      responses:
+        "200":
+          description: Structured diff
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompareWorkflowResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/versions:
+    get:
+      operationId: listWorkflowVersions
+      summary: List immutable versions
+      description: Requires `workflow.view`. Newest version first.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      responses:
+        "200":
+          description: Versions
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowVersionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/versions/{versionId}:
+    get:
+      operationId: getWorkflowVersion
+      summary: Get one immutable version
+      description: Requires `workflow.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - $ref: "#/components/parameters/VersionID"
+      responses:
+        "200":
+          description: Version
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowVersion"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/versions/{versionId}/export:
+    get:
+      operationId: exportWorkflowVersion
+      summary: Immutable YAML export
+      description: |
+        Requires `workflow.view`. JSON envelope by default; `Accept:
+        application/yaml` returns the frozen document bytes.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - $ref: "#/components/parameters/VersionID"
+      responses:
+        "200":
+          description: Immutable export
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExport"
+            application/yaml:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/versions/{versionId}/restore:
+    post:
+      operationId: restoreWorkflowVersion
+      summary: Restore version as a new draft revision
+      description: |
+        Copies the immutable version YAML into the mutable draft and
+        increments revision. Does not mutate the version. Requires
+        `workflow.edit`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - $ref: "#/components/parameters/VersionID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreDraftRequest"
+      responses:
+        "200":
+          description: Restored draft
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDetail"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workflows/{workflowId}/executions:
+    post:
+      operationId: startWorkflowExecution
+      summary: Pin a published version for execution
+      description: |
+        E3.2 stub. Requires `workflow.execute` and `workflowVersionId`.
+        Drafts cannot run (`400` `invalid-request`). The created row
+        stores `workflowVersionId` + `workflowDigest` and later draft
+        edits cannot change that pin. Full durable engine is E5.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartExecutionRequest"
+      responses:
+        "201":
+          description: Pinned execution stub
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/executions/{executionId}:
+    get:
+      operationId: getWorkflowExecution
+      summary: Get pinned execution
+      description: Requires `execution.view`. Digest/version remain the start-time pin.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Execution pin
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /permission-matrix:
     get:
       operationId: getPermissionMatrix
@@ -1276,6 +1747,20 @@ components:
       schema:
         type: string
         format: uuid
+    WorkflowID:
+      name: workflowId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VersionID:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   headers:
     XRequestID:
       description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
@@ -1633,6 +2118,260 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowFieldError"
+    WorkflowRecord:
+      type: object
+      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, published, archived]
+        draftRevision:
+          type: integer
+          format: int64
+        draftDigest:
+          type: string
+        latestVersionNumber:
+          type: integer
+        latestVersionId:
+          type: string
+          format: uuid
+        latestVersionDigest:
+          type: string
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkflowList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRecord"
+    WorkflowDraft:
+      type: object
+      required: [workflowId, revision, definitionYaml, digest, summary, warnings, validationState, updatedAt]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+        validationState:
+          type: string
+          enum: [valid, invalid]
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    WorkflowDetail:
+      type: object
+      required: [workflow, draft]
+      properties:
+        workflow:
+          $ref: "#/components/schemas/WorkflowRecord"
+        draft:
+          $ref: "#/components/schemas/WorkflowDraft"
+    WorkflowVersion:
+      type: object
+      required: [id, workflowId, versionNumber, definitionYaml, digest, summary, publishNote, publishedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflowId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        publishNote:
+          type: string
+        publishedBy:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+    WorkflowVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVersion"
+    CreateWorkflowRequest:
+      type: object
+      required: [definitionYaml]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        definitionYaml:
+          type: string
+    SaveDraftRequest:
+      type: object
+      required: [revision, definitionYaml]
+      properties:
+        revision:
+          type: integer
+          format: int64
+        definitionYaml:
+          type: string
+    PublishWorkflowRequest:
+      type: object
+      properties:
+        revision:
+          type: integer
+          format: int64
+          description: Optional optimistic lock against the current draft revision
+        note:
+          type: string
+    PublishWorkflowResult:
+      type: object
+      required: [workflow, version]
+      properties:
+        workflow:
+          $ref: "#/components/schemas/WorkflowRecord"
+        version:
+          $ref: "#/components/schemas/WorkflowVersion"
+    CompareRef:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [draft, version]
+        versionId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+    CompareWorkflowRequest:
+      type: object
+      required: [left, right]
+      properties:
+        left:
+          $ref: "#/components/schemas/CompareRef"
+        right:
+          $ref: "#/components/schemas/CompareRef"
+    CompareChange:
+      type: object
+      required: [path, op]
+      properties:
+        path:
+          type: string
+        op:
+          type: string
+          enum: [add, remove, replace]
+        left: {}
+        right: {}
+    CompareWorkflowResult:
+      type: object
+      required: [equal, digestMatch, left, right, leftDigest, rightDigest, changes]
+      properties:
+        equal:
+          type: boolean
+        digestMatch:
+          type: boolean
+        left:
+          $ref: "#/components/schemas/CompareRef"
+        right:
+          $ref: "#/components/schemas/CompareRef"
+        leftDigest:
+          type: string
+        rightDigest:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompareChange"
+    RestoreDraftRequest:
+      type: object
+      properties:
+        expectedRevision:
+          type: integer
+          format: int64
+    WorkflowExport:
+      type: object
+      required: [workflowId, versionId, versionNumber, digest, filename, definitionYaml]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        digest:
+          type: string
+        filename:
+          type: string
+        definitionYaml:
+          type: string
+    StartExecutionRequest:
+      type: object
+      required: [workflowVersionId]
+      properties:
+        workflowVersionId:
+          type: string
+          format: uuid
+    WorkflowExecution:
+      type: object
+      required: [id, workflowId, workflowVersionId, workflowDigest, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflowId:
+          type: string
+          format: uuid
+        workflowVersionId:
+          type: string
+          format: uuid
+        workflowDigest:
+          type: string
+        status:
+          type: string
+          enum: [queued, pinned]
+        requestedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]

@@ -224,6 +224,13 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/workspace/artifacts/{id}", "/workspace/jobs", "/workspace/cache/{key}",
 		"/workspace/realtime/channels/{id}/subscribe", "/workspace/audit-events",
 		"/workflows/catalog", "/workflows/validate", "/workflows/normalize",
+		"/workflows", "/workflows/{workflowId}", "/workflows/{workflowId}/draft",
+		"/workflows/{workflowId}/publish", "/workflows/{workflowId}/compare",
+		"/workflows/{workflowId}/versions", "/workflows/{workflowId}/versions/{versionId}",
+		"/workflows/{workflowId}/versions/{versionId}/export",
+		"/workflows/{workflowId}/versions/{versionId}/restore",
+		"/workflows/{workflowId}/executions",
+		"/workflows/{workflowId}/executions/{executionId}",
 	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)
