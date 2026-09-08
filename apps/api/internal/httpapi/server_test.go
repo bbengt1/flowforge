@@ -203,6 +203,12 @@ func TestOpenAPIAndSwagger(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "/api/v1/openapi.yaml") {
 		t.Fatalf("swagger landing page missing spec links")
 	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
+	if !strings.Contains(rec.Body.String(), "/metrics") {
+		t.Fatal("openapi.yaml missing /metrics")
+	}
 }
 
 func assertJSONStatus(t *testing.T, body []byte, want string) {
