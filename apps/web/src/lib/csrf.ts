@@ -44,6 +44,7 @@ export function captureCsrfFromResponse(
   const headerToken = headers.get(CSRF_HEADER)?.trim();
   if (headerToken) {
     rememberCsrfToken(headerToken);
+    return;
   }
   if (body && typeof body === "object") {
     const raw = body as Record<string, unknown>;

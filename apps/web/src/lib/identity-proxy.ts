@@ -13,11 +13,7 @@ import {
   collectSetCookies,
   rewriteUpstreamSetCookies,
 } from "./session-cookies.ts";
-import {
-  CSRF_HEADER,
-  SESSION_METHODS,
-  isSessionSegments,
-} from "./session-contract.ts";
+import { CSRF_HEADER } from "./session-contract.ts";
 
 const API_PREFIX = "/api/v1";
 const PROXY_PREFIX = "/api/control-plane";
@@ -90,7 +86,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       Boolean(s[3]),
   },
   { methods: ["GET"], match: (s) => eq(s, ["workspace", "audit-events"]) },
-  { methods: [...SESSION_METHODS], match: (s) => isSessionSegments(s) },
+  { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["session", "audit-events"]) },
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */

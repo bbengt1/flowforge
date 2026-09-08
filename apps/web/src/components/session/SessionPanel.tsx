@@ -6,6 +6,7 @@ import { callIdentityProxy } from "@/lib/identity-client";
 import { emptyDevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import {
+  effectiveExpiresAt,
   formatSessionCountdown,
   isCsrfProblem,
   sessionExpiryState,
@@ -13,8 +14,11 @@ import {
 import {
   endSession,
   establishSession,
+  loadCurrentSession,
+  loadSessionAudit,
   refreshSession,
 } from "@/lib/session-client";
+import type { SessionAuditEvent } from "@/lib/session-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 const EXAMPLE_LOGIN = {
@@ -34,42 +38,25 @@ export function SessionPanel() {
   const [displayName, setDisplayName] = useState(EXAMPLE_LOGIN.displayName);
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
+  const [audit, setAudit] = useState<SessionAuditEvent[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    void refreshSession();
+    void loadCurrentSession();
   }, []);
 
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+
   useEffect(() => {
-    if (!snapshot.active || !snapshot.session.expiresAt) {
+    if (!snapshot.active || !expiresAt) {
       return;
     }
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [snapshot.active, snapshot.session.expiresAt]);
+  }, [snapshot.active, expiresAt]);
 
-  useEffect(() => {
-    if (!snapshot.active) {
-      return;
-    }
-    if (snapshot.session.issuer) {
-      setIssuer(snapshot.session.issuer);
-    }
-    if (snapshot.session.subject) {
-      setSubject(snapshot.session.subject);
-    }
-    if (snapshot.session.displayName) {
-      setDisplayName(snapshot.session.displayName);
-    }
-  }, [
-    snapshot.active,
-    snapshot.session.displayName,
-    snapshot.session.issuer,
-    snapshot.session.subject,
-  ]);
-
-  const expiry = sessionExpiryState(snapshot.session.expiresAt, now);
-  const countdown = formatSessionCountdown(snapshot.session.expiresAt, now);
+  const expiry = sessionExpiryState(expiresAt, now);
+  const countdown = formatSessionCountdown(expiresAt, now);
 
   async function login() {
     setPending("login");
@@ -86,23 +73,42 @@ export function SessionPanel() {
     setProblem(null);
     const result = await endSession();
     setPending(null);
+    setAudit([]);
     if (!result.ok && result.statusCode !== 401) {
       setProblem(result.problem);
     }
   }
 
+  async function extendIdle() {
+    setPending("refresh");
+    setProblem(null);
+    const result = await refreshSession();
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+    }
+  }
+
+  async function loadAudit() {
+    setPending("audit");
+    setProblem(null);
+    const result = await loadSessionAudit();
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    setAudit(result.data.items ?? []);
+  }
+
   async function exerciseMissingCsrf() {
     setPending("csrf");
     setProblem(null);
-    const result = await callIdentityProxy(
-      "/tenants",
-      emptyDevIdentity(),
-      {
-        method: "POST",
-        body: { slug: "csrf-fail-closed", name: "CSRF fail-closed" },
-        omitCsrf: true,
-      },
-    );
+    const result = await callIdentityProxy("/tenants", emptyDevIdentity(), {
+      method: "POST",
+      body: { slug: "csrf-fail-closed", name: "CSRF fail-closed" },
+      omitCsrf: true,
+    });
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -124,23 +130,36 @@ export function SessionPanel() {
             Cookie session
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-600">
-            Calls jonny&apos;s session endpoints through the same-origin{" "}
-            <code className="font-mono text-xs">/api/control-plane/session</code>{" "}
-            proxy with <code className="font-mono text-xs">credentials: include</code>.
-            The API issues HttpOnly session cookies. Mutations send{" "}
-            <code className="font-mono text-xs">X-CSRF-Token</code>. Bearer
-            tokens are never placed in localStorage or the URL.
+            Calls jonny&apos;s{" "}
+            <code className="font-mono text-xs">/api/v1/session</code> through
+            the same-origin proxy with{" "}
+            <code className="font-mono text-xs">credentials: include</code>.
+            Cookies are <code className="font-mono text-xs">ff_session</code>{" "}
+            (HttpOnly) and <code className="font-mono text-xs">ff_csrf</code>{" "}
+            at <code className="font-mono text-xs">Path=/api/v1</code>.
+            Mutations send <code className="font-mono text-xs">X-CSRF-Token</code>.
+            Bearer tokens are never placed in localStorage or the URL.
           </p>
         </div>
         {snapshot.active ? (
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={pending !== null}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-          >
-            {pending === "logout" ? "Signing out…" : "Log out"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void extendIdle()}
+              disabled={pending !== null}
+              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            >
+              {pending === "refresh" ? "Refreshing…" : "Refresh idle"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={pending !== null}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {pending === "logout" ? "Signing out…" : "Log out"}
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -174,7 +193,7 @@ export function SessionPanel() {
             <dd>{snapshot.session.displayName || "—"}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Expiry</dt>
+            <dt className="text-zinc-500">Idle expiry (30m default)</dt>
             <dd
               className={
                 expiry === "expired" || expiry === "warning"
@@ -184,11 +203,12 @@ export function SessionPanel() {
             >
               {countdown}
             </dd>
-            {snapshot.session.expiresAt ? (
-              <dd className="font-mono text-xs text-zinc-500">
-                {snapshot.session.expiresAt}
-              </dd>
-            ) : null}
+            <dd className="font-mono text-xs text-zinc-500">
+              idle {snapshot.session.idleExpiresAt || "—"}
+            </dd>
+            <dd className="font-mono text-xs text-zinc-500">
+              absolute {snapshot.session.absoluteExpiresAt || "—"}
+            </dd>
           </div>
         </dl>
       ) : (
@@ -241,21 +261,60 @@ export function SessionPanel() {
       )}
 
       {snapshot.active ? (
-        <div className="mt-5 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-3">
-          <p className="text-sm font-medium">Fail-closed CSRF exercise</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Sends a state-changing request without{" "}
-            <code className="font-mono text-xs">X-CSRF-Token</code>. Expected
-            result is problem+json <code className="font-mono text-xs">csrf-required</code>.
-          </p>
-          <button
-            type="button"
-            onClick={() => void exerciseMissingCsrf()}
-            disabled={pending !== null}
-            className="mt-3 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-          >
-            {pending === "csrf" ? "Sending…" : "Send mutation without CSRF"}
-          </button>
+        <div className="mt-5 space-y-4">
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-3">
+            <p className="text-sm font-medium">Fail-closed CSRF exercise</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Sends a state-changing request without{" "}
+              <code className="font-mono text-xs">X-CSRF-Token</code> while{" "}
+              <code className="font-mono text-xs">ff_session</code> is present.
+              Expected result is problem+json CSRF fail-closed.
+            </p>
+            <button
+              type="button"
+              onClick={() => void exerciseMissingCsrf()}
+              disabled={pending !== null}
+              className="mt-3 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {pending === "csrf" ? "Sending…" : "Send mutation without CSRF"}
+            </button>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">Session audit</p>
+              <button
+                type="button"
+                onClick={() => void loadAudit()}
+                disabled={pending !== null}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {pending === "audit" ? "Loading…" : "Load audit events"}
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-zinc-600">
+              <code className="font-mono text-xs">GET /api/v1/session/audit-events</code>
+              . Secret-free rows only.
+            </p>
+            {audit.length === 0 ? (
+              <p className="mt-3 text-sm text-zinc-600">No audit events loaded.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-zinc-100 text-sm">
+                {audit.map((item) => (
+                  <li key={item.id || `${item.event_type}-${item.created_at}`} className="py-2">
+                    <p className="font-medium">
+                      {item.event_type} · {item.outcome}
+                    </p>
+                    <p className="text-zinc-600">{item.reason}</p>
+                    <p className="font-mono text-xs text-zinc-500">
+                      {item.created_at}
+                      {item.request_id ? ` · ${item.request_id}` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       ) : null}
 

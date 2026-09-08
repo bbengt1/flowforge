@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
+  effectiveExpiresAt,
   formatSessionCountdown,
   sessionExpiryState,
 } from "@/lib/session";
@@ -46,7 +47,8 @@ export function SessionExpiryBanner() {
     return null;
   }
 
-  const state = sessionExpiryState(snapshot.session.expiresAt, now);
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+  const state = sessionExpiryState(expiresAt, now);
   if (state !== "warning" && state !== "expired") {
     return null;
   }
@@ -60,7 +62,9 @@ export function SessionExpiryBanner() {
         {state === "expired" ? "Session expired" : "Session expiring soon"}
       </p>
       <p className="mt-1">
-        {formatSessionCountdown(snapshot.session.expiresAt, now)}.{" "}
+        {formatSessionCountdown(expiresAt, now)} (idle{" "}
+        {snapshot.session.idleExpiresAt || "—"}, absolute{" "}
+        {snapshot.session.absoluteExpiresAt || "—"}).{" "}
         <a className="underline" href="#session">
           Open session controls
         </a>

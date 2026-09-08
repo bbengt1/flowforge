@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { ProblemDetails } from "./problem.ts";
 import {
   csrfRequiredProblem,
+  effectiveExpiresAt,
   formatSessionCountdown,
   isCsrfProblem,
   isStaleSessionProblem,
@@ -17,30 +18,45 @@ function problem(partial: Partial<ProblemDetails> & Pick<ProblemDetails, "code" 
     title: partial.title ?? "Problem",
     status: partial.status,
     detail: partial.detail ?? "detail",
-    instance: "/api/control-plane/session",
+    instance: "/api/v1/session",
     code: partial.code,
     request_id: "req-id-16charsxxx",
   };
 }
 
 describe("parseBrowserSession", () => {
-  it("requires a subject and accepts csrf_token / expires_at", () => {
+  it("reads #22 {session,principal,csrf_token} and idle/absolute expiry", () => {
     assert.equal(parseBrowserSession(null), null);
     assert.equal(parseBrowserSession({ issuer: "https://idp" }), null);
     const parsed = parseBrowserSession({
-      issuer: "https://idp",
-      subject: "operator-chloe",
-      display_name: "Chloe",
-      expires_at: "2026-09-08T20:00:00.000Z",
+      session: {
+        id: "sess-1",
+        created_at: "2026-09-08T19:00:00.000Z",
+        last_seen_at: "2026-09-08T19:00:00.000Z",
+        idle_expires_at: "2026-09-08T19:30:00.000Z",
+        absolute_expires_at: "2026-09-09T07:00:00.000Z",
+      },
+      principal: {
+        issuer: "https://idp",
+        external_subject: "operator-chloe",
+        display_name: "Chloe",
+        status: "active",
+      },
       csrf_token: "csrf-abc",
     });
     assert.deepEqual(parsed, {
       issuer: "https://idp",
       subject: "operator-chloe",
       displayName: "Chloe",
-      expiresAt: "2026-09-08T20:00:00.000Z",
+      sessionId: "sess-1",
+      idleExpiresAt: "2026-09-08T19:30:00.000Z",
+      absoluteExpiresAt: "2026-09-09T07:00:00.000Z",
       csrfToken: "csrf-abc",
     });
+    assert.equal(
+      effectiveExpiresAt(parsed!),
+      "2026-09-08T19:30:00.000Z",
+    );
   });
 });
 
@@ -83,16 +99,12 @@ describe("session problem mapping", () => {
       true,
     );
     assert.equal(
-      isCsrfProblem(problem({ status: 403, code: "csrf-invalid" })),
-      true,
-    );
-    assert.equal(
       isCsrfProblem(
         problem({
           status: 403,
           code: "forbidden",
           title: "Forbidden",
-          detail: "CSRF token missing",
+          detail: "CSRF validation failed.",
         }),
       ),
       true,
@@ -101,7 +113,7 @@ describe("session problem mapping", () => {
       isCsrfProblem(problem({ status: 403, code: "forbidden", detail: "not a member" })),
       false,
     );
-    const local = csrfRequiredProblem("/api/control-plane/tenants", "req-id-16charsxxx");
+    const local = csrfRequiredProblem("/api/v1/tenants", "req-id-16charsxxx");
     assert.equal(local.code, "csrf-required");
     assert.equal(local.status, 403);
   });

@@ -1,8 +1,5 @@
 import type { ProblemDetails } from "./problem.ts";
-import {
-  SESSION_PROBLEM_CODES,
-  type SessionPayload,
-} from "./session-contract.ts";
+import { SESSION_PROBLEM_CODES } from "./session-contract.ts";
 
 export const SESSION_WARNING_MS = 5 * 60 * 1000;
 
@@ -10,7 +7,9 @@ export type BrowserSession = {
   issuer: string;
   subject: string;
   displayName: string;
-  expiresAt: string | null;
+  sessionId: string;
+  idleExpiresAt: string | null;
+  absoluteExpiresAt: string | null;
   csrfToken: string;
 };
 
@@ -21,28 +20,53 @@ export function emptyBrowserSession(): BrowserSession {
     issuer: "",
     subject: "",
     displayName: "",
-    expiresAt: null,
+    sessionId: "",
+    idleExpiresAt: null,
+    absoluteExpiresAt: null,
     csrfToken: "",
   };
 }
 
 export function parseBrowserSession(value: unknown): BrowserSession | null {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return null;
   }
-  const raw = value as SessionPayload & Record<string, unknown>;
-  const subject = readString(raw.subject);
+  const principal = isRecord(value.principal) ? value.principal : value;
+  const session = isRecord(value.session) ? value.session : value;
+  const subject = readString(principal.external_subject ?? principal.subject);
   if (!subject) {
     return null;
   }
-  const expiresAt = readString(raw.expires_at || raw.expiresAt);
   return {
-    issuer: readString(raw.issuer),
+    issuer: readString(principal.issuer),
     subject,
-    displayName: readString(raw.display_name || raw.displayName),
-    expiresAt: expiresAt || null,
-    csrfToken: readString(raw.csrf_token || raw.csrfToken),
+    displayName: readString(principal.display_name ?? principal.displayName),
+    sessionId: readString(session.id),
+    idleExpiresAt: readTime(session.idle_expires_at ?? session.idleExpiresAt),
+    absoluteExpiresAt: readTime(
+      session.absolute_expires_at ?? session.absoluteExpiresAt,
+    ),
+    csrfToken: readString(value.csrf_token ?? value.csrfToken),
   };
+}
+
+/** Countdown uses the sooner of idle (30m) and absolute (12h) expiry. */
+export function effectiveExpiresAt(session: {
+  idleExpiresAt: string | null;
+  absoluteExpiresAt: string | null;
+}): string | null {
+  const idle = remainingSessionMs(session.idleExpiresAt);
+  const absolute = remainingSessionMs(session.absoluteExpiresAt);
+  if (idle === null && absolute === null) {
+    return null;
+  }
+  if (idle === null) {
+    return session.absoluteExpiresAt;
+  }
+  if (absolute === null) {
+    return session.idleExpiresAt;
+  }
+  return idle <= absolute ? session.idleExpiresAt : session.absoluteExpiresAt;
 }
 
 export function remainingSessionMs(
@@ -148,6 +172,15 @@ export function csrfRequiredProblem(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readTime(value: unknown): string | null {
+  const text = readString(value);
+  return text || null;
 }

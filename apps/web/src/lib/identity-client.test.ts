@@ -38,7 +38,9 @@ describe("callIdentityProxy session alignment", () => {
       issuer: "https://flowforge.local",
       subject: "operator-chloe",
       displayName: "Chloe",
-      expiresAt: "2026-09-08T21:00:00.000Z",
+      sessionId: "sess-1",
+      idleExpiresAt: "2026-09-08T21:00:00.000Z",
+      absoluteExpiresAt: "2026-09-09T07:00:00.000Z",
       csrfToken: "csrf-from-memory",
     });
     globalThis.fetch = (async (input, init) => {
@@ -52,7 +54,7 @@ describe("callIdentityProxy session alignment", () => {
 
     const result = await callIdentityProxy("/workspaces", identity);
     assert.equal(result.ok, true);
-    assert.equal(seen.url, "/api/control-plane/workspaces");
+    assert.equal(seen.url, "/api/v1/workspaces");
     assert.equal(seen.init?.credentials, "include");
     const headers = new Headers(seen.init?.headers);
     assert.equal(headers.get(FLOWFORGE_ISSUER_HEADER), null);
@@ -68,7 +70,9 @@ describe("callIdentityProxy session alignment", () => {
       issuer: "https://flowforge.local",
       subject: "operator-chloe",
       displayName: "Chloe",
-      expiresAt: null,
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
       csrfToken: "",
     });
     globalThis.fetch = (async () => {
@@ -91,7 +95,9 @@ describe("callIdentityProxy session alignment", () => {
       issuer: "https://flowforge.local",
       subject: "operator-chloe",
       displayName: "Chloe",
-      expiresAt: null,
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
       csrfToken: "csrf-ok",
     });
     const seen: { headers?: Headers } = {};
@@ -128,7 +134,9 @@ describe("callIdentityProxy session alignment", () => {
       issuer: "https://flowforge.local",
       subject: "operator-chloe",
       displayName: "Chloe",
-      expiresAt: "2026-09-08T21:00:00.000Z",
+      sessionId: "sess-1",
+      idleExpiresAt: "2026-09-08T21:00:00.000Z",
+      absoluteExpiresAt: "2026-09-09T07:00:00.000Z",
       csrfToken: "csrf-ok",
     });
     globalThis.fetch = (async () =>

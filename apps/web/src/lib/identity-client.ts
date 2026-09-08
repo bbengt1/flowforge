@@ -66,7 +66,7 @@ export async function callIdentityProxy<T>(
         title: "Invalid Request",
         status: 400,
         detail:
-          "Browser session calls must use the same-origin /api/control-plane proxy.",
+          "Browser session calls must use the same-origin /api/v1 proxy.",
         instance: path,
         code: "invalid-request",
         request_id: requestId,

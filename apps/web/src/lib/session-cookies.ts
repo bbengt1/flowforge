@@ -1,7 +1,9 @@
 /**
- * Rewrite API Set-Cookie so the browser stores session cookies on the UI
- * origin (same-origin Next proxy). Domain is stripped. Secure is kept only
- * when the inbound browser request is TLS so localhost HTTP still works.
+ * Rewrite API Set-Cookie onto the UI origin (same-origin Next proxy).
+ * Domain is stripped. Path and SameSite stay as the API set them
+ * (`Path=/api/v1`, Lax for ff_session, Strict for ff_csrf). Secure is
+ * kept only when the inbound browser request is TLS so localhost HTTP
+ * still works.
  *
  * Cookie values are never logged.
  */
@@ -65,9 +67,10 @@ export function rewriteUpstreamSetCookie(
   }
 
   if (!hasPath) {
-    kept.push("Path=/");
+    kept.push("Path=/api/v1");
   }
   if (!hasSameSite) {
+    // API default for ff_session; ff_csrf is SameSite=Strict when present.
     kept.push("SameSite=Lax");
   }
   if (options.requestSecure && !kept.some((item) => item.toLowerCase() === "secure")) {

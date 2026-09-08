@@ -82,7 +82,9 @@ describe("resolveIdentityProxyTarget", () => {
       ["GET", ["workspace", "audit-events"], "/api/v1/workspace/audit-events"],
       ["GET", ["session"], "/api/v1/session"],
       ["POST", ["session"], "/api/v1/session"],
-      ["DELETE", ["session"], "/api/v1/session"],
+      ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
+      ["POST", ["session", "logout"], "/api/v1/session/logout"],
+      ["GET", ["session", "audit-events"], "/api/v1/session/audit-events"],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -134,6 +136,12 @@ describe("resolveIdentityProxyTarget", () => {
       assert.equal(missing.status, 404);
       const problem = missing.problem("/api/control-plane/not-a-route", "id-16-characters");
       assert.equal(problem.code, "not-found");
+    }
+
+    const deleteSession = resolveIdentityProxyTarget("DELETE", ["session"]);
+    assert.equal("status" in deleteSession, true);
+    if ("status" in deleteSession) {
+      assert.equal(deleteSession.status, 405);
     }
 
     const disallowed = resolveIdentityProxyTarget("DELETE", ["workspaces"]);
@@ -302,7 +310,7 @@ describe("fetchIdentityControlPlane", () => {
             [REQUEST_ID_HEADER]: "session-request16",
             [CSRF_HEADER]: "csrf-header",
             "Set-Cookie":
-              "flowforge_session=opaque; Domain=api.example.test; HttpOnly; Secure; Path=/",
+              "ff_session=opaque; Domain=api.example.test; HttpOnly; Secure; Path=/api/v1; SameSite=Lax",
           },
         },
       );
@@ -315,20 +323,22 @@ describe("fetchIdentityControlPlane", () => {
       requestId: "session-request16",
       requestSecure: false,
       identityHeaders: new Headers({
-        Cookie: "flowforge_session=opaque",
+        Cookie: "ff_session=opaque",
         [CSRF_HEADER]: "csrf-from-browser",
         Authorization: "Bearer secret",
       }),
     });
 
-    assert.equal(seen.headers?.get("Cookie"), "flowforge_session=opaque");
+    assert.equal(seen.headers?.get("Cookie"), "ff_session=opaque");
     assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-from-browser");
     assert.equal(seen.headers?.get("Authorization"), null);
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.csrfToken, "csrf-header");
       assert.equal(result.setCookies.length, 1);
-      assert.match(result.setCookies[0] ?? "", /flowforge_session=opaque/);
+      assert.match(result.setCookies[0] ?? "", /ff_session=opaque/);
+      assert.match(result.setCookies[0] ?? "", /Path=\/api\/v1/);
+      assert.match(result.setCookies[0] ?? "", /SameSite=Lax/);
       assert.doesNotMatch(result.setCookies[0] ?? "", /Domain=/);
       assert.doesNotMatch(result.setCookies[0] ?? "", /Secure/);
     }
@@ -339,12 +349,12 @@ describe("pickSessionCredentialHeaders", () => {
   it("copies only Cookie and CSRF", () => {
     const forwarded = pickSessionCredentialHeaders(
       new Headers({
-        Cookie: "flowforge_session=opaque",
+        Cookie: "ff_session=opaque",
         [CSRF_HEADER]: "csrf",
         Authorization: "Bearer secret",
       }),
     );
-    assert.equal(forwarded.get("Cookie"), "flowforge_session=opaque");
+    assert.equal(forwarded.get("Cookie"), "ff_session=opaque");
     assert.equal(forwarded.get(CSRF_HEADER), "csrf");
     assert.equal(forwarded.get("Authorization"), null);
   });

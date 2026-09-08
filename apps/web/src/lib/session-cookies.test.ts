@@ -7,29 +7,34 @@ import {
 } from "./session-cookies.ts";
 
 describe("rewriteUpstreamSetCookie", () => {
-  it("strips Domain and Secure on localhost HTTP so the UI origin can store the cookie", () => {
+  it("keeps ff_* names, Path=/api/v1, and API SameSite; strips Domain and Secure on HTTP", () => {
     const rewritten = rewriteUpstreamSetCookie(
-      "flowforge_session=opaque; Path=/api; Domain=api.example.test; HttpOnly; Secure; SameSite=Lax",
+      "ff_session=opaque; Path=/api/v1; Domain=api.example.test; HttpOnly; Secure; SameSite=Lax",
       { requestSecure: false },
     );
     assert.ok(rewritten);
-    assert.match(rewritten ?? "", /^flowforge_session=opaque;/);
+    assert.match(rewritten ?? "", /^ff_session=opaque;/);
+    assert.match(rewritten ?? "", /Path=\/api\/v1/);
     assert.match(rewritten ?? "", /HttpOnly/i);
     assert.match(rewritten ?? "", /SameSite=Lax/i);
     assert.doesNotMatch(rewritten ?? "", /Domain=/i);
     assert.doesNotMatch(rewritten ?? "", /Secure/i);
   });
 
-  it("keeps Secure on TLS and defaults Path=/ plus SameSite=Lax", () => {
-    const rewritten = rewriteUpstreamSetCookie("flowforge_csrf=token", {
-      requestSecure: true,
-    });
-    assert.equal(rewritten, "flowforge_csrf=token; Path=/; SameSite=Lax; Secure");
+  it("preserves SameSite=Strict on ff_csrf and defaults Path=/api/v1", () => {
+    const rewritten = rewriteUpstreamSetCookie(
+      "ff_csrf=token; SameSite=Strict",
+      { requestSecure: true },
+    );
+    assert.equal(
+      rewritten,
+      "ff_csrf=token; SameSite=Strict; Path=/api/v1; Secure",
+    );
     assert.deepEqual(
-      rewriteUpstreamSetCookies(["flowforge_session=a; Domain=x"], {
+      rewriteUpstreamSetCookies(["ff_session=a; Domain=x; SameSite=Lax"], {
         requestSecure: false,
       }),
-      ["flowforge_session=a; Path=/; SameSite=Lax"],
+      ["ff_session=a; SameSite=Lax; Path=/api/v1"],
     );
   });
 });
@@ -38,20 +43,20 @@ describe("requestIsSecure", () => {
   it("uses X-Forwarded-Proto then the request URL", () => {
     assert.equal(
       requestIsSecure({
-        url: "http://localhost:3000/api/control-plane/session",
+        url: "http://localhost:3000/api/v1/session",
         headers: new Headers({ "x-forwarded-proto": "https" }),
       }),
       true,
     );
     assert.equal(
       requestIsSecure({
-        url: "http://localhost:3000/api/control-plane/session",
+        url: "http://localhost:3000/api/v1/session",
         headers: new Headers({ "x-forwarded-proto": "http" }),
       }),
       false,
     );
     assert.equal(
-      requestIsSecure({ url: "https://ui.example.test/api/control-plane/session" }),
+      requestIsSecure({ url: "https://ui.example.test/api/v1/session" }),
       true,
     );
   });

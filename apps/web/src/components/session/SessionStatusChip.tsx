@@ -3,10 +3,11 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
+  effectiveExpiresAt,
   formatSessionCountdown,
   sessionExpiryState,
 } from "@/lib/session";
-import { refreshSession } from "@/lib/session-client";
+import { loadCurrentSession } from "@/lib/session-client";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 export function SessionStatusChip() {
@@ -23,7 +24,7 @@ export function SessionStatusChip() {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    void refreshSession();
+    void loadCurrentSession();
   }, []);
 
   useEffect(() => {
@@ -56,7 +57,8 @@ export function SessionStatusChip() {
     );
   }
 
-  const state = sessionExpiryState(snapshot.session.expiresAt, now);
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+  const state = sessionExpiryState(expiresAt, now);
   const tone =
     state === "expired" || state === "warning"
       ? "border-amber-300 bg-amber-50 text-amber-900"
@@ -68,7 +70,7 @@ export function SessionStatusChip() {
       className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}
       title={snapshot.session.subject}
     >
-      {snapshot.session.subject} · {formatSessionCountdown(snapshot.session.expiresAt, now)}
+      {snapshot.session.subject} · {formatSessionCountdown(expiresAt, now)}
     </a>
   );
 }

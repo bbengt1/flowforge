@@ -118,7 +118,7 @@ Until authoring (E6) lands, the deployable shell is the home page, a slim header
 
 `/membership` is a minimal operator surface (Chloe) that exercises jonny's E2.1 API contract. It is not the product workspace shell.
 
-- **Session (E2.3):** cookie session via same-origin `/api/control-plane/session` (`credentials: include`). Subject/expiry come from `GET /session`; logout is `DELETE /session`. CSRF header `X-CSRF-Token` is sent on state-changing calls. Bearer tokens are never stored in `localStorage` or the URL.
+- **Session (E2.3):** cookie session via same-origin `/api/v1/session` (`credentials: include`). Subject/expiry come from `session.idle_expires_at` / `session.absolute_expires_at`. Logout is `POST /session/logout`. CSRF header `X-CSRF-Token` is sent on mutations when `ff_session` is present. Bearer tokens are never stored in `localStorage` or the URL.
 - **Workspace context:** tenant id *or* tenant slug and workbench key live in tab `sessionStorage`. They are not secrets.
 - **Temporary header fallback:** local-only issuer/subject headers, clearly labeled, used only when no cookie session is active. Remove when jonny's session API is the sole subject path.
 - **Workspace identity:** the UI and Next proxy never send `X-FlowForge-Workspace-ID` and do not offer a workspace-UUID lookup field. Current workspace resolution uses tenant + workbench key only.
@@ -152,24 +152,25 @@ Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Se
 
 ## E2.3 browser session operator
 
-`/membership` and `/isolation` (Chloe) consume jonny's session API. The Go session store, cookie issuance, and server CSRF/CORS/CSP policy stay on `apps/api`.
+`/membership` and `/isolation` (Chloe) consume jonny's session API from **#22** (now on `main`). The Go session store, cookie issuance, and server CSRF/CORS/CSP policy stay on `apps/api`.
 
-- **Login/bootstrap:** `POST /api/control-plane/session` with issuer/subject (optional display name). HttpOnly session cookie + CSRF token come from the API (or `csrf_token` in JSON).
-- **Current session:** `GET /api/control-plane/session` shows subject and `expires_at`. Header chip and expiry banner count down; warning at five minutes; stale `401 unauthenticated` / `stale-session` prompts re-login.
-- **Logout:** `DELETE /api/control-plane/session` with CSRF.
-- **CSRF:** double-submit header `X-CSRF-Token` on POST/PUT/PATCH/DELETE (except bootstrap `POST /session` when no token exists yet). Missing CSRF with a session cookie fails closed at the Next proxy (`csrf-required` problem+json) before the Go API is called.
-- **CSP/CORS:** browser session fetches are same-origin Next proxies only (`connect-src 'self'`). No credentialed wildcard CORS. `Secure` is stripped on rewritten cookies only for localhost HTTP.
-- **Contract adapter:** `apps/web/src/lib/session-contract.ts` is the single place to retarget paths/header/cookie names when jonny's OpenAPI lands.
-
-Provisional routes (server owned by jonny; UI matches these until OpenAPI lands):
+- **Login/bootstrap:** `POST /api/v1/session` with `{issuer, external_subject, display_name?}`. `201` `{session,principal,csrf_token}` plus `ff_session` / `ff_csrf`.
+- **Current session:** `GET /api/v1/session` requires the cookie (header-only → `401`). Expiry UX uses `session.idle_expires_at` (30m) and `session.absolute_expires_at` (12h).
+- **Refresh:** `POST /api/v1/session/refresh` with CSRF; extends idle and rotates CSRF.
+- **Logout:** `POST /api/v1/session/logout` with CSRF (not `DELETE /session`).
+- **Audit:** `GET /api/v1/session/audit-events`.
+- **CSRF:** `X-CSRF-Token` on POST/PUT/PATCH/DELETE when `ff_session` is present. Header-only callers skip CSRF. Missing CSRF with a session cookie fails closed at the Next proxy before the Go API is called.
+- **Cookies:** `ff_session` HttpOnly `SameSite=Lax`; `ff_csrf` readable `SameSite=Strict`; both `Path=/api/v1`. Same-origin rewrite maps `/api/v1/*` → `/api/control-plane/*` so those cookies are sent. Domain is stripped; `Secure` is omitted on localhost HTTP.
+- **Headers:** when a cookie session is active, issuer/subject headers are not sent (conflicting headers are `403` on the API).
+- **Contract adapter:** `apps/web/src/lib/session-contract.ts`.
 
 | Method | Path | CSRF | Notes |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/session` | send if known | Bootstrap from issuer/subject; sets `flowforge_session` (HttpOnly) + CSRF |
-| `GET` | `/api/v1/session` | no | Subject, `expires_at`, `csrf_token` |
-| `DELETE` | `/api/v1/session` | required | Logout; clears cookies |
-
-CSRF header: `X-CSRF-Token`. CSRF cookie: `flowforge_csrf` (readable double-submit). Problem codes: `401 unauthenticated` / `stale-session`, `403 csrf-required` / `csrf-invalid`.
+| `POST` | `/api/v1/session` | no | Create; sets `ff_session` + `ff_csrf` |
+| `GET` | `/api/v1/session` | no | Cookie required |
+| `POST` | `/api/v1/session/refresh` | required | Extend idle; rotate CSRF |
+| `POST` | `/api/v1/session/logout` | required | Revoke; clear cookies |
+| `GET` | `/api/v1/session/audit-events` | no | Secret-free audit rows |
 
 ## Initial implementation components
 

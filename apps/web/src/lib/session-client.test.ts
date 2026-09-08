@@ -5,12 +5,24 @@ import { REQUEST_ID_HEADER } from "./request-id.ts";
 import {
   endSession,
   establishSession,
+  loadCurrentSession,
   refreshSession,
 } from "./session-client.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { clearSession, getSessionSnapshot, setActiveSession } from "./session-store.ts";
+import type { BrowserSession } from "./session.ts";
 
 const originalFetch = globalThis.fetch;
+
+const active: BrowserSession = {
+  issuer: "https://flowforge.local",
+  subject: "operator-chloe",
+  displayName: "Chloe",
+  sessionId: "sess-1",
+  idleExpiresAt: "2026-09-08T21:00:00.000Z",
+  absoluteExpiresAt: "2026-09-09T07:00:00.000Z",
+  csrfToken: "csrf-ok",
+};
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -18,21 +30,27 @@ afterEach(() => {
 });
 
 describe("session-client", () => {
-  it("POSTs bootstrap identity to the same-origin session proxy and stores the snapshot in memory", async () => {
+  it("POSTs issuer/external_subject to /api/v1/session and stores the snapshot", async () => {
     const seen: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (input, init) => {
       seen.url = String(input);
       seen.init = init;
       return new Response(
         JSON.stringify({
-          issuer: "https://flowforge.local",
-          subject: "operator-chloe",
-          display_name: "Chloe (dev)",
-          expires_at: "2026-09-08T21:00:00.000Z",
+          session: {
+            id: "sess-1",
+            idle_expires_at: "2026-09-08T21:00:00.000Z",
+            absolute_expires_at: "2026-09-09T07:00:00.000Z",
+          },
+          principal: {
+            issuer: "https://flowforge.local",
+            external_subject: "operator-chloe",
+            display_name: "Chloe (dev)",
+          },
           csrf_token: "csrf-login",
         }),
         {
-          status: 200,
+          status: 201,
           headers: {
             "Content-Type": "application/json",
             [CSRF_HEADER]: "csrf-header",
@@ -47,24 +65,21 @@ describe("session-client", () => {
       displayName: "Chloe (dev)",
     });
     assert.equal(result.ok, true);
-    assert.equal(seen.url, "/api/control-plane/session");
+    assert.equal(seen.url, "/api/v1/session");
     assert.equal(seen.init?.method, "POST");
     assert.equal(seen.init?.credentials, "include");
+    assert.match(String(seen.init?.body), /external_subject/);
+    assert.doesNotMatch(String(seen.init?.body), /"subject":/);
     const snapshot = getSessionSnapshot();
     assert.equal(snapshot.active, true);
     assert.equal(snapshot.session.subject, "operator-chloe");
+    assert.equal(snapshot.session.idleExpiresAt, "2026-09-08T21:00:00.000Z");
     assert.equal(snapshot.session.csrfToken, "csrf-header");
     assert.equal(JSON.stringify(seen.init?.body).includes("Bearer"), false);
   });
 
-  it("GET refresh marks a previously active session stale on 401", async () => {
-    setActiveSession({
-      issuer: "https://flowforge.local",
-      subject: "operator-chloe",
-      displayName: "Chloe",
-      expiresAt: "2026-09-08T21:00:00.000Z",
-      csrfToken: "csrf-ok",
-    });
+  it("GET /session marks a previously active session stale on 401", async () => {
+    setActiveSession(active);
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -85,32 +100,57 @@ describe("session-client", () => {
         },
       )) as typeof fetch;
 
-    const result = await refreshSession();
+    const result = await loadCurrentSession();
     assert.equal(result.ok, false);
     assert.equal(getSessionSnapshot().stale, true);
     assert.equal(getSessionSnapshot().active, false);
   });
 
-  it("DELETE logout sends CSRF and clears memory state", async () => {
-    setActiveSession({
-      issuer: "https://flowforge.local",
-      subject: "operator-chloe",
-      displayName: "Chloe",
-      expiresAt: null,
-      csrfToken: "csrf-ok",
-    });
-    const seen: { headers?: Headers; method?: string } = {};
-    globalThis.fetch = (async (_input, init) => {
+  it("POST /session/refresh and /session/logout send CSRF", async () => {
+    setActiveSession(active);
+    const seen: { url?: string; headers?: Headers; method?: string } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
       seen.headers = new Headers(init?.headers);
       seen.method = init?.method;
       return new Response(null, { status: 204 });
     }) as typeof fetch;
 
-    const result = await endSession();
-    assert.equal(result.ok, true);
-    assert.equal(seen.method, "DELETE");
+    const logout = await endSession();
+    assert.equal(logout.ok, true);
+    assert.equal(seen.method, "POST");
+    assert.equal(seen.url, "/api/v1/session/logout");
     assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
     assert.equal(getSessionSnapshot().active, false);
-    assert.equal(getSessionSnapshot().session.csrfToken, "");
+
+    setActiveSession(active);
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.headers = new Headers(init?.headers);
+      seen.method = init?.method;
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "sess-1",
+            idle_expires_at: "2026-09-08T21:30:00.000Z",
+            absolute_expires_at: "2026-09-09T07:00:00.000Z",
+          },
+          principal: {
+            issuer: "https://flowforge.local",
+            external_subject: "operator-chloe",
+          },
+          csrf_token: "csrf-rotated",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const refreshed = await refreshSession();
+    assert.equal(refreshed.ok, true);
+    assert.equal(seen.method, "POST");
+    assert.equal(seen.url, "/api/v1/session/refresh");
+    assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
+    assert.equal(getSessionSnapshot().session.idleExpiresAt, "2026-09-08T21:30:00.000Z");
+    assert.equal(getSessionSnapshot().session.csrfToken, "csrf-rotated");
   });
 });
