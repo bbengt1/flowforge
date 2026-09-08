@@ -109,10 +109,19 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 
 ## Foundation operator shell
 
-Until workspace identity (E2) and authoring (E6) land, the deployable shell is the home page plus a slim header:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, and the E2.1 membership operator:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
+
+## E2.1 membership operator
+
+`/membership` is a minimal operator surface (Chloe) that exercises jonny's E2.1 API contract. It is not the product workspace shell.
+
+- **Dev identity panel:** local-only issuer/subject (optional display name) plus tenant id *or* tenant slug and workbench key. Values live in `sessionStorage` for the current tab. E2.3 sessions replace this. Secrets are never stored.
+- **Workspace identity:** the UI and Next proxy never send `X-FlowForge-Workspace-ID` and do not offer a workspace-UUID lookup field. Current workspace resolution uses tenant + workbench key only.
+- **Actions:** create tenant (`POST /tenants`), create workspace (`POST /workspaces`; caller becomes admin), list caller workspaces (`GET /workspaces`), current workspace roles/permissions (`GET /workspace`), members add/update/remove (`GET|PUT /workspace/members`, `DELETE /workspace/members/{userID}`), read-only permission matrix (`GET /permission-matrix`).
+- **Proxies:** `/api/control-plane/{permission-matrix,roles,permissions,tenants,workspaces,workspace,workspace/members,workspace/members/{userID}}` attach FlowForge identity headers and `X-Request-ID`, call `API_INTERNAL_URL` `/api/v1/...`, preserve `application/problem+json`, and echo the request id. Unauthorized and last-admin conflict problems show `title`, `detail`, `code`, and `request_id`.
 
 ## Initial implementation components
 

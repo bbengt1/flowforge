@@ -15,6 +15,8 @@ The UI proxies `GET /api/v1/health` and `GET /api/v1/readiness` (compose network
 
 Operator OpenAPI links on the home/shell point at the public control plane (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
 
+`/membership` (Chloe, E2.1) exercises workspace identity and RBAC against jonny's API contract in [PR #17](https://github.com/bbengt1/flowforge/pull/17). Next.js `/api/control-plane/*` proxies attach `X-FlowForge-*` identity headers and `X-Request-ID`. The operator never treats a host-supplied workspace UUID as the lookup key.
+
 ## UI only (optional)
 
 ```bash
@@ -34,9 +36,9 @@ Serves [http://localhost:3000](http://localhost:3000) and checks `http://localho
 
 Compose builds `web` from `./apps/web` and `api` from `./apps/api`. This PR does not add `apps/api` files so it cannot clobber PR #2. Either merge order works: #2 first (compose then has a real context) or #1 first (compose assumes `apps/api` from #2). pnpm workspace root is ready for more packages later.
 
-## E1 ownership
+## E1 / E2 ownership
 
 | Slice | Owner |
 | --- | --- |
-| Next.js UI, health/readiness proxies, secure headers, web image/compose hardening, `env-template.txt` web vars, this README | Chloe |
-| Go API, PostgreSQL, API image/K8s/TLS/provenance/vuln gates, backup encryption + restore rehearsal (`#10`) | jonny |
+| Next.js UI, health/readiness/identity proxies, membership operator, secure headers, web image/compose hardening, `env-template.txt` web vars, this README | Chloe |
+| Go API, PostgreSQL, workspace model/RBAC, API image/K8s/TLS/provenance/vuln gates, backup encryption + restore rehearsal | jonny |
