@@ -216,7 +216,11 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	for _, p := range []string{"/health", "/readiness", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger"} {
+	for _, p := range []string{
+		"/health", "/readiness", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
+		"/permission-matrix", "/roles", "/permissions", "/tenants", "/workspaces", "/workspace",
+		"/workspace/members",
+	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)
 		}
@@ -245,7 +249,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 	enums, _ := code["enum"].([]any)
 	want := map[string]bool{
 		CodeInvalidRequest: true, CodeUnauthenticated: true, CodeForbidden: true,
-		CodeNotFound: true, CodeMethodNotAllowed: true, CodeRequestTooLarge: true,
+		CodeNotFound: true, CodeConflict: true, CodeMethodNotAllowed: true, CodeRequestTooLarge: true,
 		CodeInternalError: true, CodeDependencyUnavailable: true,
 	}
 	for _, v := range enums {

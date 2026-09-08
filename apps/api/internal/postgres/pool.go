@@ -100,6 +100,7 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 	if cfg.ConnConfig.ConnectTimeout == 0 {
 		cfg.ConnConfig.ConnectTimeout = defaultConnectTimeout
 	}
+	applyPoolHooks(cfg)
 
 	connectCtx, cancelConnect := context.WithTimeout(ctx, defaultConnectTimeout)
 	pool, err := pgxpool.NewWithConfig(connectCtx, cfg)
@@ -189,6 +190,7 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if cfg.ConnConfig.ConnectTimeout == 0 {
 		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
 	}
+	applyPoolHooks(cfg)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err

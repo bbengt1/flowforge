@@ -1,6 +1,6 @@
 # FlowForge control-plane API
 
-Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **8080** and exposes the E1 foundation routes from `docs/reference/backend-api-map.md`.
+Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **8080** and exposes the routes from `docs/reference/backend-api-map.md`.
 
 ## Routes
 
@@ -12,10 +12,22 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. |
 | `GET` | `/api/v1/swagger` | Specification landing page. |
+| `GET` | `/api/v1/permission-matrix` | Role/permission catalog (view, edit, publish, execute, credential, approval, administration). |
+| `GET` | `/api/v1/roles` | Role vocabulary. |
+| `GET` | `/api/v1/permissions` | Permission vocabulary. |
+| `POST` | `/api/v1/tenants` | Create tenant. |
+| `GET` | `/api/v1/workspaces` | Workspaces the caller belongs to. |
+| `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. |
+| `GET` | `/api/v1/workspace` | Server-derived current workspace + roles + permissions. |
+| `GET` | `/api/v1/workspace/members` | List members (`workspace.administer`). |
+| `PUT` | `/api/v1/workspace/members` | Bind member roles (`workspace.administer`). |
+| `DELETE` | `/api/v1/workspace/members/{userID}` | Remove member; last admin is protected. |
+
+Subject identity (until E2.3 sessions) uses `X-FlowForge-Issuer` and `X-FlowForge-Subject`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key.
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 
-Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
+Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `conflict` (409), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
 
 The process boots even if PostgreSQL is down. Health stays 200; readiness tracks the database. On connect, the API applies forward-only migrations recorded in `schema_migrations`.
 

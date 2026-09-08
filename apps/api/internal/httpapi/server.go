@@ -5,7 +5,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
@@ -15,6 +17,7 @@ import (
 // Server is the versioned control-plane HTTP API.
 type Server struct {
 	db       postgres.Checker
+	store    identity.Store
 	log      *slog.Logger
 	registry *observability.Registry
 }
@@ -26,17 +29,29 @@ func New(db postgres.Checker) http.Handler {
 
 // NewWithSecurity returns a handler with TLS/proxy policy applied.
 func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
-	return newServer(db, slog.Default(), observability.NewRegistry(), sec)
+	return newServer(db, inferStore(db), slog.Default(), observability.NewRegistry(), sec)
 }
 
-func newServer(db postgres.Checker, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
+// NewWithStore returns a handler with an explicit identity store (tests).
+func NewWithStore(db postgres.Checker, store identity.Store) http.Handler {
+	return newServer(db, store, slog.Default(), observability.NewRegistry(), Security{})
+}
+
+func inferStore(db postgres.Checker) identity.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return identity.NewPostgres(p)
+	}
+	return nil
+}
+
+func newServer(db postgres.Checker, store identity.Store, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
 	if registry == nil {
 		registry = observability.NewRegistry()
 	}
-	s := &Server{db: db, log: log, registry: registry}
+	s := &Server{db: db, store: store, log: log, registry: registry}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
@@ -45,11 +60,21 @@ func newServer(db postgres.Checker, log *slog.Logger, registry *observability.Re
 	mux.HandleFunc("GET /api/v1/openapi.yaml", s.openapiYAML)
 	mux.HandleFunc("GET /api/v1/openapi.json", s.openapiJSON)
 	mux.HandleFunc("GET /api/v1/swagger", s.swagger)
+	mux.HandleFunc("GET /api/v1/permission-matrix", s.getPermissionMatrix)
+	mux.HandleFunc("GET /api/v1/roles", s.getRoles)
+	mux.HandleFunc("GET /api/v1/permissions", s.getPermissions)
+	mux.HandleFunc("POST /api/v1/tenants", s.createTenant)
+	mux.HandleFunc("GET /api/v1/workspaces", s.listWorkspaces)
+	mux.HandleFunc("POST /api/v1/workspaces", s.createWorkspace)
+	mux.HandleFunc("GET /api/v1/workspace", s.getCurrentWorkspace)
+	mux.HandleFunc("GET /api/v1/workspace/members", s.listMembers)
+	mux.HandleFunc("PUT /api/v1/workspace/members", s.putMember)
+	mux.HandleFunc("DELETE /api/v1/workspace/members/{userID}", s.deleteMember)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if rec := muxMethodNotAllowed(mux, r); rec != "" {
+		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {
 			setRoute(r, routePattern(mux, r))
-			w.Header().Set("Allow", "GET, HEAD")
+			w.Header().Set("Allow", allow)
 			WriteProblem(w, r, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "Method Not Allowed", rec)
 			return
 		}
@@ -138,31 +163,59 @@ func hasExactRoute(mux *http.ServeMux, r *http.Request) bool {
 	return pattern != ""
 }
 
+var routedMethods = []string{
+	http.MethodGet, http.MethodHead, http.MethodPost,
+	http.MethodPut, http.MethodPatch, http.MethodDelete,
+}
+
 func routePattern(mux *http.ServeMux, r *http.Request) string {
 	if _, pattern := mux.Handler(r); pattern != "" {
 		return pattern
 	}
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		return "unmatched"
-	}
-	clone := r.Clone(context.Background())
-	clone.Method = http.MethodGet
-	if _, pattern := mux.Handler(clone); pattern != "" {
-		return pattern
+	for _, method := range routedMethods {
+		clone := r.Clone(context.Background())
+		clone.Method = method
+		if _, pattern := mux.Handler(clone); pattern != "" {
+			return pattern
+		}
 	}
 	return "unmatched"
 }
 
-func muxMethodNotAllowed(mux *http.ServeMux, r *http.Request) string {
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		return ""
+func allowedMethods(mux *http.ServeMux, r *http.Request) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, method := range routedMethods {
+		clone := r.Clone(context.Background())
+		clone.Method = method
+		if _, pattern := mux.Handler(clone); pattern != "" && !seen[method] {
+			seen[method] = true
+			out = append(out, method)
+		}
 	}
-	clone := r.Clone(context.Background())
-	clone.Method = http.MethodGet
-	if _, pattern := mux.Handler(clone); pattern != "" {
-		return "The " + r.Method + " method is not allowed for this path."
+	if seen[http.MethodGet] && !seen[http.MethodHead] {
+		// HEAD is conventional for GET-only resources.
+		withHead := make([]string, 0, len(out)+1)
+		for _, method := range out {
+			withHead = append(withHead, method)
+			if method == http.MethodGet {
+				withHead = append(withHead, http.MethodHead)
+			}
+		}
+		out = withHead
 	}
-	return ""
+	return out
+}
+
+func muxMethodNotAllowed(mux *http.ServeMux, r *http.Request) (string, string) {
+	if hasExactRoute(mux, r) {
+		return "", ""
+	}
+	allowed := allowedMethods(mux, r)
+	if len(allowed) == 0 {
+		return "", ""
+	}
+	return "The " + r.Method + " method is not allowed for this path.", strings.Join(allowed, ", ")
 }
 
 // ReadyChecker adapts a ping function to postgres.Checker.

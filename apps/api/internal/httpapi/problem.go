@@ -18,6 +18,7 @@ const (
 	CodeUnauthenticated       = "unauthenticated"
 	CodeForbidden             = "forbidden"
 	CodeNotFound              = "not-found"
+	CodeConflict              = "conflict"
 	CodeMethodNotAllowed      = "method-not-allowed"
 	CodeRequestTooLarge       = "request-too-large"
 	CodeInternalError         = "internal-error"
