@@ -20,6 +20,12 @@ DATABASE_URL=postgres://flowforge:replace-with-local-password@postgres:5432/flow
 API_PORT=8080
 # Go listen address (HTTP_ADDR, not API_ADDR). Default :8080.
 HTTP_ADDR=:8080
+# TLS/proxy (E1.3 #10). Local compose stays HTTP. Production Ingress sets
+# REQUIRE_TLS=true and TRUSTED_PROXY_CIDRS. See docs/deployment.md.
+# TRUSTED_PROXY_CIDRS=
+# REQUIRE_TLS=false
+# TLS_CERT_FILE=
+# TLS_KEY_FILE=
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000
@@ -29,3 +35,14 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 # Server-side API origin used inside Compose. For `pnpm dev` on the host,
 # leave unset or set to http://localhost:8080 (the app defaults to that).
 API_INTERNAL_URL=http://api:8080
+
+# --- Web security headers (E1.3) ---
+# HSTS is sent only when the request is HTTPS or X-Forwarded-Proto is https.
+# Local http://localhost:3000 does not send HSTS. Set WEB_HSTS=1 only behind
+# a TLS terminator that does not forward proto. Leave unset for local HTTP.
+# WEB_HSTS=1
+#
+# Optional extra CSP connect-src origins (space-separated). The origin of
+# NEXT_PUBLIC_API_URL is always included. Uncomment only if the browser
+# must call additional origins.
+# WEB_CSP_CONNECT_SRC=

@@ -28,6 +28,9 @@ need "$api_df" '^USER 65532:65532'
 need "$api_df" '^FROM golang:1.25-alpine AS build$'
 need "$api_df" '^FROM alpine:3.20$'
 
+web_df="$ROOT/apps/web/Dockerfile"
+need "$web_df" '^USER 65532:65532'
+
 compose="$ROOT/docker-compose.yml"
 need "$compose" 'user: "65532:65532"'
 need "$compose" 'read_only: true'
