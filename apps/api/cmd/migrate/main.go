@@ -23,7 +23,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := cfg.MigrateTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	pool, err := postgres.Open(ctx, cfg.DatabaseURL)

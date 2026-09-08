@@ -168,6 +168,9 @@ func TestMethodNotAllowedProblem(t *testing.T) {
 	if p.Code != "method-not-allowed" {
 		t.Fatalf("code = %q", p.Code)
 	}
+	if rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("Allow = %q, want GET, HEAD", rec.Header().Get("Allow"))
+	}
 }
 
 func TestOpenAPIAndSwagger(t *testing.T) {

@@ -19,21 +19,32 @@ type Checker interface {
 	Ping(ctx context.Context) error
 }
 
+const (
+	defaultConnectTimeout = 5 * time.Second
+	defaultMigrateTimeout = 5 * time.Minute
+)
+
 // Pool is a reconnecting PostgreSQL pool used by readiness and migrations.
 type Pool struct {
-	url  string
-	log  *slog.Logger
-	mu   sync.RWMutex
-	pool *pgxpool.Pool
-	last error
+	url            string
+	log            *slog.Logger
+	migrateTimeout time.Duration
+	mu             sync.RWMutex
+	pool           *pgxpool.Pool
+	last           error
 }
 
 // NewPool returns an unconnected pool. Call Start to connect and migrate.
-func NewPool(databaseURL string, log *slog.Logger) *Pool {
+// migrateTimeout bounds schema application after a successful ping; a
+// non-positive value uses 5 minutes. Connect/ping stay on a 5s deadline.
+func NewPool(databaseURL string, log *slog.Logger, migrateTimeout time.Duration) *Pool {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Pool{url: databaseURL, log: log, last: ErrUnavailable}
+	if migrateTimeout <= 0 {
+		migrateTimeout = defaultMigrateTimeout
+	}
+	return &Pool{url: databaseURL, log: log, migrateTimeout: migrateTimeout, last: ErrUnavailable}
 }
 
 // Start connects, applies forward-only migrations, and retries until ctx ends.
@@ -78,9 +89,6 @@ func (p *Pool) Start(ctx context.Context) {
 }
 
 func (p *Pool) connectAndMigrate(ctx context.Context) error {
-	connectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
 	cfg, err := pgxpool.ParseConfig(p.url)
 	if err != nil {
 		return fmt.Errorf("parse database url: %w", err)
@@ -90,20 +98,27 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 	cfg.MaxConnLifetime = time.Hour
 	cfg.HealthCheckPeriod = 30 * time.Second
 	if cfg.ConnConfig.ConnectTimeout == 0 {
-		cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+		cfg.ConnConfig.ConnectTimeout = defaultConnectTimeout
 	}
 
+	connectCtx, cancelConnect := context.WithTimeout(ctx, defaultConnectTimeout)
 	pool, err := pgxpool.NewWithConfig(connectCtx, cfg)
 	if err != nil {
+		cancelConnect()
 		p.setErr(err)
 		return err
 	}
 	if err := pool.Ping(connectCtx); err != nil {
+		cancelConnect()
 		pool.Close()
 		p.setErr(err)
 		return err
 	}
-	if err := Migrate(connectCtx, pool); err != nil {
+	cancelConnect()
+
+	migrateCtx, cancelMigrate := context.WithTimeout(ctx, p.migrateTimeout)
+	defer cancelMigrate()
+	if err := Migrate(migrateCtx, pool); err != nil {
 		pool.Close()
 		p.setErr(err)
 		return fmt.Errorf("migrate: %w", err)

@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/migrations"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 `
 
+// migrationLockKey is a session-level advisory lock that serializes
+// forward-only schema application across API replicas and cmd/migrate.
+// See docs/reference/database.md (migration serialization).
+const migrationLockKey int64 = 881726401
+
 type migration struct {
 	Version int64
 	Name    string
@@ -29,11 +34,24 @@ type migration struct {
 
 // Migrate applies pending forward-only SQL files and records them in
 // schema_migrations. Re-running is a no-op for already-applied versions.
+// Discovery and application run under pg_advisory_lock on one connection.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
 		return fmt.Errorf("postgres pool is nil")
 	}
-	if _, err := pool.Exec(ctx, createSchemaMigrations); err != nil {
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer unlockMigrations(conn)
+
+	if _, err := conn.Exec(ctx, createSchemaMigrations); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
@@ -42,7 +60,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 
-	applied, err := appliedVersions(ctx, pool)
+	applied, err := appliedVersions(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -51,11 +69,17 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if applied[m.Version] {
 			continue
 		}
-		if err := applyMigration(ctx, pool, m); err != nil {
+		if err := applyMigration(ctx, conn, m); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func unlockMigrations(conn *pgxpool.Conn) {
+	unlockCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, _ = conn.Exec(unlockCtx, `SELECT pg_advisory_unlock($1)`, migrationLockKey)
 }
 
 func loadMigrations() ([]migration, error) {
@@ -95,8 +119,8 @@ func parseMigrationName(filename string) (int64, string, error) {
 	return version, rest, nil
 }
 
-func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[int64]bool, error) {
-	rows, err := pool.Query(ctx, `SELECT version FROM schema_migrations`)
+func appliedVersions(ctx context.Context, conn *pgxpool.Conn) (map[int64]bool, error) {
+	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("list schema_migrations: %w", err)
 	}
@@ -113,8 +137,8 @@ func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[int64]bool, e
 	return applied, rows.Err()
 }
 
-func applyMigration(ctx context.Context, pool *pgxpool.Pool, m migration) error {
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+func applyMigration(ctx context.Context, conn *pgxpool.Conn, m migration) error {
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin migration %d: %w", m.Version, err)
 	}

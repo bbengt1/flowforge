@@ -22,4 +22,5 @@ COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
 
 USER 65532:65532
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/api"]
+# CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate.
+CMD ["/usr/local/bin/api"]

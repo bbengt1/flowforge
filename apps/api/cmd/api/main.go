@@ -25,7 +25,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	pool := postgres.NewPool(cfg.DatabaseURL, log)
+	pool := postgres.NewPool(cfg.DatabaseURL, log, cfg.MigrateTimeout)
 	bg, stopBG := context.WithCancel(context.Background())
 	go pool.Start(bg)
 	defer func() {
@@ -61,8 +61,8 @@ func main() {
 		log.Info("shutting down", "signal", sig.String())
 	}
 
-	timeout, err := time.ParseDuration(cfg.ShutdownWait)
-	if err != nil {
+	timeout := cfg.ShutdownWait
+	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

@@ -28,6 +28,7 @@ func New(db postgres.Checker) http.Handler {
 
 	return withRequestID(withSecureHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec := muxMethodNotAllowed(mux, r); rec != "" {
+			w.Header().Set("Allow", "GET, HEAD")
 			writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "Method Not Allowed", rec)
 			return
 		}

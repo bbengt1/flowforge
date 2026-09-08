@@ -6,22 +6,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
-	defaultHTTPAddr = ":8080"
-	defaultPGHost   = "localhost"
-	defaultPGPort   = "5432"
-	defaultPGUser   = "flowforge"
-	defaultPGDB     = "flowforge"
-	defaultSSLMode  = "disable"
+	defaultHTTPAddr        = ":8080"
+	defaultPGHost          = "localhost"
+	defaultPGPort          = "5432"
+	defaultPGUser          = "flowforge"
+	defaultPGDB            = "flowforge"
+	defaultSSLMode         = "disable"
+	defaultMigrateTimeout  = 5 * time.Minute
+	defaultShutdownTimeout = 10 * time.Second
 )
 
 // Config is process configuration loaded from the environment.
 type Config struct {
-	HTTPAddr     string
-	DatabaseURL  string
-	ShutdownWait string
+	HTTPAddr       string
+	DatabaseURL    string
+	ShutdownWait   time.Duration
+	MigrateTimeout time.Duration
 }
 
 // Load reads configuration from the process environment.
@@ -31,9 +35,10 @@ func Load() (Config, error) {
 	loadDotEnv()
 
 	cfg := Config{
-		HTTPAddr:     listenAddr(),
-		DatabaseURL:  databaseURL(),
-		ShutdownWait: firstNonEmpty(os.Getenv("SHUTDOWN_TIMEOUT"), "10s"),
+		HTTPAddr:       listenAddr(),
+		DatabaseURL:    databaseURL(),
+		ShutdownWait:   durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
+		MigrateTimeout: durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")
@@ -80,6 +85,18 @@ func databaseURL() string {
 	q.Set("sslmode", ssl)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+func durationEnv(name string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
 }
 
 func firstNonEmpty(values ...string) string {

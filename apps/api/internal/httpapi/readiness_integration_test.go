@@ -22,7 +22,7 @@ func TestReadinessWithUnreachablePostgres(t *testing.T) {
 	addr := ln.Addr().String()
 	_ = ln.Close()
 
-	pool := postgres.NewPool("postgres://flowforge:flowforge@"+addr+"/flowforge?sslmode=disable", nil)
+	pool := postgres.NewPool("postgres://flowforge:flowforge@"+addr+"/flowforge?sslmode=disable", nil, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 	go pool.Start(ctx)
@@ -62,7 +62,7 @@ func TestReadinessWithLivePostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool := postgres.NewPool(dsn, nil)
+	pool := postgres.NewPool(dsn, nil, 0)
 	done := make(chan struct{})
 	go func() {
 		pool.Start(ctx)

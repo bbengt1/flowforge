@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestListenAddrDefaults(t *testing.T) {
@@ -46,6 +47,17 @@ func TestDatabaseURLFromPartsURLEncodesPassword(t *testing.T) {
 	}
 	if !strings.Contains(got, "postgres:5432/flowforge") {
 		t.Fatalf("databaseURL() = %q, want host/db", got)
+	}
+}
+
+func TestDurationEnv(t *testing.T) {
+	t.Setenv("MIGRATE_TIMEOUT", "2m")
+	if got := durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout); got != 2*time.Minute {
+		t.Fatalf("got %s", got)
+	}
+	t.Setenv("MIGRATE_TIMEOUT", "nope")
+	if got := durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout); got != defaultMigrateTimeout {
+		t.Fatalf("invalid duration should fall back, got %s", got)
 	}
 }
 

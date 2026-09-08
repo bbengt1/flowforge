@@ -32,6 +32,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `POSTGRES_DB` / `PGDATABASE` | `flowforge` | |
 | `POSTGRES_SSLMODE` / `PGSSLMODE` | `disable` | |
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
+| `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -77,5 +78,5 @@ Conventions:
 - Host/container port: `8080`
 - Build context: `apps/api` (this Dockerfile)
 - Image user: UID/GID `65532` (non-root)
-- Same image can run migrations as a one-shot: `command: ["/usr/local/bin/migrate"]`
+- Same image can run migrations as a one-shot. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` replaces the API process.
 - UI (`apps/web`) should call `http://api:8080` from the compose network, or `http://localhost:8080` from the host
