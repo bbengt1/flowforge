@@ -35,8 +35,11 @@ func main() {
 	}()
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewWithSecurity(pool, httpapi.Security{
+			TrustedProxies: cfg.TrustedProxies,
+			RequireTLS:     cfg.RequireTLS,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -45,7 +48,12 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("api listening", "addr", cfg.HTTPAddr)
+		if cfg.TLSCertFile != "" {
+			log.Info("api listening", "addr", cfg.HTTPAddr, "tls", true, "require_tls", cfg.RequireTLS)
+			errCh <- srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+			return
+		}
+		log.Info("api listening", "addr", cfg.HTTPAddr, "tls", false, "require_tls", cfg.RequireTLS)
 		errCh <- srv.ListenAndServe()
 	}()
 

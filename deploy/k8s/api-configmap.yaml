@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowforge-api
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: api
+data:
+  HTTP_ADDR: ":8080"
+  # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.
+  REQUIRE_TLS: "true"
+  TRUSTED_PROXY_CIDRS: "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+  POSTGRES_SSLMODE: "require"

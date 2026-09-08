@@ -1,0 +1,171 @@
+# E1.3: provenance, vulnerability, and restore-rehearsal gates.
+# Policy: deploy/supply-chain/policy.md
+name: supply-chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: Approved bases and deploy defaults
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check approved Dockerfile bases
+        run: bash scripts/check-approved-bases.sh
+      - name: Check deployment hardening defaults
+        run: bash scripts/check-deploy-defaults.sh
+      - name: Check govulncheck gate fixtures
+        run: |
+          python3 scripts/govulncheck-gate.py scripts/testdata/govulncheck-clean.json
+          if python3 scripts/govulncheck-gate.py scripts/testdata/govulncheck-reject.json; then
+            echo "expected third-party finding to fail the gate" >&2
+            exit 1
+          fi
+
+  govulncheck:
+    name: Go vulnerability check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: |
+          govulncheck -format json ./... > "${RUNNER_TEMP}/govulncheck.json" || true
+          python3 "${GITHUB_WORKSPACE}/scripts/govulncheck-gate.py" "${RUNNER_TEMP}/govulncheck.json"
+
+  api-tests:
+    name: API unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+      - name: Test
+        run: go test ./...
+
+  image-scan:
+    name: API image SBOM and vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t flowforge-api:ci ./apps/api
+
+      # Install the scanner binary. Do not use aquasecurity/trivy-action
+      # version tags here — GitHub could not resolve @0.28.0 or @0.36.0.
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: "0.74.0"
+        run: |
+          set -euo pipefail
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      - name: Application dependency scan
+        run: >
+          trivy fs
+          --scanners vuln
+          --pkg-types library
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          apps/api
+
+      - name: Image scan (fixed CRITICAL)
+        run: >
+          trivy image
+          --severity CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          flowforge-api:ci
+
+      - name: SPDX SBOM
+        run: >
+          trivy image
+          --format spdx-json
+          --output api-sbom.spdx.json
+          flowforge-api:ci
+
+      - name: Provenance statement
+        run: bash scripts/write-provenance.sh flowforge-api:ci api-provenance.json
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Upload SBOM and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-supply-chain
+          path: |
+            api-sbom.spdx.json
+            api-provenance.json
+
+  restore-rehearsal:
+    name: Encrypted backup restore rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_USER: flowforge
+      POSTGRES_DB: flowforge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set disposable secrets
+        run: |
+          pass="$(openssl rand -hex 12)"
+          key="$(openssl rand -hex 24)"
+          echo "::add-mask::${pass}"
+          echo "::add-mask::${key}"
+          echo "POSTGRES_PASSWORD=${pass}" >> "$GITHUB_ENV"
+          echo "BACKUP_ENCRYPTION_KEY=${key}" >> "$GITHUB_ENV"
+
+      - name: Start Postgres and hardened API
+        run: docker compose up --build -d --wait --wait-timeout 180 postgres api
+
+      - name: Restore rehearsal
+        run: bash scripts/backup/restore-rehearsal.sh
+
+      - name: Compose logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail=200 postgres api
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
