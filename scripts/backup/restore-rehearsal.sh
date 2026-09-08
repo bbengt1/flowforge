@@ -114,7 +114,12 @@ docker run -d --name "$RESTORE_API" --network "$network" \
   --tmpfs /tmp:uid=65532,gid=65532,mode=1777 \
   -p "${VERIFY_PORT}:8080" \
   -e HTTP_ADDR=":8080" \
-  -e "DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${ISOLATED}:5432/${POSTGRES_DB}?sslmode=disable" \
+  -e POSTGRES_HOST="$ISOLATED" \
+  -e POSTGRES_PORT="5432" \
+  -e POSTGRES_USER="$POSTGRES_USER" \
+  -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+  -e POSTGRES_DB="$POSTGRES_DB" \
+  -e POSTGRES_SSLMODE="disable" \
   "$BACKUP_API_IMAGE" >/dev/null
 
 api_ok=0

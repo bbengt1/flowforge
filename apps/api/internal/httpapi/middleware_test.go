@@ -11,7 +11,7 @@ import (
 func TestRequireTLSRejectsPlainHTTP(t *testing.T) {
 	h := NewWithSecurity(nil, Security{RequireTLS: true})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
 	req.Header.Set(RequestIDHeader, "caller-request-16")
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -19,6 +19,20 @@ func TestRequireTLSRejectsPlainHTTP(t *testing.T) {
 	}
 	if rec.Header().Get("Strict-Transport-Security") != "" {
 		t.Fatal("HSTS must not be set on rejected plain HTTP")
+	}
+}
+
+func TestRequireTLSAllowsPlainHTTPProbes(t *testing.T) {
+	h := NewWithSecurity(nil, Security{RequireTLS: true})
+	for _, path := range []string{"/api/v1/health", "/api/v1/readiness"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK && rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d, want probe success or dependency 503", path, rec.Code)
+		}
+		if rec.Header().Get("Strict-Transport-Security") != "" {
+			t.Fatalf("%s must not set HSTS on plain HTTP probes", path)
+		}
 	}
 }
 
@@ -59,7 +73,7 @@ func TestForwardedProtoTrustedOnly(t *testing.T) {
 
 	t.Run("untrusted forwarded proto ignored", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
 		req.RemoteAddr = "203.0.113.9:443"
 		req.Header.Set("X-Forwarded-Proto", "https")
 		h.ServeHTTP(rec, req)
