@@ -5,7 +5,10 @@ import {
 } from "./src/lib/security-headers";
 
 const dockerBuild = process.env.DOCKER_BUILD === "1";
-const security = staticSecurityHeaders();
+// CSP is applied per-request in src/proxy.ts with a nonce so Next.js
+// can authorize inline bootstrap/RSC scripts. A baked nonce-less CSP
+// here would block hydration.
+const security = staticSecurityHeaders({ includeCsp: false });
 
 const nextConfig: NextConfig = {
   ...(dockerBuild ? { output: "standalone" as const } : {}),

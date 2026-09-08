@@ -44,22 +44,45 @@ export function getApiConnectOrigins(env: HeaderEnv = process.env): string[] {
   return [...origins];
 }
 
+/** Per-request nonce for Next.js inline bootstrap / RSC payload scripts. */
+export function createScriptNonce(): string {
+  return Buffer.from(crypto.randomUUID()).toString("base64");
+}
+
 export function buildContentSecurityPolicy(
-  options: { development?: boolean; connectSrc?: string[]; env?: HeaderEnv } = {},
+  options: {
+    development?: boolean;
+    connectSrc?: string[];
+    env?: HeaderEnv;
+    nonce?: string;
+  } = {},
 ): string {
   const env = options.env ?? process.env;
   const development =
     options.development ?? env.NODE_ENV !== "production";
   const connectSrc = options.connectSrc ?? getApiConnectOrigins(env);
-  // Dev needs eval/inline for Next/Turbopack HMR. Production scripts are hashed files.
-  const scriptSrc = development
-    ? "'self' 'unsafe-eval' 'unsafe-inline'"
-    : "'self'";
+  const nonce = options.nonce;
+  // Next.js App Router emits inline bootstrap/RSC scripts. Production
+  // authorizes those with a per-request nonce (+ strict-dynamic). Dev
+  // still needs eval for Turbopack/React error stacks.
+  let scriptSrc: string;
+  if (nonce) {
+    scriptSrc = development
+      ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
+      : `'self' 'nonce-${nonce}' 'strict-dynamic'`;
+  } else if (development) {
+    scriptSrc = "'self' 'unsafe-eval' 'unsafe-inline'";
+  } else {
+    scriptSrc = "'self'";
+  }
+  const styleSrc = nonce
+    ? `'self' 'unsafe-inline' 'nonce-${nonce}'`
+    : "'self' 'unsafe-inline'";
 
   return [
     "default-src 'self'",
     `script-src ${scriptSrc}`,
-    "style-src 'self' 'unsafe-inline'",
+    `style-src ${styleSrc}`,
     "img-src 'self' data: blob:",
     "font-src 'self'",
     `connect-src ${connectSrc.join(" ")}`,
@@ -92,13 +115,21 @@ export function shouldSendHsts(input: {
 }
 
 export function staticSecurityHeaders(
-  options: { development?: boolean; env?: HeaderEnv } = {},
+  options: {
+    development?: boolean;
+    env?: HeaderEnv;
+    nonce?: string;
+    includeCsp?: boolean;
+  } = {},
 ): HeaderPair[] {
-  return [
-    {
+  const headers: HeaderPair[] = [];
+  if (options.includeCsp !== false) {
+    headers.push({
       key: "Content-Security-Policy",
       value: buildContentSecurityPolicy(options),
-    },
+    });
+  }
+  headers.push(
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "Permissions-Policy", value: PERMISSIONS_POLICY },
@@ -106,7 +137,8 @@ export function staticSecurityHeaders(
     { key: "X-DNS-Prefetch-Control", value: "off" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
     { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
-  ];
+  );
+  return headers;
 }
 
 export function applySecurityHeaders(
@@ -116,14 +148,19 @@ export function applySecurityHeaders(
     env?: HeaderEnv;
     protocol?: string;
     forwardedProto?: string | null;
+    nonce?: string;
   } = {},
 ): void {
   const env = options.env ?? process.env;
   for (const { key, value } of staticSecurityHeaders({
     development: options.development,
     env,
+    nonce: options.nonce,
   })) {
     headers.set(key, value);
+  }
+  if (options.nonce) {
+    headers.set("x-nonce", options.nonce);
   }
   if (
     shouldSendHsts({

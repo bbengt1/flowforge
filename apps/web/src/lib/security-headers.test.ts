@@ -51,12 +51,26 @@ describe("buildContentSecurityPolicy", () => {
     assert.doesNotMatch(csp, /upgrade-insecure-requests/);
   });
 
-  it("allows eval and inline scripts only in development", () => {
+  it("allows eval and inline scripts only in development without a nonce", () => {
     const csp = buildContentSecurityPolicy({
       development: true,
       env: { NEXT_PUBLIC_API_URL: "http://localhost:8080" },
     });
     assert.match(csp, /script-src 'self' 'unsafe-eval' 'unsafe-inline'/);
+  });
+
+  it("authorizes Next.js inline scripts with a per-request nonce", () => {
+    const csp = buildContentSecurityPolicy({
+      development: false,
+      nonce: "test-nonce",
+      env: { NEXT_PUBLIC_API_URL: "http://localhost:8080" },
+    });
+    assert.match(
+      csp,
+      /script-src 'self' 'nonce-test-nonce' 'strict-dynamic'/,
+    );
+    assert.doesNotMatch(csp, /unsafe-eval/);
+    assert.doesNotMatch(csp, /script-src [^;]*unsafe-inline/);
   });
 });
 
@@ -119,5 +133,15 @@ describe("applySecurityHeaders", () => {
       },
     );
     assert.equal(httpsHeaders.get("Strict-Transport-Security"), HSTS_VALUE);
+  });
+
+  it("exposes the nonce on x-nonce and in CSP", () => {
+    const headers = new Map<string, string>();
+    applySecurityHeaders(
+      { set: (key, value) => headers.set(key, value) },
+      { env: { NODE_ENV: "production" }, nonce: "abc123" },
+    );
+    assert.equal(headers.get("x-nonce"), "abc123");
+    assert.match(headers.get("Content-Security-Policy") ?? "", /nonce-abc123/);
   });
 });

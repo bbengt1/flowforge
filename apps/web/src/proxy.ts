@@ -1,20 +1,30 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { applySecurityHeaders } from "@/lib/security-headers";
+import { applySecurityHeaders, createScriptNonce } from "@/lib/security-headers";
 
 /**
  * Next.js 16 request interception (replaces middleware.ts).
- * next.config.ts already attaches the static header set to every path,
- * including /_next/static. This layer adds HSTS when the request is TLS
- * (direct HTTPS, X-Forwarded-Proto, or WEB_HSTS=1) and refreshes CSP from
- * runtime env such as WEB_CSP_CONNECT_SRC.
+ *
+ * Generates a per-request CSP nonce and puts Content-Security-Policy on
+ * both the request (so Next.js stamps nonce= on bootstrap/RSC scripts)
+ * and the response. next.config.ts attaches the non-CSP header set,
+ * including on /_next/static. HSTS is added only when the request is TLS.
  */
 export function proxy(request: NextRequest) {
-  const response = NextResponse.next();
-  applySecurityHeaders(response.headers, {
+  const nonce = createScriptNonce();
+  const headerOptions = {
+    nonce,
     protocol: request.nextUrl.protocol,
     forwardedProto: request.headers.get("x-forwarded-proto"),
+  };
+
+  const requestHeaders = new Headers(request.headers);
+  applySecurityHeaders(requestHeaders, headerOptions);
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
   });
+  applySecurityHeaders(response.headers, headerOptions);
   return response;
 }
 
