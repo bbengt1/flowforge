@@ -22,8 +22,18 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/workspace/members` | List members (`workspace.administer`). |
 | `PUT` | `/api/v1/workspace/members` | Bind member roles (`workspace.administer`). |
 | `DELETE` | `/api/v1/workspace/members/{userID}` | Remove member; last admin is protected. |
+| `GET` | `/api/v1/workspace/records` | List FORCE-RLS records (`kind` required). |
+| `POST` | `/api/v1/workspace/records` | Create a scoped record. Body `id` / `workspace_id` rejected. |
+| `GET` | `/api/v1/workspace/records/{id}` | Get a scoped record; other-workspace UUIDs are 404. |
+| `POST` | `/api/v1/workspace/records/{id}/links` | Composite `(workspace_id, parent_id)` attach. |
+| `POST` | `/api/v1/workspace/credentials/{id}/use` | Credential use (`credential.use`). |
+| `GET` | `/api/v1/workspace/artifacts/{id}` | Artifact access (`execution.view`). |
+| `GET` / `POST` | `/api/v1/workspace/jobs` | Job hooks (`execution.view` / `workflow.execute`). |
+| `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
+| `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
+| `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
 
-Subject identity (until E2.3 sessions) uses `X-FlowForge-Issuer` and `X-FlowForge-Subject`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key.
+Subject identity (until E2.3 sessions) uses `X-FlowForge-Issuer` and `X-FlowForge-Subject`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 

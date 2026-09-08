@@ -46,13 +46,13 @@ func ValidateClaim(c WorkspaceClaim) error {
 	if hasHostID && (!hasTenant || !hasWorkbench) {
 		return ErrHostSuppliedWorkspaceID
 	}
-	if hasHostID && !validUUID(c.HostWorkspaceID) {
+	if hasHostID && !ValidUUID(c.HostWorkspaceID) {
 		return ErrHostSuppliedWorkspaceID
 	}
 	if !hasTenant || !hasWorkbench {
 		return ErrIncompleteWorkspaceClaim
 	}
-	if c.TenantID != "" && !validUUID(c.TenantID) {
+	if c.TenantID != "" && !ValidUUID(c.TenantID) {
 		return ErrAmbiguousWorkspaceIdentity
 	}
 	if c.TenantSlug != "" && !ValidTenantSlug(c.TenantSlug) {
@@ -71,7 +71,7 @@ func ConfirmResolvedID(resolvedWorkspaceID, hostWorkspaceID string) error {
 	if hostWorkspaceID == "" {
 		return nil
 	}
-	if !validUUID(hostWorkspaceID) || !validUUID(resolvedWorkspaceID) {
+	if !ValidUUID(hostWorkspaceID) || !ValidUUID(resolvedWorkspaceID) {
 		return ErrHostSuppliedWorkspaceID
 	}
 	if !strings.EqualFold(resolvedWorkspaceID, hostWorkspaceID) {
@@ -83,7 +83,8 @@ func ConfirmResolvedID(resolvedWorkspaceID, hostWorkspaceID string) error {
 // ForbiddenIdentityFields are JSON keys that attempt to set workspace identity.
 var ForbiddenIdentityFields = []string{"id", "workspace_id", "workspaceId"}
 
-func validUUID(s string) bool {
+// ValidUUID reports whether s is a 36-character hex UUID with hyphens.
+func ValidUUID(s string) bool {
 	if len(s) != 36 {
 		return false
 	}

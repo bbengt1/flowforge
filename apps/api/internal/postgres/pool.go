@@ -100,18 +100,17 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 	if cfg.ConnConfig.ConnectTimeout == 0 {
 		cfg.ConnConfig.ConnectTimeout = defaultConnectTimeout
 	}
-	applyPoolHooks(cfg)
 
 	connectCtx, cancelConnect := context.WithTimeout(ctx, defaultConnectTimeout)
-	pool, err := pgxpool.NewWithConfig(connectCtx, cfg)
+	admin, err := pgxpool.NewWithConfig(connectCtx, cfg)
 	if err != nil {
 		cancelConnect()
 		p.setErr(err)
 		return err
 	}
-	if err := pool.Ping(connectCtx); err != nil {
+	if err := admin.Ping(connectCtx); err != nil {
 		cancelConnect()
-		pool.Close()
+		admin.Close()
 		p.setErr(err)
 		return err
 	}
@@ -119,17 +118,46 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 
 	migrateCtx, cancelMigrate := context.WithTimeout(ctx, p.migrateTimeout)
 	defer cancelMigrate()
-	if err := Migrate(migrateCtx, pool); err != nil {
-		pool.Close()
+	if err := Migrate(migrateCtx, admin); err != nil {
+		admin.Close()
 		p.setErr(err)
 		return fmt.Errorf("migrate: %w", err)
 	}
+	admin.Close()
+
+	appCfg, err := pgxpool.ParseConfig(p.url)
+	if err != nil {
+		p.setErr(err)
+		return err
+	}
+	appCfg.MaxConns = cfg.MaxConns
+	appCfg.MinConns = cfg.MinConns
+	appCfg.MaxConnLifetime = cfg.MaxConnLifetime
+	appCfg.HealthCheckPeriod = cfg.HealthCheckPeriod
+	if appCfg.ConnConfig.ConnectTimeout == 0 {
+		appCfg.ConnConfig.ConnectTimeout = defaultConnectTimeout
+	}
+	applyPoolHooks(appCfg, true)
+
+	app, err := pgxpool.NewWithConfig(ctx, appCfg)
+	if err != nil {
+		p.setErr(err)
+		return err
+	}
+	pingCtx, cancelPing := context.WithTimeout(ctx, defaultConnectTimeout)
+	if err := app.Ping(pingCtx); err != nil {
+		cancelPing()
+		app.Close()
+		p.setErr(err)
+		return err
+	}
+	cancelPing()
 
 	p.mu.Lock()
 	if p.pool != nil {
 		p.pool.Close()
 	}
-	p.pool = pool
+	p.pool = app
 	p.last = nil
 	p.mu.Unlock()
 
@@ -190,7 +218,40 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if cfg.ConnConfig.ConnectTimeout == 0 {
 		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
 	}
-	applyPoolHooks(cfg)
+	admin, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := admin.Ping(ctx); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	if err := Migrate(ctx, admin); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	admin.Close()
+
+	app, err := openAppPool(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return app, nil
+}
+
+// OpenAdmin connects, migrates, and returns a pool as the login role (no
+// SET ROLE). Used by isolation tests that must seed or inspect as owner.
+func OpenAdmin(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	if databaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is not set")
+	}
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+	if cfg.ConnConfig.ConnectTimeout == 0 {
+		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -200,6 +261,26 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, err
 	}
 	if err := Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
+}
+
+func openAppPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+	if cfg.ConnConfig.ConnectTimeout == 0 {
+		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	}
+	applyPoolHooks(cfg, true)
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, err
 	}

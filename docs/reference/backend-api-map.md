@@ -30,6 +30,25 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 | `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. | `200` member | `400` `401` `403` `404` `409` |
 | `DELETE /api/v1/workspace/members/{userID}` | Remove a member. Cannot remove the last administrator. | `204` | `401` `403` `404` `409` |
 
+## Workspace isolation (E2.2)
+
+After membership authorization, the API sets transaction-local `app.workspace_id` and queries workspace-owned tables under `FORCE ROW LEVEL SECURITY`. Host-supplied `id` / `workspace_id` on write bodies is rejected. A valid UUID from another workspace is `not-found` (not a leak). These routes are isolation hooks for surfaces that exist today; later credential/artifact/execution epics keep the same scope rules.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workspace/records?kind=` | List scoped records. `kind` required. Permission depends on kind. | `200` `{items}` | `400` `401` `403` |
+| `POST /api/v1/workspace/records` | Create a scoped record (`credential`, `artifact`, `job`, `cache`, `realtime`, `audit`). | `201` record | `400` `401` `403` |
+| `GET /api/v1/workspace/records/{id}` | Get a scoped record. | `200` | `401` `403` `404` |
+| `POST /api/v1/workspace/records/{id}/links` | Attach a child via composite `(workspace_id, parent_id)` FK. | `201` link | `400` `401` `403` `404` |
+| `POST /api/v1/workspace/credentials/{id}/use` | Credential use. Requires `credential.use`. | `204` | `401` `403` `404` |
+| `GET /api/v1/workspace/artifacts/{id}` | Artifact access. Requires `execution.view`. | `200` | `401` `403` `404` |
+| `GET /api/v1/workspace/jobs` | List job hooks. Requires `execution.view`. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/workspace/jobs` | Enqueue a job hook. Requires `workflow.execute`. | `201` | `401` `403` |
+| `GET /api/v1/workspace/cache/{key}` | Workspace-prefixed cache read. | `200` | `401` `403` `404` |
+| `PUT /api/v1/workspace/cache/{key}` | Workspace-prefixed cache write. | `200` | `401` `403` |
+| `POST /api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. Requires `workflow.view`. | `200` | `401` `403` `404` |
+| `GET /api/v1/workspace/audit-events` | List audit hooks. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
+
 Every request receives `X-Request-ID`. A caller-supplied value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same identifier is present on the response header, in `application/problem+json` as `request_id`, and in structured request logs so an API flow can be traced end to end.
 
 Errors use `application/problem+json` and include `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes:

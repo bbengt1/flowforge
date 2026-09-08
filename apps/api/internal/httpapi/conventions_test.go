@@ -219,7 +219,9 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 	for _, p := range []string{
 		"/health", "/readiness", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
 		"/permission-matrix", "/roles", "/permissions", "/tenants", "/workspaces", "/workspace",
-		"/workspace/members",
+		"/workspace/members", "/workspace/records", "/workspace/credentials/{id}/use",
+		"/workspace/artifacts/{id}", "/workspace/jobs", "/workspace/cache/{key}",
+		"/workspace/realtime/channels/{id}/subscribe", "/workspace/audit-events",
 	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)
