@@ -24,6 +24,15 @@ export type CatalogNode = {
   inputs?: CatalogPort[];
   outputs?: CatalogPort[];
   requiredWith?: string[];
+  /**
+   * Optional catalog hints. E3.1 GET /workflows/catalog on main returns
+   * type/phase/ports/requiredWith only. Prefer these when jonny's E3.3
+   * contract adds them; otherwise the UI adapter mirrors action-catalog.md.
+   */
+  name?: string;
+  policy?: string;
+  redaction?: string;
+  classification?: string;
 };
 
 export type WorkflowCatalog = {

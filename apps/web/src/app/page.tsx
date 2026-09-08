@@ -102,8 +102,10 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Workflow operator</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E3.1 / E3.2 UI for jonny&apos;s YAML and version
-          contract. Validate and normalize stay on the editor. Drafts save
+          Chloe&apos;s E3.1–E3.3 UI for jonny&apos;s YAML and version
+          contract. Validate and normalize stay on the editor. The core-node
+          palette inserts canonical YAML and the inspector writes bounded{" "}
+          <code className="font-mono text-xs">with</code> fields. Drafts save
           with revision / If-Match, 409 offers reload, publish is immutable,
           and run accepts only a published version id.
         </p>
