@@ -1,0 +1,31 @@
+# FlowForge local development (E1.1)
+# Copy this file to .env and replace the PostgreSQL password placeholder.
+# Do not commit .env. There are no production secrets in this template.
+
+# --- PostgreSQL ---
+POSTGRES_USER=flowforge
+POSTGRES_PASSWORD=replace-with-local-password
+POSTGRES_DB=flowforge
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+# Compose builds DATABASE_URL for the api service as:
+#   postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+# URL-encode any special characters in the password. This equivalent is for
+# host-side `go run` / tests against the compose network hostname.
+DATABASE_URL=postgres://flowforge:replace-with-local-password@postgres:5432/flowforge?sslmode=disable
+
+# --- API (Go control plane — PR #2 / apps/api) ---
+# Host port published as http://localhost:8080
+API_PORT=8080
+# Go listen address (HTTP_ADDR, not API_ADDR). Default :8080.
+HTTP_ADDR=:8080
+
+# --- Web (Next.js) ---
+# Host port published as http://localhost:3000
+WEB_PORT=3000
+# Browser-facing API origin on the host machine.
+NEXT_PUBLIC_API_URL=http://localhost:8080
+# Server-side API origin used inside Compose. For `pnpm dev` on the host,
+# leave unset or set to http://localhost:8080 (the app defaults to that).
+API_INTERNAL_URL=http://api:8080

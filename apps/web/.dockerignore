@@ -1,0 +1,12 @@
+.git
+.next
+node_modules
+**/.DS_Store
+.env
+.env.*
+*.md
+*.log
+*.tsbuildinfo
+coverage
+AGENTS.md
+CLAUDE.md
