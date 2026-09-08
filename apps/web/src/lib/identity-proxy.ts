@@ -9,6 +9,15 @@ import {
   upstreamProblem,
 } from "./problem.ts";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.ts";
+import {
+  collectSetCookies,
+  rewriteUpstreamSetCookies,
+} from "./session-cookies.ts";
+import {
+  CSRF_HEADER,
+  SESSION_METHODS,
+  isSessionSegments,
+} from "./session-contract.ts";
 
 const API_PREFIX = "/api/v1";
 const PROXY_PREFIX = "/api/control-plane";
@@ -81,6 +90,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       Boolean(s[3]),
   },
   { methods: ["GET"], match: (s) => eq(s, ["workspace", "audit-events"]) },
+  { methods: [...SESSION_METHODS], match: (s) => isSessionSegments(s) },
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -183,6 +193,8 @@ export type IdentityProxySuccess = {
   requestId: string;
   contentType: string | null;
   body: unknown;
+  setCookies: string[];
+  csrfToken: string | null;
 };
 
 export type IdentityProxyFailure = {
@@ -191,6 +203,8 @@ export type IdentityProxyFailure = {
   requestId: string;
   contentType: typeof PROBLEM_JSON;
   problem: ProblemDetails;
+  setCookies: string[];
+  csrfToken: string | null;
 };
 
 export type IdentityProxyResult = IdentityProxySuccess | IdentityProxyFailure;
@@ -203,10 +217,12 @@ export async function fetchIdentityControlPlane(options: {
   identityHeaders: Headers;
   body?: string | null;
   contentType?: string | null;
+  requestSecure?: boolean;
 }): Promise<IdentityProxyResult> {
   const requestId = resolveRequestId(options.requestId);
   const url = `${getApiInternalUrl()}${options.apiPath}`;
   const headers = pickIsolationForwardedHeaders(options.identityHeaders);
+  pickSessionCredentialHeaders(options.identityHeaders, headers);
   headers.set(REQUEST_ID_HEADER, requestId);
   headers.set("Accept", "application/json, application/problem+json");
   if (options.body && options.method !== "GET" && options.method !== "HEAD") {
@@ -232,6 +248,10 @@ export async function fetchIdentityControlPlane(options: {
       response.headers.get(REQUEST_ID_HEADER) ?? requestId,
     );
     const contentType = response.headers.get("content-type");
+    const setCookies = rewriteUpstreamSetCookies(collectSetCookies(response.headers), {
+      requestSecure: options.requestSecure === true,
+    });
+    const csrfToken = response.headers.get(CSRF_HEADER)?.trim() || null;
 
     if (response.status === 204) {
       return {
@@ -240,6 +260,8 @@ export async function fetchIdentityControlPlane(options: {
         requestId: echoed,
         contentType: null,
         body: null,
+        setCookies,
+        csrfToken,
       };
     }
 
@@ -260,6 +282,8 @@ export async function fetchIdentityControlPlane(options: {
         requestId: problem.request_id || echoed,
         contentType: PROBLEM_JSON,
         problem,
+        setCookies,
+        csrfToken,
       };
     }
 
@@ -270,6 +294,8 @@ export async function fetchIdentityControlPlane(options: {
         requestId: echoed,
         contentType: mediaType(contentType) || "application/json",
         body: parsed,
+        setCookies,
+        csrfToken,
       };
     }
 
@@ -280,6 +306,8 @@ export async function fetchIdentityControlPlane(options: {
       requestId: echoed,
       contentType: PROBLEM_JSON,
       problem,
+      setCookies,
+      csrfToken,
     };
   } catch {
     const problem = unreachableProblem(options.instance, requestId);
@@ -289,8 +317,26 @@ export async function fetchIdentityControlPlane(options: {
       requestId,
       contentType: PROBLEM_JSON,
       problem,
+      setCookies: [],
+      csrfToken: null,
     };
   }
+}
+
+/** Cookie + CSRF only. Authorization / bearer tokens are never forwarded. */
+export function pickSessionCredentialHeaders(
+  source: Headers,
+  target = new Headers(),
+): Headers {
+  const cookie = source.get("cookie")?.trim();
+  if (cookie) {
+    target.set("Cookie", cookie);
+  }
+  const csrf = source.get(CSRF_HEADER)?.trim();
+  if (csrf) {
+    target.set(CSRF_HEADER, csrf);
+  }
+  return target;
 }
 
 async function readJsonBody(response: Response): Promise<unknown> {

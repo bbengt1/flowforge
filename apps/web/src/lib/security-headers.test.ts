@@ -5,6 +5,7 @@ import {
   applySecurityHeaders,
   buildContentSecurityPolicy,
   getApiConnectOrigins,
+  sessionConnectSrc,
   shouldSendHsts,
   staticSecurityHeaders,
 } from "./security-headers.ts";
@@ -35,6 +36,18 @@ describe("getApiConnectOrigins", () => {
     assert.ok(origins.includes("https://api.example.test"));
     assert.ok(origins.includes("https://extra.example.test"));
     assert.ok(origins.includes("wss://extra.example.test"));
+  });
+});
+
+describe("sessionConnectSrc", () => {
+  it("keeps credentialed session fetches on same-origin only", () => {
+    assert.deepEqual(sessionConnectSrc(), ["'self'"]);
+    const csp = buildContentSecurityPolicy({
+      development: false,
+      connectSrc: sessionConnectSrc(),
+    });
+    assert.match(csp, /connect-src 'self'/);
+    assert.doesNotMatch(csp, /connect-src [^;]*\*/);
   });
 });
 

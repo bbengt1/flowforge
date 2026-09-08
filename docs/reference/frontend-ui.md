@@ -109,7 +109,7 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, and the E2.2 isolation exercise:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, and the E2.3 cookie session controls:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -118,10 +118,12 @@ Until authoring (E6) lands, the deployable shell is the home page, a slim header
 
 `/membership` is a minimal operator surface (Chloe) that exercises jonny's E2.1 API contract. It is not the product workspace shell.
 
-- **Dev identity panel:** local-only issuer/subject (optional display name) plus tenant id *or* tenant slug and workbench key. Values live in `sessionStorage` for the current tab. E2.3 sessions replace this. Secrets are never stored.
+- **Session (E2.3):** cookie session via same-origin `/api/control-plane/session` (`credentials: include`). Subject/expiry come from `GET /session`; logout is `DELETE /session`. CSRF header `X-CSRF-Token` is sent on state-changing calls. Bearer tokens are never stored in `localStorage` or the URL.
+- **Workspace context:** tenant id *or* tenant slug and workbench key live in tab `sessionStorage`. They are not secrets.
+- **Temporary header fallback:** local-only issuer/subject headers, clearly labeled, used only when no cookie session is active. Remove when jonny's session API is the sole subject path.
 - **Workspace identity:** the UI and Next proxy never send `X-FlowForge-Workspace-ID` and do not offer a workspace-UUID lookup field. Current workspace resolution uses tenant + workbench key only.
 - **Actions:** create tenant (`POST /tenants`), create workspace (`POST /workspaces`; caller becomes admin), list caller workspaces (`GET /workspaces`), current workspace roles/permissions (`GET /workspace`), members add/update/remove (`GET|PUT /workspace/members`, `DELETE /workspace/members/{userID}`), read-only permission matrix (`GET /permission-matrix`).
-- **Proxies:** `/api/control-plane/{permission-matrix,roles,permissions,tenants,workspaces,workspace,workspace/members,workspace/members/{userID}}` attach FlowForge identity headers and `X-Request-ID`, call `API_INTERNAL_URL` `/api/v1/...`, preserve `application/problem+json`, and echo the request id. Unauthorized and last-admin conflict problems show `title`, `detail`, `code`, and `request_id`.
+- **Proxies:** `/api/control-plane/{session,permission-matrix,roles,permissions,tenants,workspaces,workspace,workspace/members,workspace/members/{userID}}` attach workspace headers, session cookies, CSRF, and `X-Request-ID`, call `API_INTERNAL_URL` `/api/v1/...`, preserve `application/problem+json`, and echo the request id. Unauthorized, CSRF, and last-admin conflict problems show `title`, `detail`, `code`, and `request_id`.
 
 ## E2.3 browser session contract (API → UI)
 
@@ -143,10 +145,31 @@ Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Se
 
 `/isolation` (also embedded at the bottom of `/membership`) is Chloe's negative operator surface for jonny's E2.2 isolation hook routes. It is not the product workspace shell.
 
-- **Same identity as E2.1:** issuer/subject plus tenant id *or* slug and workbench key from tab-scoped `sessionStorage`. Workspace lookup is never a host-supplied workspace UUID.
+- **Same identity as E2.1 / E2.3:** cookie session preferred; optional temporary header fallback; tenant id *or* slug and workbench key from tab-scoped `sessionStorage`. Workspace lookup is never a host-supplied workspace UUID.
 - **Foreign-id exercises:** `POST /workspace/credentials/{id}/use`, `GET /workspace/artifacts/{id}`, `GET /workspace/cache/{key}`, `POST /workspace/realtime/channels/{id}/subscribe`, `GET /workspace/records/{id}`, plus scoped `GET /workspace/records?kind=`, `GET /workspace/jobs`, and `GET /workspace/audit-events`. Success of the story is that cross-workspace access **fails** and `application/problem+json` (`title`, `detail`, `status`, `code`, `request_id`) is shown.
 - **Optional mismatch demo:** the panel may send `X-FlowForge-Workspace-ID` *in addition to* tenant + workbench so the API can reject the mismatch. Workspace-ID-only is not offered as a selector. `POST /workspace/records` with `workspace_id` in the body is a separate fail demo.
-- **Proxies:** `/api/control-plane/workspace/{records,credentials/{id}/use,artifacts/{id},jobs,cache/{key},realtime/channels/{id}/subscribe,audit-events}` attach FlowForge headers and `X-Request-ID`, preserve problem+json, and echo the request id. Query strings such as `kind=` are forwarded. Workspace-ID is forwarded only when tenant + workbench are also present.
+- **Proxies:** `/api/control-plane/workspace/{records,credentials/{id}/use,artifacts/{id},jobs,cache/{key},realtime/channels/{id}/subscribe,audit-events}` attach FlowForge headers and `X-Request-ID`, preserve problem+json, and echo the request id. Query strings such as `kind=` are forwarded. Workspace-ID is forwarded only when tenant + workbench are also present. Session cookies and `X-CSRF-Token` are forwarded; `Set-Cookie` is rewritten onto the UI origin. Authorization/bearer is never forwarded.
+
+## E2.3 browser session operator
+
+`/membership` and `/isolation` (Chloe) consume jonny's session API. The Go session store, cookie issuance, and server CSRF/CORS/CSP policy stay on `apps/api`.
+
+- **Login/bootstrap:** `POST /api/control-plane/session` with issuer/subject (optional display name). HttpOnly session cookie + CSRF token come from the API (or `csrf_token` in JSON).
+- **Current session:** `GET /api/control-plane/session` shows subject and `expires_at`. Header chip and expiry banner count down; warning at five minutes; stale `401 unauthenticated` / `stale-session` prompts re-login.
+- **Logout:** `DELETE /api/control-plane/session` with CSRF.
+- **CSRF:** double-submit header `X-CSRF-Token` on POST/PUT/PATCH/DELETE (except bootstrap `POST /session` when no token exists yet). Missing CSRF with a session cookie fails closed at the Next proxy (`csrf-required` problem+json) before the Go API is called.
+- **CSP/CORS:** browser session fetches are same-origin Next proxies only (`connect-src 'self'`). No credentialed wildcard CORS. `Secure` is stripped on rewritten cookies only for localhost HTTP.
+- **Contract adapter:** `apps/web/src/lib/session-contract.ts` is the single place to retarget paths/header/cookie names when jonny's OpenAPI lands.
+
+Provisional routes (server owned by jonny; UI matches these until OpenAPI lands):
+
+| Method | Path | CSRF | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/session` | send if known | Bootstrap from issuer/subject; sets `flowforge_session` (HttpOnly) + CSRF |
+| `GET` | `/api/v1/session` | no | Subject, `expires_at`, `csrf_token` |
+| `DELETE` | `/api/v1/session` | required | Logout; clears cookies |
+
+CSRF header: `X-CSRF-Token`. CSRF cookie: `flowforge_csrf` (readable double-submit). Problem codes: `401 unauthenticated` / `stale-session`, `403 csrf-required` / `csrf-invalid`.
 
 ## Initial implementation components
 

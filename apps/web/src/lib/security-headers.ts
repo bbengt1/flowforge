@@ -44,6 +44,16 @@ export function getApiConnectOrigins(env: HeaderEnv = process.env): string[] {
   return [...origins];
 }
 
+/**
+ * Credentialed browser session fetches stay on 'self' (Next proxies).
+ * connect-src may list the public API origin for non-credentialed docs
+ * links / health display, but never a wildcard and never credentialed
+ * cross-origin session calls.
+ */
+export function sessionConnectSrc(): string[] {
+  return ["'self'"];
+}
+
 /** Per-request nonce for Next.js inline bootstrap / RSC payload scripts. */
 export function createScriptNonce(): string {
   return Buffer.from(crypto.randomUUID()).toString("base64");

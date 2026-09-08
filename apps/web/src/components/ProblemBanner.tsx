@@ -1,4 +1,5 @@
 import { safeProblemDetail, type ProblemDetails } from "@/lib/problem";
+import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
 
 type ProblemBannerProps = {
   problem: ProblemDetails;
@@ -19,6 +20,20 @@ export function ProblemBanner({ problem, className }: ProblemBannerProps) {
         {problem.status ? ` (${problem.status})` : null}
       </p>
       <p className="mt-1">{safeProblemDetail(problem.detail)}</p>
+      {isStaleSessionProblem(problem) ? (
+        <p className="mt-2">
+          Stale or missing session.{" "}
+          <a className="underline" href="#session">
+            Re-establish the cookie session
+          </a>
+          .
+        </p>
+      ) : null}
+      {isCsrfProblem(problem) ? (
+        <p className="mt-2">
+          CSRF fail-closed. The state-changing request was rejected.
+        </p>
+      ) : null}
       <dl className="mt-3 grid gap-1 font-mono text-xs text-amber-900/80 sm:grid-cols-2">
         <div>
           <dt className="inline text-amber-800/70">code </dt>

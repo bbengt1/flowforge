@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SessionStatusChip } from "@/components/session/SessionStatusChip";
 import { getPublicSwaggerUrl } from "@/lib/config";
 
 export function SiteHeader() {
@@ -11,6 +12,7 @@ export function SiteHeader() {
           FlowForge
         </Link>
         <nav aria-label="Operator" className="flex items-center gap-4">
+          <SessionStatusChip />
           <Link
             href="/membership"
             className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
