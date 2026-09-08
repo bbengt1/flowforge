@@ -868,7 +868,7 @@ function nextInsert(lines: string[], insertLine: number, blockLines: string[]): 
 
 function appendNodesSection(yaml: string, blockLines: string[]): string {
   const lines = yaml.split("\n");
-  let specIndex = lines.findIndex((line) => line.trim() === "spec:" || line.trim().startsWith("spec:"));
+  const specIndex = lines.findIndex((line) => line.trim() === "spec:" || line.trim().startsWith("spec:"));
   if (specIndex < 0) {
     return `${yaml.replace(/\s*$/, "")}\nspec:\n  nodes:\n${blockLines.join("\n")}\n`;
   }
