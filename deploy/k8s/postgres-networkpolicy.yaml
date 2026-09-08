@@ -1,0 +1,37 @@
+# Applies once a postgres workload is labeled
+# app.kubernetes.io/name=flowforge, app.kubernetes.io/component=postgres.
+# Restricts database ingress to the API (and DNS egress for the cluster resolver).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flowforge-postgres
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: flowforge
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

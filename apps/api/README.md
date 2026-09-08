@@ -36,6 +36,9 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `POSTGRES_SSLMODE` / `PGSSLMODE` | `disable` | |
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
+| `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
+| `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -80,6 +83,7 @@ Conventions:
 - Service name: `api`
 - Host/container port: `8080`
 - Build context: `apps/api` (this Dockerfile)
-- Image user: UID/GID `65532` (non-root)
+- Image user: UID/GID `65532` (non-root). Compose and `deploy/k8s` also set a read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, and CPU/memory/PID limits.
 - Same image can run migrations as a one-shot. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` replaces the API process.
 - UI (`apps/web`) should call `http://api:8080` from the compose network, or `http://localhost:8080` from the host
+- Kubernetes / TLS / supply-chain foundation: [`deploy/`](../../deploy/)

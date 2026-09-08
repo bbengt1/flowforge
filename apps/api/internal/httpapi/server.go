@@ -21,10 +21,15 @@ type Server struct {
 
 // New returns a handler for /api/v1 foundation routes.
 func New(db postgres.Checker) http.Handler {
-	return newServer(db, slog.Default(), observability.NewRegistry())
+	return NewWithSecurity(db, Security{})
 }
 
-func newServer(db postgres.Checker, log *slog.Logger, registry *observability.Registry) http.Handler {
+// NewWithSecurity returns a handler with TLS/proxy policy applied.
+func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
+	return newServer(db, slog.Default(), observability.NewRegistry(), sec)
+}
+
+func newServer(db postgres.Checker, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -57,7 +62,7 @@ func newServer(db postgres.Checker, log *slog.Logger, registry *observability.Re
 		mux.ServeHTTP(w, r)
 	})
 
-	return withRequestID(withSecureHeaders(withObserve(log, registry, withRecover(log, withBodyLimit(router)))))
+	return withRequestID(withSecureHeaders(sec, withObserve(log, registry, withRecover(log, withBodyLimit(router)))))
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

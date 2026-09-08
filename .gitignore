@@ -44,4 +44,5 @@ coverage/
 
 # misc
 *.pem
+*.sql.enc
 .vercel

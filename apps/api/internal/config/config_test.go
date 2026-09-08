@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,57 @@ func TestDurationEnv(t *testing.T) {
 	if got := durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout); got != defaultMigrateTimeout {
 		t.Fatalf("invalid duration should fall back, got %s", got)
 	}
+}
+
+func TestParseCIDRs(t *testing.T) {
+	nets, err := parseCIDRs("10.0.0.0/8, 192.168.1.1, ::1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nets) != 3 {
+		t.Fatalf("len = %d, want 3", len(nets))
+	}
+	if !nets[0].Contains(mustIP("10.9.8.7")) {
+		t.Fatal("10.0.0.0/8 should contain 10.9.8.7")
+	}
+	if !nets[1].Contains(mustIP("192.168.1.1")) || nets[1].Contains(mustIP("192.168.1.2")) {
+		t.Fatal("bare IPv4 should become /32")
+	}
+
+	if _, err := parseCIDRs("not-a-cidr"); err == nil {
+		t.Fatal("expected invalid CIDR error")
+	}
+	empty, err := parseCIDRs("  ")
+	if err != nil || empty != nil {
+		t.Fatalf("empty should be nil, got %v err=%v", empty, err)
+	}
+}
+
+func TestBoolEnv(t *testing.T) {
+	t.Setenv("REQUIRE_TLS", "true")
+	if !boolEnv("REQUIRE_TLS", false) {
+		t.Fatal("true should enable")
+	}
+	t.Setenv("REQUIRE_TLS", "nope")
+	if boolEnv("REQUIRE_TLS", false) {
+		t.Fatal("unknown value should fall back")
+	}
+}
+
+func TestLoadTLSFilesMustBePaired(t *testing.T) {
+	t.Setenv("TLS_CERT_FILE", "/tmp/cert.pem")
+	t.Setenv("TLS_KEY_FILE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected paired TLS file error")
+	}
+}
+
+func mustIP(s string) net.IP {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		panic(s)
+	}
+	return ip
 }
 
 func TestLoadDotEnvDoesNotOverrideEnv(t *testing.T) {

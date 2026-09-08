@@ -6,12 +6,52 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 	"unicode"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 )
+
+// Security is the TLS/proxy policy applied at the HTTP boundary.
+// Empty TrustedProxies means X-Forwarded-* headers are ignored.
+type Security struct {
+	TrustedProxies []*net.IPNet
+	RequireTLS     bool
+}
+
+func (s Security) requestIsHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !s.fromTrustedProxy(r) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func (s Security) fromTrustedProxy(r *http.Request) bool {
+	ip := clientIP(r)
+	if ip == nil {
+		return false
+	}
+	for _, network := range s.TrustedProxies {
+		if network != nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func clientIP(r *http.Request) net.IP {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return net.ParseIP(host)
+}
 
 type contextKey int
 
@@ -42,8 +82,13 @@ func withRequestID(next http.Handler) http.Handler {
 	})
 }
 
-func withSecureHeaders(next http.Handler) http.Handler {
+func withSecureHeaders(sec Security, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		https := sec.requestIsHTTPS(r)
+		if sec.RequireTLS && !https {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS is required.")
+			return
+		}
 		h := w.Header()
 		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -51,6 +96,9 @@ func withSecureHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Cache-Control", "no-store")
+		if https {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -33,11 +33,24 @@ services:
     restart: unless-stopped
 
   api:
-    # Image and module owned by PR #2 (apps/api). Listen addr is HTTP_ADDR.
+    # Image and module owned by the API slice. Listen addr is HTTP_ADDR.
+    # Hardening matches deploy/k8s (UID 65532, read-only FS, dropped caps).
+    # Web image/compose alignment is owned by the UI teammate.
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     image: flowforge-api:local
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=1777
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 256
     ports:
       - "8080:8080"
     environment:

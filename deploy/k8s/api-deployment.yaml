@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowforge-api
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: flowforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flowforge
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: flowforge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # Replace with a digest-pinned image before production.
+          # CI rejects :latest (see scripts/check-deploy-defaults.sh).
+          image: ghcr.io/bbengt1/flowforge-api:foundation
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/api"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: flowforge-api
+            - secretRef:
+                name: flowforge-api
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/v1/readiness
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

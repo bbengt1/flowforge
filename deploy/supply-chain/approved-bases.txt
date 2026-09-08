@@ -1,0 +1,5 @@
+# Approved Dockerfile bases (name:tag). Digests are optional suffixes.
+# Keep this list small. Web may reuse these names when aligning to UID 65532.
+golang:1.22-alpine
+alpine:3.20
+node:22-alpine

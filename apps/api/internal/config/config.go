@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,6 +27,13 @@ type Config struct {
 	DatabaseURL    string
 	ShutdownWait   time.Duration
 	MigrateTimeout time.Duration
+	// TrustedProxies are CIDRs allowed to set X-Forwarded-Proto / X-Forwarded-For.
+	// Empty means forwarded headers are ignored (safe local default).
+	TrustedProxies []*net.IPNet
+	// RequireTLS rejects requests that are not HTTPS (direct TLS or a trusted proxy).
+	RequireTLS  bool
+	TLSCertFile string
+	TLSKeyFile  string
 }
 
 // Load reads configuration from the process environment.
@@ -34,16 +42,73 @@ type Config struct {
 func Load() (Config, error) {
 	loadDotEnv()
 
+	proxies, err := parseCIDRs(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return Config{}, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
+	}
+
 	cfg := Config{
 		HTTPAddr:       listenAddr(),
 		DatabaseURL:    databaseURL(),
 		ShutdownWait:   durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 		MigrateTimeout: durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
+		TrustedProxies: proxies,
+		RequireTLS:     boolEnv("REQUIRE_TLS", false),
+		TLSCertFile:    strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
+		TLSKeyFile:     strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")
 	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return Config{}, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
 	return cfg, nil
+}
+
+// parseCIDRs parses a comma-separated list of CIDRs. Empty input is valid.
+func parseCIDRs(raw string) ([]*net.IPNet, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var nets []*net.IPNet
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !strings.Contains(part, "/") {
+			if ip := net.ParseIP(part); ip != nil {
+				if ip.To4() != nil {
+					part += "/32"
+				} else {
+					part += "/128"
+				}
+			}
+		}
+		_, network, err := net.ParseCIDR(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q", part)
+		}
+		nets = append(nets, network)
+	}
+	return nets, nil
+}
+
+func boolEnv(name string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func listenAddr() string {
