@@ -73,6 +73,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 	}
+	if err := ensureAppRole(ctx, conn); err != nil {
+		return err
+	}
 	return nil
 }
 
