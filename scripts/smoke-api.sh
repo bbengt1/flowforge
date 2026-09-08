@@ -67,7 +67,12 @@ wait_for /api/v1/health 200 '.status == "ok"'
 wait_for /api/v1/readiness 200 '.status == "ready"'
 
 assert_body /api/v1/openapi.yaml 200 'openapi:'
-assert_now /api/v1/openapi.json 200 '.openapi != null'
+code="$(request "${BASE_URL}/api/v1/openapi.json")"
+if [[ "$code" != "200" ]] || ! jq -e '.openapi != null and .paths["/metrics"] != null' "$BODY" >/dev/null 2>&1; then
+  echo "assert failed GET /api/v1/openapi.json: status=${code}" >&2
+  exit 1
+fi
+echo "ok GET /api/v1/openapi.json ${code}"
 assert_body /api/v1/metrics 200 'flowforge_http_requests_total'
 
 code="$(request "${BASE_URL}/api/v1/missing")"
