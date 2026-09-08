@@ -338,8 +338,7 @@ export function CredentialWizard() {
             <button
               type="button"
               onClick={() => go(WIZARD_STEPS[stepIndex + 1] ?? "review")}
-              disabled={step === "identity" && !displayName.trim()}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900"
             >
               Continue
             </button>
