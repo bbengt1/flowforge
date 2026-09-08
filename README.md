@@ -38,5 +38,5 @@ Compose builds `web` from `./apps/web` and `api` from `./apps/api`. This PR does
 
 | Slice | Owner |
 | --- | --- |
-| Next.js UI, health/readiness proxies, `X-Request-ID` + problem+json mapping, OpenAPI/Swagger links, `env-template.txt`, `docker-compose.yml`, this README | Chloe |
-| Go API, PostgreSQL connection/migration harness, correlation IDs, structured logs, RFC 9457, OpenAPI publish, metrics | jonny |
+| Next.js UI, health/readiness proxies, secure headers, web image/compose hardening, `env-template.txt` web vars, this README | Chloe |
+| Go API, PostgreSQL, API image/K8s/TLS/provenance/vuln gates, backup encryption + restore rehearsal (`#10`) | jonny |

@@ -1,11 +1,14 @@
-# Local stack for E1.1 (docs/deployment.md):
+# Local stack (docs/deployment.md):
 #   docker compose up --build
 #
 # Services:
-#   web      — Next.js UI (this PR). Build context ./apps/web.
-#   api      — Go control plane (PR #2). Build context ./apps/api;
-#              listens on HTTP_ADDR=:8080.
+#   web      — Next.js UI. Build context ./apps/web. UID 65532, read-only root,
+#              tmpfs, cap_drop, no-new-privileges, resource limits, secure headers.
+#   api      — Go control plane. Build context ./apps/api; HTTP_ADDR=:8080.
+#              Hardening from E1.3 #10 (UID 65532, read-only, caps, tmpfs,
+#              mem/cpu/pid limits). Matches deploy/k8s.
 #   postgres — local PostgreSQL. Password comes from .env only.
+#              Backup encryption + restore rehearsal: scripts/backup/.
 #
 # Published ports (host):
 #   UI   http://localhost:3000
@@ -13,6 +16,14 @@
 #        http://localhost:8080/api/v1/readiness
 
 name: flowforge
+
+# Shared least-privilege defaults. Postgres is not merged into this anchor:
+# the official image starts as root then drops, and cap_drop ALL breaks that.
+x-security: &security
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
 
 services:
   postgres:
@@ -30,22 +41,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   api:
-    # Image and module owned by the API slice. Listen addr is HTTP_ADDR.
+    # Image and module owned by the API slice (#10). Listen addr is HTTP_ADDR.
     # Hardening matches deploy/k8s (UID 65532, read-only FS, dropped caps).
-    # Web image/compose alignment is owned by the UI teammate.
+    <<: *security
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     image: flowforge-api:local
     user: "65532:65532"
     read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=1777
     mem_limit: 512m
@@ -62,17 +71,36 @@ services:
     restart: unless-stopped
 
   web:
+    <<: *security
     build:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     image: flowforge-web:local
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777,noexec,nosuid
+      - /app/.next/cache:size=128M,mode=1777,noexec,nosuid
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 256
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
       API_INTERNAL_URL: http://api:8080
+      WEB_HSTS: ${WEB_HSTS:-}
+      WEB_CSP_CONNECT_SRC: ${WEB_CSP_CONNECT_SRC:-}
     depends_on:
       - api
     restart: unless-stopped

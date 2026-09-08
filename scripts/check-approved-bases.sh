@@ -4,9 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ALLOW="$ROOT/deploy/supply-chain/approved-bases.txt"
-# API image is in scope for E1.3. Web Dockerfile is owned by the UI teammate;
-# it may join the same allowlist when it aligns to UID 65532.
-DOCKERFILES=("$ROOT/apps/api/Dockerfile")
+# API (#10) and web (#11) images share UID 65532 and this allowlist.
+DOCKERFILES=("$ROOT/apps/api/Dockerfile" "$ROOT/apps/web/Dockerfile")
 
 if [[ ! -f "$ALLOW" ]]; then
   echo "missing $ALLOW" >&2
@@ -37,6 +36,10 @@ for file in "${DOCKERFILES[@]}"; do
       rest="${rest#* }"
     fi
     image="${rest%% *}"
+    # Multi-stage named references have no registry/tag (FROM deps AS build).
+    if [[ "$image" != *:* ]]; then
+      continue
+    fi
     if ! approved "$image"; then
       echo "unapproved base in ${file#"$ROOT/"}: $image" >&2
       failed=1

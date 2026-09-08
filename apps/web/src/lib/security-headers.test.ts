@@ -1,0 +1,123 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  HSTS_VALUE,
+  applySecurityHeaders,
+  buildContentSecurityPolicy,
+  getApiConnectOrigins,
+  shouldSendHsts,
+  staticSecurityHeaders,
+} from "./security-headers.ts";
+
+describe("getApiConnectOrigins", () => {
+  it("defaults to the same local API origin as config.ts", () => {
+    assert.deepEqual(getApiConnectOrigins({}), [
+      "'self'",
+      "http://localhost:8080",
+    ]);
+  });
+
+  it("always includes self and the public API origin", () => {
+    assert.deepEqual(
+      getApiConnectOrigins({
+        NEXT_PUBLIC_API_URL: "http://localhost:8080/",
+      }),
+      ["'self'", "http://localhost:8080"],
+    );
+  });
+
+  it("appends extra connect-src origins from WEB_CSP_CONNECT_SRC", () => {
+    const origins = getApiConnectOrigins({
+      NEXT_PUBLIC_API_URL: "https://api.example.test",
+      WEB_CSP_CONNECT_SRC: "https://extra.example.test wss://extra.example.test",
+    });
+    assert.ok(origins.includes("'self'"));
+    assert.ok(origins.includes("https://api.example.test"));
+    assert.ok(origins.includes("https://extra.example.test"));
+    assert.ok(origins.includes("wss://extra.example.test"));
+  });
+});
+
+describe("buildContentSecurityPolicy", () => {
+  it("uses a production script-src without eval and denies framing", () => {
+    const csp = buildContentSecurityPolicy({
+      development: false,
+      env: { NEXT_PUBLIC_API_URL: "http://localhost:8080" },
+    });
+    assert.match(csp, /script-src 'self'/);
+    assert.doesNotMatch(csp, /unsafe-eval/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.match(csp, /connect-src 'self' http:\/\/localhost:8080/);
+    assert.doesNotMatch(csp, /upgrade-insecure-requests/);
+  });
+
+  it("allows eval and inline scripts only in development", () => {
+    const csp = buildContentSecurityPolicy({
+      development: true,
+      env: { NEXT_PUBLIC_API_URL: "http://localhost:8080" },
+    });
+    assert.match(csp, /script-src 'self' 'unsafe-eval' 'unsafe-inline'/);
+  });
+});
+
+describe("shouldSendHsts", () => {
+  it("is off for local HTTP so localhost:3000 stays usable", () => {
+    assert.equal(shouldSendHsts({ protocol: "http:" }), false);
+    assert.equal(shouldSendHsts({ forwardedProto: "http" }), false);
+    assert.equal(shouldSendHsts({}), false);
+  });
+
+  it("is on for HTTPS, forwarded proto, or WEB_HSTS=1", () => {
+    assert.equal(shouldSendHsts({ protocol: "https:" }), true);
+    assert.equal(shouldSendHsts({ forwardedProto: "https" }), true);
+    assert.equal(shouldSendHsts({ forwardedProto: "https,http" }), true);
+    assert.equal(shouldSendHsts({ force: true, protocol: "http:" }), true);
+  });
+});
+
+describe("staticSecurityHeaders", () => {
+  it("emits the documented baseline without HSTS", () => {
+    const keys = staticSecurityHeaders({
+      development: false,
+      env: { NEXT_PUBLIC_API_URL: "http://localhost:8080" },
+    }).map((header) => header.key);
+    assert.deepEqual(keys, [
+      "Content-Security-Policy",
+      "X-Content-Type-Options",
+      "Referrer-Policy",
+      "Permissions-Policy",
+      "X-Frame-Options",
+      "X-DNS-Prefetch-Control",
+      "Cross-Origin-Opener-Policy",
+      "X-Permitted-Cross-Domain-Policies",
+    ]);
+    assert.equal(keys.includes("Strict-Transport-Security"), false);
+  });
+});
+
+describe("applySecurityHeaders", () => {
+  it("adds HSTS only when TLS is indicated", () => {
+    const httpHeaders = new Map<string, string>();
+    applySecurityHeaders(
+      { set: (key, value) => httpHeaders.set(key, value) },
+      { env: { NODE_ENV: "production" }, protocol: "http:" },
+    );
+    assert.equal(httpHeaders.has("Strict-Transport-Security"), false);
+    assert.equal(httpHeaders.get("X-Content-Type-Options"), "nosniff");
+    assert.equal(httpHeaders.get("X-Frame-Options"), "DENY");
+    assert.equal(
+      httpHeaders.get("Referrer-Policy"),
+      "strict-origin-when-cross-origin",
+    );
+
+    const httpsHeaders = new Map<string, string>();
+    applySecurityHeaders(
+      { set: (key, value) => httpsHeaders.set(key, value) },
+      {
+        env: { NODE_ENV: "production", WEB_HSTS: "1" },
+        protocol: "http:",
+      },
+    );
+    assert.equal(httpsHeaders.get("Strict-Transport-Security"), HSTS_VALUE);
+  });
+});
