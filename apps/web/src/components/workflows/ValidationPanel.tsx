@@ -12,6 +12,7 @@ type ValidationPanelProps = {
   digest: string | null;
   problem: ProblemDetails | null;
   onJump: (line: number) => void;
+  onSelectNode?: (id: string) => void;
 };
 
 export function ValidationPanel({
@@ -22,6 +23,7 @@ export function ValidationPanel({
   digest,
   problem,
   onJump,
+  onSelectNode,
 }: ValidationPanelProps) {
   const showSummary = status === "valid" && summary && errors.length === 0;
 
@@ -104,7 +106,19 @@ export function ValidationPanel({
           <ul className="space-y-1 font-mono text-xs text-zinc-600">
             {summary.nodes.map((node) => (
               <li key={node.id}>
-                {node.id} · {node.type}
+                {onSelectNode ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectNode(node.id)}
+                    className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                  >
+                    {node.id} · {node.type}
+                  </button>
+                ) : (
+                  <>
+                    {node.id} · {node.type}
+                  </>
+                )}
               </li>
             ))}
           </ul>

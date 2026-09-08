@@ -75,6 +75,7 @@ export function isCorePhase(phase: unknown): boolean {
 export function coreCatalog(catalog: WorkflowCatalog): WorkflowCatalog {
   return {
     apiVersion: catalog.apiVersion,
+    ...(catalog.rules ? { rules: catalog.rules } : {}),
     triggers: (catalog.triggers ?? []).filter((item) => isCorePhase(item.phase)),
     nodes: (catalog.nodes ?? []).filter((item) => isCorePhase(item.phase)),
   };
