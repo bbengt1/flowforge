@@ -1,0 +1,144 @@
+openapi: 3.0.3
+info:
+  title: FlowForge Control Plane API
+  description: Versioned control-plane foundation routes.
+  version: 0.1.0
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Process liveness
+      description: Returns process liveness. Does not check dependencies.
+      responses:
+        "200":
+          description: Process is alive
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+  /readiness:
+    get:
+      operationId: getReadiness
+      summary: PostgreSQL dependency readiness
+      description: Returns ready when PostgreSQL is reachable; otherwise a problem details response.
+      responses:
+        "200":
+          description: PostgreSQL is reachable
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+              example:
+                status: ready
+        "503":
+          description: PostgreSQL is not reachable
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: urn:flowforge:problem:dependency-unavailable
+                title: Dependency Unavailable
+                status: 503
+                detail: PostgreSQL is not reachable
+                instance: /api/v1/readiness
+                code: dependency-unavailable
+                request_id: 0123456789abcdef0123456789abcdef
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPIYAML
+      summary: Published OpenAPI YAML
+      responses:
+        "200":
+          description: OpenAPI document
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /openapi.json:
+    get:
+      operationId: getOpenAPIJSON
+      summary: Published OpenAPI JSON
+      responses:
+        "200":
+          description: OpenAPI document
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                type: object
+  /swagger:
+    get:
+      operationId: getSwagger
+      summary: Specification landing page
+      responses:
+        "200":
+          description: Human-readable specification landing page
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            text/html:
+              schema:
+                type: string
+components:
+  headers:
+    XRequestID:
+      description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: ^[A-Za-z0-9-]{16,128}$
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Readiness:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+    Problem:
+      type: object
+      required: [type, title, status, detail, instance, code, request_id]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
