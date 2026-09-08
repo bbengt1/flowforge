@@ -107,6 +107,13 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 - Responsive layout preserves the canvas and inspector on desktop; on smaller screens, library and inspector become drawers while workflow review/run/history remain fully usable.
 - Respect reduced motion and user color preferences. Motion is limited to meaningful execution/connection feedback.
 
+## Foundation operator shell
+
+Until workspace identity (E2) and authoring (E6) land, the deployable shell is the home page plus a slim header:
+
+- Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
+- OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
+
 ## Initial implementation components
 
 ```text
