@@ -51,6 +51,7 @@ export async function callIdentityProxy<T>(
     body?: unknown;
     mismatchWorkspaceId?: string;
     omitCsrf?: boolean;
+    headers?: Record<string, string>;
   } = {},
 ): Promise<IdentityClientResult<T>> {
   const requestId = generateRequestId();
@@ -75,6 +76,7 @@ export async function callIdentityProxy<T>(
   }
 
   const session = getSessionSnapshot();
+  const extra = pickSafeClientHeaders(init.headers);
   const headers: Record<string, string> = {
     Accept: "application/json, application/problem+json",
     [REQUEST_ID_HEADER]: requestId,
@@ -83,6 +85,7 @@ export async function callIdentityProxy<T>(
       headerFallback: headerFallbackEnabled(),
       mismatchWorkspaceId: init.mismatchWorkspaceId,
     }),
+    ...extra,
   };
   const hasBody = init.body !== undefined;
   if (hasBody) {
@@ -194,6 +197,31 @@ export async function fetchSameOriginProxy<T>(options: {
       problem: unreachableProblem(options.instance, generated),
     };
   }
+}
+
+const BLOCKED_CLIENT_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "host",
+  "content-length",
+]);
+
+/** Extra hop-by-hop-safe headers (If-Match). Never forwards Authorization. */
+function pickSafeClientHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [name, raw] of Object.entries(headers)) {
+    const value = raw.trim();
+    if (!value || BLOCKED_CLIENT_HEADERS.has(name.toLowerCase())) {
+      continue;
+    }
+    out[name] = value;
+  }
+  return out;
 }
 
 async function readJson(response: Response): Promise<unknown> {

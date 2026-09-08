@@ -87,3 +87,144 @@ export type NormalizeResponse = {
 export type DefinitionYamlBody = {
   definitionYaml: string;
 };
+
+/** Shapes from jonny's E3.2 draft/publish/version API (PR #29). */
+
+export const WORKFLOW_STATUS_DRAFT = "draft";
+export const WORKFLOW_STATUS_PUBLISHED = "published";
+export const COMPARE_KIND_DRAFT = "draft";
+export const COMPARE_KIND_VERSION = "version";
+export const CONFLICT_CODE = "conflict";
+
+export type WorkflowStatus = "draft" | "published" | "archived" | string;
+
+export type WorkflowRecord = {
+  id: string;
+  slug: string;
+  name: string;
+  status: WorkflowStatus;
+  draftRevision: number;
+  draftDigest: string;
+  latestVersionNumber: number;
+  latestVersionId?: string;
+  latestVersionDigest?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkflowList = {
+  items: WorkflowRecord[];
+};
+
+export type WorkflowDraft = {
+  workflowId: string;
+  revision: number;
+  definitionYaml: string;
+  digest: string;
+  summary: WorkflowSummary;
+  warnings: WorkflowFieldError[];
+  validationState: "valid" | "invalid" | string;
+  updatedBy?: string;
+  updatedAt: string;
+};
+
+export type WorkflowDetail = {
+  workflow: WorkflowRecord;
+  draft: WorkflowDraft;
+};
+
+export type WorkflowVersion = {
+  id: string;
+  workflowId: string;
+  versionNumber: number;
+  definitionYaml?: string;
+  digest: string;
+  summary?: WorkflowSummary;
+  publishNote: string;
+  publishedBy?: string;
+  publishedAt: string;
+};
+
+export type WorkflowVersionList = {
+  items: WorkflowVersion[];
+};
+
+export type CreateWorkflowBody = {
+  definitionYaml: string;
+  slug?: string;
+  name?: string;
+};
+
+export type SaveDraftBody = {
+  revision: number;
+  definitionYaml: string;
+};
+
+export type PublishWorkflowBody = {
+  revision?: number;
+  note?: string;
+};
+
+export type PublishWorkflowResult = {
+  workflow: WorkflowRecord;
+  version: WorkflowVersion;
+};
+
+export type CompareKind = "draft" | "version";
+
+export type CompareRef = {
+  kind: CompareKind;
+  versionId?: string;
+  versionNumber?: number;
+};
+
+export type CompareWorkflowBody = {
+  left: CompareRef;
+  right: CompareRef;
+};
+
+export type CompareChange = {
+  path: string;
+  op: "add" | "remove" | "replace" | string;
+  left?: unknown;
+  right?: unknown;
+};
+
+export type CompareWorkflowResult = {
+  equal: boolean;
+  digestMatch: boolean;
+  left: CompareRef;
+  right: CompareRef;
+  leftDigest: string;
+  rightDigest: string;
+  changes: CompareChange[];
+};
+
+export type RestoreDraftBody = {
+  expectedRevision?: number;
+};
+
+export type WorkflowExport = {
+  workflowId: string;
+  versionId: string;
+  versionNumber: number;
+  digest: string;
+  filename: string;
+  definitionYaml: string;
+};
+
+export type StartExecutionBody = {
+  workflowVersionId: string;
+};
+
+export type WorkflowExecution = {
+  id: string;
+  workflowId: string;
+  workflowVersionId: string;
+  workflowDigest: string;
+  status: "queued" | "pinned" | string;
+  requestedBy?: string;
+  createdAt: string;
+};
