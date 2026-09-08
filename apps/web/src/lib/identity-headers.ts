@@ -1,9 +1,11 @@
 /**
- * FlowForge identity headers (E2.1) until E2.3 browser sessions.
+ * FlowForge identity headers (E2.1 / E2.2) until E2.3 browser sessions.
  *
  * Workspace lookup is tenant id *or* tenant slug plus workbench_key.
  * X-FlowForge-Workspace-ID is untrusted host context and is never
- * forwarded by the UI proxy — it is never the lookup key.
+ * the lookup key. The membership proxy never forwards it. The isolation
+ * proxy may attach it only alongside tenant + workbench as a deliberate
+ * mismatch fail demo — never as the sole workspace identity.
  */
 
 export const FLOWFORGE_ISSUER_HEADER = "X-FlowForge-Issuer";
@@ -67,6 +69,25 @@ export function pickForwardedIdentityHeaders(source: Headers): Headers {
   return out;
 }
 
+/**
+ * Isolation hook forwarding: same as E2.1, plus Workspace-ID only when
+ * tenant + workbench are also present. Workspace-ID-only is never forwarded.
+ */
+export function pickIsolationForwardedHeaders(source: Headers): Headers {
+  const out = pickForwardedIdentityHeaders(source);
+  const workspaceId = source.get(FLOWFORGE_WORKSPACE_ID_HEADER)?.trim();
+  if (!workspaceId) {
+    return out;
+  }
+  const tenantId = source.get(FLOWFORGE_TENANT_ID_HEADER)?.trim();
+  const tenantSlug = source.get(FLOWFORGE_TENANT_SLUG_HEADER)?.trim();
+  const workbench = source.get(FLOWFORGE_WORKBENCH_KEY_HEADER)?.trim();
+  if (workbench && (tenantId || tenantSlug)) {
+    out.set(FLOWFORGE_WORKSPACE_ID_HEADER, workspaceId);
+  }
+  return out;
+}
+
 /** Browser → Next proxy headers. Never includes workspace-id. */
 export function clientIdentityHeaders(
   identity: DevIdentity,
@@ -85,6 +106,22 @@ export function clientIdentityHeaders(
     if (value) {
       headers[name] = value;
     }
+  }
+  return headers;
+}
+
+/**
+ * Browser → Next headers for isolation exercises. Workspace-ID is attached
+ * only as a mismatch fail demo when tenant + workbench lookup is already set.
+ */
+export function clientIsolationHeaders(
+  identity: DevIdentity,
+  mismatchWorkspaceId?: string,
+): Record<string, string> {
+  const headers = clientIdentityHeaders(identity);
+  const workspaceId = mismatchWorkspaceId?.trim();
+  if (workspaceId && hasWorkspaceLookup(identity)) {
+    headers[FLOWFORGE_WORKSPACE_ID_HEADER] = workspaceId;
   }
   return headers;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useSyncExternalStore } from "react";
+import { IsolationExercise } from "@/components/isolation/IsolationExercise";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { IdentityBootstrap } from "@/components/membership/IdentityBootstrap";
 import { MembersPanel } from "@/components/membership/MembersPanel";
@@ -478,6 +479,8 @@ export function MembershipOperator() {
         pending={pending === "matrix" || pending === "roles"}
         onRefresh={() => void loadMatrix()}
       />
+
+      <IsolationExercise />
     </div>
   );
 }

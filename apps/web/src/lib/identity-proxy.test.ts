@@ -3,6 +3,8 @@ import { afterEach, describe, it } from "node:test";
 import {
   FLOWFORGE_ISSUER_HEADER,
   FLOWFORGE_SUBJECT_HEADER,
+  FLOWFORGE_TENANT_SLUG_HEADER,
+  FLOWFORGE_WORKBENCH_KEY_HEADER,
   FLOWFORGE_WORKSPACE_ID_HEADER,
 } from "./identity-headers.ts";
 import {
@@ -10,6 +12,7 @@ import {
   methodNotAllowedProblem,
   notFoundProblem,
   resolveIdentityProxyTarget,
+  withRequestSearch,
 } from "./identity-proxy.ts";
 import { PROBLEM_JSON } from "./problem.ts";
 import { REQUEST_ID_HEADER } from "./request-id.ts";
@@ -21,7 +24,7 @@ afterEach(() => {
 });
 
 describe("resolveIdentityProxyTarget", () => {
-  it("maps the documented E2.1 routes onto /api/v1", () => {
+  it("maps the documented E2.1 and E2.2 routes onto /api/v1", () => {
     const cases: Array<[string, string[], string]> = [
       ["GET", ["permission-matrix"], "/api/v1/permission-matrix"],
       ["GET", ["roles"], "/api/v1/roles"],
@@ -37,6 +40,44 @@ describe("resolveIdentityProxyTarget", () => {
         ["workspace", "members", "11111111-1111-1111-1111-111111111111"],
         "/api/v1/workspace/members/11111111-1111-1111-1111-111111111111",
       ],
+      ["GET", ["workspace", "records"], "/api/v1/workspace/records"],
+      ["POST", ["workspace", "records"], "/api/v1/workspace/records"],
+      [
+        "GET",
+        ["workspace", "records", "22222222-2222-2222-2222-222222222222"],
+        "/api/v1/workspace/records/22222222-2222-2222-2222-222222222222",
+      ],
+      [
+        "POST",
+        [
+          "workspace",
+          "credentials",
+          "22222222-2222-2222-2222-222222222222",
+          "use",
+        ],
+        "/api/v1/workspace/credentials/22222222-2222-2222-2222-222222222222/use",
+      ],
+      [
+        "GET",
+        ["workspace", "artifacts", "22222222-2222-2222-2222-222222222222"],
+        "/api/v1/workspace/artifacts/22222222-2222-2222-2222-222222222222",
+      ],
+      ["GET", ["workspace", "jobs"], "/api/v1/workspace/jobs"],
+      ["POST", ["workspace", "jobs"], "/api/v1/workspace/jobs"],
+      ["GET", ["workspace", "cache", "job-1"], "/api/v1/workspace/cache/job-1"],
+      ["PUT", ["workspace", "cache", "job-1"], "/api/v1/workspace/cache/job-1"],
+      [
+        "POST",
+        [
+          "workspace",
+          "realtime",
+          "channels",
+          "22222222-2222-2222-2222-222222222222",
+          "subscribe",
+        ],
+        "/api/v1/workspace/realtime/channels/22222222-2222-2222-2222-222222222222/subscribe",
+      ],
+      ["GET", ["workspace", "audit-events"], "/api/v1/workspace/audit-events"],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -51,6 +92,20 @@ describe("resolveIdentityProxyTarget", () => {
         );
       }
     }
+  });
+
+  it("appends inbound query strings for kind= list hooks", () => {
+    assert.equal(
+      withRequestSearch(
+        "/api/v1/workspace/records",
+        "http://localhost/api/control-plane/workspace/records?kind=credential",
+      ),
+      "/api/v1/workspace/records?kind=credential",
+    );
+    assert.equal(
+      withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
+      "/api/v1/workspace/jobs",
+    );
   });
 
   it("does not offer a workspace-id-only lookup path", () => {
@@ -169,6 +224,58 @@ describe("fetchIdentityControlPlane", () => {
     if (result.ok) {
       assert.equal(result.statusCode, 204);
       assert.equal(result.body, null);
+    }
+  });
+
+  it("forwards a mismatched Workspace-ID only with tenant + workbench", async () => {
+    const seen: { headers?: Headers } = {};
+    globalThis.fetch = (async (_input, init) => {
+      seen.headers = new Headers(init?.headers);
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "Host-supplied workspace identity does not match the server-derived workspace.",
+          instance: "/api/v1/workspace/artifacts/22222222-2222-2222-2222-222222222222",
+          code: "forbidden",
+          request_id: "mismatch-request16",
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            [REQUEST_ID_HEADER]: "mismatch-request16",
+          },
+        },
+      );
+    }) as typeof fetch;
+
+    const result = await fetchIdentityControlPlane({
+      method: "GET",
+      apiPath: "/api/v1/workspace/artifacts/22222222-2222-2222-2222-222222222222",
+      instance:
+        "/api/control-plane/workspace/artifacts/22222222-2222-2222-2222-222222222222",
+      requestId: "mismatch-request16",
+      identityHeaders: new Headers({
+        [FLOWFORGE_ISSUER_HEADER]: "https://host.example",
+        [FLOWFORGE_SUBJECT_HEADER]: "operator-1",
+        [FLOWFORGE_TENANT_SLUG_HEADER]: "acme",
+        [FLOWFORGE_WORKBENCH_KEY_HEADER]: "ops",
+        [FLOWFORGE_WORKSPACE_ID_HEADER]: "33333333-3333-3333-3333-333333333333",
+      }),
+    });
+
+    assert.equal(
+      seen.headers?.get(FLOWFORGE_WORKSPACE_ID_HEADER),
+      "33333333-3333-3333-3333-333333333333",
+    );
+    assert.equal(seen.headers?.get(FLOWFORGE_TENANT_SLUG_HEADER), "acme");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 403);
+      assert.equal(result.problem.code, "forbidden");
+      assert.equal(result.problem.request_id, "mismatch-request16");
     }
   });
 });

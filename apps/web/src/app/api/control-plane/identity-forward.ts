@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   fetchIdentityControlPlane,
   resolveIdentityProxyTarget,
+  withRequestSearch,
 } from "@/lib/identity-proxy";
 import { PROBLEM_JSON } from "@/lib/problem";
 import { REQUEST_ID_HEADER, resolveRequestId } from "@/lib/request-id";
@@ -28,7 +29,7 @@ export async function forwardIdentityControlPlane(
 
   const result = await fetchIdentityControlPlane({
     method: target.method,
-    apiPath: target.apiPath,
+    apiPath: withRequestSearch(target.apiPath, request.url),
     instance: target.instance,
     requestId,
     identityHeaders: request.headers,

@@ -1,5 +1,5 @@
 import { getApiInternalUrl } from "./config.ts";
-import { pickForwardedIdentityHeaders } from "./identity-headers.ts";
+import { pickIsolationForwardedHeaders } from "./identity-headers.ts";
 import {
   isProblemContentType,
   isProblemDetails,
@@ -35,7 +35,63 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[1] === "members" &&
       Boolean(s[2]),
   },
+  { methods: ["GET", "POST"], match: (s) => eq(s, ["workspace", "records"]) },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workspace" &&
+      s[1] === "records" &&
+      Boolean(s[2]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 4 &&
+      s[0] === "workspace" &&
+      s[1] === "credentials" &&
+      s[3] === "use" &&
+      Boolean(s[2]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workspace" &&
+      s[1] === "artifacts" &&
+      Boolean(s[2]),
+  },
+  { methods: ["GET", "POST"], match: (s) => eq(s, ["workspace", "jobs"]) },
+  {
+    methods: ["GET", "PUT"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workspace" &&
+      s[1] === "cache" &&
+      Boolean(s[2]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === "workspace" &&
+      s[1] === "realtime" &&
+      s[2] === "channels" &&
+      s[4] === "subscribe" &&
+      Boolean(s[3]),
+  },
+  { methods: ["GET"], match: (s) => eq(s, ["workspace", "audit-events"]) },
 ];
+
+/** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
+export function withRequestSearch(apiPath: string, requestUrl: string): string {
+  try {
+    const search = new URL(requestUrl).search;
+    return search ? `${apiPath}${search}` : apiPath;
+  } catch {
+    return apiPath;
+  }
+}
 
 function eq(segments: string[], expected: string[]): boolean {
   return (
@@ -150,7 +206,7 @@ export async function fetchIdentityControlPlane(options: {
 }): Promise<IdentityProxyResult> {
   const requestId = resolveRequestId(options.requestId);
   const url = `${getApiInternalUrl()}${options.apiPath}`;
-  const headers = pickForwardedIdentityHeaders(options.identityHeaders);
+  const headers = pickIsolationForwardedHeaders(options.identityHeaders);
   headers.set(REQUEST_ID_HEADER, requestId);
   headers.set("Accept", "application/json, application/problem+json");
   if (options.body && options.method !== "GET" && options.method !== "HEAD") {

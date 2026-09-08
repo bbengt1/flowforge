@@ -15,8 +15,9 @@ export default function MembershipPage() {
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Minimal operator surface for jonny&apos;s workspace identity API. It
           exercises tenant/workspace bootstrap, membership, roles, and the
-          permission matrix. This is not the product shell (E6). Identity
-          headers are local-only until E2.3 sessions.
+          permission matrix, plus the E2.2 negative isolation exercises. This
+          is not the product shell (E6). Identity headers are local-only until
+          E2.3 sessions.
         </p>
       </header>
       <MembershipOperator />
