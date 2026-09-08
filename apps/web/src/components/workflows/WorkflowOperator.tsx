@@ -5,11 +5,22 @@ import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentity
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { CatalogPanel } from "@/components/workflows/CatalogPanel";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
+import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { RunControl } from "@/components/workflows/RunControl";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
+import {
+  adaptCoreNeutralPalette,
+  type CoreNeutralPaletteEntry,
+} from "@/lib/workflow-core-nodes";
+import {
+  applyCoreNodeConfig,
+  insertCoreNode,
+  listYamlNodes,
+  type CoreNodeWith,
+} from "@/lib/workflow-yaml-nodes";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -102,9 +113,14 @@ export function WorkflowOperator() {
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
+
+  const yamlNodes = listYamlNodes(yaml);
+  const palette = adaptCoreNeutralPalette(catalog);
 
   const canCall = hasOperatorCaller(
     session.active,
@@ -505,6 +521,22 @@ export function WorkflowOperator() {
     setExecution(result.execution);
   }
 
+  function insertPaletteNode(entry: CoreNeutralPaletteEntry) {
+    const inserted = insertCoreNode(yaml, entry.type);
+    setDigest(null);
+    setYaml(inserted.yaml);
+    setSelectedNodeId(inserted.node.id);
+  }
+
+  function applyNodeConfig(id: string, name: string, config: CoreNodeWith) {
+    const result = applyCoreNodeConfig(yaml, id, name, config);
+    if (result.yaml) {
+      setDigest(null);
+      setYaml(result.yaml);
+    }
+    return result.errors;
+  }
+
   function importFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -671,12 +703,25 @@ export function WorkflowOperator() {
         ) : null}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
-        <CatalogPanel
-          catalog={catalog}
-          pending={pending === "catalog"}
-          onRefresh={() => void loadCatalog()}
-        />
+      <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)_20rem]">
+        <div className="space-y-6">
+          <CatalogPanel
+            catalog={catalog}
+            entries={palette}
+            query={paletteQuery}
+            pending={pending === "catalog"}
+            onQuery={setPaletteQuery}
+            onRefresh={() => void loadCatalog()}
+            onInsert={insertPaletteNode}
+          />
+          <NodeInspector
+            nodes={yamlNodes}
+            selectedId={selectedNodeId}
+            pending={pending !== null}
+            onSelect={setSelectedNodeId}
+            onApply={applyNodeConfig}
+          />
+        </div>
         <YamlEditor
           value={yaml}
           onChange={(next) => {
@@ -698,6 +743,7 @@ export function WorkflowOperator() {
             setFocusLine(line);
             setFocusToken((token) => token + 1);
           }}
+          onSelectNode={setSelectedNodeId}
         />
       </div>
 
