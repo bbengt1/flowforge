@@ -21,11 +21,11 @@ type Checker interface {
 
 // Pool is a reconnecting PostgreSQL pool used by readiness and migrations.
 type Pool struct {
-	url    string
-	log    *slog.Logger
-	mu     sync.RWMutex
-	pool   *pgxpool.Pool
-	last   error
+	url  string
+	log  *slog.Logger
+	mu   sync.RWMutex
+	pool *pgxpool.Pool
+	last error
 }
 
 // NewPool returns an unconnected pool. Call Start to connect and migrate.
