@@ -129,9 +129,9 @@ The Go API now issues cookie sessions. Chloe owns the client UX; this is the con
 
 | Method | Path | Cookies / CSRF | Success |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/session` | Sets `ff_session` + `ff_csrf`. No CSRF required to create. Body `{issuer,external_subject,display_name?}` or identity headers. | `201` `{session,principal,csrf_token}` |
+| `POST` | `/api/v1/session` | Sets `ff_session` + `ff_csrf`. No CSRF required to create. Prefer identity headers. JSON `{issuer,external_subject,display_name?}` is used only when headers are absent; a conflicting body is `403`. | `201` `{session,principal,csrf_token}` |
 | `GET` | `/api/v1/session` | `ff_session` required. Safe method: no CSRF header. | `200` same shape |
-| `POST` | `/api/v1/session/refresh` | Session cookie + `X-CSRF-Token` matching `ff_csrf`. Rotates CSRF. | `200` |
+| `POST` | `/api/v1/session/refresh` | Session cookie + `X-CSRF-Token` matching `ff_csrf`. Rotates CSRF. A stale pair after another tab refreshed is `409` — retry with the latest `csrf_token`. | `200` |
 | `POST` | `/api/v1/session/logout` | Session cookie + CSRF. Clears cookies. | `204` |
 | `GET` | `/api/v1/session/audit-events` | Session or identity headers. | `200` `{items}` |
 

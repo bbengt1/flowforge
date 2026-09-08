@@ -9,7 +9,7 @@ import (
 type Store interface {
 	Create(ctx context.Context, userID string, now time.Time, idle, absolute time.Duration) (Issued, error)
 	Lookup(ctx context.Context, token string, now time.Time) (Record, error)
-	Refresh(ctx context.Context, token string, now time.Time, idle time.Duration) (Issued, error)
+	Refresh(ctx context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error)
 	Revoke(ctx context.Context, token string, now time.Time) (Record, error)
 	Touch(ctx context.Context, token string, now time.Time) error
 	Audit(ctx context.Context, event AuditEvent) error

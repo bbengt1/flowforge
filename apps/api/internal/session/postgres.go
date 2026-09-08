@@ -76,7 +76,7 @@ func (p *Postgres) Lookup(ctx context.Context, token string, now time.Time) (Rec
 }
 
 // Refresh extends idle expiry and rotates CSRF. Absolute expiry is a hard cap.
-func (p *Postgres) Refresh(ctx context.Context, token string, now time.Time, idle time.Duration) (Issued, error) {
+func (p *Postgres) Refresh(ctx context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error) {
 	if idle <= 0 {
 		idle = DefaultIdleTimeout
 	}
@@ -87,6 +87,9 @@ func (p *Postgres) Refresh(ctx context.Context, token string, now time.Time, idl
 	}
 	if err := Valid(rec, now); err != nil {
 		return Issued{Record: rec}, err
+	}
+	if !csrfMatches(rec, presentedCSRF) {
+		return Issued{Record: rec}, ErrConflict
 	}
 	csrf, err := newToken()
 	if err != nil {
@@ -99,17 +102,20 @@ func (p *Postgres) Refresh(ctx context.Context, token string, now time.Time, idl
 	var csrfHash []byte
 	err = p.db.QueryRow(ctx, `
 		UPDATE browser_sessions
-		   SET csrf_hash = $2,
-		       last_seen_at = $3,
-		       idle_expires_at = $4
-		 WHERE token_hash = $1 AND revoked_at IS NULL
+		   SET csrf_hash = $3,
+		       last_seen_at = $4,
+		       idle_expires_at = $5
+		 WHERE token_hash = $1 AND csrf_hash = $2 AND revoked_at IS NULL
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
 		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at
-	`, hashToken(token), hashToken(csrf), now, nextIdle).Scan(
+	`, hashToken(token), hashToken(presentedCSRF), hashToken(csrf), now, nextIdle).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Issued{Record: rec}, ErrConflict
+		}
 		return Issued{}, mapDBErr(err)
 	}
 	rec.setCSRFHash(csrfHash)

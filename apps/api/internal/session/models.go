@@ -10,6 +10,7 @@ var (
 	ErrNotFound         = errors.New("session not found")
 	ErrExpired          = errors.New("session expired")
 	ErrRevoked          = errors.New("session revoked")
+	ErrConflict         = errors.New("session conflict")
 	ErrInvalid          = errors.New("invalid session")
 	ErrStoreUnavailable = errors.New("session store is unavailable")
 )

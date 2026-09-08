@@ -37,7 +37,7 @@ func TestMemoryCreateLookupRefreshRevoke(t *testing.T) {
 		t.Fatalf("unknown token: %v", err)
 	}
 
-	refreshed, err := store.Refresh(ctx, issued.Token, now.Add(40*time.Second), time.Minute)
+	refreshed, err := store.Refresh(ctx, issued.Token, issued.CSRF, now.Add(40*time.Second), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestMemoryRefreshCannotExceedAbsolute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refreshed, err := store.Refresh(ctx, issued.Token, now.Add(40*time.Minute), time.Hour)
+	refreshed, err := store.Refresh(ctx, issued.Token, issued.CSRF, now.Add(40*time.Minute), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,30 @@ func TestMemoryRefreshCannotExceedAbsolute(t *testing.T) {
 	}
 	if _, err := store.Lookup(ctx, issued.Token, now.Add(90*time.Minute)); err != ErrExpired {
 		t.Fatalf("absolute expiry: %v", err)
+	}
+}
+
+func TestMemoryRefreshRejectsStaleCSRF(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	issued, err := store.Create(ctx, "11111111-1111-1111-1111-111111111111", now, time.Hour, 12*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.Refresh(ctx, issued.Token, issued.CSRF, now.Add(time.Minute), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Refresh(ctx, issued.Token, issued.CSRF, now.Add(2*time.Minute), time.Hour); err != ErrConflict {
+		t.Fatalf("stale csrf after rotation: %v", err)
+	}
+	second, err := store.Refresh(ctx, issued.Token, first.CSRF, now.Add(2*time.Minute), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.CSRF == first.CSRF {
+		t.Fatal("winner should rotate csrf")
 	}
 }
 

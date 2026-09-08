@@ -71,7 +71,7 @@ func (m *Memory) Lookup(_ context.Context, token string, now time.Time) (Record,
 
 // Refresh extends idle expiry and rotates the CSRF token. The session cookie
 // is unchanged. Absolute expiry is a hard cap.
-func (m *Memory) Refresh(_ context.Context, token string, now time.Time, idle time.Duration) (Issued, error) {
+func (m *Memory) Refresh(_ context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error) {
 	if idle <= 0 {
 		idle = DefaultIdleTimeout
 	}
@@ -89,6 +89,9 @@ func (m *Memory) Refresh(_ context.Context, token string, now time.Time, idle ti
 	}
 	if err := Valid(row.record, now); err != nil {
 		return Issued{Record: row.record}, err
+	}
+	if !csrfMatches(row.record, presentedCSRF) {
+		return Issued{Record: row.record}, ErrConflict
 	}
 	nextIdle := now.Add(idle)
 	if nextIdle.After(row.record.AbsoluteExpiresAt) {

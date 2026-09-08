@@ -176,26 +176,8 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	if !s.requireStore(w, r) || !s.requireSessions(w, r) {
 		return
 	}
-	issuer := strings.TrimSpace(r.Header.Get(headerIssuer))
-	subject := strings.TrimSpace(r.Header.Get(headerSubject))
-	display := strings.TrimSpace(r.Header.Get(headerDisplayName))
-	if r.Header.Get("Content-Type") != "" {
-		var req createSessionRequest
-		if !DecodeJSON(w, r, &req) {
-			return
-		}
-		if strings.TrimSpace(req.Issuer) != "" {
-			issuer = strings.TrimSpace(req.Issuer)
-		}
-		if strings.TrimSpace(req.ExternalSubject) != "" {
-			subject = strings.TrimSpace(req.ExternalSubject)
-		}
-		if strings.TrimSpace(req.DisplayName) != "" {
-			display = strings.TrimSpace(req.DisplayName)
-		}
-	}
-	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
-		WriteUnauthenticated(w, r)
+	issuer, subject, display, ok := s.sessionCreateIdentity(w, r)
+	if !ok {
 		return
 	}
 	user, err := s.store.UpsertUser(r.Context(), issuer, subject, display)
@@ -261,12 +243,16 @@ func (s *Server) refreshSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policy := s.sec.sessionPolicy()
-	issued, err := s.sessions.Refresh(r.Context(), pc.token, s.clockNow(), policy.IdleTimeout)
+	presentedCSRF := strings.TrimSpace(r.Header.Get(session.CSRFHeader))
+	issued, err := s.sessions.Refresh(r.Context(), pc.token, presentedCSRF, s.clockNow(), policy.IdleTimeout)
 	if err != nil {
 		if errors.Is(err, session.ErrExpired) || errors.Is(err, session.ErrRevoked) {
 			s.auditSession(r, issued.Record, session.EventExpired, session.OutcomeDenied, err.Error())
 			WriteUnauthenticated(w, r)
 			return
+		}
+		if errors.Is(err, session.ErrConflict) {
+			s.auditSession(r, issued.Record, session.EventCSRFRejected, session.OutcomeDenied, "csrf rotation conflict")
 		}
 		writeSessionError(w, r, err)
 		return
@@ -430,10 +416,52 @@ func (s *Server) auditSession(r *http.Request, rec session.Record, eventType, ou
 	}
 }
 
+func (s *Server) sessionCreateIdentity(w http.ResponseWriter, r *http.Request) (issuer, subject, display string, ok bool) {
+	headerIssuer := strings.TrimSpace(r.Header.Get(headerIssuer))
+	headerSubject := strings.TrimSpace(r.Header.Get(headerSubject))
+	display = strings.TrimSpace(r.Header.Get(headerDisplayName))
+	var body createSessionRequest
+	if r.Header.Get("Content-Type") != "" {
+		if !DecodeJSON(w, r, &body) {
+			return "", "", "", false
+		}
+		body.Issuer = strings.TrimSpace(body.Issuer)
+		body.ExternalSubject = strings.TrimSpace(body.ExternalSubject)
+		body.DisplayName = strings.TrimSpace(body.DisplayName)
+	}
+	hasHeader := headerIssuer != "" || headerSubject != ""
+	if hasHeader {
+		if body.Issuer != "" && body.Issuer != headerIssuer {
+			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Request body identity does not match authenticated identity headers.")
+			return "", "", "", false
+		}
+		if body.ExternalSubject != "" && body.ExternalSubject != headerSubject {
+			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Request body identity does not match authenticated identity headers.")
+			return "", "", "", false
+		}
+		issuer, subject = headerIssuer, headerSubject
+		if display == "" {
+			display = body.DisplayName
+		}
+	} else {
+		issuer, subject = body.Issuer, body.ExternalSubject
+		if display == "" {
+			display = body.DisplayName
+		}
+	}
+	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
+		WriteUnauthenticated(w, r)
+		return "", "", "", false
+	}
+	return issuer, subject, display, true
+}
+
 func writeSessionError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, session.ErrNotFound), errors.Is(err, session.ErrExpired), errors.Is(err, session.ErrRevoked):
 		WriteUnauthenticated(w, r)
+	case errors.Is(err, session.ErrConflict):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The session was refreshed elsewhere. Retry with the current CSRF token.")
 	case errors.Is(err, session.ErrInvalid):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The session request is not valid.")
 	case errors.Is(err, session.ErrStoreUnavailable):

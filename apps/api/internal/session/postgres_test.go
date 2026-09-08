@@ -47,7 +47,7 @@ func TestPostgresSessionLifecycle(t *testing.T) {
 		t.Fatalf("idle expiry: %v", err)
 	}
 
-	refreshed, err := store.Refresh(ctx, issued.Token, now.Add(30*time.Second), time.Minute)
+	refreshed, err := store.Refresh(ctx, issued.Token, issued.CSRF, now.Add(30*time.Second), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}

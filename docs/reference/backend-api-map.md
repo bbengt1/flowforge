@@ -28,9 +28,9 @@ CORS is an exact allowlist (`CORS_ALLOWED_ORIGINS`). Empty allowlist + foreign `
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `POST /api/v1/session` | Create session from JSON `{issuer,external_subject,display_name?}` and/or identity headers. Sets both cookies. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin) |
+| `POST /api/v1/session` | Create session from identity headers and/or JSON `{issuer,external_subject,display_name?}`. Headers win; a conflicting body is `403`. Sets both cookies. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin or identity conflict) |
 | `GET /api/v1/session` | Current browser session. Cookie required; header-only is `401`. | `200` `{session,principal,csrf_token}` | `401` `403` |
-| `POST /api/v1/session/refresh` | Extend idle expiry; rotate CSRF. Requires CSRF pair. | `200` `{session,principal,csrf_token}` | `401` `403` |
+| `POST /api/v1/session/refresh` | Extend idle expiry; rotate CSRF. Requires CSRF pair. Concurrent/stale CSRF is `409`. | `200` `{session,principal,csrf_token}` | `401` `403` `409` |
 | `POST /api/v1/session/logout` | Revoke session and clear cookies. Requires CSRF when a session cookie is present. | `204` | `403` |
 | `GET /api/v1/session/audit-events` | Caller's secret-free session audit events. | `200` `{items}` | `401` |
 

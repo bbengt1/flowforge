@@ -80,6 +80,32 @@ func TestSessionCreateAcceptsIdentityHeaders(t *testing.T) {
 	}
 }
 
+func TestSessionCreateBodyCannotOverrideIdentityHeaders(t *testing.T) {
+	env := newSessionEnv(Security{})
+	rec := httptest.NewRecorder()
+	req := sessionCreateRequest("https://idp.example", "attacker-as-admin", "Admin")
+	req.Header.Set(headerIssuer, "https://idp.example")
+	req.Header.Set(headerSubject, "real-user")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	if rec.Result().Cookies() != nil {
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == session.CookieName && c.Value != "" && c.MaxAge != -1 {
+				t.Fatal("must not issue a session when body identity conflicts with headers")
+			}
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	req = sessionCreateRequest("https://idp.example", "real-user", "Real")
+	req.Header.Set(headerIssuer, "https://idp.example")
+	req.Header.Set(headerSubject, "real-user")
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("matching body+headers: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHeaderAuthStillWorksWithoutSession(t *testing.T) {
 	env := newSessionEnv(Security{})
 	rec := httptest.NewRecorder()

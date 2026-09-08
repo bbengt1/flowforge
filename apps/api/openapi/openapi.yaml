@@ -199,11 +199,14 @@ paths:
       operationId: createSession
       summary: Create a browser session
       description: |
-        Establishes a server-side session from bootstrap issuer/subject
-        (JSON body and/or identity headers). Sets `ff_session` (`HttpOnly`,
-        `SameSite=Lax`, `Secure` on HTTPS, `Path=/api/v1`) and `ff_csrf`
-        (readable, `SameSite=Strict`, `Secure` on HTTPS, `Path=/api/v1`).
-        Non-browser callers may keep using identity headers without cookies.
+        Establishes a server-side session from bootstrap issuer/subject.
+        Identity headers win when present. JSON `issuer` / `external_subject`
+        are used only when those headers are absent; a conflicting body is
+        `403`. Sets `ff_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on
+        HTTPS, `Path=/api/v1`) and `ff_csrf` (readable, `SameSite=Strict`,
+        `Secure` on HTTPS, `Path=/api/v1`). Non-browser callers may keep
+        using identity headers without cookies. Until OIDC, issuer/subject
+        is the same E2.1 bootstrap used by header auth.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -264,6 +267,7 @@ paths:
       description: |
         Extends idle expiry up to the absolute cap and rotates the CSRF
         token. Requires `ff_session` plus matching `ff_csrf` / `X-CSRF-Token`.
+        Concurrent refresh with a stale CSRF pair returns `409`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/CSRFToken"
@@ -281,6 +285,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
   /session/logout:
