@@ -88,8 +88,9 @@ export function ApiHealthCard({
         ) : (
           <>
             <span className="font-medium text-amber-800">Not available yet.</span>{" "}
-            The Go control plane is a Compose hook until jonny lands health and
-            readiness. {health.error ? `(${health.error})` : null}
+            The Go control plane at{" "}
+            <code className="font-mono">http://api:8080</code> is not reachable
+            yet. {health.error ? `(${health.error})` : null}
           </>
         )}
       </p>

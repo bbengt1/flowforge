@@ -2,9 +2,9 @@
 #   docker compose up --build
 #
 # Services:
-#   web      — Next.js UI (Chloe). Image built from apps/web.
-#   api      — Go control plane (jonny). Build context is apps/api;
-#              replace the placeholder Dockerfile with the real Go image.
+#   web      — Next.js UI (this PR). Build context ./apps/web.
+#   api      — Go control plane (PR #2). Build context ./apps/api;
+#              listens on HTTP_ADDR=:8080.
 #   postgres — local PostgreSQL. Password comes from .env only.
 #
 # Published ports (host):
@@ -33,23 +33,16 @@ services:
     restart: unless-stopped
 
   api:
-    # jonny: replace apps/api/Dockerfile with the multi-stage Go build.
-    # Expected process: listen on :8080 (or $API_ADDR) and serve
-    # GET /api/v1/health and GET /api/v1/readiness.
+    # Image and module owned by PR #2 (apps/api). Listen addr is HTTP_ADDR.
     build:
       context: ./apps/api
       dockerfile: Dockerfile
     image: flowforge-api:local
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "8080:8080"
     environment:
-      API_ADDR: ${API_ADDR:-:8080}
-      DATABASE_URL: ${DATABASE_URL}
-      POSTGRES_USER: ${POSTGRES_USER:-flowforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-flowforge}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy

@@ -38,11 +38,9 @@ dist/
 # test / coverage
 coverage/
 
-# go binaries (jonny) once the API lands
+# go binaries (apps/api is owned by PR #2)
 *.exe
 *.test
-apps/api/bin/
-apps/api/flowforge-api
 
 # misc
 *.pem
