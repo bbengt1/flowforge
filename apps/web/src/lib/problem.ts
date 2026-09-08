@@ -1,3 +1,12 @@
+/** Field-level workflow validation error from `invalid-workflow` problems. */
+export type ProblemFieldError = {
+  path: string;
+  line?: number;
+  column?: number;
+  code: string;
+  message: string;
+};
+
 /** RFC 9457 problem details plus the FlowForge `code` and `request_id` fields. */
 export type ProblemDetails = {
   type: string;
@@ -7,6 +16,7 @@ export type ProblemDetails = {
   instance: string;
   code: string;
   request_id: string;
+  errors?: ProblemFieldError[];
 };
 
 export const PROBLEM_JSON = "application/problem+json";
@@ -36,6 +46,40 @@ export function isProblemDetails(value: unknown): value is ProblemDetails {
     typeof body.code === "string" &&
     typeof body.request_id === "string"
   );
+}
+
+/** Copy `errors[]` from an invalid-workflow problem. Never invents a graph. */
+export function problemFieldErrors(value: unknown): ProblemFieldError[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const raw = (value as Record<string, unknown>).errors;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: ProblemFieldError[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    if (typeof row.code !== "string" || typeof row.message !== "string") {
+      continue;
+    }
+    const error: ProblemFieldError = {
+      path: typeof row.path === "string" ? row.path : "",
+      code: row.code,
+      message: row.message,
+    };
+    if (typeof row.line === "number" && Number.isFinite(row.line)) {
+      error.line = row.line;
+    }
+    if (typeof row.column === "number" && Number.isFinite(row.column)) {
+      error.column = row.column;
+    }
+    out.push(error);
+  }
+  return out;
 }
 
 export function unreachableProblem(

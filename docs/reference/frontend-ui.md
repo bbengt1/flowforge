@@ -109,7 +109,7 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, and the E2.3 cookie session controls:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, and the E3.1 YAML validate/normalize operator:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -171,6 +171,16 @@ Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Se
 | `POST` | `/api/v1/session/refresh` | required | Extend idle; rotate CSRF |
 | `POST` | `/api/v1/session/logout` | required | Revoke; clear cookies |
 | `GET` | `/api/v1/session/audit-events` | no | Secret-free audit rows |
+
+## E3.1 workflow YAML operator
+
+`/workflows` is Chloe's minimal operator for jonny's E3.1 catalog / validate / normalize API. It is not the E6 canvas and does not persist drafts (E3.2).
+
+- **Same identity as E2.3 / E2.1:** cookie session + `X-CSRF-Token` on POST; workspace lookup is tenant + workbench key. Header-only local-dev fallback is unchanged.
+- **Editor:** YAML textarea with line numbers. Debounced `POST /workflows/validate` shows valid + warnings, or linked `errors[]` (`path`, `line`, `column`, `code`, `message`). Invalid YAML never renders a guessed graph.
+- **Normalize / import:** `POST /workflows/normalize` (or file import then normalize) **replaces** the editor buffer with `definitionYaml` and shows the `sha256:` digest plus summary counts. No `PUT /workflows/{id}/draft`.
+- **Palette:** `GET /workflows/catalog` filtered to `phase: core` only. `next` / `provider` / unknown phases fail closed.
+- **Proxies:** `/api/control-plane/workflows/{catalog,validate,normalize}` attach session cookies, CSRF, workspace headers, and `X-Request-ID`; preserve `application/problem+json` including `errors[]`.
 
 ## Initial implementation components
 

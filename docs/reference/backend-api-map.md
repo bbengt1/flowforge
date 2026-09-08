@@ -78,7 +78,9 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 
 Ephemeral parse/normalize/validate only. Draft persistence and publish are E3.2 (`PUT /api/v1/workflows/{workflowId}/draft` is not implemented here). Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
 
-**UI route map (Chloe):** debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Render `summary` onto the canvas. On `invalid-workflow`, show `errors[]` (`path`, `line`, `column`, `code`, `message`) and do not guess a graph. Catalog drives the node palette and port wiring. Do not persist credentials or host-supplied workspace IDs in YAML.
+**UI route map (Chloe):** `/workflows` is the E3.1 YAML operator (not the E6 canvas). Debounce YAML edits against validate; on Save-preview or import, call normalize and replace the editor buffer with `definitionYaml`. Show digest + `summary` counts; do not guess a graph on `invalid-workflow` — render `errors[]` (`path`, `line`, `column`, `code`, `message`). Catalog palette is `phase: core` only (`next` / `provider` fail closed). Do not persist credentials or host-supplied workspace IDs in YAML.
+
+The Next UI proxies these routes under `/api/control-plane/workflows/{catalog,validate,normalize}` with session cookies, CSRF on POST, workspace tenant + workbench headers, and preserved `application/problem+json` including `errors[]`.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
