@@ -568,10 +568,11 @@ func directedCycle(nodes []Node, adj map[string][]string) (bool, []string) {
 				visit(v)
 			} else if color[v] == gray {
 				found = true
-				cycle = []string{v}
-				for x := u; x != v && x != ""; x = parent[x] {
+				cycle = []string{u}
+				for x := parent[u]; x != "" && x != v; x = parent[x] {
 					cycle = append([]string{x}, cycle...)
 				}
+				cycle = append([]string{v}, cycle...)
 				cycle = append(cycle, v)
 				return
 			}

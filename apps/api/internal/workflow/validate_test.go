@@ -37,6 +37,15 @@ spec:
 `
 		_, errs := Parse([]byte(src))
 		assertHasCode(t, errs, CodeCycle)
+		found := false
+		for _, e := range errs {
+			if e.Code == CodeCycle && strings.Contains(e.Message, "left") && strings.Contains(e.Message, "right") && !strings.Contains(e.Message, "left -> left") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("cycle message not actionable: %+v", errs)
+		}
 	})
 
 	t.Run("disconnected", func(t *testing.T) {
