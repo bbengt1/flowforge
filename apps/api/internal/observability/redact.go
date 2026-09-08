@@ -77,7 +77,8 @@ func shouldRedactKey(key string) bool {
 		"secret", "token", "access_token", "refresh_token", "id_token",
 		"api_key", "apikey", "x_api_key", "database_url", "dsn",
 		"credential", "credentials", "private_key", "client_secret",
-		"webhook_secret":
+		"webhook_secret", "kubeconfig", "dek_envelope", "ciphertext",
+		"credential_kek":
 		return true
 	}
 	for _, part := range []string{"password", "secret", "token", "authorization", "credential", "api_key"} {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
 // Security is the TLS/proxy/CORS/session policy applied at the HTTP boundary.
@@ -24,6 +25,7 @@ type Security struct {
 	RequireTLS     bool
 	AllowedOrigins []string
 	Session        SessionPolicy
+	VaultKeys      vault.Keys
 }
 
 // SessionPolicy is idle/absolute lifetime for browser sessions.

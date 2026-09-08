@@ -127,6 +127,14 @@ func TestBoolEnv(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
+	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
+	t.Setenv("CREDENTIAL_KEK_FILE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid CREDENTIAL_KEK error")
+	}
+}
+
 func TestLoadTLSFilesMustBePaired(t *testing.T) {
 	t.Setenv("TLS_CERT_FILE", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_FILE", "")

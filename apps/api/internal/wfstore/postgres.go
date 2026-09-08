@@ -521,6 +521,65 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 	return exec, nil
 }
 
+func (p *Postgres) FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	if !authz.ValidUUID(credentialID) {
+		return []CredentialRef{}, nil
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		SELECT 'draft', w.id::text, w.slug, w.name, '', 0, '', ''
+		FROM workflow_drafts d
+		JOIN workflows w ON w.workspace_id = d.workspace_id AND w.id = d.workflow_id
+		WHERE position($1 in d.normalized_yaml) > 0
+		UNION ALL
+		SELECT 'version', w.id::text, w.slug, w.name, v.id::text, v.version_number, '', ''
+		FROM workflow_versions v
+		JOIN workflows w ON w.workspace_id = v.workspace_id AND w.id = v.workflow_id
+		WHERE position($1 in v.normalized_yaml) > 0
+		UNION ALL
+		SELECT 'execution', w.id::text, w.slug, w.name, v.id::text, v.version_number, e.id::text, e.status
+		FROM executions e
+		JOIN workflow_versions v ON v.workspace_id = e.workspace_id AND v.id = e.workflow_version_id
+		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		WHERE position($1 in v.normalized_yaml) > 0
+		  AND e.status IN ('queued', 'pinned')
+		ORDER BY 1, 3
+	`, credentialID)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	var out []CredentialRef
+	for rows.Next() {
+		var ref CredentialRef
+		if err := rows.Scan(
+			&ref.Kind, &ref.WorkflowID, &ref.WorkflowSlug, &ref.WorkflowName,
+			&ref.VersionID, &ref.VersionNumber, &ref.ExecutionID, &ref.ExecutionStatus,
+		); err != nil {
+			return nil, mapDBErr(err)
+		}
+		out = append(out, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, mapDBErr(err)
+	}
+	if out == nil {
+		out = []CredentialRef{}
+	}
+	return out, nil
+}
+
 func (p *Postgres) GetExecution(ctx context.Context, scope isolation.Scope, workflowID, executionID string) (Execution, error) {
 	if scope.Zero() {
 		return Execution{}, ErrNoScope

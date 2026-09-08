@@ -241,6 +241,31 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 | `POST` | `/api/v1/workflows/{workflowId}/executions` | yes | **requires** `workflowVersionId` |
 | `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | no | pin is stable |
 
+## E4.1 credential vault contract (API → UI)
+
+The Go API now persists envelope-encrypted credentials. Chloe owns vault screens; **never display or store plaintext**. Contract details live in `docs/reference/backend-api-map.md` (E4.1). JSON is camelCase. Do not call isolation `POST /workspace/records` with `kind=credential` for the product vault.
+
+Suggested Next proxies (Chloe): `/api/control-plane/credentials`, `/credentials/catalog`, `/credentials/{credentialId}`, `.../rotate`, `.../disable`, `.../enable`, `.../test`, `.../use`, `.../usage`, `.../deletion-impact`, `.../events`. Forward session cookies, CSRF on POST/PATCH/DELETE, tenant + workbench headers, and `X-Request-ID`; preserve `application/problem+json`.
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/credentials/catalog` | `credential.view` | no | Type + field names only |
+| `GET` | `/api/v1/credentials` | `credential.view` | no | `{items}` metadata |
+| `POST` | `/api/v1/credentials` | `credential.manage` | yes | `{type,displayName,tags?,metadata?,expiresAt?,secret}` → `201` metadata; drop `secret` after submit |
+| `GET` | `/api/v1/credentials/{credentialId}` | `credential.view` | no | metadata + `permittedActions` |
+| `PATCH` | `/api/v1/credentials/{credentialId}` | `credential.manage` | yes | metadata only; `secret` is `400` |
+| `POST` | `/api/v1/credentials/{credentialId}/rotate` | `credential.manage` | yes | `{secret}` |
+| `POST` | `/api/v1/credentials/{credentialId}/disable` | `credential.manage` | yes | |
+| `POST` | `/api/v1/credentials/{credentialId}/enable` | `credential.manage` | yes | |
+| `POST` | `/api/v1/credentials/{credentialId}/test` | `credential.use` or `manage` | yes | `{result,credential}` redacted |
+| `POST` | `/api/v1/credentials/{credentialId}/use` | `credential.use` | yes | `204` empty |
+| `GET` | `/api/v1/credentials/{credentialId}/usage` | `credential.view` | no | drafts/versions/executions |
+| `GET` | `/api/v1/credentials/{credentialId}/deletion-impact` | `credential.view` | no | `canDelete` |
+| `DELETE` | `/api/v1/credentials/{credentialId}` | `credential.manage` | yes | `{confirm:true}`; `409` if active execution |
+| `GET` | `/api/v1/credentials/{credentialId}/events` | `credential.view` | no | secret-free audit |
+
+Masked, paste-safe secret fields; clear them from component state after `201`/`200`. Responses never include `secret`, `kubeconfig`, `privateKey`, `token`, `ciphertext`, or `dekEnvelope`. Viewer cannot list credentials. Editor can view names only.
+
 ## Initial implementation components
 
 ```text

@@ -65,7 +65,7 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 | `POST /api/v1/workspace/records` | Create a scoped record (`credential`, `artifact`, `job`, `cache`, `realtime`, `audit`). | `201` record | `400` `401` `403` |
 | `GET /api/v1/workspace/records/{id}` | Get a scoped record. | `200` | `401` `403` `404` |
 | `POST /api/v1/workspace/records/{id}/links` | Attach a child via composite `(workspace_id, parent_id)` FK. | `201` link | `400` `401` `403` `404` |
-| `POST /api/v1/workspace/credentials/{id}/use` | Credential use. Requires `credential.use`. | `204` | `401` `403` `404` |
+| `POST /api/v1/workspace/credentials/{id}/use` | E2.2 isolation hook use (stub record). Requires `credential.use`. Product vault use is `POST /credentials/{id}/use`. | `204` | `401` `403` `404` |
 | `GET /api/v1/workspace/artifacts/{id}` | Artifact access. Requires `execution.view`. | `200` | `401` `403` `404` |
 | `GET /api/v1/workspace/jobs` | List job hooks. Requires `execution.view`. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/workspace/jobs` | Enqueue a job hook. Requires `workflow.execute`. | `201` | `401` `403` |
@@ -73,6 +73,49 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 | `PUT /api/v1/workspace/cache/{key}` | Workspace-prefixed cache write. | `200` | `401` `403` |
 | `POST /api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. Requires `workflow.view`. | `200` | `401` `403` `404` |
 | `GET /api/v1/workspace/audit-events` | List audit hooks. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
+
+E2.2 `kind=credential` records are isolation stubs without encryption. The product vault is `/api/v1/credentials` below.
+
+## Encrypted credential vault (E4.1)
+
+Workspace-scoped envelope-encrypted secrets. Plaintext is accepted only on create/rotate over TLS, encrypted before persistence, and is **never** returned in JSON, problem details, logs, metrics, YAML, jobs, or audit `details`. Isolation hook `POST /workspace/credentials/{id}/use` stays for E2.2 stubs; product use is `POST /credentials/{id}/use` (`204`, empty body).
+
+**Key source (no hard-coded secrets):** `CREDENTIAL_KEK` (32-byte AES-256 as standard/raw-URL base64 or 64 hex chars) or `CREDENTIAL_KEK_FILE`. Optional `CREDENTIAL_KEK_ID` is stored as `keyReference` (default `env:CREDENTIAL_KEK` / `file:CREDENTIAL_KEK_FILE`). Missing/invalid KEK fails closed on create/rotate/test/use (`503` `dependency-unavailable`). Local MVP envelope: random DEK + AES-256-GCM payload, DEK wrapped with the KEK. Production should wrap the KEK with a KMS and keep loading the unwrapped key from env.
+
+**UI route map (Chloe):** cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST/PATCH/DELETE. JSON is camelCase. Never persist `secret` in `sessionStorage`, `localStorage`, URLs, or analytics. After submit, drop the form values. List/detail/events show only metadata (`displayName`, `type`, `status`, `tags`, `fingerprint`, test/rotation timestamps, `permittedActions`). Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story.
+
+Suggested UI flow:
+
+1. `GET /credentials/catalog` for type + field shapes (names only).
+2. Add wizard: `POST /credentials` `{type,displayName,tags?,metadata?,expiresAt?,secret}`. Keep `id`; discard `secret`.
+3. List: `GET /credentials`. Detail: `GET /credentials/{id}`.
+4. Metadata edit: `PATCH /credentials/{id}` (sending `secret` is `400`).
+5. Rotate: `POST /credentials/{id}/rotate` `{secret}`.
+6. Test: `POST /credentials/{id}/test` → `{result:{status,reason,checkedAt},credential}` (no plaintext).
+7. Disable/enable: `POST .../disable` / `.../enable`.
+8. Usage: `GET .../usage`. Before delete: `GET .../deletion-impact`. Delete only with `{confirm:true}`; `409` while an active execution references the id.
+9. Audit: `GET .../events`.
+
+RBAC: `credential.view` list/get/usage/impact/events/catalog; `credential.use` test+use (operator); `credential.manage` create/rotate/disable/enable/delete/patch (admin). Viewer has no credential permissions. Editor/publisher can view metadata only.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/credentials/catalog` | Typed field catalog (no values). Requires `credential.view`. | `200` `{types}` | `401` `403` |
+| `GET /api/v1/credentials` | List metadata. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/credentials` | Create; encrypt `secret` before persist. | `201` metadata | `400` `401` `403` `503` |
+| `GET /api/v1/credentials/{credentialId}` | Metadata only. | `200` | `401` `403` `404` |
+| `PATCH /api/v1/credentials/{credentialId}` | Safe metadata (`displayName`, `tags`, `metadata`, `expiresAt`). | `200` | `400` (incl. `secret`) `401` `403` `404` |
+| `POST /api/v1/credentials/{credentialId}/rotate` | Replace encrypted payload. | `200` metadata | `400` `401` `403` `404` `503` |
+| `POST /api/v1/credentials/{credentialId}/disable` | Disable; use fails closed. | `200` | `401` `403` `404` |
+| `POST /api/v1/credentials/{credentialId}/enable` | Re-enable. | `200` | `401` `403` `404` |
+| `POST /api/v1/credentials/{credentialId}/test` | In-process shape check. Requires `credential.use` or `manage`. | `200` `{result,credential}` | `401` `403` `404` |
+| `POST /api/v1/credentials/{credentialId}/use` | Record use; empty body. Requires `credential.use`. | `204` | `401` `403` `404` `409` (disabled/expired) |
+| `GET /api/v1/credentials/{credentialId}/usage` | Last-used + draft/version/execution refs. | `200` | `401` `403` `404` |
+| `GET /api/v1/credentials/{credentialId}/deletion-impact` | Affected drafts/versions/active executions. | `200` `{canDelete,...}` | `401` `403` `404` |
+| `DELETE /api/v1/credentials/{credentialId}` | Delete after `{confirm:true}`. | `204` | `400` `401` `403` `404` `409` |
+| `GET /api/v1/credentials/{credentialId}/events` | Redacted vault audit. | `200` `{items}` | `401` `403` `404` |
+
+Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, optional `passphrase`), `token` (`token`), `webhook_secret` (`secret`), `provider` (`token`). Metadata cannot store those secret keys. `fingerprint` is `sha256:<hex>` of canonical secret JSON (not reversible).
 
 ## Workflow YAML contract (E3.1)
 

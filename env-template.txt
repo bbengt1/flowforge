@@ -32,6 +32,12 @@ HTTP_ADDR=:8080
 CORS_ALLOWED_ORIGINS=http://localhost:3000
 SESSION_IDLE_TIMEOUT=30m
 SESSION_ABSOLUTE_TIMEOUT=12h
+# Local vault KEK (E4.1). 32-byte AES-256 as base64 or 64 hex chars.
+# Generate with: openssl rand -base64 32
+# Leave empty to boot the API; create/rotate/test fail closed until set.
+# CREDENTIAL_KEK=
+# CREDENTIAL_KEK_FILE=
+# CREDENTIAL_KEK_ID=env:CREDENTIAL_KEK
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000

@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,8 @@ type Server struct {
 	cache     *isolation.Cache
 	sessions  session.Store
 	workflows wfstore.Store
+	vault     vault.Store
+	keys      vault.Keys
 	log       *slog.Logger
 	registry  *observability.Registry
 	sec       Security
@@ -39,6 +42,8 @@ type Deps struct {
 	Scoped    isolation.Store
 	Sessions  session.Store
 	Workflows wfstore.Store
+	Vault     vault.Store
+	Keys      vault.Keys
 	Cache     *isolation.Cache
 	Log       *slog.Logger
 	Registry  *observability.Registry
@@ -60,6 +65,7 @@ func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
 		Scoped:    scoped,
 		Sessions:  sessions,
 		Workflows: workflows,
+		Keys:      sec.VaultKeys,
 		Security:  sec,
 	})
 }
@@ -89,6 +95,17 @@ func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.
 	return nil, isolation.NewMemory(), session.NewMemory(), wfstore.NewMemory()
 }
 
+func inferVault(db postgres.Checker, keys vault.Keys, workflows wfstore.Store) vault.Store {
+	var refs vault.RefFinder
+	if workflows != nil {
+		refs = workflows
+	}
+	if p, ok := db.(*postgres.Pool); ok {
+		return vault.NewPostgres(p, keys, refs)
+	}
+	return vault.NewMemory(keys, refs)
+}
+
 func newServer(d Deps) http.Handler {
 	log := d.Log
 	if log == nil {
@@ -110,6 +127,11 @@ func newServer(d Deps) http.Handler {
 	if workflows == nil {
 		workflows = wfstore.NewMemory()
 	}
+	keys := d.Keys
+	vaultStore := d.Vault
+	if vaultStore == nil {
+		vaultStore = inferVault(d.DB, keys, workflows)
+	}
 	clock := d.Now
 	if clock == nil {
 		clock = time.Now
@@ -121,6 +143,8 @@ func newServer(d Deps) http.Handler {
 		cache:     cache,
 		sessions:  sessions,
 		workflows: workflows,
+		vault:     vaultStore,
+		keys:      keys,
 		log:       log,
 		registry:  registry,
 		sec:       d.Security,
@@ -177,6 +201,20 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore", s.restoreWorkflowVersion)
 	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/executions", s.startWorkflowExecution)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions/{executionId}", s.getWorkflowExecution)
+	mux.HandleFunc("GET /api/v1/credentials/catalog", s.getCredentialCatalog)
+	mux.HandleFunc("GET /api/v1/credentials", s.listCredentials)
+	mux.HandleFunc("POST /api/v1/credentials", s.createCredential)
+	mux.HandleFunc("GET /api/v1/credentials/{credentialId}", s.getCredential)
+	mux.HandleFunc("PATCH /api/v1/credentials/{credentialId}", s.updateCredential)
+	mux.HandleFunc("POST /api/v1/credentials/{credentialId}/rotate", s.rotateCredential)
+	mux.HandleFunc("POST /api/v1/credentials/{credentialId}/disable", s.disableCredential)
+	mux.HandleFunc("POST /api/v1/credentials/{credentialId}/enable", s.enableCredential)
+	mux.HandleFunc("POST /api/v1/credentials/{credentialId}/test", s.testCredential)
+	mux.HandleFunc("POST /api/v1/credentials/{credentialId}/use", s.useVaultCredential)
+	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/usage", s.getCredentialUsage)
+	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/deletion-impact", s.getCredentialDeletionImpact)
+	mux.HandleFunc("DELETE /api/v1/credentials/{credentialId}", s.deleteCredential)
+	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/events", s.listCredentialEvents)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {

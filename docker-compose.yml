@@ -69,6 +69,8 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
+      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-}
+      CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
