@@ -23,8 +23,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   queue payload, realtime subscription, artifact URL, and audit event carries the
   server-derived workspace ID. Database RLS is a backstop, not the only check.
 - Browser sessions use `Secure`, `HttpOnly`, and appropriately scoped `SameSite`
-  cookies. State-changing browser requests require CSRF protection. Bearer tokens
-  are never accepted from a URL or persisted in browser local storage.
+  cookies (`ff_session` is `HttpOnly` + `SameSite=Lax`; `ff_csrf` is readable +
+  `SameSite=Strict`; both `Path=/api/v1`). State-changing browser requests
+  require CSRF protection (`X-CSRF-Token` paired with `ff_csrf` and the
+  server-side hash). Bearer tokens are never accepted from a URL or persisted
+  in browser local storage. Idle and absolute expiry fail closed.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
   audience-bound to FlowForge. Key rotation accepts only active and explicitly
   overlapping verification keys. The UI treats host-provided identity as display
@@ -81,7 +84,8 @@ produce an auditable, version-pinned execution.
 
 - TLS is required at every network boundary. Production configuration must set
   secure headers, an explicit CSP appropriate to the embed mode, clickjacking
-  protection, and restrictive CORS origins; wildcard credentialed CORS is
+  protection, and restrictive CORS origins (`CORS_ALLOWED_ORIGINS` exact
+  allowlist; foreign origins fail closed); wildcard credentialed CORS is
   prohibited.
 - Log correlation IDs, actor/resource identifiers, decisions, and outcomes, but
   never authorization headers, cookie values, credential material, webhook

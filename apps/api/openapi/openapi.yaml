@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -16,12 +16,20 @@ info:
     - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
       Authenticated-but-failed flows use `unauthenticated` (401) and
       `forbidden` (403). Unique identity collisions use `conflict` (409).
+    - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
+      `POST /session`. State-changing cookie requests require `X-CSRF-Token`.
+      Non-browser callers may keep using `X-FlowForge-Issuer` /
+      `X-FlowForge-Subject`. A session cookie wins; conflicting identity
+      headers fail closed.
     - Workspace identity is server-derived from `(tenant_id|tenant_slug,
       workbench_key)`. A host-supplied workspace UUID is never the lookup key
       and is rejected when it is the only identity or does not match resolution.
     - Workspace-owned queries set transaction-local `app.workspace_id` only
       after membership authorization. Cross-workspace reads, writes,
       credential use, artifact access, and realtime subscribe fail closed.
+    - CORS is an exact origin allowlist (`CORS_ALLOWED_ORIGINS`). Empty
+      allowlist plus a foreign `Origin` fails closed. Wildcard credentialed
+      CORS is rejected at process start.
     - Request bodies are capped at 1048576 bytes.
     - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
       and `/api/v1/swagger`.
@@ -186,6 +194,138 @@ paths:
           $ref: "#/components/responses/RequestTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
+  /session:
+    post:
+      operationId: createSession
+      summary: Create a browser session
+      description: |
+        Establishes a server-side session from bootstrap issuer/subject
+        (JSON body and/or identity headers). Sets `ff_session` (`HttpOnly`,
+        `SameSite=Lax`, `Secure` on HTTPS, `Path=/api/v1`) and `ff_csrf`
+        (readable, `SameSite=Strict`, `Secure` on HTTPS, `Path=/api/v1`).
+        Non-browser callers may keep using identity headers without cookies.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/DisplayName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session issued
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Set-Cookie:
+              description: "ff_session (HttpOnly) and ff_csrf (readable) cookies."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+    get:
+      operationId: getSession
+      summary: Current browser session
+      description: Requires the `ff_session` cookie. Header-only callers receive `401`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Current session
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /session/refresh:
+    post:
+      operationId: refreshSession
+      summary: Refresh session idle expiry
+      description: |
+        Extends idle expiry up to the absolute cap and rotates the CSRF
+        token. Requires `ff_session` plus matching `ff_csrf` / `X-CSRF-Token`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          description: Session refreshed
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /session/logout:
+    post:
+      operationId: logoutSession
+      summary: Revoke the current session
+      description: Requires CSRF when a session cookie is present. Clears both cookies.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204":
+          description: Session revoked
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /session/audit-events:
+    get:
+      operationId: listSessionAuditEvents
+      summary: Session audit events for the caller
+      description: |
+        Secret-free session security events for the authenticated principal
+        (created, refreshed, revoked, expired, CSRF/origin/privilege denials).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      responses:
+        "200":
+          description: Audit events
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionAuditEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /permission-matrix:
     get:
       operationId: getPermissionMatrix
@@ -945,15 +1085,34 @@ components:
     Issuer:
       name: X-FlowForge-Issuer
       in: header
-      required: true
-      description: Host identity issuer. Establishes the subject until E2.3 browser sessions replace these headers. Does not authorize a workspace.
+      required: false
+      description: |
+        Host identity issuer for non-browser callers. Browser clients should
+        use `ff_session` instead. Ignored when a session cookie is present
+        unless it conflicts (conflict fails closed). Does not authorize a workspace.
       schema:
         type: string
     Subject:
       name: X-FlowForge-Subject
       in: header
-      required: true
+      required: false
       description: Host identity subject. Unique with issuer. Does not authorize a workspace.
+      schema:
+        type: string
+    DisplayName:
+      name: X-FlowForge-Display-Name
+      in: header
+      required: false
+      description: Optional display name applied on user upsert.
+      schema:
+        type: string
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: |
+        Required on state-changing requests authenticated by `ff_session`.
+        Must match the `ff_csrf` cookie and the server-side session secret.
       schema:
         type: string
     TenantID:
@@ -1097,6 +1256,87 @@ components:
         status:
           type: string
           enum: [active, disabled]
+    CreateSessionRequest:
+      type: object
+      properties:
+        issuer:
+          type: string
+        external_subject:
+          type: string
+        display_name:
+          type: string
+    Session:
+      type: object
+      required: [id, created_at, last_seen_at, idle_expires_at, absolute_expires_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+        absolute_expires_at:
+          type: string
+          format: date-time
+    SessionResponse:
+      type: object
+      required: [session, principal, csrf_token]
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        principal:
+          $ref: "#/components/schemas/User"
+        csrf_token:
+          type: string
+          description: Same value as the `ff_csrf` cookie. Never log or persist in localStorage.
+    SessionAuditEvent:
+      type: object
+      required: [id, event_type, outcome, reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum:
+            - session.created
+            - session.refreshed
+            - session.revoked
+            - session.expired
+            - session.csrf_rejected
+            - session.origin_rejected
+            - session.privilege_denied
+            - session.auth_rejected
+        outcome:
+          type: string
+          enum: [allowed, denied]
+        reason:
+          type: string
+        request_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    SessionAuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionAuditEvent"
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]

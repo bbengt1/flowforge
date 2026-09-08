@@ -86,6 +86,36 @@ func TestParseCIDRs(t *testing.T) {
 	}
 }
 
+func TestParseOrigins(t *testing.T) {
+	got, err := parseOrigins("https://app.example, http://localhost:3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "https://app.example" || got[1] != "http://localhost:3000" {
+		t.Fatalf("got %#v", got)
+	}
+	if _, err := parseOrigins("*"); err == nil {
+		t.Fatal("wildcard must fail closed")
+	}
+	if _, err := parseOrigins("null"); err == nil {
+		t.Fatal("null origin must fail closed")
+	}
+	if _, err := parseOrigins("https://app.example/path"); err == nil {
+		t.Fatal("path must be rejected")
+	}
+	empty, err := parseOrigins("  ")
+	if err != nil || empty != nil {
+		t.Fatalf("empty should be nil, got %v err=%v", empty, err)
+	}
+}
+
+func TestLoadRejectsWildcardCORS(t *testing.T) {
+	t.Setenv("CORS_ALLOWED_ORIGINS", "*")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected wildcard CORS load error")
+	}
+}
+
 func TestBoolEnv(t *testing.T) {
 	t.Setenv("REQUIRE_TLS", "true")
 	if !boolEnv("REQUIRE_TLS", false) {

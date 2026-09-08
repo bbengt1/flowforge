@@ -39,6 +39,11 @@ func main() {
 		Handler: httpapi.NewWithSecurity(pool, httpapi.Security{
 			TrustedProxies: cfg.TrustedProxies,
 			RequireTLS:     cfg.RequireTLS,
+			AllowedOrigins: cfg.CORSAllowedOrigins,
+			Session: httpapi.SessionPolicy{
+				IdleTimeout:     cfg.SessionIdleTimeout,
+				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
+			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

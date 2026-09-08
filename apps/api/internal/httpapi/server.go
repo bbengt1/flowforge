@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
 	"gopkg.in/yaml.v3"
 )
@@ -21,8 +23,24 @@ type Server struct {
 	store    identity.Store
 	scoped   isolation.Store
 	cache    *isolation.Cache
+	sessions session.Store
 	log      *slog.Logger
 	registry *observability.Registry
+	sec      Security
+	clock    func() time.Time
+}
+
+// Deps configures a Server. Tests inject stores, security policy, and a clock.
+type Deps struct {
+	DB       postgres.Checker
+	Store    identity.Store
+	Scoped   isolation.Store
+	Sessions session.Store
+	Cache    *isolation.Cache
+	Log      *slog.Logger
+	Registry *observability.Registry
+	Security Security
+	Now      func() time.Time
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -30,10 +48,16 @@ func New(db postgres.Checker) http.Handler {
 	return NewWithSecurity(db, Security{})
 }
 
-// NewWithSecurity returns a handler with TLS/proxy policy applied.
+// NewWithSecurity returns a handler with TLS/proxy/CORS/session policy applied.
 func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
-	idStore, scoped := inferStores(db)
-	return newServer(db, idStore, scoped, isolation.NewCache(), slog.Default(), observability.NewRegistry(), sec)
+	idStore, scoped, sessions := inferStores(db)
+	return NewWithDeps(Deps{
+		DB:       db,
+		Store:    idStore,
+		Scoped:   scoped,
+		Sessions: sessions,
+		Security: sec,
+	})
 }
 
 // NewWithStore returns a handler with an explicit identity store (tests).
@@ -46,27 +70,53 @@ func NewWithStores(db postgres.Checker, store identity.Store, scoped isolation.S
 	if scoped == nil {
 		scoped = isolation.NewMemory()
 	}
-	return newServer(db, store, scoped, isolation.NewCache(), slog.Default(), observability.NewRegistry(), Security{})
+	return NewWithDeps(Deps{DB: db, Store: store, Scoped: scoped, Sessions: session.NewMemory()})
 }
 
-func inferStores(db postgres.Checker) (identity.Store, isolation.Store) {
+// NewWithDeps returns a handler with explicit dependencies.
+func NewWithDeps(d Deps) http.Handler {
+	return newServer(d)
+}
+
+func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.Store) {
 	if p, ok := db.(*postgres.Pool); ok {
-		return identity.NewPostgres(p), isolation.NewPostgres(p)
+		return identity.NewPostgres(p), isolation.NewPostgres(p), session.NewPostgres(p)
 	}
-	return nil, isolation.NewMemory()
+	return nil, isolation.NewMemory(), session.NewMemory()
 }
 
-func newServer(db postgres.Checker, store identity.Store, scoped isolation.Store, cache *isolation.Cache, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
+func newServer(d Deps) http.Handler {
+	log := d.Log
 	if log == nil {
 		log = slog.Default()
 	}
+	registry := d.Registry
 	if registry == nil {
 		registry = observability.NewRegistry()
 	}
+	cache := d.Cache
 	if cache == nil {
 		cache = isolation.NewCache()
 	}
-	s := &Server{db: db, store: store, scoped: scoped, cache: cache, log: log, registry: registry}
+	sessions := d.Sessions
+	if sessions == nil {
+		sessions = session.NewMemory()
+	}
+	clock := d.Now
+	if clock == nil {
+		clock = time.Now
+	}
+	s := &Server{
+		db:       d.DB,
+		store:    d.Store,
+		scoped:   d.Scoped,
+		cache:    cache,
+		sessions: sessions,
+		log:      log,
+		registry: registry,
+		sec:      d.Security,
+		clock:    clock,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
@@ -97,6 +147,11 @@ func newServer(db postgres.Checker, store identity.Store, scoped isolation.Store
 	mux.HandleFunc("PUT /api/v1/workspace/cache/{key}", s.putCache)
 	mux.HandleFunc("POST /api/v1/workspace/realtime/channels/{id}/subscribe", s.subscribeRealtime)
 	mux.HandleFunc("GET /api/v1/workspace/audit-events", s.listAuditEvents)
+	mux.HandleFunc("POST /api/v1/session", s.createSession)
+	mux.HandleFunc("GET /api/v1/session", s.getSession)
+	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
+	mux.HandleFunc("POST /api/v1/session/logout", s.logoutSession)
+	mux.HandleFunc("GET /api/v1/session/audit-events", s.listSessionAudit)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {
@@ -114,7 +169,7 @@ func newServer(db postgres.Checker, store identity.Store, scoped isolation.Store
 		mux.ServeHTTP(w, r)
 	})
 
-	return withRequestID(withSecureHeaders(sec, withObserve(log, registry, withRecover(log, withBodyLimit(router)))))
+	return withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router))))))
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
 const (
@@ -94,23 +95,10 @@ func (s *Server) requirePrincipal(w http.ResponseWriter, r *http.Request) (ident
 	if !s.requireStore(w, r) {
 		return identity.User{}, false
 	}
-	issuer := strings.TrimSpace(r.Header.Get(headerIssuer))
-	subject := strings.TrimSpace(r.Header.Get(headerSubject))
-	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
-		WriteUnauthenticated(w, r)
-		return identity.User{}, false
+	if token := sessionCookieValue(r); token != "" {
+		return s.requireSessionPrincipal(w, r, token)
 	}
-	display := strings.TrimSpace(r.Header.Get(headerDisplayName))
-	user, err := s.store.UpsertUser(r.Context(), issuer, subject, display)
-	if err != nil {
-		writeIdentityError(w, r, err)
-		return identity.User{}, false
-	}
-	if user.Status != "active" {
-		WriteForbidden(w, r)
-		return identity.User{}, false
-	}
-	return user, true
+	return s.requireHeaderPrincipal(w, r)
 }
 
 func claimedWorkspace(r *http.Request) authz.WorkspaceClaim {
@@ -156,12 +144,18 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 	}
 	if action == "" {
 		if len(perms) == 0 {
+			if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+				s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "no workspace membership")
+			}
 			WriteForbidden(w, r)
 			return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 		}
 		return ws, tenant, roles, perms, true
 	}
 	if !authz.Allows(perms, action) {
+		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing permission")
+		}
 		WriteForbidden(w, r)
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}

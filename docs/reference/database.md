@@ -35,8 +35,10 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`. |
 | `role_permissions` | `role_id`, `permission_id` | Role capability map. |
 | `workspace_role_bindings` | `workspace_id`, `user_id`, `role_id` | Workspace-scoped RBAC. |
+| `browser_sessions` | `id`, `user_id`, `token_hash`, `csrf_hash`, idle/absolute expiry, `revoked_at` | Cookie secrets stored only as SHA-256; no RLS (identity substrate). |
+| `session_audit_events` | `id`, `user_id`, `session_id`, `event_type`, `outcome`, `reason`, `request_id` | Append-only, secret-free session security events. |
 
-Host/embed identity assertions are validated before a transaction starts. The database records safe subject, host audience, tenant/workspace context, correlation ID, and permission decision in audit data; it does not persist the bearer assertion itself.
+Host/embed identity assertions are validated before a transaction starts. The database records safe subject, host audience, tenant/workspace context, correlation ID, and permission decision in audit data; it does not persist the bearer assertion itself. Browser session cookies are hashed before persistence; audit rows never store token or CSRF values.
 
 ## Workflow authoring and versions
 

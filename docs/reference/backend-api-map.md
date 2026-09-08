@@ -11,9 +11,34 @@
 | `GET /api/v1/openapi.json` | Published OpenAPI JSON. | `200` | — |
 | `GET /api/v1/swagger` | Specification landing page. | `200` | — |
 
+## Browser sessions (E2.3)
+
+Browser clients use cookie sessions. Non-browser callers (tests, hooks, Next.js server proxies that still inject headers) may keep `X-FlowForge-Issuer` / `X-FlowForge-Subject`. When `ff_session` is present, identity comes only from the session; conflicting identity headers fail closed (`403`). Header-only callers skip CSRF.
+
+**UI route map (Chloe):** call the API origin with `credentials: "include"`. Do not store the session token or CSRF secret in `localStorage`. Read `csrf_token` from the JSON body (or the `ff_csrf` cookie) and send it as `X-CSRF-Token` on every state-changing request.
+
+| Cookie | Flags | Purpose |
+| --- | --- | --- |
+| `ff_session` | `HttpOnly`, `SameSite=Lax`, `Secure` on HTTPS, `Path=/api/v1` | Opaque session id (server stores SHA-256 only) |
+| `ff_csrf` | readable, `SameSite=Strict`, `Secure` on HTTPS, `Path=/api/v1` | Double-submit CSRF pair with `X-CSRF-Token` |
+
+Idle default **30m**, absolute default **12h** (`SESSION_IDLE_TIMEOUT` / `SESSION_ABSOLUTE_TIMEOUT`). Refresh extends idle only; it cannot pass the absolute cap. Stale, revoked, or forged cookies are `401`.
+
+CORS is an exact allowlist (`CORS_ALLOWED_ORIGINS`). Empty allowlist + foreign `Origin` is `403` with no `Access-Control-Allow-Origin`. Wildcard / `null` origins are rejected at process start. Same-origin and Origin-less callers are allowed. CSP remains `default-src 'none'` (plus `frame-ancestors` / `form-action` / `object-src` none).
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `POST /api/v1/session` | Create session from JSON `{issuer,external_subject,display_name?}` and/or identity headers. Sets both cookies. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin) |
+| `GET /api/v1/session` | Current browser session. Cookie required; header-only is `401`. | `200` `{session,principal,csrf_token}` | `401` `403` |
+| `POST /api/v1/session/refresh` | Extend idle expiry; rotate CSRF. Requires CSRF pair. | `200` `{session,principal,csrf_token}` | `401` `403` |
+| `POST /api/v1/session/logout` | Revoke session and clear cookies. Requires CSRF when a session cookie is present. | `204` | `403` |
+| `GET /api/v1/session/audit-events` | Caller's secret-free session audit events. | `200` `{items}` | `401` |
+
+Session audit event types: `session.created`, `session.refreshed`, `session.revoked`, `session.expired`, `session.csrf_rejected`, `session.origin_rejected`, `session.privilege_denied`, `session.auth_rejected`. Logs and audit rows never include cookie or token values.
+
 ## Workspace identity and RBAC (E2.1)
 
-Identity headers establish the subject until E2.3 browser sessions: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). They do not authorize a workspace.
+Identity headers establish the subject for non-browser callers: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). Browser clients should use E2.3 sessions instead. Headers do not authorize a workspace.
 
 Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge-Tenant-Slug` plus `X-FlowForge-Workbench-Key`. `X-FlowForge-Workspace-ID` is untrusted host context: it is rejected when it is the only identity, and forbidden when it does not match the server-derived workspace.
 
@@ -65,4 +90,4 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `internal-error` | 500 | Unexpected failure |
 | `dependency-unavailable` | 503 | PostgreSQL is not reachable |
 
-Foundation responses also set restrictive content, referrer, and permissions policies. When the request is HTTPS (direct TLS or `X-Forwarded-Proto: https` from a CIDR in `TRUSTED_PROXY_CIDRS`), responses also set `Strict-Transport-Security`. If `REQUIRE_TLS` is true, plain HTTP is rejected as `invalid-request`, except `GET /api/v1/health` and `GET /api/v1/readiness` so Kubernetes HTTP probes can reach the pod without Ingress TLS. Structured logs are JSON and secret-free: they record method, path, route, status, duration, bytes, and `request_id`, and never record `Authorization`, cookies, query strings, or request bodies. Metrics labels are method, route, and status only.
+Foundation responses also set restrictive content, referrer, and permissions policies. When the request is HTTPS (direct TLS or `X-Forwarded-Proto: https` from a CIDR in `TRUSTED_PROXY_CIDRS`), responses also set `Strict-Transport-Security`. If `REQUIRE_TLS` is true, plain HTTP is rejected as `invalid-request`, except `GET /api/v1/health` and `GET /api/v1/readiness` so Kubernetes HTTP probes can reach the pod without Ingress TLS. Structured logs are JSON and secret-free: they record method, path, route, status, duration, bytes, and `request_id`, and never record `Authorization`, cookies, query strings, or request bodies. Session audit logs add `event_type`, `outcome`, `reason`, `user_id`, and `session_id` only. Metrics labels are method, route, and status only.

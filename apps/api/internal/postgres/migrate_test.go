@@ -35,14 +35,20 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if all[0].Version != 1 {
 		t.Fatalf("first migration version = %d, want 1", all[0].Version)
 	}
-	var sawIsolation bool
+	var sawIsolation, sawSessions bool
 	for _, m := range all {
 		if m.Version == 3 && m.Name == "workspace_isolation" {
 			sawIsolation = true
 		}
+		if m.Version == 4 && m.Name == "browser_sessions" {
+			sawSessions = true
+		}
 	}
 	if !sawIsolation {
 		t.Fatal("expected 000003_workspace_isolation.sql")
+	}
+	if !sawSessions {
+		t.Fatal("expected 000004_browser_sessions.sql")
 	}
 }
 

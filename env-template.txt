@@ -26,6 +26,11 @@ HTTP_ADDR=:8080
 # REQUIRE_TLS=false
 # TLS_CERT_FILE=
 # TLS_KEY_FILE=
+# Browser session / CORS (E2.3). Empty CORS allowlist is fail-closed for
+# foreign Origin. Uncomment so the UI origin can call the API with cookies.
+# CORS_ALLOWED_ORIGINS=http://localhost:3000
+# SESSION_IDLE_TIMEOUT=30m
+# SESSION_ABSOLUTE_TIMEOUT=12h
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000
