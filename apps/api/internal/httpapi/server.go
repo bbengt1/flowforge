@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
@@ -18,6 +19,8 @@ import (
 type Server struct {
 	db       postgres.Checker
 	store    identity.Store
+	scoped   isolation.Store
+	cache    *isolation.Cache
 	log      *slog.Logger
 	registry *observability.Registry
 }
@@ -29,29 +32,41 @@ func New(db postgres.Checker) http.Handler {
 
 // NewWithSecurity returns a handler with TLS/proxy policy applied.
 func NewWithSecurity(db postgres.Checker, sec Security) http.Handler {
-	return newServer(db, inferStore(db), slog.Default(), observability.NewRegistry(), sec)
+	idStore, scoped := inferStores(db)
+	return newServer(db, idStore, scoped, isolation.NewCache(), slog.Default(), observability.NewRegistry(), sec)
 }
 
 // NewWithStore returns a handler with an explicit identity store (tests).
 func NewWithStore(db postgres.Checker, store identity.Store) http.Handler {
-	return newServer(db, store, slog.Default(), observability.NewRegistry(), Security{})
+	return NewWithStores(db, store, isolation.NewMemory())
 }
 
-func inferStore(db postgres.Checker) identity.Store {
-	if p, ok := db.(*postgres.Pool); ok {
-		return identity.NewPostgres(p)
+// NewWithStores returns a handler with explicit identity and isolation stores.
+func NewWithStores(db postgres.Checker, store identity.Store, scoped isolation.Store) http.Handler {
+	if scoped == nil {
+		scoped = isolation.NewMemory()
 	}
-	return nil
+	return newServer(db, store, scoped, isolation.NewCache(), slog.Default(), observability.NewRegistry(), Security{})
 }
 
-func newServer(db postgres.Checker, store identity.Store, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
+func inferStores(db postgres.Checker) (identity.Store, isolation.Store) {
+	if p, ok := db.(*postgres.Pool); ok {
+		return identity.NewPostgres(p), isolation.NewPostgres(p)
+	}
+	return nil, isolation.NewMemory()
+}
+
+func newServer(db postgres.Checker, store identity.Store, scoped isolation.Store, cache *isolation.Cache, log *slog.Logger, registry *observability.Registry, sec Security) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
 	if registry == nil {
 		registry = observability.NewRegistry()
 	}
-	s := &Server{db: db, store: store, log: log, registry: registry}
+	if cache == nil {
+		cache = isolation.NewCache()
+	}
+	s := &Server{db: db, store: store, scoped: scoped, cache: cache, log: log, registry: registry}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
@@ -70,6 +85,18 @@ func newServer(db postgres.Checker, store identity.Store, log *slog.Logger, regi
 	mux.HandleFunc("GET /api/v1/workspace/members", s.listMembers)
 	mux.HandleFunc("PUT /api/v1/workspace/members", s.putMember)
 	mux.HandleFunc("DELETE /api/v1/workspace/members/{userID}", s.deleteMember)
+	mux.HandleFunc("GET /api/v1/workspace/records", s.listRecords)
+	mux.HandleFunc("POST /api/v1/workspace/records", s.createRecord)
+	mux.HandleFunc("GET /api/v1/workspace/records/{id}", s.getRecord)
+	mux.HandleFunc("POST /api/v1/workspace/records/{id}/links", s.createRecordLink)
+	mux.HandleFunc("POST /api/v1/workspace/credentials/{id}/use", s.useCredential)
+	mux.HandleFunc("GET /api/v1/workspace/artifacts/{id}", s.getArtifact)
+	mux.HandleFunc("GET /api/v1/workspace/jobs", s.listJobs)
+	mux.HandleFunc("POST /api/v1/workspace/jobs", s.createJob)
+	mux.HandleFunc("GET /api/v1/workspace/cache/{key}", s.getCache)
+	mux.HandleFunc("PUT /api/v1/workspace/cache/{key}", s.putCache)
+	mux.HandleFunc("POST /api/v1/workspace/realtime/channels/{id}/subscribe", s.subscribeRealtime)
+	mux.HandleFunc("GET /api/v1/workspace/audit-events", s.listAuditEvents)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {

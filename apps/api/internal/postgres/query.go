@@ -2,18 +2,35 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// applyPoolHooks resets leftover session GUCs on checkout so E2.2 can set
-// transaction-local app.workspace_id without inheriting a prior checkout.
-func applyPoolHooks(cfg *pgxpool.Config) {
+// applyPoolHooks resets leftover session GUCs on checkout and, when
+// assumeAppRole is true, assumes flowforge_app so FORCE RLS cannot be bypassed
+// by a superuser login role leftover from Docker/CI.
+func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
 	cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
-		_, err := conn.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`)
-		return err == nil
+		if _, err := conn.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`); err != nil {
+			return false
+		}
+		if assumeAppRole {
+			if _, err := conn.Exec(ctx, `SET ROLE `+AppRole); err != nil {
+				return false
+			}
+		}
+		return true
+	}
+	if assumeAppRole {
+		cfg.AfterRelease = func(conn *pgx.Conn) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, err := conn.Exec(ctx, `RESET ROLE`)
+			return err == nil
+		}
 	}
 }
 

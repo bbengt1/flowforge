@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 )
 
 const (
@@ -66,6 +67,27 @@ func (s *Server) requireStore(w http.ResponseWriter, r *http.Request) bool {
 	}
 	WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
 	return false
+}
+
+func (s *Server) requireScopedStore(w http.ResponseWriter, r *http.Request) bool {
+	if s.scoped != nil {
+		return true
+	}
+	WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Isolation store is not available.")
+	return false
+}
+
+func (s *Server) requireScope(w http.ResponseWriter, r *http.Request, user identity.User, action string) (isolation.Scope, bool) {
+	ws, _, _, _, ok := s.requireAccess(w, r, user, action)
+	if !ok {
+		return isolation.Scope{}, false
+	}
+	scope, err := isolation.Authorize(ws.ID, user.ID)
+	if err != nil {
+		writeIdentityError(w, r, err)
+		return isolation.Scope{}, false
+	}
+	return scope, true
 }
 
 func (s *Server) requirePrincipal(w http.ResponseWriter, r *http.Request) (identity.User, bool) {
