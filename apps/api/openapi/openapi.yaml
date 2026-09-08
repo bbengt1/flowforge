@@ -1,8 +1,24 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  description: Versioned control-plane foundation routes.
   version: 0.1.0
+  description: |
+    Versioned control-plane API. Conventions:
+
+    - Correlation: every response sets `X-Request-ID`. A caller value is
+      accepted only when it is 16–128 ASCII letters, digits, or hyphens;
+      otherwise the API generates one. The same id is returned in problem
+      documents as `request_id` and in structured request logs.
+    - Errors: 4xx/5xx responses use RFC 9457 `application/problem+json`
+      (`type`, `title`, `status`, `detail`, `instance`) plus `code` and
+      `request_id`. Problem details never echo request bodies, credentials,
+      or other secret material.
+    - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
+      Authenticated-but-failed flows use `unauthenticated` (401) and
+      `forbidden` (403). Those codes are the contract for later RBAC routes.
+    - Request bodies are capped at 1048576 bytes.
+    - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
+      and `/api/v1/swagger`.
 servers:
   - url: /api/v1
 paths:
@@ -11,6 +27,8 @@ paths:
       operationId: getHealth
       summary: Process liveness
       description: Returns process liveness. Does not check dependencies.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: Process is alive
@@ -23,11 +41,19 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /readiness:
     get:
       operationId: getReadiness
       summary: PostgreSQL dependency readiness
       description: Returns ready when PostgreSQL is reachable; otherwise a problem details response.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: PostgreSQL is reachable
@@ -40,6 +66,12 @@ paths:
                 $ref: "#/components/schemas/Readiness"
               example:
                 status: ready
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "503":
           description: PostgreSQL is not reachable
           headers:
@@ -57,10 +89,37 @@ paths:
                 instance: /api/v1/readiness
                 code: dependency-unavailable
                 request_id: 0123456789abcdef0123456789abcdef
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Baseline Prometheus metrics
+      description: |
+        Prometheus 0.0.4 text exposition of HTTP request counts and
+        duration histograms. Labels are method, route, and status only.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Prometheus text
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            text/plain:
+              schema:
+                type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
       summary: Published OpenAPI YAML
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: OpenAPI document
@@ -71,10 +130,18 @@ paths:
             application/yaml:
               schema:
                 type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /openapi.json:
     get:
       operationId: getOpenAPIJSON
       summary: Published OpenAPI JSON
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: OpenAPI document
@@ -85,10 +152,18 @@ paths:
             application/json:
               schema:
                 type: object
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /swagger:
     get:
       operationId: getSwagger
       summary: Specification landing page
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: Human-readable specification landing page
@@ -99,7 +174,24 @@ paths:
             text/html:
               schema:
                 type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
+  parameters:
+    RequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Correlation identifier. Accepted only when 16–128 ASCII letters, digits, or hyphens.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: ^[A-Za-z0-9-]{16,128}$
   headers:
     XRequestID:
       description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
@@ -140,5 +232,138 @@ components:
           type: string
         code:
           type: string
+          enum:
+            - invalid-request
+            - unauthenticated
+            - forbidden
+            - not-found
+            - method-not-allowed
+            - request-too-large
+            - internal-error
+            - dependency-unavailable
         request_id:
           type: string
+  responses:
+    InvalidRequest:
+      description: Malformed JSON, missing body, or unsupported Content-Type
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:invalid-request
+            title: Invalid Request
+            status: 400
+            detail: Request body is not valid JSON.
+            instance: /api/v1/example
+            code: invalid-request
+            request_id: 0123456789abcdef0123456789abcdef
+    Unauthenticated:
+      description: Missing or invalid credentials
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:unauthenticated
+            title: Unauthenticated
+            status: 401
+            detail: Authentication is required.
+            instance: /api/v1/example
+            code: unauthenticated
+            request_id: 0123456789abcdef0123456789abcdef
+    Forbidden:
+      description: Authenticated caller is not authorized
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:forbidden
+            title: Forbidden
+            status: 403
+            detail: You are not authorized to perform this action.
+            instance: /api/v1/example
+            code: forbidden
+            request_id: 0123456789abcdef0123456789abcdef
+    NotFound:
+      description: The requested path does not exist
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:not-found
+            title: Not Found
+            status: 404
+            detail: The requested path does not exist.
+            instance: /api/v1/missing
+            code: not-found
+            request_id: 0123456789abcdef0123456789abcdef
+    MethodNotAllowed:
+      description: HTTP method is not allowed for this path
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+        Allow:
+          schema:
+            type: string
+            example: GET, HEAD
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:method-not-allowed
+            title: Method Not Allowed
+            status: 405
+            detail: The POST method is not allowed for this path.
+            instance: /api/v1/health
+            code: method-not-allowed
+            request_id: 0123456789abcdef0123456789abcdef
+    RequestTooLarge:
+      description: Request body exceeds 1048576 bytes
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:request-too-large
+            title: Request Too Large
+            status: 413
+            detail: The request body exceeds the 1048576 byte limit.
+            instance: /api/v1/health
+            code: request-too-large
+            request_id: 0123456789abcdef0123456789abcdef
+    InternalError:
+      description: Unexpected server failure
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:internal-error
+            title: Internal Server Error
+            status: 500
+            detail: An unexpected error occurred.
+            instance: /api/v1/health
+            code: internal-error
+            request_id: 0123456789abcdef0123456789abcdef

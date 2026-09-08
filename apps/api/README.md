@@ -8,11 +8,14 @@ Go module `github.com/bbengt1/flowforge/apps/api`. Listens on **8080** and expos
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok"}`. Does not check PostgreSQL. |
 | `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). |
+| `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). |
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. |
 | `GET` | `/api/v1/swagger` | Specification landing page. |
 
-Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`.
+Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
+
+Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
 
 The process boots even if PostgreSQL is down. Health stays 200; readiness tracks the database. On connect, the API applies forward-only migrations recorded in `schema_migrations`.
 
