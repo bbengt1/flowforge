@@ -98,10 +98,11 @@ export function WorkflowList({
                 <button
                   type="button"
                   onClick={() => onSelect(item)}
+                  disabled={pending}
                   className={
                     selected
-                      ? "flex w-full flex-col gap-1 rounded-lg bg-teal-50 px-3 py-2 text-left"
-                      : "flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-left hover:bg-zinc-50"
+                      ? "flex w-full flex-col gap-1 rounded-lg bg-teal-50 px-3 py-2 text-left disabled:opacity-60"
+                      : "flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-left hover:bg-zinc-50 disabled:opacity-60"
                   }
                 >
                   <span className="font-medium text-zinc-900">{item.name}</span>

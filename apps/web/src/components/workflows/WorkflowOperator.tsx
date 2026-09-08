@@ -219,6 +219,9 @@ export function WorkflowOperator() {
   }
 
   async function refreshList() {
+    if (pending !== null) {
+      return;
+    }
     setPending("list");
     setProblem(null);
     const result = await listWorkflows(identity);
@@ -231,6 +234,18 @@ export function WorkflowOperator() {
     setItems(result.items);
   }
 
+  function resetWorkflowScopedState() {
+    setConflictDraft(null);
+    setConflictProblem(null);
+    setCompare(null);
+    setCompareLeft("draft");
+    setCompareRight("");
+    setPublishedVersion(null);
+    setExecution(null);
+    setRunVersionId("");
+    setVersions([]);
+  }
+
   async function refreshVersions(workflowId: string) {
     const result = await listWorkflowVersions(identity, workflowId);
     setLastRequestId(result.requestId);
@@ -239,21 +254,16 @@ export function WorkflowOperator() {
       return;
     }
     setVersions(result.items);
-    setRunVersionId((current) => {
-      if (current && result.items.some((item) => item.id === current)) {
-        return current;
-      }
-      return result.items[0]?.id ?? "";
-    });
+    setRunVersionId(result.items[0]?.id ?? "");
   }
 
   async function openWorkflow(record: WorkflowRecord) {
+    if (pending !== null) {
+      return;
+    }
     setPending("open");
     setProblem(null);
-    setConflictDraft(null);
-    setConflictProblem(null);
-    setCompare(null);
-    setPublishedVersion(null);
+    resetWorkflowScopedState();
     const draft = await getWorkflowDraft(identity, record.id);
     setLastRequestId(draft.requestId);
     if (!draft.ok) {
@@ -268,6 +278,9 @@ export function WorkflowOperator() {
   }
 
   async function createFromEditor() {
+    if (pending !== null) {
+      return;
+    }
     setPending("create");
     setProblem(null);
     const result = await createWorkflow(identity, {
@@ -285,6 +298,7 @@ export function WorkflowOperator() {
       setProblem(result.problem);
       return;
     }
+    resetWorkflowScopedState();
     const created = result.workflow;
     if (created) {
       setWorkflow(created);
@@ -294,10 +308,6 @@ export function WorkflowOperator() {
       ]);
     }
     applyEditor({ ...result.applied, revision: result.applied.revision });
-    setVersions([]);
-    setRunVersionId("");
-    setExecution(null);
-    setPublishedVersion(null);
     setPending(null);
   }
 
@@ -439,7 +449,7 @@ export function WorkflowOperator() {
   }
 
   async function restoreVersion(version: WorkflowVersion) {
-    if (!workflow || revision === null) {
+    if (!workflow || revision === null || dirty) {
       return;
     }
     setPending("restore");
@@ -533,7 +543,7 @@ export function WorkflowOperator() {
       <WorkflowList
         items={items}
         selectedId={workflow?.id ?? null}
-        pending={pending === "list" || pending === "create"}
+        pending={pending !== null}
         slug={createSlug}
         name={createName}
         onSlug={setCreateSlug}
@@ -696,6 +706,7 @@ export function WorkflowOperator() {
           <VersionHistory
             versions={versions}
             pending={pending}
+            dirty={dirty}
             compareLeft={compareLeft}
             compareRight={compareRight}
             compare={compare}

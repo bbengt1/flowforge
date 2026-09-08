@@ -10,6 +10,7 @@ import type {
 type VersionHistoryProps = {
   versions: WorkflowVersion[];
   pending: string | null;
+  dirty: boolean;
   compareLeft: CompareKind | string;
   compareRight: string;
   compare: CompareWorkflowResult | null;
@@ -23,6 +24,7 @@ type VersionHistoryProps = {
 export function VersionHistory({
   versions,
   pending,
+  dirty,
   compareLeft,
   compareRight,
   compare,
@@ -45,7 +47,8 @@ export function VersionHistory({
       <p className="mt-1 text-sm text-zinc-600">
         Immutable published snapshots. Export, compare (draft vs version or
         version vs version), or restore-as-new-draft. Restore never mutates the
-        version.
+        version. Save the draft before restore — unsaved editor edits are not
+        discarded.
       </p>
 
       {versions.length === 0 ? (
@@ -82,7 +85,7 @@ export function VersionHistory({
                 <button
                   type="button"
                   onClick={() => onRestore(version)}
-                  disabled={busy}
+                  disabled={busy || dirty}
                   className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
                 >
                   Restore as new draft
