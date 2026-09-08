@@ -38,7 +38,7 @@ Session audit event types: `session.created`, `session.refreshed`, `session.revo
 
 ## Workspace identity and RBAC (E2.1)
 
-Identity headers establish the subject for non-browser callers: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). Browser clients should use E2.3 sessions instead. Headers do not authorize a workspace.
+Identity headers establish the subject for non-browser callers: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). Browser clients should use E2.3 sessions instead. Headers do not authorize a workspace. The UI session adapter is `apps/web/src/lib/session-contract.ts`.
 
 Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge-Tenant-Slug` plus `X-FlowForge-Workbench-Key`. `X-FlowForge-Workspace-ID` is untrusted host context: it is rejected when it is the only identity, and forbidden when it does not match the server-derived workspace.
 

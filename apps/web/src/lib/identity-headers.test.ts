@@ -9,8 +9,11 @@ import {
   FLOWFORGE_WORKSPACE_ID_HEADER,
   clientIdentityHeaders,
   clientIsolationHeaders,
+  clientOperatorHeaders,
+  clientWorkspaceHeaders,
   emptyDevIdentity,
   hasCallerIdentity,
+  hasOperatorCaller,
   hasWorkspaceLookup,
   isWorkspaceIdOnlyIdentity,
   pickForwardedIdentityHeaders,
@@ -127,6 +130,47 @@ describe("isolation header forwarding", () => {
       "33333333-3333-3333-3333-333333333333",
     );
     assert.equal(withLookup[FLOWFORGE_TENANT_SLUG_HEADER], "acme");
+  });
+});
+
+describe("clientOperatorHeaders", () => {
+  const identity = {
+    issuer: "https://host.example",
+    subject: "operator-1",
+    displayName: "Chloe",
+    tenantId: "",
+    tenantSlug: "acme",
+    workbenchKey: "ops",
+  };
+
+  it("omits issuer/subject when a cookie session is active", () => {
+    const headers = clientOperatorHeaders(identity, {
+      sessionActive: true,
+      headerFallback: true,
+    });
+    assert.equal(headers[FLOWFORGE_ISSUER_HEADER], undefined);
+    assert.equal(headers[FLOWFORGE_SUBJECT_HEADER], undefined);
+    assert.equal(headers[FLOWFORGE_TENANT_SLUG_HEADER], "acme");
+    assert.equal(headers[FLOWFORGE_WORKBENCH_KEY_HEADER], "ops");
+  });
+
+  it("sends header identity only for the temporary fallback", () => {
+    const fallback = clientOperatorHeaders(identity, {
+      sessionActive: false,
+      headerFallback: true,
+    });
+    assert.equal(fallback[FLOWFORGE_ISSUER_HEADER], "https://host.example");
+    assert.equal(fallback[FLOWFORGE_SUBJECT_HEADER], "operator-1");
+
+    const workspaceOnly = clientWorkspaceHeaders(identity);
+    assert.equal(workspaceOnly[FLOWFORGE_ISSUER_HEADER], undefined);
+    assert.equal(workspaceOnly[FLOWFORGE_TENANT_SLUG_HEADER], "acme");
+    assert.equal(
+      hasOperatorCaller(true, emptyDevIdentity(), false),
+      true,
+    );
+    assert.equal(hasOperatorCaller(false, identity, false), false);
+    assert.equal(hasOperatorCaller(false, identity, true), true);
   });
 });
 

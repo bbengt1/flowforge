@@ -17,8 +17,8 @@ export default function IsolationPage() {
           Negative operator surface for jonny&apos;s isolation hook API.
           Cross-workspace credential, artifact, cache, realtime, and record
           access must fail closed with visible problem details. This is not
-          the product shell (E6). Workspace lookup stays tenant + workbench
-          key — never a host-supplied workspace UUID.
+          the product shell (E6). Prefer the cookie session; workspace lookup
+          stays tenant + workbench key — never a host-supplied workspace UUID.
         </p>
       </header>
       <IsolationIdentityPanel />

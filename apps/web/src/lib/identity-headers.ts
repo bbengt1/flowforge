@@ -1,7 +1,10 @@
 /**
- * FlowForge identity headers (E2.1 / E2.2) until E2.3 browser sessions.
+ * FlowForge identity headers (E2.1 / E2.2) and E2.3 session alignment.
  *
- * Workspace lookup is tenant id *or* tenant slug plus workbench_key.
+ * Cookie sessions establish the subject. Tenant + workbench remain the
+ * only workspace lookup. X-FlowForge-Issuer/Subject are a temporary
+ * local-dev fallback when no session cookie is active.
+ *
  * X-FlowForge-Workspace-ID is untrusted host context and is never
  * the lookup key. The membership proxy never forwards it. The isolation
  * proxy may attach it only alongside tenant + workbench as a deliberate
@@ -48,6 +51,15 @@ export function emptyDevIdentity(): DevIdentity {
 
 export function hasCallerIdentity(identity: DevIdentity): boolean {
   return Boolean(identity.issuer.trim() && identity.subject.trim());
+}
+
+/** Cookie session, or the temporary header fallback with issuer+subject. */
+export function hasOperatorCaller(
+  sessionActive: boolean,
+  identity: DevIdentity,
+  headerFallback: boolean,
+): boolean {
+  return sessionActive || (headerFallback && hasCallerIdentity(identity));
 }
 
 /** Tenant + workbench_key — the only accepted workspace lookup. */
@@ -110,6 +122,18 @@ export function clientIdentityHeaders(
   return headers;
 }
 
+/** Browser → Next workspace lookup only (no subject headers). */
+export function clientWorkspaceHeaders(
+  identity: DevIdentity,
+): Record<string, string> {
+  return clientIdentityHeaders({
+    ...identity,
+    issuer: "",
+    subject: "",
+    displayName: "",
+  });
+}
+
 /**
  * Browser → Next headers for isolation exercises. Workspace-ID is attached
  * only as a mismatch fail demo when tenant + workbench lookup is already set.
@@ -124,6 +148,26 @@ export function clientIsolationHeaders(
     headers[FLOWFORGE_WORKSPACE_ID_HEADER] = workspaceId;
   }
   return headers;
+}
+
+/**
+ * Prefer cookie session (no issuer/subject headers). Header identity is
+ * attached only when the temporary local-dev fallback is enabled and no
+ * session is active.
+ */
+export function clientOperatorHeaders(
+  identity: DevIdentity,
+  options: {
+    sessionActive: boolean;
+    headerFallback: boolean;
+    mismatchWorkspaceId?: string;
+  },
+): Record<string, string> {
+  const workspaceOnly = options.sessionActive || !options.headerFallback;
+  const source = workspaceOnly
+    ? { ...identity, issuer: "", subject: "", displayName: "" }
+    : identity;
+  return clientIsolationHeaders(source, options.mismatchWorkspaceId);
 }
 
 export function isWorkspaceIdOnlyIdentity(source: Headers): boolean {

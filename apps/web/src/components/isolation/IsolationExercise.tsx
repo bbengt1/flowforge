@@ -8,10 +8,12 @@ import {
   loadDevIdentity,
   subscribeDevIdentity,
 } from "@/lib/dev-identity";
+import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import {
-  hasCallerIdentity,
+  hasOperatorCaller,
   hasWorkspaceLookup,
 } from "@/lib/identity-headers";
+import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
   classifyIsolationResult,
   emptyIsolationTargets,
@@ -39,6 +41,16 @@ export function IsolationExercise() {
     subscribeDevIdentity,
     loadDevIdentity,
     emptyStoredIdentity,
+  );
+  const session = useSyncExternalStore(
+    subscribeSession,
+    getSessionSnapshot,
+    getSessionSnapshot,
+  );
+  const headerFallback = useSyncExternalStore(
+    subscribeHeaderFallback,
+    loadHeaderFallback,
+    () => false,
   );
   const [targets, setTargets] = useState<IsolationTargetIds>(emptyIsolationTargets);
   const [sendMismatch, setSendMismatch] = useState(false);
@@ -192,7 +204,9 @@ export function IsolationExercise() {
     setPending(null);
   }
 
-  const ready = hasCallerIdentity(identity) && hasWorkspaceLookup(identity);
+  const ready =
+    hasOperatorCaller(session.active, identity, headerFallback) &&
+    hasWorkspaceLookup(identity);
 
   return (
     <section
@@ -207,10 +221,10 @@ export function IsolationExercise() {
           Negative isolation exercise
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600">
-          Same local identity and tenant + workbench lookup as membership.
-          These calls hit jonny&apos;s isolation hook routes. The story
-          succeeds when cross-workspace access{" "}
-          <strong>fails</strong> and problem+json (
+          Same cookie session (or temporary header fallback) and tenant +
+          workbench lookup as membership. These calls hit jonny&apos;s
+          isolation hook routes. The story succeeds when cross-workspace
+          access <strong>fails</strong> and problem+json (
           <code className="font-mono text-xs">code</code>,{" "}
           <code className="font-mono text-xs">request_id</code>) is visible.
           Host-supplied{" "}
@@ -221,8 +235,9 @@ export function IsolationExercise() {
 
       {!ready ? (
         <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-          Set issuer, subject, and tenant + workbench key in the identity
-          panel. Workspace UUID is not a lookup field.
+          Establish a cookie session (or enable the temporary header
+          fallback) and set tenant + workbench key. Workspace UUID is not a
+          lookup field.
         </p>
       ) : null}
 

@@ -13,6 +13,16 @@ const security = staticSecurityHeaders({ includeCsp: false });
 const nextConfig: NextConfig = {
   ...(dockerBuild ? { output: "standalone" as const } : {}),
   poweredByHeader: false,
+  // Browser session cookies are Path=/api/v1. Rewrite so same-origin
+  // fetches to /api/v1/* hit the existing control-plane forwarder.
+  async rewrites() {
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "/api/control-plane/:path*",
+      },
+    ];
+  },
   async headers() {
     // `/:path*` does not always match `/` in Next.js; set both.
     const sources = ["/", "/:path*"];

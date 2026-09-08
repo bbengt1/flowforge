@@ -6,6 +6,8 @@ import { ProblemBanner } from "@/components/ProblemBanner";
 import { IdentityBootstrap } from "@/components/membership/IdentityBootstrap";
 import { MembersPanel } from "@/components/membership/MembersPanel";
 import { PermissionMatrixTable } from "@/components/membership/PermissionMatrixTable";
+import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
+import { SessionPanel } from "@/components/session/SessionPanel";
 import {
   clearDevIdentity,
   emptyStoredIdentity,
@@ -13,8 +15,15 @@ import {
   saveDevIdentity,
   subscribeDevIdentity,
 } from "@/lib/dev-identity";
+import {
+  loadHeaderFallback,
+  setHeaderFallback,
+  subscribeHeaderFallback,
+} from "@/lib/header-fallback";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { emptyDevIdentity, type DevIdentity } from "@/lib/identity-headers";
+import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
+import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import type {
   CurrentWorkspace,
   ItemList,
@@ -41,6 +50,16 @@ export function MembershipOperator() {
     subscribeDevIdentity,
     loadDevIdentity,
     emptyStoredIdentity,
+  );
+  const session = useSyncExternalStore(
+    subscribeSession,
+    getSessionSnapshot,
+    getSessionSnapshot,
+  );
+  const headerFallback = useSyncExternalStore(
+    subscribeHeaderFallback,
+    loadHeaderFallback,
+    () => false,
   );
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
@@ -228,12 +247,15 @@ export function MembershipOperator() {
 
   return (
     <div className="space-y-6">
+      <SessionPanel />
+      <SessionExpiryBanner />
       <IdentityBootstrap
         identity={identity}
         onChange={updateIdentity}
         onExample={() => updateIdentity({ ...EXAMPLE_IDENTITY })}
         onClear={() => {
           clearDevIdentity();
+          setHeaderFallback(false);
           updateIdentity(emptyDevIdentity());
           setMatrix(null);
           setRoles([]);
@@ -242,9 +264,22 @@ export function MembershipOperator() {
           setMembers([]);
           setProblem(null);
         }}
+        headerFallback={headerFallback}
+        onHeaderFallbackChange={setHeaderFallback}
+        sessionActive={session.active}
       />
 
       {problem ? <ProblemBanner problem={problem} /> : null}
+      {problem && isStaleSessionProblem(problem) ? (
+        <p className="text-sm text-zinc-600">
+          Stale session — <a className="underline" href="#session">re-establish the cookie session</a>.
+        </p>
+      ) : null}
+      {problem && isCsrfProblem(problem) ? (
+        <p className="text-sm text-zinc-600">
+          CSRF fail-closed. The mutation was not applied.
+        </p>
+      ) : null}
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">
           last request_id {lastRequestId}
