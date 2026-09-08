@@ -127,7 +127,7 @@ export function CredentialWizard() {
           Step {stepIndex + 1} of {WIZARD_STEPS.length}
         </p>
         <h2 className="mt-1 text-lg font-semibold">{STEP_LABEL[step]}</h2>
-        <ol className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-600">
+        <ol className="mt-3 flex flex-wrap gap-2 text-sm text-zinc-600">
           {WIZARD_STEPS.map((item, index) => (
             <li key={item}>
               <button
@@ -135,8 +135,8 @@ export function CredentialWizard() {
                 onClick={() => go(item)}
                 className={
                   item === step
-                    ? "rounded-full bg-teal-800 px-2 py-0.5 text-white"
-                    : "rounded-full border border-zinc-200 px-2 py-0.5"
+                    ? "rounded-full bg-teal-800 px-3 py-1.5 text-white"
+                    : "rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-400"
                 }
               >
                 {index + 1}. {STEP_LABEL[item]}
