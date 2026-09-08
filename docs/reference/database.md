@@ -1,0 +1,115 @@
+# PostgreSQL database specification
+
+## Purpose and conventions
+
+PostgreSQL is FlowForge's active deployed database. It is the durable source of truth for tenant/workspace isolation, canonical YAML drafts and immutable versions, credential encryption metadata, target/policy configuration, execution coordination, and audit history. Large artifacts and logs live in object storage; PostgreSQL stores their redacted metadata and immutable references.
+
+All identifiers are UUIDs. All timestamps use `timestamptz` in UTC. Structured columns use bounded, schema-validated `jsonb`; opaque runtime output, secrets, and unrestricted JSON are not indexed. Rows use `created_at`, `updated_at`, and actor columns where applicable.
+
+## Isolation model
+
+```mermaid
+flowchart TB
+  T[Tenant] --> W[Workspace: tenant_id + workbench_key]
+  W --> C[Credentials and targets]
+  W --> F[Workflow and immutable versions]
+  W --> P[Policies and profiles]
+  F --> E[Executions and steps]
+  E --> A[Artifacts and audit events]
+```
+
+`workspaces` is the operational isolation boundary. It is unique on `(tenant_id, workbench_key)`. Every mutable configuration, credential, target, profile, policy, workflow, execution, artifact, and audit row carries `workspace_id`; no client-side filter is trusted as a tenancy boundary.
+
+All workspace-owned tables use PostgreSQL row-level security (RLS) with `FORCE ROW LEVEL SECURITY`. Request transactions set a transaction-local `app.workspace_id` only after host identity and workspace membership are validated; an unset, malformed, or cross-workspace setting matches no rows. Pool checkout/reset must ensure the setting cannot survive a transaction. Worker service roles remain narrow and bind workspace ID in every query and queue claim. Where both records are workspace-owned, schema constraints use composite `(workspace_id, id)` foreign keys (or an equivalent trigger when PostgreSQL partitioning prevents that constraint), so a valid UUID from another workspace cannot be attached by a buggy query. RLS is defense in depth, not a substitute for those constraints.
+
+## Identity and authorization
+
+| Table | Key columns | Notes |
+| --- | --- | --- |
+| `tenants` | `id`, `slug`, `name`, `status` | Organization/host isolation root. |
+| `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. |
+| `users` | `id`, `issuer`, `external_subject`, `display_name`, `status` | OIDC/host identity reference; unique `(issuer, external_subject)`; no provider token. |
+| `roles` | `id`, `key`, `description` | Stable role vocabulary. |
+| `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`. |
+| `role_permissions` | `role_id`, `permission_id` | Role capability map. |
+| `workspace_role_bindings` | `workspace_id`, `user_id`, `role_id` | Workspace-scoped RBAC. |
+
+Host/embed identity assertions are validated before a transaction starts. The database records safe subject, host audience, tenant/workspace context, correlation ID, and permission decision in audit data; it does not persist the bearer assertion itself.
+
+## Workflow authoring and versions
+
+| Table | Key columns | Invariants |
+| --- | --- | --- |
+| `workflows` | `id`, `workspace_id`, `slug`, `name`, `status`, `draft_revision`, `created_by`, `updated_by` | Unique `(workspace_id, slug)`; one action remains a one-node workflow, never a separate action resource. |
+| `workflow_drafts` | `workflow_id`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `validation_state`, `revision` | Exactly one mutable draft per workflow; optimistic update requires current revision. |
+| `workflow_versions` | `id`, `workflow_id`, `version_number`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `publish_note`, `published_by`, `published_at` | Immutable after publish; unique `(workflow_id, version_number)` and `(workflow_id, definition_digest)`. |
+| `workflow_version_artifacts` | `workflow_version_id`, `node_id`, `script_artifact_id` | Pins published script artifact per node. |
+| `workflow_triggers` | `id`, `workflow_id`, `type`, `config`, `status` | Safe trigger metadata only; webhook secrets remain credentials. |
+| `workflow_templates` | `id`, `workspace_id` nullable, `name`, `normalized_yaml`, `digest`, `status` | Reviewed source for new drafts; never executed directly. |
+
+`normalized_yaml` is the canonical saved document. `parsed_definition` is a validated query/execution projection, never an independently editable canvas graph. A draft save stores revision, YAML, digest, and parser/validation result atomically. Publishing copies the normalized definition into an immutable version and records exact policy/profile/artifact references.
+
+## Credential vault and operational configuration
+
+| Table | Key columns | Invariants |
+| --- | --- | --- |
+| `credentials` | `id`, `workspace_id`, `type`, `display_name`, `ciphertext`, `dek_envelope`, `key_reference`, `encryption_version`, `metadata`, `status`, `rotated_at`, `expires_at` | Ciphertext only; never plaintext after submission. |
+| `credential_permissions` | `credential_id`, `principal_type`, `principal_id`, `permission` | Explicit use/rotate/manage grants. |
+| `credential_events` | `id`, `credential_id`, `event_type`, `actor_id`, `details_redacted`, `occurred_at` | Rotation/test/disable audit; append only. |
+| `cluster_targets` | `id`, `workspace_id`, `name`, `credential_id`, `endpoint_metadata`, `policy_id`, `status` | Cluster endpoint metadata is safe; kubeconfig remains encrypted credential payload. |
+| `ssh_targets` | `id`, `workspace_id`, `name`, `credential_id`, `hostname`, `port`, `host_key_fingerprint`, `policy_id`, `status` | Key fingerprint/host policy only; no private key. |
+| `command_profiles` / `command_profile_versions` | `id`, `workspace_id`, `name`, `version_number`, `parameter_schema`, `template`, `retry_safe`, `policy_id`, `status` | Published profile versions are immutable and pinned by execution. |
+| `runtime_profiles` | `id`, `workspace_id` nullable, `name`, `language`, `image_digest`, `dependency_lock_digest`, `limits`, `status` | Runtime image is immutable by digest. |
+| `script_artifacts` | `id`, `workspace_id`, `language`, `digest`, `signature`, `runtime_profile_id`, `storage_ref`, `scan_status`, `metadata` | Content-addressed and immutable after signing. |
+| `connections` / `connection_versions` | `id`, `workspace_id`, `name`, `type`, `credential_id`, `endpoint_policy`, `version_number`, `status` | The endpoint policy has normalized host/method/path/port/TLS/redirect rules; published versions are immutable and execution pins one. |
+| `recipient_lists` / `recipient_list_versions` | `id`, `workspace_id`, `name`, `version_number`, `recipient_policy`, `status` | Approved recipients/domains only; published versions are immutable and execution pins one. |
+| `message_templates` / `message_template_versions` | `id`, `workspace_id`, `name`, `version_number`, `input_schema`, `content_classification`, `status` | Template inputs are schema/classification constrained; published versions are immutable and execution pins one. |
+| `response_schemas` | `id`, `workspace_id`, `name`, `schema`, `max_bytes`, `status` | Schema and size limit are validated before a provider result becomes port data. |
+| `policies` / `policy_versions` | `id`, `workspace_id`, `kind`, `name`, `version_number`, `policy_json`, `status` | Target/profile policy revisions are immutable once referenced. |
+| `target_policy_bindings` | `target_type`, `target_id`, `policy_version_id` | Binds operational target to an exact active policy version. |
+
+Credentials use envelope encryption: the database stores ciphertext, encrypted data-encryption-key envelope, KMS/key reference, and encryption version. The API sends plaintext only to the backend over TLS at create/rotate time; it is encrypted before database persistence and never returned to the UI, logs, YAML, audit detail, or analytics. Rotating a credential creates/re-encrypts a new encrypted payload and preserves redacted history.
+
+## Execution, queue, and artifacts
+
+| Table | Key columns | Invariants |
+| --- | --- | --- |
+| `executions` | `id`, `workspace_id`, `workflow_version_id`, `workflow_digest`, `trigger_id`, `status`, `idempotency_key`, `input_redacted`, `policy_snapshot`, `correlation_id`, `requested_by`, `started_at`, `finished_at`, `retention_until` | Unique `(workspace_id, workflow_version_id, idempotency_key)` when key is non-null. |
+| `execution_steps` | `id`, `execution_id`, `node_id`, `node_type`, `attempt`, `status`, `lease_id`, `fencing_token`, `idempotency_key`, `policy_snapshot`, `target_snapshot`, `input_redacted`, `output_redacted`, `error_redacted`, timestamps | Unique `(execution_id, node_id, attempt)`; never store secret/plain raw output. |
+| `execution_jobs` | `id`, `execution_step_id`, `status`, `available_at`, `lease_expires_at`, `heartbeat_at`, `worker_id`, `fencing_token`, `attempt` | Durable dispatch record; at most one active claim for a step attempt. |
+| `execution_artifacts` | `id`, `workspace_id`, `execution_id`, `execution_step_id`, `kind`, `storage_ref`, `digest`, `size_bytes`, `content_classification`, `redacted`, `expires_at` | Object-store reference with integrity/retention metadata. |
+| `approvals` | `id`, `workspace_id`, `execution_id`, `execution_step_id`, `policy_version_id`, `status`, `requested_by`, `decided_by`, timestamps | Approval is version/policy-pinned and cannot be reused. |
+| `audit_events` | `id`, `workspace_id`, `actor_id`, `host_context_redacted`, `action`, `resource_type`, `resource_id`, `outcome`, `correlation_id`, `details_redacted`, `occurred_at` | Append-only, separately retained and access controlled. |
+
+Workers claim eligible jobs with `FOR UPDATE SKIP LOCKED`. A claim increments and returns `fencing_token`; every heartbeat, completion, and result write requires the matching active lease and token. A stale worker cannot overwrite a later worker's result. Lease expiry resolves to safe provider verification when available; otherwise the step becomes `indeterminate`, not silently retried.
+
+Execution input/output data is schema-limited and redacted before persistence. Large outputs, logs, and generated files are redacted/scanned before upload to encrypted object storage; an artifact that cannot be safely redacted is rejected rather than retained. `storage_ref` is an internal opaque locator, never a client-supplied URL or bucket/key. Artifact download authorization rechecks workspace and retention, then returns a short-lived, single-artifact URL (or streams through the API); object-store credentials cannot list other workspace prefixes. Credential material, raw kubeconfig, SSH keys, access tokens, command lines containing secrets, and unredacted provider responses cannot be written to execution, artifact, or audit storage.
+
+## Integrity rules
+
+1. Every workspace-owned row must resolve to the same `workspace_id` as each referenced parent/resource.
+2. Published workflow versions, command-profile versions, policy versions, script artifacts, and runtime image digests are immutable.
+3. Every execution pins its workflow version/digest plus target, policy, profile, and artifact snapshots needed to reproduce authorization reasoning.
+4. Credential use requires workspace scope, credential permission, and declared workflow node usage validation.
+5. Steps exchange only declared redacted-safe output ports; no implicit context or secret propagation exists.
+6. Soft-disable/retire credentials, targets, profiles, and policies before deletion. Block deletion while an active execution references the resource; show affected drafts/versions in the UI.
+7. Database roles may not bypass RLS except a narrowly scoped migration/maintenance role. Application requests never use the owner role, `BYPASSRLS`, or an unreviewed `SECURITY DEFINER` function.
+
+## Indexing, partitioning, and capacity
+
+- Index all workspace foreign keys and common workspace views: `(workspace_id, updated_at DESC)` for workflows/configuration, `(workspace_id, status, started_at DESC)` for executions, and `(workspace_id, occurred_at DESC)` for audit events.
+- Index `execution_steps(execution_id, node_id)`, `execution_artifacts(execution_id, execution_step_id)`, and active-job lease fields with partial indexes.
+- Use GIN indexes only for bounded/queryable `parsed_definition`, label, and policy fields. Do not add blanket JSONB indexes.
+- Partition high-write `executions`, `execution_steps`, and `audit_events` by month. Maintain retention jobs that delete expired artifact references and object payloads; audit retention follows a separately governed policy.
+- Use pooled connections, query timeouts, migration serialization, and measured connection/query/lock/vacuum headroom before increasing worker replicas. The initial capacity target is at least 2x observed peak for connection pool, write throughput, queue lag, and storage growth.
+
+## Migration and validation plan
+
+Migrations are forward-only, transaction-safe where PostgreSQL permits, and include indexes/constraints before application code relies on them. Initial migration sequence:
+
+1. tenant/workspace/identity/RBAC and RLS helpers;
+2. workflows, drafts, immutable versions, triggers, and templates;
+3. credentials, target/profile/policy versioning, and artifact metadata;
+4. executions, steps, jobs/leases, approvals, artifacts, and audit partitions.
+
+Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test ./...`, `go run ./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.
