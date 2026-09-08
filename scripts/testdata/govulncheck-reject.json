@@ -1,0 +1,12 @@
+{
+  "finding": {
+    "osv": "GO-FAKE-0001",
+    "trace": [
+      {
+        "module": "github.com/example/vulnerable",
+        "package": "github.com/example/vulnerable",
+        "function": "Boom"
+      }
+    ]
+  }
+}

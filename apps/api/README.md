@@ -1,6 +1,6 @@
 # FlowForge control-plane API
 
-Go module `github.com/bbengt1/flowforge/apps/api`. Listens on **8080** and exposes the E1 foundation routes from `docs/reference/backend-api-map.md`.
+Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **8080** and exposes the E1 foundation routes from `docs/reference/backend-api-map.md`.
 
 ## Routes
 

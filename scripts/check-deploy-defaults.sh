@@ -25,6 +25,7 @@ forbid() {
 
 api_df="$ROOT/apps/api/Dockerfile"
 need "$api_df" '^USER 65532:65532'
+need "$api_df" '^FROM golang:1.25-alpine AS build$'
 need "$api_df" '^FROM alpine:3.20$'
 
 compose="$ROOT/docker-compose.yml"

@@ -14,7 +14,8 @@ Shared runtime UID for FlowForge app images: **65532**.
 
 | Check | Scope | Fail when |
 | --- | --- | --- |
-| `govulncheck` | Reachable Go code in `apps/api` | Any known vulnerability in the call graph |
+| `govulncheck` | Reachable **third-party** Go modules in `apps/api` | Any known vulnerability in the call graph (`scripts/govulncheck-gate.py`) |
+| `govulncheck` stdlib | Go toolchain | Recorded, not rejected in this MVP. Production enablement requires a currently patched Go release (1.25.x+ as of this story). |
 | Trivy filesystem (`library`) | Application dependencies | HIGH or CRITICAL |
 | Trivy image | OS + app packages in `flowforge-api` | CRITICAL **with a vendor fix**. Unfixed OS CVEs are recorded, not rejected (MVP). Digest-pin and patch before production enablement |
 

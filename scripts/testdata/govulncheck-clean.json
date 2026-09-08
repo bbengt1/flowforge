@@ -1,0 +1,12 @@
+{
+  "finding": {
+    "osv": "GO-FAKE-STDLIB",
+    "trace": [
+      {
+        "module": "stdlib",
+        "package": "net/http",
+        "function": "ListenAndServe"
+      }
+    ]
+  }
+}
