@@ -17,6 +17,12 @@ export function SiteHeader() {
           >
             Membership
           </Link>
+          <Link
+            href="/isolation"
+            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
+          >
+            Isolation
+          </Link>
           <a
             className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
             href={swaggerUrl}

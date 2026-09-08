@@ -22,7 +22,7 @@ export default async function Home() {
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-8 px-6 py-16">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E1 foundation · E2.1 membership
+          E1 foundation · E2.1 membership · E2.2 isolation
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -35,6 +35,13 @@ export default async function Home() {
             href="/membership"
           >
             membership operator
+          </Link>{" "}
+          or prove isolation fails closed on the{" "}
+          <Link
+            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+            href="/isolation"
+          >
+            isolation exercise
           </Link>
           .
         </p>
@@ -61,6 +68,24 @@ export default async function Home() {
             href="/membership"
           >
             Open membership and roles
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Isolation exercise</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E2.2 UI for jonny&apos;s isolation hooks: attempt
+          cross-workspace credential, artifact, cache, realtime, and record
+          access and show the problem+json failure. Workspace UUID is never
+          the lookup key.
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/isolation"
+          >
+            Open isolation exercise
           </Link>
         </p>
       </section>

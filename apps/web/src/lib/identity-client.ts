@@ -1,4 +1,4 @@
-import { clientIdentityHeaders, type DevIdentity } from "./identity-headers";
+import { clientIsolationHeaders, type DevIdentity } from "./identity-headers";
 import {
   isProblemContentType,
   isProblemDetails,
@@ -31,7 +31,7 @@ const PROXY_PREFIX = "/api/control-plane";
 export async function callIdentityProxy<T>(
   path: string,
   identity: DevIdentity,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; mismatchWorkspaceId?: string } = {},
 ): Promise<IdentityClientResult<T>> {
   const requestId = generateRequestId();
   const method = init.method ?? "GET";
@@ -39,7 +39,7 @@ export async function callIdentityProxy<T>(
   const headers: Record<string, string> = {
     Accept: "application/json, application/problem+json",
     [REQUEST_ID_HEADER]: requestId,
-    ...clientIdentityHeaders(identity),
+    ...clientIsolationHeaders(identity, init.mismatchWorkspaceId),
   };
   const hasBody = init.body !== undefined;
   if (hasBody) {

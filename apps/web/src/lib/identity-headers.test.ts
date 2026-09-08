@@ -8,11 +8,13 @@ import {
   FLOWFORGE_WORKBENCH_KEY_HEADER,
   FLOWFORGE_WORKSPACE_ID_HEADER,
   clientIdentityHeaders,
+  clientIsolationHeaders,
   emptyDevIdentity,
   hasCallerIdentity,
   hasWorkspaceLookup,
   isWorkspaceIdOnlyIdentity,
   pickForwardedIdentityHeaders,
+  pickIsolationForwardedHeaders,
 } from "./identity-headers.ts";
 
 describe("pickForwardedIdentityHeaders", () => {
@@ -74,6 +76,57 @@ describe("clientIdentityHeaders", () => {
   it("omits blank fields", () => {
     const headers = clientIdentityHeaders(emptyDevIdentity());
     assert.deepEqual(headers, {});
+  });
+});
+
+describe("isolation header forwarding", () => {
+  it("forwards Workspace-ID only alongside tenant + workbench", () => {
+    const withLookup = pickIsolationForwardedHeaders(
+      new Headers({
+        [FLOWFORGE_ISSUER_HEADER]: "https://host.example",
+        [FLOWFORGE_SUBJECT_HEADER]: "operator-1",
+        [FLOWFORGE_TENANT_SLUG_HEADER]: "acme",
+        [FLOWFORGE_WORKBENCH_KEY_HEADER]: "ops",
+        [FLOWFORGE_WORKSPACE_ID_HEADER]: "33333333-3333-3333-3333-333333333333",
+      }),
+    );
+    assert.equal(
+      withLookup.get(FLOWFORGE_WORKSPACE_ID_HEADER),
+      "33333333-3333-3333-3333-333333333333",
+    );
+    assert.equal(withLookup.get(FLOWFORGE_TENANT_SLUG_HEADER), "acme");
+    assert.equal(withLookup.get(FLOWFORGE_WORKBENCH_KEY_HEADER), "ops");
+
+    const idOnly = pickIsolationForwardedHeaders(
+      new Headers({
+        [FLOWFORGE_ISSUER_HEADER]: "https://host.example",
+        [FLOWFORGE_SUBJECT_HEADER]: "operator-1",
+        [FLOWFORGE_WORKSPACE_ID_HEADER]: "33333333-3333-3333-3333-333333333333",
+      }),
+    );
+    assert.equal(idOnly.get(FLOWFORGE_WORKSPACE_ID_HEADER), null);
+  });
+
+  it("does not emit Workspace-ID-only from the browser client helper", () => {
+    const withoutLookup = clientIsolationHeaders(emptyDevIdentity(), "33333333-3333-3333-3333-333333333333");
+    assert.equal(withoutLookup[FLOWFORGE_WORKSPACE_ID_HEADER], undefined);
+
+    const withLookup = clientIsolationHeaders(
+      {
+        issuer: "https://host.example",
+        subject: "operator-1",
+        displayName: "",
+        tenantId: "",
+        tenantSlug: "acme",
+        workbenchKey: "ops",
+      },
+      "33333333-3333-3333-3333-333333333333",
+    );
+    assert.equal(
+      withLookup[FLOWFORGE_WORKSPACE_ID_HEADER],
+      "33333333-3333-3333-3333-333333333333",
+    );
+    assert.equal(withLookup[FLOWFORGE_TENANT_SLUG_HEADER], "acme");
   });
 });
 
