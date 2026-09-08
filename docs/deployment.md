@@ -12,7 +12,7 @@ Migrations are forward-only and recorded in `schema_migrations`; re-running the 
 Compose hardening (both services, UID/GID **65532**):
 
 - **api** (`#10`): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, and CPU/memory/PID limits. Matches `deploy/k8s`.
-- **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/.next/cache`, `mem_limit` / `cpus` / `pids_limit`, and `deploy.resources`.
+- **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`).
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 
 ## Deployment controls

@@ -86,14 +86,6 @@ services:
     mem_limit: 512m
     cpus: "1.0"
     pids_limit: 256
-    deploy:
-      resources:
-        limits:
-          cpus: "1.00"
-          memory: 512M
-        reservations:
-          cpus: "0.10"
-          memory: 128M
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
