@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -15,7 +15,10 @@ info:
       or other secret material.
     - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
       Authenticated-but-failed flows use `unauthenticated` (401) and
-      `forbidden` (403). Those codes are the contract for later RBAC routes.
+      `forbidden` (403). Unique identity collisions use `conflict` (409).
+    - Workspace identity is server-derived from `(tenant_id|tenant_slug,
+      workbench_key)`. A host-supplied workspace UUID is never the lookup key
+      and is rejected when it is the only identity or does not match resolution.
     - Request bodies are capped at 1048576 bytes.
     - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
       and `/api/v1/swagger`.
@@ -180,6 +183,318 @@ paths:
           $ref: "#/components/responses/RequestTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
+  /permission-matrix:
+    get:
+      operationId: getPermissionMatrix
+      summary: Role and permission catalog
+      description: Returns the deny-by-default permission matrix (view, edit, publish, execute, credential, approval, administration).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      responses:
+        "200":
+          description: Permission matrix
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionMatrix"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List role vocabulary
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      responses:
+        "200":
+          description: Roles
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /permissions:
+    get:
+      operationId: listPermissions
+      summary: List permission vocabulary
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      responses:
+        "200":
+          description: Permissions
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /tenants:
+    post:
+      operationId: createTenant
+      summary: Create a tenant
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, name]
+              properties:
+                slug:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Tenant created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List workspaces the caller belongs to
+      description: Memberships are loaded from server-side bindings. Host workspace IDs are ignored.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      responses:
+        "200":
+          description: Memberships
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createWorkspace
+      summary: Create a workspace
+      description: |
+        Creates a workspace unique on `(tenant_id, workbench_key)` and binds the
+        caller as `admin`. `id` and `workspace_id` in the body are rejected.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workbench_key, name]
+              properties:
+                tenant_id:
+                  type: string
+                  format: uuid
+                tenant_slug:
+                  type: string
+                workbench_key:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Workspace created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workspace:
+    get:
+      operationId: getCurrentWorkspace
+      summary: Resolve the current workspace
+      description: |
+        Resolves workspace identity from tenant + workbench_key headers.
+        `X-FlowForge-Workspace-ID` is untrusted host context and is rejected
+        unless it matches the server-derived workspace.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Server-derived workspace, roles, and permissions
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentWorkspace"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspace/members:
+    get:
+      operationId: listWorkspaceMembers
+      summary: List workspace members
+      description: Requires `workspace.administer`. Workspace is server-derived.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Members
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: putWorkspaceMember
+      summary: Bind roles for a workspace member
+      description: Requires `workspace.administer`. Replaces the member's roles. Rejects host-supplied workspace IDs in the body.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_keys]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                issuer:
+                  type: string
+                external_subject:
+                  type: string
+                display_name:
+                  type: string
+                role_keys:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Updated member
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workspace/members/{userID}:
+    delete:
+      operationId: deleteWorkspaceMember
+      summary: Remove a workspace member
+      description: Requires `workspace.administer`. Cannot remove the last administrator.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: userID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Member removed
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   parameters:
     RequestID:
@@ -192,6 +507,50 @@ components:
         minLength: 16
         maxLength: 128
         pattern: ^[A-Za-z0-9-]{16,128}$
+    Issuer:
+      name: X-FlowForge-Issuer
+      in: header
+      required: true
+      description: Host identity issuer. Establishes the subject until E2.3 browser sessions replace these headers. Does not authorize a workspace.
+      schema:
+        type: string
+    Subject:
+      name: X-FlowForge-Subject
+      in: header
+      required: true
+      description: Host identity subject. Unique with issuer. Does not authorize a workspace.
+      schema:
+        type: string
+    TenantID:
+      name: X-FlowForge-Tenant-ID
+      in: header
+      required: false
+      description: Tenant UUID used with workbench_key to resolve workspace identity.
+      schema:
+        type: string
+        format: uuid
+    TenantSlug:
+      name: X-FlowForge-Tenant-Slug
+      in: header
+      required: false
+      description: Tenant slug used with workbench_key when tenant id is omitted.
+      schema:
+        type: string
+    WorkbenchKey:
+      name: X-FlowForge-Workbench-Key
+      in: header
+      required: false
+      description: Host workbench key. Combined with tenant identity, this is the only accepted workspace lookup.
+      schema:
+        type: string
+    HostWorkspaceID:
+      name: X-FlowForge-Workspace-ID
+      in: header
+      required: false
+      description: Untrusted host-supplied workspace UUID. Rejected unless it matches the server-derived `(tenant, workbench_key)` workspace.
+      schema:
+        type: string
+        format: uuid
   headers:
     XRequestID:
       description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
@@ -237,12 +596,193 @@ components:
             - unauthenticated
             - forbidden
             - not-found
+            - conflict
             - method-not-allowed
             - request-too-large
             - internal-error
             - dependency-unavailable
         request_id:
           type: string
+    Tenant:
+      type: object
+      required: [id, slug, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Workspace:
+      type: object
+      required: [id, tenant_id, workbench_key, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        workbench_key:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    User:
+      type: object
+      required: [id, issuer, external_subject, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        issuer:
+          type: string
+        external_subject:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+    CurrentWorkspace:
+      type: object
+      required: [workspace, tenant, principal, roles, permissions]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+        principal:
+          $ref: "#/components/schemas/User"
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    Member:
+      type: object
+      required: [user, roles, permissions]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    MemberList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+    MembershipList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [workspace, tenant, roles, permissions]
+            properties:
+              workspace:
+                $ref: "#/components/schemas/Workspace"
+              tenant:
+                $ref: "#/components/schemas/Tenant"
+              roles:
+                type: array
+                items:
+                  type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    PermissionMatrix:
+      type: object
+      required: [permissions, roles]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [key, family]
+            properties:
+              key:
+                type: string
+              family:
+                type: string
+                enum: [view, edit, publish, execute, credential, approval, administration]
+        roles:
+          type: array
+          items:
+            type: object
+            required: [key, description, permissions]
+            properties:
+              key:
+                type: string
+              description:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    RoleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [key]
+            properties:
+              key:
+                type: string
+              description:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    PermissionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [key]
+            properties:
+              key:
+                type: string
   responses:
     InvalidRequest:
       description: Malformed JSON, missing body, or unsupported Content-Type
@@ -294,6 +834,23 @@ components:
             detail: You are not authorized to perform this action.
             instance: /api/v1/example
             code: forbidden
+            request_id: 0123456789abcdef0123456789abcdef
+    Conflict:
+      description: Unique identity collision or last-admin protection
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:conflict
+            title: Conflict
+            status: 409
+            detail: A unique identity already exists.
+            instance: /api/v1/workspaces
+            code: conflict
             request_id: 0123456789abcdef0123456789abcdef
     NotFound:
       description: The requested path does not exist
