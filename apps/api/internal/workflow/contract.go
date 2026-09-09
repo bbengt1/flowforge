@@ -2,6 +2,8 @@ package workflow
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -586,26 +588,36 @@ func isoDurationSeconds(s string) (int64, error) {
 		return 0, fmt.Errorf("duration must be an ISO-8601 duration")
 	}
 	rest := s[1:]
-	if strings.ContainsAny(rest, "YM") && !strings.Contains(rest, "T") {
-		// Months/years are calendar-relative and not deterministic.
-		if hasUnit(rest, 'Y') || hasUnitBeforeT(rest, 'M') {
-			return 0, fmt.Errorf("duration cannot use years or months; use weeks, days, or time units")
-		}
+	if rest == "" {
+		return 0, fmt.Errorf("duration must be an ISO-8601 duration")
 	}
 	if hasUnit(rest, 'Y') || hasUnitBeforeT(rest, 'M') {
 		return 0, fmt.Errorf("duration cannot use years or months; use weeks, days, or time units")
 	}
 	date, timePart, hasTime := strings.Cut(rest, "T")
-	var total int64
-	n, err := consumeDuration(date, map[byte]time.Duration{'W': 7 * 24 * time.Hour, 'D': 24 * time.Hour})
+	if hasTime && timePart == "" {
+		return 0, fmt.Errorf("duration must be an ISO-8601 duration")
+	}
+	if date == "" && !hasTime {
+		return 0, fmt.Errorf("duration must be an ISO-8601 duration")
+	}
+	if strings.ContainsRune(date, 'W') {
+		if hasTime || strings.ContainsRune(date, 'D') {
+			return 0, fmt.Errorf("duration must be an ISO-8601 duration")
+		}
+		return consumeDuration(date, []byte{'W'}, map[byte]int64{'W': 7 * 24 * 3600})
+	}
+	total, err := consumeDuration(date, []byte{'D'}, map[byte]int64{'D': 24 * 3600})
 	if err != nil {
 		return 0, err
 	}
-	total += n
 	if hasTime {
-		n, err = consumeDuration(timePart, map[byte]time.Duration{'H': time.Hour, 'M': time.Minute, 'S': time.Second})
+		n, err := consumeDuration(timePart, []byte{'H', 'M', 'S'}, map[byte]int64{'H': 3600, 'M': 60, 'S': 1})
 		if err != nil {
 			return 0, err
+		}
+		if total > (1<<63-1)-n {
+			return 0, fmt.Errorf("duration is out of range")
 		}
 		total += n
 	}
@@ -621,12 +633,14 @@ func hasUnitBeforeT(s string, unit byte) bool {
 	return strings.IndexByte(date, unit) >= 0
 }
 
-func consumeDuration(s string, units map[byte]time.Duration) (int64, error) {
+func consumeDuration(s string, order []byte, scales map[byte]int64) (int64, error) {
 	if s == "" {
 		return 0, nil
 	}
-	var total time.Duration
+	var total int64
+	pos := 0
 	i := 0
+	got := 0
 	for i < len(s) {
 		start := i
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -636,18 +650,37 @@ func consumeDuration(s string, units map[byte]time.Duration) (int64, error) {
 			return 0, fmt.Errorf("duration must be an ISO-8601 duration")
 		}
 		unit := s[i]
-		scale, ok := units[unit]
-		if !ok {
-			return 0, fmt.Errorf("duration unit %q is not allowed", string(unit))
+		found := -1
+		for j := pos; j < len(order); j++ {
+			if order[j] == unit {
+				found = j
+				break
+			}
 		}
-		var n int64
-		for _, c := range s[start:i] {
-			n = n*10 + int64(c-'0')
+		if found < 0 {
+			return 0, fmt.Errorf("duration must be an ISO-8601 duration")
 		}
-		total += time.Duration(n) * scale
+		n, err := strconv.ParseInt(s[start:i], 10, 64)
+		if err != nil || n < 0 {
+			return 0, fmt.Errorf("duration is out of range")
+		}
+		scale := scales[unit]
+		if n != 0 && scale > (1<<63-1)/n {
+			return 0, fmt.Errorf("duration is out of range")
+		}
+		add := n * scale
+		if total > (1<<63-1)-add {
+			return 0, fmt.Errorf("duration is out of range")
+		}
+		total += add
+		pos = found + 1
+		got++
 		i++
 	}
-	return int64(total / time.Second), nil
+	if got == 0 {
+		return 0, fmt.Errorf("duration must be an ISO-8601 duration")
+	}
+	return total, nil
 }
 
 // ParseISODuration converts a validated ISO-8601 duration (weeks, days, and
@@ -656,6 +689,9 @@ func ParseISODuration(s string) (time.Duration, error) {
 	sec, err := isoDurationSeconds(s)
 	if err != nil {
 		return 0, err
+	}
+	if sec > math.MaxInt64/int64(time.Second) {
+		return 0, fmt.Errorf("duration is out of range")
 	}
 	return time.Duration(sec) * time.Second, nil
 }

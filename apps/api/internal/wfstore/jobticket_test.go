@@ -38,7 +38,18 @@ func TestJobTicketRejectsAlteredExpiredAndCrossWorkspace(t *testing.T) {
 		t.Fatalf("authorize: %v", err)
 	}
 
-	altered := token[:len(token)-1] + "x"
+	dot := strings.LastIndex(token, ".")
+	if dot < 0 || dot+2 >= len(token) {
+		t.Fatalf("token shape: %s", token)
+	}
+	// Flip a signature character that is not trailing base64 leftover bits.
+	sig := []byte(token[dot+1:])
+	if sig[0] == 'A' {
+		sig[0] = 'B'
+	} else {
+		sig[0] = 'A'
+	}
+	altered := token[:dot+1] + string(sig)
 	if _, err := ParseJobTicket(key, altered); err != ErrJobBinding {
 		t.Fatalf("altered token: %v", err)
 	}
