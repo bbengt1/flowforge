@@ -26,3 +26,7 @@ export function PUT(request: Request, context: RouteContext) {
 export function DELETE(request: Request, context: RouteContext) {
   return handle(request, context);
 }
+
+export function PATCH(request: Request, context: RouteContext) {
+  return handle(request, context);
+}

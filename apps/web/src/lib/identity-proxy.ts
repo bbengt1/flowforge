@@ -160,6 +160,35 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[2] === "executions" &&
       isResourceId(s[3]),
   },
+  // E4.1 vault UI (#35) stacked on jonny's #38 routes. Isolation hook
+  // POST /workspace/credentials/{id}/use stays above this block.
+  { methods: ["GET"], match: (s) => eq(s, ["credentials", "catalog"]) },
+  { methods: ["GET", "POST"], match: (s) => eq(s, ["credentials"]) },
+  {
+    methods: ["GET", "PATCH", "DELETE"],
+    match: (s) =>
+      s.length === 2 && s[0] === "credentials" && isResourceId(s[1]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "credentials" &&
+      isResourceId(s[1]) &&
+      (s[2] === "rotate" ||
+        s[2] === "disable" ||
+        s[2] === "enable" ||
+        s[2] === "test" ||
+        s[2] === "use"),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "credentials" &&
+      isResourceId(s[1]) &&
+      (s[2] === "usage" || s[2] === "events" || s[2] === "deletion-impact"),
+  },
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -310,6 +339,8 @@ export async function fetchIdentityControlPlane(options: {
     );
   }
 
+  // Never log Authorization, Cookie, or request bodies (vault create/rotate
+  // carry plaintext once). Problem+json is returned to the caller only.
   try {
     const response = await fetch(url, {
       method: options.method,
