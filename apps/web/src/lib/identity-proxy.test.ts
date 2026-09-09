@@ -224,6 +224,7 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       ["GET", ["ops-config", "catalog"], "/api/v1/ops-config/catalog"],
       ["POST", ["ops-config", "select"], "/api/v1/ops-config/select"],
+      ["GET", ["kubernetes", "catalog"], "/api/v1/kubernetes/catalog"],
       ["GET", ["cluster-targets"], "/api/v1/cluster-targets"],
       ["POST", ["cluster-targets"], "/api/v1/cluster-targets"],
       [

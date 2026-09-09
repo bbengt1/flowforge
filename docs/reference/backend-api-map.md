@@ -125,7 +125,7 @@ Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions`
 
 Suggested UI flow:
 
-1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, and `usePermission`.
+1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, and (E7.1) `kubernetesEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`.
 2. List: `GET /{collection}` (`cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`).
 3. Create draft: `POST /{collection}` `{name, slug?, spec}`. Keep `resource.id` and `draft.revision`.
 4. Save: `PUT /{collection}/{id}/draft` `{revision, spec, name?}`. On `409`, reload the draft.
@@ -139,7 +139,8 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields. Requires `opsconfig.view`. | `200` `{kinds}` | `401` `403` |
+| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine}` | `401` `403` |
+| `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -158,7 +159,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 
 | Kind | Required `spec` |
 | --- | --- |
-| `cluster_target` | `credentialId`, `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces`, `policyId` |
+| `cluster_target` | `credentialId` (workspace `kubernetes` / kubeconfig credential only), `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces` (non-empty DNS-1123 labels), `policyId` (published `kind=kubernetes` policy; target namespaces must be a subset), `serviceAccount.{name,namespace?,roleTemplate?}` (`roleTemplate` defaults to `namespace-scoped-runner`; ClusterRoles are not MVP). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include kubeconfig. |
 | `ssh_target` | `credentialId`, `hostname`, `hostKeyFingerprint`; optional `port` (default 22), `allowedAddresses`, `policyId` |
 | `command_profile` | `parameterSchema`, `template` (no `$()`, `` ` ``, `${`, `{{`); optional `retrySafe`, `policyId` |
 | `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
@@ -166,7 +167,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
 | `message_template` | `inputSchema`, `contentClassification`, `body`; optional `subject` |
 | `response_schema` | `schema`, `maxBytes` (1–1048576) |
-| `policy` | `kind` (`kubernetes`/`ssh`/`script`/`http`/`notification`/`approval`), `policy` object. Evaluation keys (E4.3): `requireApproval`, `approverRole`, `expiresIn` (ISO-8601), `operations`, `deny`, `allowedNamespaces`/`namespaces`, `allowedKinds`/`kinds`, `allowedVerbs`/`verbs`, `allowedHosts`/`hosts`, `allowedAddresses`/`addresses`. |
+| `policy` | `kind` (`kubernetes`/`ssh`/`script`/`http`/`notification`/`approval`), `policy` object. Evaluation keys (E4.3 / E7.1): `requireApproval`, `approverRole`, `expiresIn` (ISO-8601), `operations`, `deny`, `allowedNamespaces`/`namespaces`, `allowedKinds`/`kinds`, `allowedVerbs`/`verbs`, `allowedHosts`/`hosts`, `allowedAddresses`/`addresses`. For `kind=kubernetes`, unknown keys are rejected; aliases canonicalize to `allowedNamespaces` / `allowedKinds` / `allowedVerbs`. Empty allowlists are rejected (open-by-accident). Publish/select of a kubernetes policy requires a non-empty namespace allowlist unless `deny=true`. Allowlists fail closed when present (including empty). Engine kinds: ConfigMap, Service, Deployment, StatefulSet, DaemonSet, Job, CronJob, Ingress, NetworkPolicy. Engine verbs: `get`, `list`, `apply`, `watch`. |
 
 Workflow publish fails closed if a YAML resource UUID is missing, unpublished, disabled, or in another workspace. Execution JSON includes `pins[]` copied from the workflow version; later ops-config publishes do not change that pin. **Authorization** on start re-evaluates the **current** published target/policy (E4.3), so a later policy/target publish can block dispatch even though the execution pin stays on the older revision.
 
@@ -201,7 +202,23 @@ RBAC: `approval.view` list/get/events/catalog/evaluate; `workflow.execute` creat
 
 Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding fields on every requirement/record: `workflowVersionId`, `workflowDigest`, `targetId`/`targetVersionId`/`targetDigest`, `policyResourceId`/`policyVersionId`/`policyDigest`/`policyRevision`, `operation`, `nodeId`, `expiresAt`, `bindingFingerprint`.
 
-`flow.approval` nodes always produce a requirement (`with.approverRole`, `with.expiresIn`). A kubernetes/ssh/http/notification/script policy produces a requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
+`flow.approval` nodes always produce a requirement (`with.approverRole`, `with.expiresIn`). A kubernetes/ssh/http/notification/script policy produces a requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present (a present empty list denies). Cluster-target `allowedNamespaces` is also enforced at evaluate. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
+
+## Kubernetes target and policy management (E7.1)
+
+Control-plane hardening on the existing E4.2 collections. No `kubernetes.apply` / `get` / `list` / `rolloutStatus` runners yet (E7.2 / E7.3).
+
+**UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`kubernetesEngine`) or `GET /kubernetes/catalog` for allowlists, evaluation-key aliases, and service-account template paths. Cluster-target credential pickers must list only workspace `type=kubernetes` credentials (secret field `kubeconfig`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/kubernetes/catalog` the same way as ops-config. Do not rewrite `apps/web` in this API story.
+
+Suggested UI flow:
+
+1. Create a vault credential `type=kubernetes` (E4.1). Never echo kubeconfig.
+2. Optionally create/publish a `policies` resource with `kind=kubernetes` and a non-empty `allowedNamespaces` (or `namespaces`). Add `allowedKinds` / `allowedVerbs` to fail closed on those axes.
+3. Create/publish a `cluster-targets` draft: `{name, spec:{credentialId, endpoint:{apiServer}, allowedNamespaces?, policyId?, serviceAccount?}}`.
+4. Select as today (`POST /cluster-targets/{id}/select`). Publish/select re-checks credential type, required fields, empty allowlists, and namespace subset vs the bound policy.
+5. Apply `deploy/kubernetes/workspace-*.yaml` in each allowed namespace (operator, not FlowForge). E7.2 workers will read `serviceAccount` metadata.
+
+Least-privilege SA templates (no ClusterRoles): [`deploy/kubernetes/`](../../deploy/kubernetes/). Default name `flowforge-runner`, `roleTemplate=namespace-scoped-runner`.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 

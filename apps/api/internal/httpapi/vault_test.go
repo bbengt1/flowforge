@@ -189,7 +189,9 @@ func TestCredentialVaultRBACAndDisablement(t *testing.T) {
 func TestCredentialVaultUsageAndDeletionImpact(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
-	created := createVaultCredential(t, h, admin, tenant, ws, "token", "Used", map[string]string{"token": vaultPlaintext})
+	created := createVaultCredential(t, h, admin, tenant, ws, "kubernetes", "Used", map[string]string{
+		"kubeconfig": "apiVersion: v1\nkind: Config\n# " + vaultPlaintext + "\nclusters: []\nusers: []\n",
+	})
 	target := createPublishedClusterTarget(t, h, admin, tenant, ws, created.ID, "used-cluster")
 
 	yamlDoc := workflowYAMLWithTarget(target.Resource.ID)
@@ -345,4 +347,3 @@ func mustJSONBytes(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }
-

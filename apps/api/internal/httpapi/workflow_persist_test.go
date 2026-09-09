@@ -39,7 +39,7 @@ spec:
 func TestWorkflowDraftPublishCompareRestoreAndPin(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
-	cred := createVaultCredential(t, h, admin, tenant, ws, "token", "Cluster token", map[string]string{"token": "abcdefghijklmnop"})
+	cred := createKubernetesCredential(t, h, admin, tenant, ws, "Cluster token")
 	target := createPublishedClusterTarget(t, h, admin, tenant, ws, cred.ID, "persist-cluster")
 	src := workflowYAMLWithTarget(target.Resource.ID)
 	edited := strings.ReplaceAll(editedWorkflowYAML, "11111111-1111-4111-8111-111111111111", target.Resource.ID)

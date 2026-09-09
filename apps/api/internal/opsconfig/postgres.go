@@ -289,6 +289,9 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, kind, id 
 	if in.ExpectedRevision > 0 && draft.Revision != in.ExpectedRevision {
 		return Resource{}, Version{}, ErrRevisionConflict
 	}
+	if err := ValidateReady(kind, draft.Spec); err != nil {
+		return Resource{}, Version{}, err
+	}
 	payload, err := json.Marshal(draft.Spec)
 	if err != nil {
 		return Resource{}, Version{}, ErrInvalid
@@ -698,6 +701,9 @@ func resolveOne(ctx context.Context, tx pgx.Tx, ref Ref) (Pin, error) {
 		}
 		return Pin{}, err
 	}
+	if err := ValidateReady(ref.Kind, ver.Spec); err != nil {
+		return Pin{}, err
+	}
 	return Pin{
 		Kind:          ref.Kind,
 		ResourceID:    ref.ResourceID,
@@ -832,6 +838,7 @@ func scanDraft(row rowScanner, kind string) (Draft, error) {
 	if err := json.Unmarshal(raw, &d.Spec); err != nil || d.Spec == nil {
 		d.Spec = map[string]any{}
 	}
+	d.Spec = RedactSpec(d.Spec)
 	return d, nil
 }
 
@@ -845,6 +852,7 @@ func scanVersion(row rowScanner, kind string) (Version, error) {
 	if err := json.Unmarshal(raw, &v.Spec); err != nil || v.Spec == nil {
 		v.Spec = map[string]any{}
 	}
+	v.Spec = RedactSpec(v.Spec)
 	return v, nil
 }
 

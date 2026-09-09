@@ -37,6 +37,72 @@ func TestNormalizeSpecStableDigest(t *testing.T) {
 	}
 }
 
+func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
+	cred := "11111111-1111-4111-8111-111111111111"
+	_, _, err := NormalizeSpec(KindClusterTarget, map[string]any{
+		"credentialId":      cred,
+		"endpoint":          map[string]any{"apiServer": "https://kube.example"},
+		"allowedNamespaces": []any{},
+	})
+	if err == nil {
+		t.Fatal("empty allowedNamespaces must be rejected")
+	}
+	spec, _, err := NormalizeSpec(KindClusterTarget, map[string]any{
+		"credentialId":      cred,
+		"endpoint":          map[string]any{"apiServer": "https://kube.example"},
+		"allowedNamespaces": []any{"cp-ops-nprd"},
+		"serviceAccount":    map[string]any{"name": "flowforge-runner", "namespace": "cp-ops-nprd"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa, _ := spec["serviceAccount"].(map[string]any)
+	if sa["roleTemplate"] != "namespace-scoped-runner" {
+		t.Fatalf("default roleTemplate = %+v", sa)
+	}
+
+	_, _, err = NormalizeSpec(KindPolicy, map[string]any{
+		"kind":   "kubernetes",
+		"policy": map[string]any{"allowedNamespaces": []any{}, "extra": true},
+	})
+	if err == nil {
+		t.Fatal("empty/unknown kubernetes policy keys must be rejected")
+	}
+	out, _, err := NormalizeSpec(KindPolicy, map[string]any{
+		"kind": "kubernetes",
+		"policy": map[string]any{
+			"namespaces":      []any{"prod"},
+			"kinds":           []any{"Deployment"},
+			"verbs":           []any{"apply"},
+			"deny":            false,
+			"requireApproval": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := out["policy"].(map[string]any)
+	if _, ok := rules["allowedNamespaces"]; !ok {
+		t.Fatalf("canonical namespaces missing: %+v", rules)
+	}
+	if err := ValidateReady(KindPolicy, map[string]any{"kind": "kubernetes", "policy": map[string]any{"requireApproval": true}}); err == nil {
+		t.Fatal("publish must require namespace allowlist")
+	}
+	if err := ValidateReady(KindPolicy, map[string]any{"kind": "kubernetes", "policy": map[string]any{"deny": true}}); err != nil {
+		t.Fatalf("deny-all is ready: %v", err)
+	}
+	if err := TargetNamespacesConsistent(
+		map[string]any{"allowedNamespaces": []string{"staging"}},
+		map[string]any{"kind": "kubernetes", "policy": map[string]any{"allowedNamespaces": []string{"prod"}}},
+	); err == nil {
+		t.Fatal("inconsistent namespaces must fail")
+	}
+	redacted := RedactSpec(map[string]any{"credentialId": cred, "kubeconfig": "apiVersion: v1"})
+	if _, ok := redacted["kubeconfig"]; ok {
+		t.Fatal("kubeconfig must be stripped")
+	}
+}
+
 func TestExtractRefsFromWorkflowYAML(t *testing.T) {
 	src := `apiVersion: flowforge/v1
 kind: Workflow

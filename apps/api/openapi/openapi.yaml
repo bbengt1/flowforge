@@ -3410,6 +3410,37 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /kubernetes/catalog:
+    get:
+      operationId: getKubernetesCatalog
+      summary: Kubernetes engine catalog
+      description: |
+        Requires `opsconfig.view`. Documents cluster-target credential type
+        (`kubernetes` / kubeconfig), namespace/kind/verb evaluation keys,
+        fail-closed empty allowlists, and least-privilege service-account
+        templates. Does not contact a cluster (E7.2 apply/get/list).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Kubernetes engine catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesEngineCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /ops-config/select:
     post:
       operationId: selectOpsConfigBatch
@@ -4374,6 +4405,59 @@ components:
                 type: array
                 items: {type: string}
               usePermission: {type: string}
+              allowedCredentialTypes:
+                type: array
+                items: {type: string}
+              engine: {type: string}
+        kubernetesEngine:
+          $ref: "#/components/schemas/KubernetesEngineCatalog"
+    KubernetesEngineCatalog:
+      type: object
+      required: [credentialType, allowedKinds, allowedVerbs, evaluationKeys, serviceAccount, publishRules]
+      properties:
+        credentialType: {type: string, enum: [kubernetes]}
+        credentialSecretField: {type: string, enum: [kubeconfig]}
+        allowedKinds:
+          type: array
+          items: {type: string}
+        allowedVerbs:
+          type: array
+          items: {type: string}
+        evaluationKeys:
+          type: array
+          items:
+            type: object
+            required: [canonical, aliases]
+            properties:
+              canonical: {type: string}
+              aliases:
+                type: array
+                items: {type: string}
+              failClosedWhenPresent: {type: boolean}
+              requiredForPublish: {type: boolean}
+        serviceAccount:
+          type: object
+          properties:
+            defaultName: {type: string}
+            roleTemplate: {type: string}
+            roleTemplatePath: {type: string}
+            roleBindingTemplatePath: {type: string}
+            serviceAccountPath: {type: string}
+            clusterRoles: {type: boolean}
+            notes: {type: string}
+        publishRules:
+          type: object
+          properties:
+            clusterTargetRequired:
+              type: array
+              items: {type: string}
+            kubernetesPolicyRequired:
+              type: array
+              items: {type: string}
+            emptyAllowlistsRejected: {type: boolean}
+            credentialType: {type: string}
+            denyAllowsMissingAllowlist: {type: boolean}
+        clusterRoles: {type: boolean}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]
