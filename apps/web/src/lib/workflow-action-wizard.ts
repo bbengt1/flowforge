@@ -26,6 +26,18 @@ import {
 } from "./kubernetes-node-contract.ts";
 import { isKubernetesRolloutType, rolloutKindsFromCatalog } from "./kubernetes-rollout-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
+import {
+  defaultSshWith,
+  isExposedSshWithField,
+  isSshConfigurableType,
+  overlaySshFields,
+  sshNodeWithFields,
+  stripSshForbiddenWith,
+  validateSshNodeConfig,
+  type SshNodeCatalog,
+  type SshNodeConfigContext,
+  type SshNodeWithField,
+} from "./ssh-node-contract.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
 import { isSecretFieldName } from "./credential.ts";
@@ -115,6 +127,11 @@ export type WizardValidationContext = {
   allowedNamespaces?: readonly string[];
   targetSelectorClosed?: boolean;
   engineCatalog?: KubernetesEngineCatalog | null;
+  sshCatalog?: SshNodeCatalog | null;
+  sshTargetSelectorClosed?: boolean;
+  commandProfileSelectorClosed?: boolean;
+  parameterConstraints?: SshNodeConfigContext["parameterConstraints"];
+  profileRetrySafe?: boolean;
 };
 
 export type WizardRecommendation = {
@@ -251,9 +268,10 @@ export function defaultWithForType(type: string): Record<string, unknown> {
   if (isKubernetesConfigurableType(type)) {
     return defaultKubernetesWith(type);
   }
+  if (isSshConfigurableType(type)) {
+    return defaultSshWith(type);
+  }
   switch (type) {
-    case "ssh.run":
-      return { timeoutSeconds: 60 };
     case "script.python":
       return { entrypoint: "main.py", timeoutSeconds: 30, memoryMiB: 128 };
     case "script.go":
@@ -279,7 +297,26 @@ export function wizardConfigFields(
   entry: ActionLibraryEntry | undefined,
   type = entry?.type ?? "",
   engineCatalog?: KubernetesEngineCatalog | null,
+  sshCatalog?: SshNodeCatalog | null,
 ): WizardConfigField[] {
+  if (isSshConfigurableType(type)) {
+    const engineFields = sshCatalog?.nodes.find((item) => item.type === type)
+      ?.allowedWith;
+    const catalogOwnsFields =
+      (engineFields && engineFields.length > 0) ||
+      (entry?.source === "catalog" && (entry.allowedWith?.length ?? 0) > 0);
+    if (catalogOwnsFields) {
+      return overlaySshFields(
+        engineFields?.length ? engineFields : (entry?.allowedWith ?? []),
+        type,
+      )
+        .filter((field) => isExposedSshWithField(field.name))
+        .map((field) => fromSshWithField(field, false));
+    }
+    return sshNodeWithFields(type, sshCatalog).map((field) =>
+      fromSshWithField(field, entry?.source !== "catalog"),
+    );
+  }
   if (isKubernetesConfigurableType(type)) {
     const engineFields = engineCatalog?.nodes.find((item) => item.type === type)
       ?.allowedWith;
@@ -506,13 +543,19 @@ export function validateWizardDraft(
   if (isForbiddenYamlKey(draft.name) || looksLikeSecretValue(draft.name)) {
     errors.push("Action name must not contain secret material.");
   }
-  const fields = wizardConfigFields(entry, draft.type, context.engineCatalog);
+  const fields = wizardConfigFields(
+    entry,
+    draft.type,
+    context.engineCatalog,
+    context.sshCatalog,
+  );
   for (const field of fields) {
     const value = draft.with[field.name];
     if (
       field.required &&
       isEmptyWithValue(value) &&
-      !isKubernetesConfigurableType(draft.type)
+      !isKubernetesConfigurableType(draft.type) &&
+      !isSshConfigurableType(draft.type)
     ) {
       errors.push(`${field.name} is required.`);
     }
@@ -536,6 +579,17 @@ export function validateWizardDraft(
         allowedNamespaces: context.allowedNamespaces,
         targetSelectorClosed: context.targetSelectorClosed,
         engineCatalog: context.engineCatalog,
+      }),
+    );
+  }
+  if (isSshConfigurableType(draft.type)) {
+    errors.push(
+      ...validateSshNodeConfig(draft.type, draft.with, {
+        targetSelectorClosed: context.sshTargetSelectorClosed,
+        profileSelectorClosed: context.commandProfileSelectorClosed,
+        parameterConstraints: context.parameterConstraints,
+        profileRetrySafe: context.profileRetrySafe,
+        sshCatalog: context.sshCatalog,
       }),
     );
   }
@@ -609,7 +663,9 @@ export function sanitizeWizardWith(
 ): Record<string, unknown> {
   const source = isKubernetesConfigurableType(type)
     ? stripKubernetesForbiddenWith(value)
-    : value;
+    : isSshConfigurableType(type)
+      ? stripSshForbiddenWith(value)
+      : value;
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(source)) {
     if (!key.trim() || isForbiddenYamlKey(key) || isSecretFieldName(key)) {
@@ -619,6 +675,29 @@ export function sanitizeWizardWith(
       continue;
     }
     if (typeof raw === "string" && looksLikeSecretValue(raw)) {
+      continue;
+    }
+    if (
+      key === "parameters" &&
+      isSshConfigurableType(type) &&
+      raw &&
+      typeof raw === "object" &&
+      !Array.isArray(raw)
+    ) {
+      const nested: Record<string, unknown> = {};
+      for (const [param, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (!param.trim() || isForbiddenYamlKey(param) || isSecretFieldName(param)) {
+          continue;
+        }
+        if (typeof value === "string" && looksLikeSecretValue(value)) {
+          continue;
+        }
+        nested[param] = value;
+      }
+      if (Object.keys(nested).length === 0) {
+        continue;
+      }
+      out[key] = nested;
       continue;
     }
     out[key] = raw;
@@ -690,6 +769,26 @@ export function namespacesForWizardTarget(
 
 function isExposedKubernetesField(name: string): boolean {
   return name !== "force" && name !== "kubeconfig" && name !== "server";
+}
+
+function fromSshWithField(
+  field: SshNodeWithField,
+  inferred: boolean,
+): WizardConfigField {
+  return {
+    name: field.name,
+    kind: field.kind,
+    required: field.required === true,
+    control: field.controlHint,
+    enumValues: field.enum,
+    description: field.description ?? "",
+    defaultValue: field.defaultValue ?? "",
+    selectorKind: selectorKindForField(field.name),
+    inferred,
+    label: field.label,
+    advanced: field.advanced,
+    readOnly: field.readOnly,
+  };
 }
 
 function fromKubernetesWithField(

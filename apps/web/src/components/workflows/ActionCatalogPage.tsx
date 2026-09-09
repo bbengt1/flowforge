@@ -11,6 +11,8 @@ import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
+import { getSshCatalog } from "@/lib/ssh-client";
+import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
 import { fetchWorkflowCatalog } from "@/lib/workflow-client";
 import type { WorkflowCatalog } from "@/lib/workflow-types";
@@ -36,6 +38,7 @@ export function ActionCatalogPage() {
   const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
     null,
   );
+  const [sshCatalog, setSshCatalog] = useState<SshNodeCatalog | null>(null);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -46,12 +49,14 @@ export function ActionCatalogPage() {
   async function loadCatalog() {
     setPending(true);
     setProblem(null);
-    const [result, engine] = await Promise.all([
+    const [result, engine, ssh] = await Promise.all([
       fetchWorkflowCatalog(identity),
       getKubernetesCatalog(identity).catch(() => null),
+      getSshCatalog(identity).catch(() => null),
     ]);
     setPending(false);
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
+    setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -87,7 +92,7 @@ export function ActionCatalogPage() {
       {problem ? <ProblemBanner problem={problem} /> : null}
       <ActionLibrary
         catalog={catalog}
-        entries={adaptActionLibrary(catalog, engineCatalog)}
+        entries={adaptActionLibrary(catalog, engineCatalog, sshCatalog)}
         query={query}
         pending={pending}
         onQuery={setQuery}

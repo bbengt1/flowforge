@@ -21,6 +21,8 @@ import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
+import { getSshCatalog } from "@/lib/ssh-client";
+import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
 import {
   adaptActionLibrary,
   rejectDisabledActionType,
@@ -122,6 +124,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
     null,
   );
+  const [sshCatalog, setSshCatalog] = useState<SshNodeCatalog | null>(null);
   const [status, setStatus] = useState<"idle" | "pending" | "valid" | "invalid">(
     "idle",
   );
@@ -182,7 +185,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
-  const library = adaptActionLibrary(catalog, engineCatalog);
+  const library = adaptActionLibrary(catalog, engineCatalog, sshCatalog);
   const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
   const graph = projectCanvasGraph({
     errors,
@@ -292,13 +295,15 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   async function loadCatalog() {
     setPending("catalog");
     setProblem(null);
-    const [result, engine] = await Promise.all([
+    const [result, engine, ssh] = await Promise.all([
       fetchWorkflowCatalog(identity),
       getKubernetesCatalog(identity).catch(() => null),
+      getSshCatalog(identity).catch(() => null),
     ]);
     setLastRequestId(result.requestId);
     setPending(null);
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
+    setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;

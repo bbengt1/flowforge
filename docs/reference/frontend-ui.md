@@ -203,6 +203,18 @@ E8.1 (Chloe) extends the E4.2 `/config` SSH-target and command-profile surfaces 
 - **Operator routes:** existing `/config/ssh-targets` and `/config/command-profiles` — not a duplicate Targets app.
 - **Helpers:** `apps/web/src/lib/ssh.ts`. Types: `ssh-types.ts`.
 
+## E8.2 ssh.run node config (Chloe UI)
+
+E8.2 (Chloe) adds a placeable `ssh.run` configuration to the E6.2 library and E6.3 action wizard. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-node-contract.ts`. Prefer `GET /workflows/catalog` plus `GET /ssh/catalog` `nodes[]` / `retry` / `errors[]` / `permissions[]` when listed; otherwise use marked `contract-fallback` entries (same pattern as E7.2). Relates to #83 / Part of #81 — **Keep #83 open** (jonny owns isolation + tests). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Library / wizard:** `ssh.run` is always placeable. Configure workspace-scoped `sshTargetId`, `commandProfileId`, optional typed `parameters` from the selected profile schema, bounded `timeoutSeconds` (1–3600, default 60), and an explicit `retryPolicy` (`maxAttempts` defaults to 0).
+- **Selectors:** reuse E8.1 published SSH target + command profile selectors (display name + id). `POST …/select` remains the authorize step. HTTP 403 / empty lists fail closed — no leftover rows. Never show `privateKey` / `passphrase`.
+- **Not a terminal:** no free-form command/shell field, password auth, agent forwarding, port forwarding, proxy commands, or host-key auto-accept toggles.
+- **Retry:** retries stay at zero. `retrySafe` is a read-only profile flag (E8.3).
+- **YAML:** references and typed values only — never SSH keys, passwords, host fingerprints as secrets, connection settings as secrets, or raw logs.
+- **Copy:** execution uses ephemeral keys, known-host verification, and allowlists (server-enforced).
+- **Unchanged:** E8.1 `/config` SSH targets and command profiles; no invented routes; `apps/api` untouched.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

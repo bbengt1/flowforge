@@ -12,6 +12,14 @@ import {
 } from "./kubernetes-node-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
+  adaptSshNodeEntries,
+  hasSshNodeContract,
+  isSshConfigurableType,
+  sshFallbackNode,
+  sshLibraryTypes,
+  type SshNodeCatalog,
+} from "./ssh-node-contract.ts";
+import {
   CORE_NEUTRAL_NODE_TYPES,
   adaptCoreNeutralPalette,
   catalogExcludesTriggerNodes,
@@ -127,7 +135,11 @@ export function rejectDisabledActionType(
   }
   const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
   if (!listed) {
-    if (isCoreNeutralNodeType(type) || kubernetesLibraryTypes(catalog).includes(type)) {
+    if (
+      isCoreNeutralNodeType(type) ||
+      kubernetesLibraryTypes(catalog).includes(type) ||
+      sshLibraryTypes(catalog).includes(type)
+    ) {
       return { ok: true, reason: "" };
     }
     return { ok: false, reason: `${type} is not an enabled catalog implementation.` };
@@ -152,30 +164,36 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
   const k8sFallback = isKubernetesConfigurableType(node.type)
     ? kubernetesFallbackNode(node.type)
     : undefined;
-  const fallbackName = coreFallback?.name || k8sFallback?.title;
-  const fallbackDescription = coreFallback?.description || k8sFallback?.description || "";
+  const sshFallback = isSshConfigurableType(node.type)
+    ? sshFallbackNode(node.type)
+    : undefined;
+  const familyFallback = k8sFallback ?? sshFallback;
+  const fallbackName = coreFallback?.name || familyFallback?.title;
+  const fallbackDescription = coreFallback?.description || familyFallback?.description || "";
   const k8sCatalog = k8sFallback ? hasKubernetesNodeContract(node) : false;
+  const sshCatalogued = sshFallback ? hasSshNodeContract(node) : false;
   return {
     type: node.type,
     name: node.title || fallbackName || node.type,
     description: node.description || fallbackDescription,
     phase: isCorePhase(node.phase) ? "core" : String(node.phase),
     family: actionFamilyForType(node.type),
-    inputs: node.inputs?.length ? node.inputs : coreFallback?.inputs ?? k8sFallback?.inputs ?? [],
-    outputs: node.outputs?.length ? node.outputs : coreFallback?.outputs ?? k8sFallback?.outputs ?? [],
+    inputs: node.inputs?.length ? node.inputs : coreFallback?.inputs ?? familyFallback?.inputs ?? [],
+    outputs: node.outputs?.length ? node.outputs : coreFallback?.outputs ?? familyFallback?.outputs ?? [],
     requiredWith: node.requiredWith?.length
       ? node.requiredWith
-      : coreFallback?.requiredWith ?? k8sFallback?.requiredWith ?? [],
+      : coreFallback?.requiredWith ?? familyFallback?.requiredWith ?? [],
     allowedWith: node.allowedWith?.length
       ? node.allowedWith
-      : coreFallback?.allowedWith ?? k8sFallback?.allowedWith ?? [],
-    policy: node.policy ?? coreFallback?.policy ?? k8sFallback?.policy ?? null,
-    bounds: node.bounds ?? coreFallback?.bounds ?? k8sFallback?.bounds ?? null,
-    redaction: node.redaction ?? coreFallback?.redaction ?? k8sFallback?.redaction ?? null,
+      : coreFallback?.allowedWith ?? familyFallback?.allowedWith ?? [],
+    policy: node.policy ?? coreFallback?.policy ?? familyFallback?.policy ?? null,
+    bounds: node.bounds ?? coreFallback?.bounds ?? familyFallback?.bounds ?? null,
+    redaction: node.redaction ?? coreFallback?.redaction ?? familyFallback?.redaction ?? null,
     source:
       (k8sFallback && k8sCatalog) ||
+      (sshFallback && sshCatalogued) ||
       coreFallback?.source === "catalog" ||
-      (!k8sFallback && Boolean(node.title || node.policy))
+      (!familyFallback && Boolean(node.title || node.policy))
         ? "catalog"
         : "contract-fallback",
     enabled: isCatalogImplementationEnabled(node),
@@ -190,6 +208,7 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
 export function adaptActionLibrary(
   catalog: WorkflowCatalog | null | undefined,
   engineCatalog?: KubernetesEngineCatalog | null,
+  sshCatalog?: SshNodeCatalog | null,
 ): ActionLibraryEntry[] {
   const enabled = filterEnabledActionNodes(catalog?.nodes);
   const byType = new Map(enabled.map((item) => [item.type, fromCatalogNode(item)]));
@@ -205,6 +224,12 @@ export function adaptActionLibrary(
         ...fromCatalogNode(node),
         source: "contract-fallback" as const,
       })),
+      ...adaptSshNodeEntries(null, sshCatalog).map((node) => ({
+        ...fromCatalogNode(node),
+        source: sshCatalog?.source === "contract-fallback" || !sshCatalog
+          ? ("contract-fallback" as const)
+          : ("catalog" as const),
+      })),
     ]);
   }
   for (const type of CORE_NEUTRAL_NODE_TYPES) {
@@ -216,28 +241,44 @@ export function adaptActionLibrary(
     }
   }
   for (const node of adaptKubernetesNodeEntries(catalog, engineCatalog)) {
-    const existing = byType.get(node.type);
-    if (!existing) {
-      byType.set(node.type, {
-        ...fromCatalogNode(node),
-        source: engineCatalog ? "catalog" : "contract-fallback",
-      });
-      continue;
-    }
-    if ((existing.allowedWith?.length ?? 0) === 0 && (node.allowedWith?.length ?? 0) > 0) {
-      byType.set(node.type, {
-        ...existing,
-        name: existing.name || node.title || existing.name,
-        description: existing.description || node.description || existing.description,
-        allowedWith: node.allowedWith ?? existing.allowedWith,
-        requiredWith: existing.requiredWith.length
-          ? existing.requiredWith
-          : node.requiredWith ?? existing.requiredWith,
-        source: engineCatalog ? "catalog" : existing.source,
-      });
-    }
+    mergeLibraryNode(byType, node, engineCatalog ? "catalog" : "contract-fallback");
+  }
+  for (const node of adaptSshNodeEntries(catalog, sshCatalog)) {
+    const source =
+      sshCatalog && sshCatalog.source !== "contract-fallback"
+        ? "catalog"
+        : "contract-fallback";
+    mergeLibraryNode(byType, node, source);
   }
   return sortLibraryEntries([...byType.values()]);
+}
+
+function mergeLibraryNode(
+  byType: Map<string, ActionLibraryEntry>,
+  node: CatalogNode,
+  source: "catalog" | "contract-fallback",
+): void {
+  const existing = byType.get(node.type);
+  if (!existing) {
+    byType.set(node.type, {
+      ...fromCatalogNode(node),
+      source,
+    });
+    return;
+  }
+  if ((existing.allowedWith?.length ?? 0) === 0 && (node.allowedWith?.length ?? 0) > 0) {
+    byType.set(node.type, {
+      ...existing,
+      name: existing.name || node.title || existing.name,
+      description: existing.description || node.description || existing.description,
+      allowedWith: node.allowedWith ?? existing.allowedWith,
+      requiredWith: existing.requiredWith.length
+        ? existing.requiredWith
+        : node.requiredWith ?? existing.requiredWith,
+      policy: existing.policy ?? node.policy ?? existing.policy,
+      source,
+    });
+  }
 }
 
 function sortLibraryEntries(entries: ActionLibraryEntry[]): ActionLibraryEntry[] {
