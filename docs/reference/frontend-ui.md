@@ -265,11 +265,11 @@ E9.3 (Chloe UI) authors declared input/output schemas and surfaces redacted resu
 
 ## E9.4 artifact revocation and emergency stop (Chloe UI)
 
-E9.4 (Chloe UI) wires jonny's revoke + emergency-stop map on `main`. `apps/api` is unchanged in the Chloe PR. Prefer `GET /scripts/catalog` (`revocation`, `emergencyStop`, `errors[]`) plus `POST /scripts/{id}/revoke` and `POST /executions/{id}/emergency-stop`. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #95 / Part of #91 — **Keep #95 open** (this UI story). Do not close with the API PR alone.
+E9.4 (Chloe UI) wires jonny's **#103** map on `main` (`e94-#103`). `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-ops-contract.ts` plus `script-ops-client.ts`. Prefer `GET /scripts/catalog` (`revocation`, `emergencyStop`, `errors[]`) plus `POST /scripts/{id}/revoke` `{reason?}` and `POST /executions/{id}/emergency-stop` (`{stepId?, uncertain?}` or the step twin). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #95 / Part of #91 — **Keep #95 open** (this UI story). Do not close #95 or #91.
 
-- **Artifacts:** show `revokedAt` on `GET /scripts/{id}`. **Revoke** requires `script.revoke` (operator/admin). Viewer → `403`. Idempotent. Optional secret-free `reason`.
-- **Execute fail-closed:** revoked → `409 artifact-revoked` at start and at claim / first heartbeat. Do not offer Run on a revoked digest.
-- **Emergency stop:** `POST /executions/{id}/emergency-stop` (`script.emergencyStop`). Policy may deny (`allowEmergencyStop=false`). Running / uncertain → loud `indeterminate` — never imply the script did not run. Queued (never heartbeated) may show `canceled`.
+- **Artifacts:** show `revokedAt` on `GET /scripts/{id}` and version pins. **Revoke** requires `script.revoke` (operator/admin). Viewer → `403`. Idempotent. Optional secret-free `reason` (≤256 bytes). Clear confirmation. Already-running runs are not auto-halted.
+- **Execute fail-closed:** revoked → `409 artifact-revoked` at start and at claim / first heartbeat. Do not offer Run on a revoked digest. Publish of a new draft still creates a new artifact.
+- **Emergency stop:** distinct from Cancel. `POST /executions/{id}/emergency-stop` (`script.emergencyStop`). Policy may deny (`allowEmergencyStop=false`; missing policy allows). Queued / claimed (no heartbeat) → `canceled`. Running / `uncertain=true` → loud `indeterminate` until verified — never imply the script did not run. No blind retry after stop.
 - **Unchanged:** E9.1–E9.3 authoring/I/O/retry; `apps/api` untouched in the Chloe UI PR.
 
 ## Foundation operator shell

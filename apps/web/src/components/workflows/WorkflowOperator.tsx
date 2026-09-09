@@ -24,13 +24,18 @@ import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
 import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
-import { getScriptCatalog, listWorkflowScriptArtifacts } from "@/lib/script-client";
+import { getScriptArtifact, getScriptCatalog, listWorkflowScriptArtifacts } from "@/lib/script-client";
 import {
   scriptArtifactStatus,
   yamlHasScriptNodes,
+  type ScriptArtifact,
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
+import {
+  SCRIPT_REVOKED_RUN_BLOCK_HELP,
+  hasRevokedScriptPin,
+} from "@/lib/script-ops-contract";
 import {
   adaptActionLibrary,
   rejectDisabledActionType,
@@ -138,6 +143,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   );
   const [scriptArtifacts, setScriptArtifacts] = useState<
     Record<string, ScriptVersionPin[]>
+  >({});
+  const [scriptArtifactRecords, setScriptArtifactRecords] = useState<
+    Record<string, ScriptArtifact>
   >({});
   const [status, setStatus] = useState<"idle" | "pending" | "valid" | "invalid">(
     "idle",
@@ -406,6 +414,26 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       }),
     );
     setScriptArtifacts(Object.fromEntries(artifactEntries));
+    const uniqueIds = [
+      ...new Set(
+        artifactEntries.flatMap(([, pins]) => pins.map((pin) => pin.artifactId)),
+      ),
+    ];
+    const records = await Promise.all(
+      uniqueIds.map(async (artifactId) => {
+        const result = await getScriptArtifact(identity, artifactId);
+        return result.ok ? result.artifact : null;
+      }),
+    );
+    setScriptArtifactRecords((current) => {
+      const next = { ...current };
+      for (const artifact of records) {
+        if (artifact) {
+          next[artifact.id] = artifact;
+        }
+      }
+      return next;
+    });
     if (firstPublished) {
       await evaluateSelectedVersion(firstPublished, workflowId);
     }
@@ -1231,10 +1259,21 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
                 scriptArtifacts[
                   publishedVersion?.id ?? versions[0]?.id ?? ""
                 ] ?? [],
+              artifacts: Object.values(scriptArtifactRecords),
             })}
             pins={
               scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
               []
+            }
+            artifacts={Object.values(scriptArtifactRecords)}
+            identity={identity}
+            permissions={permissions}
+            scriptCatalog={scriptCatalog}
+            onArtifactChange={(artifact) =>
+              setScriptArtifactRecords((current) => ({
+                ...current,
+                [artifact.id]: artifact,
+              }))
             }
           />
         ) : null}
@@ -1320,6 +1359,14 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
               scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
               []
             }
+            scriptArtifactRecords={Object.values(scriptArtifactRecords)}
+            permissions={permissions}
+            onScriptArtifactChange={(artifact) =>
+              setScriptArtifactRecords((current) => ({
+                ...current,
+                [artifact.id]: artifact,
+              }))
+            }
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
             onPatchNodeWith={patchNodeWith}
@@ -1369,11 +1416,25 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             execution={execution}
             pending={pending === "run" || pending === "pin"}
             dirty={dirty}
-            runBlocked={shouldBlockRun({
-              evaluation: policyEval,
-              evaluationProblem: policyEvalProblem,
-              staleLocalApproved: true,
-            })}
+            runBlocked={
+              shouldBlockRun({
+                evaluation: policyEval,
+                evaluationProblem: policyEvalProblem,
+                staleLocalApproved: true,
+              }) ||
+              hasRevokedScriptPin({
+                pins: scriptArtifacts[runVersionId] ?? [],
+                artifacts: Object.values(scriptArtifactRecords),
+              })
+            }
+            runBlockReason={
+              hasRevokedScriptPin({
+                pins: scriptArtifacts[runVersionId] ?? [],
+                artifacts: Object.values(scriptArtifactRecords),
+              })
+                ? SCRIPT_REVOKED_RUN_BLOCK_HELP
+                : undefined
+            }
             evaluation={policyEval}
             evaluationPending={policyEvalPending}
             evaluationProblem={policyEvalProblem}

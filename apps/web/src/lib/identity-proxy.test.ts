@@ -306,6 +306,27 @@ describe("resolveIdentityProxyTarget", () => {
         ["scripts", "11111111-1111-4111-8111-111111111111"],
         "/api/v1/scripts/11111111-1111-4111-8111-111111111111",
       ],
+      [
+        "POST",
+        ["scripts", "11111111-1111-4111-8111-111111111111", "revoke"],
+        "/api/v1/scripts/11111111-1111-4111-8111-111111111111/revoke",
+      ],
+      [
+        "POST",
+        ["executions", "33333333-3333-4333-8333-333333333333", "emergency-stop"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/emergency-stop",
+      ],
+      [
+        "POST",
+        [
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "steps",
+          "44444444-4444-4444-8444-444444444444",
+          "emergency-stop",
+        ],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps/44444444-4444-4444-8444-444444444444/emergency-stop",
+      ],
       ["GET", ["approvals"], "/api/v1/approvals"],
       ["POST", ["approvals"], "/api/v1/approvals"],
       ["GET", ["approvals", "catalog"], "/api/v1/approvals/catalog"],
@@ -573,6 +594,44 @@ describe("resolveIdentityProxyTarget", () => {
       assert.equal(
         pins.apiPath,
         "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/script-artifacts",
+      );
+    }
+    const revoke = resolveIdentityProxyTarget("POST", [
+      "scripts",
+      "11111111-1111-4111-8111-111111111111",
+      "revoke",
+    ]);
+    assert.equal("apiPath" in revoke, true);
+    if ("apiPath" in revoke) {
+      assert.equal(
+        revoke.apiPath,
+        "/api/v1/scripts/11111111-1111-4111-8111-111111111111/revoke",
+      );
+    }
+    const stop = resolveIdentityProxyTarget("POST", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "emergency-stop",
+    ]);
+    assert.equal("apiPath" in stop, true);
+    if ("apiPath" in stop) {
+      assert.equal(
+        stop.apiPath,
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/emergency-stop",
+      );
+    }
+    const stepStop = resolveIdentityProxyTarget("POST", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "steps",
+      "44444444-4444-4444-8444-444444444444",
+      "emergency-stop",
+    ]);
+    assert.equal("apiPath" in stepStop, true);
+    if ("apiPath" in stepStop) {
+      assert.equal(
+        stepStop.apiPath,
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps/44444444-4444-4444-8444-444444444444/emergency-stop",
       );
     }
     const blob = resolveIdentityProxyTarget("GET", [

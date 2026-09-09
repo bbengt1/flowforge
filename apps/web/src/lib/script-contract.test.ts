@@ -396,6 +396,36 @@ describe("script contract adapter", () => {
     assert.equal(fromPins.kind, "signed-pinned");
     assert.equal(fromPins.digest, "sha256:cccccccccccccccccccccccccccccccc");
     assert.equal(fromPins.scanStatus, "clean");
+
+    const revoked = scriptArtifactStatus({
+      hasPublishedVersion: true,
+      scriptArtifacts: [
+        {
+          workflowVersionId: PROFILE_ID,
+          nodeId: "summarize",
+          artifactId: PROFILE_ID,
+          digest: "sha256:cccccccccccccccccccccccccccccccc",
+          scanStatus: "clean",
+          signature: "ed25519:pin",
+        },
+      ],
+      artifacts: [
+        {
+          id: PROFILE_ID,
+          language: "python",
+          entrypoint: "main.py",
+          digest: "sha256:cccccccccccccccccccccccccccccccc",
+          signature: "ed25519:pin",
+          scanStatus: "clean",
+          status: "published",
+          revokedAt: "2026-09-09T15:04:00Z",
+        },
+      ],
+    });
+    assert.equal(revoked.kind, "revoked");
+    assert.match(revoked.label, /cannot start/i);
+    assert.match(revoked.help, /artifact-revoked/);
+    assert.equal(revoked.revokedAt, "2026-09-09T15:04:00Z");
   });
 
   it("detects script nodes in YAML and overlays catalog nodes[] when present", () => {

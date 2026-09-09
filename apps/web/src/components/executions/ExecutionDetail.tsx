@@ -104,6 +104,17 @@ import {
   scriptIndeterminateCopy,
   scriptRetryBlockedMessage,
 } from "@/lib/script-io-contract";
+import { emergencyStopExecution } from "@/lib/script-ops-client";
+import {
+  SCRIPT_EMERGENCY_STOP_CONFIRM_HELP,
+  SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE,
+  SCRIPT_EMERGENCY_STOP_HELP,
+  SCRIPT_EMERGENCY_STOP_PERMISSION,
+  SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP,
+  canOfferScriptEmergencyStop,
+  emergencyStopShouldMarkUncertain,
+  scriptEmergencyStopCopy,
+} from "@/lib/script-ops-contract";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -140,6 +151,10 @@ export function ExecutionDetail({
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [stopPending, setStopPending] = useState<string | null>(null);
+  const [stopMessage, setStopMessage] = useState<string | null>(null);
+  const [stopConfirm, setStopConfirm] = useState<string | null>(null);
+  const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [downloadPending, setDownloadPending] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const [stepLogs, setStepLogs] = useState<Record<string, ExecutionLogSlice>>(
@@ -195,14 +210,20 @@ export function ExecutionDetail({
     ),
   );
   const showRetry =
-    sshRetryAllowed ||
-    scriptRetryAllowed ||
-    canRetryExecution({
-      permissions,
-      permittedActions: view?.permittedActions,
-      status: view?.header.status,
-      steps: view?.steps,
-    });
+    !stoppedUncertain &&
+    (sshRetryAllowed ||
+      scriptRetryAllowed ||
+      canRetryExecution({
+        permissions,
+        permittedActions: view?.permittedActions,
+        status: view?.header.status,
+        steps: view?.steps,
+      }));
+  const canEmergencyStop = canOfferScriptEmergencyStop({
+    permissions,
+    status: view?.header.status,
+    steps: view?.steps,
+  });
   const indeterminate = Boolean(view?.header.indeterminate);
   const live =
     normalizeExecutionStatus(view?.header.status) === "queued" ||
@@ -302,8 +323,44 @@ export function ExecutionDetail({
     await refresh();
   }
 
+  async function onEmergencyStop(stepId?: string) {
+    if (!canEmergencyStop || stopPending) {
+      return;
+    }
+    const confirmKey = stepId ?? "execution";
+    if (stopConfirm !== confirmKey) {
+      setStopConfirm(confirmKey);
+      setStopMessage(null);
+      return;
+    }
+    setStopPending(confirmKey);
+    setProblem(null);
+    setStopMessage(null);
+    const status = stepId
+      ? view?.steps.find((step) => step.id === stepId)?.status
+      : view?.header.status;
+    const result = await emergencyStopExecution(identity, executionId, {
+      stepId,
+      uncertain: emergencyStopShouldMarkUncertain(status),
+      status,
+    });
+    setLastRequestId(result.requestId);
+    setStopPending(null);
+    setStopConfirm(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      if (result.forbidden) {
+        setStopMessage(SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE);
+      }
+      return;
+    }
+    setStoppedUncertain(result.uncertain || result.outcome === "indeterminate");
+    setStopMessage(result.message);
+    await refresh();
+  }
+
   async function onRetry(stepId?: string) {
-    if (retryPending) {
+    if (retryPending || stoppedUncertain) {
       return;
     }
     if (stepId) {
@@ -650,7 +707,7 @@ export function ExecutionDetail({
                 <button
                   type="button"
                   onClick={() => void onCancel()}
-                  disabled={cancelPending || pending}
+                  disabled={cancelPending || pending || Boolean(stopPending)}
                   className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
                 >
                   {cancelPending ? "Canceling…" : "Cancel execution"}
@@ -663,6 +720,26 @@ export function ExecutionDetail({
                     {EXECUTION_CANCEL_PERMISSION}
                   </code>
                   . This action is separately authorized.
+                </p>
+              ) : null}
+              {canEmergencyStop ? (
+                <button
+                  type="button"
+                  onClick={() => void onEmergencyStop()}
+                  disabled={Boolean(stopPending) || pending || cancelPending}
+                  className="rounded-lg border-2 border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-900 disabled:opacity-60"
+                >
+                  {stopPending === "execution"
+                    ? "Stopping…"
+                    : stopConfirm === "execution"
+                      ? "Confirm emergency stop"
+                      : "Emergency stop"}
+                </button>
+              ) : executionHasScriptRun(view.steps) &&
+                permissions != null &&
+                !permissions.includes(SCRIPT_EMERGENCY_STOP_PERMISSION) ? (
+                <p className="text-sm text-zinc-600">
+                  {SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE}
                 </p>
               ) : null}
               {showRetry ? (
@@ -722,9 +799,20 @@ export function ExecutionDetail({
             <p className="mt-2 text-xs text-zinc-500">{CANCEL_CSRF_HELP}</p>
             <p className="mt-1 text-xs text-zinc-500">{RETRY_CSRF_HELP}</p>
             <p className="mt-1 text-xs text-zinc-500">{STATUS_POLL_HELP}</p>
+            {canEmergencyStop || stoppedUncertain ? (
+              <p className="mt-2 text-xs text-rose-900">
+                {SCRIPT_EMERGENCY_STOP_HELP} {SCRIPT_EMERGENCY_STOP_CONFIRM_HELP}{" "}
+                {SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP}
+              </p>
+            ) : null}
             {cancelMessage ? (
               <p role="status" className="mt-3 text-sm text-zinc-800">
                 {cancelMessage}
+              </p>
+            ) : null}
+            {stopMessage ? (
+              <p role="status" className="mt-3 text-sm font-medium text-rose-950">
+                {stopMessage}
               </p>
             ) : null}
             {retryMessage ? (
@@ -939,14 +1027,15 @@ export function ExecutionDetail({
                       error: step.error,
                       input: step.input,
                     }) ||
-                    canOfferScriptRetry({
+                    (!stoppedUncertain &&
+                      canOfferScriptRetry({
                       permissions,
                       nodeType: step.nodeType,
                       status: step.status,
                       output: step.output,
                       error: step.error,
                       input: step.input,
-                    }) ||
+                    })) ||
                     canRetryExecutionStep({
                       permissions,
                       permittedActions: view.permittedActions,
@@ -987,8 +1076,32 @@ export function ExecutionDetail({
                       </p>
                     ) : isScriptIoActionType(step.nodeType) ? (
                       <p className="mt-3 text-xs text-zinc-500">
-                        {SCRIPT_IO_NO_BLIND_RETRY_HELP}
+                        {stoppedUncertain
+                          ? scriptEmergencyStopCopy({
+                              outcome: "indeterminate",
+                              uncertain: true,
+                              status: step.status,
+                            })
+                          : SCRIPT_IO_NO_BLIND_RETRY_HELP}
                       </p>
+                    ) : null}
+                    {canOfferScriptEmergencyStop({
+                      permissions,
+                      status: step.status,
+                      nodeType: step.nodeType,
+                    }) ? (
+                      <button
+                        type="button"
+                        onClick={() => void onEmergencyStop(step.id)}
+                        disabled={Boolean(stopPending) || pending || cancelPending}
+                        className="mt-3 ml-2 rounded-lg border-2 border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-900 disabled:opacity-60"
+                      >
+                        {stopPending === step.id
+                          ? "Stopping…"
+                          : stopConfirm === step.id
+                            ? "Confirm emergency stop"
+                            : "Emergency stop step"}
+                      </button>
                     ) : null}
                     {isSshRunType(step.nodeType)
                       ? (() => {

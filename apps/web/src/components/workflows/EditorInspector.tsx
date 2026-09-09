@@ -8,6 +8,7 @@ import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { isKubernetesActionType } from "@/lib/kubernetes";
 import {
   isScriptConfigurableType,
+  type ScriptArtifact,
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
@@ -38,6 +39,9 @@ type EditorInspectorProps = {
   hasPublishedVersion?: boolean;
   scriptCatalog?: ScriptNodeCatalog | null;
   scriptArtifacts?: readonly ScriptVersionPin[] | null;
+  scriptArtifactRecords?: readonly ScriptArtifact[] | null;
+  permissions?: readonly string[] | null;
+  onScriptArtifactChange?: (artifact: ScriptArtifact) => void;
   onSelectNode: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
@@ -58,6 +62,9 @@ export function EditorInspector({
   hasPublishedVersion,
   scriptCatalog,
   scriptArtifacts,
+  scriptArtifactRecords,
+  permissions,
+  onScriptArtifactChange,
   onSelectNode,
   onApply,
   onPatchNodeWith,
@@ -95,6 +102,9 @@ export function EditorInspector({
           hasPublishedVersion={hasPublishedVersion}
           scriptCatalog={scriptCatalog}
           scriptArtifacts={scriptArtifacts}
+          artifacts={scriptArtifactRecords}
+          permissions={permissions}
+          onArtifactChange={onScriptArtifactChange}
           onPatchNodeWith={onPatchNodeWith}
         />
       ) : null}
