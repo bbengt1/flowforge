@@ -100,11 +100,12 @@ JWS once). Problem details never echo the JWS or private keys.
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Existing embed frame allowlist |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed mint allowlist. Empty fails closed at embed mint. Portal issuers are merged in for exchange only. |
 
-Production must set a stable `EMBED_SIGNING_KEY` and explicit Portal and
-embed issuer allowlists. Empty allowlists fail closed at request time
-(`403` on mint/exchange); the process still starts so other API routes
-stay up. Local compose seeds the lists — it does not fail open. `*` /
-`null` frame ancestors are ignored.
+Production must set a durable `EMBED_SIGNING_KEY` (boot-fail if missing
+when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true`) and explicit
+Portal and embed issuer allowlists. Empty allowlists fail closed at
+request time (`403` on mint/exchange); the process still starts so other
+API routes stay up. Local compose seeds a local-only signing key and
+the lists — it does not fail open. `*` / `null` frame ancestors are ignored.
 
 ## Negative tests (epic #120)
 

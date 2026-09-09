@@ -385,6 +385,110 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsExpiredOverlapAndAcceptsUntilExpiry(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	old := TestMaterial()
+	old.KeyID = "prior-active"
+	until := now.Add(2 * time.Minute)
+	active := NewEphemeralMaterial()
+	active.KeyID = "next-active"
+	active.Overlap = []PublicJWK{{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
+		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap, OverlapUntil: until,
+	}}
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
+	}
+	if _, err := Verify(active, minted.Assertion, opt); err != nil {
+		t.Fatalf("valid overlap: %v", err)
+	}
+	opt.Now = until
+	if _, err := Verify(active, minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("overlapUntil inclusive end: %v", err)
+	}
+	opt.Now = until.Add(time.Second)
+	if _, err := Verify(active, minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("expired overlap: %v", err)
+	}
+}
+
+func TestRotateOverlapExpiresAfterOverlapUntil(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	old := TestMaterial()
+	old.KeyID = "rotate-old"
+	store := NewMemoryKeys()
+	ring := NewRing(old, store)
+	until := now.Add(90 * time.Second)
+	if err := ring.AddOverlap(ctx, old.PublicJWKS().Keys[0], until); err != nil {
+		t.Fatal(err)
+	}
+	next := NewEphemeralMaterial()
+	next.KeyID = "rotate-new"
+	if err := ring.InstallActive(next); err != nil {
+		t.Fatal(err)
+	}
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
+	}
+	if _, err := ring.Verify(ctx, minted.Assertion, opt); err != nil {
+		t.Fatalf("prior key during overlap: %v", err)
+	}
+	opt.Now = until.Add(time.Second)
+	if _, err := ring.Verify(ctx, minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("prior key after overlapUntil: %v", err)
+	}
+}
+
+func TestVerifyRefreshesOverlapFromSharedStore(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	old := TestMaterial()
+	old.KeyID = "shared-old"
+	next := NewEphemeralMaterial()
+	next.KeyID = "shared-new"
+	store := NewMemoryKeys()
+	writer := NewRing(old, store)
+	reader := NewRing(next, store)
+	if err := writer.AddOverlap(ctx, old.PublicJWKS().Keys[0], now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.InstallActive(next); err != nil {
+		t.Fatal(err)
+	}
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
+	}
+	if _, err := Verify(reader.MaterialAt(opt.Now), minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("stale reader without refresh must miss overlap: %v", err)
+	}
+	if _, err := reader.Verify(ctx, minted.Assertion, opt); err != nil {
+		t.Fatalf("verify-path refresh must load overlap: %v", err)
+	}
+
+	if err := writer.RetireOverlap(ctx, old.KeyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Verify(ctx, minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("verify-path refresh must drop retired overlap: %v", err)
+	}
+}
+
 func TestVerifyOverlapKeyAcceptedUnknownKidRejected(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	old := TestMaterial()

@@ -540,6 +540,72 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 	}
 }
 
+func TestEmbedExchangeExpiredOverlapRejected(t *testing.T) {
+	env := newEmbedEnv(t)
+	until := env.now.Add(90 * time.Second)
+	active := env.keys.PublicJWKS().Keys[0]
+	body, err := json.Marshal(map[string]any{
+		"action":       "register-overlap",
+		"publicJwk":    active,
+		"overlapUntil": until.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(body), env.ops)
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("register-overlap %d %s", rec.Code, rec.Body.String())
+	}
+	next := embed.NewEphemeralMaterial()
+	next.KeyID = "next-after-rotate"
+	if err := env.ring.InstallActive(next); err != nil {
+		t.Fatal(err)
+	}
+
+	minted, _, err := embed.Mint(env.keys, embed.MintInput{
+		Issuer:       "https://idp.example",
+		Subject:      "admin-1",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		TTL:          embed.DefaultTTL,
+		Audience:     embed.DefaultAudience,
+		Now:          *env.now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(ok, req)
+	if ok.Code != http.StatusCreated {
+		t.Fatalf("overlap still valid %d %s", ok.Code, ok.Body.String())
+	}
+
+	env.advance(91 * time.Second)
+	later, _, err := embed.Mint(env.keys, embed.MintInput{
+		Issuer:       "https://idp.example",
+		Subject:      "admin-1",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		TTL:          embed.DefaultTTL,
+		Audience:     embed.DefaultAudience,
+		Now:          *env.now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rej := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, later.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rej, req)
+	assertProblem(t, rej, http.StatusUnauthorized, CodeUnauthenticated, "")
+}
+
 func TestEmbedMintEmptyAllowlistDenied(t *testing.T) {
 	env := newEmbedEnvWithIssuers(t, nil, nil)
 	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)

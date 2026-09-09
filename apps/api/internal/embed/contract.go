@@ -21,8 +21,11 @@ const (
 )
 
 // Environment sources for the FlowForge signing key. The private key is
-// never returned from an API. Production must set a stable key; an empty
-// source yields an ephemeral process key (assertions die on restart).
+// never returned from an API. Production (empty/production APP_ENV or
+// REQUIRE_TLS) requires a durable EMBED_SIGNING_KEY and refuses to start
+// without one. An ephemeral process key is gated to non-production
+// APP_ENV only (ADV-006). ADV-016 may later remove the hardcoded
+// ephemeral seed entirely.
 const (
 	EnvSigningKey     = "EMBED_SIGNING_KEY"
 	EnvSigningKeyFile = "EMBED_SIGNING_KEY_FILE"

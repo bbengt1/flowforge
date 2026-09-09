@@ -38,7 +38,7 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | `browser_sessions` | `id`, `user_id`, `token_hash`, `csrf_hash`, idle/absolute expiry, `revoked_at`, optional `embed_tenant_id` / `embed_workbench_key` / `embed_workspace_id` / `embed_capabilities` | Cookie secrets stored only as SHA-256; no RLS (identity substrate). Embed exchange binds `(tenant_id, workbench_key)` onto the session. |
 | `session_audit_events` | `id`, `user_id`, `session_id`, `event_type`, `outcome`, `reason`, `request_id` | Append-only, secret-free session security events. |
 | `embed_assertion_jtis` | `jti`, `expires_at`, `consumed_at` | E11.2 atomic one-time assertion token ids with TTL. `INSERT ON CONFLICT DO NOTHING`; replay is conflict. No RLS (identity substrate). |
-| `embed_overlap_keys` | `kid`, public JWK fields, `expires_at` | E11.2 overlap verification public keys only. Never private material. |
+| `embed_overlap_keys` | `kid`, public JWK fields, `expires_at` | E11.2 overlap verification public keys only. Never private material. Exchange/JWKS refresh this table and drop rows past `expires_at` (`overlapUntil`). |
 
 Host/embed identity assertions are validated before a transaction starts. The database records safe subject, host audience, tenant/workspace context, correlation ID, and permission decision in audit data; it does not persist the bearer assertion itself. Browser session cookies are hashed before persistence; audit rows never store token or CSRF values.
 

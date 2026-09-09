@@ -53,36 +53,49 @@ func (r *Ring) KeyID() string {
 	return r.active.KeyID
 }
 
-// Material returns a snapshot with env + runtime overlap merged.
+// Material returns a snapshot with env + runtime overlap merged and
+// expired overlap keys dropped.
 func (r *Ring) Material() Material {
+	return r.MaterialAt(time.Now().UTC())
+}
+
+// MaterialAt is Material evaluated at now (overlapUntil / retire).
+func (r *Ring) MaterialAt(now time.Time) Material {
 	if r == nil {
 		return Material{}
 	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.snapshotLocked()
+	return r.snapshotLocked(now)
 }
 
-func (r *Ring) snapshotLocked() Material {
+func (r *Ring) snapshotLocked(now time.Time) Material {
 	m := r.active
 	seen := map[string]struct{}{}
 	out := make([]PublicJWK, 0, len(m.Overlap)+len(r.runtime))
-	for _, k := range m.Overlap {
-		if k.Kid == m.KeyID {
-			continue
+	add := func(k PublicJWK) {
+		if k.Kid == "" || k.Kid == m.KeyID {
+			return
+		}
+		if !OverlapStillValid(k.OverlapUntil, now) {
+			return
+		}
+		if _, ok := seen[k.Kid]; ok {
+			return
 		}
 		seen[k.Kid] = struct{}{}
 		out = append(out, k)
 	}
+	// Store-backed runtime first so a refresh from another instance wins
+	// over a stale env copy of the same kid.
 	for _, k := range r.runtime {
-		if k.Kid == m.KeyID {
-			continue
-		}
-		if _, ok := seen[k.Kid]; ok {
-			continue
-		}
-		seen[k.Kid] = struct{}{}
-		out = append(out, k)
+		add(k)
+	}
+	for _, k := range m.Overlap {
+		add(k)
 	}
 	m.Overlap = out
 	return m
@@ -93,19 +106,58 @@ func (r *Ring) PublicJWKS() JWKS {
 	return r.Material().PublicJWKS()
 }
 
-// Refresh pulls durable overlap keys into the runtime set.
+// Refresh pulls durable overlap keys into the runtime set and drops
+// expired in-memory overlap (overlapUntil). Call this on the verify
+// path so multi-instance rotate/retire is visible and stale rings do
+// not accept retired or expired keys forever.
 func (r *Ring) Refresh(ctx context.Context, now time.Time) error {
-	if r == nil || r.store == nil {
+	if r == nil {
 		return nil
 	}
-	keys, err := r.store.ListOverlap(ctx, now)
-	if err != nil {
-		return err
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if r.store != nil {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		keys, err := r.store.ListOverlap(ctx, now)
+		if err != nil {
+			return err
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.runtime = keys
+		r.active.Overlap = filterLiveOverlap(r.active.Overlap, now)
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.runtime = keys
+	r.runtime = filterLiveOverlap(r.runtime, now)
+	r.active.Overlap = filterLiveOverlap(r.active.Overlap, now)
 	return nil
+}
+
+// Verify refreshes overlap from the durable store, refuses expired or
+// retired overlap keys, then verifies the assertion.
+func (r *Ring) Verify(ctx context.Context, token string, opt VerifyOptions) (Verified, error) {
+	if r == nil {
+		return Verified{}, ErrKeyUnavailable
+	}
+	now := opt.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if opt.Context == nil {
+		opt.Context = ctx
+	}
+	if err := r.Refresh(ctx, now); err != nil {
+		return Verified{}, err
+	}
+	return Verify(r.MaterialAt(now), token, opt)
 }
 
 // AddOverlap registers the current active public key as overlap so a
@@ -124,6 +176,9 @@ func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt time.Tim
 	r.mu.RUnlock()
 	if !match {
 		return ErrOverlapNotPrior
+	}
+	if !expiresAt.IsZero() {
+		norm.OverlapUntil = expiresAt.UTC()
 	}
 	if r.store != nil {
 		if err := r.store.RegisterOverlap(ctx, norm, expiresAt); err != nil {
@@ -249,7 +304,9 @@ func (m *MemoryKeys) ListOverlap(_ context.Context, now time.Time) ([]PublicJWK,
 		if !OverlapStillValid(row.expiresAt, now) {
 			continue
 		}
-		out = append(out, row.key)
+		k := row.key
+		k.OverlapUntil = row.expiresAt
+		out = append(out, k)
 	}
 	return out, nil
 }
@@ -262,6 +319,9 @@ func (m *MemoryKeys) RegisterOverlap(_ context.Context, key PublicJWK, expiresAt
 	norm, err := normalizeOverlapJWK(key)
 	if err != nil {
 		return err
+	}
+	if !expiresAt.IsZero() {
+		norm.OverlapUntil = expiresAt.UTC()
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

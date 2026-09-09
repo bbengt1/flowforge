@@ -56,9 +56,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |
 | `WEB_CSP_CONNECT_SRC` | unset | Extra CSP `connect-src` origins (space-separated). `NEXT_PUBLIC_API_URL` is always included. |
-| `EMBED_SIGNING_KEY` | ephemeral | Ed25519 seed/key (base64, hex, or PKCS8 PEM) used to mint embed assertions. Production must set a stable key. |
+| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed/key (base64, hex, or PKCS8 PEM) used to mint embed assertions. Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose seeds a local-only key. Ephemeral process keys are non-production only. |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY`. |
-| `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. Never a secret. |
+| `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. Never a secret. Never `ephemeral:process` in production. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. |

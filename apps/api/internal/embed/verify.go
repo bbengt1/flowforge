@@ -68,12 +68,16 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if strings.TrimSpace(h.SDK) != "" && h.SDK != SDKVersion {
 		return Verified{}, ErrSDK
 	}
+	now := opt.Now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	if !ed25519.Verify(m.Public, []byte(parts[0]+"."+parts[1]), sb) {
-		if !verifyOverlap(m, h.Kid, []byte(parts[0]+"."+parts[1]), sb) {
+		if !verifyOverlap(m, h.Kid, []byte(parts[0]+"."+parts[1]), sb, now) {
 			return Verified{}, ErrSignature
 		}
 	}
-	if strings.TrimSpace(h.Kid) != "" && h.Kid != m.KeyID && !overlapHasKid(m, h.Kid) {
+	if strings.TrimSpace(h.Kid) != "" && h.Kid != m.KeyID && !overlapHasKid(m, h.Kid, now) {
 		return Verified{}, ErrUnknownKey
 	}
 	var c Claims
@@ -119,10 +123,6 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	}
 	if err := authz.ConfirmResolvedID(opt.ResolvedWS, c.WorkspaceID); err != nil {
 		return Verified{}, ErrWorkspaceBinding
-	}
-	now := opt.Now.UTC()
-	if now.IsZero() {
-		now = time.Now().UTC()
 	}
 	if now.Unix() < c.NotBefore {
 		return Verified{}, ErrNotYetValid
@@ -176,10 +176,13 @@ func checkRequired(c Claims) error {
 	return nil
 }
 
-func verifyOverlap(m Material, kid string, msg, sig []byte) bool {
+func verifyOverlap(m Material, kid string, msg, sig []byte, now time.Time) bool {
 	kid = strings.TrimSpace(kid)
 	for _, k := range m.Overlap {
 		if k.Status != KeyStatusOverlap && k.Status != "" {
+			continue
+		}
+		if !OverlapStillValid(k.OverlapUntil, now) {
 			continue
 		}
 		if kid != "" && k.Kid != kid {
@@ -196,9 +199,9 @@ func verifyOverlap(m Material, kid string, msg, sig []byte) bool {
 	return false
 }
 
-func overlapHasKid(m Material, kid string) bool {
+func overlapHasKid(m Material, kid string, now time.Time) bool {
 	for _, k := range m.Overlap {
-		if k.Kid == kid && k.Status == KeyStatusOverlap {
+		if k.Kid == kid && k.Status == KeyStatusOverlap && OverlapStillValid(k.OverlapUntil, now) {
 			return true
 		}
 	}
