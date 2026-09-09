@@ -10,7 +10,9 @@ import {
   createScheduleTrigger,
   deleteScheduleTrigger,
   disableScheduleTrigger,
+  dispatchSchedule,
   enableScheduleTrigger,
+  getScheduleCatalog,
   listScheduleTriggers,
   updateScheduleTrigger,
 } from "@/lib/schedule-trigger-client";
@@ -19,6 +21,7 @@ import {
   SCHEDULE_CATCH_UP_HELP,
   SCHEDULE_CATALOG_FALLBACK_MESSAGE,
   SCHEDULE_CSRF_HELP,
+  SCHEDULE_DISPATCH_HELP,
   SCHEDULE_EXPRESSION_HELP,
   SCHEDULE_FORBIDDEN_MESSAGE,
   SCHEDULE_MAX_CATCH_UP,
@@ -27,8 +30,10 @@ import {
   SCHEDULE_OVERLAP_POLICIES,
   SCHEDULE_PUBLISHED_ONLY_HELP,
   SCHEDULE_TIMEZONE_HELP,
+  SCHEDULE_TRIGGER_API_PR,
   SCHEDULE_VIEW_FORBIDDEN_MESSAGE,
   SCHEDULE_YAML_HELP,
+  canDispatchScheduleTriggers,
   canManageScheduleTriggers,
   canViewScheduleTriggers,
   editorScheduleTriggersHref,
@@ -46,6 +51,7 @@ import {
   type ScheduleOverlapPolicy,
   type ScheduleTriggerDraft,
   type ScheduleTriggerRecord,
+  type ScheduleTypeCatalog,
 } from "@/lib/schedule-trigger-contract";
 import { fetchWorkflowCatalog, listWorkflowVersions } from "@/lib/workflow-client";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
@@ -70,7 +76,11 @@ export function ScheduleTriggerPanel({
 }: ScheduleTriggerPanelProps) {
   const canView = canViewScheduleTriggers(permissions);
   const canManage = canManageScheduleTriggers(permissions);
+  const canDispatch = canDispatchScheduleTriggers(permissions);
   const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
+  const [scheduleCatalog, setScheduleCatalog] = useState<ScheduleTypeCatalog | null>(
+    null,
+  );
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [items, setItems] = useState<ScheduleTriggerRecord[]>([]);
   const [draft, setDraft] = useState<ScheduleTriggerDraft>(() =>
@@ -84,20 +94,24 @@ export function ScheduleTriggerPanel({
 
   const yamlDeclared = useMemo(() => yamlScheduleTriggers(yaml), [yaml]);
   const published = useMemo(() => publishedRunVersions(versions), [versions]);
-  const catalogFallback = isScheduleCatalogFallback(catalog);
+  const catalogFallback = isScheduleCatalogFallback(catalog, scheduleCatalog);
 
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
       fetchWorkflowCatalog(identity),
+      getScheduleCatalog(identity),
       listWorkflowVersions(identity, workflowId),
       canView ? listScheduleTriggers(identity, workflowId) : Promise.resolve(null),
-    ]).then(([catalogResult, versionResult, list]) => {
+    ]).then(([catalogResult, scheduleCatalogResult, versionResult, list]) => {
       if (cancelled) {
         return;
       }
       if (catalogResult.ok) {
         setCatalog(catalogResult.catalog);
+      }
+      if (scheduleCatalogResult.ok) {
+        setScheduleCatalog(scheduleCatalogResult.catalog);
       }
       if (versionResult.ok) {
         const publishedItems = publishedRunVersions(versionResult.items);
@@ -131,7 +145,12 @@ export function ScheduleTriggerPanel({
     }
     setPending("list");
     setProblem(null);
-    const list = await listScheduleTriggers(identity, workflowId, catalog);
+    const list = await listScheduleTriggers(
+      identity,
+      workflowId,
+      catalog,
+      scheduleCatalog,
+    );
     setPending(null);
     if (!list.ok) {
       setItems([]);
@@ -149,7 +168,13 @@ export function ScheduleTriggerPanel({
     setPending("create");
     setProblem(null);
     setLocalErrors([]);
-    const result = await createScheduleTrigger(identity, workflowId, draft, catalog);
+    const result = await createScheduleTrigger(
+      identity,
+      workflowId,
+      draft,
+      catalog,
+      scheduleCatalog,
+    );
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -177,6 +202,7 @@ export function ScheduleTriggerPanel({
       editingId,
       draft,
       catalog,
+      scheduleCatalog,
     );
     setPending(null);
     if (!result.ok) {
@@ -193,8 +219,20 @@ export function ScheduleTriggerPanel({
     setProblem(null);
     const result =
       record.status === "enabled"
-        ? await disableScheduleTrigger(identity, workflowId, record.id, catalog)
-        : await enableScheduleTrigger(identity, workflowId, record.id, catalog);
+        ? await disableScheduleTrigger(
+            identity,
+            workflowId,
+            record.id,
+            catalog,
+            scheduleCatalog,
+          )
+        : await enableScheduleTrigger(
+            identity,
+            workflowId,
+            record.id,
+            catalog,
+            scheduleCatalog,
+          );
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -212,6 +250,7 @@ export function ScheduleTriggerPanel({
       workflowId,
       triggerId,
       catalog,
+      scheduleCatalog,
     );
     setPending(null);
     if (!result.ok) {
@@ -223,6 +262,29 @@ export function ScheduleTriggerPanel({
     if (editingId === triggerId) {
       setEditingId(null);
     }
+  }
+
+  async function onDispatch(scheduleId?: string) {
+    setPending(scheduleId ? `dispatch:${scheduleId}` : "dispatch");
+    setProblem(null);
+    const result = await dispatchSchedule(
+      identity,
+      scheduleId,
+      catalog,
+      scheduleCatalog,
+    );
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    setMessage(result.message);
+    pushNotification({
+      kind: "success",
+      title: "Schedule dispatch",
+      detail: result.message,
+    });
+    await refresh();
   }
 
   function startEdit(record: ScheduleTriggerRecord) {
@@ -247,14 +309,14 @@ export function ScheduleTriggerPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-            E10.3 · Schedule triggers · contract-fallback
+            E10.3 · Schedules · #{SCHEDULE_TRIGGER_API_PR}
           </p>
           <h2 id="schedule-triggers-heading" className="text-base font-semibold">
             Timezone-explicit schedule config
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
             {workflowName ? `${workflowName}. ` : null}
-            {scheduleTriggerHelp(catalog)}
+            {scheduleTriggerHelp(catalog, scheduleCatalog)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -292,6 +354,7 @@ export function ScheduleTriggerPanel({
         <li>{SCHEDULE_CATCH_UP_HELP}</li>
         <li>{SCHEDULE_YAML_HELP}</li>
         <li>{SCHEDULE_PUBLISHED_ONLY_HELP}</li>
+        <li>{SCHEDULE_DISPATCH_HELP}</li>
       </ul>
 
       {catalogFallback ? (
@@ -334,8 +397,8 @@ export function ScheduleTriggerPanel({
         <h3 className="text-sm font-semibold">Configured schedules</h3>
         {items.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-600">
-            No schedule trigger metadata from the API. Create one below when you
-            have workflow.edit. Safe defaults stay skip / catchUp=0.
+            No schedule metadata from the API. Create one below when you have
+            workflow.edit. Safe defaults stay skip / catchUp=0.
           </p>
         ) : (
           <ul className="mt-3 grid gap-3">
@@ -357,34 +420,53 @@ export function ScheduleTriggerPanel({
                       {item.workflowVersionId
                         ? ` · version ${item.workflowVersionId}`
                         : ""}
+                      {item.nextFireAt ? ` · next ${item.nextFireAt}` : ""}
                     </p>
                   </div>
-                  {canManage ? (
+                  {canManage || canDispatch ? (
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={pending !== null}
-                        onClick={() => startEdit(item)}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={pending !== null}
-                        onClick={() => void onToggle(item)}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-                      >
-                        {item.status === "disabled" ? "Enable" : "Disable"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={pending !== null}
-                        onClick={() => void onDelete(item.id)}
-                        className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm text-rose-900 hover:bg-rose-50 disabled:opacity-60"
-                      >
-                        {pending === `delete:${item.id}` ? "Deleting…" : "Delete"}
-                      </button>
+                      {canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={pending !== null}
+                            onClick={() => startEdit(item)}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pending !== null}
+                            onClick={() => void onToggle(item)}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                          >
+                            {item.status === "disabled" ? "Enable" : "Disable"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pending !== null}
+                            onClick={() => void onDelete(item.id)}
+                            className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm text-rose-900 hover:bg-rose-50 disabled:opacity-60"
+                          >
+                            {pending === `delete:${item.id}`
+                              ? "Deleting…"
+                              : "Delete"}
+                          </button>
+                        </>
+                      ) : null}
+                      {canDispatch ? (
+                        <button
+                          type="button"
+                          disabled={pending !== null}
+                          onClick={() => void onDispatch(item.id)}
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                        >
+                          {pending === `dispatch:${item.id}`
+                            ? "Dispatching…"
+                            : "Dispatch tick"}
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -413,7 +495,7 @@ export function ScheduleTriggerPanel({
           }}
         >
           <h3 className="text-sm font-semibold">
-            {editingId ? "Update schedule trigger" : "Create schedule trigger"}
+            {editingId ? "Update schedule" : "Create schedule"}
           </h3>
           {yaml ? (
             <button
@@ -587,7 +669,7 @@ export function ScheduleTriggerPanel({
                   : "Save settings"
                 : pending === "create"
                   ? "Creating…"
-                  : "Create schedule trigger"}
+                  : "Create schedule"}
             </button>
             {editingId ? (
               <button

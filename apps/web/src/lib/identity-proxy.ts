@@ -15,6 +15,7 @@ import {
 } from "./session-cookies.ts";
 import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
 import { SCHEDULE_TRIGGER_PROXY_ROUTES } from "./schedule-trigger-contract.ts";
+import { WEBHOOK_TRIGGER_PROXY_ROUTES } from "./webhook-trigger-contract.ts";
 import {
   ALERT_PROXY_ROUTES,
   isAlertProxySegments,
@@ -284,9 +285,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[2] === "versions" &&
       isResourceId(s[3]),
   },
-  // E10.2/E10.3 trigger collection (#113 on main; E10.3 schedule is
-  // contract-fallback on the same paths with type=schedule). Paths live
-  // in schedule-trigger-contract.ts so a retarget only edits that file.
+  // E10.2 webhook admin (#113). Paths live in webhook-trigger-contract.ts.
+  ...WEBHOOK_TRIGGER_PROXY_ROUTES,
+  // E10.3 schedules (#116). Paths live in schedule-trigger-contract.ts.
   ...SCHEDULE_TRIGGER_PROXY_ROUTES,
   // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
   // approval-contract.ts.

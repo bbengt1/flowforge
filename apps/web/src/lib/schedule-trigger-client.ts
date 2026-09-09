@@ -1,7 +1,8 @@
 /**
- * Typed schedule trigger client. Paths and write bodies come from
+ * Typed schedule client. Paths and write bodies come from
  * schedule-trigger-contract.ts so a retarget only edits that adapter.
- * Cookie session + CSRF on admin mutations.
+ * Cookie session + CSRF on admin mutations and dispatch.
+ * Collection is #116 `/schedules`.
  */
 
 import { callIdentityProxy } from "./identity-client.ts";
@@ -10,15 +11,20 @@ import { isResourceId } from "./identity-proxy-ids.ts";
 import type { ProblemDetails } from "./problem.ts";
 import type { WorkflowCatalog } from "./workflow-types.ts";
 import {
+  SCHEDULE_DISPATCH_FORBIDDEN_MESSAGE,
   SCHEDULE_FORBIDDEN_MESSAGE,
   SCHEDULE_HOST_SUPPLIED_MESSAGE,
   SCHEDULE_TRIGGER_PROBLEM_CODES,
   SCHEDULE_VIEW_FORBIDDEN_MESSAGE,
   hostSuppliedScheduleIdentityKeys,
   isScheduleTriggerRef,
+  parseScheduleDispatchItems,
+  parseScheduleTypeCatalog,
   parseScheduleTriggerList,
   parseScheduleTriggerRecord,
   rejectHostSuppliedScheduleBody,
+  scheduleCatalogPath,
+  scheduleDispatchPath,
   scheduleMutationOutcomeMessage,
   scheduleTriggerCreatePath,
   scheduleTriggerDeletePath,
@@ -27,6 +33,9 @@ import {
   scheduleTriggerListPath,
   scheduleTriggerPath,
   scheduleTriggerUpdatePath,
+  scheduleTriggerWriteBody,
+  type ScheduleDispatchItem,
+  type ScheduleTypeCatalog,
   type ScheduleTriggerDraft,
   type ScheduleTriggerRecord,
   type ScheduleTriggerWriteBody,
@@ -53,6 +62,21 @@ export type ScheduleTriggerMutationSuccess = {
   statusCode: number;
   requestId: string;
   trigger: ScheduleTriggerRecord | null;
+  message: string;
+};
+
+export type ScheduleCatalogSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  catalog: ScheduleTypeCatalog;
+};
+
+export type ScheduleDispatchSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  items: ScheduleDispatchItem[];
   message: string;
 };
 
@@ -111,7 +135,7 @@ function invalidWorkflowProblem(path: string): ScheduleTriggerClientFailure {
   };
 }
 
-function invalidTriggerProblem(path: string): ScheduleTriggerClientFailure {
+function invalidScheduleProblem(path: string): ScheduleTriggerClientFailure {
   return {
     ok: false,
     statusCode: 400,
@@ -123,7 +147,7 @@ function invalidTriggerProblem(path: string): ScheduleTriggerClientFailure {
       400,
       SCHEDULE_TRIGGER_PROBLEM_CODES.invalidRequest,
       "Invalid request",
-      "triggerId must be a workspace resource UUID.",
+      "scheduleId must be a workspace resource UUID.",
     ),
   };
 }
@@ -145,15 +169,51 @@ function hostIdentityFailure(path: string): ScheduleTriggerClientFailure {
   };
 }
 
+export async function getScheduleCatalog(
+  identity: DevIdentity,
+  catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
+): Promise<ScheduleCatalogSuccess | ScheduleTriggerClientFailure> {
+  const path = scheduleCatalogPath(catalog, scheduleCatalog);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const parsed = parseScheduleTypeCatalog(result.data);
+  if (!parsed) {
+    return {
+      ok: false,
+      statusCode: 502,
+      requestId: result.requestId,
+      forbidden: false,
+      problem: localProblem(
+        path,
+        result.requestId,
+        502,
+        "invalid-request",
+        "Invalid response",
+        "Schedule catalog metadata was missing.",
+      ),
+    };
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    catalog: parsed,
+  };
+}
+
 export async function listScheduleTriggers(
   identity: DevIdentity,
   workflowId: string,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerListSuccess | ScheduleTriggerClientFailure> {
   if (!isResourceId(workflowId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers");
+    return invalidWorkflowProblem("/schedules");
   }
-  const path = scheduleTriggerListPath(workflowId, catalog);
+  const path = scheduleTriggerListPath(workflowId, catalog, scheduleCatalog);
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     const failed = failure(result);
@@ -221,11 +281,12 @@ export async function createScheduleTrigger(
   workflowId: string,
   draft: ScheduleTriggerDraft,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerMutationSuccess | ScheduleTriggerClientFailure> {
   if (!isResourceId(workflowId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers");
+    return invalidWorkflowProblem("/schedules");
   }
-  const validated = validateScheduleTriggerDraft(draft, catalog);
+  const validated = validateScheduleTriggerDraft(draft, catalog, scheduleCatalog);
   if (!validated.ok) {
     return {
       ok: false,
@@ -233,21 +294,21 @@ export async function createScheduleTrigger(
       requestId: "",
       forbidden: false,
       problem: localProblem(
-        scheduleTriggerCreatePath(workflowId, catalog),
+        scheduleTriggerCreatePath(workflowId, catalog, scheduleCatalog),
         "",
         400,
         SCHEDULE_TRIGGER_PROBLEM_CODES.invalidRequest,
         "Invalid request",
-        validated.errors[0] ?? "Schedule trigger settings are invalid.",
+        validated.errors[0] ?? "Schedule settings are invalid.",
       ),
     };
   }
   const body = rejectHostSuppliedScheduleBody(
-    validated.body as Record<string, unknown>,
+    scheduleTriggerWriteBody(validated.settings, workflowId) as Record<string, unknown>,
   ) as ScheduleTriggerWriteBody;
   return mutateScheduleTrigger(
     identity,
-    scheduleTriggerCreatePath(workflowId, catalog),
+    scheduleTriggerCreatePath(workflowId, catalog, scheduleCatalog),
     "POST",
     "create",
     body,
@@ -258,17 +319,18 @@ export async function createScheduleTrigger(
 export async function updateScheduleTrigger(
   identity: DevIdentity,
   workflowId: string,
-  triggerId: string,
+  scheduleId: string,
   draft: ScheduleTriggerDraft,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerMutationSuccess | ScheduleTriggerClientFailure> {
   if (!isResourceId(workflowId)) {
-    return invalidWorkflowProblem("/triggers/{triggerId}");
+    return invalidWorkflowProblem("/schedules/{scheduleId}");
   }
-  if (!isScheduleTriggerRef(triggerId)) {
-    return invalidTriggerProblem("/triggers/{triggerId}");
+  if (!isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem("/schedules/{scheduleId}");
   }
-  const validated = validateScheduleTriggerDraft(draft, catalog);
+  const validated = validateScheduleTriggerDraft(draft, catalog, scheduleCatalog);
   if (!validated.ok) {
     return {
       ok: false,
@@ -276,12 +338,12 @@ export async function updateScheduleTrigger(
       requestId: "",
       forbidden: false,
       problem: localProblem(
-        scheduleTriggerUpdatePath(triggerId, catalog),
+        scheduleTriggerUpdatePath(scheduleId, catalog, scheduleCatalog),
         "",
         400,
         SCHEDULE_TRIGGER_PROBLEM_CODES.invalidRequest,
         "Invalid request",
-        validated.errors[0] ?? "Schedule trigger settings are invalid.",
+        validated.errors[0] ?? "Schedule settings are invalid.",
       ),
     };
   }
@@ -290,7 +352,7 @@ export async function updateScheduleTrigger(
   ) as ScheduleTriggerWriteBody;
   return mutateScheduleTrigger(
     identity,
-    scheduleTriggerUpdatePath(triggerId, catalog),
+    scheduleTriggerUpdatePath(scheduleId, catalog, scheduleCatalog),
     "PATCH",
     "update",
     body,
@@ -301,15 +363,16 @@ export async function updateScheduleTrigger(
 export async function disableScheduleTrigger(
   identity: DevIdentity,
   workflowId: string,
-  triggerId: string,
+  scheduleId: string,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerMutationSuccess | ScheduleTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isScheduleTriggerRef(triggerId)) {
-    return invalidTriggerProblem("/triggers/{triggerId}/disable");
+  if (!isResourceId(workflowId) || !isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem("/schedules/{scheduleId}/disable");
   }
   return mutateScheduleTrigger(
     identity,
-    scheduleTriggerDisablePath(triggerId, catalog),
+    scheduleTriggerDisablePath(scheduleId, catalog, scheduleCatalog),
     "POST",
     "disable",
     {},
@@ -320,15 +383,16 @@ export async function disableScheduleTrigger(
 export async function enableScheduleTrigger(
   identity: DevIdentity,
   workflowId: string,
-  triggerId: string,
+  scheduleId: string,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerMutationSuccess | ScheduleTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isScheduleTriggerRef(triggerId)) {
-    return invalidTriggerProblem("/triggers/{triggerId}/enable");
+  if (!isResourceId(workflowId) || !isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem("/schedules/{scheduleId}/enable");
   }
   return mutateScheduleTrigger(
     identity,
-    scheduleTriggerEnablePath(triggerId, catalog),
+    scheduleTriggerEnablePath(scheduleId, catalog, scheduleCatalog),
     "POST",
     "enable",
     {},
@@ -339,15 +403,16 @@ export async function enableScheduleTrigger(
 export async function deleteScheduleTrigger(
   identity: DevIdentity,
   workflowId: string,
-  triggerId: string,
+  scheduleId: string,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<ScheduleTriggerMutationSuccess | ScheduleTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isScheduleTriggerRef(triggerId)) {
-    return invalidTriggerProblem("/triggers/{triggerId}");
+  if (!isResourceId(workflowId) || !isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem("/schedules/{scheduleId}");
   }
   return mutateScheduleTrigger(
     identity,
-    scheduleTriggerDeletePath(triggerId, catalog),
+    scheduleTriggerDeletePath(scheduleId, catalog, scheduleCatalog),
     "DELETE",
     "delete",
     undefined,
@@ -355,11 +420,52 @@ export async function deleteScheduleTrigger(
   );
 }
 
+export async function dispatchSchedule(
+  identity: DevIdentity,
+  scheduleId?: string,
+  catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
+): Promise<ScheduleDispatchSuccess | ScheduleTriggerClientFailure> {
+  const path = scheduleDispatchPath(catalog, scheduleCatalog);
+  if (scheduleId && !isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem(path);
+  }
+  const body: Record<string, unknown> = {};
+  if (scheduleId) {
+    body.scheduleId = scheduleId;
+  }
+  if (hostSuppliedScheduleIdentityKeys(body).length > 0) {
+    return hostIdentityFailure(path);
+  }
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body,
+  });
+  if (!result.ok) {
+    const failed = failure(result);
+    if (failed.forbidden) {
+      failed.problem = {
+        ...failed.problem,
+        detail: failed.problem.detail || SCHEDULE_DISPATCH_FORBIDDEN_MESSAGE,
+      };
+    }
+    return failed;
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseScheduleDispatchItems(result.data),
+    message: scheduleMutationOutcomeMessage("dispatch"),
+  };
+}
+
 export async function getScheduleTrigger(
   identity: DevIdentity,
   workflowId: string,
-  triggerId: string,
+  scheduleId: string,
   catalog?: WorkflowCatalog | null,
+  scheduleCatalog?: ScheduleTypeCatalog | null,
 ): Promise<
   | {
       ok: true;
@@ -369,10 +475,10 @@ export async function getScheduleTrigger(
     }
   | ScheduleTriggerClientFailure
 > {
-  if (!isResourceId(workflowId) || !isScheduleTriggerRef(triggerId)) {
-    return invalidTriggerProblem("/triggers/{triggerId}");
+  if (!isResourceId(workflowId) || !isScheduleTriggerRef(scheduleId)) {
+    return invalidScheduleProblem("/schedules/{scheduleId}");
   }
-  const path = scheduleTriggerPath(triggerId, catalog);
+  const path = scheduleTriggerPath(scheduleId, catalog, scheduleCatalog);
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     return failure(result);
@@ -390,7 +496,7 @@ export async function getScheduleTrigger(
         502,
         "invalid-request",
         "Invalid response",
-        "Schedule trigger metadata was missing timezone or a published version pin.",
+        "Schedule metadata was missing timezone or a published version pin.",
       ),
     };
   }

@@ -7,6 +7,8 @@ import {
   createScheduleTrigger,
   deleteScheduleTrigger,
   disableScheduleTrigger,
+  dispatchSchedule,
+  getScheduleCatalog,
   listScheduleTriggers,
   updateScheduleTrigger,
 } from "./schedule-trigger-client.ts";
@@ -24,7 +26,7 @@ const identity: DevIdentity = {
 };
 
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
-const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
+const SCHEDULE_ID = "22222222-2222-4222-8222-222222222222";
 const VERSION_ID = "33333333-3333-4333-8333-333333333333";
 
 afterEach(() => {
@@ -44,18 +46,18 @@ function withSession() {
   });
 }
 
-function sampleTrigger() {
+function sampleSchedule() {
   return {
-    id: TRIGGER_ID,
+    id: SCHEDULE_ID,
     workflowId: WORKFLOW_ID,
     workflowVersionId: VERSION_ID,
-    type: "schedule",
     status: "enabled",
     timezone: "UTC",
     cron: "0 0 * * *",
     overlapPolicy: "skip",
     misfirePolicy: "ignore",
     catchUp: 0,
+    nextFireAt: "2026-09-10T00:00:00Z",
   };
 }
 
@@ -71,8 +73,8 @@ function validDraft() {
   });
 }
 
-describe("schedule trigger client", () => {
-  it("lists GET /workflows/{id}/triggers and fail-closes 404", async () => {
+describe("schedule client", () => {
+  it("lists GET /schedules?workflowId= and fail-closes 404", async () => {
     withSession();
     const seen: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (input, init) => {
@@ -84,7 +86,7 @@ describe("schedule trigger client", () => {
           title: "Not Found",
           status: 404,
           detail: "missing",
-          instance: "/triggers",
+          instance: "/schedules",
           code: "not-found",
           request_id: "r-404",
         }),
@@ -97,17 +99,17 @@ describe("schedule trigger client", () => {
     if (!result.ok) {
       assert.equal(result.statusCode, 404);
     }
-    assert.equal(seen.url, `/api/v1/workflows/${WORKFLOW_ID}/triggers`);
+    assert.equal(seen.url, `/api/v1/schedules?workflowId=${WORKFLOW_ID}`);
     assert.equal(seen.init?.method ?? "GET", "GET");
   });
 
-  it("creates with CSRF, published version, and safe catch-up/overlap", async () => {
+  it("creates POST /schedules with workflowId, CSRF, and no type field", async () => {
     withSession();
     const seen: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (input, init) => {
       seen.url = String(input);
       seen.init = init;
-      return new Response(JSON.stringify(sampleTrigger()), {
+      return new Response(JSON.stringify(sampleSchedule()), {
         status: 201,
         headers: { "Content-Type": "application/json" },
       });
@@ -119,13 +121,15 @@ describe("schedule trigger client", () => {
       assert.equal(result.trigger?.timezone, "UTC");
       assert.equal(result.trigger?.overlapPolicy, "skip");
       assert.equal(result.trigger?.catchUp, 0);
+      assert.equal(result.trigger?.nextFireAt, "2026-09-10T00:00:00Z");
       assert.match(result.message, /published workflow version/);
     }
     const headers = new Headers(seen.init?.headers);
     assert.equal(headers.get(CSRF_HEADER), "csrf-ok");
     assert.equal(seen.init?.method, "POST");
     const body = JSON.parse(String(seen.init?.body)) as Record<string, unknown>;
-    assert.equal(body.type, "schedule");
+    assert.equal("type" in body, false);
+    assert.equal(body.workflowId, WORKFLOW_ID);
     assert.equal(body.workflowVersionId, VERSION_ID);
     assert.equal(body.timezone, "UTC");
     assert.equal(body.cron, "0 0 * * *");
@@ -134,35 +138,36 @@ describe("schedule trigger client", () => {
     assert.equal("id" in body, false);
     assert.equal("workspaceId" in body, false);
     assert.equal("interval" in body, false);
-    assert.equal(seen.url, `/api/v1/workflows/${WORKFLOW_ID}/triggers`);
+    assert.equal(seen.url, "/api/v1/schedules");
   });
 
-  it("filters webhook rows out of the shared list", async () => {
+  it("loads GET /schedules/catalog", async () => {
     withSession();
-    globalThis.fetch = (async () =>
-      new Response(
+    const seen: { url?: string } = {};
+    globalThis.fetch = (async (input) => {
+      seen.url = String(input);
+      return new Response(
         JSON.stringify({
-          items: [
-            sampleTrigger(),
-            {
-              id: "44444444-4444-4444-8444-444444444444",
-              type: "webhook",
-              publicId: `wh_${"cd".repeat(32)}`,
-            },
-          ],
+          defaultOverlapPolicy: "skip",
+          defaultMisfirePolicy: "ignore",
+          defaultCatchUp: 0,
+          dispatchRoute: "POST /api/v1/schedules/dispatch",
+          help: "catalog",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
-      )) as typeof fetch;
+      );
+    }) as typeof fetch;
 
-    const result = await listScheduleTriggers(identity, WORKFLOW_ID);
+    const result = await getScheduleCatalog(identity);
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.items.length, 1);
-      assert.equal(result.items[0]?.type, "schedule");
+      assert.equal(result.catalog.defaultOverlapPolicy, "skip");
+      assert.equal(result.catalog.dispatchRoute, "POST /api/v1/schedules/dispatch");
     }
+    assert.equal(seen.url, "/api/v1/schedules/catalog");
   });
 
-  it("patches timezone/overlap and fail-closes 403", async () => {
+  it("patches /schedules/{id} and fail-closes 403 on disable", async () => {
     withSession();
     const seen: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (input, init) => {
@@ -175,7 +180,7 @@ describe("schedule trigger client", () => {
             title: "Forbidden",
             status: 403,
             detail: "",
-            instance: "/triggers",
+            instance: "/schedules",
             code: "forbidden",
             request_id: "r-403",
           }),
@@ -184,7 +189,7 @@ describe("schedule trigger client", () => {
       }
       return new Response(
         JSON.stringify({
-          ...sampleTrigger(),
+          ...sampleSchedule(),
           timezone: "Europe/Berlin",
           overlapPolicy: "reject",
         }),
@@ -195,7 +200,7 @@ describe("schedule trigger client", () => {
     const patched = await updateScheduleTrigger(
       identity,
       WORKFLOW_ID,
-      TRIGGER_ID,
+      SCHEDULE_ID,
       emptyScheduleTriggerDraft({
         workflowVersionId: VERSION_ID,
         timezone: "Europe/Berlin",
@@ -211,15 +216,45 @@ describe("schedule trigger client", () => {
       assert.equal(patched.trigger?.timezone, "Europe/Berlin");
       assert.equal(patched.trigger?.overlapPolicy, "reject");
     }
-    assert.equal(seen.url, `/api/v1/triggers/${TRIGGER_ID}`);
+    assert.equal(seen.url, `/api/v1/schedules/${SCHEDULE_ID}`);
     assert.equal(seen.init?.method, "PATCH");
 
-    const denied = await disableScheduleTrigger(identity, WORKFLOW_ID, TRIGGER_ID);
+    const denied = await disableScheduleTrigger(identity, WORKFLOW_ID, SCHEDULE_ID);
     assert.equal(denied.ok, false);
     if (!denied.ok) {
       assert.equal(denied.forbidden, true);
       assert.equal(denied.statusCode, 403);
     }
+  });
+
+  it("dispatches POST /schedules/dispatch with CSRF and optional scheduleId", async () => {
+    withSession();
+    const seen: { url?: string; init?: RequestInit } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.init = init;
+      return new Response(
+        JSON.stringify({
+          items: [{ scheduleId: SCHEDULE_ID, skipReason: "not-due" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await dispatchSchedule(identity, SCHEDULE_ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.scheduleId, SCHEDULE_ID);
+      assert.match(result.message, /operator tick/);
+    }
+    assert.equal(seen.url, "/api/v1/schedules/dispatch");
+    assert.equal(seen.init?.method, "POST");
+    const headers = new Headers(seen.init?.headers);
+    assert.equal(headers.get(CSRF_HEADER), "csrf-ok");
+    const body = JSON.parse(String(seen.init?.body)) as Record<string, unknown>;
+    assert.equal(body.scheduleId, SCHEDULE_ID);
+    assert.equal("id" in body, false);
+    assert.equal("workspaceId" in body, false);
   });
 
   it("deletes with CSRF", async () => {
@@ -231,13 +266,13 @@ describe("schedule trigger client", () => {
       return new Response(null, { status: 204 });
     }) as typeof fetch;
 
-    const removed = await deleteScheduleTrigger(identity, WORKFLOW_ID, TRIGGER_ID);
+    const removed = await deleteScheduleTrigger(identity, WORKFLOW_ID, SCHEDULE_ID);
     assert.equal(removed.ok, true);
     if (removed.ok) {
       assert.equal(removed.trigger, null);
       assert.match(removed.message, /deleted/i);
     }
-    assert.equal(seen.url, `/api/v1/triggers/${TRIGGER_ID}`);
+    assert.equal(seen.url, `/api/v1/schedules/${SCHEDULE_ID}`);
     assert.equal(seen.init?.method, "DELETE");
     const headers = new Headers(seen.init?.headers);
     assert.equal(headers.get(CSRF_HEADER), "csrf-ok");

@@ -31,6 +31,7 @@ import {
   isWebhookCatalogFallback,
   isWebhookPublicId,
   isWebhookTriggerAuthFailure,
+  isWebhookTriggerProxySegments,
   isWebhookTriggerRef,
   parseFieldMappingText,
   parseWebhookTriggerList,
@@ -476,5 +477,18 @@ spec:
     );
     assert.equal(isWebhookTriggerAuthFailure(null), false);
     assert.match(WEBHOOK_CSRF_HELP, /X-CSRF-Token/);
+  });
+
+  it("allowlists the E10.2 /triggers collection including rotate", () => {
+    assert.equal(
+      isWebhookTriggerProxySegments(["workflows", WORKFLOW_ID, "triggers"]),
+      true,
+    );
+    assert.equal(isWebhookTriggerProxySegments(["triggers", TRIGGER_ID]), true);
+    assert.equal(
+      isWebhookTriggerProxySegments(["triggers", TRIGGER_ID, "rotate"]),
+      true,
+    );
+    assert.equal(isWebhookTriggerProxySegments(["schedules"]), false);
   });
 });

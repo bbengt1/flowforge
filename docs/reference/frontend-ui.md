@@ -651,7 +651,6 @@ Admin fields:
 | Limits | `maxBodyBytes` / `clockSkewSeconds` / `replayRetentionSeconds` / rate / concurrency | Defaults from catalog `ingress` (64 KiB, 300s, 600s, 60/min, 5) |
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
-<<<<<<< HEAD
 Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. Schedule + durable `flow.approval` wait/resume are E10.3 below. HTTP/notification actions stay E10.4.
 
 ## E10.3 schedules + approval decide UX (Chloe UI)

@@ -57,14 +57,17 @@ export const INVALIDATED_APPROVAL_DETAIL =
 export const SELF_APPROVAL_DETAIL =
   "The requester cannot approve or reject their own request.";
 
-/** E10.3 durable flow.approval wait/resume. Decide stays POST …/decide. */
+/** E10.3 durable flow.approval wait/resume from #116. Decide stays POST …/decide. */
 export const FLOW_APPROVAL_NODE_TYPE = "flow.approval" as const;
 export const FLOW_APPROVAL_REQUIRED_WITH = ["approverRole", "expiresIn"] as const;
 export const E10_APPROVAL_DECIDE_ENABLED = true;
 export const E10_APPROVAL_WAIT_DURABLE = true;
+export const APPROVAL_WAIT_RESUME_API_PR = 116;
+export const APPROVAL_WAIT_RESUME_ROUTE =
+  "POST /api/v1/approvals/{approvalId}/decide";
 
 export const APPROVAL_DECIDE_HELP =
-  "Decide is POST /approvals/{id}/decide {decision:'approved'|'rejected', note?} with cookie session + X-CSRF-Token. Fresh authorization is required on every decide. Server 403 remains the authority.";
+  "Decide is POST /approvals/{id}/decide {decision:'approved'|'rejected', note?} with cookie session + X-CSRF-Token. Fresh authorization is required on every decide. Server 403 remains the authority. Cite #116.";
 
 export const APPROVAL_SOD_HELP =
   "Separation of duties: the requester cannot approve or reject their own request. Compare GET /workspace principal.id to requestedBy (user UUIDs — never session.subject).";
@@ -76,10 +79,10 @@ export const APPROVAL_EXPIRY_HELP =
   "Expiry is bound at request time. Expired rows fail closed (409). A new evaluation is required; a stale local approve is never enough.";
 
 export const APPROVAL_WAIT_DURABLE_HELP =
-  "Durable flow.approval wait is enabled. The wait state is stored in PostgreSQL and survives worker or pod loss. This UI does not invent a wait or resume route — decide the bound approval.";
+  "GET /approvals/catalog waitResumeEnabled is true (#116). Mid-run wait parks as waiting and survives recover. This UI does not invent /executions/{id}/resume — decide the bound approval.";
 
 export const APPROVAL_RESUME_VIA_DECIDE_HELP =
-  "Resume is decide, not a new route. POST /approvals/{id}/decide with CSRF. Do not invent POST …/resume or …/wait.";
+  "Resume is decide (#116 resumeRoute). POST /approvals/{id}/decide with CSRF. Do not invent POST /executions/{id}/resume or …/wait.";
 
 export const EXPIRED_PROBLEM_ALIASES = [
   APPROVAL_PROBLEM_CODES.expired,
