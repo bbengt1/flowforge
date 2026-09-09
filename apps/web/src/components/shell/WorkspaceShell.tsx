@@ -42,7 +42,7 @@ export function WorkspaceShell({ swaggerUrl, children }: WorkspaceShellProps) {
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="border-b border-zinc-200 bg-white/80">
-            <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <button
                 type="button"
                 className="rounded-lg border border-zinc-300 px-2 py-1 text-xs lg:hidden"

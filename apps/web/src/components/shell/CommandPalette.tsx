@@ -37,8 +37,10 @@ export function CommandPalette() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && key === "k") {
         event.preventDefault();
+        event.stopPropagation();
         setOpen((current) => !current);
         setQuery("");
       }
@@ -89,26 +91,29 @@ export function CommandPalette() {
     }
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+        onClick={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        id="command-palette-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
       >
-        Commands ⌘K
+        Commands
       </button>
-    );
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-start justify-center bg-zinc-900/30 px-4 pt-24"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Command palette"
-      onClick={() => setOpen(false)}
-    >
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-zinc-900/40 px-4 pt-24"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette"
+          onClick={() => setOpen(false)}
+        >
       <div
         className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
         onClick={(event) => event.stopPropagation()}
@@ -145,7 +150,12 @@ export function CommandPalette() {
             ))
           )}
         </ul>
+        <p className="mt-2 px-1 text-[11px] text-zinc-500">
+          Esc to close · Ctrl+Shift+K
+        </p>
       </div>
-    </div>
+        </div>
+      ) : null}
+    </>
   );
 }
