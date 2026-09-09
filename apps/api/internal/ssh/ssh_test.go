@@ -146,6 +146,9 @@ func TestCatalogDocumentsRendererAndRetrySchema(t *testing.T) {
 	if cat.CredentialType != CredentialType || cat.Render.RawShellInterpolation || cat.Retry.DefaultMaxAttempts != 0 {
 		t.Fatalf("catalog = %+v", cat)
 	}
+	if cat.Isolation.PasswordAuth || cat.Isolation.InteractiveShell || !cat.Isolation.ConnectVerifiedAddress {
+		t.Fatalf("isolation = %+v", cat.Isolation)
+	}
 	if cat.PublishRules.CredentialType != CredentialType || !cat.PublishRules.EmptyAllowlistsRejected {
 		t.Fatalf("publish rules = %+v", cat.PublishRules)
 	}

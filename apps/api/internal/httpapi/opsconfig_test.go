@@ -737,6 +737,9 @@ func TestSSHTargetAndCommandProfileHardening(t *testing.T) {
 		if cat.CredentialType != ssheng.CredentialType || cat.Render.RawShellInterpolation || cat.Retry.DefaultMaxAttempts != 0 {
 			t.Fatalf("ssh catalog = %+v", cat)
 		}
+		if cat.Isolation.PasswordAuth || !cat.Isolation.EphemeralCredentialHandle {
+			t.Fatalf("ssh isolation = %+v", cat.Isolation)
+		}
 		if len(cat.ParameterTypes) == 0 || len(cat.Errors) == 0 {
 			t.Fatalf("ssh catalog missing types/errors: %+v", cat)
 		}

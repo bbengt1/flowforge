@@ -21,12 +21,30 @@ type RenderRules struct {
 	RejectValuesOutsideSchema bool     `json:"rejectValuesOutsideSchema"`
 }
 
-// RetryRules is schema-only documentation. E8.3 implements semantics.
+// RetryRules documents the explicit retry field. E8.2 never blindly re-runs.
 type RetryRules struct {
 	DefaultMaxAttempts int    `json:"defaultMaxAttempts"`
 	RetrySafeFlag      string `json:"retrySafeFlag"`
 	Semantics          string `json:"semantics"`
 	Note               string `json:"note"`
+}
+
+// IsolationRules documents hard denies and connect guarantees for Chloe.
+type IsolationRules struct {
+	AuthMethods               []string `json:"authMethods"`
+	PasswordAuth              bool     `json:"passwordAuth"`
+	AgentForwarding           bool     `json:"agentForwarding"`
+	PortForwarding            bool     `json:"portForwarding"`
+	ProxyCommand              bool     `json:"proxyCommand"`
+	HostKeyAutoAccept         bool     `json:"hostKeyAutoAccept"`
+	InteractiveShell          bool     `json:"interactiveShell"`
+	KnownHostVerification     string   `json:"knownHostVerification"`
+	ResolveThenAllowlist      bool     `json:"resolveThenAllowlist"`
+	ConnectVerifiedAddress    bool     `json:"connectVerifiedAddressOnly"`
+	EphemeralCredentialHandle bool     `json:"ephemeralCredentialHandle"`
+	NonRootRemoteAccount      bool     `json:"nonRootRemoteAccount"`
+	DefaultUsername           string   `json:"defaultUsername"`
+	PrivateKeyNeverExported   bool     `json:"privateKeyNeverExported"`
 }
 
 // NodeField is an allowlisted with key for Chloe's library/wizard.
@@ -71,6 +89,7 @@ type EngineCatalog struct {
 	Nodes                  []NodeContract      `json:"nodes"`
 	Errors                 []ErrorShape        `json:"errors"`
 	Permissions            []string            `json:"permissions"`
+	Isolation              IsolationRules      `json:"isolation"`
 }
 
 // Catalog returns documented engine constraints. No SSH connection is made.
@@ -88,10 +107,26 @@ func Catalog() EngineCatalog {
 			RejectValuesOutsideSchema: true,
 		},
 		Retry: RetryRules{
-			DefaultMaxAttempts: 0,
+			DefaultMaxAttempts: DefaultMaxAttempts,
 			RetrySafeFlag:      "retrySafe",
 			Semantics:          "E8.3",
-			Note:               "Retries default to zero. A profile may set retrySafe=true; E8.3 implements verification and bounded retry. This catalog only documents the flag.",
+			Note:               "Retries default to zero. E8.2 never blindly re-runs. A profile may set retrySafe=true and retryPolicy.maxAttempts>0; E8.3 implements verification before any retry. Lease loss is indeterminate.",
+		},
+		Isolation: IsolationRules{
+			AuthMethods:               []string{"publickey"},
+			PasswordAuth:              false,
+			AgentForwarding:           false,
+			PortForwarding:            false,
+			ProxyCommand:              false,
+			HostKeyAutoAccept:         false,
+			InteractiveShell:          false,
+			KnownHostVerification:     "fingerprint-match-fail-closed",
+			ResolveThenAllowlist:      true,
+			ConnectVerifiedAddress:    true,
+			EphemeralCredentialHandle: true,
+			NonRootRemoteAccount:      true,
+			DefaultUsername:           DefaultUsername,
+			PrivateKeyNeverExported:   true,
 		},
 		PublishRules: PublishRules{
 			SSHTargetRequired:        []string{"credentialId", "hostname", "hostKeyFingerprint"},
@@ -114,7 +149,7 @@ func NodeContracts() []NodeContract {
 	return []NodeContract{
 		{
 			Type: NodeSSHRun, Verb: VerbRun, Title: "Run command profile",
-			Description:  "Pin a workspace SSH target and immutable command-profile revision. Parameters are typed and quoted by the reviewed renderer. Isolated execution is E8.2.",
+			Description:  "Pin a workspace SSH target and immutable command-profile revision. Parameters are typed and quoted by the reviewed renderer. The worker uses an ephemeral key handle, verifies known-host fingerprints, allowlists every resolved address, and runs one bounded non-interactive command.",
 			Permissions:  RequiredPermissions(),
 			RequiredWith: []string{"sshTargetId", "commandProfileId"},
 			AllowedWith: []NodeField{
@@ -144,9 +179,18 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeParameterRejected, Status: 400, Meaning: "A parameter is missing, extra, or outside schema constraints."},
 		{Code: CodeCredentialDenied, Status: 400, Meaning: "SSH targets require a workspace ssh_private_key credential."},
 		{Code: CodePermissionDenied, Status: 403, Meaning: "Missing workflow.execute, ssh.run, sshTarget.use, or commandProfile.use."},
-		{Code: CodeHostKeyMismatch, Status: 403, Meaning: "Reserved for E8.2 known-host verification."},
-		{Code: CodeAddressDenied, Status: 403, Meaning: "Reserved for E8.2 DNS/address allowlist enforcement."},
-		{Code: CodeTimeout, Status: 408, Meaning: "Reserved for E8.2 bounded command timeout."},
-		{Code: CodeIndeterminate, Status: 409, Meaning: "Reserved for E8.3 lease-loss / unverified retry."},
+		{Code: CodeHostKeyMismatch, Status: 403, Meaning: "Presented host key does not match the pinned fingerprint. Auto-accept is disabled."},
+		{Code: CodeAddressDenied, Status: 403, Meaning: "A resolved address was outside allowedAddresses, or a DNS name had no allowlist (anti DNS-rebinding / SSRF)."},
+		{Code: CodeTimeout, Status: 408, Meaning: "Connection or command exceeded timeoutSeconds."},
+		{Code: CodeCanceled, Status: 408, Meaning: "The caller canceled the bounded SSH operation."},
+		{Code: CodeAuthDenied, Status: 403, Meaning: "Password or keyboard-interactive authentication was requested. Key-only auth is required."},
+		{Code: CodeForwardingDenied, Status: 403, Meaning: "Agent forwarding, port forwarding, proxy commands, or an interactive shell was requested."},
+		{Code: CodeRootDenied, Status: 403, Meaning: "Remote account is root (or another denied privileged name)."},
+		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, or contained an unusable private key. privateKey is never accepted on the node."},
+		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 requires retrySafe. E8.2 still does not retry."},
+		{Code: CodePolicyDenied, Status: 403, Meaning: "SSH policy deny or host/address/operation allowlist failed closed."},
+		{Code: CodeConnectFailed, Status: 502, Meaning: "TCP or SSH handshake to the verified address failed."},
+		{Code: CodeCommandFailed, Status: 502, Meaning: "The remote command could not be started or the session failed."},
+		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease was lost after dispatch. E8.2 does not retry; E8.3 adds profile verification."},
 	}
 }

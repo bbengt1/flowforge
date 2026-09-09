@@ -29,11 +29,14 @@ E8.1 (control-plane) lives on the E4.2 ops-config store. Isolated execution is E
 ```text
 internal/ssh/
   model.go target.go schema.go render.go policy.go catalog.go
+  errors.go handle.go resolve.go client.go execute.go redaction.go audit.go
+internal/workflow/ssh_contract.go
 internal/opsconfig/          # ssh_target + command_profile kinds, pins
 internal/httpapi/opsconfig.go
 GET /api/v1/ssh/catalog
-internal/ssh/client.go execute.go   # E8.2
 ```
+
+E8.2 worker isolation: ephemeral credential handle (privateKey never exported), known-host fingerprint verification (mismatch fails closed), approved resolver + allowlist of every resolved address, connect only to the verified IP, key-only auth, bounded timeouts, non-root remote account (default `flowforge`). Password auth, agent/port forwarding, proxy commands, host-key auto-accept, and interactive shells are hard-denied. `retryPolicy.maxAttempts` defaults to 0; E8.2 never blindly re-runs. Lease loss is `indeterminate` (E8.3 verification stub).
 
 ## Required validation
 

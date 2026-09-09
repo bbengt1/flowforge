@@ -187,6 +187,14 @@ func TestNormalizeSSHTargetAndCommandProfile(t *testing.T) {
 	if fp != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
 		t.Fatalf("fingerprint = %s", fp)
 	}
+	_, _, err = NormalizeSpec(KindSSHTarget, map[string]any{
+		"credentialId": cred, "hostname": "bastion.example.com",
+		"hostKeyFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"username":           "root",
+	})
+	if err == nil {
+		t.Fatal("root username must be rejected")
+	}
 
 	_, _, err = NormalizeSpec(KindCommandProfile, map[string]any{
 		"parameterSchema": map[string]any{"type": "object", "properties": map[string]any{"unit": map[string]any{"type": "string"}}},

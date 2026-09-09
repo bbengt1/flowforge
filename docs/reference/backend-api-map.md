@@ -161,7 +161,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | Kind | Required `spec` |
 | --- | --- |
 | `cluster_target` | `credentialId` (workspace `kubernetes` / kubeconfig credential only), `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces` (non-empty DNS-1123 labels), `policyId` (published `kind=kubernetes` policy; target namespaces must be a subset), `serviceAccount.{name,namespace?,roleTemplate?}` (`roleTemplate` defaults to `namespace-scoped-runner`; ClusterRoles are not MVP). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include kubeconfig. |
-| `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
+| `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `username` (non-root; default at execute is `flowforge`; `root`/`toor`/`administrator` rejected), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
 | `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (schema flag; E8.3 implements retry semantics), `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
 | `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
 | `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
@@ -319,7 +319,7 @@ Out of scope: `apps/web` rewrite, deletion, rollback, force apply, SSH/script en
 
 ## SSH target and command-profile management (E8.1)
 
-Control-plane hardening on the existing E4.2 `ssh-targets` / `command-profiles` collections. E8.2 adds the isolated `ssh.run` worker. E8.3 implements retry/indeterminate semantics (`retrySafe` is schema-only here).
+Control-plane hardening on the existing E4.2 `ssh-targets` / `command-profiles` collections. E8.2 (below) is the isolated `ssh.run` worker. E8.3 implements retry/indeterminate verification (`retrySafe` is accepted as a flag; E8.2 never blindly re-runs).
 
 **UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`sshEngine`) or `GET /ssh/catalog` for parameter types, render rules, retry-safe flags, and error codes. SSH-target credential pickers must list only workspace `type=ssh_private_key` credentials (secret fields `privateKey` / `passphrase`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/ssh/catalog` the same way as kubernetes/ops-config. Do not rewrite `apps/web` in this API story. Keep #82 open until target/profile UI surfaces land.
 
@@ -342,6 +342,7 @@ Suggested UI flow:
 | `hostname` | yes | string | DNS name or IP; lowercased |
 | `hostKeyFingerprint` | yes | string | `sha256:<64 hex>` or OpenSSH `SHA256:<base64>` |
 | `port` | no | integer | Default `22`; range 1–65535 |
+| `username` | no | string | Non-root remote account. Omitted targets use `flowforge` at execute. `root` / `toor` / `administrator` → `400`. |
 | `allowedAddresses` | no | string[] | IP or CIDR; present empty → `400`; no default-route CIDR |
 | `policyId` | no | UUID | Published `kind=ssh` policy |
 
@@ -363,16 +364,65 @@ Suggested UI flow:
 | `credentialSecretFields` | `privateKey`, `passphrase` (never returned on ops-config) |
 | `parameterTypes[]` | Allowed schema types + constraints |
 | `render` | `owner=reviewed-profile-renderer`, `quoting=posix-single-quotes`, `rawShellInterpolation=false`, forbidden tokens |
-| `retry` | `defaultMaxAttempts=0`, `retrySafeFlag`, `semantics=E8.3` |
+| `retry` | `defaultMaxAttempts=0`, `retrySafeFlag`, `semantics=E8.3`. E8.2 records the field and does not retry. |
 | `publishRules` | Required fields, empty-allowlist rejection, fingerprint format, pin immutability |
 | `evaluationKeys[]` | SSH policy aliases (`allowedHosts`/`hosts`, `allowedAddresses`/`addresses`) |
 | `nodes[]` | `ssh.run` wizard map (`sshTargetId`, `commandProfileId`, `parameters`, `timeoutSeconds`, `retryPolicy`) |
-| `errors[]` | Codes for Chloe: `invalid-target`, `invalid-fingerprint`, `invalid-address`, `empty-allowlist`, `invalid-schema`, `invalid-template`, `interpolation-denied`, `parameter-rejected`, `credential-denied`, `forbidden` |
+| `errors[]` | Codes for Chloe: `invalid-target`, `invalid-fingerprint`, `invalid-address`, `empty-allowlist`, `invalid-schema`, `invalid-template`, `interpolation-denied`, `parameter-rejected`, `credential-denied`, `forbidden`, `host-key-mismatch`, `address-denied`, `timeout`, `canceled`, `auth-denied`, `forwarding-denied`, `root-denied`, `handle-forbidden`, `retry-denied`, `policy-denied`, `connect-failed`, `command-failed`, `indeterminate` |
 | `permissions[]` | `workflow.execute`, `ssh.run`, `sshTarget.use`, `commandProfile.use` |
+| `isolation` | Hard denies (password/agent/port-forward/proxy/auto-accept/shell), known-host fingerprint match, resolve-then-allowlist, connect verified address only, ephemeral handle, default username `flowforge` |
 
 RBAC: `opsconfig.view` list/get/select/catalog; `opsconfig.edit` create/save/disable; `opsconfig.publish` publish; execute paths require `sshTarget.use` and `commandProfile.use` plus `ssh.run`. Viewer can read catalogs; editor can draft; publisher can publish revisions.
 
-Out of scope: isolated `ssh.run` worker, ephemeral keys, fake SSH server (E8.2); indeterminate/retry semantics (E8.3); `apps/web` rewrite.
+## Isolated ssh.run (E8.2)
+
+Worker library path for `ssh.run`. No new browser routes. Workers claim E5.2 jobs and call `ssh.Execute`; `privateKey` / passphrase never appear on job JSON, outputs, or audit details. `GET /ssh/catalog` now includes `isolation` plus engine errors. The live workflow catalog is `GET /workflows/catalog` (`allowedWith`, `policy.defaultMaxAttempts=0`, `redaction`).
+
+**UI route map (Chloe):** do **not** stack on another feature branch. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Do not rewrite `apps/web` in this API story. Wizard/library should read `allowedWith` on `ssh.run` and `isolation` / `errors[]` from `GET /ssh/catalog`. Keep #83 open until node/config UI surfaces land.
+
+### Node contract
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `sshTargetId` | yes | Published SSH target UUID. Execution pins the revision. |
+| `commandProfileId` | yes | Published command profile UUID. Parameters must match the pinned schema. |
+| `parameters` | no | Typed object. Reviewed renderer POSIX-quotes strings. Extra/missing/invalid → `parameter-rejected`. |
+| `timeoutSeconds` | no | 1–3600, default 60. Bounds connect + command. |
+| `retryPolicy` | no | `{maxAttempts:0-5}`. **Default `maxAttempts=0`.** `maxAttempts>0` requires profile `retrySafe=true` and is still not retried in E8.2. |
+| `policyId` | no | Optional published `kind=ssh` policy UUID. |
+
+Permissions: `workflow.execute`, `ssh.run`, `sshTarget.use`, `commandProfile.use`. Policy is revalidated immediately before connect.
+
+Outputs: `result` (redacted summary), `stdout` (bounded, secret-stripped), `exitCode`.
+
+### Security guarantees
+
+1. Ephemeral credential handle: vault `privateKey` is parsed into an in-memory signer. Handle JSON is `{id,sshTargetId,credentialId?,username?,expiresAt}` only.
+2. Known-host verification: presented host key SHA-256 must match `hostKeyFingerprint`. Mismatch → `host-key-mismatch`. Auto-accept is disabled.
+3. Approved resolver: hostname is resolved through the engine resolver (IP literals skip DNS). **Every** resolved address must be in the target `allowedAddresses` (and policy allowlist when present). A DNS name without an allowlist is denied.
+4. Connect only to the verified IP (`ip:port`). Dialing the original hostname is denied (anti DNS-rebinding / SSRF).
+5. Key-only auth. Password, keyboard-interactive, agent forwarding, port forwarding, proxy commands, and interactive shells (`RequestPty` / `Shell`) are hard-denied.
+6. Non-root remote account: default `flowforge`. `root` / `toor` / `administrator` → `root-denied`. Optional target `username` is stored when present.
+7. Redacted results + audit: parameter **names** always; sensitive values `[redacted]`; command text is stored as `commandDigest` only; exit outcome; correlation ID. PEM / private-key shaped stdout is `[redacted]`.
+8. E8.3 stub: `LeaseLost` or uncertain dispatch → `indeterminate`. The engine never blindly repeats the command.
+
+### Result / error shapes
+
+Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port, username, resolvedAddresses, connectedAddress, parameterNames, parameters, commandDigest, stdout, exitCode, retry:{maxAttempts,executedAttempts,retrySafe,semantics,note}, policyRevision?, policyDigest?, correlationId, audit}`.
+
+| `error.code` | HTTP-ish | When |
+| --- | --- | --- |
+| `parameter-rejected` / `interpolation-denied` / `invalid-template` / `invalid-schema` | 400 | Profile render / schema |
+| `forbidden` | 403 | Missing `workflow.execute`, `ssh.run`, `sshTarget.use`, or `commandProfile.use` |
+| `host-key-mismatch` | 403 | Known-host fingerprint mismatch |
+| `address-denied` | 403 | Resolved address outside allowlist or DNS without allowlist |
+| `auth-denied` / `forwarding-denied` / `root-denied` / `handle-forbidden` / `policy-denied` | 403 | Hard denies / expired handle / policy |
+| `timeout` / `canceled` | 408 | Bounded wait |
+| `retry-denied` | 400 | `maxAttempts>0` without `retrySafe` |
+| `connect-failed` / `command-failed` | 502 | Transport |
+| `indeterminate` | 409 | Lease lost after dispatch (no retry) |
+
+Out of scope: full lease-loss verification loop (E8.3); `apps/web` rewrite; Kubernetes/script engines.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 
@@ -388,7 +438,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2 adds `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, redaction). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
