@@ -39,7 +39,9 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	now := time.Date(2026, 9, 9, 4, 0, 0, 0, time.UTC)
+	// Claim time must be at or after StartExecution's wall-clock AvailableAt.
+	// A frozen past clock makes queued jobs look ineligible (AvailableAt.After(now)).
+	now := time.Now().UTC()
 	first, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "worker-a", Lease: time.Second})
 	if err != nil {
 		t.Fatal(err)
