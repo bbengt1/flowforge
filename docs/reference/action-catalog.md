@@ -10,7 +10,7 @@ This catalog distinguishes **core** nodes (first implementation target), **next*
 
 | Trigger type | Phase | Purpose | Key rules |
 | --- | --- | --- | --- |
-| `manual` | Core | User starts a published workflow. | Captures actor, input schema, idempotency key, and version digest. |
+| `manual` | Core | User starts a published workflow. | Captures actor, optional input schema (`schema` / `inputSchema`), idempotency key, and version digest. Start is `POST /workflows/{id}/executions` with `workflow.execute`, CSRF, and a published `workflowVersionId`. |
 | `webhook` | Core | Authenticated external event starts a workflow. | Server-managed rotatable secret reference, request schema/size/rate limits, and replay-resistant signature verification before parsing. |
 | `schedule` | Core | Cron/timezone schedule starts a workflow. | The scheduler is server-owned; configuration is version-pinned, timezone-explicit, and has bounded missed-run, catch-up, and overlap behavior. |
 | `event` | Next | Provider/event bus event starts a workflow. | Explicit subscription, source verification, and dedupe. |

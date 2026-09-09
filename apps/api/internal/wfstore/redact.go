@@ -154,7 +154,7 @@ func fingerprintIdempotency(workspaceID, versionID, actorID, triggerID string, i
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
-var idempotencyKeyRE = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}$`)
+var idempotencyKeyRE = regexp.MustCompile(`^[A-Za-z0-9._~:-]{1,128}$`)
 
 func validateIdempotencyKey(key string) error {
 	key = strings.TrimSpace(key)

@@ -459,6 +459,10 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	if errs := workflow.ValidateManualStartInput(req.Input, ver.DefinitionYAML); len(errs) > 0 {
+		writeManualStartInputErrors(w, r, errs)
+		return
+	}
 	if start.IdempotencyKey != "" {
 		existing, peekErr := s.workflows.PeekIdempotent(r.Context(), scope, workflowID, start)
 		if peekErr == nil {
@@ -467,6 +471,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		}
 		if !errors.Is(peekErr, wfstore.ErrNotFound) {
 			s.emitSecurityError(r, scope, peekErr)
+			s.writeManualStartAudit(r, scope, workflowID, ver, start, "", "denied", map[string]any{"reason": "idempotency-fingerprint-mismatch"})
 			writeWorkflowStoreError(w, r, peekErr)
 			return
 		}
@@ -506,6 +511,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 				Code:         CodeForbidden,
 				Details:      map[string]any{"reason": "policy-deny"},
 			})
+			s.writeManualStartAudit(r, scope, workflowID, ver, start, "", "denied", map[string]any{"reason": "policy-deny"})
 			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 			return
 		}
@@ -519,10 +525,12 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 					Code:         CodeForbidden,
 					Details:      map[string]any{"reason": "policy-deny"},
 				})
+				s.writeManualStartAudit(r, scope, workflowID, ver, start, "", "denied", map[string]any{"reason": "policy-deny"})
 				WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 				return
 			}
 			if errors.Is(gateErr, errApprovalRequired) {
+				s.writeManualStartAudit(r, scope, workflowID, ver, start, "", "denied", map[string]any{"reason": "approval-required"})
 				WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Dispatch requires a valid approval bound to the current workflow version, target, policy revision, and operation.")
 				return
 			}
@@ -702,6 +710,61 @@ func wantsYAML(r *http.Request) bool {
 	return strings.Contains(accept, "application/yaml") || strings.Contains(accept, "text/yaml")
 }
 
+func writeManualStartInputErrors(w http.ResponseWriter, r *http.Request, errs workflow.ErrorList) {
+	out := make([]FieldError, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, FieldError{
+			Path:    e.Path,
+			Line:    e.Line,
+			Column:  e.Column,
+			Code:    e.Code,
+			Message: e.Message,
+		})
+	}
+	detail := "Start input is not valid."
+	if len(out) == 1 && out[0].Message != "" {
+		detail = out[0].Message
+	}
+	WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", detail, out)
+}
+
+func (s *Server) writeManualStartAudit(r *http.Request, scope isolation.Scope, workflowID string, ver wfstore.Version, start wfstore.StartInput, executionID, outcome string, extra map[string]any) {
+	if s.workflows == nil {
+		return
+	}
+	details := map[string]any{
+		"actorId":           scope.ActorID(),
+		"workflowId":        workflowID,
+		"workflowVersionId": ver.ID,
+		"workflowDigest":    ver.Digest,
+		"triggerType":       "manual",
+		"correlationId":     firstNonEmpty(start.CorrelationID, RequestIDFromContext(r.Context())),
+		"outcome":           outcome,
+	}
+	if start.IdempotencyKey != "" {
+		details["idempotencyKey"] = start.IdempotencyKey
+	}
+	for k, v := range extra {
+		details[k] = v
+	}
+	_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+		Action:        "execution.start",
+		ResourceType:  firstNonEmpty(resourceTypeForStart(executionID), "workflow"),
+		ResourceID:    firstNonEmpty(executionID, workflowID),
+		Outcome:       outcome,
+		CorrelationID: firstNonEmpty(start.CorrelationID, RequestIDFromContext(r.Context())),
+		HostContext:   map[string]any{"requestId": RequestIDFromContext(r.Context())},
+		Details:       details,
+	})
+}
+
+func resourceTypeForStart(executionID string) string {
+	if strings.TrimSpace(executionID) != "" {
+		return "execution"
+	}
+	return "workflow"
+}
+
 func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, wfstore.ErrNotFound):
@@ -717,7 +780,7 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, wfstore.ErrDraftNotRunnable):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Drafts cannot be executed. Select a published workflow version.")
 	case errors.Is(err, wfstore.ErrIdempotencyKeyInvalid):
-		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Idempotency key must be 1-128 URL-safe characters.")
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Idempotency key must be 1-128 characters matching [A-Za-z0-9._~:-].")
 	case errors.Is(err, wfstore.ErrIdempotencyConflict):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Idempotency key was reused with a different request fingerprint.")
 	case errors.Is(err, wfstore.ErrFenceConflict):

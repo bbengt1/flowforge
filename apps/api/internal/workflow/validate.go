@@ -174,9 +174,7 @@ func validateTrigger(t Trigger, path string) ErrorList {
 	}
 	switch t.Type {
 	case "manual":
-		for k := range t.With {
-			errs = append(errs, fieldError(path+"."+k, t.pos.Line, t.pos.Column, CodeUnknownField, "manual triggers cannot declare security or extra configuration."))
-		}
+		errs = append(errs, validateManualTrigger(t, path)...)
 	case "webhook":
 		for k, v := range t.With {
 			switch k {

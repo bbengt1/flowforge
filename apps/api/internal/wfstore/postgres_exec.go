@@ -68,7 +68,8 @@ func (p *Postgres) PeekIdempotent(ctx context.Context, scope isolation.Scope, wo
 		return Execution{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, in.VersionID)); err != nil {
+	ver, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, in.VersionID))
+	if err != nil {
 		return Execution{}, err
 	}
 	existing, found, err := lookupIdempotentTx(ctx, tx, workflowID, in.VersionID, prepared.key)
@@ -82,6 +83,17 @@ func (p *Postgres) PeekIdempotent(ctx context.Context, scope isolation.Scope, wo
 		return Execution{}, ErrIdempotencyConflict
 	}
 	existing.Replayed = true
+	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:        "execution.start",
+		ResourceType:  "execution",
+		ResourceID:    existing.ID,
+		Outcome:       "replayed",
+		CorrelationID: firstNonEmpty(existing.CorrelationID, in.CorrelationID),
+		HostContext:   in.HostContext,
+		Details:       startAuditDetails(workflowID, ver, existing, "replayed"),
+	}); err != nil {
+		return Execution{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Execution{}, mapDBErr(err)
 	}

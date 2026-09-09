@@ -357,6 +357,18 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 		if existing, ok, err := m.peekLocked(scope, workflowID, ver.ID, prepared); err != nil {
 			return Execution{}, err
 		} else if ok {
+			m.audits = append(m.audits, memAudit{
+				workspaceID: scope.WorkspaceID(),
+				record: newAudit(scope, AuditWrite{
+					Action:        "execution.start",
+					ResourceType:  "execution",
+					ResourceID:    existing.ID,
+					Outcome:       "replayed",
+					CorrelationID: firstNonEmpty(existing.CorrelationID, in.CorrelationID),
+					HostContext:   in.HostContext,
+					Details:       startAuditDetails(workflowID, ver, existing, "replayed"),
+				}, time.Now().UTC()),
+			})
 			return existing, nil
 		}
 	}
@@ -396,10 +408,7 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 			Outcome:       "created",
 			CorrelationID: exec.CorrelationID,
 			HostContext:   in.HostContext,
-			Details: map[string]any{
-				"workflowId":        workflowID,
-				"workflowVersionId": ver.ID,
-			},
+			Details:       startAuditDetails(workflowID, ver, exec, "created"),
 		}, now),
 	})
 	return cloneExecution(exec, row.record), nil
@@ -425,6 +434,25 @@ func (m *Memory) PeekIdempotent(_ context.Context, scope isolation.Scope, workfl
 	if !ok {
 		return Execution{}, ErrNotFound
 	}
+	var ver Version
+	for _, candidate := range m.versions[workflowID] {
+		if candidate.ID == in.VersionID {
+			ver = candidate
+			break
+		}
+	}
+	m.audits = append(m.audits, memAudit{
+		workspaceID: scope.WorkspaceID(),
+		record: newAudit(scope, AuditWrite{
+			Action:        "execution.start",
+			ResourceType:  "execution",
+			ResourceID:    exec.ID,
+			Outcome:       "replayed",
+			CorrelationID: firstNonEmpty(exec.CorrelationID, in.CorrelationID),
+			HostContext:   in.HostContext,
+			Details:       startAuditDetails(workflowID, ver, exec, "replayed"),
+		}, time.Now().UTC()),
+	})
 	return exec, nil
 }
 

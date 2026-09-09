@@ -898,15 +898,20 @@ paths:
       operationId: startWorkflowExecution
       summary: Start a durable execution
       description: |
-        Requires `workflow.execute` and `workflowVersionId`.
-        Drafts cannot run (`400` `invalid-request`). The created row
-        stores `workflowVersionId` + `workflowDigest` and later draft
-        edits cannot change that pin. Optional `idempotencyKey` (or
-        `Idempotency-Key` header) is unique per
+        E10.1 authenticated manual start. Requires `workflow.execute`
+        and a published `workflowVersionId`. Drafts cannot run
+        (`400` `invalid-request`). The created row stores
+        `workflowVersionId` + `workflowDigest` and later draft edits
+        cannot change that pin. The run dialog must send
+        `idempotencyKey` (or `Idempotency-Key`); the key is unique per
         `(workspace, workflowVersionId, key)`. Same fingerprint returns
         `200` with `replayed=true` and does not create steps/jobs again.
-        A different fingerprint is `409`. Inputs are redacted before persist.
-        E4.3 evaluates current target/action policy first.
+        A different fingerprint is `409`. Bounded typed `input` (16 KiB;
+        schema when the published manual trigger declares one) is
+        redacted before persist. E4.3 evaluates current target/action
+        policy first (deny `403`, approval-required `409`). Start audit
+        is secret-free and includes actor, version/digest, correlation,
+        and outcome.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -5773,6 +5778,64 @@ components:
                 type: array
                 items:
                   $ref: "#/components/schemas/WorkflowPort"
+              title:
+                type: string
+              description:
+                type: string
+              allowedWith:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowWithField"
+              bounds:
+                $ref: "#/components/schemas/WorkflowNodeBounds"
+              redaction:
+                $ref: "#/components/schemas/WorkflowRedactionPolicy"
+              start:
+                type: object
+                description: E10.1 authenticated manual-start contract for the run dialog.
+                properties:
+                  route:
+                    type: string
+                  method:
+                    type: string
+                  permission:
+                    type: string
+                  csrf:
+                    type: boolean
+                  publishedVersionRequired:
+                    type: boolean
+                  versionField:
+                    type: string
+                  inputField:
+                    type: string
+                  schemaFields:
+                    type: array
+                    items:
+                      type: string
+                  idempotencyKeyField:
+                    type: string
+                  idempotencyHeader:
+                    type: string
+                  idempotencyKeyRequired:
+                    type: boolean
+                  idempotencyKeyPattern:
+                    type: string
+                  maxInputBytes:
+                    type: integer
+                  createdStatus:
+                    type: integer
+                  replayStatus:
+                    type: integer
+                  conflictStatus:
+                    type: integer
+                  policyDenyStatus:
+                    type: integer
+                  approvalRequiredStatus:
+                    type: integer
+                  draftStatus:
+                    type: integer
+                  help:
+                    type: string
         nodes:
           type: array
           items:
@@ -6136,12 +6199,16 @@ components:
         workflowVersionId:
           type: string
           format: uuid
+          description: Published workflow version. Drafts and omitted values are 400.
         idempotencyKey:
           type: string
           maxLength: 128
+          pattern: '^[A-Za-z0-9._~:-]{1,128}$'
+          description: Required for the E10.1 run dialog. Also accepted as Idempotency-Key.
         input:
           type: object
           additionalProperties: true
+          description: Bounded typed start input (16 KiB). Validated against the published manual trigger schema when declared. Secrets are redacted before persist.
         correlationId:
           type: string
         triggerId:

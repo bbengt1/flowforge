@@ -19,11 +19,50 @@ func CoreCatalog() Catalog {
 
 func triggerTypes() []TriggerType {
 	event := []Port{
-		{Name: "event", Kind: PortObject},
-		{Name: "context", Kind: PortObject},
+		{Name: "event", Kind: PortObject, Classification: ClassPublic, MaxBytes: MaxPortBytes, Description: "Validated trigger event."},
+		{Name: "context", Kind: PortObject, Classification: ClassInternal, MaxBytes: MaxPortBytes, Description: "Actor, version digest, correlation, and idempotency context."},
 	}
 	return []TriggerType{
-		{Type: "manual", Phase: PhaseCore, Outputs: event},
+		{
+			Type:        "manual",
+			Phase:       PhaseCore,
+			Title:       "Manual start",
+			Description: "Authenticated operator starts a published workflow version. Drafts never run.",
+			Outputs:     event,
+			AllowedWith: []WithField{
+				{Name: "schema", Kind: "schema", Description: "Optional JSON-schema subset for typed start input. Alias: inputSchema. Also accepted as with.schema / with.inputSchema."},
+				{Name: "inputSchema", Kind: "schema", Description: "Optional JSON-schema subset for typed start input (alias of schema)."},
+			},
+			Bounds: defaultNeutralBounds(),
+			Redaction: &RedactionPolicy{
+				AuditFields:   []string{"actorId", "workflowVersionId", "workflowDigest", "correlationId", "outcome", "idempotencyKey"},
+				RedactInputs:  true,
+				RedactOutputs: true,
+				Strategy:      "mask-classified",
+			},
+			Start: &TriggerStart{
+				Route:                    "POST /api/v1/workflows/{workflowId}/executions",
+				Method:                   "POST",
+				Permission:               "workflow.execute",
+				CSRF:                     true,
+				PublishedVersionRequired: true,
+				VersionField:             "workflowVersionId",
+				InputField:               "input",
+				SchemaFields:             []string{"schema", "inputSchema", "with.schema", "with.inputSchema"},
+				IdempotencyKeyField:      "idempotencyKey",
+				IdempotencyHeader:        "Idempotency-Key",
+				IdempotencyKeyRequired:   true,
+				IdempotencyKeyPattern:    "^[A-Za-z0-9._~:-]{1,128}$",
+				MaxInputBytes:            MaxPortBytes,
+				CreatedStatus:            201,
+				ReplayStatus:             200,
+				ConflictStatus:           409,
+				PolicyDenyStatus:         403,
+				ApprovalRequiredStatus:   409,
+				DraftStatus:              400,
+				Help:                     "Run dialog: published-version picker, bounded typed input, idempotency field, CSRF. Body {workflowVersionId, idempotencyKey, input?}. Cookie session + X-CSRF-Token. 201 new / 200 replayed / 409 fingerprint mismatch. Drafts and missing version are 400. Policy deny 403; approval-required 409. Do not invent POST /executions.",
+			},
+		},
 		{Type: "webhook", Phase: PhaseCore, Outputs: event},
 		{Type: "schedule", Phase: PhaseCore, Outputs: event},
 		{Type: "event", Phase: PhaseNext, Outputs: event},
