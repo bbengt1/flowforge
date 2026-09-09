@@ -290,7 +290,7 @@ func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Ti
 		return RetryResult{}, ErrNotFound
 	}
 	src := exec.steps[stepIdx]
-	if exec.record.Status == ExecutionIndeterminate && src.NodeType != "ssh.run" {
+	if exec.record.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
 		return RetryResult{}, ErrRetryNotAllowed
 	}
 	if len(hint) > 0 {

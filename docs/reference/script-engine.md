@@ -16,23 +16,24 @@ On publish, FlowForge validates source and configuration, packages it into an im
 
 Runners use a non-root UID, read-only root filesystem, ephemeral writable workspace, CPU/memory/process/time limits, dropped Linux capabilities, `no_new_privs`, and default-deny egress. They have no host Docker socket, cloud-instance metadata access, or Kubernetes service-account mount unless explicitly authorized by node policy. Any approved egress uses destination/port allowlists and DNS resolution is constrained to those destinations. Python runs from an approved digest-pinned image and locked dependency profile; Go runs a precompiled signed binary built from the published source in a controlled builder. The runner verifies the artifact digest, signature, and required clean scan status immediately before execution. Runtime package installation and arbitrary base images are MVP non-goals.
 
-Inputs arrive as validated JSON; outputs must meet the declared schema and size limit. Environment variables expose only an allowlisted runtime context. Credential handles are short-lived, scoped, and redacted before output persistence.
+Inputs arrive as validated JSON against the declared `inputSchema` and a 16 KiB cap; secret keys and plaintext credentials are rejected before inject. Outputs must meet the declared `outputSchema` and the same size limit, then are redacted before persist/audit. Environment variables expose only an allowlisted runtime context (`FLOWFORGE_*`). Credential handles are short-lived, scoped, and never serialized as plaintext.
 
 ## Authorization and reliability
 
 FlowForge requires `workflow.execute`, `script.run`, and runtime-profile access; elevated network, credential, or Kubernetes access needs explicit policy approval. Each run audits source/artifact digests, runtime profile, policy revision, actor, input/output schema validation, resource use, outcome, and correlation ID.
 
-Retries are zero by default. A node may be retry-safe only when it declares an idempotency key and verification behavior. Worker lease loss produces an indeterminate status until a safe verification hook resolves it; FlowForge does not rerun a potentially side-effecting script automatically.
+Retries are zero by default. A node may be retry-safe only when it declares `retrySafe`, an `idempotencyKey`, and `verification.behavior=declared-hook` plus a bounded `retryPolicy.maxAttempts` (1–5). Worker lease loss produces an indeterminate status until that hook resolves it; FlowForge does not rerun a potentially side-effecting script automatically. `onMatch` defaults to `already-applied`, `onMismatch` to `safe-to-retry`, and `onError` is `indeterminate`.
 
 ## Initial implementation layout
 
-E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 typed I/O and E9.4 revocation/emergency-stop remain hooks (`revoked_at` is already fail-closed at dispatch).
+E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 validates typed I/O, injects scoped handles, redacts outputs, and treats lease loss as indeterminate until a declared verification hook. E9.4 revocation/emergency-stop remain hooks (`revoked_at` is already fail-closed at dispatch).
 
 ```text
 apps/api/internal/scripts/
   model.go source.go validator.go package.go signer.go scan.go
   policy.go runtime.go redaction.go catalog.go pipeline.go
   isolation.go egress.go execute.go harness.go builder.go
+  io.go handle.go env.go retry.go
   store.go memory.go postgres.go
 apps/api/internal/workflow/script_contract.go
 apps/api/internal/httpapi/script.go

@@ -1,6 +1,7 @@
-// Package scripts is the E9 script engine: publish/scan/sign/pin (E9.1)
-// and isolated short-lived runners (E9.2). Typed I/O (E9.3) and
-// revocation/emergency-stop (E9.4) remain hooks.
+// Package scripts is the E9 script engine: publish/scan/sign/pin (E9.1),
+// isolated short-lived runners (E9.2), and typed I/O + recovery (E9.3).
+// Artifact revocation and emergency-stop remain E9.4 (revoked_at is already
+// fail-closed at dispatch).
 package scripts
 
 import (
@@ -61,6 +62,27 @@ const (
 	IsolationModeHarness = "harness"
 	IsolationModeLive    = "kubernetes"
 	GoBinaryPrefix       = "hmac-sha256:"
+
+	// Typed I/O bounds (E9.3). Match core port caps so one node cannot dominate.
+	MaxInputBytes  = 16 << 10
+	MaxOutputBytes = 16 << 10
+
+	// Retry defaults (E9.3). Mirror E8.3: never blindly re-run.
+	DefaultMaxAttempts = 0
+	MaxRetryAttempts   = 5
+	MaxIdempotencyKey  = 128
+
+	// Short-lived credential handle TTL. Plaintext never leaves the handle.
+	DefaultHandleTTL = 60
+	MaxHandleTTL     = 300
+
+	RetrySemantics            = "E9.3"
+	RetryVerificationContract = "node-declared-idempotent-hook"
+	VerificationBehaviorHook  = "declared-hook"
+
+	VerifyAlreadyApplied = "already-applied"
+	VerifySafeToRetry    = "safe-to-retry"
+	VerifyIndeterminate  = "indeterminate"
 )
 
 // Artifact is an immutable content-addressed script package. JSON never
@@ -116,6 +138,7 @@ type PublishInput struct {
 	NodeID                  string
 	NodeType                string
 	WorkflowVersionID       string
+	RetryWith               map[string]any
 }
 
 // PackagePayload is the canonical bytes hashed into Digest.

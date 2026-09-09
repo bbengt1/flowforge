@@ -3484,7 +3484,9 @@ paths:
         Requires `opsconfig.view`. Documents `script.python` / `script.go`
         node fields, publish/scan/sign/pin rules, runtime-profile digest
         pinning, E9.2 isolation guarantees (UID/FS/caps/no_new_privs/egress),
-        error codes, and E9.3–E9.4 hooks. Does not start a runner.
+        E9.3 typed I/O + retry/indeterminate contract (io, retry.ui, retry.probe,
+        scoped handles, allowlisted env), error codes, and the E9.4 revocation
+        hook. Does not start a runner.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"

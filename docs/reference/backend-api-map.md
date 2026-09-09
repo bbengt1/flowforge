@@ -142,7 +142,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
-| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation contract (UID/FS/caps/`no_new_privs`/egress/runtime profile), and E9.3–E9.4 hooks. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation contract, and E9.3 typed I/O + recovery (`io`, `retry.ui`, `retry.probe`, handle injection, error codes). E9.4 revocation remains a hook. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -494,7 +494,7 @@ Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRI
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/scripts/catalog` | Node fields, publish rules, E9.2 isolation contract, error codes. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Node fields, publish rules, E9.2 isolation, E9.3 I/O + retry/indeterminate contract, error codes. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
 | `POST /api/v1/scripts` | Dedicated package/scan/sign. Requires `workflow.publish`. Body `language`, `source`, `entrypoint`, `runtimeProfileId` (optional version, schemas, limits). Host-supplied workspace IDs rejected. | `201` artifact | `400` `401` `403` `404` |
 | `GET /api/v1/scripts/{artifactId}` | Metadata + digest + scan/signature. Never the package blob. Requires `workflow.view`. | `200` artifact | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts` | Pins bound at publish. Requires `workflow.view`. | `200` `{items}` | `401` `403` `404` |
@@ -511,7 +511,11 @@ Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRI
 | `memoryMiB` | no | integer | 32–2048. Must not exceed the pinned profile. |
 | `cpuMillis` | no | integer | 1–8000. Must not exceed the pinned profile. |
 | `processes` | no | integer | 1–256. Must not exceed the pinned profile. |
-| `inputSchema` / `outputSchema` | no | object | Documented JSON Schema subset. Shape validated at publish; typed execution is E9.3. |
+| `inputSchema` / `outputSchema` | no | object | Documented JSON Schema subset. Shape validated at publish; values validated at execute (16 KiB, no secrets). |
+| `retrySafe` | no | boolean | Default `false`. When `true`, `idempotencyKey` and `verification` are required. |
+| `idempotencyKey` | when `retrySafe` | string | 1–128 identifier. Required with verification to mark the node retry-safe. |
+| `verification` | when `retrySafe` | object | Idempotent `declared-hook`. `behavior`, optional `expect`, `onMatch` / `onMismatch` / `onError`. |
+| `retryPolicy` | no | object | `{maxAttempts:0-5}`. **Default `maxAttempts=0`.** `maxAttempts>0` requires `retrySafe` + `idempotencyKey` + `verification`. |
 | `policyId` | no | uuid | Optional published `kind=script` policy. |
 
 Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateKey`, `token`, `password`, `kubeconfig`, `command`, `shell`.
@@ -528,9 +532,11 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `invalid-entrypoint` | 400 | Empty, a path, or language mismatch |
 | `invalid-runtime-profile` | 400 | Missing, unpublished, or not digest-pinned |
 | `language-mismatch` | 400 | `script.python` must pin a python profile |
-| `invalid-schema` | 400 | Declared I/O schema is not the documented subset |
-| `secret-forbidden` | 400 | Source or YAML contained secret material |
-| `size-limit` | 400 | Source, timeout, or resource cap exceeded |
+| `invalid-schema` | 400 | Declared I/O schema is not the documented subset, or a value failed it |
+| `secret-forbidden` | 400 | Source, YAML, persisted input, or output contained secret material |
+| `size-limit` | 400 | Source, timeout, resource, or I/O size cap exceeded |
+| `input-rejected` | 400 | Execution input failed schema, size, or secret checks before inject |
+| `output-too-large` | 400 | Runner output exceeded the 16 KiB persist cap |
 | `artifact-mutable` | 400 | Draft/unsigned package cannot execute |
 | `artifact-unscanned` | 400 | `scanStatus` pending or missing |
 | `artifact-unsigned` | 400 | Signature missing or does not verify |
@@ -549,9 +555,12 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `docker-socket-denied` | 403 | Host Docker socket is denied |
 | `service-account-denied` | 403 | Kubernetes SA mounts are denied (MVP) |
 | `resource-limit` | 400 | CPU / memory / process / time exceeded the pin |
-| `indeterminate` | 409 | Lease lost after dispatch (E9.3 recovery hook) |
+| `indeterminate` | 409 | Lease lost after dispatch, unknown outcome, or verification could not confirm state. Never a silent re-run |
+| `retry-denied` | 400 / 409 | `maxAttempts>0` without retrySafe+idempotencyKey+verification, or a step retry that is not allowed |
+| `invalid-verification` | 400 | `retrySafe=true` without a valid idempotency key or `verification.behavior` |
+| `handle-forbidden` | 403 | Handle missing, expired, unscoped, or contained plaintext secrets |
+| `env-denied` | 403 | Runtime env key outside the allowlist, or plaintext credentials supplied as env |
 | `runner-not-implemented` | 501 | Live container runtime requested; CI harness only |
-| `typed-io-not-implemented` | 501 | E9.3 typed I/O is not enabled |
 | `revocation-not-implemented` | 501 | E9.4 revocation API is not enabled |
 
 Out of scope for E9.1: `apps/web` rewrite, typed I/O execution (E9.3), revocation/emergency-stop (E9.4), SSH/K8s engines.
@@ -584,9 +593,57 @@ Python: approved digest-pinned image + lock. Go: precompiled signed binary from 
 
 ### Result shape (job output)
 
-`{ok, operation, language, entrypoint, artifactId, artifactDigest, signatureVerified, scanStatus, runtimeProfileId, runtimeProfileDigest, isolation, binary?, stdout, stderr, exitCode, correlationId, audit, error?}`. Never includes package blobs, `storageRef`, or secret handles. Lease loss → `error.code=indeterminate` (no rerun). Typed I/O schema enforcement and emergency stop stay E9.3 / E9.4.
+`{ok, operation, language, entrypoint, artifactId, artifactDigest, signatureVerified, scanStatus, runtimeProfileId, runtimeProfileDigest, isolation, binary?, stdout, stderr, exitCode, input, output, handles, env, inputValidated, outputValidated, retry, correlationId, audit, error?}`. Never includes package blobs, `storageRef`, or plaintext credentials. Lease loss → `error.code=indeterminate` (no rerun). Emergency stop stays E9.4.
 
-Out of scope: `apps/web` rewrite, typed I/O + lease-loss recovery (E9.3), artifact revocation + emergency stop (E9.4).
+Out of scope for E9.2: `apps/web` rewrite, typed I/O + lease-loss recovery (now E9.3 below), artifact revocation + emergency stop (E9.4).
+
+## Typed script I/O and recovery (E9.3)
+
+Workers still claim an E5.2 job and call `scripts.Execute`. No new browser routes. Read `GET /scripts/catalog` → `io` + `retry` + `errors[]`. Relates to #94 / Part of #91. **Do not close #94** — Chloe may land I/O schema / result UI separately. Keep #94 open.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Wizard/library should read `allowedWith` (`inputSchema`, `outputSchema`, `retrySafe`, `idempotencyKey`, `verification`, `retryPolicy`) from `GET /workflows/catalog` and `GET /scripts/catalog` `io` / `retry.ui` / `retry.probe`. Show an unmistakable `indeterminate` badge. Enable **Retry** only when `result.retry.allowed` is true.
+
+### I/O contract
+
+1. Validate execution `input` against the declared `inputSchema` and the 16 KiB size limit **before** inject. Reject secret keys/values in persisted input and in YAML (already fail-closed at publish).
+2. Inject only scoped short-lived handles (`{id,credentialId?,workspaceId?,scopes,expiresAt}`). Plaintext credentials never enter env, logs, job JSON, or audit details. Handle TTL default 60s, max 5m.
+3. Runtime env is an allowlist only: `FLOWFORGE_CORRELATION_ID`, `FLOWFORGE_LANGUAGE`, `FLOWFORGE_ENTRYPOINT`, `FLOWFORGE_ARTIFACT_DIGEST`, `FLOWFORGE_RUNTIME_PROFILE_ID`, `FLOWFORGE_HANDLE_IDS`, `FLOWFORGE_IDEMPOTENCY_KEY`. `AWS_*` / `KUBECONFIG` / `DOCKER_*` / secret-named keys are `env-denied`.
+4. Validate runner output against `outputSchema` and the 16 KiB cap. Redact token-shaped strings before persist/audit. Irredactable secrets fail closed.
+
+### Retry / lease-loss contract
+
+Default retries are **zero**. A node is retry-safe only when it declares `retrySafe=true`, an `idempotencyKey`, and `verification.behavior=declared-hook`, and `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise execute and `POST /executions/{id}/retry` fail closed (`retry-denied`).
+
+| Condition | Retry |
+| --- | --- |
+| Omitted / `maxAttempts=0` (default) | No. First attempt only. |
+| `maxAttempts>0` without `retrySafe` + key + verification | `retry-denied` at validate, execute, and retry API. |
+| `retrySafe=true` without key or verification | `invalid-verification` at validate/publish. |
+| `retrySafe` + key + verification + remaining attempts + status `failed` / `canceled` / `indeterminate` | Yes — **after** the verification hook. |
+| Lease loss / unknown outcome after dispatch | Status `indeterminate`. No script on that call. A later attempt may run **only** the verification hook first. |
+
+`verification` is an idempotent hook, never a blind re-run of the mutating script.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `behavior` | `declared-hook` | Only allowed value |
+| `expect` | omitted | Optional prior-output subset to match |
+| `onMatch` | `already-applied` | Do **not** re-run; treat as success |
+| `onMismatch` | `safe-to-retry` | One more mutating attempt is allowed |
+| `onError` | `indeterminate` | Hook could not confirm state |
+
+`result.retry` matches the E8.3 shape (`allowed`, `retrySafe`, `requiresVerification`, `verificationDeclared`, `verification.outcome`). `audit` is secret-free (`inputValidated`, `outputValidated`, `handleIds`, `verificationOutcome`).
+
+### Execution retry APIs
+
+`POST /executions/{id}/retry` and `.../steps/{stepId}/retry` still require `workflow.execute`. For `script.python` / `script.go`:
+
+- Default `maxAttempts=0` → `409` `retry-denied`
+- Non-retrySafe or missing key/verification → `409` `retry-denied`
+- `indeterminate` without retrySafe → stays indeterminate; retry denied
+- retrySafe + key + verification + remaining attempts → `201` queues a new attempt that **must verify first** (never a blind re-run)
+
+Out of scope: `apps/web` rewrite; artifact revocation + emergency stop (E9.4).
 
 ## Workflow YAML contract (E3.1)
 
@@ -598,7 +655,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1 adds `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, `policy.permissions` includes `script.run`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1/E9.3 add `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, schemas, `retrySafe` / `idempotencyKey` / `verification` / `retryPolicy`, `policy.defaultMaxAttempts=0`, `policy.verification=node-declared-idempotent-hook`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
@@ -681,7 +738,7 @@ Suggested UI flow:
 
 1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only.
 2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
-3. Retry: `failed` or `canceled` **core** `data.*` / `flow.*` steps, or `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Other provider nodes → `409`. SSH that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
+3. Retry: `failed` or `canceled` **core** `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Other provider nodes → `409`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
 4. Do **not** call `/jobs/claim` from the UI. That is the worker client.
 
 Worker client (not the UI):
@@ -704,7 +761,7 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/jobs/{jobId}/complete` | Succeed with redacted `output`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/jobs/{jobId}/fail` | Fail with redacted `error`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step, or E8.3-eligible `ssh.run`. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
+| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step, E8.3-eligible `ssh.run`, or E9.3-eligible script. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
 | `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
 
 ## Execution artifacts (E5.3)
@@ -793,7 +850,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, or a retry/cancel that is not allowed |
-| `retry-denied` | 409 | SSH (or other) retry rejected: default `maxAttempts=0`, profile not `retrySafe`, missing verification, or no attempts remain. Indeterminate non-retrySafe SSH stays closed. |
+| `retry-denied` | 409 | SSH/script retry rejected: default `maxAttempts=0`, not `retrySafe`, missing verification or idempotency key, or no attempts remain. Indeterminate non-retrySafe steps stay closed. |
 | `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
 | `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |
 | `artifact-unsigned` | 400 | Script artifact signature is missing or does not verify. |

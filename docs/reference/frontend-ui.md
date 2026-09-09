@@ -249,9 +249,18 @@ E9.2 (Chloe UI) authors and selects isolation-safe script runtime profiles. `app
 
 - **`/config/runtime-profiles`:** language `python`/`go`, digest-pinned `imageDigest` + `dependencyLockDigest` (`sha256:<64 hex>`), `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`. Optional `egress.destinations[{host,port,protocol}]` + `egress.dnsConstrained` (always true). Omitted egress is default-deny. Publish uses the E4.2 draft/publish/versions verbs. Mutable tags and unknown spec keys are rejected.
 - **Fail-closed surfaces:** no package-install, Docker socket, metadata, privilege-escalation, or unconstrained-DNS toggles. Isolation is server-enforced copy: UID/GID `65532`, read-only root FS, ephemeral `/workspace`, drop ALL + `no_new_privs`, no SA mount, default-deny egress. CI uses HarnessRuntime (no live containers); prod manifests are `deploy/kubernetes/script-runner-*.yaml`.
-- **Egress:** metadata / loopback / `*` / Docker socket destinations are rejected. Typed I/O and revocation stay E9.3 / E9.4.
+- **Egress:** metadata / loopback / `*` / Docker socket destinations are rejected. Typed I/O and recovery are E9.3 below; revocation stays E9.4.
 - **Authoring / wizard:** `script.python` / `script.go` only list published profiles whose language matches the node. HTTP 403 empties the selector. Labels show language + display name + version.
 - **Unchanged:** E9.1 script source/publish; no extra `/scripts/*` routes; `apps/api` untouched.
+
+## E9.3 typed script I/O and recovery (Chloe UI)
+
+E9.3 (Chloe) wires jonny's I/O + recovery map on `main`. `apps/api` is unchanged in the UI PR. Prefer `GET /scripts/catalog` (`io`, `retry.ui`, `retry.probe`, `errors[]`) plus `GET /workflows/catalog` `script.python` / `script.go` `allowedWith` / `policy.defaultMaxAttempts=0`. Relates to #94 / Part of #91 — **do not close #94**; keep epic #91 open until this UI PR merges. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Authoring:** optional `inputSchema` / `outputSchema` (16 KiB, no secrets). `retrySafe` (default false) requires `idempotencyKey` and `verification.behavior=declared-hook`. `retryPolicy.maxAttempts` defaults to 0; `maxAttempts>0` without those gates is `retry-denied` / `invalid-verification`.
+- **Handles / env:** never collect plaintext credentials into YAML, env, or the run form. Handles are `{id,scopes,expiresAt}` only. Runtime env is the catalog allowlist.
+- **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive hook — never imply the script did not run. Show **Retry** only when `result.retry.allowed` is true. Hide Retry for non-retrySafe indeterminate.
+- **Unchanged:** E9.1 source/publish; E9.2 runtime-profile isolation; no invented routes; `apps/api` untouched in the Chloe UI PR.
 
 ## Foundation operator shell
 

@@ -343,6 +343,173 @@ func TestSSHRetrySemantics(t *testing.T) {
 	})
 }
 
+func TestScriptRetrySemantics(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := mustNormalize(t, scriptDispatchYAML)
+	wf, draft, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision, Note: "script"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("retry denied without verification", func(t *testing.T) {
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "script-a", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-a", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.FailJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-a", FencingToken: claimed.Job.FencingToken,
+			Error: map[string]any{"code": "invalid-schema"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryDenied) && !errors.Is(err, ErrRetryNotAllowed) {
+			t.Fatalf("default script retry: %v", err)
+		}
+	})
+
+	t.Run("indeterminate without verification stays closed", func(t *testing.T) {
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "script-b", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-b", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ReleaseJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-b", FencingToken: claimed.Job.FencingToken,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryDenied) && !errors.Is(err, ErrRetryNotAllowed) {
+			t.Fatalf("indet script retry: %v", err)
+		}
+	})
+
+	t.Run("retrySafe with key and verification queues verify-first attempt", func(t *testing.T) {
+		normalized2 := mustNormalize(t, scriptRetryDispatchYAML)
+		wf2, draft2, err := store.Create(ctx, scope, CreateInput{
+			NormalizedYAML: normalized2.NormalizedYAML,
+			Digest:         normalized2.Digest,
+			Summary:        normalized2.Summary,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ver2, err := store.Publish(ctx, scope, wf2.ID, PublishInput{ExpectedRevision: draft2.Revision, Note: "script-retry"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec, err := store.StartExecution(ctx, scope, wf2.ID, StartInput{VersionID: ver2.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "script-c", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-c", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ReleaseJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "script-c", FencingToken: claimed.Job.FencingToken,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		retried, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID, map[string]any{
+			"retrySafe": true, "verificationDeclared": true, "idempotencyKeyDeclared": true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if retried.Step.Attempt != 2 || retried.Job.Status != JobQueued {
+			t.Fatalf("retry = %+v %+v", retried.Step, retried.Job)
+		}
+	})
+}
+
+const scriptDispatchYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: e93-script
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "ok"}))
+        entrypoint: main.py
+        runtimeProfileId: 33333333-3333-4333-8333-333333333333
+        timeoutSeconds: 30
+  edges: []
+`
+
+const scriptRetryDispatchYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: e93-script-retry
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "ok"}))
+        entrypoint: main.py
+        runtimeProfileId: 33333333-3333-4333-8333-333333333333
+        timeoutSeconds: 30
+        retrySafe: true
+        idempotencyKey: summarize-once
+        verification:
+          behavior: declared-hook
+        retryPolicy:
+          maxAttempts: 2
+  edges: []
+`
+
 const sshDispatchYAML = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:

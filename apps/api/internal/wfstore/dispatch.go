@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
 
@@ -66,12 +67,22 @@ func retryPolicy(nodeType string) (safe bool, maxRetries int) {
 	if nodeType == ssh.NodeSSHRun {
 		return false, ssh.DefaultMaxAttempts
 	}
+	if scripts.IsScriptNode(nodeType) {
+		return false, scripts.DefaultMaxAttempts
+	}
 	return false, 0
+}
+
+func allowsIndeterminateRetry(nodeType string) bool {
+	return nodeType == ssh.NodeSSHRun || scripts.IsScriptNode(nodeType)
 }
 
 func canRetryStep(step ExecutionStep) error {
 	if step.NodeType == ssh.NodeSSHRun {
 		return canRetrySSHStep(step)
+	}
+	if scripts.IsScriptNode(step.NodeType) {
+		return canRetryScriptStep(step)
 	}
 	switch step.Status {
 	case ExecutionFailed, ExecutionCanceled:
@@ -103,6 +114,96 @@ func canRetrySSHStep(step ExecutionStep) error {
 		return ErrRetryDenied
 	}
 	return ErrRetryNotAllowed
+}
+
+func canRetryScriptStep(step ExecutionStep) error {
+	switch step.Status {
+	case ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate:
+	default:
+		return ErrRetryNotAllowed
+	}
+	eval := scriptRetryEval(step)
+	dec := scripts.EvaluateRetry(eval)
+	if dec.Allowed {
+		return nil
+	}
+	if dec.Code == scripts.CodeRetryDenied {
+		return ErrRetryDenied
+	}
+	return ErrRetryNotAllowed
+}
+
+func scriptRetryEval(step ExecutionStep) scripts.RetryEval {
+	max := scripts.MaxAttemptsFromWith(step.Input)
+	safe, hasVerify, hasKey := scriptRetryFlags(step)
+	if n, ok := asIntAny(step.PolicySnapshot["maxAttempts"]); ok {
+		max = n
+	}
+	return scripts.RetryEval{
+		Status:             step.Status,
+		Attempt:            step.Attempt,
+		MaxAttempts:        max,
+		RetrySafe:          safe,
+		HasVerification:    hasVerify,
+		HasIdempotencyKey:  hasKey,
+		PriorIndeterminate: step.Status == ExecutionIndeterminate,
+	}
+}
+
+func scriptRetryFlags(step ExecutionStep) (retrySafe, hasVerification, hasKey bool) {
+	retrySafe = boolFrom(step.PolicySnapshot, "retrySafe")
+	hasVerification = boolFrom(step.PolicySnapshot, "verificationDeclared") || mapFrom(step.PolicySnapshot, "verification") != nil
+	hasKey = boolFrom(step.PolicySnapshot, "idempotencyKeyDeclared") || stringFrom(step.PolicySnapshot, "idempotencyKey") != ""
+	if retry, ok := step.Output["retry"].(map[string]any); ok {
+		if v, exists := retry["retrySafe"]; exists {
+			retrySafe, _ = v.(bool)
+		}
+		if v, exists := retry["verificationDeclared"]; exists {
+			hasVerification, _ = v.(bool)
+		}
+		if v, exists := retry["idempotencyKey"]; exists {
+			s, _ := v.(string)
+			hasKey = hasKey || strings.TrimSpace(s) != ""
+		}
+	}
+	if retry, ok := step.Error["retry"].(map[string]any); ok {
+		if v, exists := retry["retrySafe"]; exists {
+			retrySafe, _ = v.(bool)
+		}
+		if v, exists := retry["verificationDeclared"]; exists {
+			hasVerification, _ = v.(bool)
+		}
+		if v, exists := retry["idempotencyKey"]; exists {
+			s, _ := v.(string)
+			hasKey = hasKey || strings.TrimSpace(s) != ""
+		}
+	}
+	if strings.TrimSpace(stringFrom(step.Input, "idempotencyKey")) != "" {
+		hasKey = true
+	}
+	return retrySafe, hasVerification, hasKey
+}
+
+func stringFrom(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return strings.TrimSpace(s)
+}
+
+func asIntAny(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		if n == float64(int(n)) {
+			return int(n), true
+		}
+	}
+	return 0, false
 }
 
 func sshRetryEval(step ExecutionStep) ssh.RetryEval {

@@ -729,7 +729,7 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, wfstore.ErrJobBinding):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The authenticated job binding was rejected.")
 	case errors.Is(err, wfstore.ErrRetryDenied):
-		WriteProblem(w, r, http.StatusConflict, CodeRetryDenied, "Retry Denied", "Retry is not allowed: default maxAttempts is 0, the profile is not retrySafe, verification is missing, or no attempts remain. Indeterminate SSH steps are never blindly re-run.")
+		WriteProblem(w, r, http.StatusConflict, CodeRetryDenied, "Retry Denied", "Retry is not allowed: default maxAttempts is 0, the node is not retrySafe, verification or idempotency key is missing, or no attempts remain. Indeterminate SSH/script steps are never blindly re-run.")
 	case errors.Is(err, wfstore.ErrNotClaimable), errors.Is(err, wfstore.ErrAlreadyTerminal), errors.Is(err, wfstore.ErrRetryNotAllowed), errors.Is(err, wfstore.ErrCanceled):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The job or execution cannot be updated in its current state.")
 	case errors.Is(err, wfstore.ErrUnsafeArtifact):

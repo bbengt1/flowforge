@@ -43,6 +43,63 @@ type IsolationRules struct {
 	Hooks                    []string               `json:"hooks"`
 }
 
+// IORules documents typed input/output + handle injection for Chloe.
+type IORules struct {
+	MaxInputBytes        int      `json:"maxInputBytes"`
+	MaxOutputBytes       int      `json:"maxOutputBytes"`
+	SecretsForbidden     bool     `json:"secretsForbidden"`
+	PlaintextCredentials bool     `json:"plaintextCredentials"`
+	HandleInjection      string   `json:"handleInjection"`
+	HandleTTLSeconds     int      `json:"handleTTLSeconds"`
+	HandleMaxTTLSeconds  int      `json:"handleMaxTTLSeconds"`
+	AllowlistedEnv       []string `json:"allowlistedEnv"`
+	ForbiddenEnv         []string `json:"forbiddenEnv"`
+	ValidateBeforeInject bool     `json:"validateBeforeInject"`
+	RedactBeforePersist  bool     `json:"redactBeforePersist"`
+	Note                 string   `json:"note"`
+}
+
+// RetryRules documents default-zero retries and the verification contract.
+type RetryRules struct {
+	DefaultMaxAttempts                int               `json:"defaultMaxAttempts"`
+	MaxAttempts                       int               `json:"maxAttempts"`
+	RetrySafeFlag                     string            `json:"retrySafeFlag"`
+	IdempotencyKey                    string            `json:"idempotencyKey"`
+	Semantics                         string            `json:"semantics"`
+	Note                              string            `json:"note"`
+	BlindRetry                        bool              `json:"blindRetry"`
+	LeaseLossOutcome                  string            `json:"leaseLossOutcome"`
+	UnknownOutcome                    string            `json:"unknownOutcome"`
+	RequiresIdempotencyKey            bool              `json:"requiresIdempotencyKey"`
+	RequiresVerificationWhenRetrySafe bool              `json:"requiresVerificationWhenRetrySafe"`
+	Verification                      string            `json:"verification"`
+	WhenRetryAllowed                  string            `json:"whenRetryAllowed"`
+	States                            []string          `json:"states"`
+	UI                                RetryUI           `json:"ui"`
+	Probe                             VerificationRules `json:"probe"`
+}
+
+// VerificationRules documents the node-declared idempotent hook.
+type VerificationRules struct {
+	RequiredWhenRetrySafe bool     `json:"requiredWhenRetrySafe"`
+	Field                 string   `json:"field"`
+	Behavior              string   `json:"behavior"`
+	OnMatchDefault        string   `json:"onMatchDefault"`
+	OnMismatchDefault     string   `json:"onMismatchDefault"`
+	OnError               string   `json:"onError"`
+	Outcomes              []string `json:"outcomes"`
+	Note                  string   `json:"note"`
+}
+
+// RetryUI is the Chloe contract for badges and retry controls.
+type RetryUI struct {
+	IndeterminateBadge string `json:"indeterminateBadge"`
+	RetrySafeFlag      string `json:"retrySafeFlag"`
+	RetryEnabledWhen   string `json:"retryEnabledWhen"`
+	HideRetryWhen      string `json:"hideRetryWhen"`
+	NeverAssumeAbsent  bool   `json:"neverAssumeAbsent"`
+}
+
 // RuntimeProfileContract is the pinned ops-config shape the runner consumes.
 type RuntimeProfileContract struct {
 	Language             string   `json:"language"`
@@ -91,6 +148,8 @@ type EngineCatalog struct {
 	Errors       []ErrorShape      `json:"errors"`
 	Permissions  []string          `json:"permissions"`
 	Isolation    IsolationRules    `json:"isolation"`
+	IO           IORules           `json:"io"`
+	Retry        RetryRules        `json:"retry"`
 	Hooks        map[string]string `json:"hooks"`
 }
 
@@ -145,8 +204,55 @@ func Catalog() EngineCatalog {
 				"deploy/kubernetes/script-runner-deployment.yaml",
 				"deploy/kubernetes/script-runner-networkpolicy.yaml",
 			},
-			Note:  "E9.2 isolated runner. Execute calls VerifyForDispatch, then HarnessRuntime (CI) or a live Kubernetes Job. Python uses the pinned image+lock; Go uses a controlled-builder signed binary (CI stub still enforces isolation).",
-			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec"},
+			Note:  "E9.2 isolated runner plus E9.3 typed I/O. Execute validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job. Lease loss is indeterminate — never a blind re-run.",
+			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec", "ValidateExecutionInput", "PublicHandles"},
+		},
+		IO: IORules{
+			MaxInputBytes:        MaxInputBytes,
+			MaxOutputBytes:       MaxOutputBytes,
+			SecretsForbidden:     true,
+			PlaintextCredentials: false,
+			HandleInjection:      "scoped-short-lived",
+			HandleTTLSeconds:     DefaultHandleTTL,
+			HandleMaxTTLSeconds:  MaxHandleTTL,
+			AllowlistedEnv:       AllowedRuntimeEnv(),
+			ForbiddenEnv:         []string{"AWS_*", "KUBECONFIG", "DOCKER_*", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL", "PRIVATE_KEY"},
+			ValidateBeforeInject: true,
+			RedactBeforePersist:  true,
+			Note:                 "Inputs are validated against inputSchema and size limits before inject. Only scoped handle ids are injected. Outputs are schema/size checked and redacted before persist/audit.",
+		},
+		Retry: RetryRules{
+			DefaultMaxAttempts:                DefaultMaxAttempts,
+			MaxAttempts:                       MaxRetryAttempts,
+			RetrySafeFlag:                     "retrySafe",
+			IdempotencyKey:                    "idempotencyKey",
+			Semantics:                         RetrySemantics,
+			Note:                              "Retries default to zero. A node is retry-safe only when it declares retrySafe, an idempotency key, and verification.behavior. Lease loss and unknown outcomes are indeterminate — never a blind re-run.",
+			BlindRetry:                        false,
+			LeaseLossOutcome:                  "indeterminate",
+			UnknownOutcome:                    "indeterminate",
+			RequiresIdempotencyKey:            true,
+			RequiresVerificationWhenRetrySafe: true,
+			Verification:                      RetryVerificationContract,
+			WhenRetryAllowed:                  "node retrySafe=true AND idempotencyKey is present AND verification.behavior is declared-hook AND retryPolicy.maxAttempts>0 AND attempts remain AND prior status is failed, canceled, or indeterminate after verification",
+			States:                            []string{"queued", "running", "succeeded", "failed", "canceled", "indeterminate"},
+			UI: RetryUI{
+				IndeterminateBadge: "indeterminate",
+				RetrySafeFlag:      "retrySafe",
+				RetryEnabledWhen:   "Show Retry when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Disable/hide Retry for non-retrySafe indeterminate.",
+				HideRetryWhen:      "indeterminate without retry.allowed, retry-denied, or maxAttempts=0",
+				NeverAssumeAbsent:  true,
+			},
+			Probe: VerificationRules{
+				RequiredWhenRetrySafe: true,
+				Field:                 "verification",
+				Behavior:              VerificationBehaviorHook,
+				OnMatchDefault:        VerifyAlreadyApplied,
+				OnMismatchDefault:     VerifySafeToRetry,
+				OnError:               VerifyIndeterminate,
+				Outcomes:              []string{VerifyAlreadyApplied, VerifySafeToRetry, VerifyIndeterminate},
+				Note:                  "declared-hook is an idempotent check of prior output / expect. already-applied resolves success without re-running. safe-to-retry allows one more mutating attempt. indeterminate stays loud and does not re-run.",
+			},
 		},
 		Hooks: map[string]string{
 			"E9.2": "isolated runner (VerifyForDispatch then Execute)",
@@ -168,8 +274,12 @@ func NodeContracts() []NodeContract {
 		{Name: "memoryMiB", Kind: "integer", Description: "Bounded 32–2048. Must not exceed the pinned runtime profile."},
 		{Name: "cpuMillis", Kind: "integer", Description: "Optional CPU millicores. Must not exceed the pinned runtime profile."},
 		{Name: "processes", Kind: "integer", Description: "Optional process cap. Must not exceed the pinned runtime profile."},
-		{Name: "inputSchema", Kind: "object", Description: "Declared input JSON Schema subset. Shape is validated at publish; typed execution is E9.3."},
-		{Name: "outputSchema", Kind: "object", Description: "Declared output JSON Schema subset. Shape is validated at publish; typed execution is E9.3."},
+		{Name: "inputSchema", Kind: "object", Description: "Declared input JSON Schema subset. Validated at publish and again before inject (16 KiB, no secrets)."},
+		{Name: "outputSchema", Kind: "object", Description: "Declared output JSON Schema subset. Runner output is validated and redacted before persist."},
+		{Name: "retrySafe", Kind: "boolean", Description: "Default false. When true, idempotencyKey and verification are required."},
+		{Name: "idempotencyKey", Kind: "string", Description: "Required when retrySafe. 1–128 identifier. Declares the node retry-safe with verification."},
+		{Name: "verification", Kind: "object", Description: "Required when retrySafe. {behavior:declared-hook, expect?, onMatch, onMismatch, onError}. Never a blind re-run."},
+		{Name: "retryPolicy", Kind: "object", Description: "Optional {maxAttempts:0-5}. Default maxAttempts is 0. maxAttempts>0 requires retrySafe + idempotencyKey + verification."},
 		{Name: "policyId", Kind: "uuid", Description: "Optional published kind=script policy UUID."},
 	}
 	return []NodeContract{
@@ -201,9 +311,11 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeInvalidEntrypoint, Status: 400, Meaning: "Entrypoint is empty, a path, or does not match the language (main.py / main.go)."},
 		{Code: CodeInvalidRuntimeProfile, Status: 400, Meaning: "Runtime profile is missing, unpublished, or not digest-pinned."},
 		{Code: CodeLanguageMismatch, Status: 400, Meaning: "script.python must pin a python profile; script.go must pin a go profile."},
-		{Code: CodeInvalidSchema, Status: 400, Meaning: "inputSchema or outputSchema is not the documented JSON Schema subset."},
-		{Code: CodeSecretForbidden, Status: 400, Meaning: "Source or YAML contained secret material (PEM, kubeconfig, tokens)."},
-		{Code: CodeSizeLimit, Status: 400, Meaning: "Source, timeout, or resource limit exceeded the documented cap."},
+		{Code: CodeInvalidSchema, Status: 400, Meaning: "inputSchema or outputSchema is not the documented JSON Schema subset, or a value failed the declared schema."},
+		{Code: CodeSecretForbidden, Status: 400, Meaning: "Source, YAML, persisted input, or output contained secret material (PEM, kubeconfig, tokens)."},
+		{Code: CodeSizeLimit, Status: 400, Meaning: "Source, timeout, resource, or I/O size exceeded the documented cap."},
+		{Code: CodeInputRejected, Status: 400, Meaning: "Execution input failed schema, size, or secret checks before inject."},
+		{Code: CodeOutputTooLarge, Status: 400, Meaning: "Runner output exceeded the 16 KiB persist cap."},
 		{Code: CodeArtifactMutable, Status: 400, Meaning: "A draft or unsigned package cannot be executed. Publish first."},
 		{Code: CodeArtifactUnscanned, Status: 400, Meaning: "Artifact scan_status is pending or missing."},
 		{Code: CodeArtifactUnsigned, Status: 400, Meaning: "Artifact signature is missing or does not verify."},
@@ -223,9 +335,12 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeDockerSocketDenied, Status: 403, Meaning: "Host Docker socket is denied."},
 		{Code: CodeServiceAccountDenied, Status: 403, Meaning: "Kubernetes service-account mounts are denied (MVP)."},
 		{Code: CodeResourceLimit, Status: 400, Meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile."},
-		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch. The script is not retried (E9.3 recovery hook)."},
+		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch, unknown provider outcome, or verification could not confirm state. Never a silent re-run."},
+		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied."},
+		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true without a valid idempotency key or verification.behavior, or verification set on a non-retrySafe node."},
+		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, unscoped, or contained plaintext secrets. Handles only."},
+		{Code: CodeEnvDenied, Status: 403, Meaning: "Runtime environment key is outside the allowlist, or plaintext credentials were supplied as env."},
 		{Code: CodeRunnerNotImplemented, Status: 501, Meaning: "Live container runtime requested (RequireLiveRuntime) but only the CI harness is available."},
-		{Code: CodeIONotImplemented, Status: 501, Meaning: "E9.3 typed I/O execution is not enabled."},
 		{Code: CodeRevocationNotImplemented, Status: 501, Meaning: "E9.4 revocation API is not enabled."},
 	}
 }

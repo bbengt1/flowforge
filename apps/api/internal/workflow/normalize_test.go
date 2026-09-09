@@ -112,7 +112,7 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 			foundSSH = true
 		}
 		if n.Type == "script.python" || n.Type == "script.go" {
-			if n.Policy == nil || !n.Policy.SideEffects || len(n.AllowedWith) == 0 || n.Redaction == nil {
+			if n.Policy == nil || !n.Policy.SideEffects || n.Policy.DefaultMaxAttempts != 0 || len(n.AllowedWith) == 0 || n.Redaction == nil {
 				t.Fatalf("%s contract incomplete: %+v", n.Type, n)
 			}
 			foundScript = true
