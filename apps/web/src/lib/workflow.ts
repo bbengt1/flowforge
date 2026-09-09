@@ -379,12 +379,21 @@ export function isCompareResult(value: unknown): value is CompareWorkflowResult 
 /** Run control: published version UUID only. Never a draft sentinel. */
 export function executionStartBody(
   workflowVersionId: string | null | undefined,
+  extras: { idempotencyKey?: string; input?: Record<string, unknown> } = {},
 ): StartExecutionBody | null {
   const id = workflowVersionId?.trim() ?? "";
   if (!isResourceId(id)) {
     return null;
   }
-  return { workflowVersionId: id };
+  const body: StartExecutionBody = { workflowVersionId: id };
+  const key = extras.idempotencyKey?.trim();
+  if (key) {
+    body.idempotencyKey = key.slice(0, 128);
+  }
+  if (extras.input && typeof extras.input === "object") {
+    body.input = extras.input;
+  }
+  return body;
 }
 
 export function publishedVersions(versions: WorkflowVersion[]): WorkflowVersion[] {

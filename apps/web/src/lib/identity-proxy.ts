@@ -14,6 +14,11 @@ import {
   rewriteUpstreamSetCookies,
 } from "./session-cookies.ts";
 import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
+import {
+  EXECUTION_PROXY_ROUTES,
+  isExecutionProxySegments,
+  retargetExecutionApiPath,
+} from "./execution-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -118,6 +123,14 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[0] === "workflows" &&
       isResourceId(s[1]) &&
       (s[2] === "publish" || s[2] === "compare" || s[2] === "executions"),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "executions",
   },
   {
     methods: ["GET"],
@@ -245,6 +258,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
   // approval-contract.ts.
   ...APPROVAL_PROXY_ROUTES,
+  // E5.1 execution history UI (#46 / #51). Paths live in
+  // execution-contract.ts. POST /workflows/{id}/executions start stays
+  // above this block (CSRF). Do not invent POST /executions.
+  ...EXECUTION_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -301,9 +318,12 @@ export function resolveIdentityProxyTarget(
     };
   }
 
+  const mapped = `${API_PREFIX}/${segments.join("/")}`;
   return {
     method,
-    apiPath: `${API_PREFIX}/${segments.join("/")}`,
+    apiPath: isExecutionProxySegments(segments)
+      ? retargetExecutionApiPath(mapped)
+      : mapped,
     instance,
   };
 }

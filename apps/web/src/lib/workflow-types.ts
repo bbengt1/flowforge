@@ -270,6 +270,13 @@ export type WorkflowExport = {
 
 export type StartExecutionBody = {
   workflowVersionId: string;
+  idempotencyKey?: string;
+  input?: Record<string, unknown>;
+};
+
+export type StartExecutionOptions = {
+  idempotencyKey?: string;
+  input?: Record<string, unknown>;
 };
 
 export type WorkflowExecution = {
@@ -281,4 +288,9 @@ export type WorkflowExecution = {
   requestedBy?: string;
   createdAt: string;
   pins?: OpsConfigPin[];
+  idempotencyKey?: string;
+  correlationId?: string;
+  replayed?: boolean;
+  reused?: boolean;
+  input?: unknown;
 };

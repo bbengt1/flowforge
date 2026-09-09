@@ -554,9 +554,10 @@ export async function startWorkflowExecution(
   identity: DevIdentity,
   workflowId: string,
   workflowVersionId: string,
+  extras: { idempotencyKey?: string; input?: Record<string, unknown> } = {},
 ): Promise<ExecutionClientSuccess | WorkflowClientFailure> {
   const path = workflowExecutionsPath(workflowId);
-  const body = executionStartBody(workflowVersionId);
+  const body = executionStartBody(workflowVersionId, extras);
   if (!body) {
     return malformed(
       "local-execution-16",
@@ -569,7 +570,7 @@ export async function startWorkflowExecution(
     method: "POST",
     body,
   });
-  return executionResult(result, path);
+  return executionResult(result, path, { started: true });
 }
 
 export async function getWorkflowExecution(
@@ -654,6 +655,7 @@ function draftOnlyResult(
 function executionResult(
   result: IdentityClientResult<WorkflowExecution>,
   instance: string,
+  options: { started?: boolean } = {},
 ): ExecutionClientSuccess | WorkflowClientFailure {
   if (!result.ok) {
     return failure(result);
@@ -668,10 +670,15 @@ function executionResult(
     );
   }
   const pins = parseAuthorizedPins((payload as { pins?: unknown }).pins);
+  const row = payload as WorkflowExecution;
+  const replayed =
+    row.replayed === true ||
+    row.reused === true ||
+    (options.started === true && result.statusCode === 200);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    execution: { ...payload, pins },
+    execution: { ...row, pins, replayed, reused: replayed },
   };
 }

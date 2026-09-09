@@ -118,6 +118,8 @@ export function WorkflowOperator() {
   const [compareRight, setCompareRight] = useState("");
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
+  const [runIdempotencyKey, setRunIdempotencyKey] = useState("");
+  const [lastStartStatus, setLastStartStatus] = useState<number | null>(null);
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
   const [policyEval, setPolicyEval] = useState<PolicyEvaluation | null>(null);
   const [policyEvalProblem, setPolicyEvalProblem] =
@@ -601,13 +603,23 @@ export function WorkflowOperator() {
         return;
       }
     }
-    const result = await startWorkflowExecution(identity, workflow.id, runVersionId);
+    const extras = runIdempotencyKey.trim()
+      ? { idempotencyKey: runIdempotencyKey.trim() }
+      : {};
+    const result = await startWorkflowExecution(
+      identity,
+      workflow.id,
+      runVersionId,
+      extras,
+    );
     setLastRequestId(result.requestId);
+    setLastStartStatus(result.statusCode);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
     }
+    setProblem(null);
     setExecution(result.execution);
     await loadExecutionApprovals(workflow.id, result.execution);
   }
@@ -887,6 +899,10 @@ export function WorkflowOperator() {
             evaluationPending={policyEvalPending}
             evaluationProblem={policyEvalProblem}
             executionApprovals={executionApprovals}
+            lastStartStatus={lastStartStatus}
+            runProblem={problem}
+            idempotencyKey={runIdempotencyKey}
+            onIdempotencyKey={setRunIdempotencyKey}
             onSelectVersion={(versionId) => {
               setRunVersionId(versionId);
               void evaluateSelectedVersion(versionId);

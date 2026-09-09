@@ -225,6 +225,17 @@ describe("draft conflict and run guards", () => {
       executionStartBody("22222222-2222-4222-8222-222222222222"),
       { workflowVersionId: "22222222-2222-4222-8222-222222222222" },
     );
+    assert.deepEqual(
+      executionStartBody("22222222-2222-4222-8222-222222222222", {
+        idempotencyKey: "deploy-prod-1",
+        input: { dryRun: true },
+      }),
+      {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        idempotencyKey: "deploy-prod-1",
+        input: { dryRun: true },
+      },
+    );
     const versions: WorkflowVersion[] = [
       {
         id: "22222222-2222-4222-8222-222222222222",
