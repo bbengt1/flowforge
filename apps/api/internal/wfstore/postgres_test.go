@@ -158,7 +158,7 @@ func TestPostgresImmutabilityPinningAndIsolation(t *testing.T) {
 	})
 
 	t.Run("force rls is enabled", func(t *testing.T) {
-		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions", "execution_steps", "execution_jobs", "audit_events"} {
+		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions", "execution_steps", "execution_jobs", "audit_events", "execution_artifacts", "artifact_download_grants"} {
 			var forced bool
 			err := admin.QueryRow(ctx, `
 				SELECT c.relforcerowsecurity

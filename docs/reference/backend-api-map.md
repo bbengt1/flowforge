@@ -66,7 +66,7 @@ After membership authorization, the API sets transaction-local `app.workspace_id
 | `GET /api/v1/workspace/records/{id}` | Get a scoped record. | `200` | `401` `403` `404` |
 | `POST /api/v1/workspace/records/{id}/links` | Attach a child via composite `(workspace_id, parent_id)` FK. | `201` link | `400` `401` `403` `404` |
 | `POST /api/v1/workspace/credentials/{id}/use` | E2.2 isolation hook use (stub record). Requires `credential.use`. Product vault use is `POST /credentials/{id}/use`. | `204` | `401` `403` `404` |
-| `GET /api/v1/workspace/artifacts/{id}` | Artifact access. Requires `execution.view`. | `200` | `401` `403` `404` |
+| `GET /api/v1/workspace/artifacts/{id}` | E2.2 isolation hook (stub record). Product artifacts are `GET /artifacts/{id}` (E5.3). Requires `execution.view`. | `200` | `401` `403` `404` |
 | `GET /api/v1/workspace/jobs` | List job hooks. Requires `execution.view`. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/workspace/jobs` | Enqueue a job hook. Requires `workflow.execute`. | `201` | `401` `403` |
 | `GET /api/v1/workspace/cache/{key}` | Workspace-prefixed cache read. | `200` | `401` `403` `404` |
@@ -264,7 +264,7 @@ Suggested UI flow:
 
 PostgreSQL model for executions, steps, jobs, and append-only `audit_events`. E5.2 uses the reserved lease/fencing columns for claim/heartbeat/recovery. Artifact downloads are E5.3.
 
-**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable against `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: `/executions` (workspace history) and `/executions/{id}` (detail with redacted steps). Next proxies can rewrite `/api/control-plane/executions` and `/api/control-plane/workflows/{id}/executions`.
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable against `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: `/executions` (workspace history) and `/executions/{id}` (detail with redacted steps). Artifact list/download is E5.3 below. Next proxies can rewrite `/api/control-plane/executions` and `/api/control-plane/workflows/{id}/executions`.
 
 Suggested UI flow:
 
@@ -272,8 +272,8 @@ Suggested UI flow:
 2. Same `idempotencyKey` + same input/actor → `200` with the original `id` and `replayed: true`. Do not treat that as a second run.
 3. Same key + different `input` (or actor) → `409` `conflict`. Show a safe message; do not retry with a new key unless the operator intends a new run.
 4. Workspace history: `GET /executions?status=&workflowId=&limit=`. Per-workflow: `GET /workflows/{workflowId}/executions`.
-5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, `steps[]`, `jobs[]`, `pins[]`.
-6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
+5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, bounded `steps[]` (`outputTruncated`), `jobs[]`, `pins[]`, and `artifacts[]` metadata (E5.3).
+6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`, `/artifacts`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
 Statuses: `queued`, `pinned` (legacy stub), `running`, `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). Workers claim jobs via `/jobs/*`; the UI cancels/retries via `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser.
@@ -283,7 +283,7 @@ Retention: executions `retentionUntil` default 90 days; audit events 365 days. M
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
 | `GET /api/v1/executions` | Workspace history. Query `workflowId`, `status`, `limit` (1–100, default 50). Requires `execution.view`. | `200` `{items}` | `401` `403` |
-| `GET /api/v1/executions/{executionId}` | Detail + redacted steps/jobs/pins/audit. | `200` | `401` `403` `404` |
+| `GET /api/v1/executions/{executionId}` | Detail + redacted steps/jobs/pins/audit + artifact metadata. | `200` | `401` `403` `404` |
 | `GET /api/v1/executions/{executionId}/steps` | Redacted step list. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/executions/{executionId}/steps/{stepId}` | One step. | `200` | `401` `403` `404` |
 | `GET /api/v1/executions/{executionId}/jobs` | Dispatch records. | `200` `{items}` | `401` `403` `404` |
@@ -325,6 +325,42 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` |
+
+## Execution artifacts (E5.3)
+
+Redacted step state, bounded logs/output, envelope-encrypted artifact metadata, short-lived download grants, retention deletion, and legal hold. Object payloads are encrypted at rest (same `CREDENTIAL_KEK` envelope as the vault). Local MVP storage is the filesystem under `ARTIFACT_STORE_DIR` (compose/k8s: `/tmp/flowforge-artifacts` on the read-only container tmpfs). Empty `ARTIFACT_STORE_DIR` uses in-process memory (lost on restart). The API **never** returns `storageRef`, DEK/envelope fields, bucket names, or durable public URLs.
+
+**UI route map (Chloe):** do **not** stack on this feature branch. Paths are intended to be stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` / `storageRef` / `url` / `bucket` / `key` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Do not call object-store APIs. Do not persist download `href`s. Isolation hook `GET /workspace/artifacts/{id}` is **not** the product artifact API.
+
+Suggested Next proxies: `/api/control-plane/executions/{id}/artifacts`, `.../steps/{stepId}/logs`, `/artifacts/{id}`, `.../downloads`, `/artifact-downloads/{grantId}`, `.../legal-hold`, `/retention/purge`.
+
+Suggested UI flow:
+
+1. Poll `GET /executions/{id}` — `steps[]` (bounded, `outputTruncated`) and `artifacts[]` (metadata only). Optional `GET /executions/{id}/artifacts?stepId=&kind=`.
+2. Logs: `GET /executions/{id}/steps/{stepId}/logs?limit=&offset=&maxBytes=`. Default window 200 lines / 16KiB; max 200 lines / 256KiB. Tokens are already `[redacted]` in stored logs.
+3. Download: `POST /artifacts/{id}/downloads` `{}` → `{download:{id,artifactId,expiresAt,href,method:"GET"}}` then `GET {href}` with cookies. Re-request a grant if `404` (expired). Default grant TTL **60s** (`ARTIFACT_DOWNLOAD_TTL`), max 5m. Auth is re-evaluated on **every** grant and stream request.
+4. Never render or store `storageRef`, `dekEnvelope`, `ciphertext`, bucket URLs, or a grant `href` past its expiry.
+5. Legal hold / purge are admin-only (`workspace.administer`); not required for the artifact viewer.
+
+Worker/operator upload (not the browser viewer): `POST /executions/{id}/artifacts` or `POST /executions/{id}/steps/{stepId}/artifacts` (or `.../logs`) with `{kind,filename,contentType,contentClassification,content|contentBase64}`. Scan rejects PEM private keys, kubeconfig, K8s Secret manifests, AWS secret keys, and `secret`/`restricted` classification **before** persist (`400`, audit `artifact.upload.rejected`). Allowed `contentType`: `text/plain`, `application/json`, `application/octet-stream`. Caps: files 1MiB (`ARTIFACT_MAX_BYTES`), logs 256KiB, output 16KiB. Filename paths are stripped.
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/executions/{executionId}` | `execution.view` | no | Includes `artifacts[]` metadata + bounded `steps[]` |
+| `GET` | `/api/v1/executions/{executionId}/artifacts` | `execution.view` | no | `{items}` metadata. Query `stepId`, `kind` |
+| `POST` | `/api/v1/executions/{executionId}/artifacts` | `workflow.execute` | yes | Upload. Host locators → `400`. Missing KEK → `503` |
+| `POST` | `/api/v1/executions/{executionId}/steps/{stepId}/artifacts` | `workflow.execute` | yes | Upload bound to a step |
+| `GET` | `/api/v1/executions/{executionId}/steps/{stepId}/logs` | `execution.view` | no | `{lines,offset,nextOffset,truncated,maxBytes}` |
+| `POST` | `/api/v1/executions/{executionId}/steps/{stepId}/logs` | `workflow.execute` | yes | Upload; default `kind=log` |
+| `GET` | `/api/v1/artifacts/{artifactId}` | `execution.view` | no | Metadata only. Expired without hold → `404` |
+| `POST` | `/api/v1/artifacts/{artifactId}/downloads` | `execution.view` | yes | `{download:{href,method,expiresAt}}` same-origin grant |
+| `GET` | `/api/v1/artifact-downloads/{grantId}` | `execution.view` | no | Stream bytes. Re-evals workspace + perm + retention + grant. `Cache-Control: no-store` |
+| `POST` | `/api/v1/artifacts/{artifactId}/legal-hold` | `workspace.administer` | yes | `{hold, reason}` — reason required to place. Audit `artifact.legal_hold.*` |
+| `POST` | `/api/v1/retention/purge` | `workspace.administer` | yes | Deletes metadata + object payload. Holds skipped. `{purged,held,executions,audits}` |
+
+Artifact JSON fields: `id`, `executionId`, `executionStepId?`, `kind`, `filename`, `contentType`, `digest`, `sizeBytes`, `contentClassification` (`public`/`internal`/`confidential`), `redacted`, `expiresAt` (defaults to the execution `retentionUntil`), `legalHold`, `legalHoldReason?`, `legalHoldBy?`, `legalHoldAt?`, `createdAt`, `updatedAt`.
+
+Out of scope: E5.4 audit integrity suite expansion, provider engines, `apps/web` rewrite.
 
 RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
 

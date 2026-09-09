@@ -121,6 +121,9 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
 | `JOB_BINDING_SECRET` | ephemeral | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Unset generates a process-local key (tickets die on restart). |
+| `ARTIFACT_STORE_DIR` | empty | Filesystem root for encrypted artifact payloads (`{dir}/{workspaceID}/{storageRef}`). Empty uses in-process memory. Compose/k8s API containers are read-only — use `/tmp/flowforge-artifacts`. |
+| `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
+| `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -159,6 +162,9 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
       CREDENTIAL_KEK: ${CREDENTIAL_KEK:-}
+      ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
+      ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
+      ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
     depends_on:
       postgres:
         condition: service_healthy

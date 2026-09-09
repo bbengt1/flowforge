@@ -74,7 +74,9 @@ produce an auditable, version-pinned execution.
 - Artifact access is workspace-authorized on every request. Use short-lived,
   single-resource download grants; do not return bucket credentials or durable
   public URLs. Retention deletion must remove both metadata and object data, with
-  auditable legal-hold exceptions.
+  auditable legal-hold exceptions. E5.3 implements this on the Go API
+  (`POST /artifacts/{id}/downloads` + `GET /artifact-downloads/{grantId}`,
+  `POST /retention/purge`, `POST /artifacts/{id}/legal-hold`).
 - Script and connector artifacts require a verified signature, digest pin, scan
   status, approved runtime profile, and provenance before dispatch. Revocation
   blocks new runs; an already-running execution is handled according to an

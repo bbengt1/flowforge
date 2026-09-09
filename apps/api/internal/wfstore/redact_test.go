@@ -1,6 +1,9 @@
 package wfstore
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRedactValueStripsSecrets(t *testing.T) {
 	in := map[string]any{
@@ -51,6 +54,20 @@ func TestFingerprintStableAndSensitiveToInput(t *testing.T) {
 	}
 	if a == c {
 		t.Fatal("different input produced the same fingerprint")
+	}
+}
+
+func TestBoundStepTruncatesLargeOutput(t *testing.T) {
+	big := strings.Repeat("x", MaxStepOutputBytes+50)
+	step := BoundStep(ExecutionStep{
+		Output: map[string]any{"blob": big},
+		Error:  map[string]any{},
+	})
+	if !step.OutputTruncated {
+		t.Fatal("expected truncation")
+	}
+	if step.Output["truncated"] != true {
+		t.Fatalf("output = %#v", step.Output)
 	}
 }
 

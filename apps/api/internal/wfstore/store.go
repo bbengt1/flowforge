@@ -33,6 +33,10 @@ var (
 	ErrAlreadyTerminal       = errors.New("execution is already terminal")
 	ErrRetryNotAllowed       = errors.New("retry is not allowed")
 	ErrCanceled              = errors.New("execution or job was canceled")
+	ErrUnsafeArtifact        = errors.New("artifact content cannot be safely retained")
+	ErrArtifactExpired       = errors.New("artifact has expired")
+	ErrLegalHold             = errors.New("artifact is under legal hold")
+	ErrGrantExpired          = errors.New("download grant has expired")
 )
 
 // Validation states persisted with a draft.
@@ -82,6 +86,9 @@ const (
 	MaxLease                  = 5 * time.Minute
 	DefaultJobBindingTTL      = time.Hour
 	DefaultRetrySafeMax       = 3
+	DefaultDownloadTTL        = 60 * time.Second
+	MaxDownloadTTL            = 5 * time.Minute
+	MaxStepOutputBytes        = 16 * 1024
 )
 
 // Workflow is the workspace-owned authoring record.
@@ -166,11 +173,98 @@ type ExecutionStep struct {
 	TargetSnapshot map[string]any `json:"targetSnapshot"`
 	Input          map[string]any `json:"input"`
 	Output         map[string]any `json:"output"`
-	Error          map[string]any `json:"error"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	StartedAt      *time.Time     `json:"startedAt,omitempty"`
-	FinishedAt     *time.Time     `json:"finishedAt,omitempty"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	Error           map[string]any `json:"error"`
+	OutputTruncated bool           `json:"outputTruncated,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	StartedAt       *time.Time     `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time     `json:"finishedAt,omitempty"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+// Artifact is redacted, encrypted-at-rest execution output metadata.
+// storage_ref, envelopes, and key material are never serialized to JSON.
+type Artifact struct {
+	ID                    string     `json:"id"`
+	ExecutionID           string     `json:"executionId"`
+	ExecutionStepID       string     `json:"executionStepId,omitempty"`
+	Kind                  string     `json:"kind"`
+	Filename              string     `json:"filename"`
+	ContentType           string     `json:"contentType"`
+	Digest                string     `json:"digest"`
+	SizeBytes             int64      `json:"sizeBytes"`
+	ContentClassification string     `json:"contentClassification"`
+	Redacted              bool       `json:"redacted"`
+	ExpiresAt             time.Time  `json:"expiresAt"`
+	LegalHold             bool       `json:"legalHold"`
+	LegalHoldReason       string     `json:"legalHoldReason,omitempty"`
+	LegalHoldBy           string     `json:"legalHoldBy,omitempty"`
+	LegalHoldAt           *time.Time `json:"legalHoldAt,omitempty"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	StorageRef            string     `json:"-"`
+	DEKEnvelope           []byte     `json:"-"`
+	KeyReference          string     `json:"-"`
+	EncryptionVersion     int        `json:"-"`
+	MetadataCiphertext    []byte     `json:"-"`
+}
+
+// DownloadGrant is a short-lived, single-artifact download authorization.
+// The href is a same-origin API path — never a bucket URL or credential.
+type DownloadGrant struct {
+	ID         string    `json:"id"`
+	ArtifactID string    `json:"artifactId"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	Href       string    `json:"href"`
+	Method     string    `json:"method"`
+	ActorID    string    `json:"-"`
+}
+
+// ArtifactListFilter selects artifacts for one execution.
+type ArtifactListFilter struct {
+	ExecutionID string
+	StepID      string
+	Kind        string
+}
+
+// CreateArtifactInput records a scanned, encrypted payload.
+type CreateArtifactInput struct {
+	ExecutionID           string
+	StepID                string
+	Kind                  string
+	Filename              string
+	ContentType           string
+	ContentClassification string
+	Digest                string
+	SizeBytes             int64
+	Redacted              bool
+	ExpiresAt             time.Time
+	StorageRef            string
+	MetadataCiphertext    []byte
+	DEKEnvelope           []byte
+	KeyReference          string
+	EncryptionVersion     int
+}
+
+// LegalHoldInput places or releases an authorized hold.
+type LegalHoldInput struct {
+	Hold   bool
+	Reason string
+}
+
+// RetentionPlan is the set of artifacts a purge must process before
+// deleting metadata or parent executions.
+type RetentionPlan struct {
+	Purge []Artifact
+	Hold  []Artifact
+}
+
+// StepLogs is a bounded window of redacted log lines.
+type StepLogs struct {
+	Lines     []string `json:"lines"`
+	Offset    int      `json:"offset"`
+	Next      int      `json:"nextOffset"`
+	Truncated bool     `json:"truncated"`
+	MaxBytes  int      `json:"maxBytes"`
 }
 
 // ExecutionJob is the durable dispatch record for a step attempt.
@@ -379,6 +473,14 @@ type Store interface {
 	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)
 	WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error)
 	PurgeExpired(ctx context.Context, scope isolation.Scope, now time.Time) (executions int, audits int, err error)
+	CreateArtifact(ctx context.Context, scope isolation.Scope, in CreateArtifactInput) (Artifact, error)
+	GetArtifact(ctx context.Context, scope isolation.Scope, artifactID string) (Artifact, error)
+	ListArtifacts(ctx context.Context, scope isolation.Scope, filter ArtifactListFilter) ([]Artifact, error)
+	DeleteArtifact(ctx context.Context, scope isolation.Scope, artifactID string) error
+	SetLegalHold(ctx context.Context, scope isolation.Scope, artifactID string, in LegalHoldInput) (Artifact, error)
+	CreateDownloadGrant(ctx context.Context, scope isolation.Scope, artifactID string, now time.Time, ttl time.Duration) (DownloadGrant, error)
+	GetDownloadGrant(ctx context.Context, scope isolation.Scope, grantID string, now time.Time) (DownloadGrant, Artifact, error)
+	PlanRetentionPurge(ctx context.Context, scope isolation.Scope, now time.Time) (RetentionPlan, error)
 	FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error)
 }
 

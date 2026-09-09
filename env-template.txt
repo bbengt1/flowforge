@@ -41,6 +41,11 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # HMAC key for authenticated worker job tickets (E5.2). 32-byte AES-sized
 # secret as base64 or 64 hex. Unset uses an ephemeral process key.
 # JOB_BINDING_SECRET=
+# Encrypted artifact object store (E5.3). Empty = in-process memory.
+# Compose/k8s API containers are read-only; use the /tmp tmpfs:
+# ARTIFACT_STORE_DIR=/tmp/flowforge-artifacts
+# ARTIFACT_DOWNLOAD_TTL=60s
+# ARTIFACT_MAX_BYTES=1048576
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000

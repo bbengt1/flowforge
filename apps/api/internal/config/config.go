@@ -6,10 +6,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 const (
@@ -44,6 +47,13 @@ type Config struct {
 	// VaultKeys is the local envelope KEK loaded from CREDENTIAL_KEK /
 	// CREDENTIAL_KEK_FILE. Empty keys fail closed on vault write/unlock.
 	VaultKeys vault.Keys
+	// ArtifactStoreDir is the local MVP filesystem root for encrypted
+	// object payloads. Empty uses in-process memory storage.
+	ArtifactStoreDir string
+	// ArtifactDownloadTTL is the lifetime of a short-lived download grant.
+	ArtifactDownloadTTL time.Duration
+	// ArtifactMaxBytes is the upload size cap (logs use a tighter bound).
+	ArtifactMaxBytes int
 }
 
 // Load reads configuration from the process environment.
@@ -78,6 +88,9 @@ func Load() (Config, error) {
 		SessionIdleTimeout:     durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		SessionAbsoluteTimeout: durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
 		VaultKeys:              keys,
+		ArtifactStoreDir:       strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
+		ArtifactDownloadTTL:    durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
+		ArtifactMaxBytes:       intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")
@@ -212,6 +225,18 @@ func databaseURL() string {
 	q.Set("sslmode", ssl)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+func intEnv(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func durationEnv(name string, fallback time.Duration) time.Duration {

@@ -5,10 +5,12 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
+	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -33,11 +35,14 @@ type Server struct {
 	ops       opsconfig.Store
 	approvals approval.Store
 	keys      vault.Keys
-	jobKey    []byte
-	log       *slog.Logger
-	registry  *observability.Registry
-	sec       Security
-	clock     func() time.Time
+	jobKey          []byte
+	objects         artifact.Objects
+	downloadTTL     time.Duration
+	artifactMaxBytes int
+	log             *slog.Logger
+	registry        *observability.Registry
+	sec             Security
+	clock           func() time.Time
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -51,12 +56,15 @@ type Deps struct {
 	Ops           opsconfig.Store
 	Approvals     approval.Store
 	Keys          vault.Keys
-	JobBindingKey []byte
-	Cache         *isolation.Cache
-	Log           *slog.Logger
-	Registry      *observability.Registry
-	Security      Security
-	Now           func() time.Time
+	JobBindingKey    []byte
+	Objects          artifact.Objects
+	DownloadTTL      time.Duration
+	ArtifactMaxBytes int
+	Cache            *isolation.Cache
+	Log              *slog.Logger
+	Registry         *observability.Registry
+	Security         Security
+	Now              func() time.Time
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -170,22 +178,40 @@ func newServer(d Deps) http.Handler {
 	if len(jobKey) == 0 {
 		jobKey = wfstore.LoadJobBindingKey()
 	}
+	objects := d.Objects
+	if objects == nil {
+		if root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")); root != "" {
+			if fsStore, err := artifact.NewFilesystemObjects(root); err == nil {
+				objects = fsStore
+			}
+		}
+	}
+	if objects == nil {
+		objects = artifact.NewMemoryObjects()
+	}
+	downloadTTL := d.DownloadTTL
+	if downloadTTL <= 0 {
+		downloadTTL = wfstore.DefaultDownloadTTL
+	}
 	s := &Server{
-		db:        d.DB,
-		store:     d.Store,
-		scoped:    d.Scoped,
-		cache:     cache,
-		sessions:  sessions,
-		workflows: workflows,
-		vault:     vaultStore,
-		ops:       opsStore,
-		approvals: approvalStore,
-		keys:      keys,
-		jobKey:    jobKey,
-		log:       log,
-		registry:  registry,
-		sec:       d.Security,
-		clock:     clock,
+		db:               d.DB,
+		store:            d.Store,
+		scoped:           d.Scoped,
+		cache:            cache,
+		sessions:         sessions,
+		workflows:        workflows,
+		vault:            vaultStore,
+		ops:              opsStore,
+		approvals:        approvalStore,
+		keys:             keys,
+		jobKey:           jobKey,
+		objects:          objects,
+		downloadTTL:      downloadTTL,
+		artifactMaxBytes: d.ArtifactMaxBytes,
+		log:              log,
+		registry:         registry,
+		sec:              d.Security,
+		clock:            clock,
 	}
 
 	mux := http.NewServeMux()
@@ -243,6 +269,11 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/executions/{executionId}", s.getWorkspaceExecution)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/steps", s.listExecutionSteps)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/steps/{stepId}", s.getExecutionStep)
+	mux.HandleFunc("GET /api/v1/executions/{executionId}/steps/{stepId}/logs", s.getStepLogs)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/steps/{stepId}/logs", s.uploadStepArtifact)
+	mux.HandleFunc("GET /api/v1/executions/{executionId}/artifacts", s.listExecutionArtifacts)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/artifacts", s.uploadExecutionArtifact)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/steps/{stepId}/artifacts", s.uploadStepArtifact)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/jobs", s.listExecutionJobs)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/audit-events", s.listExecutionAuditEvents)
 	mux.HandleFunc("POST /api/v1/executions/{executionId}/cancel", s.cancelExecution)
@@ -255,6 +286,11 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/jobs/{jobId}/complete", s.completeJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobId}/fail", s.failJob)
 	mux.HandleFunc("GET /api/v1/audit-events", s.listProductAuditEvents)
+	mux.HandleFunc("GET /api/v1/artifacts/{artifactId}", s.getProductArtifact)
+	mux.HandleFunc("POST /api/v1/artifacts/{artifactId}/downloads", s.createArtifactDownload)
+	mux.HandleFunc("GET /api/v1/artifact-downloads/{grantId}", s.streamArtifactDownload)
+	mux.HandleFunc("POST /api/v1/artifacts/{artifactId}/legal-hold", s.setArtifactLegalHold)
+	mux.HandleFunc("POST /api/v1/retention/purge", s.purgeRetention)
 	mux.HandleFunc("GET /api/v1/credentials/catalog", s.getCredentialCatalog)
 	mux.HandleFunc("GET /api/v1/credentials", s.listCredentials)
 	mux.HandleFunc("POST /api/v1/credentials", s.createCredential)

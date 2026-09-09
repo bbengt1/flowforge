@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -35,18 +37,32 @@ func main() {
 		pool.Close()
 	}()
 
+	objects, _, err := loadArtifactObjects(cfg.ArtifactStoreDir)
+	if err != nil {
+		log.Error("artifact store", "error", err)
+		os.Exit(1)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
-		Handler: httpapi.NewWithSecurity(pool, httpapi.Security{
-			TrustedProxies: cfg.TrustedProxies,
-			RequireTLS:     cfg.RequireTLS,
-			AllowedOrigins: cfg.CORSAllowedOrigins,
-			Session: httpapi.SessionPolicy{
-				IdleTimeout:     cfg.SessionIdleTimeout,
-				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
+		Handler: httpapi.NewWithDeps(httpapi.Deps{
+			DB:               pool,
+			Keys:             cfg.VaultKeys,
+			JobBindingKey:    wfstore.LoadJobBindingKey(),
+			Objects:          objects,
+			DownloadTTL:      cfg.ArtifactDownloadTTL,
+			ArtifactMaxBytes: cfg.ArtifactMaxBytes,
+			Security: httpapi.Security{
+				TrustedProxies: cfg.TrustedProxies,
+				RequireTLS:     cfg.RequireTLS,
+				AllowedOrigins: cfg.CORSAllowedOrigins,
+				Session: httpapi.SessionPolicy{
+					IdleTimeout:     cfg.SessionIdleTimeout,
+					AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
+				},
+				VaultKeys:     cfg.VaultKeys,
+				JobBindingKey: wfstore.LoadJobBindingKey(),
 			},
-			VaultKeys:     cfg.VaultKeys,
-			JobBindingKey: wfstore.LoadJobBindingKey(),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -88,4 +104,15 @@ func main() {
 		log.Error("shutdown", "error", err)
 		os.Exit(1)
 	}
+}
+
+func loadArtifactObjects(root string) (artifact.Objects, string, error) {
+	if strings.TrimSpace(root) == "" {
+		return artifact.NewMemoryObjects(), "memory", nil
+	}
+	fs, err := artifact.NewFilesystemObjects(root)
+	if err != nil {
+		return nil, "", err
+	}
+	return fs, root, nil
 }
