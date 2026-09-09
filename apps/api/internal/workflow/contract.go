@@ -649,3 +649,13 @@ func consumeDuration(s string, units map[byte]time.Duration) (int64, error) {
 	}
 	return int64(total / time.Second), nil
 }
+
+// ParseISODuration converts a validated ISO-8601 duration (weeks, days, and
+// time units only) into a time.Duration.
+func ParseISODuration(s string) (time.Duration, error) {
+	sec, err := isoDurationSeconds(s)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(sec) * time.Second, nil
+}

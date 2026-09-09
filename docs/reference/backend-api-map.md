@@ -119,7 +119,7 @@ RBAC: `credential.view` list/get/usage/impact/events/catalog; `credential.use` t
 
 Workspace-scoped cluster/SSH targets, command/runtime profiles, connections, recipient lists, message templates, response schemas, and policies. Each resource has one mutable draft and immutable published revisions. Workflow publish and execution start **pin exact versions**; later draft edits do not retarget a pin. Endpoint, recipient, template, and schema selection is server-authorized: the client sends resource UUIDs only; the API resolves a published revision in the current workspace. Cross-workspace UUIDs are `404`. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`.
 
-Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions` (immutable), `ops_pins` (immutable), `target_policy_bindings`. FORCE RLS + composite `(workspace_id, id)` FKs. Credential references use composite FK to `credentials`. E4.3 policy evaluation is out of scope; this story only stores and pins policy revisions.
+Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions` (immutable), `ops_pins` (immutable), `target_policy_bindings`. FORCE RLS + composite `(workspace_id, id)` FKs. Credential references use composite FK to `credentials`. Policy evaluation and approval binding are E4.3 below.
 
 **UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST/PUT. JSON is camelCase. Next proxies can rewrite `/api/control-plane/{collection}/...` the same way as credentials/workflows. Suggested screens: `/targets`, `/profiles`, `/connections`, `/templates` (or one `/ops-config?kind=`). Do not rewrite `apps/web` in this API story.
 
@@ -166,9 +166,44 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
 | `message_template` | `inputSchema`, `contentClassification`, `body`; optional `subject` |
 | `response_schema` | `schema`, `maxBytes` (1–1048576) |
-| `policy` | `kind` (`kubernetes`/`ssh`/`script`/`http`/`notification`/`approval`), `policy` object |
+| `policy` | `kind` (`kubernetes`/`ssh`/`script`/`http`/`notification`/`approval`), `policy` object. Evaluation keys (E4.3): `requireApproval`, `approverRole`, `expiresIn` (ISO-8601), `operations`, `deny`, `allowedNamespaces`/`namespaces`, `allowedKinds`/`kinds`, `allowedVerbs`/`verbs`, `allowedHosts`/`hosts`, `allowedAddresses`/`addresses`. |
 
-Workflow publish fails closed if a YAML resource UUID is missing, unpublished, disabled, or in another workspace. Execution JSON includes `pins[]` copied from the workflow version; later ops-config publishes do not change that pin.
+Workflow publish fails closed if a YAML resource UUID is missing, unpublished, disabled, or in another workspace. Execution JSON includes `pins[]` copied from the workflow version; later ops-config publishes do not change that pin. **Authorization** on start re-evaluates the **current** published target/policy (E4.3), so a later policy/target publish can block dispatch even though the execution pin stays on the older revision.
+
+## Policy evaluation and approvals (E4.3)
+
+Evaluate target/action policy **before dispatch**. Approval requirements are bound to workflow version, target revision, policy revision, operation, and expiry. A changed policy, target, or workflow version invalidates a prior approval. Decide rechecks membership and `approval.decide` on the server. Requester self-approval is denied. This is the control-plane **boundary** (requirements + binding + fail-closed invalidation), not the E10 durable `flow.approval` wait/resume worker.
+
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Suggested screens: `/approvals` (inbox) and a pre-run policy panel on the workflow run dialog. Next proxies can rewrite `/api/control-plane/policy/evaluate` and `/api/control-plane/approvals/...`. Do not rewrite `apps/web` in this API story. Durable wait/resume UI stays disabled until E10.
+
+Suggested UI flow:
+
+1. Pre-run: `POST /policy/evaluate` `{workflowId, workflowVersionId}` → `{decision, dispatchAllowed, operations[], requirements[], approvals[]}`.
+2. If `decision=deny`, block Run and show `denied[].reason`.
+3. If `decision=approval-required`, `POST /approvals` `{workflowId, workflowVersionId}` (or let Run 409 after the server materializes pending rows). Inbox: `GET /approvals?status=pending`.
+4. Approver (not the requester): `POST /approvals/{id}/decide` `{decision:"approved"|"rejected", note?}`. Requires `approval.decide` plus the bound `approverRole` (or `admin`).
+5. Run again: `POST /workflows/{id}/executions` `{workflowVersionId}`. Valid approvals → `201`. Missing/stale/expired → `409` `conflict`. Policy deny → `403`.
+6. After a policy or target **publish** (or disable), prior pending/approved rows become `invalidated`. Re-evaluate and request a new approval.
+7. Detail/audit: `GET /approvals/{id}`, `GET /approvals/{id}/events`. Catalog: `GET /approvals/catalog`.
+
+RBAC: `approval.view` list/get/events/catalog/evaluate; `workflow.execute` create requirements; `approval.decide` decide (approver/admin). Viewer can read status. Operator can request, not decide. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/approvals/catalog` | Statuses, decisions, default expiry. Requires `approval.view`. | `200` `{statuses,decisions,defaultExpiresIn}` | `401` `403` |
+| `POST /api/v1/policy/evaluate` | Preview current published target/policy vs a workflow version. Requires `workflow.view`. | `200` evaluation | `400` `401` `403` `404` |
+| `GET /api/v1/approvals` | List. Query `status`, `workflowId`, `workflowVersionId`, `executionId`. Refreshes stale rows. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/approvals` | Materialize pending requirements from evaluate. Idempotent on active fingerprint. Requires `workflow.execute`. | `201` `{items}` | `400` `401` `403` `404` |
+| `GET /api/v1/approvals/{approvalId}` | One requirement; refreshes expiry/binding. | `200` | `401` `403` `404` |
+| `POST /api/v1/approvals/{approvalId}/decide` | Fresh auth. `{decision, note?}`. No self-approval. | `200` | `400` `401` `403` `404` `409` (expired/invalidated/not pending) |
+| `GET /api/v1/approvals/{approvalId}/events` | Secret-free audit. | `200` `{items}` | `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/executions` | **Also** evaluates policy before the pin stub. Approval-required without a valid approval is `409` (pending rows are created). Deny is `403`. | `201` execution | `400` `401` `403` `404` `409` |
+
+Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding fields on every requirement/record: `workflowVersionId`, `workflowDigest`, `targetId`/`targetVersionId`/`targetDigest`, `policyResourceId`/`policyVersionId`/`policyDigest`/`policyRevision`, `operation`, `nodeId`, `expiresAt`, `bindingFingerprint`.
+
+`flow.approval` nodes always produce a requirement (`with.approverRole`, `with.expiresIn`). A kubernetes/ssh/http/notification/script policy produces a requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
+
+Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 
 Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, optional `passphrase`), `token` (`token`), `webhook_secret` (`secret`), `provider` (`token`). Metadata cannot store those secret keys. `fingerprint` is `sha256:<hex>` of canonical secret JSON (not reversible).
 
@@ -221,7 +256,7 @@ Suggested UI flow:
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable export. JSON `{filename,definitionYaml,digest,...}`; `Accept: application/yaml` returns raw YAML. | `200` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/compare` | Diff two refs. `{left:{kind:"draft"}, right:{kind:"version",versionId}}` (or `versionNumber`). | `200` `{equal,digestMatch,left,right,leftDigest,rightDigest,changes[]}` | `400` `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore version as a **new** draft revision. JSON `{expectedRevision?}`. Requires `workflow.edit`. Version is unchanged. | `200` `{workflow,draft}` | `409` stale draft / `401` `403` `404` |
-| `POST /api/v1/workflows/{workflowId}/executions` | Stub start. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. | `201` execution | `400` drafts cannot run / `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/executions` | Stub start. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. | `201` execution | `400` drafts cannot run / `401` `403` `404` `409` |
 | `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Read the pin. Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
 
 RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.

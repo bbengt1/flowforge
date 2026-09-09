@@ -218,6 +218,11 @@ func (s *Server) publishOpsResource(kind string) http.HandlerFunc {
 			writeOpsError(w, r, err)
 			return
 		}
+		reason := "target revision changed"
+		if kind == opsconfig.KindPolicy {
+			reason = "policy revision changed"
+		}
+		s.invalidateApprovalsForResource(r.Context(), scope, rec.ID, reason)
 		writeJSON(w, http.StatusCreated, opsPublishResponse{Resource: rec, Version: ver})
 	}
 }
@@ -263,6 +268,7 @@ func (s *Server) disableOpsResource(kind string) http.HandlerFunc {
 			writeOpsError(w, r, err)
 			return
 		}
+		s.invalidateApprovalsForResource(r.Context(), scope, rec.ID, "resource is disabled")
 		writeJSON(w, http.StatusOK, rec)
 	}
 }

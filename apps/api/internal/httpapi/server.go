@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -30,6 +31,7 @@ type Server struct {
 	workflows wfstore.Store
 	vault     vault.Store
 	ops       opsconfig.Store
+	approvals approval.Store
 	keys      vault.Keys
 	log       *slog.Logger
 	registry  *observability.Registry
@@ -46,6 +48,7 @@ type Deps struct {
 	Workflows wfstore.Store
 	Vault     vault.Store
 	Ops       opsconfig.Store
+	Approvals approval.Store
 	Keys      vault.Keys
 	Cache     *isolation.Cache
 	Log       *slog.Logger
@@ -113,6 +116,13 @@ func inferOps(db postgres.Checker) opsconfig.Store {
 	return opsconfig.NewMemory()
 }
 
+func inferApprovals(db postgres.Checker) approval.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return approval.NewPostgres(p)
+	}
+	return approval.NewMemory()
+}
+
 func newServer(d Deps) http.Handler {
 	log := d.Log
 	if log == nil {
@@ -139,6 +149,10 @@ func newServer(d Deps) http.Handler {
 	if opsStore == nil {
 		opsStore = inferOps(d.DB)
 	}
+	approvalStore := d.Approvals
+	if approvalStore == nil {
+		approvalStore = inferApprovals(d.DB)
+	}
 	vaultStore := d.Vault
 	if vaultStore == nil {
 		vaultStore = inferVault(d.DB, keys, workflows, opsStore)
@@ -156,6 +170,7 @@ func newServer(d Deps) http.Handler {
 		workflows: workflows,
 		vault:     vaultStore,
 		ops:       opsStore,
+		approvals: approvalStore,
 		keys:      keys,
 		log:       log,
 		registry:  registry,
@@ -245,6 +260,13 @@ func newServer(d Deps) http.Handler {
 		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/enable", s.enableOpsResource(kind))
 		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/select", s.selectOpsResource(kind))
 	}
+	mux.HandleFunc("GET /api/v1/approvals/catalog", s.getApprovalCatalog)
+	mux.HandleFunc("POST /api/v1/policy/evaluate", s.evaluatePolicy)
+	mux.HandleFunc("GET /api/v1/approvals", s.listApprovals)
+	mux.HandleFunc("POST /api/v1/approvals", s.createApprovals)
+	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
+	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/decide", s.decideApproval)
+	mux.HandleFunc("GET /api/v1/approvals/{approvalId}/events", s.listApprovalEvents)
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {
