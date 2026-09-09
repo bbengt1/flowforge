@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  KUBERNETES_DEFAULT_TIMEOUT_SECONDS,
   KUBERNETES_FIELD_MANAGER,
   KUBERNETES_FORCE_APPLY,
   KUBERNETES_FORCE_DENIED_MESSAGE,
   KUBERNETES_FORBIDDEN_WITH_KEYS,
   KUBERNETES_MVP_NODE_TYPES,
   KUBERNETES_NAMESPACE_REQUIRED_MESSAGE,
+  KUBERNETES_NODE_API_PR,
   KUBERNETES_NODE_EPIC,
   KUBERNETES_NODE_ROUTE_MAP_SOURCE,
   KUBERNETES_NODE_STORY,
+  KUBERNETES_OBSERVATION_DEFERRED,
   KUBERNETES_SECRET_MANIFEST_MESSAGE,
   KUBERNETES_TARGET_FAIL_CLOSED_MESSAGE,
   adaptKubernetesNodeEntries,
   allowedNamespacesFromPinSpec,
+  applyRulesFromCatalog,
   catalogListsKubernetesType,
   defaultKubernetesWith,
   hasKubernetesNodeContract,
@@ -25,7 +29,9 @@ import {
   looksLikeSecretManifest,
   stripKubernetesForbiddenWith,
   validateKubernetesNodeConfig,
+  waitReadyMessage,
 } from "./kubernetes-node-contract.ts";
+import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import type { WorkflowCatalog } from "./workflow-types.ts";
 
 const TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -56,13 +62,75 @@ const catalog: WorkflowCatalog = {
   ],
 };
 
+const engineCatalog: KubernetesEngineCatalog = {
+  credentialType: "kubernetes",
+  credentialSecretField: "kubeconfig",
+  allowedKinds: ["ConfigMap", "Deployment"],
+  allowedVerbs: ["get", "list", "apply"],
+  evaluationKeys: [],
+  serviceAccount: {
+    defaultName: "flowforge-runner",
+    roleTemplate: "namespace-scoped-runner",
+    clusterRoles: false,
+  },
+  publishRules: {
+    clusterTargetRequired: ["credentialId", "endpoint"],
+    kubernetesPolicyRequired: ["allowedNamespaces|namespaces"],
+    emptyAllowlistsRejected: true,
+    credentialType: "kubernetes",
+    denyAllowsMissingAllowlist: true,
+  },
+  clusterRoles: false,
+  nodes: [
+    {
+      type: "kubernetes.apply",
+      verb: "apply",
+      title: "Apply manifests",
+      description: "Validate, dry-run, then SSA.",
+      permissions: ["workflow.execute", "kubernetes.apply", "clusterTarget.use"],
+      requiredWith: ["clusterTargetId", "namespace"],
+      allowedWith: [
+        { name: "clusterTargetId", kind: "uuid", required: true },
+        { name: "namespace", kind: "string", required: true },
+        { name: "fieldManager", kind: "enum", enum: ["flowforge"] },
+        { name: "manifests", kind: "string" },
+      ],
+      outputs: ["result", "resources", "status"],
+      sideEffects: true,
+      retrySafe: false,
+      idempotent: true,
+      fieldManager: "flowforge",
+      force: false,
+      serverDryRunAlways: true,
+      waitReady: "deferred-e7.3",
+    },
+  ],
+  errors: [
+    {
+      code: "ownership-conflict",
+      status: 409,
+      meaning: "SSA field-manager conflict. Force is never applied.",
+    },
+  ],
+  apply: {
+    fieldManager: "flowforge",
+    force: false,
+    serverDryRunAlways: true,
+    clientDryRunAddsLocalValidationOnly: true,
+    waitReady: "deferred-e7.3",
+  },
+};
+
 describe("kubernetes node contract adapter", () => {
-  it("cites E7.2 / E7 and a pending jonny map", () => {
+  it("cites E7.2 / E7 and jonny's #78 map on main", () => {
     assert.equal(KUBERNETES_NODE_STORY, 71);
     assert.equal(KUBERNETES_NODE_EPIC, 69);
-    assert.equal(KUBERNETES_NODE_ROUTE_MAP_SOURCE, "e72-pending-jonny-map");
+    assert.equal(KUBERNETES_NODE_API_PR, 78);
+    assert.equal(KUBERNETES_NODE_ROUTE_MAP_SOURCE, "e72-#78");
     assert.equal(KUBERNETES_FIELD_MANAGER, "flowforge");
     assert.equal(KUBERNETES_FORCE_APPLY, false);
+    assert.equal(KUBERNETES_DEFAULT_TIMEOUT_SECONDS, 60);
+    assert.equal(KUBERNETES_OBSERVATION_DEFERRED, "deferred-e7.3");
     assert.deepEqual(
       [...KUBERNETES_FORBIDDEN_WITH_KEYS],
       ["force", "kubeconfig", "server", "fieldManager"],
@@ -98,6 +166,11 @@ describe("kubernetes node contract adapter", () => {
       kubernetesFallbackNode("kubernetes.rolloutStatus").description ?? "",
       /E7\.3/,
     );
+
+    const overlaid = adaptKubernetesNodeEntries(null, engineCatalog);
+    const applyFromEngine = overlaid.find((item) => item.type === "kubernetes.apply");
+    assert.equal(applyFromEngine?.title, "Apply manifests");
+    assert.ok((applyFromEngine?.allowedWith ?? []).some((field) => field.name === "manifests"));
   });
 
   it("prefers catalog allowedWith when jonny's map lands", () => {
@@ -135,6 +208,18 @@ describe("kubernetes node config validation", () => {
       false,
     );
     assert.equal(defaultKubernetesWith("kubernetes.apply").dryRun, "server");
+    assert.equal(defaultKubernetesWith("kubernetes.apply").timeoutSeconds, 60);
+    assert.equal(
+      fields.find((field) => field.name === "fieldManager")?.readOnly,
+      true,
+    );
+    assert.equal(
+      fields.find((field) => field.name === "fieldManager")?.defaultValue,
+      "flowforge",
+    );
+    assert.match(waitReadyMessage(engineCatalog), /deferred-e7\.3/);
+    assert.equal(applyRulesFromCatalog(engineCatalog).force, false);
+    assert.equal(applyRulesFromCatalog(engineCatalog).fieldManager, "flowforge");
 
     const errors = validateKubernetesNodeConfig("kubernetes.apply", {
       dryRun: "server",
@@ -218,5 +303,41 @@ describe("kubernetes node config validation", () => {
       looksLikePastedKubeconfig("apiVersion: v1\nkind: Config\nclusters:\n- name: x\nusers:\n- name: y"),
       true,
     );
+  });
+
+  it("accepts wait=ready as deferred-e7.3 and rejects a non-flowforge fieldManager", () => {
+    const ready = validateKubernetesNodeConfig("kubernetes.apply", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      manifests: ["apiVersion: v1", "kind: ConfigMap", "metadata:", "  name: ok"].join("\n"),
+      wait: "ready",
+      timeoutSeconds: 60,
+    });
+    assert.deepEqual(ready, []);
+    assert.match(waitReadyMessage(), /deferred-e7\.3/);
+
+    const manager = validateKubernetesNodeConfig("kubernetes.get", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      kind: "ConfigMap",
+      name: "settings",
+      fieldManager: "attacker",
+    });
+    assert.ok(manager.some((error) => /flowforge/.test(error)));
+
+    const kindDenied = validateKubernetesNodeConfig(
+      "kubernetes.list",
+      {
+        clusterTargetId: TARGET_ID,
+        namespace: "app",
+        kind: "Job",
+      },
+      { engineCatalog },
+    );
+    assert.ok(kindDenied.some((error) => /allowlist/.test(error)));
+
+    const overlaid = kubernetesNodeWithFields("kubernetes.apply", engineCatalog);
+    assert.equal(overlaid.find((field) => field.name === "fieldManager")?.readOnly, true);
+    assert.equal(overlaid.some((field) => field.name === "force"), false);
   });
 });

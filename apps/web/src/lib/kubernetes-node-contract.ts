@@ -1,18 +1,24 @@
 /**
  * Single retarget adapter for Chloe's E7.2 Kubernetes read/apply
- * node config (library + wizard). Jonny owns the engine and will
- * share a node/contract map — retarget this file only.
+ * node config (library + wizard). Wired to jonny's **#78** map on
+ * `main`: GET /workflows/catalog + GET /kubernetes/catalog
+ * (`nodes[]`, `errors[]`, `apply`).
  *
- * Until that map lands, these are contract-fallback entries marked
- * the same way E3.3/E6.3 mark catalog vs fallback. Prefer
- * GET /workflows/catalog when it lists the type with allowedWith /
- * policy. Consume existing cluster-target list + POST …/select.
+ * Prefer catalog `allowedWith` / `nodes[]` when present. Fallback
+ * entries stay marked `contract-fallback` (E3.3/E6.3 pattern).
+ * Consume existing cluster-target list + POST …/select.
  * Do not invent routes. Do not change `apps/api`.
  *
  * Relates to #71 / Part of #69. Do not close #71.
  */
 
 import { KUBERNETES_ALLOWED_KINDS } from "./kubernetes-types.ts";
+import type {
+  KubernetesEngineApplyRules,
+  KubernetesEngineCatalog,
+  KubernetesEngineErrorShape,
+  KubernetesEngineNodeContract,
+} from "./kubernetes-types.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
@@ -27,11 +33,14 @@ import { isCatalogImplementationEnabled } from "./workflow.ts";
 
 export const KUBERNETES_NODE_STORY = 71;
 export const KUBERNETES_NODE_EPIC = 69;
-/** Jonny's engine PR is not on main yet. */
-export const KUBERNETES_NODE_ROUTE_MAP_SOURCE = "e72-pending-jonny-map" as const;
+/** Jonny's E7.2 engine map on main. */
+export const KUBERNETES_NODE_API_PR = 78;
+export const KUBERNETES_NODE_ROUTE_MAP_SOURCE = "e72-#78" as const;
 
 export const KUBERNETES_FIELD_MANAGER = "flowforge" as const;
 export const KUBERNETES_FORCE_APPLY = false;
+export const KUBERNETES_DEFAULT_TIMEOUT_SECONDS = 60;
+export const KUBERNETES_OBSERVATION_DEFERRED = "deferred-e7.3" as const;
 
 export const KUBERNETES_MVP_NODE_TYPES = [
   "kubernetes.apply",
@@ -84,6 +93,7 @@ export const KUBERNETES_NODE_POLICY_NOTES = [
   "Force apply, deletion, rollback, and pasted kubeconfigs are not available.",
   "FieldManager is fixed to flowforge with Force=false. Ownership conflicts are returned, never stolen.",
   "Apply always runs a strict server-side dry-run before persist. Client dry-run never replaces it.",
+  "wait=ready is accepted; observation is deferred-e7.3 (no rollout watch in this story).",
   "The UI never receives or stores kubeconfigs or plaintext credentials.",
 ] as const;
 
@@ -105,11 +115,23 @@ export const KUBERNETES_KUBECONFIG_DENIED_MESSAGE =
 export const KUBERNETES_ROLLOUT_STUB_MESSAGE =
   "Rollout observation is E7.3. Configure the cluster target and namespace only — full rollout UX is not in this story.";
 
+export const KUBERNETES_WAIT_READY_MESSAGE =
+  "wait=ready is accepted. Rollout observation is deferred-e7.3 — this is not a rollout watch.";
+
+export const DEFAULT_KUBERNETES_APPLY_RULES: KubernetesEngineApplyRules = {
+  fieldManager: KUBERNETES_FIELD_MANAGER,
+  force: false,
+  serverDryRunAlways: true,
+  clientDryRunAddsLocalValidationOnly: true,
+  waitReady: KUBERNETES_OBSERVATION_DEFERRED,
+};
+
 const NAMESPACE_DNS = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 export type KubernetesNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
+  readOnly?: boolean;
   controlHint: "text" | "textarea" | "enum" | "uuid" | "number";
   defaultValue?: unknown;
 };
@@ -117,6 +139,8 @@ export type KubernetesNodeWithField = CatalogWithField & {
 export type KubernetesNodeConfigContext = {
   allowedNamespaces?: readonly string[];
   targetSelectorClosed?: boolean;
+  engineCatalog?: KubernetesEngineCatalog | null;
+  allowedKinds?: readonly string[];
 };
 
 export function isKubernetesMvpNodeType(
@@ -173,20 +197,57 @@ export function defaultKubernetesWith(
 ): Record<string, unknown> {
   switch (type) {
     case "kubernetes.apply":
-      return { dryRun: "server", wait: "none", timeoutSeconds: 300 };
     case "kubernetes.get":
     case "kubernetes.list":
-      return { dryRun: "server", wait: "none", timeoutSeconds: 30 };
+      return {
+        dryRun: "server",
+        wait: "none",
+        timeoutSeconds: KUBERNETES_DEFAULT_TIMEOUT_SECONDS,
+      };
     case "kubernetes.rolloutStatus":
-      return { wait: "ready", timeoutSeconds: 300 };
+      return { wait: "ready", timeoutSeconds: KUBERNETES_DEFAULT_TIMEOUT_SECONDS };
     default:
       return {};
   }
 }
 
+export function applyRulesFromCatalog(
+  catalog?: KubernetesEngineCatalog | null,
+): KubernetesEngineApplyRules {
+  return catalog?.apply ?? DEFAULT_KUBERNETES_APPLY_RULES;
+}
+
+export function engineNodeContract(
+  type: string,
+  catalog?: KubernetesEngineCatalog | null,
+): KubernetesEngineNodeContract | undefined {
+  return catalog?.nodes.find((item) => item.type === type);
+}
+
+export function engineErrorShapes(
+  catalog?: KubernetesEngineCatalog | null,
+): KubernetesEngineErrorShape[] {
+  return catalog?.errors ?? [];
+}
+
+export function waitReadyMessage(
+  catalog?: KubernetesEngineCatalog | null,
+): string {
+  const observation =
+    applyRulesFromCatalog(catalog).waitReady || KUBERNETES_OBSERVATION_DEFERRED;
+  return `wait=ready is accepted. Rollout observation is ${observation} — this is not a rollout watch.`;
+}
+
 export function kubernetesNodeWithFields(
   type: string,
+  engineCatalog?: KubernetesEngineCatalog | null,
 ): KubernetesNodeWithField[] {
+  const engineNode = engineNodeContract(type, engineCatalog);
+  const kinds =
+    engineCatalog?.allowedKinds?.length
+      ? engineCatalog.allowedKinds
+      : [...KUBERNETES_ALLOWED_KINDS];
+  const waitNote = waitReadyMessage(engineCatalog);
   const common: KubernetesNodeWithField[] = [
     {
       name: "clusterTargetId",
@@ -204,51 +265,74 @@ export function kubernetesNodeWithFields(
       label: "Namespace",
       controlHint: "text",
       description:
-        "Must be in the selected target/policy allowlist. Empty allowlists fail closed.",
+        "DNS-1123 namespace. Must be on the target and policy allowlists. Empty allowlists fail closed.",
+    },
+    {
+      name: "dryRun",
+      kind: "enum",
+      enum: [...KUBERNETES_DRY_RUN_MODES],
+      label: "Local dry-run",
+      controlHint: "enum",
+      defaultValue: "server",
+      advanced: true,
+      description:
+        "client adds local validation only. Apply always performs a strict server-side dry-run before persist.",
+    },
+    {
+      name: "wait",
+      kind: "enum",
+      enum: [...KUBERNETES_WAIT_MODES],
+      label: "Wait",
+      controlHint: "enum",
+      defaultValue: "none",
+      advanced: true,
+      description: waitNote,
+    },
+    {
+      name: "timeoutSeconds",
+      kind: "integer",
+      label: "Timeout (seconds)",
+      controlHint: "number",
+      defaultValue: KUBERNETES_DEFAULT_TIMEOUT_SECONDS,
+      advanced: true,
+      description: `Bounded timeout (${KUBERNETES_MIN_TIMEOUT_SECONDS}–${KUBERNETES_MAX_TIMEOUT_SECONDS}). Default ${KUBERNETES_DEFAULT_TIMEOUT_SECONDS}.`,
+    },
+    {
+      name: "fieldManager",
+      kind: "enum",
+      enum: [KUBERNETES_FIELD_MANAGER],
+      label: "Field manager",
+      controlHint: "text",
+      defaultValue: KUBERNETES_FIELD_MANAGER,
+      advanced: true,
+      readOnly: true,
+      description:
+        "Service-owned. Fixed to flowforge. Force is false and is not user-controlled.",
+    },
+    {
+      name: "policyId",
+      kind: "uuid",
+      label: "Policy",
+      controlHint: "uuid",
+      advanced: true,
+      description: "Optional published kubernetes policy UUID.",
     },
   ];
+
+  if (engineNode?.allowedWith.length) {
+    return overlayKubernetesFields(engineNode.allowedWith, type, kinds, waitNote);
+  }
 
   if (type === "kubernetes.apply") {
     return [
       ...common,
       {
         name: "manifests",
-        kind: "yaml",
-        required: true,
+        kind: "string",
         label: "Manifests",
         controlHint: "textarea",
         description:
-          "Multi-document YAML. Secret data, cluster-scoped objects, and templating are denied.",
-      },
-      {
-        name: "dryRun",
-        kind: "enum",
-        enum: [...KUBERNETES_DRY_RUN_MODES],
-        label: "Local dry-run",
-        controlHint: "enum",
-        defaultValue: "server",
-        advanced: true,
-        description:
-          "Client may add local validation. Apply always performs a strict server-side dry-run before persist.",
-      },
-      {
-        name: "wait",
-        kind: "enum",
-        enum: [...KUBERNETES_WAIT_MODES],
-        label: "Wait",
-        controlHint: "enum",
-        defaultValue: "none",
-        advanced: true,
-        description: "none returns after apply. ready waits for a bounded ready condition (E7.3).",
-      },
-      {
-        name: "timeoutSeconds",
-        kind: "integer",
-        label: "Timeout (seconds)",
-        controlHint: "number",
-        defaultValue: 300,
-        advanced: true,
-        description: `Bounded timeout (${KUBERNETES_MIN_TIMEOUT_SECONDS}–${KUBERNETES_MAX_TIMEOUT_SECONDS}).`,
+          "Multi-document YAML. Secret data is denied. Images must be allowlisted and digest-pinned.",
       },
     ];
   }
@@ -260,10 +344,10 @@ export function kubernetesNodeWithFields(
         name: "kind",
         kind: "enum",
         required: true,
-        enum: [...KUBERNETES_ALLOWED_KINDS],
+        enum: [...kinds],
         label: "Kind",
         controlHint: "enum",
-        description: "Allowed resource kind in the selected namespace.",
+        description: "Allowlisted kind only.",
       },
       {
         name: "name",
@@ -271,9 +355,8 @@ export function kubernetesNodeWithFields(
         required: true,
         label: "Name",
         controlHint: "text",
-        description: "Resource name to read. Must be a DNS label.",
+        description: "Resource name.",
       },
-      ...readObservationFields(30),
     ];
   }
 
@@ -284,41 +367,73 @@ export function kubernetesNodeWithFields(
         name: "kind",
         kind: "enum",
         required: true,
-        enum: [...KUBERNETES_ALLOWED_KINDS],
+        enum: [...kinds],
         label: "Kind",
         controlHint: "enum",
-        description: "Allowed resource kind to list in the selected namespace.",
+        description: "Allowlisted kind only.",
       },
-      ...readObservationFields(30),
     ];
   }
 
   if (type === KUBERNETES_ROLLOUT_STUB_TYPE) {
-    return [
-      ...common,
-      {
-        name: "wait",
-        kind: "enum",
-        enum: [...KUBERNETES_WAIT_MODES],
-        label: "Wait",
-        controlHint: "enum",
-        defaultValue: "ready",
-        advanced: true,
-        description: KUBERNETES_ROLLOUT_STUB_MESSAGE,
-      },
-      {
-        name: "timeoutSeconds",
-        kind: "integer",
-        label: "Timeout (seconds)",
-        controlHint: "number",
-        defaultValue: 300,
-        advanced: true,
-        description: KUBERNETES_ROLLOUT_STUB_MESSAGE,
-      },
-    ];
+    return common.map((field) =>
+      field.name === "wait"
+        ? { ...field, defaultValue: "ready", description: KUBERNETES_ROLLOUT_STUB_MESSAGE }
+        : field,
+    );
   }
 
   return common;
+}
+
+export function overlayKubernetesFields(
+  fields: CatalogWithField[],
+  type: string,
+  allowedKinds: readonly string[] = KUBERNETES_ALLOWED_KINDS,
+  waitNote = KUBERNETES_WAIT_READY_MESSAGE,
+): KubernetesNodeWithField[] {
+  const fallback = new Map(
+    kubernetesNodeWithFields(type).map((field) => [field.name, field]),
+  );
+  return fields
+    .filter((field) => field.name !== "force")
+    .map((field) => {
+      const base = fallback.get(field.name);
+      const controlHint =
+        field.name === "manifests"
+          ? "textarea"
+          : base?.controlHint ??
+            (field.kind === "uuid"
+              ? "uuid"
+              : field.kind === "integer"
+                ? "number"
+                : field.enum?.length
+                  ? "enum"
+                  : "text");
+      return {
+        name: field.name,
+        kind: field.kind,
+        required: field.required === true,
+        enum:
+          field.enum?.length
+            ? field.enum
+            : field.name === "kind"
+              ? [...allowedKinds]
+              : base?.enum,
+        description:
+          field.name === "wait"
+            ? waitNote
+            : field.description || base?.description || "",
+        label: base?.label || field.name,
+        advanced: base?.advanced,
+        readOnly: field.name === "fieldManager" || base?.readOnly,
+        controlHint,
+        defaultValue:
+          field.name === "fieldManager"
+            ? KUBERNETES_FIELD_MANAGER
+            : base?.defaultValue,
+      };
+    });
 }
 
 export function kubernetesForbiddenWithKeys(
@@ -428,15 +543,20 @@ export function validateKubernetesNodeConfig(
     }
   }
 
+  const allowedKinds =
+    context.allowedKinds?.length
+      ? context.allowedKinds
+      : context.engineCatalog?.allowedKinds?.length
+        ? context.engineCatalog.allowedKinds
+        : KUBERNETES_ALLOWED_KINDS;
+
   if (type === "kubernetes.get" || type === "kubernetes.list") {
     const kind = typeof withValue.kind === "string" ? withValue.kind.trim() : "";
     if (!kind) {
       errors.push("kind is required.");
-    } else if (
-      !(KUBERNETES_ALLOWED_KINDS as readonly string[]).includes(kind)
-    ) {
+    } else if (![...allowedKinds].includes(kind)) {
       errors.push(
-        `kind ${kind} is not in the MVP allowlist (${KUBERNETES_ALLOWED_KINDS.join(", ")}).`,
+        `kind ${kind} is not in the MVP allowlist (${[...allowedKinds].join(", ")}).`,
       );
     }
   }
@@ -449,6 +569,23 @@ export function validateKubernetesNodeConfig(
     }
   }
 
+  if (withValue.fieldManager !== undefined && withValue.fieldManager !== "") {
+    if (String(withValue.fieldManager) !== KUBERNETES_FIELD_MANAGER) {
+      errors.push(
+        "fieldManager is service-owned and must be flowforge. Force is never user-controlled.",
+      );
+    }
+  }
+  if (withValue.policyId !== undefined && withValue.policyId !== "") {
+    const policyId = String(withValue.policyId);
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        policyId,
+      )
+    ) {
+      errors.push("policyId must be a workspace UUID.");
+    }
+  }
   if (withValue.dryRun !== undefined) {
     const dryRun = String(withValue.dryRun);
     if (!(KUBERNETES_DRY_RUN_MODES as readonly string[]).includes(dryRun)) {
@@ -500,68 +637,49 @@ export function kubernetesFallbackNode(type: string): CatalogNode {
 
 export function adaptKubernetesNodeEntries(
   catalog: WorkflowCatalog | null | undefined,
+  engineCatalog?: KubernetesEngineCatalog | null,
 ): CatalogNode[] {
   return kubernetesLibraryTypes(catalog).map((type) => {
     const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
     const fallback = kubernetesFallbackNode(type);
+    const engine = engineNodeContract(type, engineCatalog);
+    const engineAllowed = engine?.allowedWith.length
+      ? engine.allowedWith
+      : undefined;
     if (!listed) {
-      return fallback;
+      if (!engine) {
+        return fallback;
+      }
+      return {
+        ...fallback,
+        title: engine.title || fallback.title,
+        description: engine.description || fallback.description,
+        requiredWith: engine.requiredWith.length
+          ? engine.requiredWith
+          : fallback.requiredWith,
+        allowedWith: engineAllowed ?? fallback.allowedWith,
+      };
     }
     return {
       ...fallback,
       ...listed,
-      title: listed.title || fallback.title,
-      description: listed.description || fallback.description,
+      title: listed.title || engine?.title || fallback.title,
+      description: listed.description || engine?.description || fallback.description,
       inputs: listed.inputs?.length ? listed.inputs : fallback.inputs,
       outputs: listed.outputs?.length ? listed.outputs : fallback.outputs,
       requiredWith: listed.requiredWith?.length
         ? listed.requiredWith
-        : fallback.requiredWith,
+        : engine?.requiredWith.length
+          ? engine.requiredWith
+          : fallback.requiredWith,
       allowedWith: listed.allowedWith?.length
         ? listed.allowedWith
-        : fallback.allowedWith,
+        : engineAllowed ?? fallback.allowedWith,
       policy: listed.policy ?? fallback.policy,
       bounds: listed.bounds ?? fallback.bounds,
       redaction: listed.redaction ?? fallback.redaction,
     };
   });
-}
-
-function readObservationFields(
-  defaultTimeout: number,
-): KubernetesNodeWithField[] {
-  return [
-    {
-      name: "dryRun",
-      kind: "enum",
-      enum: [...KUBERNETES_DRY_RUN_MODES],
-      label: "Local dry-run",
-      controlHint: "enum",
-      defaultValue: "server",
-      advanced: true,
-      description:
-        "Client may add local validation. It never replaces server-side policy checks.",
-    },
-    {
-      name: "wait",
-      kind: "enum",
-      enum: [...KUBERNETES_WAIT_MODES],
-      label: "Wait",
-      controlHint: "enum",
-      defaultValue: "none",
-      advanced: true,
-      description: "none returns the read immediately. ready is reserved for observation.",
-    },
-    {
-      name: "timeoutSeconds",
-      kind: "integer",
-      label: "Timeout (seconds)",
-      controlHint: "number",
-      defaultValue: defaultTimeout,
-      advanced: true,
-      description: `Bounded timeout (${KUBERNETES_MIN_TIMEOUT_SECONDS}–${KUBERNETES_MAX_TIMEOUT_SECONDS}).`,
-    },
-  ];
 }
 
 function validateApplyManifests(src: string): string[] {
@@ -642,16 +760,16 @@ function applyPolicy(): CatalogNodePolicy {
     permissions: ["workflow.execute", "kubernetes.apply", "clusterTarget.use"],
     retrySafe: false,
     sideEffects: true,
-    idempotent: false,
-    cancellation: "path-local",
-    verification: "server-dry-run",
+    idempotent: true,
+    cancellation: "stop-wait",
+    verification: "observe-generation",
     defaultMaxAttempts: 1,
   };
 }
 
-function readPolicy(permission: string): CatalogNodePolicy {
+function readPolicy(): CatalogNodePolicy {
   return {
-    permissions: ["workflow.execute", permission, "kubernetes.read", "clusterTarget.use"],
+    permissions: ["workflow.execute", "kubernetes.read", "clusterTarget.use"],
     retrySafe: true,
     sideEffects: false,
     idempotent: true,
@@ -676,7 +794,7 @@ function redaction(auditFields: string[]): CatalogRedaction {
     auditFields,
     redactInputs: true,
     redactOutputs: true,
-    strategy: "mask-classified",
+    strategy: "drop-secrets",
   };
 }
 
@@ -709,9 +827,9 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
   "kubernetes.apply": {
     type: "kubernetes.apply",
     phase: CATALOG_PHASE_CORE,
-    title: "Apply",
+    title: "Apply manifests",
     description:
-      "Validate YAML, always strict server-side dry-run, then server-side apply (FieldManager=flowforge, Force=false).",
+      "Validate YAML and policy, always server-side dry-run, then server-side apply with FieldManager=flowforge and Force=false.",
     inputs: [
       inherit("manifests", "string", false, "Optional upstream multi-doc YAML."),
       inherit("parameters", "object", false, "Optional typed parameters."),
@@ -721,17 +839,25 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
       inherit("resources", "object", false, "Applied resource identities."),
       inherit("status", "object", false, "Redacted apply/dry-run status."),
     ],
-    requiredWith: ["clusterTargetId", "namespace", "manifests"],
+    requiredWith: ["clusterTargetId", "namespace"],
     allowedWith: fieldsToAllowed("kubernetes.apply"),
     policy: applyPolicy(),
     bounds: defaultBounds(KUBERNETES_MAX_TIMEOUT_SECONDS),
-    redaction: redaction(["clusterTargetId", "namespace", "dryRun", "digest"]),
+    redaction: redaction([
+      "clusterTargetId",
+      "namespace",
+      "manifestDigest",
+      "fieldManager",
+      "force",
+      "dryRun",
+      "applied",
+    ]),
   },
   "kubernetes.get": {
     type: "kubernetes.get",
     phase: CATALOG_PHASE_CORE,
-    title: "Get",
-    description: "Read an allowed resource in an allowed namespace.",
+    title: "Get resource",
+    description: "Read one allowlisted resource in an allowlisted namespace.",
     inputs: [inherit("parameters", "object", false, "Optional typed parameters.")],
     outputs: [
       resultPort,
@@ -739,15 +865,15 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
     ],
     requiredWith: ["clusterTargetId", "namespace", "kind", "name"],
     allowedWith: fieldsToAllowed("kubernetes.get"),
-    policy: readPolicy("kubernetes.read"),
-    bounds: defaultBounds(120),
+    policy: readPolicy(),
+    bounds: defaultBounds(KUBERNETES_MAX_TIMEOUT_SECONDS),
     redaction: redaction(["clusterTargetId", "namespace", "kind", "name"]),
   },
   "kubernetes.list": {
     type: "kubernetes.list",
     phase: CATALOG_PHASE_CORE,
-    title: "List",
-    description: "List allowed resources in an allowed namespace.",
+    title: "List resources",
+    description: "List allowlisted resources in an allowlisted namespace.",
     inputs: [inherit("parameters", "object", false, "Optional typed parameters.")],
     outputs: [
       resultPort,
@@ -755,9 +881,9 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
     ],
     requiredWith: ["clusterTargetId", "namespace", "kind"],
     allowedWith: fieldsToAllowed("kubernetes.list"),
-    policy: readPolicy("kubernetes.read"),
-    bounds: defaultBounds(120),
-    redaction: redaction(["clusterTargetId", "namespace", "kind"]),
+    policy: readPolicy(),
+    bounds: defaultBounds(KUBERNETES_MAX_TIMEOUT_SECONDS),
+    redaction: redaction(["clusterTargetId", "namespace", "kind", "count"]),
   },
   "kubernetes.rolloutStatus": {
     type: "kubernetes.rolloutStatus",

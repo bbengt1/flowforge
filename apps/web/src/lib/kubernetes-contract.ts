@@ -20,8 +20,9 @@
  * Do not change `apps/api`. Do not re-close #70.
  *
  * E7.2 node `with` schema / catalog fallback lives in
- * `kubernetes-node-contract.ts` — retarget that file when jonny
- * posts the read/apply node map. Relates to #71 / Part of #69.
+ * `kubernetes-node-contract.ts` — wired to jonny's #78 map on
+ * `main` (`GET /workflows/catalog` + `GET /kubernetes/catalog`
+ * `nodes[]` / `errors[]` / `apply`). Relates to #71 / Part of #69.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -340,6 +341,7 @@ export const KUBERNETES_CATALOG_VERBS = KUBERNETES_ALLOWED_VERBS;
 export const KUBERNETES_CATALOG_OPERATIONS = KUBERNETES_APPROVAL_OPERATIONS;
 
 export {
+  KUBERNETES_NODE_API_PR,
   KUBERNETES_NODE_EPIC,
   KUBERNETES_NODE_ROUTE_MAP_SOURCE,
   KUBERNETES_NODE_STORY,

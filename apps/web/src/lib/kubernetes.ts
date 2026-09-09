@@ -16,7 +16,10 @@ import {
   KUBERNETES_ALLOWED_VERBS,
   KUBERNETES_CREDENTIAL_TYPE,
   KUBERNETES_POLICY_KIND,
+  type KubernetesEngineApplyRules,
   type KubernetesEngineCatalog,
+  type KubernetesEngineErrorShape,
+  type KubernetesEngineNodeContract,
   type KubernetesEvaluationKey,
   type KubernetesPolicyBody,
 } from "./kubernetes-types.ts";
@@ -274,6 +277,102 @@ export function parseKubernetesEngineCatalog(
       denyAllowsMissingAllowlist: rules.denyAllowsMissingAllowlist === true,
     },
     clusterRoles: rec.clusterRoles === true,
+    nodes: parseEngineNodes(rec.nodes),
+    errors: parseEngineErrors(rec.errors),
+    apply: parseEngineApply(rec.apply),
+  };
+}
+
+function parseEngineNodes(raw: unknown): KubernetesEngineNodeContract[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const nodes: KubernetesEngineNodeContract[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const type = String(row.type ?? "").trim();
+    if (!type) {
+      continue;
+    }
+    const allowedWith: KubernetesEngineNodeContract["allowedWith"] = [];
+    if (Array.isArray(row.allowedWith)) {
+      for (const field of row.allowedWith) {
+        if (!field || typeof field !== "object" || Array.isArray(field)) {
+          continue;
+        }
+        const spec = field as Record<string, unknown>;
+        const name = String(spec.name ?? "").trim();
+        if (!name) {
+          continue;
+        }
+        allowedWith.push({
+          name,
+          kind: String(spec.kind ?? "string"),
+          required: spec.required === true,
+          enum: stringList(spec.enum),
+          description: String(spec.description ?? "").trim() || undefined,
+        });
+      }
+    }
+    nodes.push({
+      type,
+      verb: String(row.verb ?? "").trim(),
+      title: String(row.title ?? type),
+      description: String(row.description ?? ""),
+      permissions: stringList(row.permissions),
+      requiredWith: stringList(row.requiredWith),
+      allowedWith,
+      outputs: stringList(row.outputs),
+      sideEffects: row.sideEffects === true,
+      retrySafe: row.retrySafe === true,
+      idempotent: row.idempotent === true,
+      fieldManager: String(row.fieldManager ?? "").trim() || undefined,
+      force: typeof row.force === "boolean" ? row.force : undefined,
+      serverDryRunAlways: row.serverDryRunAlways === true ? true : undefined,
+      waitReady: String(row.waitReady ?? "").trim() || undefined,
+    });
+  }
+  return nodes;
+}
+
+function parseEngineErrors(raw: unknown): KubernetesEngineErrorShape[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const errors: KubernetesEngineErrorShape[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const code = String(row.code ?? "").trim();
+    if (!code) {
+      continue;
+    }
+    errors.push({
+      code,
+      status: Number(row.status) || 0,
+      meaning: String(row.meaning ?? "").trim(),
+    });
+  }
+  return errors;
+}
+
+function parseEngineApply(raw: unknown): KubernetesEngineApplyRules {
+  const rec =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  return {
+    fieldManager: String(rec.fieldManager ?? "flowforge").trim() || "flowforge",
+    force: rec.force === true,
+    serverDryRunAlways: rec.serverDryRunAlways !== false,
+    clientDryRunAddsLocalValidationOnly:
+      rec.clientDryRunAddsLocalValidationOnly !== false,
+    waitReady: String(rec.waitReady ?? "deferred-e7.3").trim() || "deferred-e7.3",
   };
 }
 

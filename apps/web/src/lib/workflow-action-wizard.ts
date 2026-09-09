@@ -14,15 +14,17 @@ import {
   policyDecisionLabel,
 } from "./approval.ts";
 import {
-  KUBERNETES_FORBIDDEN_WITH_KEYS,
   allowedNamespacesFromPinSpec,
   defaultKubernetesWith,
   isKubernetesConfigurableType,
   kubernetesNodeWithFields,
+  overlayKubernetesFields,
   stripKubernetesForbiddenWith,
   validateKubernetesNodeConfig,
+  waitReadyMessage,
   type KubernetesNodeWithField,
 } from "./kubernetes-node-contract.ts";
+import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
 import { isSecretFieldName } from "./credential.ts";
@@ -105,11 +107,13 @@ export type WizardConfigField = {
   inferred: boolean;
   label?: string;
   advanced?: boolean;
+  readOnly?: boolean;
 };
 
 export type WizardValidationContext = {
   allowedNamespaces?: readonly string[];
   targetSelectorClosed?: boolean;
+  engineCatalog?: KubernetesEngineCatalog | null;
 };
 
 export type WizardRecommendation = {
@@ -273,16 +277,25 @@ export function defaultWithForType(type: string): Record<string, unknown> {
 export function wizardConfigFields(
   entry: ActionLibraryEntry | undefined,
   type = entry?.type ?? "",
+  engineCatalog?: KubernetesEngineCatalog | null,
 ): WizardConfigField[] {
   if (isKubernetesConfigurableType(type)) {
+    const engineFields = engineCatalog?.nodes.find((item) => item.type === type)
+      ?.allowedWith;
     const catalogOwnsFields =
-      entry?.source === "catalog" && (entry.allowedWith?.length ?? 0) > 0;
+      (engineFields && engineFields.length > 0) ||
+      (entry?.source === "catalog" && (entry.allowedWith?.length ?? 0) > 0);
     if (catalogOwnsFields) {
-      return (entry?.allowedWith ?? [])
+      return overlayKubernetesFields(
+        engineFields?.length ? engineFields : (entry?.allowedWith ?? []),
+        type,
+        engineCatalog?.allowedKinds,
+        waitReadyMessage(engineCatalog),
+      )
         .filter((field) => isExposedKubernetesField(field.name))
-        .map((field) => fromCatalogWithField(field));
+        .map((field) => fromKubernetesWithField(field, false));
     }
-    return kubernetesNodeWithFields(type).map((field) =>
+    return kubernetesNodeWithFields(type, engineCatalog).map((field) =>
       fromKubernetesWithField(field, entry?.source !== "catalog"),
     );
   }
@@ -490,7 +503,7 @@ export function validateWizardDraft(
   if (isForbiddenYamlKey(draft.name) || looksLikeSecretValue(draft.name)) {
     errors.push("Action name must not contain secret material.");
   }
-  const fields = wizardConfigFields(entry, draft.type);
+  const fields = wizardConfigFields(entry, draft.type, context.engineCatalog);
   for (const field of fields) {
     const value = draft.with[field.name];
     if (
@@ -519,6 +532,7 @@ export function validateWizardDraft(
       ...validateKubernetesNodeConfig(draft.type, draft.with, {
         allowedNamespaces: context.allowedNamespaces,
         targetSelectorClosed: context.targetSelectorClosed,
+        engineCatalog: context.engineCatalog,
       }),
     );
   }
@@ -672,7 +686,7 @@ export function namespacesForWizardTarget(
 }
 
 function isExposedKubernetesField(name: string): boolean {
-  return !(KUBERNETES_FORBIDDEN_WITH_KEYS as readonly string[]).includes(name);
+  return name !== "force" && name !== "kubeconfig" && name !== "server";
 }
 
 function fromKubernetesWithField(
@@ -691,6 +705,7 @@ function fromKubernetesWithField(
     inferred,
     label: field.label,
     advanced: field.advanced,
+    readOnly: field.readOnly,
   };
 }
 
@@ -747,7 +762,22 @@ function inferredFieldsForType(type: string, requiredWith: string[]): WizardConf
         enumValues: ["none", "ready"],
         defaultValue: type === "kubernetes.rolloutStatus" ? "ready" : "none",
       }),
-      field("timeoutSeconds", "integer", "number", { defaultValue: 300 }),
+      field("timeoutSeconds", "integer", "number", {
+        defaultValue: 60,
+        description: "Bounded timeout (1–3600). Default 60.",
+      }),
+      {
+        ...field("fieldManager", "enum", "text", {
+          enumValues: ["flowforge"],
+          defaultValue: "flowforge",
+          description: "Service-owned. Fixed to flowforge. Force is false.",
+        }),
+        readOnly: true,
+        advanced: true,
+      },
+      field("policyId", "uuid", "uuid", {
+        description: "Optional published kubernetes policy UUID.",
+      }),
     ];
     if (type === "kubernetes.apply") {
       fields.push(

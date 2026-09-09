@@ -19,6 +19,8 @@ import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
+import { getKubernetesCatalog } from "@/lib/kubernetes-client";
+import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import {
   adaptActionLibrary,
   rejectDisabledActionType,
@@ -117,6 +119,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [yaml, setYaml] = useState(STARTER_WORKFLOW_YAML);
   const [savedYaml, setSavedYaml] = useState("");
   const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
+  const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
+    null,
+  );
   const [status, setStatus] = useState<"idle" | "pending" | "valid" | "invalid">(
     "idle",
   );
@@ -177,7 +182,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
-  const library = adaptActionLibrary(catalog);
+  const library = adaptActionLibrary(catalog, engineCatalog);
   const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
   const graph = projectCanvasGraph({
     errors,
@@ -287,9 +292,13 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   async function loadCatalog() {
     setPending("catalog");
     setProblem(null);
-    const result = await fetchWorkflowCatalog(identity);
+    const [result, engine] = await Promise.all([
+      fetchWorkflowCatalog(identity),
+      getKubernetesCatalog(identity).catch(() => null),
+    ]);
     setLastRequestId(result.requestId);
     setPending(null);
+    setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;

@@ -94,8 +94,8 @@ export function ActionLibrary({
 
       <p className="mt-2 text-xs text-zinc-500">
         {fromCatalog
-          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply use catalog fields when listed, otherwise the E7.2 contract fallback."
-          : "Showing the published core-neutral and Kubernetes read/apply contract fallback until the catalog loads."}
+          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed, otherwise the marked E7.2 contract fallback."
+          : "Showing the published core-neutral and Kubernetes read/apply contract fallback until GET /workflows/catalog and GET /kubernetes/catalog load."}
       </p>
 
       <div className="mt-4 max-h-[36rem] space-y-4 overflow-auto pr-1">

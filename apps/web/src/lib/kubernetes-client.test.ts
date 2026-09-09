@@ -222,6 +222,24 @@ describe("kubernetes client", () => {
           evaluationKeys: [],
           serviceAccount: { defaultName: "flowforge-runner", roleTemplate: "namespace-scoped-runner" },
           publishRules: { emptyAllowlistsRejected: true, credentialType: "kubernetes" },
+          nodes: [
+            {
+              type: "kubernetes.apply",
+              verb: "apply",
+              title: "Apply manifests",
+              permissions: ["workflow.execute", "kubernetes.apply", "clusterTarget.use"],
+              requiredWith: ["clusterTargetId", "namespace"],
+              allowedWith: [{ name: "manifests", kind: "string" }],
+              outputs: ["result"],
+            },
+          ],
+          errors: [{ code: "ownership-conflict", status: 409, meaning: "Force is never applied." }],
+          apply: {
+            fieldManager: "flowforge",
+            force: false,
+            serverDryRunAlways: true,
+            waitReady: "deferred-e7.3",
+          },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -231,6 +249,10 @@ describe("kubernetes client", () => {
     assert.equal(catalog.ok, true);
     if (catalog.ok) {
       assert.equal(catalog.catalog.credentialType, "kubernetes");
+      assert.equal(catalog.catalog.nodes[0]?.type, "kubernetes.apply");
+      assert.equal(catalog.catalog.errors[0]?.code, "ownership-conflict");
+      assert.equal(catalog.catalog.apply.fieldManager, "flowforge");
+      assert.equal(catalog.catalog.apply.waitReady, "deferred-e7.3");
     }
     assert.match(seen[0] ?? "", /\/api\/v1\/kubernetes\/catalog$/);
 

@@ -10,6 +10,7 @@ import {
   kubernetesFallbackNode,
   kubernetesLibraryTypes,
 } from "./kubernetes-node-contract.ts";
+import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   CORE_NEUTRAL_NODE_TYPES,
   adaptCoreNeutralPalette,
@@ -188,6 +189,7 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
  */
 export function adaptActionLibrary(
   catalog: WorkflowCatalog | null | undefined,
+  engineCatalog?: KubernetesEngineCatalog | null,
 ): ActionLibraryEntry[] {
   const enabled = filterEnabledActionNodes(catalog?.nodes);
   const byType = new Map(enabled.map((item) => [item.type, fromCatalogNode(item)]));
@@ -199,7 +201,7 @@ export function adaptActionLibrary(
         enabled: true,
         placeable: true,
       })),
-      ...adaptKubernetesNodeEntries(null).map((node) => ({
+      ...adaptKubernetesNodeEntries(null, engineCatalog).map((node) => ({
         ...fromCatalogNode(node),
         source: "contract-fallback" as const,
       })),
@@ -213,11 +215,25 @@ export function adaptActionLibrary(
       }
     }
   }
-  for (const node of adaptKubernetesNodeEntries(catalog)) {
-    if (!byType.has(node.type)) {
+  for (const node of adaptKubernetesNodeEntries(catalog, engineCatalog)) {
+    const existing = byType.get(node.type);
+    if (!existing) {
       byType.set(node.type, {
         ...fromCatalogNode(node),
-        source: "contract-fallback",
+        source: engineCatalog ? "catalog" : "contract-fallback",
+      });
+      continue;
+    }
+    if ((existing.allowedWith?.length ?? 0) === 0 && (node.allowedWith?.length ?? 0) > 0) {
+      byType.set(node.type, {
+        ...existing,
+        name: existing.name || node.title || existing.name,
+        description: existing.description || node.description || existing.description,
+        allowedWith: node.allowedWith ?? existing.allowedWith,
+        requiredWith: existing.requiredWith.length
+          ? existing.requiredWith
+          : node.requiredWith ?? existing.requiredWith,
+        source: engineCatalog ? "catalog" : existing.source,
       });
     }
   }

@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { adaptActionLibrary } from "./workflow-action-library.ts";
 import {
+  KUBERNETES_DEFAULT_TIMEOUT_SECONDS,
   KUBERNETES_FORCE_DENIED_MESSAGE,
   KUBERNETES_NAMESPACE_REQUIRED_MESSAGE,
   KUBERNETES_SECRET_MANIFEST_MESSAGE,
   KUBERNETES_TARGET_FAIL_CLOSED_MESSAGE,
 } from "./kubernetes-node-contract.ts";
+import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   applyTargetPin,
   applyWizardToYaml,
@@ -179,6 +181,9 @@ describe("action wizard catalog inference and recommendations", () => {
     assert.equal(fields.some((field) => field.name === "dryRun"), true);
     assert.equal(fields.some((field) => field.name === "force"), false);
     assert.equal(fields.some((field) => field.name === "kubeconfig"), false);
+    assert.equal(fields.find((field) => field.name === "fieldManager")?.readOnly, true);
+    assert.equal(fields.find((field) => field.name === "fieldManager")?.defaultValue, "flowforge");
+    assert.equal(defaultWithForType("kubernetes.apply").timeoutSeconds, KUBERNETES_DEFAULT_TIMEOUT_SECONDS);
     assert.deepEqual(credentialTypesForAction("kubernetes.apply"), ["kubernetes"]);
     assert.deepEqual(opsConfigKindsForAction("ssh.run"), ["ssh_target", "command_profile"]);
     assert.equal(wizardNeedsTargetStep("flow.delay"), false);
@@ -359,6 +364,69 @@ describe("action wizard insert + redaction", () => {
     assert.equal(
       wizardConfigFields(entry, "kubernetes.apply").some((field) => field.name === "force"),
       false,
+    );
+    const manager = wizardConfigFields(entry, "kubernetes.apply").find(
+      (field) => field.name === "fieldManager",
+    );
+    assert.equal(manager?.readOnly, true);
+    assert.equal(manager?.defaultValue, "flowforge");
+
+    const engineCatalog: KubernetesEngineCatalog = {
+      credentialType: "kubernetes",
+      credentialSecretField: "kubeconfig",
+      allowedKinds: ["ConfigMap"],
+      allowedVerbs: ["apply"],
+      evaluationKeys: [],
+      serviceAccount: {
+        defaultName: "flowforge-runner",
+        roleTemplate: "namespace-scoped-runner",
+        clusterRoles: false,
+      },
+      publishRules: {
+        clusterTargetRequired: [],
+        kubernetesPolicyRequired: [],
+        emptyAllowlistsRejected: true,
+        credentialType: "kubernetes",
+        denyAllowsMissingAllowlist: true,
+      },
+      clusterRoles: false,
+      nodes: [
+        {
+          type: "kubernetes.apply",
+          verb: "apply",
+          title: "Apply manifests",
+          description: "",
+          permissions: ["workflow.execute", "kubernetes.apply", "clusterTarget.use"],
+          requiredWith: ["clusterTargetId", "namespace"],
+          allowedWith: [
+            { name: "clusterTargetId", kind: "uuid", required: true },
+            { name: "namespace", kind: "string", required: true },
+            { name: "fieldManager", kind: "enum", enum: ["flowforge"] },
+            { name: "wait", kind: "enum", enum: ["none", "ready"] },
+            { name: "manifests", kind: "string" },
+          ],
+          outputs: ["result"],
+          sideEffects: true,
+          retrySafe: false,
+          idempotent: true,
+          waitReady: "deferred-e7.3",
+        },
+      ],
+      errors: [],
+      apply: {
+        fieldManager: "flowforge",
+        force: false,
+        serverDryRunAlways: true,
+        clientDryRunAddsLocalValidationOnly: true,
+        waitReady: "deferred-e7.3",
+      },
+    };
+    const fromEngine = wizardConfigFields(entry, "kubernetes.apply", engineCatalog);
+    assert.equal(fromEngine.find((field) => field.name === "fieldManager")?.readOnly, true);
+    assert.equal(fromEngine.some((field) => field.name === "force"), false);
+    assert.match(
+      fromEngine.find((field) => field.name === "wait")?.description ?? "",
+      /deferred-e7\.3/,
     );
   });
 });
