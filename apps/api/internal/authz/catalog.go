@@ -32,6 +32,19 @@ const (
 	PermWorkspaceAdminister = "workspace.administer"
 	PermKubernetesApply     = "kubernetes.apply"
 	PermSSHRun              = "ssh.run"
+	PermOpsConfigView       = "opsconfig.view"
+	PermOpsConfigEdit       = "opsconfig.edit"
+	PermOpsConfigPublish    = "opsconfig.publish"
+	PermOpsConfigUse        = "opsconfig.use"
+	PermClusterTargetUse    = "clusterTarget.use"
+	PermSSHTargetUse        = "sshTarget.use"
+	PermCommandProfileUse   = "commandProfile.use"
+	PermRuntimeProfileUse   = "runtimeProfile.use"
+	PermConnectionUse       = "connection.use"
+	PermRecipientListUse    = "recipientList.use"
+	PermMessageTemplateUse  = "messageTemplate.use"
+	PermResponseSchemaUse   = "responseSchema.use"
+	PermPolicyUse           = "policy.use"
 )
 
 // Role keys.
@@ -74,6 +87,19 @@ func Permissions() []Permission {
 		{Key: PermWorkspaceAdminister, Family: FamilyAdministration},
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
+		{Key: PermOpsConfigView, Family: FamilyView},
+		{Key: PermOpsConfigEdit, Family: FamilyEdit},
+		{Key: PermOpsConfigPublish, Family: FamilyPublish},
+		{Key: PermOpsConfigUse, Family: FamilyExecute},
+		{Key: PermClusterTargetUse, Family: FamilyExecute},
+		{Key: PermSSHTargetUse, Family: FamilyExecute},
+		{Key: PermCommandProfileUse, Family: FamilyExecute},
+		{Key: PermRuntimeProfileUse, Family: FamilyExecute},
+		{Key: PermConnectionUse, Family: FamilyExecute},
+		{Key: PermRecipientListUse, Family: FamilyExecute},
+		{Key: PermMessageTemplateUse, Family: FamilyExecute},
+		{Key: PermResponseSchemaUse, Family: FamilyExecute},
+		{Key: PermPolicyUse, Family: FamilyExecute},
 	}
 }
 
@@ -83,17 +109,17 @@ func Roles() []Role {
 		{
 			Key:         RoleViewer,
 			Description: "Read workflows, executions, and approval status. Cannot edit, run, or manage credentials.",
-			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView},
+			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView, PermOpsConfigView},
 		},
 		{
 			Key:         RoleEditor,
 			Description: "Create and edit workflow drafts. Cannot publish, execute, or administer the workspace.",
-			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermExecutionView, PermCredentialView, PermApprovalView},
+			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit},
 		},
 		{
 			Key:         RolePublisher,
 			Description: "Edit and publish workflow versions. Cannot execute or administer.",
-			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermWorkflowPublish, PermExecutionView, PermCredentialView, PermApprovalView},
+			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermWorkflowPublish, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermOpsConfigPublish},
 		},
 		{
 			Key:         RoleOperator,
@@ -101,6 +127,9 @@ func Roles() []Role {
 			Permissions: []string{
 				PermWorkflowView, PermWorkflowExecute, PermExecutionView, PermExecutionCancel,
 				PermCredentialView, PermCredentialUse, PermApprovalView, PermKubernetesApply, PermSSHRun,
+				PermOpsConfigView, PermOpsConfigUse,
+				PermClusterTargetUse, PermSSHTargetUse, PermCommandProfileUse, PermRuntimeProfileUse,
+				PermConnectionUse, PermRecipientListUse, PermMessageTemplateUse, PermResponseSchemaUse, PermPolicyUse,
 			},
 		},
 		{

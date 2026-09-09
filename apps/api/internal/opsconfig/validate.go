@@ -1,0 +1,694 @@
+package opsconfig
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+)
+
+var (
+	slugRE        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	digestRE      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	emailRE       = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
+	domainRE      = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$`)
+	hostnameRE    = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$`)
+	fingerprintRE = regexp.MustCompile(`^sha256:[0-9A-Fa-f:]{32,191}$`)
+)
+
+const maxPayloadBytes = 65536
+
+// NormalizeSpec validates and canonicalizes a kind-specific spec.
+func NormalizeSpec(kind string, spec map[string]any) (map[string]any, string, error) {
+	if !ValidKind(kind) {
+		return nil, "", fmt.Errorf("%w: unknown kind", ErrInvalid)
+	}
+	if spec == nil {
+		return nil, "", fmt.Errorf("%w: spec is required", ErrInvalid)
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: spec is not JSON", ErrInvalid)
+	}
+	if len(raw) > maxPayloadBytes {
+		return nil, "", fmt.Errorf("%w: spec exceeds %d bytes", ErrInvalid, maxPayloadBytes)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil || decoded == nil {
+		return nil, "", fmt.Errorf("%w: spec must be an object", ErrInvalid)
+	}
+	normalized, err := normalizeKind(kind, decoded)
+	if err != nil {
+		return nil, "", err
+	}
+	canon, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: spec could not be normalized", ErrInvalid)
+	}
+	sum := sha256.Sum256(canon)
+	return normalized, "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func normalizeKind(kind string, spec map[string]any) (map[string]any, error) {
+	switch kind {
+	case KindClusterTarget:
+		return normalizeClusterTarget(spec)
+	case KindSSHTarget:
+		return normalizeSSHTarget(spec)
+	case KindCommandProfile:
+		return normalizeCommandProfile(spec)
+	case KindRuntimeProfile:
+		return normalizeRuntimeProfile(spec)
+	case KindConnection:
+		return normalizeConnection(spec)
+	case KindRecipientList:
+		return normalizeRecipientList(spec)
+	case KindMessageTemplate:
+		return normalizeMessageTemplate(spec)
+	case KindResponseSchema:
+		return normalizeResponseSchema(spec)
+	case KindPolicy:
+		return normalizePolicy(spec)
+	default:
+		return nil, fmt.Errorf("%w: unknown kind", ErrInvalid)
+	}
+}
+
+func normalizeClusterTarget(spec map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	cred, err := optionalUUID(spec, "credentialId")
+	if err != nil {
+		return nil, err
+	}
+	if cred == "" {
+		return nil, fmt.Errorf("%w: credentialId is required", ErrInvalid)
+	}
+	out["credentialId"] = cred
+	endpoint, err := objectField(spec, "endpoint")
+	if err != nil {
+		return nil, err
+	}
+	if endpoint == nil {
+		return nil, fmt.Errorf("%w: endpoint is required", ErrInvalid)
+	}
+	ep := map[string]any{}
+	if v, ok, err := optionalString(endpoint, "apiServer", 1, 512); err != nil {
+		return nil, err
+	} else if ok {
+		ep["apiServer"] = v
+	}
+	if v, ok, err := optionalString(endpoint, "tlsServerName", 1, 253); err != nil {
+		return nil, err
+	} else if ok {
+		ep["tlsServerName"] = v
+	}
+	if v, ok := endpoint["skipTLSVerify"]; ok {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: endpoint.skipTLSVerify must be a boolean", ErrInvalid)
+		}
+		ep["skipTLSVerify"] = b
+	}
+	if len(ep) == 0 {
+		return nil, fmt.Errorf("%w: endpoint.apiServer or endpoint.tlsServerName is required", ErrInvalid)
+	}
+	out["endpoint"] = ep
+	ns, err := stringList(spec, "allowedNamespaces", 32, 63)
+	if err != nil {
+		return nil, err
+	}
+	if ns != nil {
+		out["allowedNamespaces"] = ns
+	}
+	policy, err := optionalUUID(spec, "policyId")
+	if err != nil {
+		return nil, err
+	}
+	if policy != "" {
+		out["policyId"] = policy
+	}
+	if err := rejectUnknown(spec, "credentialId", "endpoint", "allowedNamespaces", "policyId"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeSSHTarget(spec map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	cred, err := optionalUUID(spec, "credentialId")
+	if err != nil {
+		return nil, err
+	}
+	if cred == "" {
+		return nil, fmt.Errorf("%w: credentialId is required", ErrInvalid)
+	}
+	out["credentialId"] = cred
+	host, ok, err := optionalString(spec, "hostname", 1, 253)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: hostname is required", ErrInvalid)
+	}
+	if !hostnameRE.MatchString(host) && net.ParseIP(host) == nil {
+		return nil, fmt.Errorf("%w: hostname is not a valid host or IP", ErrInvalid)
+	}
+	out["hostname"] = strings.ToLower(host)
+	port := 22
+	if raw, exists := spec["port"]; exists {
+		n, err := asInt(raw)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("%w: port must be 1-65535", ErrInvalid)
+		}
+		port = n
+	}
+	out["port"] = port
+	fp, ok, err := optionalString(spec, "hostKeyFingerprint", 8, 200)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: hostKeyFingerprint is required", ErrInvalid)
+	}
+	if !fingerprintRE.MatchString(fp) {
+		return nil, fmt.Errorf("%w: hostKeyFingerprint must be sha256:...", ErrInvalid)
+	}
+	out["hostKeyFingerprint"] = strings.ToLower(fp)
+	addrs, err := stringList(spec, "allowedAddresses", 32, 64)
+	if err != nil {
+		return nil, err
+	}
+	if addrs != nil {
+		out["allowedAddresses"] = addrs
+	}
+	policy, err := optionalUUID(spec, "policyId")
+	if err != nil {
+		return nil, err
+	}
+	if policy != "" {
+		out["policyId"] = policy
+	}
+	if err := rejectUnknown(spec, "credentialId", "hostname", "port", "hostKeyFingerprint", "allowedAddresses", "policyId"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeCommandProfile(spec map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	schema, err := objectField(spec, "parameterSchema")
+	if err != nil {
+		return nil, err
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("%w: parameterSchema is required", ErrInvalid)
+	}
+	out["parameterSchema"] = schema
+	tmpl, ok, err := optionalString(spec, "template", 1, 8192)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: template is required", ErrInvalid)
+	}
+	if strings.Contains(tmpl, "$(") || strings.Contains(tmpl, "`") || strings.Contains(tmpl, "${") || strings.Contains(tmpl, "{{") {
+		return nil, fmt.Errorf("%w: template cannot include shell interpolation or template syntax", ErrInvalid)
+	}
+	out["template"] = tmpl
+	retrySafe := false
+	if raw, exists := spec["retrySafe"]; exists {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: retrySafe must be a boolean", ErrInvalid)
+		}
+		retrySafe = b
+	}
+	out["retrySafe"] = retrySafe
+	policy, err := optionalUUID(spec, "policyId")
+	if err != nil {
+		return nil, err
+	}
+	if policy != "" {
+		out["policyId"] = policy
+	}
+	if err := rejectUnknown(spec, "parameterSchema", "template", "retrySafe", "policyId"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeRuntimeProfile(spec map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	lang, ok, err := optionalString(spec, "language", 1, 32)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: language is required", ErrInvalid)
+	}
+	lang = strings.ToLower(lang)
+	if lang != "python" && lang != "go" {
+		return nil, fmt.Errorf("%w: language must be python or go", ErrInvalid)
+	}
+	out["language"] = lang
+	image, ok, err := optionalString(spec, "imageDigest", 10, 80)
+	if err != nil || !ok || !digestRE.MatchString(image) {
+		return nil, fmt.Errorf("%w: imageDigest must be sha256:<hex>", ErrInvalid)
+	}
+	out["imageDigest"] = image
+	lock, ok, err := optionalString(spec, "dependencyLockDigest", 10, 80)
+	if err != nil || !ok || !digestRE.MatchString(lock) {
+		return nil, fmt.Errorf("%w: dependencyLockDigest must be sha256:<hex>", ErrInvalid)
+	}
+	out["dependencyLockDigest"] = lock
+	limits, err := objectField(spec, "limits")
+	if err != nil {
+		return nil, err
+	}
+	if limits == nil {
+		return nil, fmt.Errorf("%w: limits is required", ErrInvalid)
+	}
+	lim := map[string]any{}
+	for _, key := range []string{"cpuMillis", "memoryMib", "timeoutSeconds", "processes"} {
+		raw, exists := limits[key]
+		if !exists {
+			return nil, fmt.Errorf("%w: limits.%s is required", ErrInvalid, key)
+		}
+		n, err := asInt(raw)
+		if err != nil || n < 1 || n > 1_000_000 {
+			return nil, fmt.Errorf("%w: limits.%s is out of range", ErrInvalid, key)
+		}
+		lim[key] = n
+	}
+	if err := rejectUnknown(limits, "cpuMillis", "memoryMib", "timeoutSeconds", "processes"); err != nil {
+		return nil, err
+	}
+	out["limits"] = lim
+	if err := rejectUnknown(spec, "language", "imageDigest", "dependencyLockDigest", "limits"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeConnection(spec map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	typ, ok, err := optionalString(spec, "type", 1, 32)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: type is required", ErrInvalid)
+	}
+	typ = strings.ToLower(typ)
+	switch typ {
+	case "http", "webhook", "smtp":
+		out["type"] = typ
+	default:
+		return nil, fmt.Errorf("%w: type must be http, webhook, or smtp", ErrInvalid)
+	}
+	cred, err := optionalUUID(spec, "credentialId")
+	if err != nil {
+		return nil, err
+	}
+	if cred != "" {
+		out["credentialId"] = cred
+	}
+	policy, err := objectField(spec, "endpointPolicy")
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return nil, fmt.Errorf("%w: endpointPolicy is required", ErrInvalid)
+	}
+	ep := map[string]any{}
+	hosts, err := stringList(policy, "hosts", 32, 253)
+	if err != nil || len(hosts) == 0 {
+		return nil, fmt.Errorf("%w: endpointPolicy.hosts is required", ErrInvalid)
+	}
+	ep["hosts"] = hosts
+	methods, err := stringList(policy, "methods", 8, 16)
+	if err != nil || len(methods) == 0 {
+		return nil, fmt.Errorf("%w: endpointPolicy.methods is required", ErrInvalid)
+	}
+	for i, m := range methods {
+		methods[i] = strings.ToUpper(m)
+		switch methods[i] {
+		case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD":
+		default:
+			return nil, fmt.Errorf("%w: endpointPolicy.methods contains an unsupported method", ErrInvalid)
+		}
+	}
+	ep["methods"] = methods
+	paths, err := stringList(policy, "pathPrefixes", 32, 256)
+	if err != nil || len(paths) == 0 {
+		return nil, fmt.Errorf("%w: endpointPolicy.pathPrefixes is required", ErrInvalid)
+	}
+	ep["pathPrefixes"] = paths
+	ports := []any{}
+	if raw, exists := policy["ports"]; exists {
+		arr, ok := raw.([]any)
+		if !ok || len(arr) == 0 || len(arr) > 16 {
+			return nil, fmt.Errorf("%w: endpointPolicy.ports is invalid", ErrInvalid)
+		}
+		for _, item := range arr {
+			n, err := asInt(item)
+			if err != nil || n < 1 || n > 65535 {
+				return nil, fmt.Errorf("%w: endpointPolicy.ports is invalid", ErrInvalid)
+			}
+			ports = append(ports, n)
+		}
+	} else {
+		ports = []any{443}
+	}
+	ep["ports"] = ports
+	tls := true
+	if raw, exists := policy["tlsRequired"]; exists {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: endpointPolicy.tlsRequired must be a boolean", ErrInvalid)
+		}
+		tls = b
+	}
+	ep["tlsRequired"] = tls
+	allowRedirects := false
+	if raw, exists := policy["allowRedirects"]; exists {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: endpointPolicy.allowRedirects must be a boolean", ErrInvalid)
+		}
+		allowRedirects = b
+	}
+	ep["allowRedirects"] = allowRedirects
+	maxRedirects := 0
+	if raw, exists := policy["maxRedirects"]; exists {
+		n, err := asInt(raw)
+		if err != nil || n < 0 || n > 5 {
+			return nil, fmt.Errorf("%w: endpointPolicy.maxRedirects must be 0-5", ErrInvalid)
+		}
+		maxRedirects = n
+	}
+	ep["maxRedirects"] = maxRedirects
+	if err := rejectUnknown(policy, "hosts", "methods", "pathPrefixes", "ports", "tlsRequired", "allowRedirects", "maxRedirects"); err != nil {
+		return nil, err
+	}
+	out["endpointPolicy"] = ep
+	if err := rejectUnknown(spec, "type", "credentialId", "endpointPolicy"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeRecipientList(spec map[string]any) (map[string]any, error) {
+	policy, err := objectField(spec, "recipientPolicy")
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return nil, fmt.Errorf("%w: recipientPolicy is required", ErrInvalid)
+	}
+	emails, err := stringList(policy, "emails", 64, 254)
+	if err != nil {
+		return nil, err
+	}
+	domains, err := stringList(policy, "domains", 64, 253)
+	if err != nil {
+		return nil, err
+	}
+	if len(emails) == 0 && len(domains) == 0 {
+		return nil, fmt.Errorf("%w: recipientPolicy must include emails or domains", ErrInvalid)
+	}
+	for _, e := range emails {
+		if !emailRE.MatchString(strings.ToLower(e)) {
+			return nil, fmt.Errorf("%w: recipient email is not allowlisted-safe", ErrInvalid)
+		}
+	}
+	for i, d := range domains {
+		d = strings.ToLower(d)
+		if !domainRE.MatchString(d) {
+			return nil, fmt.Errorf("%w: recipient domain is not allowlisted-safe", ErrInvalid)
+		}
+		domains[i] = d
+	}
+	for i, e := range emails {
+		emails[i] = strings.ToLower(e)
+	}
+	outPolicy := map[string]any{"allowlistOnly": true}
+	if emails != nil {
+		outPolicy["emails"] = emails
+	}
+	if domains != nil {
+		outPolicy["domains"] = domains
+	}
+	if err := rejectUnknown(policy, "emails", "domains", "allowlistOnly"); err != nil {
+		return nil, err
+	}
+	if err := rejectUnknown(spec, "recipientPolicy"); err != nil {
+		return nil, err
+	}
+	return map[string]any{"recipientPolicy": outPolicy}, nil
+}
+
+func normalizeMessageTemplate(spec map[string]any) (map[string]any, error) {
+	schema, err := objectField(spec, "inputSchema")
+	if err != nil {
+		return nil, err
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("%w: inputSchema is required", ErrInvalid)
+	}
+	class, ok, err := optionalString(spec, "contentClassification", 1, 32)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: contentClassification is required", ErrInvalid)
+	}
+	switch class {
+	case "public", "internal", "confidential":
+	default:
+		return nil, fmt.Errorf("%w: contentClassification must be public, internal, or confidential", ErrInvalid)
+	}
+	subject, _, err := optionalString(spec, "subject", 0, 200)
+	if err != nil {
+		return nil, err
+	}
+	body, ok, err := optionalString(spec, "body", 1, 16384)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: body is required", ErrInvalid)
+	}
+	if strings.Contains(body, "{{") || strings.Contains(body, "${") {
+		return nil, fmt.Errorf("%w: template body cannot include interpolation syntax", ErrInvalid)
+	}
+	out := map[string]any{
+		"inputSchema":           schema,
+		"contentClassification": class,
+		"body":                  body,
+	}
+	if subject != "" {
+		out["subject"] = subject
+	}
+	if err := rejectUnknown(spec, "inputSchema", "contentClassification", "subject", "body"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeResponseSchema(spec map[string]any) (map[string]any, error) {
+	schema, err := objectField(spec, "schema")
+	if err != nil {
+		return nil, err
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("%w: schema is required", ErrInvalid)
+	}
+	raw, exists := spec["maxBytes"]
+	if !exists {
+		return nil, fmt.Errorf("%w: maxBytes is required", ErrInvalid)
+	}
+	n, err := asInt(raw)
+	if err != nil || n < 1 || n > 1_048_576 {
+		return nil, fmt.Errorf("%w: maxBytes must be 1-1048576", ErrInvalid)
+	}
+	if err := rejectUnknown(spec, "schema", "maxBytes"); err != nil {
+		return nil, err
+	}
+	return map[string]any{"schema": schema, "maxBytes": n}, nil
+}
+
+func normalizePolicy(spec map[string]any) (map[string]any, error) {
+	kind, ok, err := optionalString(spec, "kind", 1, 32)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: kind is required", ErrInvalid)
+	}
+	switch kind {
+	case "kubernetes", "ssh", "script", "http", "notification", "approval":
+	default:
+		return nil, fmt.Errorf("%w: policy kind is not supported", ErrInvalid)
+	}
+	policy, err := objectField(spec, "policy")
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return nil, fmt.Errorf("%w: policy is required", ErrInvalid)
+	}
+	if err := rejectUnknown(spec, "kind", "policy"); err != nil {
+		return nil, err
+	}
+	return map[string]any{"kind": kind, "policy": policy}, nil
+}
+
+func optionalUUID(spec map[string]any, key string) (string, error) {
+	raw, ok := spec[key]
+	if !ok || raw == nil {
+		return "", nil
+	}
+	s, ok := raw.(string)
+	if !ok || !authz.ValidUUID(strings.TrimSpace(s)) {
+		return "", fmt.Errorf("%w: %s must be a UUID", ErrInvalid, key)
+	}
+	return strings.TrimSpace(s), nil
+}
+
+func optionalString(spec map[string]any, key string, min, max int) (string, bool, error) {
+	raw, ok := spec[key]
+	if !ok || raw == nil {
+		return "", false, nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("%w: %s must be a string", ErrInvalid, key)
+	}
+	s = strings.TrimSpace(s)
+	if len(s) < min || len(s) > max {
+		return "", false, fmt.Errorf("%w: %s length is invalid", ErrInvalid, key)
+	}
+	return s, true, nil
+}
+
+func objectField(spec map[string]any, key string) (map[string]any, error) {
+	raw, ok := spec[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s must be an object", ErrInvalid, key)
+	}
+	return obj, nil
+}
+
+func stringList(spec map[string]any, key string, maxItems, maxLen int) ([]string, error) {
+	raw, ok := spec[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s must be an array of strings", ErrInvalid, key)
+	}
+	if len(arr) == 0 {
+		return []string{}, nil
+	}
+	if len(arr) > maxItems {
+		return nil, fmt.Errorf("%w: %s exceeds %d items", ErrInvalid, key, maxItems)
+	}
+	out := make([]string, 0, len(arr))
+	seen := map[string]struct{}{}
+	for _, item := range arr {
+		s, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s must be an array of strings", ErrInvalid, key)
+		}
+		s = strings.TrimSpace(s)
+		if s == "" || len(s) > maxLen {
+			return nil, fmt.Errorf("%w: %s contains an invalid value", ErrInvalid, key)
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func asInt(raw any) (int, error) {
+	switch v := raw.(type) {
+	case float64:
+		if v != float64(int(v)) {
+			return 0, ErrInvalid
+		}
+		return int(v), nil
+	case int:
+		return v, nil
+	case int64:
+		return int(v), nil
+	case json.Number:
+		n, err := v.Int64()
+		return int(n), err
+	case string:
+		return strconv.Atoi(v)
+	default:
+		return 0, ErrInvalid
+	}
+}
+
+func rejectUnknown(spec map[string]any, allowed ...string) error {
+	ok := map[string]struct{}{}
+	for _, a := range allowed {
+		ok[a] = struct{}{}
+	}
+	for key := range spec {
+		if _, known := ok[key]; !known {
+			return fmt.Errorf("%w: unknown field %s", ErrInvalid, key)
+		}
+	}
+	return nil
+}
+
+func normalizeSlug(slug, name string) (string, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		slug = slugify(name)
+	}
+	if !slugRE.MatchString(slug) {
+		return "", fmt.Errorf("%w: slug must be a lower-case hyphenated identifier", ErrInvalid)
+	}
+	return slug, nil
+}
+
+func slugify(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastHyphen := true
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastHyphen = false
+		default:
+			if !lastHyphen {
+				b.WriteByte('-')
+				lastHyphen = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "resource"
+	}
+	if out[0] >= '0' && out[0] <= '9' {
+		out = "r-" + out
+	}
+	if len(out) > 63 {
+		out = strings.Trim(out[:63], "-")
+	}
+	return out
+}
+
+func normalizeName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 200 {
+		return "", fmt.Errorf("%w: name must be 1-200 characters", ErrInvalid)
+	}
+	return name, nil
+}
+
+func credentialIDFromSpec(spec map[string]any) string {
+	raw, _ := spec["credentialId"].(string)
+	return strings.TrimSpace(raw)
+}
+
+func policyIDFromSpec(spec map[string]any) string {
+	raw, _ := spec["policyId"].(string)
+	return strings.TrimSpace(raw)
+}

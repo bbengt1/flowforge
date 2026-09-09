@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.7.0
+  version: 0.8.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -2152,7 +2152,588 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /ops-config/catalog:
+    get:
+      operationId: getOpsConfigCatalog
+      summary: Operational configuration kinds
+      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, and use permissions.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Kind catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /ops-config/select:
+    post:
+      operationId: selectOpsConfigBatch
+      summary: Server-authorized batch selection
+      description: |
+        Resolves published workspace-owned revisions. Host-supplied workspace
+        IDs are rejected. Cross-workspace UUIDs are `404`. Drafts cannot be selected.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpsSelectBatchRequest"
+      responses:
+        "200":
+          description: Authorized pins
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsPinList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /cluster-targets:
+    $ref: "#/components/pathItems/OpsCollection"
+  /cluster-targets/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /cluster-targets/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /cluster-targets/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /cluster-targets/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /cluster-targets/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /cluster-targets/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /cluster-targets/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /cluster-targets/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /ssh-targets:
+    $ref: "#/components/pathItems/OpsCollection"
+  /ssh-targets/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /ssh-targets/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /ssh-targets/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /ssh-targets/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /ssh-targets/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /ssh-targets/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /ssh-targets/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /ssh-targets/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /command-profiles:
+    $ref: "#/components/pathItems/OpsCollection"
+  /command-profiles/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /command-profiles/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /command-profiles/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /command-profiles/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /command-profiles/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /command-profiles/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /command-profiles/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /command-profiles/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /runtime-profiles:
+    $ref: "#/components/pathItems/OpsCollection"
+  /runtime-profiles/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /runtime-profiles/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /runtime-profiles/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /runtime-profiles/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /runtime-profiles/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /runtime-profiles/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /runtime-profiles/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /runtime-profiles/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /connections:
+    $ref: "#/components/pathItems/OpsCollection"
+  /connections/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /connections/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /connections/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /connections/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /connections/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /connections/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /connections/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /connections/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /recipient-lists:
+    $ref: "#/components/pathItems/OpsCollection"
+  /recipient-lists/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /recipient-lists/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /recipient-lists/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /recipient-lists/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /recipient-lists/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /recipient-lists/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /recipient-lists/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /recipient-lists/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /message-templates:
+    $ref: "#/components/pathItems/OpsCollection"
+  /message-templates/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /message-templates/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /message-templates/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /message-templates/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /message-templates/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /message-templates/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /message-templates/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /message-templates/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /response-schemas:
+    $ref: "#/components/pathItems/OpsCollection"
+  /response-schemas/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /response-schemas/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /response-schemas/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /response-schemas/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /response-schemas/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /response-schemas/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /response-schemas/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /response-schemas/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /policies:
+    $ref: "#/components/pathItems/OpsCollection"
+  /policies/{resourceId}:
+    $ref: "#/components/pathItems/OpsItem"
+  /policies/{resourceId}/draft:
+    $ref: "#/components/pathItems/OpsDraft"
+  /policies/{resourceId}/publish:
+    $ref: "#/components/pathItems/OpsPublish"
+  /policies/{resourceId}/versions:
+    $ref: "#/components/pathItems/OpsVersions"
+  /policies/{resourceId}/versions/{versionId}:
+    $ref: "#/components/pathItems/OpsVersion"
+  /policies/{resourceId}/disable:
+    $ref: "#/components/pathItems/OpsDisable"
+  /policies/{resourceId}/enable:
+    $ref: "#/components/pathItems/OpsEnable"
+  /policies/{resourceId}/select:
+    $ref: "#/components/pathItems/OpsSelect"
+  /workflows/{workflowId}/versions/{versionId}/pins:
+    get:
+      operationId: listWorkflowVersionPins
+      summary: Pins for a published workflow version
+      description: Exact ops-config revisions bound at publish. Requires `workflow.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - $ref: "#/components/parameters/VersionID"
+      responses:
+        "200":
+          description: Pins
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsPinList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
+  pathItems:
+    OpsCollection:
+      get:
+        summary: List operational configuration resources
+        description: Requires `opsconfig.view`. Returns heads only (no draft spec).
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+        responses:
+          "200":
+            description: Resource summaries
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResourceList"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+      post:
+        summary: Create a draft resource
+        description: Requires `opsconfig.edit`. Host-supplied `id` / `workspaceId` is `400`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsCreateRequest"
+        responses:
+          "201":
+            description: Created draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDetail"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsItem:
+      get:
+        summary: Get resource head
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsDraft:
+      get:
+        summary: Get mutable draft
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDraft"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+      put:
+        summary: Conflict-safe draft save
+        description: Requires `opsconfig.edit` and current `revision`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsSaveDraftRequest"
+        responses:
+          "200":
+            description: Saved draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDetail"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsPublish:
+      post:
+        summary: Publish an immutable revision
+        description: Requires `opsconfig.publish`. Duplicate digest is `409`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsPublishRequest"
+        responses:
+          "201":
+            description: Published version
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsPublishResponse"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsVersions:
+      get:
+        summary: Version history
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Versions newest first
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsVersionList"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsVersion:
+      get:
+        summary: Frozen published snapshot
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+          - $ref: "#/components/parameters/OpsVersionID"
+        responses:
+          "200":
+            description: Version
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsVersion"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsDisable:
+      post:
+        summary: Disable a resource
+        description: Select and pin fail closed until re-enabled. Requires `opsconfig.edit`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Disabled resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsEnable:
+      post:
+        summary: Re-enable a resource
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Enabled resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsSelect:
+      post:
+        summary: Server-authorized selection
+        description: Pins an exact published revision. Drafts are `400`. Cross-workspace IDs are `404`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsSelectRequest"
+        responses:
+          "200":
+            description: Pin
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsPin"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
   parameters:
     RequestID:
       name: X-Request-ID
@@ -2248,6 +2829,20 @@ components:
       schema:
         type: string
         format: uuid
+    OpsResourceID:
+      name: resourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OpsVersionID:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   headers:
     XRequestID:
       description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
@@ -2257,6 +2852,140 @@ components:
         maxLength: 128
         pattern: ^[A-Za-z0-9-]{16,128}$
   schemas:
+    OpsCatalog:
+      type: object
+      required: [kinds]
+      properties:
+        kinds:
+          type: array
+          items:
+            type: object
+            required: [kind, collection, yamlFields, usePermission]
+            properties:
+              kind: {type: string}
+              collection: {type: string}
+              displayName: {type: string}
+              yamlFields:
+                type: array
+                items: {type: string}
+              usePermission: {type: string}
+    OpsResource:
+      type: object
+      required: [id, kind, slug, name, status, draftRevision]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        slug: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [draft, published, disabled]}
+        draftRevision: {type: integer}
+        draftDigest: {type: string}
+        latestVersionNumber: {type: integer}
+        latestVersionId: {type: string}
+        latestVersionDigest: {type: string}
+        credentialId: {type: string}
+        policyId: {type: string}
+    OpsDraft:
+      type: object
+      required: [resourceId, kind, revision, spec, digest]
+      properties:
+        resourceId: {type: string, format: uuid}
+        kind: {type: string}
+        revision: {type: integer}
+        spec: {type: object, additionalProperties: true}
+        digest: {type: string}
+    OpsVersion:
+      type: object
+      required: [id, resourceId, kind, versionNumber, spec, digest]
+      properties:
+        id: {type: string, format: uuid}
+        resourceId: {type: string, format: uuid}
+        kind: {type: string}
+        versionNumber: {type: integer}
+        spec: {type: object, additionalProperties: true}
+        digest: {type: string}
+        publishNote: {type: string}
+    OpsPin:
+      type: object
+      required: [kind, resourceId, versionId, versionNumber, digest]
+      properties:
+        kind: {type: string}
+        resourceId: {type: string, format: uuid}
+        versionId: {type: string, format: uuid}
+        versionNumber: {type: integer}
+        digest: {type: string}
+        name: {type: string}
+        slug: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsDetail:
+      type: object
+      required: [resource, draft]
+      properties:
+        resource: {$ref: "#/components/schemas/OpsResource"}
+        draft: {$ref: "#/components/schemas/OpsDraft"}
+    OpsPublishResponse:
+      type: object
+      required: [resource, version]
+      properties:
+        resource: {$ref: "#/components/schemas/OpsResource"}
+        version: {$ref: "#/components/schemas/OpsVersion"}
+    OpsResourceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsResource"}
+    OpsVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsVersion"}
+    OpsPinList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsPin"}
+    OpsCreateRequest:
+      type: object
+      required: [name, spec]
+      properties:
+        slug: {type: string}
+        name: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsSaveDraftRequest:
+      type: object
+      required: [revision, spec]
+      properties:
+        revision: {type: integer}
+        name: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsPublishRequest:
+      type: object
+      properties:
+        revision: {type: integer}
+        note: {type: string}
+    OpsSelectRequest:
+      type: object
+      properties:
+        versionId: {type: string, format: uuid}
+    OpsSelectBatchRequest:
+      type: object
+      required: [refs]
+      properties:
+        refs:
+          type: array
+          items:
+            type: object
+            required: [kind, resourceId]
+            properties:
+              kind: {type: string}
+              resourceId: {type: string, format: uuid}
+              versionId: {type: string, format: uuid}
     Health:
       type: object
       required: [status]

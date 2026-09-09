@@ -39,8 +39,12 @@ spec:
 func TestWorkflowDraftPublishCompareRestoreAndPin(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
+	cred := createVaultCredential(t, h, admin, tenant, ws, "token", "Cluster token", map[string]string{"token": "abcdefghijklmnop"})
+	target := createPublishedClusterTarget(t, h, admin, tenant, ws, cred.ID, "persist-cluster")
+	src := workflowYAMLWithTarget(target.Resource.ID)
+	edited := strings.ReplaceAll(editedWorkflowYAML, "11111111-1111-4111-8111-111111111111", target.Resource.ID)
 
-	created := createWorkflow(t, h, admin, tenant, ws, validWorkflowYAML)
+	created := createWorkflow(t, h, admin, tenant, ws, src)
 	if created.Workflow.Status != wfstore.StatusDraft || created.Draft.Revision != 1 {
 		t.Fatalf("create: %+v", created)
 	}
@@ -57,13 +61,13 @@ func TestWorkflowDraftPublishCompareRestoreAndPin(t *testing.T) {
 	})
 
 	t.Run("conflict-safe save", func(t *testing.T) {
-		stale, _ := json.Marshal(map[string]any{"revision": 99, "definitionYaml": editedWorkflowYAML})
+		stale, _ := json.Marshal(map[string]any{"revision": 99, "definitionYaml": edited})
 		rec := httptest.NewRecorder()
 		req := workspaceJSON(http.MethodPut, "/api/v1/workflows/"+created.Workflow.ID+"/draft", stale, admin, tenant, ws)
 		h.ServeHTTP(rec, req)
 		assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
 
-		okBody, _ := json.Marshal(map[string]any{"revision": 1, "definitionYaml": editedWorkflowYAML})
+		okBody, _ := json.Marshal(map[string]any{"revision": 1, "definitionYaml": edited})
 		rec = httptest.NewRecorder()
 		req = workspaceJSON(http.MethodPut, "/api/v1/workflows/"+created.Workflow.ID+"/draft", okBody, admin, tenant, ws)
 		h.ServeHTTP(rec, req)
@@ -114,7 +118,7 @@ func TestWorkflowDraftPublishCompareRestoreAndPin(t *testing.T) {
 		t.Fatalf("exec pin = %+v", exec)
 	}
 
-	okBody, _ := json.Marshal(map[string]any{"revision": 2, "definitionYaml": validWorkflowYAML})
+	okBody, _ := json.Marshal(map[string]any{"revision": 2, "definitionYaml": src})
 	rec := httptest.NewRecorder()
 	req := workspaceJSON(http.MethodPut, "/api/v1/workflows/"+created.Workflow.ID+"/draft", okBody, admin, tenant, ws)
 	h.ServeHTTP(rec, req)

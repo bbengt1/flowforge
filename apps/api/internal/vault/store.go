@@ -140,3 +140,25 @@ type Store interface {
 type RefFinder interface {
 	FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]wfstore.CredentialRef, error)
 }
+
+// CompositeRefFinder unions credential references from multiple stores.
+type CompositeRefFinder []RefFinder
+
+// FindCredentialRefs implements RefFinder.
+func (c CompositeRefFinder) FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]wfstore.CredentialRef, error) {
+	var out []wfstore.CredentialRef
+	for _, finder := range c {
+		if finder == nil {
+			continue
+		}
+		items, err := finder.FindCredentialRefs(ctx, scope, credentialID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	if out == nil {
+		out = []wfstore.CredentialRef{}
+	}
+	return out, nil
+}

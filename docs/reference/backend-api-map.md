@@ -115,6 +115,61 @@ RBAC: `credential.view` list/get/usage/impact/events/catalog; `credential.use` t
 | `DELETE /api/v1/credentials/{credentialId}` | Delete after `{confirm:true}`. | `204` | `400` `401` `403` `404` `409` |
 | `GET /api/v1/credentials/{credentialId}/events` | Redacted vault audit. | `200` `{items}` | `401` `403` `404` |
 
+## Versioned operational configuration (E4.2)
+
+Workspace-scoped cluster/SSH targets, command/runtime profiles, connections, recipient lists, message templates, response schemas, and policies. Each resource has one mutable draft and immutable published revisions. Workflow publish and execution start **pin exact versions**; later draft edits do not retarget a pin. Endpoint, recipient, template, and schema selection is server-authorized: the client sends resource UUIDs only; the API resolves a published revision in the current workspace. Cross-workspace UUIDs are `404`. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`.
+
+Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions` (immutable), `ops_pins` (immutable), `target_policy_bindings`. FORCE RLS + composite `(workspace_id, id)` FKs. Credential references use composite FK to `credentials`. E4.3 policy evaluation is out of scope; this story only stores and pins policy revisions.
+
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST/PUT. JSON is camelCase. Next proxies can rewrite `/api/control-plane/{collection}/...` the same way as credentials/workflows. Suggested screens: `/targets`, `/profiles`, `/connections`, `/templates` (or one `/ops-config?kind=`). Do not rewrite `apps/web` in this API story.
+
+Suggested UI flow:
+
+1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, and `usePermission`.
+2. List: `GET /{collection}` (`cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`).
+3. Create draft: `POST /{collection}` `{name, slug?, spec}`. Keep `resource.id` and `draft.revision`.
+4. Save: `PUT /{collection}/{id}/draft` `{revision, spec, name?}`. On `409`, reload the draft.
+5. Publish: `POST /{collection}/{id}/publish` `{revision?, note?}` (`opsconfig.publish`).
+6. History: `GET /{collection}/{id}/versions` and `GET .../versions/{versionId}`.
+7. Picker / authorize: `POST /{collection}/{id}/select` `{versionId?}` or batch `POST /ops-config/select` `{refs:[{kind,resourceId,versionId?}]}`. Drafts cannot be selected (`400`).
+8. Workflow YAML stores **resource** UUIDs (`clusterTargetId`, `sshTargetId`, `commandProfileId`, `runtimeProfileId`, `connectionId`, `recipientListId`, `templateId`, `responseSchemaRef`, `policyId`). The API pins versions at workflow publish / execution start. Read pins: `GET /workflows/{workflowId}/versions/{versionId}/pins` and `pins[]` on execution JSON.
+9. Disable/enable: `POST /{collection}/{id}/disable` / `enable`. Disabled resources cannot be selected.
+
+RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/disable; `opsconfig.publish` publish; `opsconfig.use` plus `clusterTarget.use`, `sshTarget.use`, `commandProfile.use`, `runtimeProfile.use`, `connection.use`, `recipientList.use`, `messageTemplate.use`, `responseSchema.use`, `policy.use` are required to **execute** a workflow that pins those kinds (operator/admin). Viewer can read catalogs; editor can draft; publisher can publish revisions.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields. Requires `opsconfig.view`. | `200` `{kinds}` | `401` `403` |
+| `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
+| `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
+| `GET /api/v1/{collection}/{resourceId}` | Head + latest version pointers. | `200` | `401` `403` `404` |
+| `GET /api/v1/{collection}/{resourceId}/draft` | Mutable spec. | `200` | `401` `403` `404` |
+| `PUT /api/v1/{collection}/{resourceId}/draft` | Conflict-safe save. | `200` `{resource,draft}` | `400` `409` `401` `403` `404` |
+| `POST /api/v1/{collection}/{resourceId}/publish` | Immutable revision. | `201` `{resource,version}` | `409` `401` `403` `404` |
+| `GET /api/v1/{collection}/{resourceId}/versions` | History, newest first. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/{collection}/{resourceId}/versions/{versionId}` | Frozen snapshot. | `200` | `401` `403` `404` |
+| `POST /api/v1/{collection}/{resourceId}/select` | Pin latest or `{versionId}`. | `200` pin | `400` draft `404` `409` disabled |
+| `POST /api/v1/{collection}/{resourceId}/disable` | Soft-disable. | `200` | `401` `403` `404` |
+| `POST /api/v1/{collection}/{resourceId}/enable` | Re-enable. | `200` | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/versions/{versionId}/pins` | Pins bound at publish. | `200` `{items}` | `401` `403` `404` |
+
+`spec` shapes (unknown fields rejected):
+
+| Kind | Required `spec` |
+| --- | --- |
+| `cluster_target` | `credentialId`, `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces`, `policyId` |
+| `ssh_target` | `credentialId`, `hostname`, `hostKeyFingerprint`; optional `port` (default 22), `allowedAddresses`, `policyId` |
+| `command_profile` | `parameterSchema`, `template` (no `$()`, `` ` ``, `${`, `{{`); optional `retrySafe`, `policyId` |
+| `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
+| `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
+| `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
+| `message_template` | `inputSchema`, `contentClassification`, `body`; optional `subject` |
+| `response_schema` | `schema`, `maxBytes` (1–1048576) |
+| `policy` | `kind` (`kubernetes`/`ssh`/`script`/`http`/`notification`/`approval`), `policy` object |
+
+Workflow publish fails closed if a YAML resource UUID is missing, unpublished, disabled, or in another workspace. Execution JSON includes `pins[]` copied from the workflow version; later ops-config publishes do not change that pin.
+
 Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, optional `passphrase`), `token` (`token`), `webhook_secret` (`secret`), `provider` (`token`). Metadata cannot store those secret keys. `fingerprint` is `sha256:<hex>` of canonical secret JSON (not reversible).
 
 ## Workflow YAML contract (E3.1)
