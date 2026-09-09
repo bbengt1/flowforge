@@ -2,18 +2,16 @@ package scripts
 
 import (
 	"strings"
-
-	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 )
 
 // RedactSource replaces isolated token-shaped strings. Irredactable material
 // is not rewritten — callers must reject it via ScanSource first.
 func RedactSource(source string) string {
-	res := artifact.Scan(artifact.KindFile, artifact.ClassInternal, []byte(source))
-	if res.Reject != "" || len(res.Safe) == 0 {
+	if irredactableSecret([]byte(source)) {
 		return ""
 	}
-	return string(res.Safe)
+	safe, _ := redactTokens(source)
+	return safe
 }
 
 // AuditMetadata is the secret-free record written on publish.
