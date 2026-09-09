@@ -23,13 +23,14 @@ export default async function Home() {
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
           E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
-          approvals · E5.1 executions · E5.2 cancel/retry · E5.3
+          approvals · E5 executions · E5.4 alerts · E6.1 shell · E5.3
           artifacts · E5.4 alerts/audit
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
-          Workflow control plane UI. This page is the deployable shell — no
-          canvas or authoring yet. Product contracts live in{" "}
+          Workflow control plane UI. The persistent workspace shell is E6.1 —
+          RBAC nav, search, and workflow home. The canvas is still E6.2.
+          Product contracts live in{" "}
           <code className="font-mono text-sm">docs/</code>. Exercise workspace
           membership and roles from the{" "}
           <Link
@@ -51,7 +52,7 @@ export default async function Home() {
             className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
             href="/workflows"
           >
-            workflow operator
+            workflow home
           </Link>
           , manage encrypted workspace credentials on the{" "}
           <Link
@@ -144,21 +145,22 @@ export default async function Home() {
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Workflow operator</h2>
+        <h2 className="text-lg font-semibold">Workflow home</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E3.1–E3.3 UI for jonny&apos;s YAML and version
-          contract. Validate and normalize stay on the editor. The core-node
-          palette inserts canonical YAML and the inspector writes bounded{" "}
-          <code className="font-mono text-xs">with</code> fields. Drafts save
-          with revision / If-Match, 409 offers reload, publish is immutable,
-          and run accepts only a published version id.
+          Chloe&apos;s E6.1 home plus the existing E3.1–E3.3 YAML editor.
+          Search and filter drafts at{" "}
+          <code className="font-mono text-xs">/workflows</code>. The editor
+          lives at{" "}
+          <code className="font-mono text-xs">/workflows/{"{id}"}</code>.
+          Create and import still{" "}
+          <code className="font-mono text-xs">POST /workflows</code>.
         </p>
         <p className="mt-4">
           <Link
             className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
             href="/workflows"
           >
-            Open draft / publish operator
+            Open workflow home
           </Link>
         </p>
       </section>

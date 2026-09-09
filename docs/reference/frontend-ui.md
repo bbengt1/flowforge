@@ -23,10 +23,10 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1–E5.3 list/detail, cancel/retry, artifacts; `execution.view` / `execution.cancel` / `workflow.execute`), Alerts / Audit (E5.4; `alert.view` / `alert.ack`; audit browse is `GET /audit-events`), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, Approvals, Alerts, Settings (plus Audit / Membership / Isolation as foundation links). Navigation only shows capabilities permitted by RBAC from `GET /workspace`. Until E6.1, the slim operator header exposed the same destinations; E6.1 replaces that header with the product shell.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
-- Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
-- Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
+- Command palette (⌘/Ctrl+K) for keyboard-first navigation and common commands: new workflow, import YAML, open YAML/editor, validate, publish, run a selected published version, and open execution / vault / config / approvals / alerts.
+- Notifications show safe validation, publish, and execution status; they do not expose secrets.
 
 ## Workflow home
 
@@ -109,9 +109,18 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 - Responsive layout preserves the canvas and inspector on desktop; on smaller screens, library and inspector become drawers while workflow review/run/history remain fully usable.
 - Respect reduced motion and user color preferences. Motion is limited to meaningful execution/connection feedback.
 
+## E6.1 workspace shell and workflow home
+
+E6.1 (Chloe) replaces the slim operator header with the product workspace shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same as E2.3 / E2.1.
+
+- **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings, Membership, and Isolation stay available so operators can bootstrap a workspace.
+- **Search / palette:** client-side index of workflow name/slug, core catalog action types, credential display name/tags, execution IDs, alerts (identifiers only), and docs. Unexpected secret fields are stripped and never searchable. Cmd/Ctrl+K opens the command palette. New workflow / import use existing `POST /workflows`.
+- **Workflow home (`/workflows`):** list + card views with client-side filters (folders/tags derived from slug/status, owner, trigger from draft summary, environment, status, last run, last modified). Validation health and pending approvals are joined from existing draft / `GET /approvals` / `GET /executions` responses. Create, import, duplicate, and template cards POST a draft; export uses `GET …/versions/{id}/export` when a published version exists. There is no archive or template API on main.
+- **Editor:** existing E3 operator moves to `/workflows/{id}`. `/actions` is an E6.2 placeholder. `/templates` and `/settings` are shell destinations.
+
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, the E5.1–E5.3 execution history operator, and the E5.4 operational-alert queue:
+E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.

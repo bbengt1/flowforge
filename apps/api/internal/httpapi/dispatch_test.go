@@ -14,7 +14,10 @@ import (
 
 func TestDispatchClaimFenceCancelAndLeaseLoss(t *testing.T) {
 	var frozen atomic.Int64
-	base := time.Date(2026, 9, 9, 5, 0, 0, 0, time.UTC).UnixNano()
+	// StartExecution stamps AvailableAt with wall time. ClaimJob uses this
+	// injected clock, so it must be at or after that stamp — a frozen past
+	// clock makes queued jobs look ineligible (AvailableAt.After(now)).
+	base := time.Now().UTC().Add(time.Second).UnixNano()
 	frozen.Store(base)
 	h, admin := seededWorkspaceWithClock(t, func() time.Time {
 		return time.Unix(0, frozen.Load()).UTC()

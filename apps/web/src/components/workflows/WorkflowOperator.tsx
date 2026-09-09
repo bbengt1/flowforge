@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
@@ -45,6 +47,7 @@ import {
   createWorkflow,
   exportWorkflowVersion,
   fetchWorkflowCatalog,
+  getWorkflow,
   getWorkflowDraft,
   getWorkflowExecution,
   listWorkflows,
@@ -66,8 +69,15 @@ import type {
   WorkflowSummary,
   WorkflowVersion,
 } from "@/lib/workflow-types";
+import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
+import { pushNotification } from "@/lib/workspace-notifications";
 
-export function WorkflowOperator() {
+type WorkflowOperatorProps = {
+  workflowId?: string;
+};
+
+export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
+  const router = useRouter();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -136,6 +146,8 @@ export function WorkflowOperator() {
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
+  const yamlRef = useRef(yaml);
+  yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
   const palette = adaptCoreNeutralPalette(catalog);
@@ -299,6 +311,52 @@ export function WorkflowOperator() {
     setVersionPins(Object.fromEntries(pinEntries));
   }
 
+  const openedRoute = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!canCall || !workflowId || openedRoute.current === workflowId) {
+      return;
+    }
+    openedRoute.current = workflowId;
+    void (async () => {
+      const listed = await listWorkflows(identity);
+      if (listed.ok) {
+        setItems(listed.items);
+        const match = listed.items.find((item) => item.id === workflowId);
+        if (match) {
+          await openWorkflow(match);
+          return;
+        }
+      }
+      const summary = await getWorkflow(identity, workflowId);
+      if (summary.ok) {
+        await openWorkflow(summary.workflow);
+      } else {
+        setProblem(summary.problem);
+      }
+    })();
+    // openWorkflow is recreated each render; the route ref prevents repeats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCall, identity, workflowId]);
+
+  const runValidateRef = useRef(runValidate);
+  runValidateRef.current = runValidate;
+
+  useEffect(() => {
+    return subscribeWorkspaceCommands((name) => {
+      if (name === "validate") {
+        void runValidateRef.current(yamlRef.current).then(() => {
+          pushNotification({
+            kind: "validation",
+            title: "Validation requested",
+            detail: "See the validation panel for safe status.",
+            href: workflowId ? `/workflows/${workflowId}` : "/workflows",
+          });
+        });
+      }
+    });
+  }, [workflowId]);
+
   async function openWorkflow(record: WorkflowRecord) {
     if (pending !== null) {
       return;
@@ -348,9 +406,16 @@ export function WorkflowOperator() {
         created,
         ...current.filter((item) => item.id !== created.id),
       ]);
+      router.replace(`/workflows/${created.id}`);
     }
     applyEditor({ ...result.applied, revision: result.applied.revision });
     setPending(null);
+    pushNotification({
+      kind: "info",
+      title: "Draft created",
+      detail: created?.name || "Editable draft ready",
+      href: created ? `/workflows/${created.id}` : undefined,
+    });
   }
 
   async function handleConflict(workflowId: string, problemDetails: ProblemDetails) {
@@ -435,6 +500,12 @@ export function WorkflowOperator() {
     setWorkflow(result.workflow);
     setPublishedVersion(result.version);
     setPublishNote("");
+    pushNotification({
+      kind: "publish",
+      title: `Published v${result.version.versionNumber}`,
+      detail: result.version.digest,
+      href: `/workflows/${workflow.id}`,
+    });
     if (result.pins.length) {
       setVersionPins((current) => ({
         ...current,
@@ -621,8 +692,30 @@ export function WorkflowOperator() {
     }
     setProblem(null);
     setExecution(result.execution);
+    pushNotification({
+      kind: "execution",
+      title: result.execution.replayed ? "Execution replayed" : "Execution started",
+      detail: result.execution.status,
+      href: `/executions/${result.execution.id}`,
+    });
     await loadExecutionApprovals(workflow.id, result.execution);
   }
+
+  const publishDraftRef = useRef(publishDraft);
+  publishDraftRef.current = publishDraft;
+  const runPublishedRef = useRef(runPublished);
+  runPublishedRef.current = runPublished;
+
+  useEffect(() => {
+    return subscribeWorkspaceCommands((name) => {
+      if (name === "publish") {
+        void publishDraftRef.current();
+      }
+      if (name === "run-published") {
+        void runPublishedRef.current();
+      }
+    });
+  }, []);
 
   async function refreshPin() {
     if (!workflow || !execution) {
@@ -741,9 +834,24 @@ export function WorkflowOperator() {
             }}
           />
         </label>
+        <Link
+          href="/workflows"
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+        >
+          Workflow home
+        </Link>
         <button
           type="button"
-          onClick={() => void runValidate(yaml)}
+          onClick={() => {
+            void runValidate(yaml).then(() => {
+              pushNotification({
+                kind: "validation",
+                title: "Validation requested",
+                detail: "See the validation panel for safe status.",
+                href: workflow ? `/workflows/${workflow.id}` : "/workflows",
+              });
+            });
+          }}
           disabled={!canCall || pending !== null}
           className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
         >
