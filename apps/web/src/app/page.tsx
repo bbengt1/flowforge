@@ -29,7 +29,8 @@ export default async function Home() {
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
           Workflow control plane UI. The persistent workspace shell is E6.1 —
-          RBAC nav, search, and workflow home. The canvas is still E6.2.
+          RBAC nav, search, and workflow home. Canvas + guided authoring are
+          E6.2/E6.3. Execution history and graph replay are E6.4.
           Product contracts live in{" "}
           <code className="font-mono text-sm">docs/</code>. Exercise workspace
           membership and roles from the{" "}

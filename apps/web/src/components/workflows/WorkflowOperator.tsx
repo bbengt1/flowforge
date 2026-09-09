@@ -52,6 +52,12 @@ import {
   versionCompareRef,
 } from "@/lib/workflow";
 import {
+  canStartPublishedRun,
+  parseTriggerInput,
+  publishedRunVersions,
+} from "@/lib/execution-replay";
+import { PRE_RUN_PUBLISHED_ONLY_HELP } from "@/lib/execution-contract";
+import {
   compareWorkflow,
   createWorkflow,
   exportWorkflowVersion,
@@ -59,6 +65,7 @@ import {
   getWorkflow,
   getWorkflowDraft,
   getWorkflowExecution,
+  getWorkflowVersion,
   listWorkflows,
   listWorkflowVersions,
   importValidatedWorkflow,
@@ -140,7 +147,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [compareRight, setCompareRight] = useState("");
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
+  const [runVersion, setRunVersion] = useState<WorkflowVersion | null>(null);
   const [runIdempotencyKey, setRunIdempotencyKey] = useState("");
+  const [runTriggerInput, setRunTriggerInput] = useState("");
   const [lastStartStatus, setLastStartStatus] = useState<number | null>(null);
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
   const [policyEval, setPolicyEval] = useState<PolicyEvaluation | null>(null);
@@ -328,6 +337,11 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     setPublishedVersion(null);
     setExecution(null);
     setRunVersionId("");
+    setRunVersion(null);
+    setRunTriggerInput("");
+    setPolicyEval(null);
+    setPolicyEvalProblem(null);
+    setExecutionApprovals([]);
     setVersions([]);
     setVersionPins({});
   }
@@ -340,7 +354,8 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       return;
     }
     setVersions(result.items);
-    setRunVersionId(result.items[0]?.id ?? "");
+    const firstPublished = publishedRunVersions(result.items)[0]?.id ?? "";
+    setRunVersionId(firstPublished);
     const pinEntries = await Promise.all(
       result.items.map(async (version) => {
         const pins = await listWorkflowVersionPins(identity, workflowId, version.id);
@@ -348,6 +363,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       }),
     );
     setVersionPins(Object.fromEntries(pinEntries));
+    if (firstPublished) {
+      await evaluateSelectedVersion(firstPublished, workflowId);
+    }
   }
 
   const openedRoute = useRef<string | null>(null);
@@ -651,25 +669,36 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     setExecutionApprovals([]);
   }
 
-  async function evaluateSelectedVersion(versionId: string) {
+  async function evaluateSelectedVersion(
+    versionId: string,
+    workflowId = workflow?.id,
+  ) {
     if (!versionId) {
       setPolicyEval(null);
       setPolicyEvalProblem(null);
+      setRunVersion(null);
       return;
     }
     setPolicyEvalPending(true);
     setPolicyEvalProblem(null);
-    if (!workflow) {
+    if (!workflowId) {
+      setPolicyEvalPending(false);
       setPolicyEval(null);
       setPolicyEvalProblem(null);
       return;
     }
-    const result = await evaluatePolicyForRun(identity, {
-      workflowId: workflow.id,
-      workflowVersionId: versionId,
-    });
+    const [result, version] = await Promise.all([
+      evaluatePolicyForRun(identity, {
+        workflowId,
+        workflowVersionId: versionId,
+      }),
+      getWorkflowVersion(identity, workflowId, versionId),
+    ]);
     setPolicyEvalPending(false);
     setLastRequestId(result.requestId);
+    if (version.ok) {
+      setRunVersion(version.version);
+    }
     if (!result.ok) {
       setPolicyEval(null);
       setPolicyEvalProblem(result.problem);
@@ -680,6 +709,22 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
 
   async function runPublished() {
     if (!workflow || !runVersionId) {
+      return;
+    }
+    const start = canStartPublishedRun({
+      versions,
+      selectedVersionId: runVersionId,
+    });
+    if (!start.ok) {
+      setProblem({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Published version required",
+        status: 400,
+        detail: start.reason || PRE_RUN_PUBLISHED_ONLY_HELP,
+        instance: "/workflows",
+        code: "invalid-request",
+        request_id: "local-run-published-16",
+      });
       return;
     }
     setPending("run");
@@ -713,9 +758,26 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         return;
       }
     }
-    const extras = runIdempotencyKey.trim()
-      ? { idempotencyKey: runIdempotencyKey.trim() }
-      : {};
+    const parsedInput = parseTriggerInput(runTriggerInput);
+    if (!parsedInput.ok) {
+      setProblem({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Invalid trigger input",
+        status: 400,
+        detail: parsedInput.error,
+        instance: "/workflows",
+        code: "invalid-request",
+        request_id: "local-run-input-16",
+      });
+      setPending(null);
+      return;
+    }
+    const extras = {
+      ...(runIdempotencyKey.trim()
+        ? { idempotencyKey: runIdempotencyKey.trim() }
+        : {}),
+      ...(parsedInput.value ? { input: parsedInput.value } : {}),
+    };
     const result = await startWorkflowExecution(
       identity,
       workflow.id,
@@ -1208,6 +1270,11 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
           <RunControl
             versions={versions}
             selectedVersionId={runVersionId}
+            selectedVersion={runVersion}
+            catalog={catalog}
+            versionPins={versionPins[runVersionId]}
+            triggerInput={runTriggerInput}
+            onTriggerInput={setRunTriggerInput}
             execution={execution}
             pending={pending === "run" || pending === "pin"}
             dirty={dirty}
