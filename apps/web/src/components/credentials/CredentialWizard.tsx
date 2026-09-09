@@ -83,7 +83,6 @@ export function CredentialWizard() {
   const secretFields = typeInfo?.secretFields ?? [];
   const metadataFields = typeInfo?.metadataFields ?? [];
   const secretRef = useRef(secret);
-  secretRef.current = secret;
 
   useEffect(() => {
     if (!ready) {
@@ -96,6 +95,10 @@ export function CredentialWizard() {
       }
     });
   }, [ready, identity]);
+
+  useEffect(() => {
+    secretRef.current = secret;
+  }, [secret]);
 
   useEffect(() => {
     return () => {

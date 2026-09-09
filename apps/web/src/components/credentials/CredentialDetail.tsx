@@ -102,7 +102,6 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   const secretFields = typeInfo?.secretFields ?? [];
   const metadataFields = typeInfo?.metadataFields ?? [];
   const secretRef = useRef(secret);
-  secretRef.current = secret;
 
   function applyRecord(next: CredentialRecord, extraKeys: string[] = []) {
     setRecord(next);
@@ -148,6 +147,10 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       }
     });
   }, [ready, credentialId, identity]);
+
+  useEffect(() => {
+    secretRef.current = secret;
+  }, [secret]);
 
   useEffect(() => {
     return () => {

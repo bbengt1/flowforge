@@ -1237,6 +1237,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       <WorkflowConfigPins identity={identity} ready={canCall} />
 
       <ActionWizard
+        key={`${wizardOpen ? "open" : "closed"}:${wizardType ?? "any"}`}
         open={wizardOpen}
         identity={identity}
         ready={canCall}

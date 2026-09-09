@@ -90,7 +90,7 @@ export function ActionWizard({
   const [step, setStep] = useState<ActionWizardStep>("type");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<ActionWizardDraft>(() =>
-    emptyActionWizardDraft(initialType ?? "", ""),
+    emptyActionWizardDraft(initialType ?? "", entryName(entries, initialType)),
   );
   const [credentials, setCredentials] = useState<CredentialRecord[]>([]);
   const [credentialProblem, setCredentialProblem] = useState<ProblemDetails | null>(null);
@@ -123,15 +123,8 @@ export function ActionWizard({
   const policy = wizardPolicyPreview({ entry, evaluation });
   const preview = redactedYamlPreview(draft, "new-action");
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    setStep("type");
-    setLocalErrors([]);
-    const next = emptyActionWizardDraft(initialType ?? "", entryName(entries, initialType));
-    setDraft(next);
-  }, [open, initialType, entries]);
+  // Remount via parent key when the wizard opens so draft/step reset
+  // without a setState-in-effect.
 
   useEffect(() => {
     if (!open || !ready) {
