@@ -15,6 +15,7 @@ import {
   assertSecretFreeStorageValue,
   clearSecretDraftAfterSubmit,
   deletionConfirmationState,
+  secretDraftIsCleared,
   filterCredentialList,
   isSecretFieldName,
   matchesCredentialSearch,
@@ -177,6 +178,12 @@ describe("credential secret hygiene", () => {
     assert.equal("testOnRotate" in rotate, false);
     clearSecretDraftAfterSubmit(rotateDraft);
     assert.equal(rotateDraft.privateKey, "");
+    assert.equal(secretDraftIsCleared(rotateDraft), true);
+    const testDraft = emptySecretDraft();
+    testDraft.token = "rotate-then-test";
+    assert.equal(secretDraftIsCleared(testDraft), false);
+    assert.equal(secretDraftIsCleared(clearSecretDraftAfterSubmit(testDraft)), true);
+    assert.doesNotMatch(credentialEventsPath(sample.id), /token=|secret=|kubeconfig/i);
     assert.deepEqual(buildDeleteCredentialBody(), { confirm: true });
   });
 

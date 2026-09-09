@@ -131,6 +131,18 @@ E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the
 
 Helpers: `apps/web/src/lib/workflow-graph.ts`, `workflow-action-library.ts`. Canvas is not a persisted UI format.
 
+## E6.3 guided action and credential authoring
+
+E6.3 (Chloe) adds the **Add action** wizard as the primary canvas authoring path and polishes the E4.1 vault / E4.3 policy preview. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same.
+
+- **Action wizard:** Choose type (searchable categories + recommendations from catalog, selected upstream port, workspace permissions, and published target kinds) → authorized target + credential selectors (`POST …/select` + `GET /credentials`, display names only) → type-specific configure with safe defaults → map upstream typed outputs → review (catalog policy, `POST /policy/evaluate` when a published version is selected, retry hints, redacted YAML, validation) → insert a canonical `spec.nodes[]` object and optional `spec.edges[]`. Not a separate execution model.
+- **Optimistic feedback:** pending / success / error on Add. Library **Add** opens the wizard; drag-drop still inserts defaults (E6.2).
+- **Vault:** `/credentials` create / rotate / test clear secret fields from UI memory after submit and on unmount. Masked, paste-safe inputs never write `localStorage` / URL / analytics. Unexpected secret keys on responses stay stripped.
+- **Policy preview:** wizard review and pre-run both render evaluate + approval requirements. E4.3 decide (`POST /approvals/{id}/decide`) is unchanged.
+- **Catalog gap (jonny):** k8s / SSH / HTTP / scripts still have E3.1 stubs (`ports` + `requiredWith`). The wizard infers configure fields from family + YAML schema when `allowedWith` is empty. Optional catalog `enabled` / richer `allowedWith` would remove that inference. No extra API routes were added.
+
+Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.tsx`.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

@@ -7,7 +7,7 @@ export default function NewCredentialPage() {
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E4.1 · Add credential
+          E6.3 · Vault
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           New vault credential
