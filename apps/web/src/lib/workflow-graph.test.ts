@@ -158,6 +158,15 @@ describe("action library catalog filter", () => {
     assert.equal(rejectDisabledActionType("ssh.run", null).ok, true);
     assert.equal(rejectDisabledActionType("script.python", null).ok, true);
     assert.equal(rejectDisabledActionType("script.go", null).ok, true);
+    assert.equal(fallback.some((item) => item.type === "http.request"), true);
+    assert.equal(fallback.some((item) => item.type === "notification.webhook"), true);
+    assert.equal(fallback.some((item) => item.type === "notification.email"), true);
+    assert.equal(
+      fallback.find((item) => item.type === "http.request")?.source,
+      "contract-fallback",
+    );
+    assert.equal(rejectDisabledActionType("http.request", null).ok, true);
+    assert.equal(rejectDisabledActionType("notification.email", null).ok, true);
   });
 });
 

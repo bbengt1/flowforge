@@ -139,7 +139,7 @@ E6.3 (Chloe) adds the **Add action** wizard as the primary canvas authoring path
 - **Optimistic feedback:** pending / success / error on Add. Library **Add** opens the wizard; drag-drop still inserts defaults (E6.2).
 - **Vault:** `/credentials` create / rotate / test clear secret fields from UI memory after submit and on unmount. Masked, paste-safe inputs never write `localStorage` / URL / analytics. Unexpected secret keys on responses stay stripped.
 - **Policy preview:** wizard review and pre-run both render evaluate + approval requirements. E4.3 decide (`POST /approvals/{id}/decide`) is unchanged.
-- **Catalog gap (jonny):** SSH / HTTP / scripts still have E3.1 stubs (`ports` + `requiredWith`). E7.2 (#78) fills `allowedWith` / `policy` / `bounds` / `redaction` on `kubernetes.apply`, `kubernetes.get`, and `kubernetes.list` (`GET /workflows/catalog` and `GET /kubernetes/catalog` `nodes[]` / `errors[]` / `apply`). The wizard infers configure fields from family + YAML schema when `allowedWith` is empty. No extra API routes were added.
+- **Catalog gap (jonny):** E7.2 (#78) fills `allowedWith` / `policy` / `bounds` / `redaction` on Kubernetes nodes. E8.2 / E9.x do the same for SSH and scripts. E10.4 (Chloe) ships marked `e104-draft` fallbacks for `http.request` / `notification.webhook` / `notification.email` until jonny's map lands — operators still pick pinned connections / templates / recipients / schemas only. The wizard infers configure fields from family + YAML schema when `allowedWith` is empty. No extra API routes were added.
 
 Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.tsx`.
 
@@ -380,7 +380,7 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 - **Editor:** YAML textarea with line numbers. Debounced `POST /workflows/validate` shows valid + warnings, or linked `errors[]` (`path`, `line`, `column`, `code`, `message`). Invalid YAML never renders a guessed graph.
 - **Normalize / import:** `POST /workflows/normalize` (or file import then normalize) **replaces** the editor buffer with `definitionYaml` and shows the `sha256:` digest plus summary counts.
 - **Palette:** `GET /workflows/catalog` filtered to `phase: core` only. `next` / `provider` / unknown phases fail closed.
-- **E3.3 catalog deltas (Chloe):** additive fields on the same `GET /workflows/catalog` response — do not require a web rewrite to keep E3.1/E3.2 working. See [core node contracts](core-node-contracts.md) for the inspector/`with` map. Highlights: `rules.triggersAreWorkflowLevel` (do not offer `manual`/`webhook`/`schedule` as canvas nodes); seven nodes now ship `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification`/`maxBytes`; `flow.fail` now **requires** `with.code`; `flow.condition` needs `compare` unless `op` is `exists`; `flow.delay` rejects years/months and durations above `P7D`; unknown `with` keys on these nodes are `unknown-field`. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. Other core nodes (SSH/HTTP/approval/scripts) still have E3.1 stubs (ports + `requiredWith` only).
+- **E3.3 catalog deltas (Chloe):** additive fields on the same `GET /workflows/catalog` response — do not require a web rewrite to keep E3.1/E3.2 working. See [core node contracts](core-node-contracts.md) for the inspector/`with` map. Highlights: `rules.triggersAreWorkflowLevel` (do not offer `manual`/`webhook`/`schedule` as canvas nodes); seven nodes now ship `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification`/`maxBytes`; `flow.fail` now **requires** `with.code`; `flow.condition` needs `compare` unless `op` is `exists`; `flow.delay` rejects years/months and durations above `P7D`; unknown `with` keys on these nodes are `unknown-field`. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E10.4 adds marked HTTP/notification fallbacks (`e104-draft`) until the engine map lands.
 - **Proxies:** `/api/control-plane/workflows/{catalog,validate,normalize}` attach session cookies, CSRF, workspace headers, and `X-Request-ID`; preserve `application/problem+json` including `errors[]`.
 
 ## E3.3 core neutral nodes (Chloe UI)
@@ -672,6 +672,22 @@ Schedule fields:
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
 Operator surfaces: `/workflows` (Schedules / `?schedules=`) and `/workflows/{id}#schedule-triggers`. Approval decide reuses E4.3 `POST /approvals/{id}/decide`. Mid-run wait parks as `waiting` (survives recover). SoD + fresh auth; expire/invalidate → `expired`. Waiting jobs hold no worker lease — do not claim them from the browser.
+
+## E10.4 HTTP and notification action config (Chloe UI)
+
+E10.4 (Chloe UI) is a **draft** thin adapter until jonny posts the engine/catalog map. Relates to #109 / Part of #105 — **Keep #109 open**. `apps/api` is unchanged. Adapter: `apps/web/src/lib/core-http-notification-contract.ts` (`e104-draft`). Cookie session + `X-CSRF-Token` on POST select. Prefer `GET /workflows/catalog` `allowedWith` plus existing E4.2 ops-config collections. Optional `GET /ops-config/catalog` `httpEngine` / `notificationEngine` are consumed when present. Do **not** invent `/http/catalog`, `/notifications/catalog`, or a resume-style route.
+
+**Draft assumptions (retarget this adapter when the map lands):**
+
+| Node | Required pins | Configure |
+| --- | --- | --- |
+| `http.request` | `connection` (`type=http`), optional `response_schema` | method / relative `path` / timeout. Never a URL. |
+| `notification.webhook` | `connection` (`type=webhook`) | No free-form URL. Endpoint policy lives on the connection. |
+| `notification.email` | `connection` (`type=smtp`) + `recipient_list` + `message_template` | Approved revisions only. No To/CC/body fields. |
+
+TLS is required on the pinned connection; this UI has no TLS-off toggle. Credentials stay in the vault. YAML stores resource UUIDs only. Delivery results on execution steps are redacted (`authorization`, cookies, tokens, `set-cookie`). Selectors fail closed on HTTP 403.
+
+Operator surfaces: action library (HTTP / Notifications families), Add-action wizard target + configure, and the node inspector pin pickers. Helpers: `core-http-notification-contract.ts`, `core-http-notification-client.ts`.
 
 ## Required validation
 

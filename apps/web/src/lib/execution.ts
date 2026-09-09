@@ -56,6 +56,10 @@ import {
   type ExecutionStep,
   type JobDispatchView,
 } from "./execution-types.ts";
+import {
+  isHttpConfigurableType,
+  redactHttpNotificationDelivery,
+} from "./core-http-notification-contract.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import type { ProblemDetails } from "./problem.ts";
 
@@ -727,19 +731,29 @@ export function parseExecutionStep(
   if (!id || !nodeId) {
     return null;
   }
+  const nodeType = readString(row.nodeType, row.node_type);
+  const input = isHttpConfigurableType(nodeType)
+    ? redactHttpNotificationDelivery(row.input ?? null)
+    : (row.input ?? null);
+  const output = isHttpConfigurableType(nodeType)
+    ? redactHttpNotificationDelivery(row.output ?? null)
+    : (row.output ?? null);
+  const error = isHttpConfigurableType(nodeType)
+    ? redactHttpNotificationDelivery(row.error ?? null)
+    : (row.error ?? null);
   return {
     id,
     executionId: readString(row.executionId, row.execution_id) || executionId,
     nodeId,
-    nodeType: readString(row.nodeType, row.node_type),
+    nodeType,
     attempt: readNumber(row.attempt) ?? 1,
     status: readString(row.status) || "queued",
     startedAt: readString(row.startedAt, row.started_at),
     finishedAt: readString(row.finishedAt, row.finished_at),
     createdAt: readString(row.createdAt, row.created_at),
-    input: row.input ?? null,
-    output: row.output ?? null,
-    error: row.error ?? null,
+    input,
+    output,
+    error,
     fencingToken: readNumber(row.fencingToken, row.fencing_token),
     workerId: readString(row.workerId, row.worker_id),
     leaseId: readString(row.leaseId, row.lease_id),

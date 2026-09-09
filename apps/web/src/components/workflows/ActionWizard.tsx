@@ -45,6 +45,20 @@ import {
   sshRetryRules,
   type SshNodeCatalog,
 } from "@/lib/ssh-node-contract";
+import { getHttpNotificationCatalog } from "@/lib/core-http-notification-client";
+import {
+  HTTP_CONTRACT_FALLBACK_HELP,
+  HTTP_NOTIFICATION_NODE_POLICY_NOTES,
+  HTTP_NOTIFICATION_ROUTE_MAP_SOURCE,
+  HTTP_PIN_ONLY_HELP,
+  HTTP_REDACTION_HELP,
+  authorizedHttpConnections,
+  connectionSelectorLabel,
+  httpNotificationErrorShapes,
+  httpNotificationPolicyRules,
+  isHttpConfigurableType,
+  type HttpNotificationCatalog,
+} from "@/lib/core-http-notification-contract";
 import { getScriptCatalog } from "@/lib/script-client";
 import {
   SCRIPT_CONTRACT_FALLBACK_HELP,
@@ -191,6 +205,9 @@ export function ActionWizard({
   const [scriptCatalogState, setScriptCatalogState] =
     useState<ScriptNodeCatalog | null>(null);
   const scriptCatalog = scriptCatalogProp ?? scriptCatalogState;
+  const [httpCatalog, setHttpCatalog] = useState<HttpNotificationCatalog | null>(
+    null,
+  );
 
   const entry = entries.find((item) => item.type === draft.type);
   const fields = wizardConfigFields(
@@ -199,6 +216,7 @@ export function ActionWizard({
     engineCatalog,
     sshCatalog,
     scriptCatalog,
+    httpCatalog,
   );
   const targetKinds = opsConfigKindsForAction(draft.type);
   const enabledTargetKinds = (Object.entries(pins) as [OpsConfigKind, OpsConfigPin[]][])
@@ -259,6 +277,35 @@ export function ActionWizard({
   const selectedRuntimeProfile = matchingRuntimeProfiles.options.find(
     (pin) => pin.resourceId === draft.with.runtimeProfileId,
   );
+  const connectionsLoaded = pinStatus.connection !== undefined;
+  const matchingConnections = authorizedHttpConnections({
+    pins: pins.connection,
+    nodeType: isHttpConfigurableType(draft.type) ? draft.type : undefined,
+    problem: pinProblems.connection,
+    statusCode: pinStatus.connection,
+  });
+  const connectionSelectorClosed =
+    isHttpConfigurableType(draft.type) &&
+    connectionsLoaded &&
+    (matchingConnections.closed || Boolean(pinProblems.connection));
+  const recipientsLoaded = pinStatus.recipient_list !== undefined;
+  const templatesLoaded = pinStatus.message_template !== undefined;
+  const schemasLoaded = pinStatus.response_schema !== undefined;
+  const recipientSelectorClosed =
+    draft.type === "notification.email" &&
+    recipientsLoaded &&
+    ((pins.recipient_list ?? []).length === 0 || Boolean(pinProblems.recipient_list));
+  const templateSelectorClosed =
+    draft.type === "notification.email" &&
+    templatesLoaded &&
+    ((pins.message_template ?? []).length === 0 || Boolean(pinProblems.message_template));
+  const schemaSelectorClosed =
+    draft.type === "http.request" &&
+    schemasLoaded &&
+    Boolean(pinProblems.response_schema);
+  const selectedConnection = matchingConnections.options.find(
+    (pin) => pin.resourceId === draft.with.connectionId,
+  );
   const wizardContext = {
     allowedNamespaces: namespacesForWizardTarget(selectedClusterTarget),
     targetSelectorClosed,
@@ -272,6 +319,16 @@ export function ActionWizard({
     scriptCatalog,
     runtimeProfileSelectorClosed,
     runtimeProfileLanguage: runtimeProfileLanguage(selectedRuntimeProfile?.spec),
+    httpCatalog,
+    connectionSelectorClosed,
+    recipientSelectorClosed,
+    templateSelectorClosed,
+    schemaSelectorClosed,
+    connectionType:
+      typeof selectedConnection?.spec?.type === "string"
+        ? selectedConnection.spec.type
+        : null,
+    endpointPolicy: selectedConnection?.spec?.endpointPolicy ?? null,
   };
   const applyRules = applyRulesFromCatalog(engineCatalog);
   const engineErrors = engineErrorShapes(engineCatalog);
@@ -305,6 +362,12 @@ export function ActionWizard({
         return;
       }
       setScriptCatalogState(result.ok ? result.catalog : null);
+    });
+    void getHttpNotificationCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setHttpCatalog(result.ok ? result.catalog : null);
     });
     void listCredentials(identity).then((result) => {
       if (cancelled) {
@@ -520,7 +583,8 @@ export function ActionWizard({
               hideCredentialSelect={
                 isKubernetesConfigurableType(draft.type) ||
                 isSshConfigurableType(draft.type) ||
-                isScriptConfigurableType(draft.type)
+                isScriptConfigurableType(draft.type) ||
+                isHttpConfigurableType(draft.type)
               }
               onPin={choosePin}
               onCredential={(id) => {
@@ -540,6 +604,7 @@ export function ActionWizard({
               waitReadyCopy={waitReadyMessage(engineCatalog)}
               sshCatalog={sshCatalog}
               scriptCatalog={scriptCatalog}
+              httpCatalog={httpCatalog}
               sshEngineCatalog={sshEngineCatalog}
               parameterConstraints={parameterConstraints}
               profileRetrySafe={profileRetrySafe}
@@ -569,6 +634,7 @@ export function ActionWizard({
               engineCatalog={engineCatalog}
               sshCatalog={sshCatalog}
               scriptCatalog={scriptCatalog}
+              httpCatalog={httpCatalog}
               profileRetrySafe={profileRetrySafe}
               verificationDeclared={verificationDeclared}
               evaluation={evaluation ?? null}
@@ -793,7 +859,14 @@ function TargetStep({
                 problem: pinProblems[kind],
                 statusCode: pinStatus[kind],
               }).options
-            : (pins[kind] ?? []);
+            : kind === "connection" && isHttpConfigurableType(draft.type)
+              ? authorizedHttpConnections({
+                  pins: pins[kind],
+                  nodeType: draft.type,
+                  problem: pinProblems[kind],
+                  statusCode: pinStatus[kind],
+                }).options
+              : (pins[kind] ?? []);
         const selected = listed.find(
           (pin) => pin.resourceId === value || pin.versionId === value,
         );
@@ -810,6 +883,18 @@ function TargetStep({
                     ? "Published command profile"
                     : kind === "runtime_profile"
                       ? "Published runtime profile"
+                    : kind === "connection"
+                      ? draft.type === "notification.email"
+                        ? "Published SMTP connection"
+                        : draft.type === "notification.webhook"
+                          ? "Published webhook connection"
+                          : "Published HTTP connection"
+                    : kind === "recipient_list"
+                      ? "Published recipient list"
+                      : kind === "message_template"
+                        ? "Published message template"
+                        : kind === "response_schema"
+                          ? "Published response schema"
                     : kind.replaceAll("_", " ")
             }
             value={selected?.versionId ?? ""}
@@ -817,7 +902,11 @@ function TargetStep({
             problem={pinProblems[kind] ?? null}
             statusCode={pinStatus[kind]}
             optionLabel={
-              kind === "runtime_profile" ? runtimeProfileSelectorLabel : undefined
+              kind === "runtime_profile"
+                ? runtimeProfileSelectorLabel
+                : kind === "connection"
+                  ? connectionSelectorLabel
+                  : undefined
             }
             onChange={(pin) => void onPin(kind, pin)}
           />
@@ -844,6 +933,14 @@ function TargetStep({
           profile that matches this language — not an arbitrary image.{" "}
           {SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP} Secrets are never listed.{" "}
           {SCRIPT_PUBLISH_BOUNDARY_HELP}
+        </p>
+      ) : null}
+      {isHttpConfigurableType(draft.type) ? (
+        <p className="text-xs text-zinc-500">
+          Display name + id only. Connections, recipient lists, templates, and
+          response schemas are published workspace pins. There is no free-form
+          URL, recipient address, or credential field. The connection binds the
+          vault secret and requires TLS. {HTTP_PIN_ONLY_HELP}
         </p>
       ) : null}
       {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
@@ -893,6 +990,7 @@ function ConfigureStep({
   waitReadyCopy,
   sshCatalog,
   scriptCatalog,
+  httpCatalog,
   sshEngineCatalog,
   parameterConstraints,
   profileRetrySafe,
@@ -908,6 +1006,7 @@ function ConfigureStep({
   waitReadyCopy: string;
   sshCatalog: SshNodeCatalog | null;
   scriptCatalog: ScriptNodeCatalog | null;
+  httpCatalog: HttpNotificationCatalog | null;
   sshEngineCatalog: SshEngineCatalog | null;
   parameterConstraints: readonly SshParameterConstraint[];
   profileRetrySafe: boolean;
@@ -918,6 +1017,8 @@ function ConfigureStep({
   const kubernetes = isKubernetesConfigurableType(draft.type);
   const ssh = isSshConfigurableType(draft.type);
   const script = isScriptConfigurableType(draft.type);
+  const http = isHttpConfigurableType(draft.type);
+  const httpPolicy = httpNotificationPolicyRules(httpCatalog);
   const visible = fields.filter(
     (field) =>
       !field.selectorKind &&
@@ -943,7 +1044,7 @@ function ConfigureStep({
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
       </label>
-      {inferred && !kubernetes && !ssh && !script ? (
+      {inferred && !kubernetes && !ssh && !script && !http ? (
         <p className="text-xs text-zinc-500">
           Configure fields are inferred from phase/ports and the YAML schema
           until catalog <code className="font-mono">allowedWith</code> is
@@ -984,10 +1085,56 @@ function ConfigureStep({
             : SCRIPT_CONTRACT_FALLBACK_HELP}
         </p>
       ) : null}
+      {inferred && http ? (
+        <p className="text-xs text-zinc-500">
+          HTTP / notification <code className="font-mono">with</code> fields
+          prefer <code className="font-mono">GET /workflows/catalog</code>{" "}
+          <code className="font-mono">allowedWith</code>, then{" "}
+          <code className="font-mono">GET /ops-config/catalog</code>{" "}
+          <code className="font-mono">httpEngine</code> /{" "}
+          <code className="font-mono">notificationEngine</code> (
+          <code className="font-mono">{HTTP_NOTIFICATION_ROUTE_MAP_SOURCE}</code>
+          ). {httpCatalog && httpCatalog.source !== "contract-fallback"
+            ? `Using ${httpCatalog.source}.`
+            : HTTP_CONTRACT_FALLBACK_HELP}{" "}
+          {HTTP_PIN_ONLY_HELP}
+        </p>
+      ) : null}
       {isKubernetesRolloutType(draft.type) ? (
         <p className="rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-sm text-teal-950">
           {rolloutNodeDescription(engineCatalog)} {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
         </p>
+      ) : null}
+      {http ? (
+        <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-teal-950">
+            HTTP and notification constraints (fail closed)
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
+            {HTTP_NOTIFICATION_NODE_POLICY_NOTES.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-teal-950">
+            TLS required={String(httpPolicy.tlsRequired)}. Redirects default{" "}
+            {httpPolicy.allowRedirectsDefault ? "allowed" : "denied"}. Resolve
+            then allowlist={String(httpPolicy.resolveThenAllowlist)}; dial
+            verified address only=
+            {String(httpPolicy.connectVerifiedAddressOnly)}. Max request{" "}
+            {httpPolicy.maxRequestBytes} B / response {httpPolicy.maxResponseBytes}{" "}
+            B. {httpPolicy.note} {HTTP_REDACTION_HELP}
+          </p>
+          {httpNotificationErrorShapes(httpCatalog).length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
+              {httpNotificationErrorShapes(httpCatalog).slice(0, 8).map((item) => (
+                <li key={item.code}>
+                  <code className="font-mono">{item.code}</code> ({item.status}):{" "}
+                  {item.meaning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
       ) : null}
       {script ? (
         <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
@@ -1408,6 +1555,7 @@ function ReviewStep({
   engineCatalog,
   sshCatalog,
   scriptCatalog,
+  httpCatalog,
   profileRetrySafe,
   verificationDeclared,
 }: {
@@ -1424,6 +1572,7 @@ function ReviewStep({
   engineCatalog: KubernetesEngineCatalog | null;
   sshCatalog: SshNodeCatalog | null;
   scriptCatalog: ScriptNodeCatalog | null;
+  httpCatalog: HttpNotificationCatalog | null;
   profileRetrySafe: boolean;
   verificationDeclared: boolean;
 }) {
@@ -1481,6 +1630,22 @@ function ReviewStep({
             })}{" "}
             {SSH_INDETERMINATE_HELP} YAML holds target/profile UUIDs and typed
             values only.
+          </p>
+        ) : null}
+        {isHttpConfigurableType(draft.type) ? (
+          <p className="mt-2 text-xs text-zinc-600">
+            HTTP and notification actions pin authorized ops-config resources
+            only. YAML stores connectionId
+            {draft.type === "http.request"
+              ? ", method, path, timeoutSeconds, and optional responseSchemaRef"
+              : draft.type === "notification.email"
+                ? ", recipientListId, and templateId"
+                : " only"}
+            — never a URL, credential, or TLS-off flag. Delivery results are
+            redacted. Map{" "}
+            <code className="font-mono">{HTTP_NOTIFICATION_ROUTE_MAP_SOURCE}</code>
+            {httpCatalog?.source ? `; ${httpCatalog.source}` : ""}.{" "}
+            {HTTP_REDACTION_HELP}
           </p>
         ) : null}
         {isScriptConfigurableType(draft.type) ? (

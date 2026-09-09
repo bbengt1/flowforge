@@ -175,6 +175,10 @@ export type OpsConfigCatalog = {
   sshEngine?: Record<string, unknown>;
   /** Present when jonny ships E9.1+ scriptEngine catalog fields. */
   scriptEngine?: Record<string, unknown>;
+  /** Present when jonny ships E10.4 httpEngine catalog fields. */
+  httpEngine?: Record<string, unknown>;
+  /** Present when jonny ships E10.4 notificationEngine catalog fields. */
+  notificationEngine?: Record<string, unknown>;
 };
 
 export type KindDescriptor = {

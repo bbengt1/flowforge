@@ -25,6 +25,15 @@ import {
   SCRIPT_SECRET_WITH_MESSAGE,
   SCRIPT_SOURCE_REQUIRED_MESSAGE,
 } from "./script-contract.ts";
+import {
+  HTTP_CONNECTION_FAIL_CLOSED_MESSAGE,
+  HTTP_CONNECTION_REQUIRED_MESSAGE,
+  HTTP_DEFAULT_TIMEOUT_SECONDS,
+  HTTP_RECIPIENT_REQUIRED_MESSAGE,
+  HTTP_SECRET_WITH_MESSAGE,
+  HTTP_TEMPLATE_REQUIRED_MESSAGE,
+  HTTP_UNRESTRICTED_URL_MESSAGE,
+} from "./core-http-notification-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   applyTargetPin,
@@ -270,6 +279,52 @@ describe("action wizard catalog inference and recommendations", () => {
     assert.equal(scriptFields.some((field) => field.name === "inputSchema"), true);
     assert.equal(scriptFields.some((field) => field.name === "image"), false);
     assert.equal(scriptFields.some((field) => field.name === "secret"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "http.request"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "notification.webhook"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "notification.email"), true);
+    assert.equal(
+      fallbackLibrary.find((item) => item.type === "http.request")?.source,
+      "contract-fallback",
+    );
+    assert.equal(wizardNeedsTargetStep("http.request"), true);
+    assert.deepEqual(opsConfigKindsForAction("http.request"), [
+      "connection",
+      "response_schema",
+    ]);
+    assert.deepEqual(opsConfigKindsForAction("notification.email"), [
+      "connection",
+      "recipient_list",
+      "message_template",
+    ]);
+    assert.equal(
+      defaultWithForType("http.request").timeoutSeconds,
+      HTTP_DEFAULT_TIMEOUT_SECONDS,
+    );
+    const httpFields = wizardConfigFields(
+      fallbackLibrary.find((item) => item.type === "http.request"),
+      "http.request",
+    );
+    assert.equal(
+      httpFields.some((field) => field.name === "connectionId" && field.required),
+      true,
+    );
+    assert.equal(httpFields.some((field) => field.name === "method"), true);
+    assert.equal(httpFields.some((field) => field.name === "path" && field.required), true);
+    assert.equal(httpFields.some((field) => field.name === "url"), false);
+    assert.equal(httpFields.some((field) => field.name === "token"), false);
+    const emailFields = wizardConfigFields(
+      fallbackLibrary.find((item) => item.type === "notification.email"),
+      "notification.email",
+    );
+    assert.equal(
+      emailFields.some((field) => field.name === "recipientListId" && field.required),
+      true,
+    );
+    assert.equal(
+      emailFields.some((field) => field.name === "templateId" && field.required),
+      true,
+    );
+    assert.equal(emailFields.some((field) => field.name === "to"), false);
   });
 
   it("recommends compatible enabled actions from upstream port and targets", () => {
@@ -539,6 +594,74 @@ describe("action wizard insert + redaction", () => {
     assert.equal(retrySafe.ok, true);
     assert.match(result.yaml, /type: script\.python/);
     assert.match(SCRIPT_PUBLISH_BOUNDARY_HELP, /does not create an executable artifact/i);
+  });
+
+  it("inserts http.request with a pinned connection and never a URL or credential", () => {
+    const entry = palette.find((item) => item.type === "http.request")
+      ?? adaptActionLibrary(null).find((item) => item.type === "http.request");
+    const draft = emptyActionWizardDraft("http.request", "Check status");
+    draft.with = {
+      ...draft.with,
+      connectionId: "77777777-7777-4777-8777-777777777777",
+      method: "GET",
+      path: "/v1/status",
+      timeoutSeconds: 15,
+      responseSchemaRef: "88888888-8888-4888-8888-888888888888",
+      url: "https://evil.example/v1",
+      token: "sk-leaked",
+    };
+    const missing = validateWizardDraft(
+      { ...draft, with: { method: "GET", path: "/v1/status" } },
+      catalog,
+      entry,
+    );
+    assert.equal(missing.ok, false);
+    assert.ok(missing.errors.includes(HTTP_CONNECTION_REQUIRED_MESSAGE));
+
+    const closed = validateWizardDraft(draft, catalog, entry, {
+      connectionSelectorClosed: true,
+    });
+    assert.equal(closed.ok, false);
+    assert.ok(closed.errors.includes(HTTP_CONNECTION_FAIL_CLOSED_MESSAGE));
+
+    const leaked = validateWizardDraft(draft, catalog, entry);
+    assert.equal(leaked.ok, false);
+    assert.ok(leaked.errors.includes(HTTP_UNRESTRICTED_URL_MESSAGE));
+    assert.ok(leaked.errors.includes(HTTP_SECRET_WITH_MESSAGE));
+
+    const sanitized = sanitizeWizardWith(draft.with, "http.request");
+    assert.equal("url" in sanitized, false);
+    assert.equal("token" in sanitized, false);
+
+    const clean = emptyActionWizardDraft("http.request", "Check status");
+    clean.with = {
+      ...clean.with,
+      connectionId: "77777777-7777-4777-8777-777777777777",
+      method: "GET",
+      path: "/v1/status",
+      responseSchemaRef: "88888888-8888-4888-8888-888888888888",
+    };
+    const result = applyWizardToYaml(STARTER_WORKFLOW_YAML, clean, catalog, entry);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.node.type, "http.request");
+    const added = listYamlNodes(result.yaml).find((node) => node.id === result.node.id);
+    assert.equal(added?.with.connectionId, "77777777-7777-4777-8777-777777777777");
+    assert.equal(added?.with.method, "GET");
+    assert.equal(added?.with.path, "/v1/status");
+    assert.equal("url" in (added?.with ?? {}), false);
+    assert.equal("token" in (added?.with ?? {}), false);
+    assert.match(result.yaml, /type: http\.request/);
+
+    const email = emptyActionWizardDraft("notification.email", "Email ops");
+    email.with = { connectionId: "77777777-7777-4777-8777-777777777777" };
+    const emailMissing = validateWizardDraft(
+      email,
+      catalog,
+      adaptActionLibrary(null).find((item) => item.type === "notification.email"),
+    );
+    assert.equal(emailMissing.ok, false);
+    assert.ok(emailMissing.errors.includes(HTTP_RECIPIENT_REQUIRED_MESSAGE));
+    assert.ok(emailMissing.errors.includes(HTTP_TEMPLATE_REQUIRED_MESSAGE));
   });
 
   it("rejects unauthorized types and secret-shaped with values before insert", () => {

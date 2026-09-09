@@ -2,8 +2,10 @@
 
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
+import { HttpNotificationPinsPanel } from "@/components/config/HttpNotificationPinSelect";
 import { KubernetesTargetSelect } from "@/components/config/KubernetesTargetSelect";
 import { ScriptAuthoringPanel } from "@/components/workflows/ScriptAuthoringPanel";
+import { isHttpConfigurableType } from "@/lib/core-http-notification-contract";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { isKubernetesActionType } from "@/lib/kubernetes";
 import {
@@ -233,11 +235,17 @@ function CredentialHints({
   const credentialFields = [
     ...entry.requiredWith,
     ...entry.allowedWith.map((field) => field.name),
-  ].filter((name, index, all) => all.indexOf(name) === index && CREDENTIAL_KEYS.test(name));
+  ].filter(
+    (name, index, all) =>
+      all.indexOf(name) === index &&
+      CREDENTIAL_KEYS.test(name) &&
+      !isHttpConfigurableType(node.type),
+  );
   if (
     credentialFields.length === 0 &&
     !entry.policy &&
-    !isKubernetesActionType(node.type)
+    !isKubernetesActionType(node.type) &&
+    !isHttpConfigurableType(node.type)
   ) {
     return (
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -297,6 +305,18 @@ function CredentialHints({
               ? " Timeout or cancel stops waiting; it never deletes or rolls back resources."
               : ""}
           </p>
+        </div>
+      ) : null}
+      {isHttpConfigurableType(node.type) ? (
+        <div className="mt-3">
+          <HttpNotificationPinsPanel
+            type={node.type}
+            identity={identity}
+            ready={canCall}
+            values={node.with}
+            disabled={!onPatchNodeWith}
+            onPatch={(patch) => onPatchNodeWith?.(node.id, patch)}
+          />
         </div>
       ) : null}
       {credentialFields.map((field) => (

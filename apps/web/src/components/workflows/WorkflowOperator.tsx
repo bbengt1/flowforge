@@ -26,6 +26,8 @@ import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
 import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
+import { getHttpNotificationCatalog } from "@/lib/core-http-notification-client";
+import type { HttpNotificationCatalog } from "@/lib/core-http-notification-contract";
 import { getScriptArtifact, getScriptCatalog, listWorkflowScriptArtifacts } from "@/lib/script-client";
 import {
   scriptArtifactStatus,
@@ -150,6 +152,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [scriptCatalog, setScriptCatalog] = useState<ScriptNodeCatalog | null>(
     null,
   );
+  const [httpCatalog, setHttpCatalog] = useState<HttpNotificationCatalog | null>(
+    null,
+  );
   const [scriptArtifacts, setScriptArtifacts] = useState<
     Record<string, ScriptVersionPin[]>
   >({});
@@ -221,7 +226,13 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
-  const library = adaptActionLibrary(catalog, engineCatalog, sshCatalog, scriptCatalog);
+  const library = adaptActionLibrary(
+    catalog,
+    engineCatalog,
+    sshCatalog,
+    scriptCatalog,
+    httpCatalog,
+  );
   const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
   const graph = projectCanvasGraph({
     errors,
@@ -331,17 +342,19 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   async function loadCatalog() {
     setPending("catalog");
     setProblem(null);
-    const [result, engine, ssh, script] = await Promise.all([
+    const [result, engine, ssh, script, http] = await Promise.all([
       fetchWorkflowCatalog(identity),
       getKubernetesCatalog(identity).catch(() => null),
       getSshCatalog(identity).catch(() => null),
       getScriptCatalog(identity).catch(() => null),
+      getHttpNotificationCatalog(identity).catch(() => null),
     ]);
     setLastRequestId(result.requestId);
     setPending(null);
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
     setScriptCatalog(script && script.ok ? script.catalog : null);
+    setHttpCatalog(http && http.ok ? http.catalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
