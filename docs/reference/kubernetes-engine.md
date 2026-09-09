@@ -55,7 +55,7 @@ Kubernetes service accounts should receive only the minimum permissions required
 
 Apply returns resource identities, observed generation/state, and redacted diagnostics. Rollout watches recognize Deployment availability and observed generation, StatefulSet ready replicas, DaemonSet updated/available counts, and Job completion/failure. Timeout or cancellation stops waiting; it never deletes or rolls back resources.
 
-Audit events record the actor, host-embed context when present, target, policy revision, manifest digest, resource identities, dry-run/apply outcome, and correlation ID. Inputs, outputs, logs, errors, and audit details are redacted.
+Audit events record the actor, host-embed context when present, target, policy revision, manifest digest, resource identities, dry-run/apply/watch outcome, and correlation ID. Inputs, outputs, logs, errors, and audit details are redacted.
 
 ## Initial implementation layout
 
@@ -64,7 +64,7 @@ apps/api/internal/kubernetes/
   model.go catalog.go policy.go          # E7.1 control-plane
   manifest.go validator.go client.go fake.go live.go
   handle.go engine.go redact.go errors.go  # E7.2 read/apply
-  status.go                                # E7.3 rollout watch
+  status.go audit.go                       # E7.3 rollout watch + audit snapshot
 apps/api/internal/opsconfig/            # E4.2 store: cluster_target + policy kinds
 apps/api/internal/httpapi/opsconfig.go  # /cluster-targets, /policies, /kubernetes/catalog
 deploy/kubernetes/
@@ -81,4 +81,5 @@ deploy/kubernetes/
 - API tests for authorization, RFC 9457 errors, idempotency, and redaction.
 - PostgreSQL tenancy-query tests.
 - `envtest` integration for API discovery, server-side dry-run, server-side apply conflicts, and runner deployment/network-policy validation.
-- E7.2 ships fake-client coverage for dry-run, apply, ownership conflict (`Force=false`), policy/RBAC denial, and secret denial. `TODO(envtest)` remains in `fake.go` / `live.go` until CI can download kube-apiserver binaries. `wait=ready` records `observation=deferred-e7.3` and does not watch rollouts.
+- E7.2 ships fake-client coverage for dry-run, apply, ownership conflict (`Force=false`), policy/RBAC denial, and secret denial. `TODO(envtest)` remains in `fake.go` / `live.go` until CI can download kube-apiserver binaries.
+- E7.3 fulfills `wait=ready` and `kubernetes.rolloutStatus`: bounded Deployment/StatefulSet/DaemonSet/Job watches, timeout/cancel (never delete or rollback), redacted progress, and secret-free audit snapshots. Fake-client coverage includes rollout success/failure, timeout, cancel, and watch policy/RBAC denial.

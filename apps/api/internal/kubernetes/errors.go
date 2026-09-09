@@ -24,6 +24,8 @@ const (
 	CodeReadFailed         = "read-failed"
 	CodePermissionDenied   = "forbidden"
 	CodeTimeout            = "timeout"
+	CodeCanceled           = "canceled"
+	CodeRolloutFailed      = "rollout-failed"
 	CodeMissingClient      = "missing-client"
 	CodeHandleForbidden    = "handle-forbidden"
 	CodeClusterUnreachable = "cluster-unreachable"
@@ -41,8 +43,18 @@ const MaxTimeoutSeconds = 3600
 // MaxManifestBytes caps YAML submitted to apply.
 const MaxManifestBytes = 64 << 10
 
-// ObservationDeferred is returned when wait=ready (full watch is E7.3).
-const ObservationDeferred = "deferred-e7.3"
+// Observation states returned on result.observation / status.observation.
+const (
+	ObservationReady       = "ready"
+	ObservationFailed      = "failed"
+	ObservationTimeout     = "timeout"
+	ObservationCanceled    = "canceled"
+	ObservationSkipped     = "skipped"
+	ObservationProgressing = "progressing"
+)
+
+// WaitReadyObserved is the catalog signal that wait=ready performs a bounded watch.
+const WaitReadyObserved = "observed"
 
 // EngineError is a secret-free failure returned to jobs and tests.
 type EngineError struct {

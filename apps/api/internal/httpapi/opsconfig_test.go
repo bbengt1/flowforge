@@ -467,8 +467,11 @@ func TestClusterTargetKubernetesPolicyHardening(t *testing.T) {
 		if cat.CredentialType != kubernetes.CredentialType || cat.ClusterRoles || len(cat.AllowedKinds) == 0 {
 			t.Fatalf("engine catalog = %+v", cat)
 		}
-		if len(cat.Nodes) < 3 || cat.Apply.FieldManager != kubernetes.FieldManager || cat.Apply.Force {
+		if len(cat.Nodes) < 4 || cat.Apply.FieldManager != kubernetes.FieldManager || cat.Apply.Force {
 			t.Fatalf("e72 catalog = %+v", cat)
+		}
+		if cat.Apply.WaitReady != kubernetes.WaitReadyObserved || cat.Observation.Verb != "watch" {
+			t.Fatalf("e73 observation = %+v", cat.Observation)
 		}
 	})
 }

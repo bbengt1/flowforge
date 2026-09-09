@@ -106,6 +106,14 @@ func ValidatePolicy(in ValidationInput) *EngineError {
 			return engineError(CodeKindDenied, "resource kind is not allowed by policy", http.StatusForbidden)
 		}
 	}
+	if verb == "watch" {
+		if !ObservableKind(in.Kind) {
+			return engineError(CodeKindDenied, "rollout observation is limited to Deployment, StatefulSet, DaemonSet, and Job", http.StatusForbidden)
+		}
+		if in.Policy.KindsPresent && !Allowed(in.Policy.Kinds, in.Kind) {
+			return engineError(CodeKindDenied, "resource kind is not allowed by policy", http.StatusForbidden)
+		}
+	}
 	return nil
 }
 

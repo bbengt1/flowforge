@@ -115,6 +115,12 @@ func (c *LiveClient) Get(ctx context.Context, kind, namespace, name string) (Uns
 	return c.do(ctx, http.MethodGet, path, "", nil)
 }
 
+func (c *LiveClient) Watch(ctx context.Context, kind, namespace, name string) (Unstructured, error) {
+	// Observation polls GET. FlowForge policy still requires the watch verb;
+	// the namespace Role grants get+watch on status subresources.
+	return c.Get(ctx, kind, namespace, name)
+}
+
 func (c *LiveClient) List(ctx context.Context, kind, namespace string, _ ListOptions) ([]Unstructured, error) {
 	path, perr := collectionURL(kind, namespace)
 	if perr != nil {

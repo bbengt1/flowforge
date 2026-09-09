@@ -24,6 +24,11 @@ type FakeClient struct {
 	DryRuns int
 	// Applies counts successful persistent applies.
 	Applies int
+	// Watches counts watch-verb fetches used for rollout observation.
+	Watches int
+	// ReadyAfterApply injects a ready status after a persistent apply so
+	// wait=ready tests can succeed without a controller.
+	ReadyAfterApply bool
 }
 
 type fakeObject struct {
@@ -120,11 +125,32 @@ func (f *FakeClient) Apply(ctx context.Context, obj Unstructured, opts ApplyOpti
 	if stored.obj != nil {
 		applied = mergeUnstructured(stored.obj, applied)
 	}
+	if f.ReadyAfterApply {
+		applied = withReadyStatus(applied)
+	}
 	stored.obj = applied
 	stored.managers[manager] = union(stored.managers[manager], paths)
 	f.objects[id] = stored
 	f.Applies++
 	return cloneUnstructured(applied), nil
+}
+
+// SetStatus replaces status on a seeded/applied object without changing ownership.
+func (f *FakeClient) SetStatus(kind, namespace, name string, status map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	obj, ok := f.objects[keyFor(kind, namespace, name)]
+	if !ok || obj == nil {
+		return
+	}
+	obj.obj["status"] = convertYAML(status)
+}
+
+func (f *FakeClient) Has(kind, namespace, name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.objects[keyFor(kind, namespace, name)]
+	return ok
 }
 
 func (f *FakeClient) Get(_ context.Context, kind, namespace, name string) (Unstructured, error) {
@@ -140,6 +166,32 @@ func (f *FakeClient) Get(_ context.Context, kind, namespace, name string) (Unstr
 		return nil, engineError(CodeReadFailed, "resource not found", http.StatusNotFound)
 	}
 	return cloneUnstructured(obj.obj), nil
+}
+
+func (f *FakeClient) Watch(ctx context.Context, kind, namespace, name string) (Unstructured, error) {
+	if err := ctx.Err(); err != nil {
+		if ee := observationContextError(ctx); ee != nil {
+			return nil, ee
+		}
+		return nil, engineError(CodeTimeout, "context canceled", http.StatusRequestTimeout)
+	}
+	if f.Deny != nil {
+		if err := f.Deny("watch", kind, namespace, name); err != nil {
+			return nil, err
+		}
+	}
+	f.mu.Lock()
+	f.Watches++
+	obj, ok := f.objects[keyFor(kind, namespace, name)]
+	var cloned Unstructured
+	if ok {
+		cloned = cloneUnstructured(obj.obj)
+	}
+	f.mu.Unlock()
+	if !ok {
+		return nil, engineError(CodeReadFailed, "resource not found", http.StatusNotFound)
+	}
+	return cloned, nil
 }
 
 func (f *FakeClient) List(_ context.Context, kind, namespace string, _ ListOptions) ([]Unstructured, error) {

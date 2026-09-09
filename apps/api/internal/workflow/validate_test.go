@@ -208,6 +208,31 @@ spec:
 		assertHasCode(t, errs, CodeMissingField)
 	})
 
+	t.Run("rolloutStatus kind must be observable", func(t *testing.T) {
+		src := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: watch-cm
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: watch
+      type: kubernetes.rolloutStatus
+      name: Watch config
+      with:
+        clusterTargetId: 11111111-1111-4111-8111-111111111111
+        namespace: cp-ops-nprd
+        kind: ConfigMap
+        name: cfg
+  edges: []
+`
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeInvalidWith)
+	})
+
 	t.Run("secret manifest", func(t *testing.T) {
 		src := `
 apiVersion: flowforge/v1

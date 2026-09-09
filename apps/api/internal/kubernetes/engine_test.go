@@ -56,13 +56,19 @@ func TestApplyDryRunThenPersist(t *testing.T) {
 	}
 }
 
-func TestApplyWaitReadyIsDeferred(t *testing.T) {
+func TestApplyWaitReadySkipsNonObservable(t *testing.T) {
 	fake := NewFakeClient()
 	req := baseApplyReq(fake)
 	req.Wait = "ready"
 	res := Execute(context.Background(), req)
-	if !res.OK || res.Observation != ObservationDeferred {
-		t.Fatalf("wait ready: %+v", res)
+	if !res.OK || res.Observation != ObservationSkipped {
+		t.Fatalf("wait ready configmap: %+v", res)
+	}
+	if fake.Watches != 0 {
+		t.Fatalf("watched non-observable kind: %d", fake.Watches)
+	}
+	if res.Audit["watch"] != ObservationSkipped || res.Audit["applied"] != true {
+		t.Fatalf("audit = %+v", res.Audit)
 	}
 }
 

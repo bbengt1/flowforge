@@ -206,7 +206,7 @@ Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding f
 
 ## Kubernetes target and policy management (E7.1)
 
-Control-plane hardening on the existing E4.2 collections. E7.2 adds the apply/get/list engine; `kubernetes.rolloutStatus` bounded watch remains E7.3.
+Control-plane hardening on the existing E4.2 collections. E7.2 adds the apply/get/list engine. E7.3 fulfills `kubernetes.rolloutStatus` and `wait=ready` bounded watch.
 
 **UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`kubernetesEngine`) or `GET /kubernetes/catalog` for allowlists, evaluation-key aliases, and service-account template paths. Cluster-target credential pickers must list only workspace `type=kubernetes` credentials (secret field `kubeconfig`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/kubernetes/catalog` the same way as ops-config. Do not rewrite `apps/web` in this API story.
 
@@ -228,7 +228,7 @@ Engine path for `kubernetes.apply`, `kubernetes.get`, and `kubernetes.list`. No 
 
 ### Node contracts
 
-Shared fields: `clusterTargetId` (UUID), `namespace` (DNS-1123), `dryRun` (`client`|`server`), `wait` (`none`|`ready`), `timeoutSeconds` (1–3600, default 60), optional `fieldManager` (`flowforge` only), optional `policyId` (UUID). `client` dry-run adds local validation and **never** replaces the mandatory server-side dry-run on apply. `wait=ready` is accepted; observation is `deferred-e7.3` (no rolloutStatus claim).
+Shared fields: `clusterTargetId` (UUID), `namespace` (DNS-1123), `dryRun` (`client`|`server`), `wait` (`none`|`ready`), `timeoutSeconds` (1–3600, default 60), optional `fieldManager` (`flowforge` only), optional `policyId` (UUID). `client` dry-run adds local validation and **never** replaces the mandatory server-side dry-run on apply. `wait=ready` performs a bounded watch of observable kinds (see E7.3).
 
 | Node | Extra `with` | Verb | Permissions | Outputs |
 | --- | --- | --- | --- | --- |
@@ -256,7 +256,65 @@ Success `result`: `{ok, operation, clusterTargetId, namespace, manifestDigest?, 
 
 Job binding still includes workspace, workflow version, cluster target, policy revision, correlation ID, and normalized-manifest SHA-256. Workers revalidate policy before cluster contact.
 
-Out of scope: E7.3 `kubernetes.rolloutStatus` watch, `apps/web` rewrite, SSH/script engines.
+Out of scope for E7.2: E7.3 `kubernetes.rolloutStatus` watch (now below), `apps/web` rewrite, SSH/script engines.
+
+## Kubernetes rollout observation and audit (E7.3)
+
+Bounded watch for `kubernetes.apply` when `wait=ready` and the dedicated `kubernetes.rolloutStatus` node. No new browser routes. `GET /kubernetes/catalog` adds `observation` (`waitReady=observed`, states, kinds, `verb=watch`, cancel/timeout = `stop-wait`, `neverDeletesOrRollsBack=true`) plus the `kubernetes.rolloutStatus` node. The live workflow catalog is `GET /workflows/catalog`.
+
+**UI route map (Chloe):** do **not** stack on another feature branch and do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Wizard/library should read `allowedWith` / `observation` from `GET /kubernetes/catalog` and `GET /workflows/catalog`. Keep #72 open until rollout-status UI surfaces land.
+
+Suggested UI flow:
+
+1. Author `kubernetes.apply` with `wait=ready` (or a following `kubernetes.rolloutStatus` node).
+2. Show `result.observation` and `result.status.progress[]` counters. Treat timeout/cancel as “stopped waiting” — never offer delete/rollback.
+3. Render `result.audit` (or the matching `audit_events` row) as the secret-free snapshot: actor, target, policy revision, manifest digest, resource identities, dry-run/apply/watch outcome, correlation ID.
+4. On `error.code` `timeout` / `canceled` / `rollout-failed`, keep the applied identities visible; the cluster objects remain.
+
+### Node contracts
+
+Shared fields match E7.2. `kubernetes.rolloutStatus` extra identity: `kind` + `name`, or `resource` `{kind,name}`, or a wired `resource` input. Observable kinds only: Deployment, StatefulSet, DaemonSet, Job. Verb is `watch` (E7.1 allowlist). Cancel/timeout stop the wait and **never** delete or roll back.
+
+| Node | Extra `with` | Verb | Permissions | Outputs |
+| --- | --- | --- | --- | --- |
+| `kubernetes.apply` (`wait=ready`) | `manifests` | `apply` then `watch` | `workflow.execute`, `kubernetes.apply`, `clusterTarget.use` (watch also requires policy `watch`) | `result`, `resources`, `status` |
+| `kubernetes.rolloutStatus` | `kind`+`name` or `resource` | `watch` | `workflow.execute`, `kubernetes.read`, `clusterTarget.use` | `result`, `status` |
+
+Non-observable apply kinds (ConfigMap, Service, CronJob, Ingress, NetworkPolicy) with `wait=ready` return `observation=skipped` and do not require `watch`.
+
+### Observation states
+
+| `result.observation` | Meaning |
+| --- | --- |
+| `ready` | Watched object reached the kind’s ready condition (see below). |
+| `failed` | Job `Failed=True` or Deployment `Progressing` `ProgressDeadlineExceeded`. |
+| `timeout` | `timeoutSeconds` elapsed. Resources left in place. |
+| `canceled` | Caller/context canceled. Resources left in place. |
+| `skipped` | Kind is not observable, or apply `wait=ready` had no watchable docs. |
+| `progressing` | Intermediate poll state only; not a terminal result. |
+
+Ready conditions (secret-free counters on `status.progress[]`):
+
+- **Deployment:** `observedGeneration >= generation`, `updated/ready/availableReplicas == spec.replicas`, `unavailableReplicas == 0`, `Available=True` when present.
+- **StatefulSet:** `readyReplicas == spec.replicas` (and `updatedReplicas` when reported).
+- **DaemonSet:** `updatedNumberScheduled` and `numberAvailable` equal `desiredNumberScheduled`.
+- **Job:** `Complete=True` or `succeeded >= completions`; `Failed=True` is `failed`.
+
+`status.progress[]` fields: `kind`, `namespace`, `name`, `generation`, `observedGeneration`, replica/job counters, `state`, `reason`. No raw object dump, Secret data, or kubeconfig.
+
+### Result / audit / error shapes
+
+Success `result` extends E7.2 with `observation` (`ready`/`skipped`/…), `status.progress[]`, and `audit`. `audit` (and the persistable snapshot) is secret-free: `actorId`, `operation`, `clusterTargetId`, `namespace`, `policyRevision`, `policyDigest`, `manifestDigest`, `resources[]`, `serverDryRun`, `applied`, `watch`, `observation`, `correlationId`, `outcome`, optional `errorCode`.
+
+| `error.code` | HTTP-ish | When |
+| --- | --- | --- |
+| (E7.2 codes unchanged) | | |
+| `timeout` | 408 | Bounded watch elapsed. No delete/rollback. |
+| `canceled` | 408 | Observation canceled. No delete/rollback. |
+| `rollout-failed` | 409 | Deployment deadline exceeded or Job failed. No delete/rollback. |
+| `verb-denied` / `rbac-denied` | 403 | Policy or Kubernetes RBAC denied `watch`. |
+
+Out of scope: `apps/web` rewrite, deletion, rollback, force apply, SSH/script engines.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 
@@ -272,7 +330,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 

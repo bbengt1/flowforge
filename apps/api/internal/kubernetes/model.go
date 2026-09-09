@@ -1,6 +1,6 @@
-// Package kubernetes is the control-plane model and E7.2 read/apply engine
-// for cluster targets and Kubernetes policy. Workers consume scoped
-// credential handles and never serialize kubeconfig.
+// Package kubernetes is the control-plane model and Kubernetes engine
+// for cluster targets, policy, read/apply, and bounded rollout observation.
+// Workers consume scoped credential handles and never serialize kubeconfig.
 package kubernetes
 
 import (
@@ -45,6 +45,9 @@ var AllowedKinds = []string{
 	"NetworkPolicy",
 }
 
+// ObservableKinds are the only kinds kubernetes.rolloutStatus / wait=ready watch.
+var ObservableKinds = []string{"Deployment", "StatefulSet", "DaemonSet", "Job"}
+
 var (
 	dns1123LabelRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 	kindRE         = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
@@ -70,6 +73,11 @@ func ValidKind(kind string) bool {
 // KindAllowed reports whether kind is on the engine allowlist.
 func KindAllowed(kind string) bool {
 	return containsFold(AllowedKinds, kind)
+}
+
+// ObservableKind reports whether kind supports bounded rollout observation.
+func ObservableKind(kind string) bool {
+	return containsFold(ObservableKinds, kind)
 }
 
 // VerbAllowed reports whether verb is an engine verb.
