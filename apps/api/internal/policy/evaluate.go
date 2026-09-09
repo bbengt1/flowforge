@@ -394,8 +394,10 @@ func operationVerb(op string) string {
 	switch op {
 	case "kubernetes.apply":
 		return "apply"
-	case "kubernetes.get", "kubernetes.rolloutStatus":
+	case "kubernetes.get":
 		return "get"
+	case "kubernetes.rolloutStatus":
+		return "watch"
 	case "kubernetes.list":
 		return "list"
 	case "ssh.run":

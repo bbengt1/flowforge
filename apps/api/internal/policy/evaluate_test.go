@@ -178,6 +178,62 @@ func TestEvaluateTargetNamespaceAllowlist(t *testing.T) {
 	}
 }
 
+func TestEvaluateRolloutStatusUsesWatchVerb(t *testing.T) {
+	policyID := "44444444-4444-4444-8444-444444444444"
+	targetID := "11111111-1111-4111-8111-111111111111"
+	yamlDoc := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: wait-rollout
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: wait
+      type: kubernetes.rolloutStatus
+      name: Wait
+      with:
+        clusterTargetId: ` + targetID + `
+        namespace: prod
+        resource:
+          kind: Deployment
+          name: api
+  edges: []
+`
+	pins := func(verbs []string) []opsconfig.Pin {
+		return []opsconfig.Pin{
+			{
+				Kind: opsconfig.KindClusterTarget, ResourceID: targetID,
+				VersionID: "22222222-2222-4222-8222-222222222222", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("b", 64),
+				Spec: map[string]any{"policyId": policyID, "credentialId": "33333333-3333-4333-8333-333333333333", "endpoint": map[string]any{"apiServer": "https://kube.example"}},
+			},
+			{
+				Kind: opsconfig.KindPolicy, ResourceID: policyID,
+				VersionID: "55555555-5555-4555-8555-555555555555", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("c", 64),
+				Spec: map[string]any{"kind": "kubernetes", "policy": map[string]any{
+					"allowedNamespaces": []string{"prod"},
+					"allowedVerbs":      verbs,
+				}},
+			},
+		}
+	}
+	denied, err := Evaluate(Input{YAML: yamlDoc, Pins: pins([]string{"get"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.Decision != DecisionDeny {
+		t.Fatalf("get must not grant rolloutStatus, got %+v", denied)
+	}
+	allowed, err := Evaluate(Input{YAML: yamlDoc, Pins: pins([]string{"watch"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed.Decision != DecisionAllow {
+		t.Fatalf("watch must allow rolloutStatus, got %+v", allowed)
+	}
+}
+
 func TestEvaluateVerbAllowlist(t *testing.T) {
 	policyID := "44444444-4444-4444-8444-444444444444"
 	targetID := "11111111-1111-4111-8111-111111111111"
