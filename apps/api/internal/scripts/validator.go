@@ -48,7 +48,13 @@ func ValidatePublishInput(in PublishInput) error {
 	if err := ValidateDeclaredSchema(in.InputSchema, "inputSchema"); err != nil {
 		return err
 	}
+	if err := RequireObjectRoot(in.InputSchema, "inputSchema"); err != nil {
+		return err
+	}
 	if err := ValidateDeclaredSchema(in.OutputSchema, "outputSchema"); err != nil {
+		return err
+	}
+	if err := RequireObjectRoot(in.OutputSchema, "outputSchema"); err != nil {
 		return err
 	}
 	if err := ValidateRetryDeclaration(in.RetryWith); err != nil {
@@ -73,6 +79,22 @@ func ValidateDeclaredSchema(schema map[string]any, path string) error {
 		return nil
 	}
 	return validateSchemaShape(schema, path, 0)
+}
+
+// RequireObjectRoot keeps persisted I/O aligned with the result/input object ports.
+func RequireObjectRoot(schema map[string]any, path string) error {
+	if schema == nil {
+		return nil
+	}
+	raw, ok := schema["type"]
+	if !ok || raw == nil {
+		return nil
+	}
+	s, ok := raw.(string)
+	if !ok || s != "object" {
+		return &EngineError{Code: CodeInvalidSchema, Message: path + " type must be object.", Status: http.StatusBadRequest, Path: path}
+	}
+	return nil
 }
 
 func validateSchemaShape(schema map[string]any, path string, depth int) error {

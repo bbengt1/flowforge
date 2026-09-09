@@ -512,7 +512,7 @@ Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRI
 | `memoryMiB` | no | integer | 32–2048. Must not exceed the pinned profile. |
 | `cpuMillis` | no | integer | 1–8000. Must not exceed the pinned profile. |
 | `processes` | no | integer | 1–256. Must not exceed the pinned profile. |
-| `inputSchema` / `outputSchema` | no | object | Documented JSON Schema subset. Shape validated at publish; values validated at execute (16 KiB, no secrets). |
+| `inputSchema` / `outputSchema` | no | object | Documented JSON Schema subset. Root `type` must be `object` (matches the input/result ports). Shape validated at publish; values validated at execute (16 KiB, no secrets). |
 | `retrySafe` | no | boolean | Default `false`. When `true`, `idempotencyKey` and `verification` are required. |
 | `idempotencyKey` | when `retrySafe` | string | 1–128 identifier. Required with verification to mark the node retry-safe. |
 | `verification` | when `retrySafe` | object | Idempotent `declared-hook`. `behavior`, optional `expect`, `onMatch` / `onMismatch` / `onError`. |
@@ -610,7 +610,7 @@ Workers still claim an E5.2 job and call `scripts.Execute`. No new browser route
 1. Validate execution `input` against the declared `inputSchema` and the 16 KiB size limit **before** inject. Reject secret keys/values in persisted input and in YAML (already fail-closed at publish).
 2. Inject only scoped short-lived handles (`{id,credentialId?,workspaceId?,scopes,expiresAt}`). Plaintext credentials never enter env, logs, job JSON, or audit details. Handle TTL default 60s, max 5m.
 3. Runtime env is an allowlist only: `FLOWFORGE_CORRELATION_ID`, `FLOWFORGE_LANGUAGE`, `FLOWFORGE_ENTRYPOINT`, `FLOWFORGE_ARTIFACT_DIGEST`, `FLOWFORGE_RUNTIME_PROFILE_ID`, `FLOWFORGE_HANDLE_IDS`, `FLOWFORGE_IDEMPOTENCY_KEY`. `AWS_*` / `KUBECONFIG` / `DOCKER_*` / secret-named keys are `env-denied`.
-4. Validate runner output against `outputSchema` and the 16 KiB cap. Redact token-shaped strings before persist/audit. Irredactable secrets fail closed.
+4. Validate runner output against `outputSchema` and the 16 KiB cap. Root `outputSchema.type` must be `object` (publish and execute reject `array` / `string` / other roots). The persisted result is that validated object — never rewritten as `{"value": parsed}`. Nil schema still uses a persist envelope (`stdout`) for non-JSON. Redact token-shaped strings before persist/audit. Irredactable secrets fail closed.
 
 ### Retry / lease-loss contract
 
@@ -628,7 +628,7 @@ Default retries are **zero**. A node is retry-safe only when it declares `retryS
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `behavior` | `declared-hook` | Only allowed value |
+| `behavior` | required | Must be the string `declared-hook`. Missing / non-string / empty is `invalid-verification`. |
 | `expect` | omitted | Optional prior-output subset to match |
 | `onMatch` | `already-applied` | Do **not** re-run; treat as success |
 | `onMismatch` | `safe-to-retry` | One more mutating attempt is allowed |

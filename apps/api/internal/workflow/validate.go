@@ -497,6 +497,9 @@ func validateScriptNode(n Node, path string) ErrorList {
 			continue
 		}
 		errs = append(errs, ValidateDeclaredSchema(schema, path+".with."+key)...)
+		if err := scripts.RequireObjectRoot(schema, key); err != nil {
+			errs = append(errs, scriptsAsField(err, path+".with."+key, n.pos.Line, n.pos.Column))
+		}
 	}
 	if err := scripts.ValidateRetryDeclaration(n.With); err != nil {
 		errs = append(errs, scriptsAsField(err, path+".with", n.pos.Line, n.pos.Column))
