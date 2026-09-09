@@ -123,6 +123,7 @@ export function pinFromSummary(item: OpsConfigSummary): OpsConfigPin | null {
     digest: item.latestVersionDigest ?? "",
     name: item.name,
     slug: item.slug,
+    spec: item.spec,
   };
 }
 
@@ -316,6 +317,7 @@ export function parseOpsConfigSummary(raw: unknown): OpsConfigSummary | null {
     credentialId: readString(row.credentialId, row.credential_id),
     policyId: readString(row.policyId, row.policy_id),
     updatedAt: readString(row.updatedAt, row.updated_at),
+    spec: row.spec ? sanitizeSpec(row.spec) : undefined,
   };
 }
 

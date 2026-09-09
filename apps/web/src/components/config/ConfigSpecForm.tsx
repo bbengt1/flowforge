@@ -6,6 +6,7 @@ import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { KubernetesPolicyForm } from "@/components/config/KubernetesPolicyForm";
 import { PolicyRefSelect } from "@/components/config/PolicyRefSelect";
+import { RuntimeProfileForm } from "@/components/config/RuntimeProfileForm";
 import { SshTargetForm } from "@/components/config/SshTargetForm";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
@@ -22,10 +23,11 @@ import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
   CONNECTION_TYPES,
   POLICY_KINDS,
-  RUNTIME_LANGUAGES,
   type OpsConfigKind,
   type OpsConfigSpec,
 } from "@/lib/ops-config-types";
+import { getScriptRuntimeMap } from "@/lib/script-runtime-client";
+import type { ScriptRuntimeProfileMap } from "@/lib/script-runtime-contract";
 import { parseSshEngineCatalog } from "@/lib/ssh";
 import type { SshEngineCatalog } from "@/lib/ssh-types";
 
@@ -50,6 +52,9 @@ export function ConfigSpecForm({
     "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
   const [engine, setEngine] = useState<KubernetesEngineCatalog | null>(null);
   const [sshEngine, setSshEngine] = useState<SshEngineCatalog | null>(null);
+  const [runtimeMap, setRuntimeMap] = useState<ScriptRuntimeProfileMap | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!ready || (kind !== "cluster_target" && kind !== "policy")) {
@@ -91,12 +96,27 @@ export function ConfigSpecForm({
     };
   }, [identity, kind, ready]);
 
+  useEffect(() => {
+    if (!ready || kind !== "runtime_profile") {
+      return;
+    }
+    let cancelled = false;
+    void getScriptRuntimeMap(identity).then((result) => {
+      if (cancelled || !result.ok) {
+        return;
+      }
+      setRuntimeMap(result.map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity, kind, ready]);
+
   function patch(partial: Partial<OpsConfigSpec>) {
     onChange({ ...spec, ...partial });
   }
 
   const endpoint = spec.endpoint ?? {};
-  const limits = spec.limits ?? {};
   const endpointPolicy = asRecord(spec.endpointPolicy);
   const recipientPolicy = asRecord(spec.recipientPolicy);
   const serviceAccount = spec.serviceAccount ?? {};
@@ -231,83 +251,12 @@ export function ConfigSpecForm({
       ) : null}
 
       {kind === "runtime_profile" ? (
-        <>
-          <label className="text-sm">
-            <span className="font-medium">Language</span>
-            <select
-              value={spec.language ?? "python"}
-              disabled={readOnly}
-              onChange={(event) => patch({ language: event.target.value })}
-              className={inputClass}
-            >
-              {RUNTIME_LANGUAGES.map((language) => (
-                <option key={language} value={language}>
-                  {language}
-                </option>
-              ))}
-            </select>
-          </label>
-          <TextField
-            label="Image digest"
-            value={spec.imageDigest ?? ""}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(imageDigest) => patch({ imageDigest })}
-          />
-          <TextField
-            label="Dependency lock digest"
-            value={spec.dependencyLockDigest ?? ""}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(dependencyLockDigest) => patch({ dependencyLockDigest })}
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <TextField
-              label="CPU millis"
-              value={String(limits.cpuMillis ?? 500)}
-              disabled={readOnly}
-              className={inputClass}
-              onChange={(value) =>
-                patch({
-                  limits: { ...limits, cpuMillis: Number(value) || 500 },
-                })
-              }
-            />
-            <TextField
-              label="Memory MiB"
-              value={String(limits.memoryMib ?? 256)}
-              disabled={readOnly}
-              className={inputClass}
-              onChange={(value) =>
-                patch({
-                  limits: { ...limits, memoryMib: Number(value) || 256 },
-                })
-              }
-            />
-            <TextField
-              label="Timeout seconds"
-              value={String(limits.timeoutSeconds ?? 30)}
-              disabled={readOnly}
-              className={inputClass}
-              onChange={(value) =>
-                patch({
-                  limits: { ...limits, timeoutSeconds: Number(value) || 30 },
-                })
-              }
-            />
-            <TextField
-              label="Processes"
-              value={String(limits.processes ?? 1)}
-              disabled={readOnly}
-              className={inputClass}
-              onChange={(value) =>
-                patch({
-                  limits: { ...limits, processes: Number(value) || 1 },
-                })
-              }
-            />
-          </div>
-        </>
+        <RuntimeProfileForm
+          spec={spec}
+          readOnly={readOnly}
+          map={runtimeMap}
+          onChange={onChange}
+        />
       ) : null}
 
       {kind === "connection" ? (

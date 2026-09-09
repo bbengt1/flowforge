@@ -243,6 +243,16 @@ E9.1 (Chloe UI) wires jonny's **#97** map on `main` (`e91-#97`). `apps/api` is u
 - **Fail closed:** HTTP 403 empties the runtime-profile selector. Host-supplied `id` / `workspaceId` is 400 UX.
 - **Unchanged:** `apps/api` untouched in the Chloe UI PR. No extra routes beyond #97.
 
+## E9.2 isolated script runner runtime-profile UI
+
+E9.2 (Chloe UI) authors and selects isolation-safe script runtime profiles. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-runtime-contract.ts` plus `script-runtime-client.ts`. Jonny's isolated-runner map is **not** on `main` yet — the adapter is marked `e92-contract-fallback`. Prefer existing ops-config `/runtime-profiles` draft/publish/select verbs plus `GET /scripts/catalog` (or `GET /ops-config/catalog` `scriptEngine`) isolation/runtimeProfile hooks. Do not invent routes. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #93 / Part of #91 — **Keep #93 open** (jonny owns runner isolation).
+
+- **`/config/runtime-profiles`:** language `python`/`go`, digest-pinned `imageDigest` + `dependencyLockDigest` (`sha256:<64 hex>`), `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`. Publish uses the E4.2 draft/publish/versions verbs. Mutable tags and unknown spec keys are rejected.
+- **Fail-closed surfaces:** no arbitrary base image, Dockerfile, package-install toggle, Docker socket, metadata, or privilege-escalation controls. Isolation is server-enforced copy: non-root, read-only root FS, dropped capabilities, `no_new_privs`, default-deny egress.
+- **Egress:** destination/port/DNS allowlists render only when the catalog sets `runtimeProfile.egressExposed` (or lists `egress` in allowed spec). Until jonny's map lands they stay hidden and are never sent.
+- **Authoring / wizard:** `script.python` / `script.go` only list published profiles whose language matches the node. HTTP 403 empties the selector. Labels show language + display name + version.
+- **Unchanged:** E9.1 script source/publish; no `/scripts/*` additions; `apps/api` untouched.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

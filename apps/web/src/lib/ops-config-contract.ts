@@ -20,6 +20,10 @@ import type {
 } from "./ops-config-types.ts";
 import { OPS_CONFIG_KINDS } from "./ops-config-types.ts";
 import { emptyCommandProfileSpec } from "./ssh-contract.ts";
+import {
+  emptyRuntimeProfileSpec,
+  pickRuntimeProfileSpec,
+} from "./script-runtime-contract.ts";
 
 export const OPS_CONFIG_STORY = 36;
 export const OPS_CONFIG_EPIC = 34;
@@ -81,7 +85,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.runtime_profile,
     group: "profiles",
     title: "Runtime profiles",
-    summary: "Pinned script runtime image and lock digests. No mutable tags.",
+    summary:
+      "Digest-pinned script runtime image and dependency lock. Language python/go only. Isolation is server-enforced — no arbitrary images or package-install toggles.",
     yamlRef: "runtimeProfileId",
   },
   {
@@ -230,17 +235,7 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
     case "command_profile":
       return emptyCommandProfileSpec();
     case "runtime_profile":
-      return {
-        language: "python",
-        imageDigest: "",
-        dependencyLockDigest: "",
-        limits: {
-          cpuMillis: 500,
-          memoryMib: 256,
-          timeoutSeconds: 30,
-          processes: 1,
-        },
-      };
+      return emptyRuntimeProfileSpec();
     case "connection":
       return {
         type: "http",
@@ -362,6 +357,7 @@ const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "imageDigest",
   "dependencyLockDigest",
   "limits",
+  "egress",
   "type",
   "endpointPolicy",
   "recipientPolicy",
@@ -380,6 +376,9 @@ export function pickSafeSpec(
   spec: OpsConfigSpec,
   kind?: OpsConfigKind,
 ): OpsConfigSpec {
+  if (kind === "runtime_profile") {
+    return pickRuntimeProfileSpec(spec);
+  }
   const out: OpsConfigSpec = {};
   for (const key of SPEC_KEYS) {
     const value = spec[key];
