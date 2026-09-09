@@ -53,6 +53,12 @@ describe("embed client", () => {
             id: "sess-embed",
             idle_expires_at: "2026-09-09T21:00:00.000Z",
             absolute_expires_at: "2026-09-10T07:00:00.000Z",
+            embed: {
+              tenantId: "ten-1",
+              workbenchKey: "ops",
+              workspaceId: "ws-1",
+              capabilities: ["workflow.view"],
+            },
           },
           principal: {
             issuer: "https://portal.example.test",
@@ -117,6 +123,7 @@ describe("embed client", () => {
     assert.equal(verified?.source, "flowforge");
     assert.equal(verified?.tenantId, "ten-1");
     assert.equal(verified?.workbenchKey, "ops");
+    assert.deepEqual(verified?.capabilities, ["workflow.view"]);
   });
 
   it("rejects a non-JWS locally and never fetches", async () => {

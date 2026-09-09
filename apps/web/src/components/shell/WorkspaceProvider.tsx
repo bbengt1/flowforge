@@ -19,6 +19,7 @@ import {
   subscribeEmbedVerified,
 } from "@/lib/embed-tenancy-client";
 import {
+  capEmbedPermissions,
   identityMatchesVerified,
   workspaceMatchesVerified,
 } from "@/lib/embed-tenancy-contract";
@@ -155,7 +156,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       identity,
       ready,
-      permissions: ready && !tenancyMismatch ? permissions : null,
+      permissions:
+        ready && !tenancyMismatch
+          ? embed && verified
+            ? capEmbedPermissions(permissions, verified.capabilities)
+            : permissions
+          : null,
       roles: ready && !tenancyMismatch ? current?.roles ?? [] : [],
       current: ready && !tenancyMismatch ? current : null,
       memberships: ready && !tenancyMismatch ? memberships : [],

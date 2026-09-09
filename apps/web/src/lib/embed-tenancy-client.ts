@@ -1,20 +1,31 @@
 /**
  * Persist and apply FlowForge-verified embed workspace lookup.
- * Values come from POST /embed/exchange or GET /workspace — never from
- * host query, hash, or postMessage identity fields.
+ * Values come from POST /embed/exchange `workspace` / `session.embed`
+ * or GET /session — never from host query.
  *
  * Relates to #122 / Part of #120. Keep #122 open. Do not change apps/api.
  */
 
 import { saveDevIdentity } from "./dev-identity.ts";
-import type { DevIdentity } from "./identity-headers.ts";
-import type { EmbedVerifiedContext } from "./embed-contract.ts";
+import {
+  EMBED_AUDIENCE,
+  EMBED_SDK,
+  embedWorkspaceHeaders,
+  type EmbedVerifiedContext,
+} from "./embed-contract.ts";
+import {
+  FLOWFORGE_TENANT_ID_HEADER,
+  FLOWFORGE_WORKBENCH_KEY_HEADER,
+  type DevIdentity,
+} from "./identity-headers.ts";
 import {
   EMBED_VERIFIED_STORAGE_KEY,
   identityFromVerified,
   parseEmbedVerifiedWorkspace,
+  shouldAttachEmbedTenancyHeaders,
   verifiedWorkspaceFromCurrent,
   verifiedWorkspaceFromExchange,
+  verifiedWorkspaceFromSessionEmbed,
   type EmbedVerifiedWorkspace,
 } from "./embed-tenancy-contract.ts";
 import type { CurrentWorkspace } from "./identity-types.ts";
@@ -103,6 +114,53 @@ export function persistVerifiedFromWorkspace(
     saveEmbedVerified(verified);
   }
   return verified;
+}
+
+/** GET /session session.embed is the source of truth over host route state. */
+export function persistVerifiedFromSession(
+  session: unknown,
+): EmbedVerifiedWorkspace | null {
+  const verified = verifiedWorkspaceFromSessionEmbed(session);
+  if (verified) {
+    saveEmbedVerified(verified);
+  }
+  return verified;
+}
+
+/**
+ * Overlay bound tenant + workbench onto later /api/v1 calls.
+ * Overwrites host-supplied header values. Skips catalog/jwks/exchange.
+ */
+export function attachEmbedWorkspaceHeaders(
+  headers: Record<string, string>,
+  instance: string,
+): Record<string, string> {
+  if (!shouldAttachEmbedTenancyHeaders(instance)) {
+    return headers;
+  }
+  const verified = loadEmbedVerified();
+  if (!verified) {
+    return headers;
+  }
+  const bound = embedWorkspaceHeaders({
+    audience: EMBED_AUDIENCE,
+    sdk: EMBED_SDK,
+    tenantId: verified.tenantId,
+    tenantSlug: verified.tenantSlug,
+    workbenchKey: verified.workbenchKey,
+    workspaceId: verified.workspaceId,
+    workspaceName: verified.workspaceName,
+    capabilities: verified.capabilities ?? [],
+    tokenId: "",
+  });
+  if (!bound.tenantId || !bound.workbenchKey) {
+    return headers;
+  }
+  return {
+    ...headers,
+    [FLOWFORGE_TENANT_ID_HEADER]: bound.tenantId,
+    [FLOWFORGE_WORKBENCH_KEY_HEADER]: bound.workbenchKey,
+  };
 }
 
 /** Force workspace lookup headers onto the FlowForge-verified pair. */

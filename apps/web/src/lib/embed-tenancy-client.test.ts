@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { clearDevIdentity, loadDevIdentity } from "./dev-identity.ts";
+import { FLOWFORGE_TENANT_ID_HEADER, FLOWFORGE_WORKBENCH_KEY_HEADER } from "./identity-headers.ts";
 import {
+  attachEmbedWorkspaceHeaders,
   bindIdentityToVerified,
   clearEmbedVerified,
   loadEmbedVerified,
   persistVerifiedFromExchange,
+  persistVerifiedFromSession,
   persistVerifiedFromWorkspace,
 } from "./embed-tenancy-client.ts";
 
@@ -112,5 +115,32 @@ describe("embed-tenancy-client", () => {
     assert.equal(bound.workbenchKey, "ops");
     assert.equal(loadDevIdentity().tenantSlug, "acme");
     assert.equal(loadDevIdentity().workbenchKey, "ops");
+  });
+
+  it("persists GET /session session.embed and overwrites host headers", () => {
+    const verified = persistVerifiedFromSession({
+      embed: {
+        tenantId: "ten-1",
+        workbenchKey: "ops",
+        workspaceId: "ws-1",
+        capabilities: ["workflow.view"],
+      },
+    });
+    assert.equal(verified?.source, "flowforge");
+    assert.deepEqual(verified?.capabilities, ["workflow.view"]);
+    const headers = attachEmbedWorkspaceHeaders(
+      {
+        [FLOWFORGE_TENANT_ID_HEADER]: "host-supplied",
+        [FLOWFORGE_WORKBENCH_KEY_HEADER]: "prod",
+      },
+      "/api/v1/workspace",
+    );
+    assert.equal(headers[FLOWFORGE_TENANT_ID_HEADER], "ten-1");
+    assert.equal(headers[FLOWFORGE_WORKBENCH_KEY_HEADER], "ops");
+    const skipped = attachEmbedWorkspaceHeaders(
+      { [FLOWFORGE_TENANT_ID_HEADER]: "host-supplied" },
+      "/api/v1/embed/exchange",
+    );
+    assert.equal(skipped[FLOWFORGE_TENANT_ID_HEADER], "host-supplied");
   });
 });

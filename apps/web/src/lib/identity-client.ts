@@ -5,6 +5,7 @@ import {
   resolveCsrfToken,
   shouldAttachCsrf,
 } from "./csrf.ts";
+import { attachEmbedWorkspaceHeaders } from "./embed-tenancy-client.ts";
 import { headerFallbackEnabled } from "./header-fallback.ts";
 import {
   clientOperatorHeaders,
@@ -231,7 +232,7 @@ export async function fetchSameOriginProxy<T>(options: {
       method: options.method,
       cache: "no-store",
       credentials: "include",
-      headers: options.headers,
+      headers: attachEmbedWorkspaceHeaders(options.headers, options.instance),
       body: options.body,
     });
     const echoed = resolveRequestId(

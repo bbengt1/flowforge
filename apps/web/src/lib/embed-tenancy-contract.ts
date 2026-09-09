@@ -1,10 +1,10 @@
 /**
- * E11.2 embed tenancy / workbench adapter (Chloe UI).
+ * E11.2 embed tenancy / workbench adapter (Chloe UI) on jonny's #127 map.
  *
- * Honors FlowForge-verified `(tenant_id, workbench_key)` after exchange.
- * Host query / postMessage / route values are display context only and
- * never authorize. Jonny owns durable jti consume, key rotation, and
- * tenancy APIs — this file is the thin UI retarget map.
+ * Honors FlowForge-verified `(tenant_id, workbench_key)` / `session.embed`
+ * after exchange. Host query values are display-only and never authorize.
+ * Wires `EMBED_TENANCY_RULES`, `embedWorkspaceHeaders`, and
+ * `parseSessionEmbedBinding` from embed-contract.ts.
  *
  * Relates to #122 / Part of #120. Keep #122 open. Do not change apps/api.
  */
@@ -13,12 +13,16 @@ import {
   EMBED_AUDIENCE,
   EMBED_MOUNT_PREFIX,
   EMBED_SDK,
+  EMBED_TENANCY_RULES,
   embedMountPath,
+  embedWorkspaceHeaders,
   isEmbedMountPath,
   parseEmbedHostDisplay,
+  parseSessionEmbedBinding,
   standalonePathFromEmbed,
   stripAssertionParams,
   type EmbedHostDisplay,
+  type EmbedSessionBinding,
   type EmbedVerifiedContext,
 } from "./embed-contract.ts";
 import type { CurrentWorkspace, Workspace } from "./identity-types.ts";
@@ -26,9 +30,10 @@ import type { DevIdentity } from "./identity-headers.ts";
 
 export const EMBED_TENANCY_STORY = 122;
 export const EMBED_TENANCY_EPIC = 120;
-/** E11.1 lock-in until jonny publishes an E11.2 API PR. */
-export const EMBED_TENANCY_API_PR = 125;
-export const EMBED_TENANCY_ROUTE_MAP_SOURCE = "e111-#125" as const;
+export const EMBED_TENANCY_API_PR = 127;
+export const EMBED_TENANCY_ROUTE_MAP_SOURCE = "e112-#127" as const;
+
+export { EMBED_TENANCY_RULES, embedWorkspaceHeaders, parseSessionEmbedBinding };
 
 export const EMBED_VERIFIED_STORAGE_KEY = "flowforge.embed-verified.v1";
 
@@ -57,7 +62,7 @@ export const EMBED_TENANCY_HOOK_OWNERS: Record<
   "tenancy.propagation": "chloe",
 };
 
-/** Existing control-plane hops. Do not invent E11.2 API routes. */
+/** Published #127 hops. Rotate is already on EMBED_PROXY_ROUTES. */
 export const EMBED_TENANCY_EXISTING_PATHS = [
   "/workspace",
   "/workspaces",
@@ -65,15 +70,14 @@ export const EMBED_TENANCY_EXISTING_PATHS = [
   "/workspace/cache/{key}",
   "/workspace/realtime/channels/{id}/subscribe",
   "/workspace/audit-events",
+  "/session",
   "/embed/catalog",
   "/embed/jwks",
   "/embed/exchange",
+  "/embed/keys/rotate",
 ] as const;
 
-/**
- * Retarget hook for jonny's E11.2 tenancy APIs. Identity until a new
- * map lands — never invent `/embed/session` or `/embed/tenancy`.
- */
+/** Identity retarget — #127 did not remap these paths. */
 export function retargetEmbedTenancyApiPath(uiApiPath: string): string {
   return uiApiPath;
 }
@@ -83,7 +87,7 @@ type EmbedTenancyProxyRoute = {
   match: (segments: string[]) => boolean;
 };
 
-/** Additive allowlist. Empty until jonny publishes new embed tenancy routes. */
+/** Additive allowlist. Rotate lives on EMBED_PROXY_ROUTES from #127. */
 export const EMBED_TENANCY_PROXY_ROUTES: readonly EmbedTenancyProxyRoute[] = [];
 
 export function isEmbedTenancyProxySegments(segments: string[]): boolean {
@@ -92,22 +96,22 @@ export function isEmbedTenancyProxySegments(segments: string[]): boolean {
 
 export const EMBED_TENANCY_RETARGET = {
   catalogHooks:
-    "GET /embed/catalog hooks[] — prefer live jti.consume / key.rotation / tenancy.propagation status over E11.1 stubs",
+    "GET /embed/catalog hooks[] on #127 — jti.consume / key.rotation / tenancy.propagation are ready",
   jtiConsume:
-    "Durable atomic jti consume + TTL is jonny. UI already maps HTTP 409 / code=replay and never resends the compact JWS.",
+    "Durable atomic jti consume is #127. UI maps HTTP 409 / code=replay and never resends or silently retries the compact JWS.",
   keyRotation:
-    "Active + overlap kids is jonny. GET /embed/jwks already strips d / PEM / seed. Unknown kid stays fail-closed copy.",
+    "POST /embed/keys/rotate is ops-only (workspace.administer). Proxied via EMBED_PROXY_ROUTES. Embed chrome does not rotate keys.",
   tenancyApis:
-    "If jonny adds embed/session or tenancy-propagation routes, add them to EMBED_TENANCY_PROXY_ROUTES and retargetEmbedTenancyApiPath. Until then hop GET /workspace + GET /workspaces.",
+    "session.embed is the bind. Hop GET /session + GET /workspace. Send embedWorkspaceHeaders on every later /api/v1 call.",
   exchangeShape:
-    "workspace.tenant_id + workspace.workbench_key + tenant.id/slug. workspace.id is binding/display only — never the lookup key.",
+    "workspace.tenant_id + workspace.workbench_key or session.embed {tenantId,workbenchKey,workspaceId,capabilities}. workspace.id is binding/display only.",
   workspaceGet:
-    "GET /workspace remains the authorization source after exchange. Host tenant/workbench/workspace_id never become lookup headers.",
-  routeMap: "e111-#125 until jonny publishes e112-#NNN",
+    "GET /session session.embed is source of truth over host route state. GET /workspace must match the bound pair.",
+  routeMap: "e112-#127",
 } as const;
 
 export const EMBED_VERIFIED_HELP =
-  "Chrome and deep links use the FlowForge-verified (tenant_id, workbench_key) from exchange and GET /workspace. Host query, route, and postMessage values never authorize.";
+  "Chrome and deep links use the FlowForge-verified (tenant_id, workbench_key) from exchange workspace / session.embed. Host query, route, and postMessage values never authorize.";
 
 export const EMBED_LOCKED_MESSAGE =
   "This embed is locked to the FlowForge-verified tenant/workbench. Workspace switching is disabled.";
@@ -132,6 +136,7 @@ export type EmbedVerifiedWorkspace = {
   workbenchKey: string;
   workspaceId: string;
   workspaceName: string;
+  capabilities?: string[];
   source: "flowforge";
 };
 
@@ -168,6 +173,34 @@ export function verifiedWorkspaceFromExchange(
     workbenchKey: context.workbenchKey.trim(),
     workspaceId: context.workspaceId.trim(),
     workspaceName: context.workspaceName.trim(),
+    capabilities: [...context.capabilities],
+    source: "flowforge",
+  };
+  return hasVerifiedWorkspaceLookup(verified) ? verified : null;
+}
+
+export function verifiedWorkspaceFromSessionEmbed(
+  session: unknown,
+): EmbedVerifiedWorkspace | null {
+  const binding = parseSessionEmbedBinding(session);
+  if (!binding) {
+    return null;
+  }
+  return verifiedWorkspaceFromBinding(binding);
+}
+
+export function verifiedWorkspaceFromBinding(
+  binding: EmbedSessionBinding,
+): EmbedVerifiedWorkspace | null {
+  const verified: EmbedVerifiedWorkspace = {
+    audience: EMBED_AUDIENCE,
+    sdk: EMBED_SDK,
+    tenantId: binding.tenantId.trim(),
+    tenantSlug: "",
+    workbenchKey: binding.workbenchKey.trim(),
+    workspaceId: binding.workspaceId.trim(),
+    workspaceName: "",
+    capabilities: [...binding.capabilities],
     source: "flowforge",
   };
   return hasVerifiedWorkspaceLookup(verified) ? verified : null;
@@ -210,9 +243,40 @@ export function parseEmbedVerifiedWorkspace(
     workbenchKey: readString(raw.workbenchKey, raw.workbench_key),
     workspaceId: readString(raw.workspaceId, raw.workspace_id),
     workspaceName: readString(raw.workspaceName, raw.workspace_name),
+    capabilities: Array.isArray(raw.capabilities)
+      ? raw.capabilities
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      : undefined,
     source: "flowforge",
   };
   return hasVerifiedWorkspaceLookup(verified) ? verified : null;
+}
+
+export function capEmbedPermissions(
+  granted: readonly string[] | null | undefined,
+  embedCapabilities: readonly string[] | undefined,
+): string[] | null {
+  if (granted == null) {
+    return null;
+  }
+  if (!embedCapabilities) {
+    return [...granted];
+  }
+  const allow = new Set(embedCapabilities);
+  return granted.filter((permission) => allow.has(permission));
+}
+
+export function shouldAttachEmbedTenancyHeaders(instance: string): boolean {
+  const path = instance.split("?")[0] ?? instance;
+  if (
+    path.endsWith("/embed/catalog") ||
+    path.endsWith("/embed/jwks") ||
+    path.endsWith("/embed/exchange")
+  ) {
+    return false;
+  }
+  return EMBED_TENANCY_RULES.sendTenantAndWorkbenchHeaders;
 }
 
 export function identityFromVerified(

@@ -13,9 +13,11 @@ import {
   EMBED_TENANCY_PROXY_ROUTES,
   EMBED_TENANCY_RETARGET,
   EMBED_TENANCY_ROUTE_MAP_SOURCE,
+  EMBED_TENANCY_RULES,
   EMBED_TENANCY_STORY,
   EMBED_TENANCY_MISMATCH_MESSAGE,
   EMBED_VERIFIED_STORAGE_KEY,
+  capEmbedPermissions,
   decideEmbedTenancy,
   embedDeepLink,
   embedDeepLinkIsActive,
@@ -30,10 +32,12 @@ import {
   parseEmbedVerifiedWorkspace,
   rejectHostSuppliedLookup,
   isEmbedTenancyProxySegments,
+  shouldAttachEmbedTenancyHeaders,
   retargetEmbedTenancyApiPath,
   rewriteEmbedNavigationHref,
   verifiedWorkspaceFromCurrent,
   verifiedWorkspaceFromExchange,
+  verifiedWorkspaceFromSessionEmbed,
   workspaceMatchesVerified,
 } from "./embed-tenancy-contract.ts";
 
@@ -50,11 +54,14 @@ const verifiedContext: EmbedVerifiedContext = {
 };
 
 describe("embed-tenancy-contract", () => {
-  it("cites #122 / #120 and keeps the E11.1 lock-in map", () => {
+  it("cites #122 / #120 and the #127 tenancy map", () => {
     assert.equal(EMBED_TENANCY_STORY, 122);
     assert.equal(EMBED_TENANCY_EPIC, 120);
-    assert.equal(EMBED_TENANCY_API_PR, 125);
-    assert.equal(EMBED_TENANCY_ROUTE_MAP_SOURCE, "e111-#125");
+    assert.equal(EMBED_TENANCY_API_PR, 127);
+    assert.equal(EMBED_TENANCY_ROUTE_MAP_SOURCE, "e112-#127");
+    assert.equal(EMBED_TENANCY_RULES.sendTenantAndWorkbenchHeaders, true);
+    assert.ok(EMBED_TENANCY_EXISTING_PATHS.includes("/embed/keys/rotate"));
+    assert.ok(EMBED_TENANCY_EXISTING_PATHS.includes("/session"));
     assert.equal(EMBED_VERIFIED_STORAGE_KEY, "flowforge.embed-verified.v1");
     assert.deepEqual([...EMBED_TENANCY_HOOK_IDS], [
       "jti.consume",
@@ -68,7 +75,7 @@ describe("embed-tenancy-contract", () => {
     assert.equal(EMBED_TENANCY_PROXY_ROUTES.length, 0);
     assert.equal(retargetEmbedTenancyApiPath("/workspace"), "/workspace");
     assert.equal(isEmbedTenancyProxySegments(["workspace"]), false);
-    assert.match(EMBED_TENANCY_RETARGET.tenancyApis, /GET \/workspace/);
+    assert.match(EMBED_TENANCY_RETARGET.tenancyApis, /session\.embed/);
     assert.match(EMBED_LOCKED_MESSAGE, /locked/);
   });
 
@@ -276,6 +283,34 @@ describe("embed-tenancy-contract", () => {
       rewriteEmbedNavigationHref("https://evil.example/workflows", "https://app.example"),
       null,
     );
+  });
+
+  it("caps UI by session.embed capabilities and skips public embed hops", () => {
+    assert.deepEqual(
+      capEmbedPermissions(
+        ["workflow.view", "workflow.edit", "credential.view"],
+        ["workflow.view"],
+      ),
+      ["workflow.view"],
+    );
+    assert.deepEqual(capEmbedPermissions(["workflow.view"], undefined), [
+      "workflow.view",
+    ]);
+    assert.deepEqual(capEmbedPermissions(["workflow.view"], []), []);
+    const fromSession = verifiedWorkspaceFromSessionEmbed({
+      embed: {
+        tenantId: "ten-1",
+        workbenchKey: "ops",
+        workspaceId: "ws-1",
+        capabilities: ["workflow.view"],
+      },
+    });
+    assert.equal(fromSession?.source, "flowforge");
+    assert.deepEqual(fromSession?.capabilities, ["workflow.view"]);
+    assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/workspace"), true);
+    assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/exchange"), false);
+    assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/catalog"), false);
+    assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/keys/rotate"), true);
   });
 
   it("parses catalog hooks and keeps jonny APIs out of the UI adapter", () => {
