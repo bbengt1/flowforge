@@ -250,7 +250,7 @@ func TestCredentialVaultUsageAndDeletionImpact(t *testing.T) {
 
 func TestCredentialVaultFailsClosedWithoutKEK(t *testing.T) {
 	store := identity.NewMemory()
-	h := NewWithDeps(Deps{Store: store, Keys: vault.Keys{}})
+	h := NewWithDeps(withHTTPTestIdentity(Deps{Store: store, Keys: vault.Keys{}}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 	rec := httptest.NewRecorder()
 	req := identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"nokek","name":"NoKek"}`, admin)

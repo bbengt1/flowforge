@@ -280,7 +280,7 @@ func seededWorkspaceWithScripts(t *testing.T, store scripts.Store, key []byte) (
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
 	hooks := webhook.NewMemory()
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:            idStore,
 		Scoped:           isolation.NewMemory(),
 		Sessions:         session.NewMemory(),
@@ -291,7 +291,7 @@ func seededWorkspaceWithScripts(t *testing.T, store scripts.Store, key []byte) (
 		Keys:             keys,
 		Scripts:          store,
 		ScriptSigningKey: key,
-	})
+	}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 
 	rec := httptest.NewRecorder()

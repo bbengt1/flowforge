@@ -185,6 +185,25 @@ func TestMethodNotAllowedOnIdentityRoutes(t *testing.T) {
 	}
 }
 
+func seedWorkspace(t *testing.T, store identity.Store, user identity.User, slug, workbench, name string) {
+	t.Helper()
+	ctx := t.Context()
+	u, err := store.UpsertUser(ctx, user.Issuer, user.ExternalSubject, user.DisplayName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := store.GetTenantBySlug(ctx, slug)
+	if err != nil {
+		tenant, err = store.CreateTenant(ctx, slug, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateWorkspace(ctx, tenant.ID, workbench, name, u.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seededWorkspace(t *testing.T) (http.Handler, identity.User) {
 	t.Helper()
 	store := identity.NewMemory()
@@ -192,7 +211,7 @@ func seededWorkspace(t *testing.T) (http.Handler, identity.User) {
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
 	hooks := webhook.NewMemory()
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
 		Sessions:  session.NewMemory(),
@@ -201,7 +220,7 @@ func seededWorkspace(t *testing.T) (http.Handler, identity.User) {
 		Hooks:     hooks,
 		Vault:     vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops, hooks}),
 		Keys:      keys,
-	})
+	}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 
 	rec := httptest.NewRecorder()

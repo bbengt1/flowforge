@@ -109,6 +109,49 @@ func TestParseOrigins(t *testing.T) {
 	}
 }
 
+func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("APP_ENV", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TrustIdentityHeaders {
+		t.Fatal("empty config must fail closed")
+	}
+
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "1")
+	if _, err := Load(); err == nil {
+		t.Fatal("trusted-dev without APP_ENV must refuse to start")
+	}
+
+	t.Setenv("APP_ENV", "production")
+	if _, err := Load(); err == nil {
+		t.Fatal("trusted-dev in production must refuse to start")
+	}
+
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("trusted-dev with REQUIRE_TLS must refuse to start")
+	}
+
+	t.Setenv("REQUIRE_TLS", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrustIdentityHeaders {
+		t.Fatal("explicit trusted-dev + APP_ENV=development must enable header identity")
+	}
+}
+
 func TestLoadRejectsWildcardCORS(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "*")
 	if _, err := Load(); err == nil {

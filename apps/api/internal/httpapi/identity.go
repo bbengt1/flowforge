@@ -230,7 +230,11 @@ func (s *Server) getPermissions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requirePrincipal(w, r); !ok {
+	user, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	if !s.requirePlatformAdmin(w, r, user) {
 		return
 	}
 	var req createTenantRequest
@@ -248,6 +252,9 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requirePrincipal(w, r)
 	if !ok {
+		return
+	}
+	if !s.requirePlatformAdmin(w, r, user) {
 		return
 	}
 	var req createWorkspaceRequest

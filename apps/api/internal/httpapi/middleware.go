@@ -20,13 +20,19 @@ import (
 // Security is the TLS/proxy/CORS/session policy applied at the HTTP boundary.
 // Empty TrustedProxies means X-Forwarded-* headers are ignored.
 // Empty AllowedOrigins means only same-origin or Origin-less callers (fail closed).
+// TrustIdentityHeaders is false by default (fail closed): client-supplied
+// X-FlowForge-Issuer / X-FlowForge-Subject are not authentication and
+// POST /session must not upsert principals from those values. Enable only
+// via config.Load() when TRUSTED_DEV_IDENTITY_HEADERS is explicit and the
+// process is not production-locked.
 type Security struct {
-	TrustedProxies []*net.IPNet
-	RequireTLS     bool
-	AllowedOrigins []string
-	Session        SessionPolicy
-	VaultKeys      vault.Keys
-	JobBindingKey  []byte
+	TrustedProxies       []*net.IPNet
+	RequireTLS           bool
+	AllowedOrigins       []string
+	TrustIdentityHeaders bool
+	Session              SessionPolicy
+	VaultKeys            vault.Keys
+	JobBindingKey        []byte
 }
 
 // SessionPolicy is idle/absolute lifetime for browser sessions.

@@ -36,7 +36,11 @@ func TestSessionAPIAgainstPostgres(t *testing.T) {
 
 	store := identity.NewPostgres(pool)
 	sessions := session.NewPostgres(pool)
-	h := httpapi.NewWithDeps(httpapi.Deps{Store: store, Sessions: sessions})
+	h := httpapi.NewWithDeps(httpapi.Deps{
+		Store:    store,
+		Sessions: sessions,
+		Security: httpapi.Security{TrustIdentityHeaders: true},
+	})
 	n := time.Now().UnixNano()
 	subject := fmt.Sprintf("sess-admin-%d", n)
 

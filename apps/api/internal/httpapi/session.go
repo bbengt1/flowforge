@@ -116,6 +116,10 @@ func principalFromRequest(r *http.Request) *principalContext {
 }
 
 func (s *Server) requireHeaderPrincipal(w http.ResponseWriter, r *http.Request) (identity.User, bool) {
+	if !s.sec.TrustIdentityHeaders {
+		WriteUnauthenticated(w, r)
+		return identity.User{}, false
+	}
 	issuer := strings.TrimSpace(r.Header.Get(headerIssuer))
 	subject := strings.TrimSpace(r.Header.Get(headerSubject))
 	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
@@ -434,6 +438,10 @@ func (s *Server) auditSession(r *http.Request, rec session.Record, eventType, ou
 }
 
 func (s *Server) sessionCreateIdentity(w http.ResponseWriter, r *http.Request) (issuer, subject, display string, ok bool) {
+	if !s.sec.TrustIdentityHeaders {
+		WriteUnauthenticated(w, r)
+		return "", "", "", false
+	}
 	headerIssuer := strings.TrimSpace(r.Header.Get(headerIssuer))
 	headerSubject := strings.TrimSpace(r.Header.Get(headerSubject))
 	display = strings.TrimSpace(r.Header.Get(headerDisplayName))

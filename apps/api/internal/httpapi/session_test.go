@@ -33,12 +33,12 @@ func newSessionEnv(sec Security) sessionEnv {
 	if sec.Session.AbsoluteTimeout == 0 {
 		sec.Session.AbsoluteTimeout = 12 * time.Hour
 	}
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:    store,
 		Sessions: session.NewMemory(),
 		Security: sec,
 		Now:      func() time.Time { return *clock },
-	})
+	}))
 	return sessionEnv{h: h, store: store, now: clock}
 }
 
@@ -357,12 +357,12 @@ func TestSessionAuditIsSecretFree(t *testing.T) {
 	store := identity.NewMemory()
 	sessions := session.NewMemory()
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:    store,
 		Sessions: sessions,
 		Log:      log,
 		Now:      func() time.Time { return *clock },
-	})
+	}))
 	created, payload := createSession(t, h, "https://idp.example", "admin-1", "Admin", false)
 	token, csrf := sessionPair(t, created)
 

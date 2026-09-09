@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -35,10 +36,15 @@ func TestIsolationAPIAgainstPostgres(t *testing.T) {
 	defer pool.Close()
 
 	store := identity.NewPostgres(pool)
-	h := httpapi.NewWithStores(nil, store, isolation.NewPostgres(pool))
 	n := time.Now().UnixNano()
 	slug := fmt.Sprintf("iso%d", n)
 	subject := fmt.Sprintf("iso-admin-%d", n)
+	h := httpapi.NewWithDeps(httpapi.Deps{
+		Store:          store,
+		Scoped:         isolation.NewPostgres(pool),
+		Security:       httpapi.Security{TrustIdentityHeaders: true},
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: subject}},
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader([]byte(`{"slug":"`+slug+`","name":"Iso"}`)))
 	req.Header.Set("Content-Type", "application/json")
