@@ -2,7 +2,6 @@ package embed
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
