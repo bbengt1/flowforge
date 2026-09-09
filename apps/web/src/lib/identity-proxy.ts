@@ -35,6 +35,11 @@ import {
   isSshProxySegments,
   retargetSshApiPath,
 } from "./ssh-contract.ts";
+import {
+  SCRIPT_PROXY_ROUTES,
+  isScriptProxySegments,
+  retargetScriptApiPath,
+} from "./script-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -298,6 +303,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // ssh-contract.ts. Upstream is ops-config collections plus
   // GET /ssh/catalog. Duplicate allowlist matches are intentional.
   ...SSH_PROXY_ROUTES,
+  // E9.1 script catalog / artifact UI (#92 / #97). Paths live in
+  // script-contract.ts. GET /scripts/catalog, POST /scripts,
+  // GET /scripts/{id}, GET …/script-artifacts. Never package blobs.
+  ...SCRIPT_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -364,6 +373,8 @@ export function resolveIdentityProxyTarget(
     apiPath = retargetKubernetesApiPath(mapped);
   } else if (isSshProxySegments(segments)) {
     apiPath = retargetSshApiPath(mapped);
+  } else if (isScriptProxySegments(segments)) {
+    apiPath = retargetScriptApiPath(mapped);
   }
   return {
     method,

@@ -3,8 +3,14 @@
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { KubernetesTargetSelect } from "@/components/config/KubernetesTargetSelect";
+import { ScriptAuthoringPanel } from "@/components/workflows/ScriptAuthoringPanel";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { isKubernetesActionType } from "@/lib/kubernetes";
+import {
+  isScriptConfigurableType,
+  type ScriptNodeCatalog,
+  type ScriptVersionPin,
+} from "@/lib/script-contract";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
   formatBounds,
@@ -28,6 +34,10 @@ type EditorInspectorProps = {
   pending: boolean;
   identity: DevIdentity;
   canCall: boolean;
+  dirty?: boolean;
+  hasPublishedVersion?: boolean;
+  scriptCatalog?: ScriptNodeCatalog | null;
+  scriptArtifacts?: readonly ScriptVersionPin[] | null;
   onSelectNode: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
@@ -44,11 +54,18 @@ export function EditorInspector({
   pending,
   identity,
   canCall,
+  dirty,
+  hasPublishedVersion,
+  scriptCatalog,
+  scriptArtifacts,
   onSelectNode,
   onApply,
   onPatchNodeWith,
 }: EditorInspectorProps) {
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
+  const selectedNode = selectedNodeId
+    ? nodes.find((node) => node.id === selectedNodeId) ?? null
+    : null;
   const palette = entries.filter((entry) =>
     isCoreNeutralNodeType(entry.type),
   ) as CoreNeutralPaletteEntry[];
@@ -69,6 +86,18 @@ export function EditorInspector({
         onSelect={onSelectNode}
         onApply={onApply}
       />
+      {selectedNode && isScriptConfigurableType(selectedNode.type) ? (
+        <ScriptAuthoringPanel
+          node={selectedNode}
+          identity={identity}
+          ready={canCall}
+          dirty={dirty}
+          hasPublishedVersion={hasPublishedVersion}
+          scriptCatalog={scriptCatalog}
+          scriptArtifacts={scriptArtifacts}
+          onPatchNodeWith={onPatchNodeWith}
+        />
+      ) : null}
       {selection.kind === "node" ? (
         <CredentialHints
           node={nodes.find((node) => node.id === selection.id) ?? null}

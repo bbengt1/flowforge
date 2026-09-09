@@ -288,6 +288,24 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/pins",
       ],
+      [
+        "GET",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+          "script-artifacts",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/script-artifacts",
+      ],
+      ["GET", ["scripts", "catalog"], "/api/v1/scripts/catalog"],
+      ["POST", ["scripts"], "/api/v1/scripts"],
+      [
+        "GET",
+        ["scripts", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/scripts/11111111-1111-4111-8111-111111111111",
+      ],
       ["GET", ["approvals"], "/api/v1/approvals"],
       ["POST", ["approvals"], "/api/v1/approvals"],
       ["GET", ["approvals", "catalog"], "/api/v1/approvals/catalog"],
@@ -518,6 +536,53 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("apiPath" in catalog, true);
     if ("apiPath" in catalog) {
       assert.equal(catalog.apiPath, "/api/v1/ssh/catalog");
+    }
+  });
+
+  it("retargets E9.1 script catalog and artifact paths through the adapter", () => {
+    const catalog = resolveIdentityProxyTarget("GET", ["scripts", "catalog"]);
+    assert.equal("apiPath" in catalog, true);
+    if ("apiPath" in catalog) {
+      assert.equal(catalog.apiPath, "/api/v1/scripts/catalog");
+    }
+    const create = resolveIdentityProxyTarget("POST", ["scripts"]);
+    assert.equal("apiPath" in create, true);
+    if ("apiPath" in create) {
+      assert.equal(create.apiPath, "/api/v1/scripts");
+    }
+    const get = resolveIdentityProxyTarget("GET", [
+      "scripts",
+      "11111111-1111-4111-8111-111111111111",
+    ]);
+    assert.equal("apiPath" in get, true);
+    if ("apiPath" in get) {
+      assert.equal(
+        get.apiPath,
+        "/api/v1/scripts/11111111-1111-4111-8111-111111111111",
+      );
+    }
+    const pins = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "versions",
+      "22222222-2222-4222-8222-222222222222",
+      "script-artifacts",
+    ]);
+    assert.equal("apiPath" in pins, true);
+    if ("apiPath" in pins) {
+      assert.equal(
+        pins.apiPath,
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/script-artifacts",
+      );
+    }
+    const blob = resolveIdentityProxyTarget("GET", [
+      "scripts",
+      "11111111-1111-4111-8111-111111111111",
+      "package",
+    ]);
+    assert.equal("status" in blob, true);
+    if ("status" in blob) {
+      assert.equal(blob.status, 404);
     }
   });
 

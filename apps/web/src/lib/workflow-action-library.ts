@@ -20,6 +20,14 @@ import {
   type SshNodeCatalog,
 } from "./ssh-node-contract.ts";
 import {
+  adaptScriptNodeEntries,
+  hasScriptNodeContract,
+  isScriptConfigurableType,
+  scriptFallbackNode,
+  scriptLibraryTypes,
+  type ScriptNodeCatalog,
+} from "./script-contract.ts";
+import {
   CORE_NEUTRAL_NODE_TYPES,
   adaptCoreNeutralPalette,
   catalogExcludesTriggerNodes,
@@ -138,7 +146,8 @@ export function rejectDisabledActionType(
     if (
       isCoreNeutralNodeType(type) ||
       kubernetesLibraryTypes(catalog).includes(type) ||
-      sshLibraryTypes(catalog).includes(type)
+      sshLibraryTypes(catalog).includes(type) ||
+      scriptLibraryTypes(catalog).includes(type)
     ) {
       return { ok: true, reason: "" };
     }
@@ -167,11 +176,15 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
   const sshFallback = isSshConfigurableType(node.type)
     ? sshFallbackNode(node.type)
     : undefined;
-  const familyFallback = k8sFallback ?? sshFallback;
+  const scriptFallback = isScriptConfigurableType(node.type)
+    ? scriptFallbackNode(node.type)
+    : undefined;
+  const familyFallback = k8sFallback ?? sshFallback ?? scriptFallback;
   const fallbackName = coreFallback?.name || familyFallback?.title;
   const fallbackDescription = coreFallback?.description || familyFallback?.description || "";
   const k8sCatalog = k8sFallback ? hasKubernetesNodeContract(node) : false;
   const sshCatalogued = sshFallback ? hasSshNodeContract(node) : false;
+  const scriptCatalogued = scriptFallback ? hasScriptNodeContract(node) : false;
   return {
     type: node.type,
     name: node.title || fallbackName || node.type,
@@ -192,6 +205,7 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
     source:
       (k8sFallback && k8sCatalog) ||
       (sshFallback && sshCatalogued) ||
+      (scriptFallback && scriptCatalogued) ||
       coreFallback?.source === "catalog" ||
       (!familyFallback && Boolean(node.title || node.policy))
         ? "catalog"
@@ -209,6 +223,7 @@ export function adaptActionLibrary(
   catalog: WorkflowCatalog | null | undefined,
   engineCatalog?: KubernetesEngineCatalog | null,
   sshCatalog?: SshNodeCatalog | null,
+  scriptCatalog?: ScriptNodeCatalog | null,
 ): ActionLibraryEntry[] {
   const enabled = filterEnabledActionNodes(catalog?.nodes);
   const byType = new Map(enabled.map((item) => [item.type, fromCatalogNode(item)]));
@@ -230,6 +245,13 @@ export function adaptActionLibrary(
           ? ("contract-fallback" as const)
           : ("catalog" as const),
       })),
+      ...adaptScriptNodeEntries(null, scriptCatalog).map((node) => ({
+        ...fromCatalogNode(node),
+        source:
+          scriptCatalog && scriptCatalog.source !== "contract-fallback"
+            ? ("catalog" as const)
+            : ("contract-fallback" as const),
+      })),
     ]);
   }
   for (const type of CORE_NEUTRAL_NODE_TYPES) {
@@ -246,6 +268,13 @@ export function adaptActionLibrary(
   for (const node of adaptSshNodeEntries(catalog, sshCatalog)) {
     const source =
       sshCatalog && sshCatalog.source !== "contract-fallback"
+        ? "catalog"
+        : "contract-fallback";
+    mergeLibraryNode(byType, node, source);
+  }
+  for (const node of adaptScriptNodeEntries(catalog, scriptCatalog)) {
+    const source =
+      scriptCatalog && scriptCatalog.source !== "contract-fallback"
         ? "catalog"
         : "contract-fallback";
     mergeLibraryNode(byType, node, source);

@@ -224,6 +224,25 @@ E8.3 (Chloe) wires jonny's **#90** map on `main` (`e83-#90`). `apps/api` is unch
 - **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive probe — never imply the command did not run. Show **Retry** only when `result.retry.allowed` is true (same rule on `POST …/retry`; `409 retry-denied` when closed). Hide Retry for non-retrySafe indeterminate.
 - **Unchanged:** E8.1 `/config` collections; E8.2 node fields; no invented routes; `apps/api` untouched.
 
+## E9.1 script source authoring and publish UI
+
+E9.1 (Chloe UI) wires jonny's **#97** map on `main` (`e91-#97`). `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-contract.ts` plus `script-client.ts`. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #92 (already closed by #97) / Part of #91 — **do not re-close #92**; keep epic #91 open until this UI PR merges.
+
+| Route | Notes |
+| --- | --- |
+| `GET /scripts/catalog` | Node fields, publish rules, errors, E9.2–E9.4 hooks. Fallback: `GET /ops-config/catalog` `scriptEngine`. |
+| `GET /ops-config/catalog` | Adds `scriptEngine`; runtime-profiles `engine=script`. |
+| `POST /scripts` | Package/scan/sign → artifact metadata (no blob). |
+| `GET /scripts/{id}` | Digest + scan/signature — never `package` / `storageRef`. |
+| `POST /workflows/{id}/publish` | Also packages script nodes → `{version,pins,scriptArtifacts}`. |
+| `GET …/versions/{v}/script-artifacts` | Pins bound at publish. |
+
+- **Library / wizard:** `script.python` / `script.go` (`Run Python script` / `Run Go script`). Required `with`: `source`, `entrypoint` (basename), published `runtimeProfileId` (language match), `timeoutSeconds` (1–3600). Optional `memoryMiB` (32–2048), `cpuMillis`, `processes`, schemas, `policyId`. Forbidden: `env` / `environment` / `secrets` / `credentials` / `privateKey` / `token` / `password` / `kubeconfig` / `command` / `shell`.
+- **Publish boundary:** Draft save writes YAML only. Publish packages, scans, signs, and pins. UI shows digest + `scanStatus` + signature present/missing — never package blobs or `storageRef`.
+- **Execute fail-closed:** drafts / mutable / unscanned / unsigned / scan-failed → 400; needs `script.run` + `runtimeProfile.use`. Isolated runners are E9.2.
+- **Fail closed:** HTTP 403 empties the runtime-profile selector. Host-supplied `id` / `workspaceId` is 400 UX.
+- **Unchanged:** `apps/api` untouched. No extra routes beyond #97.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

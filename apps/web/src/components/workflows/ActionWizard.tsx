@@ -41,6 +41,22 @@ import {
   sshRetryRules,
   type SshNodeCatalog,
 } from "@/lib/ssh-node-contract";
+import { getScriptCatalog } from "@/lib/script-client";
+import {
+  SCRIPT_CONTRACT_FALLBACK_HELP,
+  SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
+  SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
+  SCRIPT_MUTABLE_REJECT_HELP,
+  SCRIPT_NODE_POLICY_NOTES,
+  SCRIPT_PUBLISH_BOUNDARY_HELP,
+  SCRIPT_ROUTE_MAP_SOURCE,
+  isScriptConfigurableType,
+  isScriptRuntimeProfileSpec,
+  runtimeProfileLanguage,
+  scriptNodeErrorShapes,
+  scriptPublishRules,
+  type ScriptNodeCatalog,
+} from "@/lib/script-contract";
 import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_INDETERMINATE_HELP,
@@ -100,6 +116,7 @@ type ActionWizardProps = {
   identity: DevIdentity;
   ready: boolean;
   catalog: WorkflowCatalog | null;
+  scriptCatalog?: ScriptNodeCatalog | null;
   entries: ActionLibraryEntry[];
   yaml: string;
   nodes: YamlWorkflowNode[];
@@ -119,6 +136,7 @@ export function ActionWizard({
   identity,
   ready,
   catalog,
+  scriptCatalog: scriptCatalogProp,
   entries,
   yaml,
   nodes,
@@ -151,9 +169,18 @@ export function ActionWizard({
   const [sshEngineCatalog, setSshEngineCatalog] = useState<SshEngineCatalog | null>(
     null,
   );
+  const [scriptCatalogState, setScriptCatalogState] =
+    useState<ScriptNodeCatalog | null>(null);
+  const scriptCatalog = scriptCatalogProp ?? scriptCatalogState;
 
   const entry = entries.find((item) => item.type === draft.type);
-  const fields = wizardConfigFields(entry, draft.type, engineCatalog, sshCatalog);
+  const fields = wizardConfigFields(
+    entry,
+    draft.type,
+    engineCatalog,
+    sshCatalog,
+    scriptCatalog,
+  );
   const targetKinds = opsConfigKindsForAction(draft.type);
   const enabledTargetKinds = (Object.entries(pins) as [OpsConfigKind, OpsConfigPin[]][])
     .filter(([, items]) => items.length > 0)
@@ -199,6 +226,14 @@ export function ActionWizard({
     isSshConfigurableType(draft.type) &&
     commandProfilesLoaded &&
     ((pins.command_profile ?? []).length === 0 || Boolean(pinProblems.command_profile));
+  const runtimeProfilesLoaded = pinStatus.runtime_profile !== undefined;
+  const runtimeProfileSelectorClosed =
+    isScriptConfigurableType(draft.type) &&
+    runtimeProfilesLoaded &&
+    ((pins.runtime_profile ?? []).length === 0 || Boolean(pinProblems.runtime_profile));
+  const selectedRuntimeProfile = (pins.runtime_profile ?? []).find(
+    (pin) => pin.resourceId === draft.with.runtimeProfileId,
+  );
   const wizardContext = {
     allowedNamespaces: namespacesForWizardTarget(selectedClusterTarget),
     targetSelectorClosed,
@@ -209,6 +244,9 @@ export function ActionWizard({
     parameterConstraints,
     profileRetrySafe,
     verificationDeclared,
+    scriptCatalog,
+    runtimeProfileSelectorClosed,
+    runtimeProfileLanguage: runtimeProfileLanguage(selectedRuntimeProfile?.spec),
   };
   const applyRules = applyRulesFromCatalog(engineCatalog);
   const engineErrors = engineErrorShapes(engineCatalog);
@@ -236,6 +274,12 @@ export function ActionWizard({
       }
       setSshCatalog(result.ok ? result.nodeCatalog : null);
       setSshEngineCatalog(result.ok ? result.catalog : null);
+    });
+    void getScriptCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setScriptCatalogState(result.ok ? result.catalog : null);
     });
     void listCredentials(identity).then((result) => {
       if (cancelled) {
@@ -286,7 +330,11 @@ export function ActionWizard({
               ? authorizedSshTargets({ items: result.items }).options
               : kind === "command_profile"
                 ? authorizedCommandProfiles({ items: result.items }).options
-                : publishedPinsFromList({ items: result.items }).options;
+                : kind === "runtime_profile"
+                  ? publishedPinsFromList({ items: result.items }).options.filter(
+                      (pin) => isScriptRuntimeProfileSpec(pin.spec),
+                    )
+                  : publishedPinsFromList({ items: result.items }).options;
       }
       setPins(nextPins);
       setPinProblems(nextProblems);
@@ -441,7 +489,8 @@ export function ActionWizard({
               credentialOptions={credentialOptions}
               hideCredentialSelect={
                 isKubernetesConfigurableType(draft.type) ||
-                isSshConfigurableType(draft.type)
+                isSshConfigurableType(draft.type) ||
+                isScriptConfigurableType(draft.type)
               }
               onPin={choosePin}
               onCredential={(id) => {
@@ -460,6 +509,7 @@ export function ActionWizard({
               engineCatalog={engineCatalog}
               waitReadyCopy={waitReadyMessage(engineCatalog)}
               sshCatalog={sshCatalog}
+              scriptCatalog={scriptCatalog}
               sshEngineCatalog={sshEngineCatalog}
               parameterConstraints={parameterConstraints}
               profileRetrySafe={profileRetrySafe}
@@ -488,6 +538,7 @@ export function ActionWizard({
               engineErrors={engineErrors}
               engineCatalog={engineCatalog}
               sshCatalog={sshCatalog}
+              scriptCatalog={scriptCatalog}
               profileRetrySafe={profileRetrySafe}
               verificationDeclared={verificationDeclared}
               evaluation={evaluation ?? null}
@@ -716,8 +767,10 @@ function TargetStep({
                 ? "Published kubernetes cluster target"
                 : kind === "ssh_target"
                   ? "Published SSH target"
-                  : kind === "command_profile"
+                    : kind === "command_profile"
                     ? "Published command profile"
+                    : kind === "runtime_profile"
+                      ? "Published runtime profile"
                     : kind.replaceAll("_", " ")
             }
             value={selected?.versionId ?? ""}
@@ -741,6 +794,13 @@ function TargetStep({
           <code className="font-mono">type=ssh_private_key</code> vault credential.
           Command profiles are administrator-owned templates. The UI never lists
           privateKey, passphrase, host fingerprints as secrets, or raw logs.
+        </p>
+      ) : null}
+      {isScriptConfigurableType(draft.type) ? (
+        <p className="text-xs text-zinc-500">
+          Display name + id only. Choose a published approved runtime/dependency
+          profile — not an arbitrary image. Secrets are never listed.{" "}
+          {SCRIPT_PUBLISH_BOUNDARY_HELP}
         </p>
       ) : null}
       {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
@@ -789,6 +849,7 @@ function ConfigureStep({
   engineCatalog,
   waitReadyCopy,
   sshCatalog,
+  scriptCatalog,
   sshEngineCatalog,
   parameterConstraints,
   profileRetrySafe,
@@ -803,6 +864,7 @@ function ConfigureStep({
   engineCatalog: KubernetesEngineCatalog | null;
   waitReadyCopy: string;
   sshCatalog: SshNodeCatalog | null;
+  scriptCatalog: ScriptNodeCatalog | null;
   sshEngineCatalog: SshEngineCatalog | null;
   parameterConstraints: readonly SshParameterConstraint[];
   profileRetrySafe: boolean;
@@ -812,6 +874,7 @@ function ConfigureStep({
   const inferred = fields.some((field) => field.inferred);
   const kubernetes = isKubernetesConfigurableType(draft.type);
   const ssh = isSshConfigurableType(draft.type);
+  const script = isScriptConfigurableType(draft.type);
   const visible = fields.filter(
     (field) =>
       !field.selectorKind &&
@@ -836,7 +899,7 @@ function ConfigureStep({
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
       </label>
-      {inferred && !kubernetes ? (
+      {inferred && !kubernetes && !ssh && !script ? (
         <p className="text-xs text-zinc-500">
           Configure fields are inferred from phase/ports and the YAML schema
           until catalog <code className="font-mono">allowedWith</code> is
@@ -863,10 +926,52 @@ function ConfigureStep({
           jonny&apos;s map when the catalog is listed.
         </p>
       ) : null}
+      {inferred && script ? (
+        <p className="text-xs text-zinc-500">
+          Script <code className="font-mono">with</code> fields prefer{" "}
+          <code className="font-mono">GET /scripts/catalog</code>{" "}
+          <code className="font-mono">nodes[]</code> from #97 (
+          <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
+          ), then <code className="font-mono">GET /ops-config/catalog</code>{" "}
+          <code className="font-mono">scriptEngine</code>, then{" "}
+          <code className="font-mono">GET /workflows/catalog</code>.{" "}
+          {scriptCatalog && scriptCatalog.source !== "contract-fallback"
+            ? `Using ${scriptCatalog.source}.`
+            : SCRIPT_CONTRACT_FALLBACK_HELP}
+        </p>
+      ) : null}
       {isKubernetesRolloutType(draft.type) ? (
         <p className="rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-sm text-teal-950">
           {rolloutNodeDescription(engineCatalog)} {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
         </p>
+      ) : null}
+      {script ? (
+        <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-teal-950">
+            Script publish boundary (server-enforced)
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
+            {SCRIPT_NODE_POLICY_NOTES.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-teal-950">
+            {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
+            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}{" "}
+            Required: {scriptPublishRules(scriptCatalog).requiredWith.join(", ")}.
+            Source cap {scriptPublishRules(scriptCatalog).maxSourceBytes} bytes.
+          </p>
+          {scriptNodeErrorShapes(scriptCatalog).length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
+              {scriptNodeErrorShapes(scriptCatalog).slice(0, 8).map((item) => (
+                <li key={item.code}>
+                  <code className="font-mono">{item.code}</code> ({item.status}):{" "}
+                  {item.meaning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
       ) : null}
       {ssh ? (
         <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
@@ -1095,7 +1200,7 @@ function ConfigField({
             }
             onChange(event.target.value);
           }}
-          rows={field.name === "manifests" ? 12 : 6}
+          rows={field.name === "manifests" || field.name === "source" ? 12 : 6}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
         />
         {field.description ? (
@@ -1218,6 +1323,7 @@ function ReviewStep({
   engineErrors,
   engineCatalog,
   sshCatalog,
+  scriptCatalog,
   profileRetrySafe,
   verificationDeclared,
 }: {
@@ -1233,6 +1339,7 @@ function ReviewStep({
   engineErrors: ReturnType<typeof engineErrorShapes>;
   engineCatalog: KubernetesEngineCatalog | null;
   sshCatalog: SshNodeCatalog | null;
+  scriptCatalog: ScriptNodeCatalog | null;
   profileRetrySafe: boolean;
   verificationDeclared: boolean;
 }) {
@@ -1290,6 +1397,17 @@ function ReviewStep({
             })}{" "}
             {SSH_INDETERMINATE_HELP} YAML holds target/profile UUIDs and typed
             values only.
+          </p>
+        ) : null}
+        {isScriptConfigurableType(draft.type) ? (
+          <p className="mt-2 text-xs text-zinc-600">
+            {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
+            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP} YAML
+            stores source, entrypoint, runtimeProfileId, timeoutSeconds, and
+            optional limits/schemas — never secrets, command/shell, or
+            package/storageRef. Map source #97 (
+            <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
+            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}).
           </p>
         ) : null}
       </section>

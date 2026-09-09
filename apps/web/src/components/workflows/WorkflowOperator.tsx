@@ -19,10 +19,18 @@ import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
+import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
 import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
+import { getScriptCatalog, listWorkflowScriptArtifacts } from "@/lib/script-client";
+import {
+  scriptArtifactStatus,
+  yamlHasScriptNodes,
+  type ScriptNodeCatalog,
+  type ScriptVersionPin,
+} from "@/lib/script-contract";
 import {
   adaptActionLibrary,
   rejectDisabledActionType,
@@ -125,6 +133,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     null,
   );
   const [sshCatalog, setSshCatalog] = useState<SshNodeCatalog | null>(null);
+  const [scriptCatalog, setScriptCatalog] = useState<ScriptNodeCatalog | null>(
+    null,
+  );
+  const [scriptArtifacts, setScriptArtifacts] = useState<
+    Record<string, ScriptVersionPin[]>
+  >({});
   const [status, setStatus] = useState<"idle" | "pending" | "valid" | "invalid">(
     "idle",
   );
@@ -185,7 +199,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
-  const library = adaptActionLibrary(catalog, engineCatalog, sshCatalog);
+  const library = adaptActionLibrary(catalog, engineCatalog, sshCatalog, scriptCatalog);
   const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
   const graph = projectCanvasGraph({
     errors,
@@ -295,15 +309,17 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   async function loadCatalog() {
     setPending("catalog");
     setProblem(null);
-    const [result, engine, ssh] = await Promise.all([
+    const [result, engine, ssh, script] = await Promise.all([
       fetchWorkflowCatalog(identity),
       getKubernetesCatalog(identity).catch(() => null),
       getSshCatalog(identity).catch(() => null),
+      getScriptCatalog(identity).catch(() => null),
     ]);
     setLastRequestId(result.requestId);
     setPending(null);
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
+    setScriptCatalog(script && script.ok ? script.catalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -359,6 +375,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     setExecutionApprovals([]);
     setVersions([]);
     setVersionPins({});
+    setScriptArtifacts({});
   }
 
   async function refreshVersions(workflowId: string) {
@@ -378,6 +395,17 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       }),
     );
     setVersionPins(Object.fromEntries(pinEntries));
+    const artifactEntries = await Promise.all(
+      result.items.map(async (version) => {
+        const artifacts = await listWorkflowScriptArtifacts(
+          identity,
+          workflowId,
+          version.id,
+        );
+        return [version.id, artifacts.ok ? artifacts.items : []] as const;
+      }),
+    );
+    setScriptArtifacts(Object.fromEntries(artifactEntries));
     if (firstPublished) {
       await evaluateSelectedVersion(firstPublished, workflowId);
     }
@@ -582,6 +610,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       setVersionPins((current) => ({
         ...current,
         [result.version.id]: result.pins,
+      }));
+    }
+    if (result.scriptArtifacts.length) {
+      setScriptArtifacts((current) => ({
+        ...current,
+        [result.version.id]: result.scriptArtifacts,
       }));
     }
     await refreshVersions(workflow.id);
@@ -1187,6 +1221,23 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             </code>
           </p>
         ) : null}
+        {yamlHasScriptNodes(yaml) ? (
+          <ScriptPublishStatus
+            status={scriptArtifactStatus({
+              dirty,
+              hasPublishedVersion: Boolean(publishedVersion || versions[0]),
+              version: publishedVersion ?? versions[0] ?? null,
+              scriptArtifacts:
+                scriptArtifacts[
+                  publishedVersion?.id ?? versions[0]?.id ?? ""
+                ] ?? [],
+            })}
+            pins={
+              scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
+              []
+            }
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
@@ -1262,6 +1313,13 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             pending={pending !== null}
             identity={identity}
             canCall={canCall}
+            dirty={dirty}
+            hasPublishedVersion={Boolean(publishedVersion || versions[0])}
+            scriptCatalog={scriptCatalog}
+            scriptArtifacts={
+              scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
+              []
+            }
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
             onPatchNodeWith={patchNodeWith}
@@ -1342,6 +1400,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         identity={identity}
         ready={canCall}
         catalog={catalog}
+        scriptCatalog={scriptCatalog}
         entries={library}
         yaml={yaml}
         nodes={yamlNodes}

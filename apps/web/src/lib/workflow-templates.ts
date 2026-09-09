@@ -79,24 +79,24 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     id: "python-automation",
     title: "Python automation",
     description:
-      "Starter for isolated Python work. Script source is published later; this draft is editable now.",
+      "Starter for isolated Python work. Add a script.python node from the action wizard. Draft save writes YAML; publish packages/scans/signs and pins the artifact.",
     slugHint: "python-automation",
     name: "Python automation",
     definitionYaml: starter(
       "python-automation",
-      "Starter draft for Python automation. Replace the seed with a reviewed script node when available.",
+      "Starter draft for Python automation. Add script.python from the action wizard — publish is the artifact pin, not draft save.",
     ),
   },
   {
     id: "go-automation",
     title: "Go automation",
     description:
-      "Starter for isolated Go work. Creates an editable draft in this workspace.",
+      "Starter for isolated Go work. Add a script.go node from the action wizard. Draft save writes YAML; publish packages/scans/signs and pins the artifact.",
     slugHint: "go-automation",
     name: "Go automation",
     definitionYaml: starter(
       "go-automation",
-      "Starter draft for Go automation. Replace the seed with a reviewed script node when available.",
+      "Starter draft for Go automation. Add script.go from the action wizard — publish is the artifact pin, not draft save.",
     ),
   },
   {
