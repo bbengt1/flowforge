@@ -38,7 +38,7 @@ The [frontend UI specification](reference/frontend-ui.md) defines the visual can
 
 The YAML document is a typed directed graph. Provider actions are composable node objects with explicit input/output ports; execution plans use only declared edges and preserve each node's policy boundary. This prevents a Kubernetes, SSH, or script node from receiving unrelated prior results or credentials by accident.
 
-The host uses a stable route or mount point and communicates through a versioned embed contract. Deep links remain valid in standalone mode. The host never receives workflow credentials or raw runner logs containing secrets.
+The host uses a stable route or mount point and communicates through a versioned embed contract (`embed.v1`, `/embed/v1` prefix). Deep links remain valid in standalone mode. The host never receives workflow credentials or raw runner logs containing secrets. See the [embed SDK](reference/embed-sdk.md).
 
 ## CP Ops Portal add-in
 

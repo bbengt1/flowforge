@@ -70,3 +70,16 @@ API_INTERNAL_URL=http://api:8080
 # NEXT_PUBLIC_API_URL is always included. Uncomment only if the browser
 # must call additional origins.
 # WEB_CSP_CONNECT_SRC=
+#
+# E11.1 embed framing (exact origins, space or comma separated). Empty keeps
+# frame-ancestors 'none' / X-Frame-Options DENY. Ignored on non-/embed/v1 paths.
+# WEB_EMBED_FRAME_ANCESTORS=
+
+# --- Embed assertions (E11.1) ---
+# Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
+# Unset uses an ephemeral process key (assertions die on restart).
+# EMBED_SIGNING_KEY=
+# EMBED_SIGNING_KEY_FILE=
+# EMBED_SIGNING_KEY_ID=env:EMBED_SIGNING_KEY
+# EMBED_AUDIENCE=flowforge
+# EMBED_ASSERTION_TTL=60s

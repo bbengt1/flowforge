@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -53,6 +54,8 @@ type Server struct {
 	registry         *observability.Registry
 	sec              Security
 	clock            func() time.Time
+	embedKeys        embed.Material
+	embedJTI         embed.JTIConsumer
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -80,6 +83,8 @@ type Deps struct {
 	Registry         *observability.Registry
 	Security         Security
 	Now              func() time.Time
+	EmbedKeys        embed.Material
+	EmbedJTI         embed.JTIConsumer
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -283,6 +288,18 @@ func newServer(d Deps) http.Handler {
 		registry:         registry,
 		sec:              d.Security,
 		clock:            clock,
+		embedKeys:        d.EmbedKeys,
+		embedJTI:         d.EmbedJTI,
+	}
+	if !s.embedKeys.Ready() {
+		if loaded, err := embed.LoadMaterial(); err == nil {
+			s.embedKeys = loaded
+		} else {
+			s.embedKeys = embed.NewEphemeralMaterial()
+		}
+	}
+	if s.embedJTI == nil {
+		s.embedJTI = embed.NewMemoryJTI()
 	}
 
 	mux := http.NewServeMux()
@@ -319,6 +336,10 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
 	mux.HandleFunc("POST /api/v1/session/logout", s.logoutSession)
 	mux.HandleFunc("GET /api/v1/session/audit-events", s.listSessionAudit)
+	mux.HandleFunc("GET /api/v1/embed/catalog", s.getEmbedCatalog)
+	mux.HandleFunc("GET /api/v1/embed/jwks", s.getEmbedJWKS)
+	mux.HandleFunc("POST /api/v1/embed/assertions", s.mintEmbedAssertion)
+	mux.HandleFunc("POST /api/v1/embed/exchange", s.exchangeEmbedAssertion)
 	mux.HandleFunc("GET /api/v1/workflows/catalog", s.getWorkflowCatalog)
 	mux.HandleFunc("POST /api/v1/workflows/validate", s.validateWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/normalize", s.normalizeWorkflow)

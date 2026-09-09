@@ -21,6 +21,16 @@ const nextConfig: NextConfig = {
         source: "/api/v1/:path*",
         destination: "/api/control-plane/:path*",
       },
+      // E11.1: /embed/v1 mounts the same canonical UI. Deep links stay valid
+      // standalone. Chloe owns the embed shell chrome.
+      {
+        source: "/embed/v1",
+        destination: "/",
+      },
+      {
+        source: "/embed/v1/:path*",
+        destination: "/:path*",
+      },
     ];
   },
   async headers() {

@@ -130,6 +130,11 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `ARTIFACT_STORE_DIR` | empty | Filesystem root for encrypted artifact payloads (`{dir}/{workspaceID}/{storageRef}`). Empty uses in-process memory. Compose/k8s API containers are read-only — use `/tmp/flowforge-artifacts`. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
+| `EMBED_SIGNING_KEY` | ephemeral | Ed25519 seed/key (base64, hex, or PKCS8 PEM) for embed assertions (E11.1). Production must set a stable key. Never returned from an API. |
+| `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY`. |
+| `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. |
+| `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
+| `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
 
 Suggested local URL (compose service hostname `postgres`):
 

@@ -46,10 +46,10 @@ func TestRedactingHandlerRedactsDSNValues(t *testing.T) {
 }
 
 func TestShouldRedactKey(t *testing.T) {
-	if !shouldRedactKey("Authorization") || !shouldRedactKey("client_secret") {
+	if !shouldRedactKey("Authorization") || !shouldRedactKey("client_secret") || !shouldRedactKey("assertion") {
 		t.Fatal("expected secret keys to redact")
 	}
-	if shouldRedactKey("request_id") || shouldRedactKey("status") || shouldRedactKey("timeout") {
+	if shouldRedactKey("request_id") || shouldRedactKey("status") || shouldRedactKey("timeout") || shouldRedactKey("jti") {
 		t.Fatal("safe keys should not redact")
 	}
 }

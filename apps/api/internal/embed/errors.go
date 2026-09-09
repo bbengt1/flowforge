@@ -1,0 +1,26 @@
+package embed
+
+import "errors"
+
+// Validation and store errors. Callers must fail closed.
+var (
+	ErrMissingClaim     = errors.New("embed assertion is missing a required claim")
+	ErrAudience         = errors.New("embed assertion audience is not bound to FlowForge")
+	ErrExpired          = errors.New("embed assertion has expired")
+	ErrNotYetValid      = errors.New("embed assertion is not yet valid")
+	ErrSignature        = errors.New("embed assertion signature is not valid")
+	ErrReplay           = errors.New("embed assertion token id has already been used")
+	ErrSDK              = errors.New("embed assertion sdk version is not supported")
+	ErrCapability       = errors.New("embed assertion capabilities are not valid")
+	ErrWorkspaceBinding = errors.New("embed assertion workspace binding does not match server resolution")
+	ErrKeyUnavailable   = errors.New("embed signing key is not available")
+	ErrIssuer           = errors.New("embed assertion issuer is not valid")
+	ErrSubject          = errors.New("embed assertion subject is not valid")
+	ErrTokenID          = errors.New("embed assertion token id is not valid")
+	ErrTenant           = errors.New("embed assertion tenant_id is not valid")
+	ErrWorkbench        = errors.New("embed assertion workbench_key is not valid")
+	ErrTTL              = errors.New("embed assertion ttl is not valid")
+	ErrStoreUnavailable = errors.New("embed assertion store is unavailable")
+	ErrRotationUnready  = errors.New("embed key rotation overlap is not enabled")
+	ErrTenancyUnready   = errors.New("embed tenancy propagation is not enabled")
+)

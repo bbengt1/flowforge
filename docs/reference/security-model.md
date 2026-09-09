@@ -29,9 +29,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   server-side hash). Bearer tokens are never accepted from a URL or persisted
   in browser local storage. Idle and absolute expiry fail closed.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
-  audience-bound to FlowForge. Key rotation accepts only active and explicitly
-  overlapping verification keys. The UI treats host-provided identity as display
-  context until the API verifies it.
+  audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`). E11.1
+  mints and verifies the contract; key rotation accepts only the active key
+  (E11.2 adds explicit overlap kids). The UI treats host-provided identity as
+  display context until `POST /embed/exchange` verifies it. Assertions are
+  never accepted from a URL. See [embed SDK](embed-sdk.md).
 - Privileged actions and approval decisions require fresh authorization at the
   server. Approval records bind the exact execution step, workflow version,
   target/policy snapshot, requested operation, and expiry; a decision cannot be

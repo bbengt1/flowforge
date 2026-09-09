@@ -5,9 +5,15 @@
  * (HSTS when the request is actually TLS). Keep this module free of next/server
  * so next.config and node:test can import it.
  *
- * Embed (E11) will relax frame-ancestors to allowlisted host origins. Standalone
- * defaults to deny/none so the shell cannot be clickjacked.
+ * Embed (E11.1) relaxes frame-ancestors to WEB_EMBED_FRAME_ANCESTORS on
+ * /embed/v1 only. Standalone stays deny/none so the shell cannot be clickjacked.
  */
+
+import {
+  frameAncestorsForPath,
+  isEmbedMountPath,
+  parseEmbedFrameAncestors,
+} from "./embed-contract.ts";
 
 export const HSTS_VALUE = "max-age=31536000; includeSubDomains";
 
@@ -21,6 +27,7 @@ export type HeaderEnv = {
   NEXT_PUBLIC_API_URL?: string;
   WEB_CSP_CONNECT_SRC?: string;
   WEB_HSTS?: string;
+  WEB_EMBED_FRAME_ANCESTORS?: string;
 };
 
 const DEFAULT_API_ORIGIN = "http://localhost:8080";
@@ -65,6 +72,7 @@ export function buildContentSecurityPolicy(
     connectSrc?: string[];
     env?: HeaderEnv;
     nonce?: string;
+    pathname?: string;
   } = {},
 ): string {
   const env = options.env ?? process.env;
@@ -99,7 +107,7 @@ export function buildContentSecurityPolicy(
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${frameAncestorsForPath(options.pathname ?? "/", env)}`,
     "frame-src 'none'",
     "worker-src 'self'",
     "manifest-src 'self'",
@@ -124,14 +132,26 @@ export function shouldSendHsts(input: {
   return (input.protocol ?? "").replace(/:$/, "").toLowerCase() === "https";
 }
 
+export function embedFramingAllowed(
+  pathname: string,
+  env: HeaderEnv = {},
+): boolean {
+  return (
+    isEmbedMountPath(pathname) &&
+    parseEmbedFrameAncestors(env.WEB_EMBED_FRAME_ANCESTORS).length > 0
+  );
+}
+
 export function staticSecurityHeaders(
   options: {
     development?: boolean;
     env?: HeaderEnv;
     nonce?: string;
     includeCsp?: boolean;
+    pathname?: string;
   } = {},
 ): HeaderPair[] {
+  const env = options.env ?? process.env;
   const headers: HeaderPair[] = [];
   if (options.includeCsp !== false) {
     headers.push({
@@ -143,7 +163,11 @@ export function staticSecurityHeaders(
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "Permissions-Policy", value: PERMISSIONS_POLICY },
-    { key: "X-Frame-Options", value: "DENY" },
+  );
+  if (!embedFramingAllowed(options.pathname ?? "/", env)) {
+    headers.push({ key: "X-Frame-Options", value: "DENY" });
+  }
+  headers.push(
     { key: "X-DNS-Prefetch-Control", value: "off" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
     { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
@@ -159,6 +183,7 @@ export function applySecurityHeaders(
     protocol?: string;
     forwardedProto?: string | null;
     nonce?: string;
+    pathname?: string;
   } = {},
 ): void {
   const env = options.env ?? process.env;
@@ -166,6 +191,7 @@ export function applySecurityHeaders(
     development: options.development,
     env,
     nonce: options.nonce,
+    pathname: options.pathname,
   })) {
     headers.set(key, value);
   }

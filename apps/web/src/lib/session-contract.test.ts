@@ -30,6 +30,8 @@ describe("session-contract", () => {
   it("requires CSRF on mutations except bootstrap POST /session", () => {
     assert.equal(csrfRequiredFor("GET", "/api/v1/session"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/embed/exchange"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/embed/assertions"), true);
     assert.equal(csrfRequiredFor("POST", "/session"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session/refresh"), true);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session/logout"), true);
