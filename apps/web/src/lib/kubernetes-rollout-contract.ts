@@ -40,9 +40,7 @@ export const KUBERNETES_ROLLOUT_KINDS = [
 
 export type KubernetesRolloutKind = (typeof KUBERNETES_ROLLOUT_KINDS)[number];
 
-/**
- * Engine-doc recognition — retarget when jonny posts the status map.
- */
+/** Engine-doc recognition from the #79 status map. */
 export const KUBERNETES_ROLLOUT_RECOGNITION = {
   Deployment: "availability + observed generation",
   StatefulSet: "ready replicas",

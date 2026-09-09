@@ -29,9 +29,11 @@ export function RolloutObservationPanel({
       <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_ROLLOUT_REDACTION_HELP}</p>
       {observations.length === 0 ? (
         <p className="mt-3 text-sm text-zinc-600">
-          No observation payload yet. The adapter is ready for jonny&apos;s
-          status map — poll continues on{" "}
-          <code className="font-mono text-xs">GET /executions/{"{id}"}</code>.
+          No observation payload yet. Poll continues on{" "}
+          <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
+          for <code className="font-mono text-xs">result.observation</code>,{" "}
+          <code className="font-mono text-xs">result.status.progress[]</code>,
+          and redacted <code className="font-mono text-xs">result.audit</code>.
         </p>
       ) : (
         <ul className="mt-4 grid gap-3">
