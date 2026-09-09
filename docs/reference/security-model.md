@@ -76,13 +76,17 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   `REQUIRE_TLS`) **refuses to start** without it — no boot-only ephemeral
   key. An ephemeral process key is gated to explicit non-production
   `APP_ENV` only. Key rotation accepts only active and explicitly
-  overlapping verification keys; unknown or expired (`overlapUntil`)
-  `kid` fails closed. Exchange and JWKS refresh the overlap set from the
-  durable store so stale in-memory rings cannot keep accepting retired
-  keys or miss overlap registered on another instance. The rotate API
-  may register only the previous active public key and requires
-  `platform.administer` (`PLATFORM_ADMINS`); `workspace.administer` is not
-  enough. Mint binds `sub` and `iss` to the authenticated caller. A
+  overlapping verification keys. Every overlap key requires a short
+  finite `overlapUntil` (max 4h). Missing, zero, or far-future expiry
+  is refused — it is not treated as forever. The active signing key is
+  not an overlap key and does not use `overlapUntil`. Unknown, missing-expiry,
+  expired, or far-future `kid` fails closed. Exchange and JWKS refresh the
+  overlap set from the durable store so stale in-memory rings cannot keep
+  accepting retired keys or miss overlap registered on another instance.
+  The rotate API may register only the previous active public key, requires
+  `overlapUntil` (max 4h), and requires `platform.administer`
+  (`PLATFORM_ADMINS`); `workspace.administer` is not enough. Bad
+  `EMBED_OVERLAP_KEYS` is a boot-fail. Mint binds `sub` and `iss` to the authenticated caller. A
   different subject requires `embed.impersonate` (same `PLATFORM_ADMINS`
   allowlist; empty is fail-closed). A different issuer is always `403`.
   Workspace `admin` cannot impersonate. `embed.impersonate` is

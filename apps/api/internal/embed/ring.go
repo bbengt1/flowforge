@@ -162,8 +162,9 @@ func (r *Ring) Verify(ctx context.Context, token string, opt VerifyOptions) (Ver
 
 // AddOverlap registers the current active public key as overlap so a
 // later active-key deploy can verify in-flight assertions. Arbitrary
-// caller-supplied Ed25519 keys are rejected fail-closed.
-func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt time.Time) error {
+// caller-supplied Ed25519 keys are rejected fail-closed. expiresAt is
+// required and must be a short window (max MaxOverlapTTL).
+func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt, now time.Time) error {
 	if r == nil {
 		return ErrKeyUnavailable
 	}
@@ -177,9 +178,10 @@ func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt time.Tim
 	if !match {
 		return ErrOverlapNotPrior
 	}
-	if !expiresAt.IsZero() {
-		norm.OverlapUntil = expiresAt.UTC()
+	if err := ValidateOverlapUntil(expiresAt, now); err != nil {
+		return err
 	}
+	norm.OverlapUntil = expiresAt.UTC()
 	if r.store != nil {
 		if err := r.store.RegisterOverlap(ctx, norm, expiresAt); err != nil {
 			return err
@@ -320,9 +322,10 @@ func (m *MemoryKeys) RegisterOverlap(_ context.Context, key PublicJWK, expiresAt
 	if err != nil {
 		return err
 	}
-	if !expiresAt.IsZero() {
-		norm.OverlapUntil = expiresAt.UTC()
+	if expiresAt.IsZero() {
+		return ErrOverlapUntilRequired
 	}
+	norm.OverlapUntil = expiresAt.UTC()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.keys == nil {

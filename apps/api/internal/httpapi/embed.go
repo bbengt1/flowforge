@@ -96,16 +96,22 @@ func (s *Server) rotateEmbedKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case "register-overlap":
-		var until time.Time
-		if strings.TrimSpace(req.OverlapUntil) != "" {
-			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(req.OverlapUntil))
-			if err != nil {
-				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil must be RFC3339.")
-				return
-			}
-			until = parsed.UTC()
+		rawUntil := strings.TrimSpace(req.OverlapUntil)
+		if rawUntil == "" {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil is required and must be a short RFC3339 expiry (max 4h).")
+			return
 		}
-		if err := s.embedRing.AddOverlap(r.Context(), req.PublicJWK, until); err != nil {
+		parsed, err := time.Parse(time.RFC3339, rawUntil)
+		if err != nil {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil must be RFC3339.")
+			return
+		}
+		until := parsed.UTC()
+		if err := embed.ValidateOverlapUntil(until, s.clockNow()); err != nil {
+			writeEmbedError(w, r, err)
+			return
+		}
+		if err := s.embedRing.AddOverlap(r.Context(), req.PublicJWK, until, s.clockNow()); err != nil {
 			writeEmbedError(w, r, err)
 			return
 		}
@@ -347,6 +353,10 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Host-supplied tenant or workbench does not match the embed session.")
 	case errors.Is(err, embed.ErrBootstrap):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Embed sessions cannot create tenants or workspaces.")
+	case errors.Is(err, embed.ErrOverlapUntilRequired):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil is required and must be in the future (max 4h).")
+	case errors.Is(err, embed.ErrOverlapUntilTooLong):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil exceeds the maximum overlap window (4h).")
 	case errors.Is(err, embed.ErrOverlapNotPrior):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Overlap registration is locked to the previous active signing key.")
 	case errors.Is(err, embed.ErrKeyUnavailable), errors.Is(err, embed.ErrStoreUnavailable):

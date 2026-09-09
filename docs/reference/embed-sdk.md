@@ -139,7 +139,7 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then validate + atomic `jti` consume + bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. |
-| `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap, or retire it. `workspace.administer` is `403`. |
+| `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap (`overlapUntil` **required**, max 4h), or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
 `subject` and `issuer` default to the authenticated caller. A different
@@ -150,23 +150,25 @@ always `403`. Capabilities must still be a subset of the caller.
 
 Exchange JSON: `{assertion, sdk?}`. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{tenantId,workbenchKey,workspaceId,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
 
-Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil?, kid?}`. `publicJwk` on `register-overlap` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
+Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil, kid?}`. On `register-overlap`, `overlapUntil` is **required** RFC3339 and must be a short future window (**max 4h**). Missing, zero, past, or farther-future is `400`. `publicJwk` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
+
+**Active key vs overlap keys:** the process **active** signing key (`EMBED_SIGNING_KEY`) is not an overlap key and does not carry `overlapUntil`. Missing `overlapUntil` on the active JWKS entry is correct — that key stays valid until a new signing key replaces it. Every **overlap** verify key (rotate API or `EMBED_OVERLAP_KEYS`) must carry a short finite `overlapUntil`. A missing field is not “valid forever”.
 
 Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown or expired-overlap kid `401`; tenancy mismatch / foreign subject without `embed.impersonate` / spoofed issuer `403`; replayed `jti` `409`; missing signing key or JTI/overlap store `503`. Production **boot-fails** if `EMBED_SIGNING_KEY` is unset (empty/`production` `APP_ENV` or `REQUIRE_TLS`). Problem details never echo the JWS or private keys. Successful impersonation is audited (`reason=impersonated`).
 
 ## Key rotation (ops)
 
-Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`). That material must be durable — production refuses to start without it. Verify (exchange) **refreshes** overlap from the durable store, then accepts the active key and any **explicit overlap** public key that is still inside `overlapUntil` and has not been retired. Unknown, expired, or retired `kid` fails closed. A stale in-memory ring does not keep accepting expired keys and does not miss overlap registered on another instance.
+Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`). That material must be durable — production refuses to start without it. The active key is **not** an “overlap until forever” via a missing field; it is the current signing key until replaced. Verify (exchange) **refreshes** overlap from the durable store, then accepts the active key and any **explicit overlap** public key that still has a short finite `overlapUntil` (max 4h), is still inside that window, and has not been retired. Unknown, missing-expiry, expired, far-future, or retired `kid` fails closed. A stale in-memory ring does not keep accepting expired keys and does not miss overlap registered on another instance.
 
 ### Recommended rotate procedure
 
 1. Generate a new Ed25519 seed. Keep the current public JWK (`GET /embed/jwks` active key).
-2. As a **platform-admin** (`PLATFORM_ADMINS=issuer|subject`), `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK from GET /embed/jwks>, overlapUntil:<now+max TTL>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key before restart. Workspace admins cannot call this route.
+2. As a **platform-admin** (`PLATFORM_ADMINS=issuer|subject`), `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK from GET /embed/jwks>, overlapUntil:<now+≤4h>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key **with `overlapUntil` on every key** before restart. Missing/too-long env `overlapUntil` is a **boot-fail**. Workspace admins cannot call this route.
 3. Deploy `EMBED_SIGNING_KEY` + `EMBED_SIGNING_KEY_ID` for the new key. Restart API pods.
-4. JWKS (refreshed from the store) lists `status=active` (new) and `status=overlap` (old, with `overlapUntil`). In-flight assertions still verify until that instant.
-5. After the overlap window, exchange refuses the old kid automatically. Optionally `POST /embed/keys/rotate` `{action:"retire", kid:<old>}` and/or remove the old key from `EMBED_OVERLAP_KEYS` (env overlap without `overlapUntil` lasts until retire or restart).
+4. JWKS (refreshed from the store) lists `status=active` (new, no `overlapUntil`) and `status=overlap` (old, with required `overlapUntil`). In-flight assertions still verify until that instant.
+5. After the overlap window, exchange refuses the old kid automatically. Optionally `POST /embed/keys/rotate` `{action:"retire", kid:<old>}` and/or remove the old key from `EMBED_OVERLAP_KEYS`.
 
-`EMBED_OVERLAP_KEYS` accepts `{"keys":[…]}` or a bare JWK array. Only public OKP/Ed25519/EdDSA keys. Private `d` is ignored and never stored.
+`EMBED_OVERLAP_KEYS` accepts `{"keys":[…]}` or a bare JWK array. Only public OKP/Ed25519/EdDSA keys. Every key **must** include RFC3339 `overlapUntil` within 4h of process start. Private `d` is ignored and never stored.
 
 ## Key management
 
@@ -175,7 +177,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM. Compose seeds a **local-only** key. An ephemeral process key is allowed only when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off. |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Active `kid`. Never `ephemeral:process` in production. |
-| `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. Optional `overlapUntil` per key. Prefer `POST /embed/keys/rotate` so every instance refreshes from the store. |
+| `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. Each key **requires** `overlapUntil` (RFC3339, max 4h from boot). Missing/zero/far-future is boot-fail. Prefer `POST /embed/keys/rotate` so every instance refreshes from the store. |
 | `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys, create tenants/workspaces, **and** mint for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
@@ -205,7 +207,7 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | Hook | Status | Fail closed |
 | --- | --- | --- |
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
-| `key.rotation` | ready | Durable active key + overlap verification. Unknown / expired `overlapUntil` `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` is boot-fail. |
+| `key.rotation` | ready | Durable active key + overlap verification. Every overlap key requires a short `overlapUntil` (max 4h). Unknown / missing-expiry / expired / far-future `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only, requires `overlapUntil`, and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` or bad `EMBED_OVERLAP_KEYS` is boot-fail. The active key is not an overlap key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
 | `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Full two-host iframe check is ADV-013. |

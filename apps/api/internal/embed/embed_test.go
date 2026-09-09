@@ -354,6 +354,8 @@ func TestTenancyAndRotationHooksFailClosed(t *testing.T) {
 
 func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	ctx := context.Background()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	until := now.Add(2 * time.Minute)
 	old := TestMaterial()
 	ring := NewRing(old, NewMemoryKeys())
 	foreign := NewEphemeralMaterial()
@@ -361,13 +363,13 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	err := ring.AddOverlap(ctx, PublicJWK{
 		Kty: KeyType, Crv: Curve, X: encodePublicX(foreign.Public), Kid: foreign.KeyID,
 		Use: "sig", Alg: Algorithm,
-	}, time.Time{})
+	}, until, now)
 	if err != ErrOverlapNotPrior {
 		t.Fatalf("foreign key: %v", err)
 	}
 
 	active := old.PublicJWKS().Keys[0]
-	if err := ring.AddOverlap(ctx, active, time.Time{}); err != nil {
+	if err := ring.AddOverlap(ctx, active, until, now); err != nil {
 		t.Fatalf("prior active: %v", err)
 	}
 	next := NewEphemeralMaterial()
@@ -375,12 +377,11 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	if err := ring.InstallActive(next); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	minted, _, err := Mint(old, testMintInput(now))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Verify(ring.Material(), minted.Assertion, VerifyOptions{
+	got, err := Verify(ring.MaterialAt(now.Add(time.Second)), minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
 		AllowedIssuers: []string{"https://portal.example"},
 	})
@@ -393,13 +394,13 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 
 	wrongX := active
 	wrongX.X = encodePublicX(foreign.Public)
-	if err := ring.AddOverlap(ctx, wrongX, time.Time{}); err != ErrOverlapNotPrior {
+	if err := ring.AddOverlap(ctx, wrongX, until, now); err != ErrOverlapNotPrior {
 		t.Fatalf("kid reuse with foreign x: %v", err)
 	}
 	if err := ring.AddOverlap(ctx, PublicJWK{
 		Kty: KeyType, Crv: Curve, X: encodePublicX(foreign.Public), Kid: old.KeyID,
 		Use: "sig", Alg: Algorithm,
-	}, time.Time{}); err != ErrOverlapNotPrior {
+	}, until, now); err != ErrOverlapNotPrior {
 		t.Fatalf("old kid with foreign x after handoff: %v", err)
 	}
 }
@@ -444,7 +445,7 @@ func TestRotateOverlapExpiresAfterOverlapUntil(t *testing.T) {
 	store := NewMemoryKeys()
 	ring := NewRing(old, store)
 	until := now.Add(90 * time.Second)
-	if err := ring.AddOverlap(ctx, old.PublicJWKS().Keys[0], until); err != nil {
+	if err := ring.AddOverlap(ctx, old.PublicJWKS().Keys[0], until, now); err != nil {
 		t.Fatal(err)
 	}
 	next := NewEphemeralMaterial()
@@ -479,7 +480,7 @@ func TestVerifyRefreshesOverlapFromSharedStore(t *testing.T) {
 	store := NewMemoryKeys()
 	writer := NewRing(old, store)
 	reader := NewRing(next, store)
-	if err := writer.AddOverlap(ctx, old.PublicJWKS().Keys[0], now.Add(2*time.Minute)); err != nil {
+	if err := writer.AddOverlap(ctx, old.PublicJWKS().Keys[0], now.Add(2*time.Minute), now); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.InstallActive(next); err != nil {
@@ -516,7 +517,7 @@ func TestVerifyOverlapKeyAcceptedUnknownKidRejected(t *testing.T) {
 	active.KeyID = "active-kid"
 	active.Overlap = []PublicJWK{{
 		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
-		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap,
+		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap, OverlapUntil: now.Add(2 * time.Minute),
 	}}
 	minted, _, err := Mint(old, testMintInput(now))
 	if err != nil {
@@ -541,6 +542,33 @@ func TestVerifyOverlapKeyAcceptedUnknownKidRejected(t *testing.T) {
 	}
 	if _, err := Verify(active, other.Assertion, VerifyOptions{Now: now.Add(time.Second), SkipJTI: true}); err != ErrSignature && err != ErrUnknownKey {
 		t.Fatalf("unknown kid: %v", err)
+	}
+}
+
+func TestVerifyRefusesOverlapKeyWithoutExpiry(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	old := TestMaterial()
+	old.KeyID = "no-until-old"
+	active := NewEphemeralMaterial()
+	active.KeyID = "no-until-active"
+	active.Overlap = []PublicJWK{{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
+		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap,
+	}}
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
+	}
+	if _, err := Verify(active, minted.Assertion, opt); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("missing overlapUntil must not verify forever: %v", err)
+	}
+	active.Overlap[0].OverlapUntil = now.Add(2 * time.Minute)
+	if _, err := Verify(active, minted.Assertion, opt); err != nil {
+		t.Fatalf("short overlapUntil must verify: %v", err)
 	}
 }
 
@@ -639,6 +667,7 @@ func overlapMaterial(t *testing.T) Material {
 	m.Overlap = []PublicJWK{{
 		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
 		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap,
+		OverlapUntil: time.Now().UTC().Add(2 * time.Minute),
 	}}
 	return m
 }

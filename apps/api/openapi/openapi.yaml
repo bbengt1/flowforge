@@ -507,10 +507,13 @@ paths:
         Operator rotate API. Mint stays on the durable active `EMBED_SIGNING_KEY`
         (production boot-fails if unset). `register-overlap` accepts only the
         current/previous active public JWK (the key being rotated out).
-        Arbitrary Ed25519 keys are `400`. `retire` removes an overlap kid after
-        in-flight assertions expire. Exchange and JWKS refresh overlap from the
-        durable store and refuse expired `overlapUntil` keys. Unknown `kid`
-        fails closed. Private keys are never accepted or returned.
+        Arbitrary Ed25519 keys are `400`. `register-overlap` requires a short
+        `overlapUntil` (max 4h). Missing, zero, past, or farther-future is
+        `400`. `retire` removes an overlap kid after in-flight assertions
+        expire. Exchange and JWKS refresh overlap from the durable store and
+        refuse missing, expired, or far-future `overlapUntil` keys. The active
+        signing key is not an overlap key. Unknown `kid` fails closed. Private
+        keys are never accepted or returned.
         Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
         `workspace.administer` is not enough (`403`). Cookie callers need CSRF.
       parameters:
@@ -6723,7 +6726,10 @@ components:
               overlapUntil:
                 type: string
                 format: date-time
-                description: Overlap verification expiry. Omitted when the kid does not expire.
+                description: |
+                  Required on overlap verification keys (max 4h from now).
+                  Omitted on the active signing key — that key is not an
+                  overlap key and does not expire via overlapUntil.
         signingReady:
           type: boolean
     MintEmbedAssertionRequest:
@@ -6804,9 +6810,12 @@ components:
           type: string
           format: date-time
           description: |
-            RFC3339 expiry for the overlap verification window. After this
+            Required on register-overlap. RFC3339 expiry for the overlap
+            verification window (must be in the future and no longer than
+            4h). Missing, zero, past, or farther-future is 400. After this
             instant, exchange and JWKS drop the kid even if it is still in
-            an in-memory ring (verify refreshes from the store).
+            an in-memory ring (verify refreshes from the store). The active
+            signing key is not an overlap key and does not use this field.
     ExchangeEmbedAssertionRequest:
       type: object
       required: [assertion]

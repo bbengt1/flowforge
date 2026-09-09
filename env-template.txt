@@ -100,8 +100,10 @@ EMBED_SIGNING_KEY_ID=local:compose
 # EMBED_ASSERTION_TTL=60s
 # EMBED_ISSUER=
 # EMBED_ISSUER_ALLOWLIST=
-# Previous public JWKS for the overlap window after a signing-key rotate:
-# EMBED_OVERLAP_KEYS=
+# Previous public JWKS for the overlap window after a signing-key rotate.
+# Every key requires overlapUntil (RFC3339, max 4h from boot). Missing/too-long is boot-fail.
+# The active EMBED_SIGNING_KEY is not an overlap key and does not use overlapUntil.
+# EMBED_OVERLAP_KEYS={"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"prior","use":"sig","alg":"EdDSA","overlapUntil":"2026-09-09T16:00:00Z"}]}
 
 # --- CP Ops Portal adapter (E11.3) ---
 # Portal issuer allowlist for POST /api/v1/portal/adapter/assertions.
