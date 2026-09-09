@@ -89,12 +89,13 @@ TRUSTED_DEV_IDENTITY_HEADERS=1
 # POST /workspaces, and POST /embed/keys/rotate.
 PLATFORM_ADMINS=https://idp.example|admin-1
 
-# --- Embed assertions (E11.1) ---
-# Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
-# Unset uses an ephemeral process key (assertions die on restart).
-# EMBED_SIGNING_KEY=
+# --- Embed assertions (E11.1 / ADV-006) ---
+# Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
+# Production (empty/production APP_ENV or REQUIRE_TLS) boot-fails if unset.
+# Compose and this template seed a local-only key. Do not copy it to k8s.
+EMBED_SIGNING_KEY=Zmxvd2ZvcmdlLWVtYmVkLWxvY2FsLWRldi1rZXkhISE=
+EMBED_SIGNING_KEY_ID=local:compose
 # EMBED_SIGNING_KEY_FILE=
-# EMBED_SIGNING_KEY_ID=env:EMBED_SIGNING_KEY
 # EMBED_AUDIENCE=flowforge
 # EMBED_ASSERTION_TTL=60s
 # EMBED_ISSUER=

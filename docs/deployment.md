@@ -83,4 +83,4 @@ bash scripts/backup/encrypt-pg-dump.sh
 bash scripts/backup/restore-rehearsal.sh
 ```
 
-`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. CI runs the same script.
+`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script sets a local-only `EMBED_SIGNING_KEY` (same seed as compose; override via env). CI runs the same script. Production still boot-fails without a unique Secret key.
