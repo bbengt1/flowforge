@@ -44,6 +44,7 @@ import {
 } from "@/lib/workflow-templates";
 import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
 import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
+import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
 import {
   MANUAL_START_QUERY,
   canOfferManualStart,
@@ -52,6 +53,10 @@ import {
   WEBHOOK_TRIGGER_QUERY,
   canViewWebhookTriggers,
 } from "@/lib/webhook-trigger-contract";
+import {
+  SCHEDULE_TRIGGER_QUERY,
+  canViewScheduleTriggers,
+} from "@/lib/schedule-trigger-contract";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 
@@ -83,9 +88,11 @@ function WorkflowHomeSession() {
   const canCreate = ready && canCreateWorkflows(permissions);
   const canExecute = ready && canOfferManualStart(permissions);
   const canViewWebhooks = ready && canViewWebhookTriggers(permissions);
+  const canViewSchedules = ready && canViewScheduleTriggers(permissions);
   const denied = ready && permissions != null && !canSeeWorkflowsNav(permissions);
   const [startWorkflowId, setStartWorkflowId] = useState("");
   const [webhookWorkflowId, setWebhookWorkflowId] = useState("");
+  const [scheduleWorkflowId, setScheduleWorkflowId] = useState("");
 
   const items = useMemo(
     () =>
@@ -133,6 +140,21 @@ function WorkflowHomeSession() {
       }
     );
   }, [items, resolvedWebhookId]);
+  const resolvedScheduleId =
+    scheduleWorkflowId === "1"
+      ? (items[0]?.id ?? "")
+      : scheduleWorkflowId;
+  const scheduleItem = useMemo(() => {
+    if (!resolvedScheduleId) {
+      return null;
+    }
+    return (
+      items.find((item) => item.id === resolvedScheduleId) ?? {
+        id: resolvedScheduleId,
+        name: undefined,
+      }
+    );
+  }, [items, resolvedScheduleId]);
 
   const refresh = useCallback(async () => {
     const token = refreshGate.current.begin();
@@ -279,7 +301,14 @@ function WorkflowHomeSession() {
     const shouldImport = searchParams.get("import") === "1";
     const startParam = searchParams.get(MANUAL_START_QUERY);
     const webhookParam = searchParams.get(WEBHOOK_TRIGGER_QUERY);
-    if (!shouldCreate && !shouldImport && !startParam && !webhookParam) {
+    const scheduleParam = searchParams.get(SCHEDULE_TRIGGER_QUERY);
+    if (
+      !shouldCreate &&
+      !shouldImport &&
+      !startParam &&
+      !webhookParam &&
+      !scheduleParam
+    ) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -308,6 +337,10 @@ function WorkflowHomeSession() {
       if (webhookParam) {
         consumedQuery.current = true;
         setWebhookWorkflowId(webhookParam);
+      }
+      if (scheduleParam) {
+        consumedQuery.current = true;
+        setScheduleWorkflowId(scheduleParam);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -612,6 +645,16 @@ function WorkflowHomeSession() {
         />
       ) : null}
 
+      {scheduleItem && canViewSchedules ? (
+        <ScheduleTriggerPanel
+          identity={identity}
+          workflowId={scheduleItem.id}
+          workflowName={scheduleItem.name}
+          permissions={permissions}
+          onClose={() => setScheduleWorkflowId("")}
+        />
+      ) : null}
+
       {visible.length === 0 ? (
         <TemplateGrid
           canCreate={canCreate}
@@ -626,6 +669,7 @@ function WorkflowHomeSession() {
           canExecute={canExecute}
           onStart={(item) => setStartWorkflowId(item.id)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
+          onSchedules={(item) => setScheduleWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -637,6 +681,7 @@ function WorkflowHomeSession() {
           canExecute={canExecute}
           onStart={(item) => setStartWorkflowId(item.id)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
+          onSchedules={(item) => setScheduleWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -726,6 +771,7 @@ function WorkflowActions({
   canExecute,
   onStart,
   onWebhooks,
+  onSchedules,
   onDuplicate,
   onExport,
 }: {
@@ -735,6 +781,7 @@ function WorkflowActions({
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
+  onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -763,6 +810,14 @@ function WorkflowActions({
         className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
       >
         Webhooks
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onSchedules(item)}
+        className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+      >
+        Schedules
       </button>
       <Link
         href={`/workflows/${item.id}`}
@@ -813,6 +868,7 @@ function WorkflowHomeList({
   canExecute,
   onStart,
   onWebhooks,
+  onSchedules,
   onDuplicate,
   onExport,
 }: {
@@ -822,6 +878,7 @@ function WorkflowHomeList({
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
+  onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -850,6 +907,7 @@ function WorkflowHomeList({
             canExecute={canExecute}
             onStart={onStart}
             onWebhooks={onWebhooks}
+            onSchedules={onSchedules}
             onDuplicate={onDuplicate}
             onExport={onExport}
           />
@@ -866,6 +924,7 @@ function WorkflowHomeCards({
   canExecute,
   onStart,
   onWebhooks,
+  onSchedules,
   onDuplicate,
   onExport,
 }: {
@@ -875,6 +934,7 @@ function WorkflowHomeCards({
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
+  onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -903,6 +963,7 @@ function WorkflowHomeCards({
               canExecute={canExecute}
               onStart={onStart}
               onWebhooks={onWebhooks}
+              onSchedules={onSchedules}
               onDuplicate={onDuplicate}
               onExport={onExport}
             />

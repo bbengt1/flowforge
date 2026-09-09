@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import {
+  APPROVAL_BINDING_HELP,
+  APPROVAL_SOD_HELP,
+  APPROVAL_WAIT_DURABLE_HELP,
+} from "@/lib/approval-contract";
 import {
   approvalStatusLabel,
   canSeeApprovalsNav,
@@ -170,6 +176,9 @@ export function ApprovalList() {
           <span className="font-mono text-xs"> · {lastRequestId}</span>
         ) : null}
       </p>
+      <p className="text-xs text-zinc-500">
+        {APPROVAL_BINDING_HELP} {APPROVAL_SOD_HELP} {APPROVAL_WAIT_DURABLE_HELP}
+      </p>
 
       {visible.length === 0 ? (
         <p className="text-sm text-zinc-600">
@@ -206,6 +215,21 @@ export function ApprovalList() {
               <p className="mt-2 break-all font-mono text-xs text-zinc-500">
                 expires {item.binding.expiresAt || "—"} · {item.id}
               </p>
+              {item.status === "pending" ? (
+                <div className="mt-3">
+                  <ApprovalDecideControls
+                    identity={identity}
+                    approval={item}
+                    actorUserId={actorUserId}
+                    permissions={permissions}
+                    onUpdated={(next) =>
+                      setItems((current) =>
+                        current.map((row) => (row.id === next.id ? next : row)),
+                      )
+                    }
+                  />
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

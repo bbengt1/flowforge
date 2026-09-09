@@ -396,10 +396,17 @@ describe("webhook-trigger contract adapter", () => {
             status: "disabled",
             ingressPath: `/api/v1/hooks/${PUBLIC_ID}`,
           },
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            type: "schedule",
+            timezone: "UTC",
+            cron: "0 0 * * *",
+          },
         ],
       },
       WORKFLOW_ID,
     );
+    assert.equal(items.length, 1);
     assert.equal(items[0]?.status, "disabled");
     assert.equal(items[0]?.workflowId, WORKFLOW_ID);
     assert.equal(items[0]?.publicId, PUBLIC_ID);

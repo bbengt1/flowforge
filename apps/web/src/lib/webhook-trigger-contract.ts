@@ -1012,6 +1012,10 @@ export function parseWebhookTriggerRecord(
 ): WebhookTriggerRecord | null {
   const { record } = stripUnexpectedWebhookSecret(payload);
   const source = unwrapTriggerRecord(record);
+  const listedType = readString(source.type);
+  if (listedType && listedType !== WEBHOOK_TRIGGER_TYPE) {
+    return null;
+  }
   const id = readString(source.id);
   const publicId = readString(source.publicId, source.public_id);
   if (!id && !publicId) {

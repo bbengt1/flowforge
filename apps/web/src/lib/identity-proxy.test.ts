@@ -697,6 +697,49 @@ describe("resolveIdentityProxyTarget", () => {
     }
   });
 
+  it("allowlists the E10.2/E10.3 trigger collection and rejects invented schedule collections", () => {
+    const list = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "triggers",
+    ]);
+    assert.equal("apiPath" in list, true);
+    if ("apiPath" in list) {
+      assert.equal(
+        list.apiPath,
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/triggers",
+      );
+    }
+    const create = resolveIdentityProxyTarget("POST", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "triggers",
+    ]);
+    assert.equal("apiPath" in create, true);
+    const item = resolveIdentityProxyTarget("PATCH", [
+      "triggers",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+    assert.equal("apiPath" in item, true);
+    if ("apiPath" in item) {
+      assert.equal(
+        item.apiPath,
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222",
+      );
+    }
+    const disable = resolveIdentityProxyTarget("POST", [
+      "triggers",
+      "22222222-2222-4222-8222-222222222222",
+      "disable",
+    ]);
+    assert.equal("apiPath" in disable, true);
+    const invented = resolveIdentityProxyTarget("GET", ["schedules"]);
+    assert.equal("status" in invented, true);
+    if ("status" in invented) {
+      assert.equal(invented.status, 404);
+    }
+  });
+
   it("allowlists E4.3 approval routes and rejects retired approve/reject paths", () => {
     const getDecide = resolveIdentityProxyTarget("GET", [
       "approvals",

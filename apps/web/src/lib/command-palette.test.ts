@@ -26,6 +26,7 @@ describe("paletteCommands", () => {
     const ids = commands.map((item) => item.id);
     assert.ok(ids.includes("open-editor"));
     assert.ok(ids.includes("webhook-triggers"));
+    assert.ok(ids.includes("schedule-triggers"));
     assert.ok(ids.includes("nav-alerts"));
     assert.equal(ids.includes("new-workflow"), false);
     assert.equal(ids.includes("publish"), false);

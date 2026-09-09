@@ -2,7 +2,8 @@
  * E6.4 execution history + graph replay helpers.
  *
  * Extends E5.1–E5.3 list/detail and the E6.2 canvas projection.
- * Prefer existing E5 routes. Do not invent wait/resume APIs (E10).
+ * Prefer existing E5 routes. Do not invent wait/resume APIs — E10.3
+ * resume is POST /approvals/{id}/decide.
  * Secrets stay [redacted] or stripped — never compared as plaintext.
  */
 

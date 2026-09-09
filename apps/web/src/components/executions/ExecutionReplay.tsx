@@ -211,8 +211,8 @@ export function ExecutionReplay({
             : null}
           {selected.waiting ? (
             <p role="status" className="mt-3 text-sm text-zinc-800">
-              Waiting on approval. Decide from the approval inbox — wait/resume
-              stay disabled until E10.
+              Waiting on approval. Decide the bound approval — the wait state
+              survives worker or pod loss. Resume is decide, not a new route.
             </p>
           ) : null}
           <div className="mt-3">

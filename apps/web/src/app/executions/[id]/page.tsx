@@ -33,7 +33,8 @@ export default async function ExecutionDetailPage({
           verified, with no blind retry. Script and SSH retry appear only
           when{" "}
           <code className="font-mono text-sm">result.retry.allowed</code> is
-          true. Approval wait/resume stay disabled until E10. Error links
+          true. Durable approval wait is enabled; resume is decide (SoD
+          fail-closed). Error links
           jump to the failed or indeterminate node. Secrets appear as{" "}
           <code className="font-mono text-sm">[redacted]</code>.
         </p>

@@ -129,14 +129,15 @@ export const STATUS_POLL_HELP =
 /** E6.4 replay / pre-run / compare. No new API routes. */
 export const EXECUTION_REPLAY_STORY = 63;
 export const EXECUTION_AUTHORING_EPIC = 59;
-export const E10_APPROVAL_WAIT_ENABLED = false;
+export const E10_APPROVAL_WAIT_ENABLED = true;
+/** No invented resume route — decide the bound approval instead. */
 export const E10_APPROVAL_RESUME_ENABLED = false;
 
 export const APPROVAL_WAIT_DISABLED_HELP =
-  "Approval wait stays disabled until E10 durable flow.approval. This UI does not call a wait API.";
+  "Durable flow.approval wait is enabled. The wait state survives worker or pod loss. This UI does not call a wait API.";
 
 export const APPROVAL_RESUME_DISABLED_HELP =
-  "Resume stays disabled until E10. This UI does not invent a resume route; decide the bound approval instead.";
+  "Resume is decide, not a new route. POST /approvals/{id}/decide with CSRF and fresh authorization. Requester self-approval is denied.";
 
 export const PRE_RUN_PUBLISHED_ONLY_HELP =
   "Only a published workflowVersionId can run. Drafts are never sent on POST /workflows/{id}/executions.";

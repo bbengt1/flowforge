@@ -148,6 +148,7 @@ export function ExecutionDetail({
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [actorUserId, setActorUserId] = useState("");
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
@@ -245,6 +246,7 @@ export function ExecutionDetail({
     setPending(false);
     if (workspace.ok) {
       setPermissions(workspace.data.permissions ?? []);
+      setActorUserId(workspace.data.principal?.id ?? "");
     } else if (workspace.statusCode === 403 || workspace.statusCode === 401) {
       setPermissions([]);
     }
@@ -912,6 +914,14 @@ export function ExecutionDetail({
           <ExecutionApprovalState
             executionStatus={view.header.status}
             approvals={approvals}
+            identity={identity}
+            actorUserId={actorUserId}
+            permissions={permissions}
+            onApprovalUpdated={(next) =>
+              setApprovals((current) =>
+                current.map((item) => (item.id === next.id ? next : item)),
+              )
+            }
           />
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">

@@ -8,6 +8,7 @@ import { canSeeApprovalsNav } from "./approval.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
 import { canSeeOpsConfigNav } from "./ops-config.ts";
 import { webhookTriggersHref } from "./webhook-trigger-contract.ts";
+import { scheduleTriggersHref } from "./schedule-trigger-contract.ts";
 import {
   canCreateWorkflows,
   canExecuteWorkflows,
@@ -146,6 +147,20 @@ export function paletteCommands(
         href: context.workflowId
           ? `/workflows/${context.workflowId}#webhook-triggers`
           : webhookTriggersHref(),
+      },
+    });
+    commands.push({
+      id: "schedule-triggers",
+      label: "Configure schedule triggers",
+      hint: context.workflowId
+        ? "Timezone-explicit schedule config for this workflow (E10.3)"
+        : "Timezone-explicit schedule trigger config (E10.3)",
+      keywords: ["schedule", "cron", "timezone", "catch-up", "overlap", "trigger"],
+      action: {
+        type: "navigate",
+        href: context.workflowId
+          ? `/workflows/${context.workflowId}#schedule-triggers`
+          : scheduleTriggersHref(),
       },
     });
   }

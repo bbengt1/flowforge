@@ -25,6 +25,10 @@ import {
 } from "./approval.ts";
 import {
   APPROVAL_PROBLEM_CODES,
+  APPROVAL_SOD_HELP,
+  APPROVAL_WAIT_DURABLE_HELP,
+  E10_APPROVAL_DECIDE_ENABLED,
+  E10_APPROVAL_WAIT_DURABLE,
   EXPIRED_APPROVAL_DETAIL,
   INVALIDATED_APPROVAL_DETAIL,
   SELF_APPROVAL_DETAIL,
@@ -417,5 +421,15 @@ describe("secret-free approval payloads", () => {
     assert.equal(evaluation.operations?.[0]?.retryMaxAttempts, 2);
     assert.equal(evaluation.operations?.[0]?.retryAllowed, false);
     assert.equal(evaluation.operations?.[0]?.verificationDeclared, true);
+  });
+});
+
+describe("E10.3 approval decide contract", () => {
+  it("enables durable wait and SoD decide copy without inventing resume", () => {
+    assert.equal(E10_APPROVAL_DECIDE_ENABLED, true);
+    assert.equal(E10_APPROVAL_WAIT_DURABLE, true);
+    assert.match(APPROVAL_SOD_HELP, /requester cannot/);
+    assert.match(APPROVAL_WAIT_DURABLE_HELP, /survives/);
+    assert.match(APPROVAL_WAIT_DURABLE_HELP, /decide/);
   });
 });

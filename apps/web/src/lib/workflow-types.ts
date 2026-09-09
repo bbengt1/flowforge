@@ -121,6 +121,23 @@ export type CatalogTriggerAdmin = {
   help?: string;
 };
 
+/**
+ * Pending jonny's E10.3 catalog map on `triggers[type=schedule].schedule`.
+ * Marked contract-fallback until that object lands.
+ */
+export type CatalogTriggerSchedule = {
+  timezoneRequired?: boolean;
+  expressionKinds?: string[];
+  overlapPolicies?: string[];
+  defaultOverlapPolicy?: string;
+  misfirePolicies?: string[];
+  defaultMisfirePolicy?: string;
+  defaultCatchUp?: number | boolean;
+  maxCatchUp?: number;
+  publishedVersionRequired?: boolean;
+  help?: string;
+};
+
 export type CatalogTrigger = {
   type: string;
   phase: CatalogPhase;
@@ -134,6 +151,7 @@ export type CatalogTrigger = {
   start?: CatalogTriggerStart;
   ingress?: CatalogTriggerIngress;
   admin?: CatalogTriggerAdmin;
+  schedule?: CatalogTriggerSchedule;
 };
 
 export type CatalogRules = {

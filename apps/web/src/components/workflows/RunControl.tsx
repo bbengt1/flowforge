@@ -30,6 +30,7 @@ import {
   manualStartHelp,
 } from "@/lib/manual-start-contract";
 import type { OpsConfigPin } from "@/lib/ops-config-types";
+import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { shortDigest } from "@/lib/workflow";
 import type {
@@ -62,6 +63,7 @@ type RunControlProps = {
   fieldValues?: Record<string, string>;
   onFieldValues?: (value: Record<string, string>) => void;
   permissions?: string[] | null;
+  identity?: DevIdentity;
   onSelectVersion: (versionId: string) => void;
   onRun: () => void;
   onRefreshPin: () => void;
@@ -91,6 +93,7 @@ export function RunControl({
   fieldValues = {},
   onFieldValues,
   permissions,
+  identity,
   onSelectVersion,
   onRun,
   onRefreshPin,
@@ -391,6 +394,8 @@ export function RunControl({
             <ExecutionApprovalState
               executionStatus={execution.status}
               approvals={executionApprovals}
+              identity={identity}
+              permissions={permissions}
             />
           </div>
         </div>

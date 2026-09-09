@@ -400,12 +400,12 @@ describe("keyboard and error navigation", () => {
   });
 });
 
-describe("approval wait stays disabled until E10", () => {
-  it("does not enable wait or resume controls", () => {
+describe("approval wait is durable in E10.3", () => {
+  it("enables durable wait and keeps resume as decide", () => {
     const controls = approvalWaitControls();
-    assert.equal(controls.waitEnabled, false);
+    assert.equal(controls.waitEnabled, true);
     assert.equal(controls.resumeEnabled, false);
-    assert.match(controls.waitHelp, /E10/);
-    assert.match(controls.resumeHelp, /E10/);
+    assert.match(controls.waitHelp, /survives/);
+    assert.match(controls.resumeHelp, /decide/);
   });
 });
