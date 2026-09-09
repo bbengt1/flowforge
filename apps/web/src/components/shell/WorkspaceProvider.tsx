@@ -10,7 +10,18 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { emptyStoredIdentity, loadDevIdentity, saveDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
+import {
+  bindIdentityToVerified,
+  emptyEmbedVerified,
+  loadEmbedVerified,
+  subscribeEmbedVerified,
+} from "@/lib/embed-tenancy-client";
+import {
+  identityMatchesVerified,
+  workspaceMatchesVerified,
+} from "@/lib/embed-tenancy-contract";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup, type DevIdentity } from "@/lib/identity-headers";
@@ -26,6 +37,8 @@ export type WorkspaceContextValue = {
   memberships: Membership[];
   environment: string;
   switchWorkspace: (membership: Membership) => void;
+  embedLocked: boolean;
+  tenancyMismatch: boolean;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -39,10 +52,16 @@ export function useWorkspace(): WorkspaceContextValue {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const embed = useEmbedMode();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
     emptyStoredIdentity,
+  );
+  const verified = useSyncExternalStore(
+    subscribeEmbedVerified,
+    loadEmbedVerified,
+    emptyEmbedVerified,
   );
   const session = useSyncExternalStore(
     subscribeSession,
@@ -57,10 +76,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<CurrentWorkspace | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [tenancyMismatch, setTenancyMismatch] = useState(false);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
-    hasWorkspaceLookup(identity);
+    hasWorkspaceLookup(identity) &&
+    (!embed || Boolean(verified));
+
+  useEffect(() => {
+    if (!embed || !verified) {
+      return;
+    }
+    if (!identityMatchesVerified(identity, verified)) {
+      bindIdentityToVerified(identity, verified);
+    }
+  }, [embed, verified, identity]);
 
   useEffect(() => {
     if (!ready) {
@@ -75,11 +105,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (workspace.ok) {
+        if (
+          embed &&
+          verified &&
+          !workspaceMatchesVerified(workspace.data.workspace, verified)
+        ) {
+          setTenancyMismatch(true);
+          setCurrent(null);
+          setPermissions([]);
+          return;
+        }
+        setTenancyMismatch(false);
         setCurrent(workspace.data);
         setPermissions(workspace.data.permissions ?? []);
       } else if (workspace.statusCode === 401 || workspace.statusCode === 403) {
         setCurrent(null);
         setPermissions([]);
+        if (embed && verified) {
+          setTenancyMismatch(true);
+        }
       } else {
         setPermissions([]);
       }
@@ -90,10 +134,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [ready, identity]);
+  }, [ready, identity, embed, verified]);
 
   const switchWorkspace = useCallback(
     (membership: Membership) => {
+      if (embed && verified) {
+        return;
+      }
       saveDevIdentity({
         ...identity,
         tenantId: membership.workspace.tenant_id,
@@ -101,21 +148,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         workbenchKey: membership.workspace.workbench_key,
       });
     },
-    [identity],
+    [embed, verified, identity],
   );
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       identity,
       ready,
-      permissions: ready ? permissions : null,
-      roles: ready ? current?.roles ?? [] : [],
-      current: ready ? current : null,
-      memberships: ready ? memberships : [],
+      permissions: ready && !tenancyMismatch ? permissions : null,
+      roles: ready && !tenancyMismatch ? current?.roles ?? [] : [],
+      current: ready && !tenancyMismatch ? current : null,
+      memberships: ready && !tenancyMismatch ? memberships : [],
       environment: identity.workbenchKey.trim(),
       switchWorkspace,
+      embedLocked: embed && Boolean(verified),
+      tenancyMismatch: embed && tenancyMismatch,
     }),
-    [identity, ready, permissions, current, memberships, switchWorkspace],
+    [
+      identity,
+      ready,
+      permissions,
+      current,
+      memberships,
+      switchWorkspace,
+      embed,
+      verified,
+      tenancyMismatch,
+    ],
   );
 
   return (

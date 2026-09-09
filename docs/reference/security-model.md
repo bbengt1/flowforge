@@ -38,8 +38,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   through API authorization, configuration lookups, jobs/workers, caches,
   realtime, history, and audit. A host-supplied tenant is never authorization.
   The UI treats host-provided identity as display context until
-  `POST /embed/exchange` verifies it. Assertions are never accepted from a URL.
-  See [embed SDK](embed-sdk.md).
+  `POST /embed/exchange` verifies it. After exchange, embed chrome and deep
+  links use the FlowForge-verified `(tenant_id, workbench_key)` /
+  `session.embed` only. Assertions are never accepted from a URL. See
+  [embed SDK](embed-sdk.md).
 - Privileged actions and approval decisions require fresh authorization at the
   server. Approval records bind the exact execution step, workflow version,
   target/policy snapshot, requested operation, and expiry; a decision cannot be

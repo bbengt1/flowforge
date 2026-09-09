@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
-  navItemIsActive,
+  embedDeepLink,
+  embedDeepLinkIsActive,
+} from "@/lib/embed-tenancy-contract";
+import {
   visibleWorkspaceNav,
   type WorkspaceNavItem,
 } from "@/lib/workspace-nav";
@@ -17,8 +21,12 @@ const groupLabel: Record<WorkspaceNavItem["group"], string> = {
 
 export function WorkspaceNav() {
   const pathname = usePathname();
+  const embed = useEmbedMode();
   const { permissions } = useWorkspace();
-  const items = visibleWorkspaceNav(permissions);
+  const items = visibleWorkspaceNav(permissions).map((item) => ({
+    ...item,
+    href: embed ? embedDeepLink(item.href) : item.href,
+  }));
   const groups: WorkspaceNavItem["group"][] = ["primary", "ops", "foundation"];
 
   return (
@@ -35,7 +43,7 @@ export function WorkspaceNav() {
             </p>
             <ul className="mt-1 space-y-0.5">
               {groupItems.map((item) => {
-                const active = navItemIsActive(item.href, pathname);
+                const active = embedDeepLinkIsActive(item.href, pathname);
                 return (
                   <li key={item.id}>
                     <Link

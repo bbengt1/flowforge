@@ -6,6 +6,7 @@ import {
   fetchEmbedJwks,
 } from "./embed-client.ts";
 import { clearDevIdentity, loadDevIdentity } from "./dev-identity.ts";
+import { clearEmbedVerified, loadEmbedVerified } from "./embed-tenancy-client.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { clearSession, getSessionSnapshot } from "./session-store.ts";
 
@@ -37,6 +38,7 @@ afterEach(() => {
   clearSession();
   memory.clear();
   clearDevIdentity();
+  clearEmbedVerified();
 });
 
 describe("embed client", () => {
@@ -111,6 +113,10 @@ describe("embed client", () => {
     assert.equal(identity.tenantSlug, "acme");
     assert.equal(identity.workbenchKey, "ops");
     assert.equal(identity.tenantId, "ten-1");
+    const verified = loadEmbedVerified();
+    assert.equal(verified?.source, "flowforge");
+    assert.equal(verified?.tenantId, "ten-1");
+    assert.equal(verified?.workbenchKey, "ops");
   });
 
   it("rejects a non-JWS locally and never fetches", async () => {

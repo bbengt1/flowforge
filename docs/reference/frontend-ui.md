@@ -724,7 +724,7 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 | `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller |
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |
 
-E11.2 (API) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell must honor that contract (see below). E11.3 Portal adapter remains out of scope.
+E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell honors that contract (see below). Do not implement the E11.3 Portal adapter here.
 
 ## E11.1 embed shell (Chloe UI)
 
@@ -737,16 +737,20 @@ Thin chrome + exchange gate on the #125 map. `apps/api` is unchanged. Relates to
 - **Secrets:** assertion never in query, hash, path, or `localStorage`. Host query values are display-only until exchange. Workspace lookup after exchange uses API `workspace` / `tenant`, not host query.
 - **CSP:** standalone stays `frame-ancestors 'none'` / `X-Frame-Options: DENY`. `WEB_EMBED_FRAME_ANCESTORS` relaxes framing on `/embed/v1` only.
 
-## E11.2 tenancy (Chloe — honor workbench/tenant)
+## E11.2 embed tenancy / workbench (Chloe UI)
 
-Relates to #122 / Part of #120 — **Keep #122 open**. API contract is on this PR; do not close #122 until the shell honors the bind.
+Thin contract adapter + chrome on jonny's **#127** map (`e112-#127`). `apps/api` is unchanged. Relates to #122 / Part of #120 — **Keep #122 open**. Adapter: `apps/web/src/lib/embed-tenancy-contract.ts` on `embed-contract.ts` (`EMBED_TENANCY_RULES`, `embedWorkspaceHeaders`, `parseSessionEmbedBinding`).
 
-- After exchange, persist `workspace.tenant_id` + `workspace.workbench_key` (or `session.embed`) in tab `sessionStorage`. Host query `tenant` / `workbench` stay display-only.
-- Every later API call sends `X-FlowForge-Tenant-ID` (or slug) **and** `X-FlowForge-Workbench-Key` matching that bind. A disagreeing host value is HTTP 403 — do not retry with the host value.
-- Host tenant is never authorization. `GET /session` `session.embed` is the source of truth when present.
-- `session.embed.capabilities` caps the session; hide actions the minted set does not include.
-- Configuration, jobs, caches, realtime, history, and audit are already server-scoped to that pair. Do not send `X-FlowForge-Workspace-ID` as a lookup key.
-- Key rotation (`POST /embed/keys/rotate`) is an ops route, not an embed-shell control.
+After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `(tenant_id, workbench_key)` from `workspace` / `session.embed`. Host query, route, and postMessage tenant/workbench/`workspace_id` values are display-only and never become lookup headers or authorize.
+
+- **Persist:** `workspace.tenant_id` + `workbench_key` or `session.embed` in tab `sessionStorage` (`flowforge.embed-verified.v1`, `source: "flowforge"`). Host-shaped records are ignored.
+- **Headers:** every later `/api/v1` / `/api/control-plane` call sends `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key` via `embedWorkspaceHeaders` matching the bound session. Do not retry a `403` with host values.
+- **Source of truth:** `GET /session` `session.embed` wins over host route state. Workspace switching is locked.
+- **Capabilities:** hide chrome/nav the minted `session.embed.capabilities` set cannot perform.
+- **Fail closed:** no verified pair → no `GET /workspace`. Mismatch vs `GET /workspace` closes the surface. Durable `jti` replay is HTTP `409` (no silent retry).
+- **Deep links:** same standalone hrefs under `/embed/v1`. Chrome nav, session chip, command palette, and search remap hrefs. In-app `<a>` / `Link` clicks stay on the mount.
+- **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `workspace.administer`) and is not an embed-shell control. Do not send `X-FlowForge-Workspace-ID` as the lookup key.
+- **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops.
 
 ## Required validation
 

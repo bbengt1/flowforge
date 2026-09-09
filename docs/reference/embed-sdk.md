@@ -7,8 +7,9 @@ single-use assertion. E11.2 completes independent validation, durable one-time
 propagation.
 
 Chloe owns the embed shell UI. This document is the route and field map.
-Adapter: `apps/web/src/lib/embed-contract.ts`. Relates to #122 / Part of #120 —
-**Keep #122 open** (Chloe still has UI pending). Relates to #121 for the shell.
+Adapter: `apps/web/src/lib/embed-contract.ts`. E11.2 UI adapter:
+`apps/web/src/lib/embed-tenancy-contract.ts`. Relates to #122 / Part of #120 —
+**Keep #122 open**. Relates to #121 for the shell.
 
 ## SDK
 
@@ -162,5 +163,5 @@ and `workspace_id` only.
 | --- | --- | --- |
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
 | `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. |
-| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. |
+| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. |
 | Portal adapter | out of scope | E11.3 CP Ops Portal add-in |

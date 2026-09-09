@@ -3,9 +3,13 @@
  * embed-contract.ts. The compact JWS is POSTed once and forgotten —
  * never written to localStorage, sessionStorage, or the URL.
  *
- * Relates to #121 / Part of #120. Keep #121 open. Do not change apps/api.
+ * Relates to #122 / Part of #120. Keep #122 open. Do not change apps/api.
+ * After exchange, persist FlowForge-verified (tenant_id, workbench_key)
+ * only — host query values never become workspace lookup.
  */
 
+import { persistVerifiedFromExchange } from "./embed-tenancy-client.ts";
+import { identityFromVerified } from "./embed-tenancy-contract.ts";
 import { saveDevIdentity } from "./dev-identity.ts";
 import {
   EMBED_CATALOG_PATH,
@@ -24,7 +28,6 @@ import {
   type EmbedVerifiedContext,
 } from "./embed-contract.ts";
 import { fetchSameOriginProxy } from "./identity-client.ts";
-import type { DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
 import { parseBrowserSession } from "./session.ts";
@@ -254,18 +257,23 @@ function applyExchangeSession(payload: unknown): void {
  * workspace/tenant — not from the host deep-link query.
  */
 function applyVerifiedWorkspaceLookup(context: EmbedVerifiedContext): void {
-  if (!context.tenantSlug && !context.tenantId && !context.workbenchKey) {
+  const verified = persistVerifiedFromExchange(context);
+  if (!verified) {
     return;
   }
-  const current: DevIdentity = {
-    issuer: "",
-    subject: "",
-    displayName: "",
-    tenantId: context.tenantId,
-    tenantSlug: context.tenantSlug,
-    workbenchKey: context.workbenchKey,
-  };
-  saveDevIdentity(current);
+  saveDevIdentity(
+    identityFromVerified(
+      {
+        issuer: "",
+        subject: "",
+        displayName: "",
+        tenantId: "",
+        tenantSlug: "",
+        workbenchKey: "",
+      },
+      verified,
+    ),
+  );
 }
 
 export function emptyAssertionHolder(): { assertion: string } {
