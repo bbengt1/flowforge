@@ -373,7 +373,7 @@ describe("action wizard insert + redaction", () => {
       },
       catalog,
       entry,
-      { profileRetrySafe: true },
+      { profileRetrySafe: true, verificationDeclared: true },
     );
     assert.equal(retrySafeAllowed.ok, true);
     assert.deepEqual(defaultWithForType("ssh.run").retryPolicy, { maxAttempts: 0 });

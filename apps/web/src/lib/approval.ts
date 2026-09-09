@@ -34,6 +34,7 @@ import {
   type PolicyDecision,
   type PolicyDenied,
   type PolicyEvaluation,
+  type PolicyOperationResult,
   type PolicyRequirement,
   type ValidityReason,
 } from "./approval-types.ts";
@@ -489,7 +490,38 @@ export function parsePolicyEvaluation(raw: unknown): PolicyEvaluation | null {
     requirements,
     approvals: parseApprovalList(row.approvals ?? { items: [] }),
     denied,
+    operations: parsePolicyOperations(row.operations),
   };
+}
+
+function parsePolicyOperations(raw: unknown): PolicyOperationResult[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: PolicyOperationResult[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const operation = readString(row.operation);
+    if (!operation) {
+      continue;
+    }
+    out.push({
+      nodeId: readString(row.nodeId, row.node_id),
+      operation,
+      decision: readString(row.decision) || undefined,
+      reason: readString(row.reason) || undefined,
+      retrySafe: row.retrySafe === true,
+      retryMaxAttempts: Number.isInteger(Number(row.retryMaxAttempts))
+        ? Number(row.retryMaxAttempts)
+        : undefined,
+      retryAllowed: row.retryAllowed === true,
+      verificationDeclared: row.verificationDeclared === true,
+    });
+  }
+  return out;
 }
 
 export function parseApprovalCatalog(raw: unknown): ApprovalCatalog | null {

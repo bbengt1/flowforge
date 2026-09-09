@@ -5,7 +5,7 @@
  * + GET /ssh/catalog (`nodes[]` / `retry` / `errors[]` / `isolation`).
  *
  * E8.3 retry / indeterminate semantics live in `ssh-retry-contract.ts`
- * (the single retarget point when jonny posts the #84 map).
+ * (wired to jonny's #90 map: retry.ui / retry.probe / result.retry.allowed).
  *
  * Consume existing SSH-target + command-profile list + POST …/select
  * (E8.1). Do not invent routes. Do not change `apps/api`.
@@ -51,6 +51,7 @@ export {
   SSH_RETRY_DENIED_MESSAGE,
   SSH_RETRY_ZERO_MESSAGE,
   commandProfileRetrySafe,
+  commandProfileVerificationDeclared,
   defaultSshRetryPolicy,
 } from "./ssh-retry-contract.ts";
 
@@ -93,7 +94,7 @@ export const SSH_NODE_POLICY_NOTES = [
   "Non-root remote account (default flowforge). root / toor / administrator are denied.",
   "This is not an interactive terminal. Choose a published command profile with typed parameters — no arbitrary user shell.",
   "YAML stores sshTargetId, commandProfileId, parameter values, timeoutSeconds, retryPolicy, and optional policyId only. Never keys, passwords, host fingerprints, connection settings, or raw logs.",
-  "Retries default to zero. maxAttempts>0 requires a retrySafe profile with an idempotent verification path. Lease loss is indeterminate — never a blind retry.",
+  "Retries default to zero. maxAttempts>0 requires a retrySafe profile with a declared verification probe. Lease loss is indeterminate — never a blind retry. Retry is shown only when result.retry.allowed is true.",
   "Selectors fail closed on HTTP 403. Only published workspace SSH targets and command profiles are listed.",
 ] as const;
 
@@ -187,6 +188,7 @@ export type SshNodeCatalog = {
 export type SshNodeConfigContext = {
   targetSelectorClosed?: boolean;
   profileSelectorClosed?: boolean;
+  verificationDeclared?: boolean;
   parameterConstraints?: readonly SshParameterConstraint[];
   profileRetrySafe?: boolean;
   sshCatalog?: SshNodeCatalog | null;
@@ -405,7 +407,7 @@ export function sshNodeWithFields(
       controlHint: "text",
       defaultValue: defaultSshRetryPolicy(),
       advanced: true,
-      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
+      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe plus verification. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
     },
     {
       name: "policyId",
@@ -572,6 +574,7 @@ export function validateSshNodeConfig(
   const retryPolicy = validateSshRetryPolicy({
     withValue,
     profileRetrySafe: context.profileRetrySafe,
+    verificationDeclared: context.verificationDeclared,
   });
   errors.push(...retryPolicy.errors);
 

@@ -9,7 +9,9 @@ import {
 } from "@/lib/execution-contract";
 import {
   isSshRunType,
+  parseSshRetryResult,
   sshIndeterminateCopy,
+  sshVerificationOutcomeCopy,
 } from "@/lib/ssh-retry-contract";
 import {
   currentReplayNodeId,
@@ -129,10 +131,29 @@ export function ExecutionReplay({
                 ? sshIndeterminateCopy({
                     status: selected.status,
                     nodeType: selected.step.nodeType,
+                    verificationOutcome: parseSshRetryResult(
+                      selected.step.output,
+                      selected.step.error,
+                      selected.step.input,
+                    )?.verificationOutcome,
                   })
                 : INDETERMINATE_STATUS_HELP}
             </p>
           ) : null}
+          {isSshRunType(selected.step.nodeType)
+            ? (() => {
+                const retry = parseSshRetryResult(
+                  selected.step.output,
+                  selected.step.error,
+                  selected.step.input,
+                );
+                return retry?.verificationOutcome ? (
+                  <p className="mt-2 text-sm text-zinc-800">
+                    {sshVerificationOutcomeCopy(retry.verificationOutcome)}
+                  </p>
+                ) : null;
+              })()
+            : null}
           {selected.waiting ? (
             <p role="status" className="mt-3 text-sm text-zinc-800">
               Waiting on approval. Decide from the approval inbox — wait/resume

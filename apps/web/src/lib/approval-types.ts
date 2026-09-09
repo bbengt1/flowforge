@@ -144,6 +144,17 @@ export type PolicyDenied = {
   reason: string;
 };
 
+export type PolicyOperationResult = {
+  nodeId: string;
+  operation: string;
+  decision?: string;
+  reason?: string;
+  retrySafe?: boolean;
+  retryMaxAttempts?: number;
+  retryAllowed?: boolean;
+  verificationDeclared?: boolean;
+};
+
 export type PolicyEvaluation = {
   decision: PolicyDecision;
   dispatchAllowed: boolean;
@@ -154,6 +165,7 @@ export type PolicyEvaluation = {
   requirements: PolicyRequirement[];
   approvals: ApprovalRequest[];
   denied: PolicyDenied[];
+  operations?: PolicyOperationResult[];
 };
 
 export type EvaluatePolicyBody = {

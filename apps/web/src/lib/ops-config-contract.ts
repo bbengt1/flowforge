@@ -19,6 +19,7 @@ import type {
   SelectRef,
 } from "./ops-config-types.ts";
 import { OPS_CONFIG_KINDS } from "./ops-config-types.ts";
+import { emptyCommandProfileSpec } from "./ssh-contract.ts";
 
 export const OPS_CONFIG_STORY = 36;
 export const OPS_CONFIG_EPIC = 34;
@@ -227,14 +228,7 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
         hostKeyFingerprint: "",
       };
     case "command_profile":
-      return {
-        parameterSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {},
-        },
-        template: "",
-      };
+      return emptyCommandProfileSpec();
     case "runtime_profile":
       return {
         language: "python",
@@ -363,6 +357,7 @@ const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "parameterSchema",
   "template",
   "retrySafe",
+  "verification",
   "language",
   "imageDigest",
   "dependencyLockDigest",

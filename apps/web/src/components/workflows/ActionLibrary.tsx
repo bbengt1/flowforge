@@ -94,7 +94,7 @@ export function ActionLibrary({
 
       <p className="mt-2 text-xs text-zinc-500">
         {fromCatalog
-          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry. Retry defaults to zero; maxAttempts>0 needs profile retrySafe. Lease loss is indeterminate — never a blind retry."
+          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry.ui / retry.probe (#90). Retry defaults to zero; maxAttempts>0 needs profile retrySafe plus verification. Retry is gated on result.retry.allowed."
           : "Showing the published core-neutral, Kubernetes read/apply, and ssh.run contract fallback until GET /workflows/catalog, GET /kubernetes/catalog, and GET /ssh/catalog load. SSH retry uses the marked E8.3 contract-fallback until the catalog retry schema is listed."}
       </p>
 

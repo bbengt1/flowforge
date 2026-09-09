@@ -23,7 +23,6 @@
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
-import { SSH_RETRY_SAFE_HELP } from "./ssh-retry-contract.ts";
 import {
   SSH_CREDENTIAL_TYPE,
   SSH_DEFAULT_PORT,
@@ -34,7 +33,8 @@ import {
   type SshEngineCatalog,
 } from "./ssh-types.ts";
 
-export { SSH_RETRY_SAFE_HELP } from "./ssh-retry-contract.ts";
+export const SSH_RETRY_SAFE_HELP =
+  "Mark retrySafe only when this profile declares an idempotent verification probe. Enabling it means a later ssh.run may retry after that probe — never a blind repeat. Default is false. retrySafe=true requires spec.verification.template. maxAttempts>0 on ssh.run requires retrySafe plus verification.";
 
 export { SSH_DENIED_FEATURES } from "./ssh-types.ts";
 

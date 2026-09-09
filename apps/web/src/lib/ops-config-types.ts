@@ -62,6 +62,14 @@ export type OpsConfigSpec = {
   parameterSchema?: Record<string, unknown>;
   template?: string;
   retrySafe?: boolean;
+  verification?: {
+    template?: string;
+    expectExitCode?: number;
+    expectStdoutContains?: string;
+    onMatch?: string;
+    onMismatch?: string;
+    onError?: string;
+  };
   language?: RuntimeLanguage | string;
   imageDigest?: string;
   dependencyLockDigest?: string;

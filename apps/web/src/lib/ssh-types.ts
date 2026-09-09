@@ -56,10 +56,20 @@ export type SshTargetSpec = {
   policyId?: string;
 };
 
+export type SshVerificationSpec = {
+  template: string;
+  expectExitCode?: number;
+  expectStdoutContains?: string;
+  onMatch?: string;
+  onMismatch?: string;
+  onError?: string;
+};
+
 export type SshCommandProfileSpec = {
   parameterSchema: Record<string, unknown>;
   template: string;
   retrySafe?: boolean;
+  verification?: SshVerificationSpec;
   policyId?: string;
 };
 

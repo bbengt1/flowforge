@@ -8,7 +8,14 @@ import {
   SSH_RETRY_SAFE_HELP,
   SSH_REVIEWED_RENDER_HELP,
 } from "@/lib/ssh-contract";
-import { SSH_RETRY_ZERO_MESSAGE } from "@/lib/ssh-retry-contract";
+import {
+  SSH_INVALID_VERIFICATION_MESSAGE,
+  SSH_PROBE_HELP,
+  SSH_RETRY_ZERO_MESSAGE,
+  defaultSshVerificationSpec,
+  parseSshVerificationSpec,
+  validateSshVerificationSpec,
+} from "@/lib/ssh-retry-contract";
 import {
   applyParameterSchemaToSpec,
   parameterSchemaGaps,
@@ -134,7 +141,15 @@ export function CommandProfileForm({
             type="checkbox"
             checked={Boolean(spec.retrySafe)}
             disabled={readOnly || !retrySafeExposed}
-            onChange={(event) => patch({ retrySafe: event.target.checked })}
+            onChange={(event) => {
+              const retrySafe = event.target.checked;
+              patch({
+                retrySafe,
+                verification: retrySafe
+                  ? spec.verification ?? defaultSshVerificationSpec()
+                  : undefined,
+              });
+            }}
             className="mt-1"
           />
           <span>
@@ -153,8 +168,16 @@ export function CommandProfileForm({
         {!retrySafeExposed ? (
           <p role="status" className="text-xs text-amber-950">
             Catalog did not expose <code className="font-mono">retrySafe</code>.
-            Using the marked E8.3 contract-fallback — the flag stays off.
+            Using the marked e83-#90 contract-fallback — the flag stays off.
           </p>
+        ) : null}
+        {spec.retrySafe ? (
+          <VerificationFields
+            spec={spec}
+            readOnly={readOnly}
+            className={inputClass}
+            onChange={onChange}
+          />
         ) : null}
       </fieldset>
 
@@ -349,6 +372,116 @@ function ParameterRow({
       >
         Remove
       </button>
+    </div>
+  );
+}
+
+function VerificationFields({
+  spec,
+  readOnly,
+  className,
+  onChange,
+}: {
+  spec: OpsConfigSpec;
+  readOnly: boolean;
+  className: string;
+  onChange: (spec: OpsConfigSpec) => void;
+}) {
+  const parsed = parseSshVerificationSpec(spec.verification) ?? defaultSshVerificationSpec();
+  const errors = validateSshVerificationSpec({
+    retrySafe: spec.retrySafe === true,
+    verification: spec.verification,
+  });
+  function patchVerification(partial: Partial<typeof parsed>) {
+    onChange({
+      ...spec,
+      verification: { ...parsed, ...partial },
+    });
+  }
+  return (
+    <div className="grid gap-3 rounded-lg border border-teal-200 bg-white px-3 py-3">
+      <p className="text-xs text-teal-900">{SSH_PROBE_HELP}</p>
+      <label className="text-sm">
+        <span className="font-medium">Verification probe template</span>
+        <textarea
+          value={parsed.template}
+          disabled={readOnly}
+          rows={3}
+          spellCheck={false}
+          onChange={(event) => patchVerification({ template: event.target.value })}
+          className={`${className} font-mono`}
+        />
+        <span className="mt-1 block text-xs text-zinc-500">
+          Idempotent read-only {"{name}"} probe. Never the mutating command.
+          Same parameterSchema and POSIX quoting as the reviewed template.
+        </span>
+      </label>
+      <label className="text-sm">
+        <span className="font-medium">expectExitCode</span>
+        <input
+          type="number"
+          value={parsed.expectExitCode}
+          disabled={readOnly}
+          onChange={(event) =>
+            patchVerification({
+              expectExitCode: Number(event.target.value) || 0,
+            })
+          }
+          className={className}
+        />
+        <span className="mt-1 block text-xs text-zinc-500">Default 0.</span>
+      </label>
+      <label className="text-sm">
+        <span className="font-medium">expectStdoutContains (optional)</span>
+        <input
+          value={parsed.expectStdoutContains ?? ""}
+          disabled={readOnly}
+          autoComplete="off"
+          onChange={(event) =>
+            patchVerification({
+              expectStdoutContains: event.target.value.trim() || undefined,
+            })
+          }
+          className={`${className} font-mono`}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="font-medium">onMatch</span>
+        <select
+          value={parsed.onMatch}
+          disabled={readOnly}
+          onChange={(event) => patchVerification({ onMatch: event.target.value })}
+          className={className}
+        >
+          <option value="already-applied">already-applied (succeed, do not re-run)</option>
+          <option value="safe-to-retry">safe-to-retry</option>
+        </select>
+      </label>
+      <label className="text-sm">
+        <span className="font-medium">onMismatch</span>
+        <select
+          value={parsed.onMismatch}
+          disabled={readOnly}
+          onChange={(event) => patchVerification({ onMismatch: event.target.value })}
+          className={className}
+        >
+          <option value="safe-to-retry">safe-to-retry (may re-run once)</option>
+          <option value="already-applied">already-applied</option>
+        </select>
+      </label>
+      <label className="text-sm">
+        <span className="font-medium">onError</span>
+        <input value="indeterminate" disabled readOnly className={className} />
+        <span className="mt-1 block text-xs text-zinc-500">
+          Probe failure stays loud indeterminate. The UI never implies the
+          command did not run.
+        </span>
+      </label>
+      {errors.length > 0 ? (
+        <p role="status" className="text-sm text-amber-950">
+          {errors[0] || SSH_INVALID_VERIFICATION_MESSAGE}
+        </p>
+      ) : null}
     </div>
   );
 }

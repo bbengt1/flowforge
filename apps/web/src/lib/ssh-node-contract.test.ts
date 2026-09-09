@@ -205,7 +205,7 @@ describe("ssh node contract adapter", () => {
         retryPolicy: { maxAttempts: 1 },
         policyId: TARGET_ID,
       },
-      { profileRetrySafe: true },
+      { profileRetrySafe: true, verificationDeclared: true },
     );
     assert.deepEqual(retrySafe, []);
   });
