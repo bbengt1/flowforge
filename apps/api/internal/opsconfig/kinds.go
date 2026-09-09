@@ -75,7 +75,7 @@ func KindInfos() []KindInfo {
 		{Kind: KindSSHTarget, Collection: "ssh-targets", DisplayName: "SSH target", YAMLFields: []string{YAMLSSHTargetID}, UsePermission: authz.PermSSHTargetUse, AllowedCredentialTypes: []string{ssheng.CredentialType}, Engine: "ssh"},
 		{Kind: KindCommandProfile, Collection: "command-profiles", DisplayName: "Command profile", YAMLFields: []string{YAMLCommandProfileID}, UsePermission: authz.PermCommandProfileUse, Engine: "ssh"},
 		{Kind: KindRuntimeProfile, Collection: "runtime-profiles", DisplayName: "Runtime profile", YAMLFields: []string{YAMLRuntimeProfileID}, UsePermission: authz.PermRuntimeProfileUse, Engine: "script"},
-		{Kind: KindConnection, Collection: "connections", DisplayName: "Connection", YAMLFields: []string{YAMLConnectionID}, UsePermission: authz.PermConnectionUse},
+		{Kind: KindConnection, Collection: "connections", DisplayName: "Connection", YAMLFields: []string{YAMLConnectionID}, UsePermission: authz.PermConnectionUse, AllowedCredentialTypes: []string{"token"}, Engine: "http-notification"},
 		{Kind: KindRecipientList, Collection: "recipient-lists", DisplayName: "Recipient list", YAMLFields: []string{YAMLRecipientListID}, UsePermission: authz.PermRecipientListUse},
 		{Kind: KindMessageTemplate, Collection: "message-templates", DisplayName: "Message template", YAMLFields: []string{YAMLTemplateID, YAMLMessageTemplateID}, UsePermission: authz.PermMessageTemplateUse},
 		{Kind: KindResponseSchema, Collection: "response-schemas", DisplayName: "Response schema", YAMLFields: []string{YAMLResponseSchemaRef, YAMLResponseSchemaID}, UsePermission: authz.PermResponseSchemaUse},

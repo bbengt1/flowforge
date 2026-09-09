@@ -46,6 +46,10 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # ARTIFACT_STORE_DIR=/tmp/flowforge-artifacts
 # ARTIFACT_DOWNLOAD_TTL=60s
 # ARTIFACT_MAX_BYTES=1048576
+# E10.4 HTTP/notification actions. Default enabled after the negative
+# SSRF/redirect/DNS-rebinding/redaction suite. Set false to disable
+# http.request, notification.webhook, and notification.email at validate.
+# INTEGRATION_ACTIONS_ENABLED=true
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000

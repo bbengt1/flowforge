@@ -64,6 +64,8 @@ Outputs follow declared schemas and size limits. An oversized port output fails 
 
 `http.request` never accepts a user-provided unrestricted URL, credentials in YAML, disabled TLS verification, or unbounded response body. Connections resolve hostnames through an approved resolver; every destination address, including redirects, must remain allowlisted, so private/link-local addresses and DNS rebinding cannot turn a connection into SSRF. Request headers, query fields, and bodies use explicit schemas; secret-bearing inputs may cross this boundary only when the connection policy authorizes that exact field. Email/message content can interpolate only explicit typed inputs; sensitive values are excluded by default and must pass policy before delivery.
 
+E10.4 implements the three core nodes. The live contract is `GET /api/v1/workflows/catalog` (`allowedWith`, `policy`, `bounds`, `redaction`, `integrationGate`) and `GET /api/v1/http/catalog`. The integration gate enables the nodes because the negative SSRF/redirect/DNS-rebinding/TLS/secret-field/tenancy suite is present; `INTEGRATION_ACTIONS_ENABLED=false` disables them at validate/publish.
+
 ## Operational actions
 
 | Node | Phase | Purpose | Key rules |

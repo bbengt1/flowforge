@@ -85,6 +85,16 @@ type CatalogRules struct {
 	TriggersAreWorkflowLevel  bool `json:"triggersAreWorkflowLevel"`
 	GraphNodesExcludeTriggers bool `json:"graphNodesExcludeTriggers"`
 	UnsupportedPhasesRejected bool `json:"unsupportedPhasesRejected"`
+	IntegrationActionsEnabled bool `json:"integrationActionsEnabled"`
+}
+
+// IntegrationGate documents the E10.4 enablement check for Chloe.
+type IntegrationGate struct {
+	Name    string   `json:"name"`
+	Enabled bool     `json:"enabled"`
+	Nodes   []string `json:"nodes"`
+	Suites  []string `json:"suites"`
+	Note    string   `json:"note"`
 }
 
 // TriggerStart is the authenticated manual-start contract (E10.1).
@@ -191,10 +201,11 @@ type NodeType struct {
 
 // Catalog is the typed graph vocabulary published to the UI.
 type Catalog struct {
-	APIVersion string        `json:"apiVersion"`
-	Rules      CatalogRules  `json:"rules"`
-	Triggers   []TriggerType `json:"triggers"`
-	Nodes      []NodeType    `json:"nodes"`
+	APIVersion      string          `json:"apiVersion"`
+	Rules           CatalogRules    `json:"rules"`
+	IntegrationGate IntegrationGate `json:"integrationGate"`
+	Triggers        []TriggerType   `json:"triggers"`
+	Nodes           []NodeType      `json:"nodes"`
 }
 
 // Document is the typed workflow graph after safe parse.

@@ -1,0 +1,373 @@
+package httpnotify
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+)
+
+func operatorPerms() []string {
+	return authz.ExpandRoles([]string{authz.RoleOperator})
+}
+
+type mapResolver map[string][]net.IP
+
+func (m mapResolver) LookupIP(_ context.Context, _ string, host string) ([]net.IP, error) {
+	if ips, ok := m[host]; ok {
+		return ips, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+func httpConn(hosts []string, addrs []string, methods []string, prefixes []string) ConnectionContext {
+	if len(methods) == 0 {
+		methods = []string{"GET", "POST"}
+	}
+	if len(prefixes) == 0 {
+		prefixes = []string{"/"}
+	}
+	return ConnectionContext{
+		ID:          "77777777-7777-4777-8777-777777777777",
+		WorkspaceID: "ws-1",
+		Type:        ConnectionHTTP,
+		Published:   true,
+		Policy: EndpointPolicy{
+			Hosts:            hosts,
+			Methods:          methods,
+			PathPrefixes:     prefixes,
+			Ports:            []int{80, 443},
+			TLSRequired:      false,
+			AllowedAddresses: addrs,
+			AddressesPresent: len(addrs) > 0,
+			MaxRequestBytes:  DefaultMaxRequestBytes,
+			MaxResponseBytes: DefaultMaxResponseBytes,
+		},
+	}
+}
+
+func baseHTTPReq(conn ConnectionContext, method, path string, payload map[string]any) Request {
+	host := ""
+	if len(conn.Policy.Hosts) > 0 {
+		host = conn.Policy.Hosts[0]
+	}
+	return Request{
+		Operation:      NodeHTTPRequest,
+		ConnectionID:   conn.ID,
+		WorkspaceID:    "ws-1",
+		Method:         method,
+		Path:           path,
+		Host:           host,
+		TimeoutSeconds: 5,
+		Payload:        payload,
+		Permissions:    operatorPerms(),
+		Connection:     conn,
+		Resolver:       mapResolver{host: []net.IP{net.ParseIP("127.0.0.1")}},
+		CorrelationID:  "corr-http-1",
+		ActorID:        "actor-1",
+	}
+}
+
+func startHTTP(t *testing.T, handler http.HandlerFunc) (*httptest.Server, string, int) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	u := strings.TrimPrefix(srv.URL, "http://")
+	_, port, err := net.SplitHostPort(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv, port, p
+}
+
+func TestApprovedHTTPRequest(t *testing.T) {
+	var sawAuth string
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/status" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"env":"staging"}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, nil, []string{"/v1/"})
+	conn.Policy.Ports = []int{port}
+	req := baseHTTPReq(conn, http.MethodGet, "/v1/status", nil)
+	req.Handle = &Handle{Authorization: "Bearer super-secret-token"}
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK || res.Error != nil {
+		t.Fatalf("approved: %+v", res.Error)
+	}
+	if res.StatusCode != 200 || res.Body["ok"] != true {
+		t.Fatalf("result = %+v", res)
+	}
+	if sawAuth != "Bearer super-secret-token" {
+		t.Fatalf("worker must send handle auth, got %q", sawAuth)
+	}
+	raw, _ := jsonish(res)
+	if strings.Contains(raw, "super-secret-token") || strings.Contains(raw, "Bearer ") && strings.Contains(raw, "super-secret") {
+		t.Fatalf("secret leaked: %s", raw)
+	}
+	if res.Audit["outcome"] != "success" || res.Audit["correlationId"] != "corr-http-1" {
+		t.Fatalf("audit = %+v", res.Audit)
+	}
+}
+
+func jsonish(v any) (string, error) {
+	b, err := json.Marshal(v)
+	return string(b), err
+}
+
+func TestSSRFDenied(t *testing.T) {
+	conn := httpConn([]string{"169.254.169.254"}, []string{"169.254.169.254"}, nil, nil)
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"169.254.169.254": []net.IP{net.ParseIP("169.254.169.254")}}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("ssrf: %+v", res.Error)
+	}
+}
+
+func TestDNSRebindingDenied(t *testing.T) {
+	conn := httpConn([]string{"status.example.com"}, []string{"8.8.8.8"}, nil, nil)
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"status.example.com": []net.IP{
+		net.ParseIP("8.8.8.8"),
+		net.ParseIP("169.254.169.254"),
+	}}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || (res.Error.Code != CodeSSRFDenied && res.Error.Code != CodeAddressDenied) {
+		t.Fatalf("rebinding: %+v", res.Error)
+	}
+}
+
+func TestRedirectDenied(t *testing.T) {
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data", http.StatusFound)
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"GET"}, []string{"/"})
+	conn.Policy.Ports = []int{port}
+	conn.Policy.AllowRedirects = false
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || (res.Error.Code != CodeRedirectDenied && res.Error.Code != CodeSSRFDenied) {
+		t.Fatalf("redirect: %+v", res.Error)
+	}
+}
+
+func TestRedirectHopRevalidated(t *testing.T) {
+	var hops []string
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		hops = append(hops, r.URL.Path)
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/admin", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"GET"}, []string{"/"})
+	conn.Policy.Ports = []int{port}
+	conn.Policy.AllowRedirects = true
+	conn.Policy.MaxRedirects = 2
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("allowed redirect: %+v", res.Error)
+	}
+	if len(hops) < 2 {
+		t.Fatalf("hops = %#v", hops)
+	}
+
+	// Redirect to a different host that is not allowlisted.
+	srv2, _, port2 := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://evil.example.com/steal", http.StatusFound)
+	})
+	conn.Policy.Ports = []int{port2}
+	conn.Policy.AllowRedirects = true
+	conn.Policy.MaxRedirects = 2
+	req = baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Transport = srv2.Client().Transport
+	req.Resolver = mapResolver{
+		"127.0.0.1":        []net.IP{net.ParseIP("127.0.0.1")},
+		"evil.example.com": []net.IP{net.ParseIP("8.8.8.8")},
+	}
+	res = Execute(context.Background(), req)
+	if res.OK || res.Error == nil || (res.Error.Code != CodeRedirectDenied && res.Error.Code != CodeInvalidEndpoint && res.Error.Code != CodeAddressDenied) {
+		t.Fatalf("cross-host redirect: %+v", res.Error)
+	}
+}
+
+func TestOversizeDenied(t *testing.T) {
+	big := strings.Repeat("a", DefaultMaxResponseBytes+8)
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":"`+big+`"}`)
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, nil, nil)
+	conn.Policy.Ports = []int{port}
+	conn.Policy.MaxResponseBytes = 64
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeOversize {
+		t.Fatalf("oversize: %+v", res.Error)
+	}
+}
+
+func TestSecretRedaction(t *testing.T) {
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"token":"abc-secret","authorization":"Bearer xyz"}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"POST"}, []string{"/"})
+	conn.Policy.Ports = []int{port}
+	conn.Policy.SecretFields = []string{"token"}
+	req := baseHTTPReq(conn, http.MethodPost, "/", map[string]any{"token": "abc-secret", "name": "ops"})
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("secret field authorized: %+v", res.Error)
+	}
+	if res.Body["token"] != redactedMarker || res.Body["authorization"] != redactedMarker {
+		t.Fatalf("body not redacted: %+v", res.Body)
+	}
+
+	conn.Policy.SecretFields = nil
+	req = baseHTTPReq(conn, http.MethodPost, "/", map[string]any{"token": "abc-secret"})
+	req.Transport = srv.Client().Transport
+	res = Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSecretDenied {
+		t.Fatalf("unauthorized secret: %+v", res.Error)
+	}
+}
+
+func TestWrongConnectionType(t *testing.T) {
+	conn := httpConn([]string{"mail.example.com"}, []string{"127.0.0.1"}, nil, nil)
+	conn.Type = ConnectionSMTP
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeWrongConnectionType {
+		t.Fatalf("wrong type: %+v", res.Error)
+	}
+}
+
+func TestUnpublishedPin(t *testing.T) {
+	conn := httpConn([]string{"status.example.com"}, []string{"127.0.0.1"}, nil, nil)
+	conn.Published = false
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeUnpublishedPin {
+		t.Fatalf("unpublished: %+v", res.Error)
+	}
+}
+
+func TestTenancyDenied(t *testing.T) {
+	conn := httpConn([]string{"status.example.com"}, []string{"127.0.0.1"}, nil, nil)
+	conn.WorkspaceID = "ws-other"
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeTenancyDenied {
+		t.Fatalf("tenancy: %+v", res.Error)
+	}
+}
+
+func TestWebhookIdempotencyHeader(t *testing.T) {
+	var key string
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		key = r.Header.Get(IdempotencyHeader)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"delivered":true}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"POST"}, []string{"/"})
+	conn.Type = ConnectionWebhook
+	conn.Policy.Ports = []int{port}
+	req := baseHTTPReq(conn, http.MethodPost, "/", map[string]any{"event": "deployed"})
+	req.Operation = NodeWebhook
+	req.IdempotencyKey = "idem-1"
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("webhook: %+v", res.Error)
+	}
+	if key != "idem-1" {
+		t.Fatalf("idempotency = %q", key)
+	}
+}
+
+func TestEmailApprovedAndRecipientDeny(t *testing.T) {
+	mailer := &CaptureMailer{}
+	req := EmailRequest{
+		ConnectionID:  "99999999-9999-4999-8999-999999999999",
+		WorkspaceID:   "ws-1",
+		Payload:       map[string]any{"service": "api"},
+		Permissions:   operatorPerms(),
+		Connection:    ConnectionContext{ID: "c1", WorkspaceID: "ws-1", Type: ConnectionSMTP, Published: true},
+		Recipients:    RecipientListContext{ID: "r1", WorkspaceID: "ws-1", Published: true, Emails: []string{"ops@example.com"}, Domains: []string{"example.com"}},
+		Template:      TemplateContext{ID: "t1", WorkspaceID: "ws-1", Published: true, Subject: "Alert", Body: "Service {service} is degraded.", InputSchema: map[string]any{"type": "object", "required": []any{"service"}, "properties": map[string]any{"service": map[string]any{"type": "string"}}}},
+		Mailer:        mailer,
+		CorrelationID: "corr-mail-1",
+	}
+	res := ExecuteEmail(context.Background(), req)
+	if !res.OK || res.Error != nil {
+		t.Fatalf("email: %+v", res.Error)
+	}
+	if len(mailer.Messages) != 1 || mailer.Messages[0].To[0] != "ops@example.com" {
+		t.Fatalf("mail = %+v", mailer.Messages)
+	}
+	if !strings.Contains(mailer.Messages[0].Body, "api") {
+		t.Fatalf("body = %s", mailer.Messages[0].Body)
+	}
+
+	req.Payload = map[string]any{"to": "evil@other.com", "service": "api"}
+	res = ExecuteEmail(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeRecipientDenied {
+		t.Fatalf("payload to: %+v", res.Error)
+	}
+
+	req.Payload = map[string]any{"recipient": "evil@other.com", "service": "api"}
+	req.Template.InputSchema = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"service":   map[string]any{"type": "string"},
+			"recipient": map[string]any{"type": "string"},
+		},
+	}
+	res = ExecuteEmail(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeRecipientDenied {
+		t.Fatalf("schema recipient deny: %+v", res.Error)
+	}
+
+	req.Connection.Type = ConnectionHTTP
+	req.Payload = map[string]any{"service": "api"}
+	res = ExecuteEmail(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeWrongConnectionType {
+		t.Fatalf("smtp type: %+v", res.Error)
+	}
+}
+
+func TestCatalogDocumentsGateAndNodes(t *testing.T) {
+	cat := Catalog()
+	if !cat.Gate.Enabled || len(cat.Gate.Suites) < 8 {
+		t.Fatalf("gate = %+v", cat.Gate)
+	}
+	if len(cat.Nodes) != 3 {
+		t.Fatalf("nodes = %+v", cat.Nodes)
+	}
+	for _, n := range cat.Nodes {
+		if !n.Enabled || len(n.AllowedWith) == 0 || len(n.Permissions) == 0 {
+			t.Fatalf("node = %+v", n)
+		}
+	}
+}

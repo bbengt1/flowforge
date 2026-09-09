@@ -54,6 +54,9 @@ type Config struct {
 	ArtifactDownloadTTL time.Duration
 	// ArtifactMaxBytes is the upload size cap (logs use a tighter bound).
 	ArtifactMaxBytes int
+	// IntegrationActionsEnabled catalogs and executes http.request /
+	// notification.* when the negative suite is present (default true).
+	IntegrationActionsEnabled bool
 }
 
 // Load reads configuration from the process environment.
@@ -76,21 +79,22 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		HTTPAddr:               listenAddr(),
-		DatabaseURL:            databaseURL(),
-		ShutdownWait:           durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
-		MigrateTimeout:         durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
-		TrustedProxies:         proxies,
-		RequireTLS:             boolEnv("REQUIRE_TLS", false),
-		TLSCertFile:            strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
-		TLSKeyFile:             strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
-		CORSAllowedOrigins:     origins,
-		SessionIdleTimeout:     durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
-		SessionAbsoluteTimeout: durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
-		VaultKeys:              keys,
-		ArtifactStoreDir:       strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
-		ArtifactDownloadTTL:    durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
-		ArtifactMaxBytes:       intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),
+		HTTPAddr:                  listenAddr(),
+		DatabaseURL:               databaseURL(),
+		ShutdownWait:              durationEnv("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
+		MigrateTimeout:            durationEnv("MIGRATE_TIMEOUT", defaultMigrateTimeout),
+		TrustedProxies:            proxies,
+		RequireTLS:                boolEnv("REQUIRE_TLS", false),
+		TLSCertFile:               strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
+		TLSKeyFile:                strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
+		CORSAllowedOrigins:        origins,
+		SessionIdleTimeout:        durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
+		SessionAbsoluteTimeout:    durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
+		VaultKeys:                 keys,
+		ArtifactStoreDir:          strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
+		ArtifactDownloadTTL:       durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
+		ArtifactMaxBytes:          intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),
+		IntegrationActionsEnabled: boolEnv("INTEGRATION_ACTIONS_ENABLED", true),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

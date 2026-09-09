@@ -125,7 +125,7 @@ Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions`
 
 Suggested UI flow:
 
-1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, (E7.1) `kubernetesEngine`, (E8.1) `sshEngine`, and (E9.1) `scriptEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`. SSH-target rows include `allowedCredentialTypes: ["ssh_private_key"]`. Runtime-profile rows include `engine: "script"`.
+1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, (E7.1) `kubernetesEngine`, (E8.1) `sshEngine`, (E9.1) `scriptEngine`, and (E10.4) `httpNotificationEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`. SSH-target rows include `allowedCredentialTypes: ["ssh_private_key"]`. Connection rows include `allowedCredentialTypes: ["token"]` and `engine: "http-notification"`. Runtime-profile rows include `engine: "script"`.
 2. List: `GET /{collection}` (`cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`).
 3. Create draft: `POST /{collection}` `{name, slug?, spec}`. Keep `resource.id` and `draft.revision`.
 4. Save: `PUT /{collection}/{id}/draft` `{revision, spec, name?}`. On `409`, reload the draft.
@@ -139,10 +139,11 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine}` | `401` `403` |
+| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), `scriptEngine` (E9.1), and `httpNotificationEngine` (E10.4). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine,httpNotificationEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation, E9.3 I/O/retry, and E9.4 `revocation` + `emergencyStop`. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/http/catalog` | HTTP/notification node fields, SSRF/redirect/TLS/size/secret-field rules, and `integrationGate`. Requires `opsconfig.view`. Does not make a remote call. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -165,7 +166,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `username` (non-root; default at execute is `flowforge`; `root`/`toor`/`administrator` rejected), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
 | `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (default `false`; when `true`, `verification` is required); optional `verification` `{template, expectExitCode?, expectStdoutContains?, onMatch?, onMismatch?, onError?}`; `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
 | `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`; optional `egress.{destinations[{host,port,protocol}],dnsConstrained:true}` (omitted = default-deny; metadata/loopback/wildcards rejected) |
-| `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
+| `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects, `allowedAddresses` (destination-IP allowlist; required at execute for DNS names), `secretFields`, `maxRequestBytes`/`maxResponseBytes` |
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
 | `message_template` | `inputSchema`, `contentClassification`, `body`; optional `subject` |
 | `response_schema` | `schema`, `maxBytes` (1–1048576) |
@@ -860,7 +861,49 @@ Suggested approval wait flow:
 | `GET /api/v1/approvals/catalog` | Now `waitResumeEnabled: true`. Resume via decide. | `200` catalog | `401` `403` |
 | `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. | `200` approval | `401` `403` `409` |
 
-Out of scope: `apps/web` rewrite (Chloe), `http.request` / `notification.webhook` / `notification.email` (E10.4).
+Out of scope: `apps/web` rewrite (Chloe). HTTP and notification action nodes are E10.4 below.
+
+## HTTP and notification actions (E10.4)
+
+Last story on epic #105. Relates to #109 / Part of #105 — **Keep #109 open** (Chloe still has library/wizard UI pending). Do **not** rewrite `apps/web` in this API story.
+
+`http.request`, `notification.webhook`, and `notification.email` use pinned, server-authorized connection / recipient-list / message-template / response-schema revisions. YAML stores **resource UUIDs only** (`connectionId`, `recipientListId`, `templateId`, `responseSchemaRef`, `policyId`). Publish and execution start pin the published revision; later draft edits do not retarget a pin.
+
+**Integration gate:** the nodes are catalog-enabled because the negative suite is implemented (SSRF, redirect, DNS-rebinding, oversize, secret redaction, wrong connection type, unpublished pin, tenancy, email recipient deny). `GET /workflows/catalog` exposes `rules.integrationActionsEnabled` and `integrationGate`. Set `INTEGRATION_ACTIONS_ENABLED=false` to reject the three types at validate/publish.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Wizard/library should read `GET /workflows/catalog` (`allowedWith`, `policy`, `bounds`, `redaction`, `integrationGate`) and `GET /http/catalog` / `GET /ops-config/catalog` (`httpNotificationEngine`). Connection pickers list workspace connections whose `type` matches the node (`http` / `webhook` / `smtp`). Next proxies can expose `/api/control-plane/http/catalog`.
+
+### Node / contract map
+
+| Node | Required `with` | Optional `with` | Connection type | Permissions |
+| --- | --- | --- | --- | --- |
+| `http.request` | `connectionId` | `method`, `path`, `host`, `timeoutSeconds` (1–60, default 15), `responseSchemaRef`, `policyId` | `http` | `workflow.execute`, `connection.use`, `responseSchema.use` (when a schema is pinned) |
+| `notification.webhook` | `connectionId` | `path`, `host`, `timeoutSeconds`, `idempotencyKey`, `policyId` | `webhook` | `workflow.execute`, `connection.use` |
+| `notification.email` | `connectionId`, `recipientListId`, `templateId` | `policyId` | `smtp` | `workflow.execute`, `connection.use`, `recipientList.use`, `messageTemplate.use` |
+
+Forbidden YAML keys (fail closed): `http.request` cannot declare `url`, `insecureSkipVerify`, `authorization`, `headers`. `notification.webhook` cannot declare `url`, `secret`, `endpoint`. `notification.email` cannot declare `to`, `recipients`, `body`, `html`.
+
+HTTP/webhook delivery:
+
+1. Normalize host + relative path into an absolute URL. Full URLs, userinfo, and credentials in YAML are denied.
+2. Resolve through the approved resolver. Every destination address, including redirects, must be on `endpointPolicy.allowedAddresses`. DNS names without an allowlist are denied (anti DNS-rebinding).
+3. Link-local and metadata addresses (`169.254.0.0/16`, `fe80::/10`) are always denied (SSRF).
+4. Connect only to the verified address. TLS verification cannot be skipped. `tlsRequired` defaults true.
+5. Redirects default deny. When `allowRedirects=true`, each hop is re-checked for host/method/path/TLS/address policy (max 5).
+6. Request/response bodies are capped (`maxRequestBytes` / `maxResponseBytes`, default 16 KiB, hard 1 MiB).
+7. Secret-bearing payload fields require `endpointPolicy.secretFields`. Results and audit records are redacted.
+
+Email delivery uses only the pinned recipient-list emails/domains and the pinned message-template revision. `{name}` placeholders may interpolate explicit typed string inputs; `{{` / `${` are denied. Payload `to` / `recipients` is `recipient-denied`.
+
+Policy kind must be `http` for `http.request` and `notification` for the notification nodes. Allowlists fail closed when present.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workflows/catalog` | Live node contracts + `integrationGate`. Requires `workflow.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/http/catalog` | Engine isolation, errors, node fields. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/ops-config/catalog` | Includes `httpNotificationEngine`. | `200` catalog | `401` `403` |
+
+Out of scope: `apps/web` rewrite (Chloe). No new trigger types.
 
 ## Durable executions (E5.1)
 
