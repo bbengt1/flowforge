@@ -443,6 +443,51 @@ describe("resolveIdentityProxyTarget", () => {
     );
   });
 
+  it("retargets E7.1 cluster-target and kubernetes policy paths through the adapter", () => {
+    const list = resolveIdentityProxyTarget("GET", ["cluster-targets"]);
+    assert.equal("apiPath" in list, true);
+    if ("apiPath" in list) {
+      assert.equal(list.apiPath, "/api/v1/cluster-targets");
+    }
+    const select = resolveIdentityProxyTarget("POST", [
+      "cluster-targets",
+      "11111111-1111-4111-8111-111111111111",
+      "select",
+    ]);
+    assert.equal("apiPath" in select, true);
+    if ("apiPath" in select) {
+      assert.equal(
+        select.apiPath,
+        "/api/v1/cluster-targets/11111111-1111-4111-8111-111111111111/select",
+      );
+    }
+    const policyDraft = resolveIdentityProxyTarget("PUT", [
+      "policies",
+      "11111111-1111-4111-8111-111111111111",
+      "draft",
+    ]);
+    assert.equal("apiPath" in policyDraft, true);
+    if ("apiPath" in policyDraft) {
+      assert.equal(
+        policyDraft.apiPath,
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/draft",
+      );
+    }
+    const authorized = resolveIdentityProxyTarget("GET", [
+      "cluster-targets",
+      "authorized",
+    ]);
+    assert.equal("status" in authorized, true);
+    if ("status" in authorized) {
+      assert.equal(authorized.status, 404);
+    }
+    const catalog = resolveIdentityProxyTarget("GET", ["kubernetes", "catalog"]);
+    assert.equal("apiPath" in catalog, true);
+    if ("apiPath" in catalog) {
+      assert.equal(catalog.apiPath, "/api/v1/kubernetes/catalog");
+    }
+  });
+
   it("does not treat reserved ops-config actions as resource ids", () => {
     const unknown = resolveIdentityProxyTarget("GET", [
       "cluster-targets",

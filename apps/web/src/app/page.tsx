@@ -24,7 +24,7 @@ export default async function Home() {
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
           E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
           approvals · E5 executions · E5.4 alerts · E6.1 shell · E5.3
-          artifacts · E5.4 alerts/audit
+          artifacts · E5.4 alerts/audit · E7.1 kubernetes targets
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -199,6 +199,34 @@ export default async function Home() {
             href="/config"
           >
             Open targets / profiles / config
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Kubernetes targets and policy</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E7.1 UI on the existing E4.2{" "}
+          <code className="font-mono text-xs">cluster-targets</code> and{" "}
+          <code className="font-mono text-xs">policies</code> surfaces.
+          Cluster targets bind a workspace vault credential by display name.
+          Kubernetes policy allowlists namespaces, kinds, and verbs and can
+          require approval. Selectors fail closed on 403. The UI never
+          receives kubeconfigs. Wired to the #74 map on main. Relates to
+          #70 (already closed) / Part of #69.
+        </p>
+        <p className="mt-4 flex flex-wrap gap-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/config/cluster-targets"
+          >
+            Open cluster targets
+          </Link>
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/config/policies"
+          >
+            Open policies
           </Link>
         </p>
       </section>

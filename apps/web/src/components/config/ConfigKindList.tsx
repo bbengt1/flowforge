@@ -75,6 +75,11 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
             <p className="mt-1 max-w-2xl text-sm text-zinc-600">
               {descriptor.summary} Drafts are editable; published versions are
               immutable pins for workflows.
+              {kind === "cluster_target"
+                ? " E7.1: bind a workspace kubernetes credential and optional policy. Kubeconfig never appears here."
+                : kind === "policy"
+                  ? " E7.1: kubernetes policies use namespace, kind, and verb allowlists plus approval-required actions."
+                  : ""}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

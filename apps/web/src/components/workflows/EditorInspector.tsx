@@ -2,7 +2,9 @@
 
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
+import { KubernetesTargetSelect } from "@/components/config/KubernetesTargetSelect";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
+import { isKubernetesActionType } from "@/lib/kubernetes";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
   formatBounds,
@@ -28,6 +30,7 @@ type EditorInspectorProps = {
   canCall: boolean;
   onSelectNode: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
+  onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 };
 
 const CREDENTIAL_KEYS = /credential|connectionid/i;
@@ -43,6 +46,7 @@ export function EditorInspector({
   canCall,
   onSelectNode,
   onApply,
+  onPatchNodeWith,
 }: EditorInspectorProps) {
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
   const palette = entries.filter((entry) =>
@@ -71,6 +75,7 @@ export function EditorInspector({
           entry={entries.find((item) => item.type === nodes.find((node) => node.id === selection.id)?.type)}
           identity={identity}
           canCall={canCall}
+          onPatchNodeWith={onPatchNodeWith}
         />
       ) : null}
     </div>
@@ -175,11 +180,13 @@ function CredentialHints({
   entry,
   identity,
   canCall,
+  onPatchNodeWith,
 }: {
   node: YamlWorkflowNode | null;
   entry?: ActionLibraryEntry;
   identity: DevIdentity;
   canCall: boolean;
+  onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 }) {
   if (!node || !entry) {
     return null;
@@ -188,7 +195,11 @@ function CredentialHints({
     ...entry.requiredWith,
     ...entry.allowedWith.map((field) => field.name),
   ].filter((name, index, all) => all.indexOf(name) === index && CREDENTIAL_KEYS.test(name));
-  if (credentialFields.length === 0 && !entry.policy) {
+  if (
+    credentialFields.length === 0 &&
+    !entry.policy &&
+    !isKubernetesActionType(node.type)
+  ) {
     return (
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold">Policy</h2>
@@ -210,6 +221,11 @@ function CredentialHints({
       </section>
     );
   }
+  const clusterTargetId =
+    typeof node.with.clusterTargetId === "string"
+      ? String(node.with.clusterTargetId)
+      : "";
+
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="text-base font-semibold">Ports, policy, credentials</h2>
@@ -221,6 +237,25 @@ function CredentialHints({
       </p>
       {formatPolicy(entry.policy) ? (
         <p className="mt-2 text-sm text-zinc-700">policy: {formatPolicy(entry.policy)}</p>
+      ) : null}
+      {isKubernetesActionType(node.type) ? (
+        <div className="mt-3">
+          <KubernetesTargetSelect
+            identity={identity}
+            ready={canCall}
+            value={clusterTargetId}
+            disabled={!onPatchNodeWith}
+            onChange={(pin) =>
+              onPatchNodeWith?.(node.id, {
+                clusterTargetId: pin?.resourceId ?? "",
+              })
+            }
+          />
+          <p className="mt-1 text-xs text-zinc-500">
+            Authorized published cluster targets only. Display name and
+            version — never kubeconfig.
+          </p>
+        </div>
       ) : null}
       {credentialFields.map((field) => (
         <div key={field} className="mt-3">

@@ -147,6 +147,24 @@ describe("ops-config contract (#41)", () => {
         .policyId,
       RESOURCE_ID,
     );
+    const cluster = pickSafeSpec({
+      credentialId: RESOURCE_ID,
+      allowedNamespaces: [],
+      serviceAccount: { name: "", roleTemplate: "namespace-scoped-runner" },
+      policy: { allowedNamespaces: [], allowedKinds: ["Deployment"], deny: true },
+    }, "cluster_target");
+    assert.equal(cluster.allowedNamespaces, undefined);
+    assert.equal(cluster.serviceAccount, undefined);
+    assert.deepEqual(cluster.policy, { allowedKinds: ["Deployment"], deny: true });
+    const withSa = pickSafeSpec({
+      serviceAccount: {
+        name: "flowforge-runner",
+        namespace: "cp-ops-nprd",
+        roleTemplate: "namespace-scoped-runner",
+      },
+    }, "cluster_target");
+    assert.equal(withSa.serviceAccount?.name, "flowforge-runner");
+    assert.equal(withSa.serviceAccount?.namespace, "cp-ops-nprd");
   });
 });
 

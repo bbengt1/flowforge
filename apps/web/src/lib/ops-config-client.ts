@@ -6,6 +6,10 @@
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
+import {
+  hostSuppliedIdentityKeys,
+  hostSuppliedIdentityProblem,
+} from "./kubernetes.ts";
 import { problemFieldErrors, type ProblemDetails } from "./problem.ts";
 import {
   batchSelectPath,
@@ -33,6 +37,7 @@ import {
   parseOpsConfigPin,
   parseOpsConfigRecord,
   parseOpsConfigVersion,
+  stripSecrets,
 } from "./ops-config.ts";
 import type {
   OpsConfigCatalog,
@@ -126,14 +131,20 @@ export async function getOpsConfigCatalog(
   if (!result.ok) {
     return failure(result);
   }
-  const kinds = Array.isArray((result.data as { kinds?: unknown }).kinds)
-    ? (result.data as OpsConfigCatalog).kinds
+  const payload = asRecord(result.data);
+  const kinds = Array.isArray(payload.kinds)
+    ? (payload.kinds as OpsConfigCatalog["kinds"])
     : [];
+  const engineRaw = payload.kubernetesEngine;
+  const kubernetesEngine =
+    engineRaw && typeof engineRaw === "object" && !Array.isArray(engineRaw)
+      ? stripSecrets(engineRaw as Record<string, unknown>)
+      : undefined;
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    catalog: { kinds },
+    catalog: { kinds, kubernetesEngine },
   };
 }
 
@@ -162,6 +173,10 @@ export async function createOpsConfig(
   slug?: string,
 ): Promise<DraftSuccess | OpsConfigClientFailure> {
   const path = collectionPath(kind);
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
     body: buildCreateBody(name, spec, slug, kind),
@@ -215,6 +230,10 @@ export async function saveOpsConfigDraft(
   name?: string,
 ): Promise<DraftSuccess | OpsConfigClientFailure> {
   const path = draftPath(kind, resourceId);
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "PUT",
     body: buildSaveDraftBody(revision, spec, name, kind),
@@ -472,6 +491,23 @@ function draftOnlyResult(
     statusCode: result.statusCode,
     requestId: result.requestId,
     draft: { ...draft, kind, resourceId: draft.resourceId || resourceId },
+  };
+}
+
+function rejectHostIdentity(
+  spec: OpsConfigSpec,
+  instance: string,
+): OpsConfigClientFailure | null {
+  const keys = hostSuppliedIdentityKeys(spec);
+  if (keys.length === 0) {
+    return null;
+  }
+  return {
+    ok: false,
+    statusCode: 400,
+    requestId: "client",
+    problem: hostSuppliedIdentityProblem(keys, instance),
+    conflict: false,
   };
 }
 

@@ -53,7 +53,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.cluster_target,
     group: "targets",
     title: "Kubernetes cluster targets",
-    summary: "Workspace cluster endpoint metadata. Kubeconfig stays in the vault.",
+    summary:
+      "Workspace cluster endpoint + vault credential + optional Kubernetes policy pin. Kubeconfig stays in the vault.",
     yamlRef: "clusterTargetId",
   },
   {
@@ -117,7 +118,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.policy,
     group: "config",
     title: "Policies",
-    summary: "Target and profile policy revisions. Referenced versions are immutable.",
+    summary:
+      "Target and profile policy revisions, including Kubernetes namespace/kind/verb allowlists. Referenced versions are immutable.",
     yamlRef: "policyId",
   },
 ];
@@ -210,7 +212,11 @@ export function workflowVersionPinsPath(
 export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
   switch (kind) {
     case "cluster_target":
-      return { credentialId: "", endpoint: { apiServer: "" } };
+      return {
+        credentialId: "",
+        endpoint: { apiServer: "" },
+        serviceAccount: { name: "", roleTemplate: "namespace-scoped-runner" },
+      };
     case "ssh_target":
       return {
         credentialId: "",
@@ -363,6 +369,7 @@ const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "maxBytes",
   "kind",
   "policy",
+  "serviceAccount",
 ];
 
 export function pickSafeSpec(
@@ -385,7 +392,65 @@ export function pickSafeSpec(
       }
       continue;
     }
+    if (key === "allowedNamespaces" && Array.isArray(value) && value.length === 0) {
+      continue;
+    }
+    if (key === "policy" && value && typeof value === "object" && !Array.isArray(value)) {
+      out.policy = omitEmptyAllowlistFields(value as Record<string, unknown>);
+      continue;
+    }
+    if (key === "serviceAccount") {
+      const sa = asServiceAccount(value);
+      if (sa) {
+        out.serviceAccount = sa;
+      }
+      continue;
+    }
     (out as Record<string, unknown>)[key] = value;
+  }
+  return out;
+}
+
+const EMPTY_ALLOWLIST_KEYS = new Set([
+  "allowedNamespaces",
+  "namespaces",
+  "allowedKinds",
+  "kinds",
+  "allowedVerbs",
+  "verbs",
+  "operations",
+]);
+
+function omitEmptyAllowlistFields(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (EMPTY_ALLOWLIST_KEYS.has(key) && Array.isArray(item) && item.length === 0) {
+      continue;
+    }
+    out[key] = item;
+  }
+  return out;
+}
+
+function asServiceAccount(
+  value: unknown,
+): OpsConfigSpec["serviceAccount"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const row = value as Record<string, unknown>;
+  const name = typeof row.name === "string" ? row.name.trim() : "";
+  if (!name) {
+    return undefined;
+  }
+  const out: NonNullable<OpsConfigSpec["serviceAccount"]> = { name };
+  if (typeof row.namespace === "string" && row.namespace.trim()) {
+    out.namespace = row.namespace.trim();
+  }
+  if (typeof row.roleTemplate === "string" && row.roleTemplate.trim()) {
+    out.roleTemplate = row.roleTemplate.trim();
   }
   return out;
 }

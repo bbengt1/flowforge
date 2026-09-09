@@ -6,6 +6,7 @@ import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { listCredentials } from "@/lib/credential-client";
 import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
+import { authorizedClusterTargets } from "@/lib/kubernetes";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -173,7 +174,10 @@ export function ActionWizard({
           nextPins[kind] = [];
           continue;
         }
-        nextPins[kind] = publishedPinsFromList({ items: result.items }).options;
+        nextPins[kind] =
+          kind === "cluster_target"
+            ? authorizedClusterTargets({ items: result.items }).options
+            : publishedPinsFromList({ items: result.items }).options;
       }
       setPins(nextPins);
       setPinProblems(nextProblems);
