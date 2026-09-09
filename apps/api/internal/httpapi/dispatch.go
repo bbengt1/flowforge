@@ -90,6 +90,7 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := wfstore.AuthorizeJobBinding(result.Binding, scope.WorkspaceID(), result.Execution.WorkflowVersionID, result.Execution.WorkflowDigest, s.now()); err != nil {
+		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
@@ -162,6 +163,7 @@ func (s *Server) workerJobAction(w http.ResponseWriter, r *http.Request, fn func
 	jobID := strings.TrimSpace(r.PathValue("jobId"))
 	binding, err := wfstore.ParseJobTicket(s.jobKey, req.JobToken)
 	if err != nil {
+		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
@@ -170,6 +172,7 @@ func (s *Server) workerJobAction(w http.ResponseWriter, r *http.Request, fn func
 		return
 	}
 	if err := wfstore.AuthorizeJobBinding(binding, scope.WorkspaceID(), "", "", s.now()); err != nil {
+		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}

@@ -29,6 +29,8 @@ const (
 	PermCredentialManage    = "credential.manage"
 	PermApprovalView        = "approval.view"
 	PermApprovalDecide      = "approval.decide"
+	PermAlertView           = "alert.view"
+	PermAlertAck            = "alert.ack"
 	PermWorkspaceAdminister = "workspace.administer"
 	PermKubernetesApply     = "kubernetes.apply"
 	PermSSHRun              = "ssh.run"
@@ -84,6 +86,8 @@ func Permissions() []Permission {
 		{Key: PermCredentialManage, Family: FamilyCredential},
 		{Key: PermApprovalView, Family: FamilyApproval},
 		{Key: PermApprovalDecide, Family: FamilyApproval},
+		{Key: PermAlertView, Family: FamilyView},
+		{Key: PermAlertAck, Family: FamilyExecute},
 		{Key: PermWorkspaceAdminister, Family: FamilyAdministration},
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
@@ -109,17 +113,17 @@ func Roles() []Role {
 		{
 			Key:         RoleViewer,
 			Description: "Read workflows, executions, and approval status. Cannot edit, run, or manage credentials.",
-			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView, PermOpsConfigView},
+			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView, PermOpsConfigView, PermAlertView},
 		},
 		{
 			Key:         RoleEditor,
 			Description: "Create and edit workflow drafts. Cannot publish, execute, or administer the workspace.",
-			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit},
+			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermAlertView},
 		},
 		{
 			Key:         RolePublisher,
 			Description: "Edit and publish workflow versions. Cannot execute or administer.",
-			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermWorkflowPublish, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermOpsConfigPublish},
+			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermWorkflowPublish, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermOpsConfigPublish, PermAlertView},
 		},
 		{
 			Key:         RoleOperator,
@@ -127,6 +131,7 @@ func Roles() []Role {
 			Permissions: []string{
 				PermWorkflowView, PermWorkflowExecute, PermExecutionView, PermExecutionCancel,
 				PermCredentialView, PermCredentialUse, PermApprovalView, PermKubernetesApply, PermSSHRun,
+				PermAlertView, PermAlertAck,
 				PermOpsConfigView, PermOpsConfigUse,
 				PermClusterTargetUse, PermSSHTargetUse, PermCommandProfileUse, PermRuntimeProfileUse,
 				PermConnectionUse, PermRecipientListUse, PermMessageTemplateUse, PermResponseSchemaUse, PermPolicyUse,
@@ -135,7 +140,7 @@ func Roles() []Role {
 		{
 			Key:         RoleApprover,
 			Description: "Decide pending approvals. Cannot edit, execute, or administer.",
-			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView, PermApprovalDecide},
+			Permissions: []string{PermWorkflowView, PermExecutionView, PermApprovalView, PermApprovalDecide, PermAlertView},
 		},
 		{
 			Key:         RoleAdmin,

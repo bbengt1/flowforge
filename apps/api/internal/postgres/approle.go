@@ -32,13 +32,25 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO flowforge_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO flowforge_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO flowforge_app;
 DO $$
+DECLARE
+    r record;
 BEGIN
     IF to_regclass('public.workflow_versions') IS NOT NULL THEN
         REVOKE UPDATE, DELETE ON workflow_versions FROM flowforge_app;
     END IF;
     IF to_regclass('public.audit_events') IS NOT NULL THEN
-        REVOKE UPDATE ON audit_events FROM flowforge_app;
+        REVOKE UPDATE, DELETE ON audit_events FROM flowforge_app;
     END IF;
+    FOR r IN
+        SELECT c.relname
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND c.relname LIKE 'audit_events_%'
+    LOOP
+        EXECUTE format('REVOKE UPDATE, DELETE ON TABLE %I FROM flowforge_app', r.relname);
+    END LOOP;
     IF to_regclass('public.credential_events') IS NOT NULL THEN
         REVOKE UPDATE ON credential_events FROM flowforge_app;
     END IF;

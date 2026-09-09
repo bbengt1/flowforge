@@ -158,7 +158,7 @@ func TestPostgresImmutabilityPinningAndIsolation(t *testing.T) {
 	})
 
 	t.Run("force rls is enabled", func(t *testing.T) {
-		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions", "execution_steps", "execution_jobs", "audit_events", "execution_artifacts", "artifact_download_grants"} {
+		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions", "execution_steps", "execution_jobs", "audit_events", "execution_artifacts", "artifact_download_grants", "operational_alerts"} {
 			var forced bool
 			err := admin.QueryRow(ctx, `
 				SELECT c.relforcerowsecurity
@@ -180,7 +180,7 @@ func seedWorkflowWorkspaces(t *testing.T, ctx context.Context, db identity.DB) (
 	t.Helper()
 	store := identity.NewPostgres(db)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	tenant, err := store.CreateTenant(ctx, "wf-"+suffix[:10], "WF")
+	tenant, err := store.CreateTenant(ctx, "wf-"+suffix[len(suffix)-12:], "WF")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -66,6 +66,9 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `POST` | `/api/v1/jobs/{jobId}/complete` | Succeed with fencing. |
 | `POST` | `/api/v1/jobs/{jobId}/fail` | Fail with fencing. |
 | `GET` | `/api/v1/audit-events` | Workspace audit events (redacted). |
+| `GET` | `/api/v1/alerts` | Operational alerts (`alert.view`). Query `kind`, `status`, `resourceType`, `resourceId`, `limit`. Identifiers only. |
+| `GET` | `/api/v1/alerts/{alertId}` | One operational alert. |
+| `POST` | `/api/v1/alerts/{alertId}/ack` | Acknowledge (`alert.ack`, operator/admin, idempotent). |
 | `GET` | `/api/v1/credentials/catalog` | Typed vault field catalog (`credential.view`). |
 | `GET` / `POST` | `/api/v1/credentials` | List metadata / create encrypted credential. |
 | `GET` / `PATCH` / `DELETE` | `/api/v1/credentials/{credentialId}` | Metadata, safe patch, confirmed delete. |

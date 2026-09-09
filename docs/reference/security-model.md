@@ -92,8 +92,9 @@ produce an auditable, version-pinned execution.
 - Log correlation IDs, actor/resource identifiers, decisions, and outcomes, but
   never authorization headers, cookie values, credential material, webhook
   bodies, or unredacted provider output. Protect audit records from normal
-  application mutation and alert on failed authorization, replay, and policy
-  violations.
+  application mutation (`flowforge_app` cannot UPDATE or DELETE `audit_events`)
+  and emit operational alerts on failed authorization, replay, policy, and
+  redaction. Alert payloads carry correlation/resource identifiers only.
 - Enforce dependency/image provenance, vulnerability scanning, patching SLAs,
   secret rotation, backup encryption, restore testing, and least-privilege
   service identities before production use.

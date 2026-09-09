@@ -360,7 +360,43 @@ Worker/operator upload (not the browser viewer): `POST /executions/{id}/artifact
 
 Artifact JSON fields: `id`, `executionId`, `executionStepId?`, `kind`, `filename`, `contentType`, `digest`, `sizeBytes`, `contentClassification` (`public`/`internal`/`confidential`), `redacted`, `expiresAt` (defaults to the execution `retentionUntil`), `legalHold`, `legalHoldReason?`, `legalHoldBy?`, `legalHoldAt?`, `createdAt`, `updatedAt`.
 
-Out of scope: E5.4 audit integrity suite expansion, provider engines, `apps/web` rewrite.
+Out of scope: provider engines, `apps/web` rewrite.
+
+## Audit integrity and operational alerts (E5.4)
+
+`audit_events` are append-only for the `flowforge_app` role (SELECT + INSERT only). UPDATE always fails. DELETE of live rows fails; expired rows are removed only by `app.purge_expired_audit_events` (SECURITY DEFINER), which `POST /retention/purge` already calls. Tamper attempts fail closed.
+
+Authorization, replay (idempotency fingerprint mismatch), policy deny, and redaction/unsafe-artifact failures emit an operational alert plus a secret-free `alert.{kind}` audit row. Alert JSON is identifiers only: no `details`, tokens, headers, bodies, or storage locators.
+
+**UI route map (Chloe):** do **not** stack on this feature branch. Paths are intended to be stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` on ack is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: `/alerts` (open queue) and `/alerts/{id}` (detail + ack). Next proxies can rewrite `/api/control-plane/alerts`, `/{id}`, `/{id}/ack`.
+
+Suggested UI flow:
+
+1. Nav: show Alerts when `GET /workspace` includes `alert.view`. Ack controls require `alert.ack` (operator/admin). Viewer/approver can read.
+2. Queue: `GET /alerts?kind=&status=open&resourceType=&resourceId=&limit=`. Kinds: `authorization`, `replay`, `policy`, `redaction`. Status: `open` | `acked`.
+3. Detail: `GET /alerts/{alertId}`. Render `kind`, `severity` (`warning` for authorization/replay, `critical` for policy/redaction), `action`, `resourceType` / `resourceId`, `correlationId`, `requestId`, `actorId`, `code`, `occurredAt`.
+4. Ack: `POST /alerts/{id}/ack` `{}` with CSRF. Idempotent `200`. Viewer → `403`.
+5. Correlate: optional `GET /audit-events?action=alert.{kind}&resourceId=` or jump to `GET /executions/{resourceId}` when `resourceType=execution`.
+6. Never persist or display unexpected secret-shaped fields. If a field like `token` / `authorization` / `details` appears, strip it.
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/alerts` | `alert.view` | no | `{items}`. Query `kind`, `status`, `resourceType`, `resourceId`, `limit` (1–100, default 50) |
+| `GET` | `/api/v1/alerts/{alertId}` | `alert.view` | no | One row. Cross-workspace → `404` |
+| `POST` | `/api/v1/alerts/{alertId}/ack` | `alert.ack` | yes | `{}` → updated row. Idempotent |
+
+Alert JSON fields: `id`, `kind`, `severity`, `action?`, `resourceType?`, `resourceId?`, `correlationId?`, `requestId?`, `actorId?`, `outcome`, `code`, `acknowledgedAt?`, `acknowledgedBy?`, `occurredAt`. No `details` object.
+
+Kinds emitted by the API (safe fixtures in tests):
+
+| Kind | When | Typical `code` | `resourceType` |
+| --- | --- | --- | --- |
+| `authorization` | Authenticated member missing the requested permission; rejected job binding | `forbidden` | `workspace` / `job` |
+| `replay` | Idempotency key reused with a different fingerprint | `conflict` | `execution` |
+| `policy` | Dispatch policy decision is deny | `forbidden` | `workflow` |
+| `redaction` | Artifact scan rejects unsafe content before persist | `invalid-request` | `execution` |
+
+Out of scope: SIEM integrations, provider engines, `apps/web` rewrite.
 
 RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
 

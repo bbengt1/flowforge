@@ -39,7 +39,9 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	now := time.Date(2026, 9, 9, 4, 0, 0, 0, time.UTC)
+	// Claim time must be at or after StartExecution's wall-clock AvailableAt.
+	// A frozen past clock makes queued jobs look ineligible (AvailableAt.After(now)).
+	now := time.Now().UTC()
 	first, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "worker-a", Lease: time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -108,18 +110,19 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		canceled, err := store.CancelExecution(ctx, scope, now, exec2.ID)
+		cancelAt := time.Now().UTC()
+		canceled, err := store.CancelExecution(ctx, scope, cancelAt, exec2.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if canceled.Status != ExecutionCanceled {
 			t.Fatalf("cancel = %s", canceled.Status)
 		}
-		again, err := store.CancelExecution(ctx, scope, now, exec2.ID)
+		again, err := store.CancelExecution(ctx, scope, cancelAt, exec2.ID)
 		if err != nil || again.Status != ExecutionCanceled {
 			t.Fatalf("idempotent cancel: %+v %v", again, err)
 		}
-		if _, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "worker-c", Lease: time.Second}); !errors.Is(err, ErrEmptyClaim) {
+		if _, err := store.ClaimJob(ctx, scope, cancelAt, ClaimInput{WorkerID: "worker-c", Lease: time.Second}); !errors.Is(err, ErrEmptyClaim) {
 			t.Fatalf("claimed canceled job: %v", err)
 		}
 	})
@@ -142,22 +145,23 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "worker-k", Lease: time.Minute})
+		k8sNow := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, k8sNow, ClaimInput{WorkerID: "worker-k", Lease: time.Minute})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+		if _, err := store.HeartbeatJob(ctx, scope, k8sNow, JobActionInput{
 			JobID: claimed.Job.ID, WorkerID: "worker-k", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.FailJob(ctx, scope, now, JobActionInput{
+		if _, err := store.FailJob(ctx, scope, k8sNow, JobActionInput{
 			JobID: claimed.Job.ID, WorkerID: "worker-k", FencingToken: claimed.Job.FencingToken,
 			Error: map[string]any{"code": "provider"},
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.RetryStep(ctx, scope, now, k8sExec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryNotAllowed) {
+		if _, err := store.RetryStep(ctx, scope, k8sNow, k8sExec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryNotAllowed) {
 			t.Fatalf("provider retry: %v", err)
 		}
 
@@ -165,21 +169,22 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		safeClaim, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "worker-d", Lease: time.Minute})
+		safeNow := time.Now().UTC()
+		safeClaim, err := store.ClaimJob(ctx, scope, safeNow, ClaimInput{WorkerID: "worker-d", Lease: time.Minute})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+		if _, err := store.HeartbeatJob(ctx, scope, safeNow, JobActionInput{
 			JobID: safeClaim.Job.ID, WorkerID: "worker-d", FencingToken: safeClaim.Job.FencingToken, Lease: time.Minute,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.FailJob(ctx, scope, now, JobActionInput{
+		if _, err := store.FailJob(ctx, scope, safeNow, JobActionInput{
 			JobID: safeClaim.Job.ID, WorkerID: "worker-d", FencingToken: safeClaim.Job.FencingToken,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		retried, err := store.RetryStep(ctx, scope, now, safe.ID, safeClaim.Step.ID)
+		retried, err := store.RetryStep(ctx, scope, safeNow, safe.ID, safeClaim.Step.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
