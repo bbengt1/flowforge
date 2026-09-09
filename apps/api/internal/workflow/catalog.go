@@ -69,31 +69,9 @@ func coreNodeTypes() []NodeType {
 			Outputs:      []Port{result},
 			RequiredWith: []string{"connectionId", "recipientListId", "templateId"},
 		},
-		{
-			Type: "kubernetes.apply", Phase: PhaseCore,
-			Inputs: []Port{
-				{Name: "manifests", Kind: PortString},
-				{Name: "parameters", Kind: PortObject},
-			},
-			Outputs: []Port{
-				result,
-				{Name: "resources", Kind: PortObject},
-				{Name: "status", Kind: PortObject},
-			},
-			RequiredWith: []string{"clusterTargetId", "namespace"},
-		},
-		{
-			Type: "kubernetes.get", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "parameters", Kind: PortObject}},
-			Outputs:      []Port{result, {Name: "items", Kind: PortObject}},
-			RequiredWith: []string{"clusterTargetId", "namespace"},
-		},
-		{
-			Type: "kubernetes.list", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "parameters", Kind: PortObject}},
-			Outputs:      []Port{result, {Name: "items", Kind: PortObject}},
-			RequiredWith: []string{"clusterTargetId", "namespace"},
-		},
+		kubernetesApplyContract(),
+		kubernetesGetContract(),
+		kubernetesListContract(),
 		{
 			Type: "kubernetes.rolloutStatus", Phase: PhaseCore,
 			Inputs:       []Port{{Name: "resource", Kind: PortObject, Required: true}},

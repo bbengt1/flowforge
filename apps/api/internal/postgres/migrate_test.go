@@ -35,7 +35,7 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if all[0].Version != 1 {
 		t.Fatalf("first migration version = %d, want 1", all[0].Version)
 	}
-	var sawIsolation, sawSessions, sawWorkflows, sawCredentials, sawOps, sawApprovals, sawExecutions, sawArtifacts, sawAuditIntegrity bool
+	var sawIsolation, sawSessions, sawWorkflows, sawCredentials, sawOps, sawApprovals, sawExecutions, sawArtifacts, sawAuditIntegrity, sawKubernetesRead bool
 	for _, m := range all {
 		if m.Version == 3 && m.Name == "workspace_isolation" {
 			sawIsolation = true
@@ -64,6 +64,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 		if m.Version == 11 && m.Name == "audit_integrity" {
 			sawAuditIntegrity = true
 		}
+		if m.Version == 12 && m.Name == "kubernetes_read" {
+			sawKubernetesRead = true
+		}
 	}
 	if !sawIsolation {
 		t.Fatal("expected 000003_workspace_isolation.sql")
@@ -91,6 +94,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	}
 	if !sawAuditIntegrity {
 		t.Fatal("expected 000011_audit_integrity.sql")
+	}
+	if !sawKubernetesRead {
+		t.Fatal("expected 000012_kubernetes_read.sql")
 	}
 }
 

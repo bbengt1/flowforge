@@ -75,6 +75,11 @@ func TestWorkflowCatalogRequiresView(t *testing.T) {
 		if n.Type == "workflow.call" && n.Phase != workflow.PhaseNext {
 			t.Fatalf("workflow.call should remain next-phase: %+v", n)
 		}
+		if n.Type == "kubernetes.apply" {
+			if n.Policy == nil || len(n.AllowedWith) == 0 || n.Redaction == nil {
+				t.Fatalf("kubernetes.apply catalog incomplete: %+v", n)
+			}
+		}
 	}
 	if !found {
 		t.Fatal("catalog missing flow.condition")

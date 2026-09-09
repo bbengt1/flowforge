@@ -61,8 +61,10 @@ Audit events record the actor, host-embed context when present, target, policy r
 
 ```text
 apps/api/internal/kubernetes/
-  model.go catalog.go policy.go          # E7.1 control-plane (this story)
-  manifest.go validator.go client.go apply.go status.go   # E7.2 / E7.3
+  model.go catalog.go policy.go          # E7.1 control-plane
+  manifest.go validator.go client.go fake.go live.go
+  handle.go engine.go redact.go errors.go  # E7.2 read/apply
+  status.go                                # E7.3 rollout watch
 apps/api/internal/opsconfig/            # E4.2 store: cluster_target + policy kinds
 apps/api/internal/httpapi/opsconfig.go  # /cluster-targets, /policies, /kubernetes/catalog
 deploy/kubernetes/
@@ -79,3 +81,4 @@ deploy/kubernetes/
 - API tests for authorization, RFC 9457 errors, idempotency, and redaction.
 - PostgreSQL tenancy-query tests.
 - `envtest` integration for API discovery, server-side dry-run, server-side apply conflicts, and runner deployment/network-policy validation.
+- E7.2 ships fake-client coverage for dry-run, apply, ownership conflict (`Force=false`), policy/RBAC denial, and secret denial. `TODO(envtest)` remains in `fake.go` / `live.go` until CI can download kube-apiserver binaries. `wait=ready` records `observation=deferred-e7.3` and does not watch rollouts.

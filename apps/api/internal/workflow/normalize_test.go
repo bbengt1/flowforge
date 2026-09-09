@@ -95,6 +95,9 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 			if _, ok := n.outputPort("result"); !ok {
 				t.Fatal("kubernetes.apply missing result port")
 			}
+			if n.Policy == nil || !n.Policy.SideEffects || len(n.AllowedWith) == 0 {
+				t.Fatalf("kubernetes.apply contract incomplete: %+v", n)
+			}
 			found = true
 		}
 	}

@@ -185,6 +185,29 @@ spec:
 		assertHasCode(t, errs, CodeUnsafeReference)
 	})
 
+	t.Run("kubernetes get requires kind", func(t *testing.T) {
+		src := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: get-cm
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: read
+      type: kubernetes.get
+      name: Get config
+      with:
+        clusterTargetId: 11111111-1111-4111-8111-111111111111
+        namespace: cp-ops-nprd
+  edges: []
+`
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeMissingField)
+	})
+
 	t.Run("secret manifest", func(t *testing.T) {
 		src := `
 apiVersion: flowforge/v1

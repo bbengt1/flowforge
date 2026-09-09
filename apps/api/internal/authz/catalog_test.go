@@ -62,7 +62,7 @@ func TestViewerCannotPerformPrivilegedActions(t *testing.T) {
 	for _, action := range []string{
 		PermWorkflowEdit, PermWorkflowPublish, PermWorkflowExecute,
 		PermCredentialUse, PermCredentialManage, PermApprovalDecide,
-		PermWorkspaceAdminister, PermKubernetesApply, PermSSHRun, PermAlertAck,
+		PermWorkspaceAdminister, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermAlertAck,
 	} {
 		if Allows(granted, action) {
 			t.Fatalf("viewer must not have %s", action)

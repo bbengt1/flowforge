@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 )
 
 var (
@@ -22,6 +24,7 @@ var resourceUUIDFields = map[string]bool{
 	"recipientListId":   true,
 	"templateId":        true,
 	"responseSchemaRef": true,
+	"policyId":          true,
 }
 
 var forbiddenWithByType = map[string][]string{
@@ -292,7 +295,22 @@ func validateNode(n Node, path string) ErrorList {
 	if isCoreNeutral(n.Type) {
 		errs = append(errs, validateCoreNeutralNode(n, path)...)
 	} else {
+		errs = append(errs, validateAllowedWith(n, nt, path)...)
 		errs = append(errs, validateNodeWith(n, path)...)
+	}
+	return errs
+}
+
+func validateAllowedWith(n Node, nt NodeType, path string) ErrorList {
+	if len(nt.AllowedWith) == 0 {
+		return nil
+	}
+	var errs ErrorList
+	allowed := allowedWithNames(nt)
+	for k := range n.With {
+		if !allowed[k] {
+			errs = append(errs, fieldError(path+".with."+k, n.pos.Line, n.pos.Column, CodeUnknownField, fmt.Sprintf("%s does not allow with.%s.", n.Type, k)))
+		}
 	}
 	return errs
 }
@@ -323,6 +341,22 @@ func validateNodeWith(n Node, path string) ErrorList {
 			}
 		}
 		errs = append(errs, validateTimeout(n.With, path)...)
+		if n.Type == "kubernetes.get" || n.Type == "kubernetes.list" {
+			if raw, ok := n.With["kind"]; ok {
+				s, ok := raw.(string)
+				if !ok || !kubernetes.KindAllowed(s) {
+					errs = append(errs, fieldError(path+".with.kind", n.pos.Line, n.pos.Column, CodeInvalidWith, "kind must be an allowlisted Kubernetes kind."))
+				}
+			}
+		}
+		if n.Type == "kubernetes.get" {
+			if raw, ok := n.With["name"]; ok {
+				s, ok := raw.(string)
+				if !ok || !validDNSLabel(s) {
+					errs = append(errs, fieldError(path+".with.name", n.pos.Line, n.pos.Column, CodeInvalidName, "name must be a DNS label."))
+				}
+			}
+		}
 		if n.Type == "kubernetes.apply" {
 			if raw, ok := n.With["manifests"]; ok {
 				s, ok := raw.(string)
