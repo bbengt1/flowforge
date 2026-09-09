@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
+  cancelExecution,
   getExecution,
   listExecutions,
   listWorkflowExecutions,
   listWorkspaceAuditEvents,
   loadExecutionHistory,
+  pollExecutionStatus,
+  retryExecution,
+  retryExecutionStep,
 } from "./execution-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { PROBLEM_JSON } from "./problem.ts";
@@ -162,10 +166,12 @@ describe("execution client", () => {
     }
   });
 
-  it("loads detail plus nested steps/jobs/audit-events and shows [redacted]", async () => {
+  it("loads detail from GET execution (steps/jobs) plus audit-events and shows [redacted]", async () => {
     withSession();
+    const seen: string[] = [];
     globalThis.fetch = (async (input) => {
       const url = String(input);
+      seen.push(url);
       if (url.endsWith(`/executions/${EXECUTION_ID}`)) {
         return new Response(
           JSON.stringify({
@@ -180,14 +186,7 @@ describe("execution client", () => {
                 name: "gate",
               },
             ],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      if (url.endsWith("/steps")) {
-        return new Response(
-          JSON.stringify({
-            items: [
+            steps: [
               {
                 id: "44444444-4444-4444-8444-444444444444",
                 nodeId: "apply",
@@ -196,17 +195,13 @@ describe("execution client", () => {
                 output: { privateKey: "-----BEGIN", result: "[redacted]" },
               },
             ],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      if (url.endsWith("/jobs")) {
-        return new Response(
-          JSON.stringify({
-            items: [
+            jobs: [
               {
                 id: "55555555-5555-4555-8555-555555555555",
                 status: "queued",
+                leaseExpiresAt: "2026-09-09T01:05:00.000Z",
+                heartbeatAt: "2026-09-09T01:04:00.000Z",
+                fencingToken: 3,
               },
             ],
           }),
@@ -232,6 +227,14 @@ describe("execution client", () => {
 
     const result = await loadExecutionHistory(identity, EXECUTION_ID);
     assert.equal(result.ok, true);
+    assert.equal(
+      seen.some((url) => url.includes("/jobs")),
+      false,
+    );
+    assert.equal(
+      seen.some((url) => /\/jobs\/(claim|heartbeat|complete|fail|recover)/.test(url)),
+      false,
+    );
     if (result.ok) {
       assert.equal(result.execution.status, "indeterminate");
       assert.equal(result.execution.replayed, true);
@@ -242,6 +245,7 @@ describe("execution client", () => {
         "[redacted]",
       );
       assert.equal(result.execution.jobs[0]?.status, "queued");
+      assert.equal(result.execution.jobs[0]?.fencingToken, 3);
       assert.equal(
         result.execution.auditEvents[0]?.action,
         "execution.step.indeterminate",
@@ -254,6 +258,48 @@ describe("execution client", () => {
         false,
       );
       assert.match(JSON.stringify(result.execution), /\[redacted\]/);
+    }
+  });
+
+  it("polls GET /executions/{id} and never calls /jobs/*", async () => {
+    withSession();
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      seen.push(url);
+      return new Response(
+        JSON.stringify({
+          ...summaryPayload({ status: "running" }),
+          steps: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              nodeId: "map",
+              nodeType: "data.map",
+              status: "running",
+            },
+          ],
+          jobs: [
+            {
+              id: "55555555-5555-4555-8555-555555555555",
+              status: "claimed",
+              heartbeatAt: "2026-09-09T01:04:00.000Z",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await pollExecutionStatus(identity, EXECUTION_ID);
+    assert.equal(result.ok, true);
+    assert.deepEqual(seen, [`/api/v1/executions/${EXECUTION_ID}`]);
+    assert.equal(
+      seen.some((url) => url.includes("/jobs")),
+      false,
+    );
+    if (result.ok) {
+      assert.equal(result.execution.status, "running");
+      assert.equal(result.execution.jobs[0]?.status, "claimed");
     }
   });
 
@@ -434,6 +480,253 @@ describe("execution client", () => {
     if (!conflict.ok) {
       assert.equal(conflict.statusCode, 409);
       assert.equal(conflict.conflict, true);
+    }
+  });
+
+  it("POSTs cancel with CSRF and treats a second cancel as idempotent", async () => {
+    withSession();
+    const seen: { url?: string; body?: string; csrf?: string | null; method?: string }[] =
+      [];
+    let call = 0;
+    globalThis.fetch = (async (input, init) => {
+      call += 1;
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: headers.get(CSRF_HEADER),
+        method: init?.method,
+      });
+      return new Response(
+        JSON.stringify(
+          summaryPayload({
+            status: "canceled",
+            replayed: call === 2,
+          }),
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const first = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "running",
+    });
+    assert.equal(first.ok, true);
+    if (first.ok) {
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.idempotent, false);
+      assert.equal(first.execution?.status, "canceled");
+    }
+    assert.equal(seen[0]?.url, `/api/v1/executions/${EXECUTION_ID}/cancel`);
+    assert.equal(seen[0]?.method, "POST");
+    assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(seen[0]?.body, "{}");
+    assert.equal(seen[0]?.body?.includes("workspaceId"), false);
+
+    const second = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "canceled",
+    });
+    assert.equal(second.ok, true);
+    if (second.ok) {
+      assert.equal(second.idempotent, true);
+      assert.match(second.message, /idempotent/);
+    }
+  });
+
+  it("fails cancel closed on missing CSRF and on 403", async () => {
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("should-not-run", { status: 500 });
+    }) as typeof fetch;
+
+    const missing = await cancelExecution(identity, EXECUTION_ID);
+    assert.equal(missing.ok, false);
+    assert.equal(fetched, false);
+    if (!missing.ok) {
+      assert.equal(missing.statusCode, 403);
+      assert.match(missing.problem.code, /csrf|forbidden/);
+      assert.equal(missing.forbidden, true);
+    }
+
+    withSession();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "execution.cancel is required.",
+          instance: `/api/v1/executions/${EXECUTION_ID}/cancel`,
+          code: "forbidden",
+          request_id: "cancel-forbid-16xx",
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            "X-Request-ID": "cancel-forbid-16xx",
+          },
+        },
+      )) as typeof fetch;
+
+    const denied = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "running",
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.forbidden, true);
+    }
+  });
+
+  it("POSTs retry with CSRF and surfaces 201 vs 409", async () => {
+    withSession();
+    const seen: { url?: string; body?: string; csrf?: string | null; method?: string }[] =
+      [];
+    let call = 0;
+    globalThis.fetch = (async (input, init) => {
+      call += 1;
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: headers.get(CSRF_HEADER),
+        method: init?.method,
+      });
+      if (String(input).includes("/jobs")) {
+        return new Response("jobs-not-allowed", { status: 500 });
+      }
+      if (call === 2) {
+        return new Response(
+          JSON.stringify({
+            type: "urn:flowforge:problem:conflict",
+            title: "Conflict",
+            status: 409,
+            detail: "indeterminate steps cannot be retried",
+            instance: `/api/v1/executions/${EXECUTION_ID}/retry`,
+            code: "conflict",
+            request_id: "retry-conflict-16x",
+          }),
+          { status: 409, headers: { "Content-Type": PROBLEM_JSON } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          execution: summaryPayload({ status: "queued" }),
+          step: {
+            id: "44444444-4444-4444-8444-444444444444",
+            nodeId: "set",
+            nodeType: "data.set",
+            status: "queued",
+            attempt: 2,
+          },
+          job: {
+            id: "55555555-5555-4555-8555-555555555555",
+            status: "queued",
+            attempt: 2,
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const created = await retryExecution(identity, EXECUTION_ID, {
+      stepId: "44444444-4444-4444-8444-444444444444",
+    });
+    assert.equal(created.ok, true);
+    if (created.ok) {
+      assert.equal(created.statusCode, 201);
+      assert.equal(created.execution?.status, "queued");
+      assert.match(created.message, /201/);
+    }
+    assert.equal(seen[0]?.url, `/api/v1/executions/${EXECUTION_ID}/retry`);
+    assert.equal(seen[0]?.method, "POST");
+    assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(
+      seen[0]?.body,
+      JSON.stringify({ stepId: "44444444-4444-4444-8444-444444444444" }),
+    );
+    assert.equal(seen[0]?.body?.includes("workspaceId"), false);
+
+    const conflict = await retryExecution(identity, EXECUTION_ID);
+    assert.equal(conflict.ok, false);
+    if (!conflict.ok) {
+      assert.equal(conflict.statusCode, 409);
+    }
+
+    const stepRetry = await retryExecutionStep(
+      identity,
+      EXECUTION_ID,
+      "44444444-4444-4444-8444-444444444444",
+    );
+    assert.equal(stepRetry.ok, true);
+    assert.equal(
+      seen[2]?.url,
+      `/api/v1/executions/${EXECUTION_ID}/steps/44444444-4444-4444-8444-444444444444/retry`,
+    );
+  });
+
+  it("fails retry closed on missing CSRF and on 403", async () => {
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("should-not-run", { status: 500 });
+    }) as typeof fetch;
+
+    const missing = await retryExecution(identity, EXECUTION_ID);
+    assert.equal(missing.ok, false);
+    assert.equal(fetched, false);
+    if (!missing.ok) {
+      assert.equal(missing.statusCode, 403);
+      assert.match(missing.problem.code, /csrf|forbidden/);
+      assert.equal(missing.forbidden, true);
+    }
+
+    withSession();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "workflow.execute is required.",
+          instance: `/api/v1/executions/${EXECUTION_ID}/retry`,
+          code: "forbidden",
+          request_id: "retry-forbid-16xxx",
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            "X-Request-ID": "retry-forbid-16xxx",
+          },
+        },
+      )) as typeof fetch;
+
+    const denied = await retryExecution(identity, EXECUTION_ID);
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.forbidden, true);
     }
   });
 });

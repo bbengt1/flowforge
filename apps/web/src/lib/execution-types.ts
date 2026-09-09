@@ -1,4 +1,4 @@
-/** Shapes from jonny's E5.1 OpenAPI (PR #51). Do not invent fields or routes. */
+/** Shapes from jonny's E5.1 OpenAPI (#51) plus E5.2 #53 cancel/retry. Do not invent fields or routes. */
 
 import type { OpsConfigPin } from "./ops-config-types.ts";
 
@@ -15,6 +15,26 @@ export const EXECUTION_STATUSES = [
 export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number] | string;
 
 export const EXECUTION_VIEW_PERMISSION = "execution.view";
+export const EXECUTION_CANCEL_PERMISSION = "execution.cancel";
+export const WORKFLOW_EXECUTE_PERMISSION = "workflow.execute";
+
+export const JOB_STATUSES = [
+  "queued",
+  "claimed",
+  "running",
+  "succeeded",
+  "failed",
+  "canceled",
+  "indeterminate",
+] as const;
+
+export type JobStatus = (typeof JOB_STATUSES)[number] | string;
+
+/** #53: Cancel when queued or running. Other terminals are 409. */
+export const CANCELABLE_STATUSES = ["queued", "running"] as const;
+
+/** #53: Retry only failed/canceled core data.* / flow.* steps — never indeterminate. */
+export const RETRYABLE_STATUSES = ["failed", "canceled"] as const;
 
 export const REDACTED_MARKER = "[redacted]";
 
@@ -59,6 +79,7 @@ export type ExecutionRecord = {
   triggerId: string;
   input: unknown;
   policySnapshot: unknown;
+  permittedActions: string[];
 };
 
 export type ExecutionStep = {
@@ -76,6 +97,7 @@ export type ExecutionStep = {
   error: unknown;
   fencingToken: number | null;
   workerId: string;
+  leaseId: string;
 };
 
 export type ExecutionJob = {
@@ -89,6 +111,7 @@ export type ExecutionJob = {
   heartbeatAt: string;
   workerId: string;
   fencingToken: number | null;
+  leaseId: string;
 };
 
 export type ExecutionAuditEvent = {
@@ -125,13 +148,46 @@ export type ExecutionListRow = {
   replayed: boolean;
 };
 
+export type ExecutionStatusPresentation = {
+  status: string;
+  label: string;
+  icon: string;
+  description: string;
+  indeterminate: boolean;
+  tone:
+    | "indeterminate"
+    | "running"
+    | "canceled"
+    | "failed"
+    | "succeeded"
+    | "queued"
+    | "claimed"
+    | "other";
+};
+
+export type JobDispatchView = {
+  id: string;
+  status: string;
+  presentation: ExecutionStatusPresentation;
+  claimed: boolean;
+  leaseId: string;
+  leaseExpiresAt: string;
+  heartbeatAt: string;
+  workerId: string;
+  fencingToken: number | null;
+  attempt: number | null;
+  executionStepId: string;
+};
+
 export type ExecutionDetailView = {
   header: ExecutionListRow;
   replayedMessage: string;
   pins: OpsConfigPin[];
   steps: ExecutionStep[];
   jobs: ExecutionJob[];
+  jobViews: JobDispatchView[];
   auditEvents: ExecutionAuditEvent[];
   input: unknown;
   policySnapshot: unknown;
+  permittedActions: string[];
 };

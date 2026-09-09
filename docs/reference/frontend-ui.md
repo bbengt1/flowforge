@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1; `execution.view`), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1 list/detail + E5.2 cancel/retry/status; `execution.view` / `execution.cancel` / `workflow.execute`), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -111,7 +111,7 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, and the E5.1 execution history operator:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, and the E5.1/E5.2 execution history operator:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -346,7 +346,7 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E5.2 cancel / status UX (Chloe)
 
-Jonny's dispatch APIs are on `main` (Relates to #47 / Part of #45). Do **not** stack the UI on this API branch. Do not rewrite worker `/jobs/*` into the browser. Artifact downloads stay E5.3.
+Jonny's dispatch APIs are on `main` via **#53** (Relates to #47 / Part of #45 — do not close #47 alone). Do **not** stack the UI on an API feature branch. Do not rewrite worker `/jobs/*` into the browser. Artifact downloads stay E5.3. This UI does **not** change `apps/api`.
 
 **UI route map** — cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`.
 
@@ -364,6 +364,8 @@ Suggested UI flow:
 3. Enable **Retry** on a `failed` or `canceled` core `data.*` / `flow.*` step when the caller has `workflow.execute`. Hide/disable retry for `indeterminate` and provider node types — show copy that an unverified side effect must not be assumed absent.
 4. `indeterminate` remains unmistakable (badge + text, not color alone). Do not offer a silent re-run.
 5. Never call `POST /jobs/claim` (or heartbeat/complete/fail) from the UI.
+
+**Implemented (#52):** paths live in `apps/web/src/lib/execution-contract.ts`. Status polls `GET /executions/{id}` only — never `/jobs/*`. Cancel is CSRF + fail-closed 403. Retry is hidden for `indeterminate` and provider nodes. E5.1 list/detail, `[redacted]`, and idempotent start stay intact.
 
 **Proxies:** `/api/control-plane/executions/{id}/cancel`, `.../retry`, `.../steps/{stepId}/retry`. CSRF on POST; preserve `application/problem+json`.
 

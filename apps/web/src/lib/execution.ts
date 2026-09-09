@@ -1,20 +1,33 @@
 /**
- * E5.1 execution history helpers aligned to jonny's #51 OpenAPI.
+ * E5.1 list/detail helpers plus E5.2 cancel/status presentation.
  *
  * List/detail show safe metadata plus already-redacted input/output/audit
  * (`[redacted]`). Unexpected secret field names are a contract bug: strip,
- * never display. `indeterminate` is first-class. 403 is fail-closed.
+ * never display. `indeterminate` is first-class (icon + text, never color
+ * alone) and never implies an unverified remote action did not occur.
+ * Cancel is separately authorized. 403 is fail-closed.
+ * Retry follows the #53 map and is never offered for indeterminate.
  */
 
 import {
+  CANCEL_APPLIED_MESSAGE,
+  CANCEL_IDEMPOTENT_MESSAGE,
   EXECUTION_PROBLEM_CODES,
+  EXECUTION_RETRY_ROUTE_PUBLISHED,
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
+  INDETERMINATE_STATUS_HELP,
+  RETRY_INDETERMINATE_MESSAGE,
+  RETRY_UNAVAILABLE_MESSAGE,
   executionHistoryHref,
 } from "./execution-contract.ts";
 import {
+  CANCELABLE_STATUSES,
+  EXECUTION_CANCEL_PERMISSION,
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
+  RETRYABLE_STATUSES,
+  WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
   type ExecutionAuditEvent,
   type ExecutionDetail,
@@ -24,7 +37,9 @@ import {
   type ExecutionListRow,
   type ExecutionRecord,
   type ExecutionStatus,
+  type ExecutionStatusPresentation,
   type ExecutionStep,
+  type JobDispatchView,
 } from "./execution-types.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -132,8 +147,14 @@ const NEVER_STRIP_KEYS = new Set([
   "available_at",
   "leaseexpiresat",
   "lease_expires_at",
+  "leaseid",
+  "lease_id",
   "heartbeatat",
   "heartbeat_at",
+  "permittedactions",
+  "permitted_actions",
+  "retrysafe",
+  "retry_safe",
   "executionstepid",
   "execution_step_id",
   "action",
@@ -246,6 +267,18 @@ function readNumber(...candidates: unknown[]): number | null {
   return null;
 }
 
+function readStringList(...candidates: unknown[]): string[] {
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
 function readBoolean(...candidates: unknown[]): boolean {
   for (const value of candidates) {
     if (typeof value === "boolean") {
@@ -269,15 +302,245 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 export function isIndeterminateStatus(status: string | undefined): boolean {
-  return status?.trim().toLowerCase() === "indeterminate";
+  return normalizeExecutionStatus(status) === "indeterminate";
 }
 
-export function executionStatusLabel(status: ExecutionStatus | undefined): string {
-  const folded = status?.trim() || "unknown";
+export function normalizeExecutionStatus(
+  status: ExecutionStatus | undefined,
+): string {
+  const folded = status?.trim().toLowerCase() || "unknown";
   if (folded === "cancelled") {
     return "canceled";
   }
   return folded;
+}
+
+export function executionStatusLabel(status: ExecutionStatus | undefined): string {
+  return executionStatusPresentation(status).label;
+}
+
+export function executionStatusPresentation(
+  status: ExecutionStatus | undefined,
+): ExecutionStatusPresentation {
+  const folded = normalizeExecutionStatus(status);
+  const indeterminate = folded === "indeterminate";
+  const catalog: Record<
+    string,
+    Omit<ExecutionStatusPresentation, "status" | "indeterminate">
+  > = {
+    running: {
+      label: "Running",
+      icon: "▶",
+      description: "The execution or job is in progress under an active claim.",
+      tone: "running",
+    },
+    canceled: {
+      label: "Canceled",
+      icon: "◼",
+      description:
+        "Cancellation was recorded. Work already dispatched to a provider may still have occurred.",
+      tone: "canceled",
+    },
+    failed: {
+      label: "Failed",
+      icon: "✕",
+      description:
+        "The run failed. Inspect diagnostics; do not assume a remote action was rolled back.",
+      tone: "failed",
+    },
+    indeterminate: {
+      label: "Indeterminate",
+      icon: "⚠",
+      description: INDETERMINATE_STATUS_HELP,
+      tone: "indeterminate",
+    },
+    queued: {
+      label: "Queued",
+      icon: "○",
+      description: "Waiting for a worker to claim this job.",
+      tone: "queued",
+    },
+    claimed: {
+      label: "Claimed",
+      icon: "◇",
+      description: "A worker holds an active lease. Heartbeat and expiry are shown when the API returns them.",
+      tone: "claimed",
+    },
+    succeeded: {
+      label: "Succeeded",
+      icon: "✓",
+      description: "The execution completed successfully.",
+      tone: "succeeded",
+    },
+    pinned: {
+      label: "Pinned",
+      icon: "⊕",
+      description: "Legacy pin stub from before durable dispatch.",
+      tone: "other",
+    },
+  };
+  const known = catalog[folded];
+  if (known) {
+    return { status: folded, indeterminate, ...known };
+  }
+  return {
+    status: folded,
+    label: folded,
+    icon: "•",
+    description: "Status reported by the API.",
+    indeterminate,
+    tone: "other",
+  };
+}
+
+export function isCancelableStatus(status: ExecutionStatus | undefined): boolean {
+  const folded = normalizeExecutionStatus(status);
+  return (CANCELABLE_STATUSES as readonly string[]).includes(folded);
+}
+
+export function canCancelExecution(options: {
+  permissions?: readonly string[] | null;
+  status?: ExecutionStatus;
+  permittedActions?: readonly string[] | null;
+}): boolean {
+  if (isIndeterminateStatus(options.status)) {
+    return false;
+  }
+  if (
+    options.permissions != null &&
+    !options.permissions.includes(EXECUTION_CANCEL_PERMISSION)
+  ) {
+    return false;
+  }
+  return isCancelableStatus(options.status);
+}
+
+/** Core #53 retry-safe families: data.* and flow.*. Provider nodes are never retried. */
+export function isCoreRetryableStepKind(nodeType: string | undefined): boolean {
+  const folded = nodeType?.trim().toLowerCase() ?? "";
+  return folded.startsWith("data.") || folded.startsWith("flow.");
+}
+
+export function isRetryableStatus(status: ExecutionStatus | undefined): boolean {
+  const folded = normalizeExecutionStatus(status);
+  return (RETRYABLE_STATUSES as readonly string[]).includes(folded);
+}
+
+function hasWorkflowExecute(permissions?: readonly string[] | null): boolean {
+  if (permissions == null) {
+    return true;
+  }
+  return permissions.includes(WORKFLOW_EXECUTE_PERMISSION);
+}
+
+export function canRetryExecution(options: {
+  permissions?: readonly string[] | null;
+  permittedActions?: readonly string[] | null;
+  status?: ExecutionStatus;
+  steps?: readonly { status?: ExecutionStatus; nodeType?: string }[] | null;
+} = {}): boolean {
+  if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
+    return false;
+  }
+  if (isIndeterminateStatus(options.status)) {
+    return false;
+  }
+  if (!isRetryableStatus(options.status)) {
+    return false;
+  }
+  if (!hasWorkflowExecute(options.permissions)) {
+    return false;
+  }
+  const steps = options.steps ?? [];
+  if (steps.some((step) => isIndeterminateStatus(step.status))) {
+    return false;
+  }
+  if (steps.length === 0) {
+    return true;
+  }
+  return steps.some(
+    (step) =>
+      isRetryableStatus(step.status) && isCoreRetryableStepKind(step.nodeType),
+  );
+}
+
+export function canRetryExecutionStep(options: {
+  permissions?: readonly string[] | null;
+  permittedActions?: readonly string[] | null;
+  executionStatus?: ExecutionStatus;
+  stepStatus?: ExecutionStatus;
+  nodeType?: string;
+}): boolean {
+  if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
+    return false;
+  }
+  if (
+    isIndeterminateStatus(options.executionStatus) ||
+    isIndeterminateStatus(options.stepStatus)
+  ) {
+    return false;
+  }
+  if (!isRetryableStatus(options.stepStatus)) {
+    return false;
+  }
+  if (!isCoreRetryableStepKind(options.nodeType)) {
+    return false;
+  }
+  return hasWorkflowExecute(options.permissions);
+}
+
+export function retryAffordanceMessage(status?: ExecutionStatus): string {
+  if (isIndeterminateStatus(status)) {
+    return RETRY_INDETERMINATE_MESSAGE;
+  }
+  return RETRY_UNAVAILABLE_MESSAGE;
+}
+
+export function isIdempotentCancel(record: {
+  previousStatus?: string;
+  status?: string;
+  canceled?: boolean;
+  replayed?: boolean;
+}): boolean {
+  if (record.replayed || record.canceled) {
+    return true;
+  }
+  return (
+    normalizeExecutionStatus(record.previousStatus) === "canceled" &&
+    normalizeExecutionStatus(record.status) === "canceled"
+  );
+}
+
+export function cancelOutcomeMessage(record: {
+  previousStatus?: string;
+  status?: string;
+  canceled?: boolean;
+  replayed?: boolean;
+}): string {
+  return isIdempotentCancel(record)
+    ? CANCEL_IDEMPOTENT_MESSAGE
+    : CANCEL_APPLIED_MESSAGE;
+}
+
+export function jobDispatchView(job: ExecutionJob): JobDispatchView {
+  const presentation = executionStatusPresentation(job.status);
+  const claimed =
+    normalizeExecutionStatus(job.status) === "claimed" ||
+    normalizeExecutionStatus(job.status) === "running" ||
+    Boolean(job.leaseId || job.heartbeatAt || job.leaseExpiresAt);
+  return {
+    id: job.id,
+    status: job.status,
+    presentation,
+    claimed,
+    leaseId: job.leaseId,
+    leaseExpiresAt: job.leaseExpiresAt,
+    heartbeatAt: job.heartbeatAt,
+    workerId: job.workerId,
+    fencingToken: job.fencingToken,
+    attempt: job.attempt,
+    executionStepId: job.executionStepId,
+  };
 }
 
 /** POST start: 200 + replayed, or an explicit replayed flag. GET 200 is not a replay. */
@@ -379,6 +642,10 @@ export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
     triggerId: readString(nested.triggerId, nested.trigger_id),
     input: nested.input ?? null,
     policySnapshot: nested.policySnapshot ?? nested.policy_snapshot ?? null,
+    permittedActions: readStringList(
+      nested.permittedActions,
+      nested.permitted_actions,
+    ),
   };
 }
 
@@ -428,6 +695,7 @@ export function parseExecutionStep(
     error: row.error ?? null,
     fencingToken: readNumber(row.fencingToken, row.fencing_token),
     workerId: readString(row.workerId, row.worker_id),
+    leaseId: readString(row.leaseId, row.lease_id),
   };
 }
 
@@ -456,6 +724,7 @@ export function parseExecutionJob(
     heartbeatAt: readString(row.heartbeatAt, row.heartbeat_at),
     workerId: readString(row.workerId, row.worker_id),
     fencingToken: readNumber(row.fencingToken, row.fencing_token),
+    leaseId: readString(row.leaseId, row.lease_id),
   };
 }
 
@@ -604,9 +873,11 @@ export function executionDetailDisplay(
     pins: detail.pins,
     steps: detail.steps,
     jobs: detail.jobs,
+    jobViews: detail.jobs.map(jobDispatchView),
     auditEvents: detail.auditEvents,
     input: detail.input,
     policySnapshot: detail.policySnapshot,
+    permittedActions: detail.permittedActions,
   };
 }
 
@@ -619,6 +890,8 @@ export function executionListText(items: ExecutionRecord[]): string {
         row.workflowLabel,
         row.versionPin,
         row.status,
+        executionStatusPresentation(row.status).icon,
+        executionStatusPresentation(row.status).label,
         row.startedAt,
         row.finishedAt,
         row.correlationId,
@@ -644,8 +917,19 @@ export function executionDetailText(detail: ExecutionDetail): string {
         redactedJson(step.output ?? step.error),
       ].join(" "),
     ),
-    ...view.jobs.map((job) =>
-      [job.id, job.status, job.workerId, job.executionStepId].join(" "),
+    ...view.jobViews.map((job) =>
+      [
+        job.id,
+        job.presentation.icon,
+        job.presentation.label,
+        job.status,
+        job.claimed ? "claimed" : "",
+        job.leaseId,
+        job.leaseExpiresAt,
+        job.heartbeatAt,
+        job.workerId,
+        job.executionStepId,
+      ].join(" "),
     ),
     ...view.auditEvents.map((event) =>
       [event.id, event.action, event.outcome, redactedJson(event.details)].join(

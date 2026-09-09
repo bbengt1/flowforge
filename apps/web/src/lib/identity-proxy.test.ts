@@ -335,6 +335,38 @@ describe("resolveIdentityProxyTarget", () => {
         ["executions", "33333333-3333-4333-8333-333333333333", "audit-events"],
         "/api/v1/executions/33333333-3333-4333-8333-333333333333/audit-events",
       ],
+      [
+        "POST",
+        ["executions", "33333333-3333-4333-8333-333333333333", "cancel"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/cancel",
+      ],
+      [
+        "POST",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "cancel",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333/cancel",
+      ],
+      [
+        "POST",
+        ["executions", "33333333-3333-4333-8333-333333333333", "retry"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/retry",
+      ],
+      [
+        "POST",
+        [
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "steps",
+          "44444444-4444-4444-8444-444444444444",
+          "retry",
+        ],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps/44444444-4444-4444-8444-444444444444/retry",
+      ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
     ];
 
@@ -487,6 +519,38 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in inventedReplay, true);
     if ("status" in inventedReplay) {
       assert.equal(inventedReplay.status, 404);
+    }
+    const workerClaim = resolveIdentityProxyTarget("POST", ["jobs", "claim"]);
+    assert.equal("status" in workerClaim, true);
+    if ("status" in workerClaim) {
+      assert.equal(workerClaim.status, 404);
+    }
+    const workerHeartbeat = resolveIdentityProxyTarget("POST", [
+      "jobs",
+      "33333333-3333-4333-8333-333333333333",
+      "heartbeat",
+    ]);
+    assert.equal("status" in workerHeartbeat, true);
+    if ("status" in workerHeartbeat) {
+      assert.equal(workerHeartbeat.status, 404);
+    }
+    const retryGet = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "retry",
+    ]);
+    assert.equal("status" in retryGet, true);
+    if ("status" in retryGet) {
+      assert.equal(retryGet.status, 405);
+    }
+    const cancelGet = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "cancel",
+    ]);
+    assert.equal("status" in cancelGet, true);
+    if ("status" in cancelGet) {
+      assert.equal(cancelGet.status, 405);
     }
     const reservedAsId = resolveIdentityProxyTarget("GET", [
       "executions",

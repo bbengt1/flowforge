@@ -258,9 +258,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
   // approval-contract.ts.
   ...APPROVAL_PROXY_ROUTES,
-  // E5.1 execution history UI (#46 / #51). Paths live in
-  // execution-contract.ts. POST /workflows/{id}/executions start stays
-  // above this block (CSRF). Do not invent POST /executions.
+  // E5.1/E5.2 execution UI. Paths live in execution-contract.ts (#53).
+  // POST start stays above this block. Cancel/retry are CSRF POSTs.
+  // Do not invent POST /executions or any /jobs/* worker route.
   ...EXECUTION_PROXY_ROUTES,
 ];
 

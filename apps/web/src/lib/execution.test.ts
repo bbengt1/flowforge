@@ -1,35 +1,59 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  CANCEL_APPLIED_MESSAGE,
+  CANCEL_FORBIDDEN_MESSAGE,
+  CANCEL_IDEMPOTENT_MESSAGE,
+  EXECUTION_CANCEL_ACTION,
+  EXECUTION_API_PR,
+  EXECUTION_RETRY_ROUTE_PUBLISHED,
   EXECUTION_UPSTREAM_COLLECTION,
   IDEMPOTENCY_CONFLICT_MESSAGE,
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
+  INDETERMINATE_STATUS_HELP,
+  RETRY_INDETERMINATE_MESSAGE,
+  RETRY_UNAVAILABLE_MESSAGE,
+  buildCancelBody,
+  buildRetryBody,
   executionAuditEventsPath,
+  executionCancelPath,
   executionHistoryHref,
   executionJobsPath,
   executionPath,
+  executionRetryPath,
   executionStepPath,
+  executionStepRetryPath,
   executionStepsPath,
   listExecutionsPath,
   listWorkflowExecutionsPath,
   listWorkspaceAuditEventsPath,
   retargetCollectionPath,
   retargetExecutionApiPath,
+  workflowExecutionCancelPath,
 } from "./execution-contract.ts";
 import {
+  canCancelExecution,
+  canRetryExecution,
+  canRetryExecutionStep,
   canSeeExecutionsNav,
+  isCoreRetryableStepKind,
+  cancelOutcomeMessage,
   executionDetailDisplay,
   executionDetailText,
   executionListDisplay,
   executionListText,
   executionStatusLabel,
+  executionStatusPresentation,
   filterExecutionList,
   isExecutionForbidden,
   isIdempotencyConflict,
+  isIdempotentCancel,
   isIndeterminateStatus,
   isSecretFieldName,
+  jobDispatchView,
   parseExecutionDetail,
+  parseExecutionJob,
   parseExecutionList,
   startOutcomeMessage,
   stripSecretFields,
@@ -64,6 +88,7 @@ function sampleRecord(
     triggerId: "",
     input: { dryRun: "[redacted]" },
     policySnapshot: null,
+    permittedActions: [],
     ...overrides,
   };
 }
@@ -118,6 +143,32 @@ describe("execution contract adapter", () => {
       }).includes("startedAfter"),
       false,
     );
+    assert.equal(
+      executionCancelPath(EXECUTION_ID),
+      `/executions/${EXECUTION_ID}/${EXECUTION_CANCEL_ACTION}`,
+    );
+    assert.equal(
+      workflowExecutionCancelPath(WORKFLOW_ID, EXECUTION_ID),
+      `/workflows/${WORKFLOW_ID}/executions/${EXECUTION_ID}/cancel`,
+    );
+    assert.deepEqual(buildCancelBody(), {});
+    assert.equal(Object.hasOwn(buildCancelBody(), "id"), false);
+    assert.equal(Object.hasOwn(buildCancelBody(), "workspaceId"), false);
+    assert.equal(EXECUTION_API_PR, 53);
+    assert.equal(EXECUTION_RETRY_ROUTE_PUBLISHED, true);
+    assert.equal(
+      executionRetryPath(EXECUTION_ID),
+      `/executions/${EXECUTION_ID}/retry`,
+    );
+    assert.equal(
+      executionStepRetryPath(EXECUTION_ID, VERSION_ID),
+      `/executions/${EXECUTION_ID}/steps/${VERSION_ID}/retry`,
+    );
+    assert.deepEqual(buildRetryBody(), {});
+    assert.deepEqual(buildRetryBody({ stepId: VERSION_ID }), {
+      stepId: VERSION_ID,
+    });
+    assert.equal(Object.hasOwn(buildRetryBody(), "workspaceId"), false);
   });
 
   it("retargets /api/v1/executions and leaves /audit-events unchanged", () => {
@@ -141,6 +192,10 @@ describe("execution contract adapter", () => {
         "workspace/executions",
       ),
       `/api/v1/workspace/executions/${EXECUTION_ID}`,
+    );
+    assert.equal(
+      retargetExecutionApiPath(`/api/v1/executions/${EXECUTION_ID}/cancel`),
+      `/api/v1/executions/${EXECUTION_ID}/cancel`,
     );
   });
 });
@@ -275,10 +330,170 @@ describe("execution redaction and list/detail rendering", () => {
     assert.equal(text.includes("-----BEGIN"), false);
   });
 
+  it("surfaces running/canceled/failed/indeterminate with icon+text, not color alone", () => {
+    const indeterminate = executionStatusPresentation("indeterminate");
+    assert.equal(indeterminate.indeterminate, true);
+    assert.equal(indeterminate.icon, "⚠");
+    assert.equal(indeterminate.label, "Indeterminate");
+    assert.equal(indeterminate.description, INDETERMINATE_STATUS_HELP);
+    assert.match(indeterminate.description, /may have occurred/);
+    assert.match(indeterminate.description, /Do not assume the action did not run/);
+    assert.equal(
+      /the action did not (run|occur)\./i.test(indeterminate.description) &&
+        !indeterminate.description.includes("Do not assume"),
+      false,
+    );
+
+    const running = executionStatusPresentation("running");
+    assert.equal(running.icon, "▶");
+    assert.equal(running.label, "Running");
+    const canceled = executionStatusPresentation("cancelled");
+    assert.equal(canceled.icon, "◼");
+    assert.equal(canceled.label, "Canceled");
+    const failed = executionStatusPresentation("failed");
+    assert.equal(failed.icon, "✕");
+    assert.equal(failed.label, "Failed");
+
+    const rendered = executionListText([
+      sampleRecord({ status: "indeterminate" }),
+    ]);
+    assert.match(rendered, /⚠/);
+    assert.match(rendered, /Indeterminate/);
+    assert.match(rendered, /indeterminate/);
+  });
+
+  it("surfaces lease/claim/heartbeat metadata and gates retry to #53", () => {
+    const job = parseExecutionJob({
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "claimed",
+      executionStepId: "44444444-4444-4444-8444-444444444444",
+      leaseId: "lease-16",
+      leaseExpiresAt: "2026-09-09T01:05:00.000Z",
+      heartbeatAt: "2026-09-09T01:04:00.000Z",
+      workerId: "worker-a",
+      fencingToken: 7,
+      attempt: 1,
+    });
+    assert.ok(job);
+    const view = jobDispatchView(job);
+    assert.equal(view.claimed, true);
+    assert.equal(view.presentation.label, "Claimed");
+    assert.equal(view.leaseExpiresAt, "2026-09-09T01:05:00.000Z");
+    assert.equal(view.heartbeatAt, "2026-09-09T01:04:00.000Z");
+    assert.equal(view.workerId, "worker-a");
+    assert.equal(view.fencingToken, 7);
+    assert.equal(isCoreRetryableStepKind("data.set"), true);
+    assert.equal(isCoreRetryableStepKind("flow.delay"), true);
+    assert.equal(isCoreRetryableStepKind("kubernetes.apply"), false);
+    assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "failed", nodeType: "data.set" }],
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "indeterminate",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "indeterminate", nodeType: "data.set" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "failed", nodeType: "kubernetes.apply" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "failed",
+        stepStatus: "failed",
+        nodeType: "flow.fail",
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "indeterminate",
+        stepStatus: "failed",
+        nodeType: "data.set",
+      }),
+      false,
+    );
+    assert.match(RETRY_UNAVAILABLE_MESSAGE, /data\.\* \/ flow\.\*/);
+    assert.match(RETRY_INDETERMINATE_MESSAGE, /Do not assume the action did not run/);
+  });
+
+  it("authorizes cancel separately and treats a second cancel as idempotent", () => {
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.view"],
+        status: "running",
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.view", "execution.cancel"],
+        status: "running",
+      }),
+      true,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
+        status: "succeeded",
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
+        status: "queued",
+      }),
+      true,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
+        status: "indeterminate",
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
+        status: "succeeded",
+        permittedActions: ["cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      isIdempotentCancel({ previousStatus: "canceled", status: "canceled" }),
+      true,
+    );
+    assert.equal(
+      cancelOutcomeMessage({ previousStatus: "canceled", status: "canceled" }),
+      CANCEL_IDEMPOTENT_MESSAGE,
+    );
+    assert.equal(
+      cancelOutcomeMessage({ previousStatus: "running", status: "canceled" }),
+      CANCEL_APPLIED_MESSAGE,
+    );
+    assert.match(CANCEL_FORBIDDEN_MESSAGE, /fail-closed/);
+  });
+
   it("surfaces indeterminate distinctly and filters by documented query only", () => {
     assert.equal(isIndeterminateStatus("indeterminate"), true);
     assert.equal(isIndeterminateStatus("failed"), false);
-    assert.equal(executionStatusLabel("cancelled"), "canceled");
+    assert.equal(executionStatusLabel("cancelled"), "Canceled");
 
     const items = [
       sampleRecord(),
