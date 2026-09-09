@@ -281,4 +281,7 @@ export type WorkflowExecution = {
   requestedBy?: string;
   createdAt: string;
   pins?: OpsConfigPin[];
+  idempotencyKey?: string;
+  correlationId?: string;
+  reused?: boolean;
 };

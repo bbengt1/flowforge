@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
 import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
+import { executionHistoryHref, IDEMPOTENCY_REPLAY_MESSAGE } from "@/lib/execution-contract";
 import type { ProblemDetails } from "@/lib/problem";
 import { shortDigest } from "@/lib/workflow";
 import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
@@ -125,14 +127,25 @@ export function RunControl({
               empty="No ops-config pins on this execution."
             />
           </div>
-          <button
-            type="button"
-            onClick={onRefreshPin}
-            disabled={pending}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-          >
-            Re-read pin
-          </button>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onRefreshPin}
+              disabled={pending}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+            >
+              Re-read pin
+            </button>
+            <Link
+              href={executionHistoryHref(execution.id, execution.workflowId)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+            >
+              Open execution history
+            </Link>
+          </div>
+          {execution.reused ? (
+            <p className="text-sm text-zinc-700">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
+          ) : null}
           <div className="pt-2">
             <ExecutionApprovalState
               executionStatus={execution.status}

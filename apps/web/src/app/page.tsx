@@ -23,7 +23,7 @@ export default async function Home() {
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
           E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
-          approvals
+          approvals · E5.1 executions
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -66,14 +66,21 @@ export default async function Home() {
           >
             operational config
           </Link>{" "}
-          operator, or review policy-bound approvals on the{" "}
+          operator, review policy-bound approvals on the{" "}
           <Link
             className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
             href="/approvals"
           >
             approvals queue
           </Link>
-          .
+          , or inspect workspace execution history on the{" "}
+          <Link
+            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+            href="/executions"
+          >
+            executions
+          </Link>{" "}
+          operator.
         </p>
       </header>
 
@@ -192,6 +199,27 @@ export default async function Home() {
             href="/approvals"
           >
             Open approvals
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Execution history</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E5.1 list/detail UI against jonny&apos;s persistence
+          query APIs (routes still in flight). Filter by workflow, status,
+          and time. Metadata is redacted;{" "}
+          <code className="font-mono text-xs">indeterminate</code> is
+          distinct. Existing{" "}
+          <code className="font-mono text-xs">POST …/executions</code> run
+          control is unchanged. Relates to #46 / Part of #45.
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/executions"
+          >
+            Open executions
           </Link>
         </p>
       </section>

@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1; `execution.view`), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -111,7 +111,7 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, and the E4.3 approvals operator:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, and the E5.1 execution history operator:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -326,6 +326,20 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 - **Workflow hooks:** evaluate → materialize pending rows when `decision=approval-required` → wait for current `approved` bindings (or `dispatchAllowed`) before start. Start execution still rechecks on the server. Execution waiting state lists `GET /approvals?executionId=`. E4.1 vault, E4.2 ops-config, and E3 workflows stay intact.
 - **Operator routes:** `/approvals`, `/approvals/{id}`.
 - **Proxies:** `/api/control-plane/approvals`, `/catalog`, `/{id}`, `…/decide`, `…/events`, and `/policy/evaluate`. Session cookies, CSRF, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Approval tokens are never stored in `localStorage`.
+
+## E5.1 execution history (Chloe UI)
+
+`/executions` is Chloe's minimal workspace-scoped history operator for #46. Jonny owns persistence + query APIs (still in flight). This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay, artifacts, and cancel/retry stay out (E5.3 / E6).
+
+- **Contract adapter:** all query paths live in `apps/web/src/lib/execution-contract.ts`. Browser calls stay on `/api/v1/executions*`. Change `EXECUTION_UPSTREAM_COLLECTION` when jonny publishes a different prefix.
+- **List:** `GET /executions` query `workflowId`, `workflowVersionId`, `status`, `startedAfter`, `startedBefore`, `correlationId`. Cards show id, workflow, version pin, status, started/finished, correlation id, and idempotency key. Secrets and unredacted outputs are stripped.
+- **Detail:** `GET /executions/{id}` plus optional `…/steps`, `…/jobs`, `…/events`. A 404 on the workspace collection may fall back to the existing E3.2 pin `GET /workflows/{workflowId}/executions/{executionId}` when `?workflowId=` is present. Nested 403 fails closed.
+- **Indeterminate:** status badge + border + text — color is never the only signal. Do not imply an unverified remote action did not occur.
+- **Idempotency:** when the API returns `reused` / `idempotentReplay` (or POST start is `200`), surface that `(workspace, workflow version, idempotency key)` did not create a second run.
+- **RBAC nav:** Executions appears when `GET /workspace` includes `execution.view`. List/detail 403 is fail-closed (no leftover rows).
+- **Run control:** existing `POST /workflows/{id}/executions` `{workflowVersionId}` is unchanged. The pin panel links to `/executions/{id}`.
+- **Operator routes:** `/executions`, `/executions/{id}`.
+- **Proxies:** `/api/control-plane/executions`, `/{id}`, `…/steps`, `…/jobs`, `…/events`. Session cookies, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Authorization and bodies are never logged.
 
 ## Initial implementation components
 

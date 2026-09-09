@@ -9,6 +9,7 @@ import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { CurrentWorkspace } from "@/lib/identity-types";
 import { canSeeApprovalsNav } from "@/lib/approval";
+import { canSeeExecutionsNav } from "@/lib/execution";
 import { canSeeOpsConfigNav } from "@/lib/ops-config";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
@@ -67,6 +68,7 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
 
   const showConfig = canSeeOpsConfigNav(ready ? permissions : null);
   const showApprovals = canSeeApprovalsNav(ready ? permissions : null);
+  const showExecutions = canSeeExecutionsNav(ready ? permissions : null);
 
   return (
     <nav aria-label="Operator" className="flex flex-wrap items-center gap-4">
@@ -93,6 +95,11 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
       {showApprovals ? (
         <Link href="/approvals" className={linkClass}>
           Approvals
+        </Link>
+      ) : null}
+      {showExecutions ? (
+        <Link href="/executions" className={linkClass}>
+          Executions
         </Link>
       ) : null}
       <Link href="/membership" className={linkClass}>

@@ -299,6 +299,27 @@ describe("resolveIdentityProxyTarget", () => {
         "/api/v1/approvals/11111111-1111-4111-8111-111111111111/events",
       ],
       ["POST", ["policy", "evaluate"], "/api/v1/policy/evaluate"],
+      ["GET", ["executions"], "/api/v1/executions"],
+      [
+        "GET",
+        ["executions", "33333333-3333-4333-8333-333333333333"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333",
+      ],
+      [
+        "GET",
+        ["executions", "33333333-3333-4333-8333-333333333333", "steps"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps",
+      ],
+      [
+        "GET",
+        ["executions", "33333333-3333-4333-8333-333333333333", "jobs"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/jobs",
+      ],
+      [
+        "GET",
+        ["executions", "33333333-3333-4333-8333-333333333333", "events"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/events",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -424,6 +445,31 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in getEvaluate, true);
     if ("status" in getEvaluate) {
       assert.equal(getEvaluate.status, 405);
+    }
+  });
+
+  it("allowlists E5.1 execution query GETs and does not add a second start path", () => {
+    const listWrite = resolveIdentityProxyTarget("POST", ["executions"]);
+    assert.equal("status" in listWrite, true);
+    if ("status" in listWrite) {
+      assert.equal(listWrite.status, 405);
+    }
+    const inventedReplay = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "replay",
+    ]);
+    assert.equal("status" in inventedReplay, true);
+    if ("status" in inventedReplay) {
+      assert.equal(inventedReplay.status, 404);
+    }
+    const reservedAsId = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "steps",
+    ]);
+    assert.equal("status" in reservedAsId, true);
+    if ("status" in reservedAsId) {
+      assert.equal(reservedAsId.status, 404);
     }
   });
 
