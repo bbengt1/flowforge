@@ -285,6 +285,7 @@ export type ScriptIoRetryValidation = {
   maxAttempts: number;
   retrySafe: boolean;
   idempotencyKey: string;
+  idempotencyKeyDeclared: boolean;
   verificationDeclared: boolean;
   errors: string[];
   warnings: string[];
@@ -751,6 +752,7 @@ export function validateScriptIoRetryDeclaration(
     maxAttempts,
     retrySafe,
     idempotencyKey,
+    idempotencyKeyDeclared: Boolean(idempotencyKey),
     verificationDeclared: verification !== null,
     errors: unique(errors),
     warnings,
