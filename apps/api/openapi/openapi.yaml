@@ -3387,7 +3387,7 @@ paths:
     get:
       operationId: getOpsConfigCatalog
       summary: Operational configuration kinds
-      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, and use permissions.
+      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, use permissions, `kubernetesEngine` (E7.1), and `sshEngine` (E8.1).
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -3438,6 +3438,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/KubernetesEngineCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /ssh/catalog:
+    get:
+      operationId: getSSHCatalog
+      summary: SSH engine catalog
+      description: |
+        Requires `opsconfig.view`. Documents SSH-target credential type
+        (`ssh_private_key`), reviewed renderer rules (no raw shell
+        interpolation), typed parameter schemas, retry-safe flags (schema
+        only; E8.3 implements semantics), publish/select constraints, and
+        error codes. Does not open an SSH connection.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: SSH engine catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHEngineCatalog"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -4412,6 +4444,8 @@ components:
               engine: {type: string}
         kubernetesEngine:
           $ref: "#/components/schemas/KubernetesEngineCatalog"
+        sshEngine:
+          $ref: "#/components/schemas/SSHEngineCatalog"
     KubernetesEngineCatalog:
       type: object
       required: [credentialType, allowedKinds, allowedVerbs, evaluationKeys, serviceAccount, publishRules]
@@ -4518,6 +4552,91 @@ components:
             cancel: {type: string}
             timeout: {type: string}
             neverDeletesOrRollsBack: {type: boolean}
+    SSHEngineCatalog:
+      type: object
+      required: [credentialType, parameterTypes, render, retry, publishRules]
+      properties:
+        credentialType: {type: string, enum: [ssh_private_key]}
+        credentialSecretFields:
+          type: array
+          items: {type: string}
+        parameterTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              constraints:
+                type: array
+                items: {type: string}
+              description: {type: string}
+        render:
+          type: object
+          properties:
+            owner: {type: string}
+            placeholderSyntax: {type: string}
+            quoting: {type: string}
+            rawShellInterpolation: {type: boolean}
+            forbiddenTokens:
+              type: array
+              items: {type: string}
+            rejectValuesOutsideSchema: {type: boolean}
+        retry:
+          type: object
+          properties:
+            defaultMaxAttempts: {type: integer}
+            retrySafeFlag: {type: string}
+            semantics: {type: string}
+            note: {type: string}
+        publishRules:
+          type: object
+          properties:
+            sshTargetRequired:
+              type: array
+              items: {type: string}
+            commandProfileRequired:
+              type: array
+              items: {type: string}
+            emptyAllowlistsRejected: {type: boolean}
+            credentialType: {type: string}
+            fingerprintFormat: {type: string}
+            draftsNotSelectable: {type: boolean}
+            publishedRevisionsPinned: {type: boolean}
+        evaluationKeys:
+          type: array
+          items:
+            type: object
+            properties:
+              canonical: {type: string}
+              aliases:
+                type: array
+                items: {type: string}
+              failClosedWhenPresent: {type: boolean}
+              requiredForPublish: {type: boolean}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              verb: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        permissions:
+          type: array
+          items: {type: string}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]

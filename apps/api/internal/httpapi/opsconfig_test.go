@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
@@ -157,21 +159,15 @@ func TestOpsConfigKindsPublishAndSelect(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
 	cred := createVaultCredential(t, h, admin, tenant, ws, "token", "API", map[string]string{"token": "abcdefghijklmnop"})
+	sshCred := createSSHCredential(t, h, admin, tenant, ws, "BastionKey")
 
 	cases := []struct {
 		collection string
 		name       string
 		spec       map[string]any
 	}{
-		{"ssh-targets", "bastion", map[string]any{
-			"credentialId": cred.ID, "hostname": "bastion.example.com", "port": 22,
-			"hostKeyFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		}},
-		{"command-profiles", "restart-unit", map[string]any{
-			"parameterSchema": map[string]any{"type": "object"},
-			"template":        "systemctl restart unit",
-			"retrySafe":       false,
-		}},
+		{"ssh-targets", "bastion", sshTargetSpec(sshCred.ID, "bastion.example.com")},
+		{"command-profiles", "restart-unit", commandProfileSpec("systemctl restart unit", nil)},
 		{"runtime-profiles", "python-approved", map[string]any{
 			"language":             "python",
 			"imageDigest":          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -240,6 +236,36 @@ func testKubeconfig() string {
 func createKubernetesCredential(t *testing.T, h http.Handler, user identity.User, tenant identity.Tenant, ws identity.Workspace, name string) vault.Metadata {
 	t.Helper()
 	return createVaultCredential(t, h, user, tenant, ws, "kubernetes", name, map[string]string{"kubeconfig": testKubeconfig()})
+}
+
+func testSSHPrivateKey() string {
+	return "-----BEGIN OPENSSH PRIVATE KEY-----\nunit-test-key\n-----END OPENSSH PRIVATE KEY-----\n"
+}
+
+func createSSHCredential(t *testing.T, h http.Handler, user identity.User, tenant identity.Tenant, ws identity.Workspace, name string) vault.Metadata {
+	t.Helper()
+	return createVaultCredential(t, h, user, tenant, ws, "ssh_private_key", name, map[string]string{"privateKey": testSSHPrivateKey()})
+}
+
+func sshTargetSpec(credentialID, hostname string) map[string]any {
+	return map[string]any{
+		"credentialId":       credentialID,
+		"hostname":           hostname,
+		"port":               22,
+		"hostKeyFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"allowedAddresses":   []string{"203.0.113.10"},
+	}
+}
+
+func commandProfileSpec(template string, properties map[string]any) map[string]any {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	return map[string]any{
+		"parameterSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": properties},
+		"template":        template,
+		"retrySafe":       false,
+	}
 }
 
 func createOpsResource(t *testing.T, h http.Handler, user identity.User, tenant identity.Tenant, ws identity.Workspace, collection, name string, spec map[string]any) opsDetailResponse {
@@ -474,4 +500,291 @@ func TestClusterTargetKubernetesPolicyHardening(t *testing.T) {
 			t.Fatalf("e73 observation = %+v", cat.Observation)
 		}
 	})
+}
+
+func TestSSHTargetAndCommandProfileHardening(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	wsA, tenant := currentWorkspace(t, h, admin)
+	sshKey := createSSHCredential(t, h, admin, tenant, wsA, "SSHKey")
+	token := createVaultCredential(t, h, admin, tenant, wsA, "token", "Token", map[string]string{"token": "abcdefghijklmnop"})
+
+	t.Run("wrong credential type is 400", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{"name": "bad-type", "spec": sshTargetSpec(token.ID, "bastion.example.com")})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/ssh-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("cross-workspace credential is 404", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_id":"`+tenant.ID+`","workbench_key":"ssh-b","name":"B"}`, admin)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("workspace B: %d %s", rec.Code, rec.Body.String())
+		}
+		var wsB identity.Workspace
+		if err := json.Unmarshal(rec.Body.Bytes(), &wsB); err != nil {
+			t.Fatal(err)
+		}
+		body, _ := json.Marshal(map[string]any{"name": "foreign-cred", "spec": sshTargetSpec(sshKey.ID, "bastion.example.com")})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/ssh-targets", body, admin, tenant, wsB)
+		req.Header.Set(headerWorkbenchKey, wsB.WorkbenchKey)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	})
+
+	t.Run("tenancy denial and host identity", func(t *testing.T) {
+		created := createOpsResource(t, h, admin, tenant, wsA, "ssh-targets", "tenancy-target", sshTargetSpec(sshKey.ID, "ops.example.com"))
+		publishOps(t, h, admin, tenant, wsA, "ssh-targets", created.Resource.ID, 1, "v1")
+		rec := httptest.NewRecorder()
+		req := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_id":"`+tenant.ID+`","workbench_key":"ssh-c","name":"C"}`, admin)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("workspace C: %d %s", rec.Code, rec.Body.String())
+		}
+		var wsC identity.Workspace
+		if err := json.Unmarshal(rec.Body.Bytes(), &wsC); err != nil {
+			t.Fatal(err)
+		}
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/ssh-targets/"+created.Resource.ID, nil, admin, tenant, wsC)
+		req.Header.Set(headerWorkbenchKey, wsC.WorkbenchKey)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+
+		body := `{"name":"x","workspaceId":"33333333-3333-4333-8333-333333333333","spec":` + mustJSONObject(sshTargetSpec(sshKey.ID, "ops.example.com")) + `}`
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodPost, "/api/v1/ssh-targets", strings.NewReader(body), admin, tenant, wsA)
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("empty allowlist and fingerprint are rejected", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{
+			"name": "empty-addrs",
+			"spec": map[string]any{
+				"credentialId": sshKey.ID, "hostname": "bastion.example.com",
+				"hostKeyFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				"allowedAddresses":   []string{},
+			},
+		})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/ssh-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+
+		body, _ = json.Marshal(map[string]any{
+			"name": "bad-fp",
+			"spec": map[string]any{
+				"credentialId": sshKey.ID, "hostname": "bastion.example.com",
+				"hostKeyFingerprint": "not-a-fingerprint",
+			},
+		})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/ssh-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("parameter schema rejection", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{
+			"name": "interp",
+			"spec": commandProfileSpec("echo $(whoami)", nil),
+		})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/command-profiles", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+
+		body, _ = json.Marshal(map[string]any{
+			"name": "unknown-placeholder",
+			"spec": commandProfileSpec("systemctl restart {unit}", nil),
+		})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/command-profiles", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("publish immutability and pin behavior", func(t *testing.T) {
+		target := createOpsResource(t, h, admin, tenant, wsA, "ssh-targets", "pin-target", sshTargetSpec(sshKey.ID, "pin.example.com"))
+		pubTarget := publishOps(t, h, admin, tenant, wsA, "ssh-targets", target.Resource.ID, 1, "v1")
+		profile := createOpsResource(t, h, admin, tenant, wsA, "command-profiles", "pin-profile", commandProfileSpec("uptime", nil))
+		pubProfile := publishOps(t, h, admin, tenant, wsA, "command-profiles", profile.Resource.ID, 1, "v1")
+
+		yamlDoc := sshWorkflowYAML("ssh-pin-restart", target.Resource.ID, profile.Resource.ID, nil)
+		wf := createWorkflow(t, h, admin, tenant, wsA, yamlDoc)
+		pubWF := publishWorkflow(t, h, admin, tenant, wsA, wf.Workflow.ID, wf.Draft.Revision, "pin ssh")
+		if len(pubWF.Pins) != 2 {
+			t.Fatalf("workflow pins = %+v", pubWF.Pins)
+		}
+		exec := startExecution(t, h, admin, tenant, wsA, wf.Workflow.ID, pubWF.Version.ID)
+
+		saved, _ := json.Marshal(map[string]any{"revision": 1, "spec": commandProfileSpec("hostname", nil)})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPut, "/api/v1/command-profiles/"+profile.Resource.ID+"/draft", saved, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("save draft: %d %s", rec.Code, rec.Body.String())
+		}
+		next := publishOps(t, h, admin, tenant, wsA, "command-profiles", profile.Resource.ID, 2, "v2")
+		if next.Version.VersionNumber != 2 || next.Version.Digest == pubProfile.Version.Digest {
+			t.Fatalf("second publish = %+v", next)
+		}
+		later := selectOps(t, h, admin, tenant, wsA, "command-profiles", profile.Resource.ID, pubProfile.Version.ID)
+		if later.Digest != pubProfile.Version.Digest || later.VersionID != pubProfile.Version.ID {
+			t.Fatalf("pinned profile drifted: %+v", later)
+		}
+
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/workflows/"+wf.Workflow.ID+"/versions/"+pubWF.Version.ID+"/pins", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("version pins: %d %s", rec.Code, rec.Body.String())
+		}
+		var pinned listResponse[opsconfig.Pin]
+		if err := json.Unmarshal(rec.Body.Bytes(), &pinned); err != nil {
+			t.Fatal(err)
+		}
+		foundProfile := false
+		for _, pin := range pinned.Items {
+			if pin.Kind == opsconfig.KindCommandProfile && (pin.VersionID != pubProfile.Version.ID || pin.Digest != pubProfile.Version.Digest) {
+				t.Fatalf("command profile pin drifted: %+v", pin)
+			}
+			if pin.Kind == opsconfig.KindSSHTarget && pin.VersionID != pubTarget.Version.ID {
+				t.Fatalf("ssh target pin drifted: %+v", pin)
+			}
+			if pin.Kind == opsconfig.KindCommandProfile {
+				foundProfile = true
+			}
+		}
+		if !foundProfile {
+			t.Fatalf("missing profile pin: %+v", pinned.Items)
+		}
+
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/workflows/"+wf.Workflow.ID+"/executions/"+exec.ID, nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("exec: %d %s", rec.Code, rec.Body.String())
+		}
+		var got executionResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Pins) != 2 {
+			t.Fatalf("execution pins drifted: %+v", got.Pins)
+		}
+	})
+
+	t.Run("workflow publish rejects parameters outside schema", func(t *testing.T) {
+		target := createOpsResource(t, h, admin, tenant, wsA, "ssh-targets", "param-target", sshTargetSpec(sshKey.ID, "param.example.com"))
+		publishOps(t, h, admin, tenant, wsA, "ssh-targets", target.Resource.ID, 1, "v1")
+		profile := createOpsResource(t, h, admin, tenant, wsA, "command-profiles", "param-profile", commandProfileSpec("systemctl restart {unit}", map[string]any{
+			"unit": map[string]any{"type": "string", "pattern": `[A-Za-z0-9._-]+`},
+		}))
+		publishOps(t, h, admin, tenant, wsA, "command-profiles", profile.Resource.ID, 1, "v1")
+		yamlDoc := sshWorkflowYAML("ssh-param-restart", target.Resource.ID, profile.Resource.ID, map[string]any{"unit": "api; rm -rf /"})
+		wf := createWorkflow(t, h, admin, tenant, wsA, yamlDoc)
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/workflows/"+wf.Workflow.ID+"/publish", []byte(`{"revision":1}`), admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("responses never include privateKey passphrase or kubeconfig", func(t *testing.T) {
+		created := createOpsResource(t, h, admin, tenant, wsA, "ssh-targets", "safe-ssh", sshTargetSpec(sshKey.ID, "safe.example.com"))
+		raw := mustJSONObject(created)
+		for _, leak := range []string{"privateKey", "passphrase", "kubeconfig", "BEGIN OPENSSH", "unit-test-key"} {
+			if strings.Contains(raw, leak) {
+				t.Fatalf("%s leaked: %s", leak, raw)
+			}
+		}
+		pub := publishOps(t, h, admin, tenant, wsA, "ssh-targets", created.Resource.ID, 1, "v1")
+		pin := selectOps(t, h, admin, tenant, wsA, "ssh-targets", created.Resource.ID, "")
+		if pin.VersionID != pub.Version.ID {
+			t.Fatalf("pin = %+v", pin)
+		}
+		pinRaw := mustJSONObject(pin)
+		if strings.Contains(pinRaw, "privateKey") || strings.Contains(pinRaw, "BEGIN") {
+			t.Fatalf("pin leaked secret: %s", pinRaw)
+		}
+	})
+
+	t.Run("catalog documents engine rules", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceRequest(http.MethodGet, "/api/v1/ops-config/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("ops catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"sshEngine"`) || !strings.Contains(rec.Body.String(), ssheng.CredentialType) {
+			t.Fatalf("ops catalog missing ssh engine: %s", rec.Body.String())
+		}
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/ssh/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("ssh catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		var cat ssheng.EngineCatalog
+		if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+			t.Fatal(err)
+		}
+		if cat.CredentialType != ssheng.CredentialType || cat.Render.RawShellInterpolation || cat.Retry.DefaultMaxAttempts != 0 {
+			t.Fatalf("ssh catalog = %+v", cat)
+		}
+		if len(cat.ParameterTypes) == 0 || len(cat.Errors) == 0 {
+			t.Fatalf("ssh catalog missing types/errors: %+v", cat)
+		}
+	})
+
+	t.Run("rbac view edit publish", func(t *testing.T) {
+		viewer := putMember(t, h, admin, tenant, wsA, `{"issuer":"https://idp.example","external_subject":"ssh-viewer","role_keys":["viewer"]}`)
+		editor := putMember(t, h, admin, tenant, wsA, `{"issuer":"https://idp.example","external_subject":"ssh-editor","role_keys":["editor"]}`)
+		if contains(viewer.Permissions, authz.PermOpsConfigEdit) || contains(viewer.Permissions, authz.PermSSHTargetUse) {
+			t.Fatal("viewer must not edit ops config or use ssh targets")
+		}
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/ssh-targets", mustJSONBytes(map[string]any{"name": "denied", "spec": sshTargetSpec(sshKey.ID, "deny.example.com")}), viewer.User, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+
+		created := createOpsResource(t, h, admin, tenant, wsA, "command-profiles", "rbac-profile", commandProfileSpec("true", nil))
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/command-profiles/"+created.Resource.ID+"/publish", []byte(`{}`), editor.User, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	})
+}
+
+func sshWorkflowYAML(name, targetID, profileID string, params map[string]any) string {
+	paramYAML := ""
+	if params != nil {
+		paramYAML = "\n        parameters:"
+		for key, val := range params {
+			s, _ := val.(string)
+			paramYAML += "\n          " + key + ": " + strconv.Quote(s)
+		}
+	}
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: ` + name + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: restart
+      type: ssh.run
+      name: Restart
+      with:
+        sshTargetId: ` + targetID + `
+        commandProfileId: ` + profileID + paramYAML + `
+  edges: []
+`
 }

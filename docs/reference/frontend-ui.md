@@ -190,6 +190,17 @@ E7.3 (Chloe) promotes `kubernetes.rolloutStatus` from the E7.2 stub to a placeab
 - **Execution:** poll existing E5 `GET /executions/{id}`. Render `result.observation`, `result.status.progress[]`, and redacted `result.audit` (actor, target, policy revision, manifest digest, resource identities, dry-run/apply/watch outcome, correlation ID). Unexpected secret / kubeconfig fields fail closed.
 - **Unchanged:** E7.1 `/config` targets and policies; E7.2 apply/get/list fields; no invented routes; `apps/api` untouched.
 
+## E8.1 SSH targets and command profiles (API map for Chloe)
+
+E8.1 hardens the existing E4.2 `/config` SSH-target and command-profile collections. The API map is `docs/reference/backend-api-map.md` (E8.1 section). `apps/web` is unchanged in the API story — keep #82 open until Chloe's UI surfaces land. Relates to #82 / Part of #81.
+
+- **SSH targets:** `spec.credentialId` is a workspace `type=ssh_private_key` vault credential only — never `privateKey` / `passphrase`. Require `hostname` and `hostKeyFingerprint`. Optional `port` (default 22), `allowedAddresses` (IP/CIDR; empty present list is rejected), published `policyId` (`kind=ssh`).
+- **Command profiles:** administrator-owned. `parameterSchema` is a restricted object schema (`string` / `integer` / `boolean`). `template` uses `{name}` placeholders. The reviewed renderer owns POSIX single-quote substitution and rejects interpolation (`$()`, backticks, `${`, `{{`) and values outside the schema. `retrySafe` is a schema flag only (E8.3).
+- **Pins:** workflow publish / execution start pin exact target + profile revisions. Later draft edits do not retarget a pin. Drafts cannot be selected.
+- **Catalog:** `GET /ops-config/catalog` (`sshEngine`) or `GET /ssh/catalog` for parameter types, render rules, retry-safe flags, and error codes.
+- **Session:** cookie session + `X-CSRF-Token` on POST/PUT. Host-supplied `id` / `workspaceId` is error UX (API 400). Unexpected secret fields are stripped.
+- **Operator routes:** existing `/config/ssh-targets` and `/config/command-profiles` — not a duplicate Targets app. Proxy `/api/control-plane/ssh/catalog` when the UI story lands.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
@@ -393,7 +404,7 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 - **Credentials:** E4.1 vault stays the secret store. Target/connection forms select credentials by display name/id only. Specs use #41 fields (`endpoint.apiServer`, `type` + `endpointPolicy.pathPrefixes`, `limits.*`, `kind` + `policy`, `recipientPolicy.emails`/`domains`).
 - **RBAC nav:** Targets / Profiles / Config appear when `GET /workspace` includes `opsconfig.view` (viewers included). Edit/publish buttons still require `opsconfig.edit` / `opsconfig.publish`.
 - **Session:** cookie session + `X-CSRF-Token` on POST/PUT; tenant + workbench identity; `credentials: include`. Host-supplied `id` / `workspaceId` are never sent on writes.
-- **Proxies:** `/api/control-plane/ops-config/{catalog,select}` plus `{cluster-targets,ssh-targets,command-profiles,runtime-profiles,connections,recipient-lists,message-templates,response-schemas,policies}` `{id}`, `…/draft` (GET|PUT), `…/publish`, `…/select`, `…/disable`, `…/enable`, `…/versions`, `GET /kubernetes/catalog`, and `GET /workflows/{id}/versions/{versionId}/pins`. E7.1: cluster targets accept only workspace `type=kubernetes` credentials; catalog includes `kubernetesEngine` (allowlists, evaluation keys, SA templates under `deploy/kubernetes/`). Kubeconfig is never shown.
+- **Proxies:** `/api/control-plane/ops-config/{catalog,select}` plus `{cluster-targets,ssh-targets,command-profiles,runtime-profiles,connections,recipient-lists,message-templates,response-schemas,policies}` `{id}`, `…/draft` (GET|PUT), `…/publish`, `…/select`, `…/disable`, `…/enable`, `…/versions`, `GET /kubernetes/catalog`, `GET /ssh/catalog`, and `GET /workflows/{id}/versions/{versionId}/pins`. E7.1: cluster targets accept only workspace `type=kubernetes` credentials; catalog includes `kubernetesEngine` (allowlists, evaluation keys, SA templates under `deploy/kubernetes/`). Kubeconfig is never shown. E8.1: SSH targets accept only workspace `type=ssh_private_key` credentials; catalog includes `sshEngine` (parameter types, reviewed renderer, retry-safe flags). Private keys and passphrases are never shown.
 - **Operator routes:** `/config`, `/config/{collection}`, `/config/{collection}/new`, `/config/{collection}/{id}`, `/config/{collection}/{id}/versions/{versionId}`.
 - **Workflow editor:** `/workflows` adds a light published-pin picker (list + POST select). Version history reads `GET /workflows/{id}/versions/{versionId}/pins`. Run control shows execution `pins[]` from start/get execution. E3 draft/publish/run and the E4.1 vault are unchanged.
 

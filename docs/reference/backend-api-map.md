@@ -125,7 +125,7 @@ Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions`
 
 Suggested UI flow:
 
-1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, and (E7.1) `kubernetesEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`.
+1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, (E7.1) `kubernetesEngine`, and (E8.1) `sshEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`. SSH-target rows include `allowedCredentialTypes: ["ssh_private_key"]`.
 2. List: `GET /{collection}` (`cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`).
 3. Create draft: `POST /{collection}` `{name, slug?, spec}`. Keep `resource.id` and `draft.revision`.
 4. Save: `PUT /{collection}/{id}/draft` `{revision, spec, name?}`. On `409`, reload the draft.
@@ -139,8 +139,9 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine}` | `401` `403` |
+| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1) and `sshEngine` (E8.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry-safe flags (schema only), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -160,8 +161,8 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | Kind | Required `spec` |
 | --- | --- |
 | `cluster_target` | `credentialId` (workspace `kubernetes` / kubeconfig credential only), `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces` (non-empty DNS-1123 labels), `policyId` (published `kind=kubernetes` policy; target namespaces must be a subset), `serviceAccount.{name,namespace?,roleTemplate?}` (`roleTemplate` defaults to `namespace-scoped-runner`; ClusterRoles are not MVP). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include kubeconfig. |
-| `ssh_target` | `credentialId`, `hostname`, `hostKeyFingerprint`; optional `port` (default 22), `allowedAddresses`, `policyId` |
-| `command_profile` | `parameterSchema`, `template` (no `$()`, `` ` ``, `${`, `{{`); optional `retrySafe`, `policyId` |
+| `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
+| `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (schema flag; E8.3 implements retry semantics), `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
 | `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
 | `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
@@ -315,6 +316,63 @@ Success `result` extends E7.2 with `observation` (`ready`/`skipped`/…), `statu
 | `verb-denied` / `rbac-denied` | 403 | Policy or Kubernetes RBAC denied `watch`. |
 
 Out of scope: `apps/web` rewrite, deletion, rollback, force apply, SSH/script engines.
+
+## SSH target and command-profile management (E8.1)
+
+Control-plane hardening on the existing E4.2 `ssh-targets` / `command-profiles` collections. E8.2 adds the isolated `ssh.run` worker. E8.3 implements retry/indeterminate semantics (`retrySafe` is schema-only here).
+
+**UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`sshEngine`) or `GET /ssh/catalog` for parameter types, render rules, retry-safe flags, and error codes. SSH-target credential pickers must list only workspace `type=ssh_private_key` credentials (secret fields `privateKey` / `passphrase`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/ssh/catalog` the same way as kubernetes/ops-config. Do not rewrite `apps/web` in this API story. Keep #82 open until target/profile UI surfaces land.
+
+Suggested UI flow:
+
+1. Create a vault credential `type=ssh_private_key` (E4.1). Never echo the private key or passphrase.
+2. Optionally create/publish a `policies` resource with `kind=ssh` and `allowedHosts` / `allowedAddresses` (empty present lists are rejected).
+3. Create/publish an `ssh-targets` draft: `{name, spec:{credentialId, hostname, hostKeyFingerprint, port?, allowedAddresses?, policyId?}}`.
+4. Create/publish a `command-profiles` draft: `{name, spec:{parameterSchema, template, retrySafe?, policyId?}}`. Template placeholders are `{name}` only. The API renderer quotes string values with POSIX single quotes; it never interpolates `$()`, backticks, `${`, or `{{`.
+5. Select as today (`POST /ssh-targets/{id}/select`, `POST /command-profiles/{id}/select`). Publish/select re-checks credential type, fingerprint format, allowlists, and parameter schema. Workflow publish pins the exact target + profile revisions and rejects `ssh.run` parameters outside the pinned schema.
+6. Later draft edits do **not** retarget a pin. Published revisions are immutable. Drafts remain editable to create the next revision.
+
+### `spec` field map
+
+**`ssh_target`**
+
+| Field | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `credentialId` | yes | UUID | Workspace `ssh_private_key` only |
+| `hostname` | yes | string | DNS name or IP; lowercased |
+| `hostKeyFingerprint` | yes | string | `sha256:<64 hex>` or OpenSSH `SHA256:<base64>` |
+| `port` | no | integer | Default `22`; range 1–65535 |
+| `allowedAddresses` | no | string[] | IP or CIDR; present empty → `400`; no default-route CIDR |
+| `policyId` | no | UUID | Published `kind=ssh` policy |
+
+**`command_profile`**
+
+| Field | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `parameterSchema` | yes | object | `{type:"object", additionalProperties:false, required?, properties}` |
+| `parameterSchema.properties.*` | — | object | `type`: `string` \| `integer` \| `boolean`. String: `enum`, `minLength`, `maxLength`, `pattern`, `sensitive`. Integer: `enum`, `minimum`, `maximum`. Names: `[A-Za-z][A-Za-z0-9_]{0,31}`. Max 16 properties. |
+| `template` | yes | string | Reviewed command with `{name}` placeholders matching properties. No interpolation tokens. |
+| `retrySafe` | no | boolean | Default `false`. Semantics are E8.3. |
+| `policyId` | no | UUID | Published `kind=ssh` policy |
+
+### Catalog (`GET /ssh/catalog`)
+
+| Field | Purpose |
+| --- | --- |
+| `credentialType` | `ssh_private_key` |
+| `credentialSecretFields` | `privateKey`, `passphrase` (never returned on ops-config) |
+| `parameterTypes[]` | Allowed schema types + constraints |
+| `render` | `owner=reviewed-profile-renderer`, `quoting=posix-single-quotes`, `rawShellInterpolation=false`, forbidden tokens |
+| `retry` | `defaultMaxAttempts=0`, `retrySafeFlag`, `semantics=E8.3` |
+| `publishRules` | Required fields, empty-allowlist rejection, fingerprint format, pin immutability |
+| `evaluationKeys[]` | SSH policy aliases (`allowedHosts`/`hosts`, `allowedAddresses`/`addresses`) |
+| `nodes[]` | `ssh.run` wizard map (`sshTargetId`, `commandProfileId`, `parameters`, `timeoutSeconds`, `retryPolicy`) |
+| `errors[]` | Codes for Chloe: `invalid-target`, `invalid-fingerprint`, `invalid-address`, `empty-allowlist`, `invalid-schema`, `invalid-template`, `interpolation-denied`, `parameter-rejected`, `credential-denied`, `forbidden` |
+| `permissions[]` | `workflow.execute`, `ssh.run`, `sshTarget.use`, `commandProfile.use` |
+
+RBAC: `opsconfig.view` list/get/select/catalog; `opsconfig.edit` create/save/disable; `opsconfig.publish` publish; execute paths require `sshTarget.use` and `commandProfile.use` plus `ssh.run`. Viewer can read catalogs; editor can draft; publisher can publish revisions.
+
+Out of scope: isolated `ssh.run` worker, ephemeral keys, fake SSH server (E8.2); indeterminate/retry semantics (E8.3); `apps/web` rewrite.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 

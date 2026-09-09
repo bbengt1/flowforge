@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
+	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -145,9 +146,10 @@ type Store interface {
 type Catalog struct {
 	Kinds      []KindInfo               `json:"kinds"`
 	Kubernetes kubernetes.EngineCatalog `json:"kubernetesEngine"`
+	SSH        ssheng.EngineCatalog     `json:"sshEngine"`
 }
 
-// TypeCatalog returns kind/collection/YAML field shapes plus E7.1 engine rules.
+// TypeCatalog returns kind/collection/YAML field shapes plus engine rules.
 func TypeCatalog() Catalog {
-	return Catalog{Kinds: KindInfos(), Kubernetes: kubernetes.Catalog()}
+	return Catalog{Kinds: KindInfos(), Kubernetes: kubernetes.Catalog(), SSH: ssheng.Catalog()}
 }

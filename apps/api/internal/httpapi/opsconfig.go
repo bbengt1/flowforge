@@ -9,7 +9,9 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 type createOpsRequest struct {
@@ -388,6 +390,15 @@ func (s *Server) getKubernetesCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, kubernetes.Catalog())
 }
 
+func (s *Server) getSSHCatalog(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.opsScope(w, r, authz.PermOpsConfigView)
+	if !ok {
+		return
+	}
+	_ = scope
+	writeJSON(w, http.StatusOK, ssheng.Catalog())
+}
+
 func (s *Server) authorizeOpsSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, kind string, spec map[string]any, ready bool) bool {
 	if spec == nil {
 		spec = map[string]any{}
@@ -396,6 +407,9 @@ func (s *Server) authorizeOpsSpec(w http.ResponseWriter, r *http.Request, scope 
 		return false
 	}
 	if kind == opsconfig.KindClusterTarget && !s.authorizeClusterTargetPolicy(w, r, scope, spec) {
+		return false
+	}
+	if (kind == opsconfig.KindSSHTarget || kind == opsconfig.KindCommandProfile) && !s.authorizeSSHPolicy(w, r, scope, spec) {
 		return false
 	}
 	if ready {
@@ -423,6 +437,10 @@ func (s *Server) authorizeCredentialSpec(w http.ResponseWriter, r *http.Request,
 	}
 	if kind == opsconfig.KindClusterTarget && meta.Type != vault.TypeKubernetes && meta.Type != kubernetes.CredentialType {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Cluster targets require a workspace kubernetes (kubeconfig) credential.")
+		return false
+	}
+	if kind == opsconfig.KindSSHTarget && meta.Type != vault.TypeSSHPrivateKey && meta.Type != ssheng.CredentialType {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "SSH targets require a workspace ssh_private_key credential.")
 		return false
 	}
 	if meta.Status == vault.StatusDisabled {
@@ -469,6 +487,45 @@ func (s *Server) authorizeClusterTargetPolicy(w http.ResponseWriter, r *http.Req
 	return true
 }
 
+func (s *Server) authorizeSSHPolicy(w http.ResponseWriter, r *http.Request, scope isolation.Scope, spec map[string]any) bool {
+	policyID := strings.TrimSpace(stringField(spec, "policyId"))
+	if policyID == "" {
+		return true
+	}
+	rec, err := s.ops.Get(r.Context(), scope, opsconfig.KindPolicy, policyID)
+	if err != nil {
+		writeOpsError(w, r, err)
+		return false
+	}
+	var policySpec map[string]any
+	if rec.Status == opsconfig.StatusPublished && rec.LatestVersionID != "" {
+		ver, verErr := s.ops.GetVersion(r.Context(), scope, opsconfig.KindPolicy, policyID, rec.LatestVersionID)
+		if verErr != nil {
+			writeOpsError(w, r, verErr)
+			return false
+		}
+		policySpec = ver.Spec
+	} else {
+		draft, draftErr := s.ops.GetDraft(r.Context(), scope, opsconfig.KindPolicy, policyID)
+		if draftErr != nil {
+			writeOpsError(w, r, draftErr)
+			return false
+		}
+		policySpec = draft.Spec
+	}
+	if kind, _ := policySpec["kind"].(string); kind != "" && kind != "ssh" {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "SSH targets and command profiles must bind an ssh policy.")
+		return false
+	}
+	if strings.TrimSpace(stringField(spec, "hostname")) != "" {
+		if err := opsconfig.TargetAddressesConsistent(spec, policySpec); err != nil {
+			writeOpsError(w, r, err)
+			return false
+		}
+	}
+	return true
+}
+
 func stringField(spec map[string]any, key string) string {
 	if spec == nil {
 		return ""
@@ -502,6 +559,9 @@ func (s *Server) pinWorkflowRefs(w http.ResponseWriter, r *http.Request, scope i
 			return nil, false
 		}
 	}
+	if !s.validateSSHRunPins(w, r, yamlDoc, pins) {
+		return nil, false
+	}
 	bound, err := s.ops.BindPins(r.Context(), scope, opsconfig.BindInput{OwnerKind: ownerKind, OwnerID: ownerID, Pins: pins})
 	if err != nil {
 		if errors.Is(err, opsconfig.ErrImmutable) {
@@ -524,8 +584,65 @@ func (s *Server) authorizeExecutionPins(w http.ResponseWriter, r *http.Request, 
 		if use == "" {
 			continue
 		}
+		if pin.Kind == opsconfig.KindSSHTarget || pin.Kind == opsconfig.KindCommandProfile {
+			if !authz.Allows(perms, use) {
+				WriteForbidden(w, r)
+				return false
+			}
+			continue
+		}
 		if !authz.Allows(perms, authz.PermOpsConfigUse) && !authz.Allows(perms, use) {
 			WriteForbidden(w, r)
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) authorizeSSHNodes(w http.ResponseWriter, r *http.Request, perms []string, yamlDoc string) bool {
+	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return true
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		if node.Type != ssheng.NodeSSHRun {
+			continue
+		}
+		for _, perm := range ssheng.RequiredPermissions() {
+			if !authz.Allows(perms, perm) {
+				WriteForbidden(w, r)
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *Server) validateSSHRunPins(w http.ResponseWriter, r *http.Request, yamlDoc string, pins []opsconfig.Pin) bool {
+	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return true
+	}
+	profiles := map[string]opsconfig.Pin{}
+	for _, pin := range pins {
+		if pin.Kind == opsconfig.KindCommandProfile {
+			profiles[pin.ResourceID] = pin
+		}
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		if node.Type != ssheng.NodeSSHRun {
+			continue
+		}
+		profileID, _ := node.With["commandProfileId"].(string)
+		profileID = strings.TrimSpace(profileID)
+		pin, ok := profiles[profileID]
+		if !ok {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "ssh.run requires a pinned command profile revision.")
+			return false
+		}
+		params, _ := node.With["parameters"].(map[string]any)
+		if err := opsconfig.ValidateSSHRunParameters(pin.Spec, params); err != nil {
+			writeOpsError(w, r, err)
 			return false
 		}
 	}

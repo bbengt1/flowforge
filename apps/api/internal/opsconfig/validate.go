@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,16 +12,16 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
+	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 var (
-	slugRE        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	digestRE      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	emailRE       = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
-	domainRE      = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$`)
-	hostnameRE    = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$`)
-	fingerprintRE = regexp.MustCompile(`^sha256:[0-9A-Fa-f:]{32,191}$`)
+	slugRE     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	digestRE   = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	emailRE    = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
+	domainRE   = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$`)
+	hostnameRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$`)
 )
 
 const maxPayloadBytes = 65536
@@ -221,33 +220,37 @@ func normalizeSSHTarget(spec map[string]any) (map[string]any, error) {
 	if err != nil || !ok {
 		return nil, fmt.Errorf("%w: hostname is required", ErrInvalid)
 	}
-	if !hostnameRE.MatchString(host) && net.ParseIP(host) == nil {
-		return nil, fmt.Errorf("%w: hostname is not a valid host or IP", ErrInvalid)
+	canonHost, err := ssheng.NormalizeHostname(host)
+	if err != nil {
+		return nil, mapSSHErr(err)
 	}
-	out["hostname"] = strings.ToLower(host)
-	port := 22
-	if raw, exists := spec["port"]; exists {
-		n, err := asInt(raw)
-		if err != nil || n < 1 || n > 65535 {
-			return nil, fmt.Errorf("%w: port must be 1-65535", ErrInvalid)
-		}
-		port = n
+	out["hostname"] = canonHost
+	_, portPresent := spec["port"]
+	port, err := ssheng.NormalizePort(spec["port"], portPresent)
+	if err != nil {
+		return nil, mapSSHErr(err)
 	}
 	out["port"] = port
 	fp, ok, err := optionalString(spec, "hostKeyFingerprint", 8, 200)
 	if err != nil || !ok {
 		return nil, fmt.Errorf("%w: hostKeyFingerprint is required", ErrInvalid)
 	}
-	if !fingerprintRE.MatchString(fp) {
-		return nil, fmt.Errorf("%w: hostKeyFingerprint must be sha256:...", ErrInvalid)
+	canonFP, err := ssheng.NormalizeFingerprint(fp)
+	if err != nil {
+		return nil, mapSSHErr(err)
 	}
-	out["hostKeyFingerprint"] = strings.ToLower(fp)
+	out["hostKeyFingerprint"] = canonFP
+	_, addrsPresent := spec["allowedAddresses"]
 	addrs, err := stringList(spec, "allowedAddresses", 32, 64)
 	if err != nil {
 		return nil, err
 	}
-	if addrs != nil {
-		out["allowedAddresses"] = addrs
+	canonAddrs, err := ssheng.NormalizeAddresses(addrs, addrsPresent)
+	if err != nil {
+		return nil, mapSSHErr(err)
+	}
+	if canonAddrs != nil {
+		out["allowedAddresses"] = canonAddrs
 	}
 	policy, err := optionalUUID(spec, "policyId")
 	if err != nil {
@@ -271,15 +274,20 @@ func normalizeCommandProfile(spec map[string]any) (map[string]any, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("%w: parameterSchema is required", ErrInvalid)
 	}
-	out["parameterSchema"] = schema
+	canonSchema, parsed, err := ssheng.NormalizeParameterSchema(schema)
+	if err != nil {
+		return nil, mapSSHErr(err)
+	}
+	out["parameterSchema"] = canonSchema
 	tmpl, ok, err := optionalString(spec, "template", 1, 8192)
 	if err != nil || !ok {
 		return nil, fmt.Errorf("%w: template is required", ErrInvalid)
 	}
-	if strings.Contains(tmpl, "$(") || strings.Contains(tmpl, "`") || strings.Contains(tmpl, "${") || strings.Contains(tmpl, "{{") {
-		return nil, fmt.Errorf("%w: template cannot include shell interpolation or template syntax", ErrInvalid)
+	canonTmpl, err := ssheng.NormalizeTemplate(tmpl, parsed)
+	if err != nil {
+		return nil, mapSSHErr(err)
 	}
-	out["template"] = tmpl
+	out["template"] = canonTmpl
 	retrySafe := false
 	if raw, exists := spec["retrySafe"]; exists {
 		b, ok := raw.(bool)
@@ -595,6 +603,13 @@ func normalizePolicy(spec map[string]any) (map[string]any, error) {
 		}
 		policy = normalized
 	}
+	if kind == "ssh" {
+		normalized, err := normalizeSSHPolicyObject(policy)
+		if err != nil {
+			return nil, err
+		}
+		policy = normalized
+	}
 	if err := rejectUnknown(spec, "kind", "policy"); err != nil {
 		return nil, err
 	}
@@ -685,6 +700,117 @@ func normalizeKubernetesPolicyObject(policy map[string]any) (map[string]any, err
 	return out, nil
 }
 
+func normalizeSSHPolicyObject(policy map[string]any) (map[string]any, error) {
+	if err := rejectUnknown(policy, ssheng.SSHPolicyKeys()...); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	if raw, ok := policy[ssheng.KeyDeny]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.deny must be a boolean", ErrInvalid)
+		}
+		out[ssheng.KeyDeny] = b
+	}
+	if raw, ok := policy[ssheng.KeyRequireApproval]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.requireApproval must be a boolean", ErrInvalid)
+		}
+		out[ssheng.KeyRequireApproval] = b
+	}
+	if v, ok, err := optionalString(policy, ssheng.KeyApproverRole, 1, 64); err != nil {
+		return nil, err
+	} else if ok {
+		out[ssheng.KeyApproverRole] = v
+	}
+	if v, ok, err := optionalString(policy, ssheng.KeyExpiresIn, 2, 32); err != nil {
+		return nil, err
+	} else if ok {
+		exp, parseErr := workflow.ParseISODuration(v)
+		if parseErr != nil || exp <= 0 {
+			return nil, fmt.Errorf("%w: policy.expiresIn must be an ISO-8601 duration", ErrInvalid)
+		}
+		if exp > 7*24*time.Hour {
+			return nil, fmt.Errorf("%w: policy.expiresIn cannot exceed P7D", ErrInvalid)
+		}
+		out[ssheng.KeyExpiresIn] = v
+	}
+	ops, err := stringList(policy, ssheng.KeyOperations, 16, 64)
+	if err != nil {
+		return nil, err
+	}
+	if _, present := policy[ssheng.KeyOperations]; present {
+		if len(ops) == 0 {
+			return nil, fmt.Errorf("%w: policy.operations must not be empty", ErrInvalid)
+		}
+		out[ssheng.KeyOperations] = ops
+	}
+	hosts, err := normalizeSSHAllowlist(policy, "host", ssheng.KeyAllowedHosts, ssheng.KeyHosts)
+	if err != nil {
+		return nil, err
+	}
+	if hosts != nil {
+		out[ssheng.KeyAllowedHosts] = hosts
+	}
+	addrs, err := normalizeSSHAllowlist(policy, "address", ssheng.KeyAllowedAddresses, ssheng.KeyAddresses)
+	if err != nil {
+		return nil, err
+	}
+	if addrs != nil {
+		out[ssheng.KeyAllowedAddresses] = addrs
+	}
+	return out, nil
+}
+
+func normalizeSSHAllowlist(policy map[string]any, kind string, canonical, alias string) ([]string, error) {
+	_, hasCanonical := policy[canonical]
+	_, hasAlias := policy[alias]
+	if hasCanonical && hasAlias {
+		return nil, fmt.Errorf("%w: use %s or %s, not both", ErrInvalid, canonical, alias)
+	}
+	key := ""
+	if hasCanonical {
+		key = canonical
+	} else if hasAlias {
+		key = alias
+	} else {
+		return nil, nil
+	}
+	maxLen := 253
+	if kind == "address" {
+		maxLen = 64
+	}
+	items, err := stringList(policy, key, 32, maxLen)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: policy.%s must not be empty (deny-by-default)", ErrInvalid, key)
+	}
+	if kind == "address" {
+		canon, err := ssheng.NormalizeAddresses(items, true)
+		if err != nil {
+			return nil, mapSSHErr(err)
+		}
+		return canon, nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		host, err := ssheng.NormalizeHostname(item)
+		if err != nil {
+			return nil, fmt.Errorf("%w: policy.%s contains an invalid host", ErrInvalid, key)
+		}
+		if _, dup := seen[host]; dup {
+			continue
+		}
+		seen[host] = struct{}{}
+		out = append(out, host)
+	}
+	return out, nil
+}
+
 func normalizeK8sAllowlist(policy map[string]any, kind string, canonical, alias string) ([]string, error) {
 	_, hasCanonical := policy[canonical]
 	_, hasAlias := policy[alias]
@@ -769,8 +895,65 @@ func ValidateReady(kind string, spec map[string]any) error {
 			}
 		}
 		return nil
+	case KindSSHTarget:
+		if credentialIDFromSpec(spec) == "" {
+			return fmt.Errorf("%w: credentialId is required", ErrInvalid)
+		}
+		host, _ := spec["hostname"].(string)
+		if strings.TrimSpace(host) == "" {
+			return fmt.Errorf("%w: hostname is required", ErrInvalid)
+		}
+		fp, _ := spec["hostKeyFingerprint"].(string)
+		if _, err := ssheng.NormalizeFingerprint(fp); err != nil {
+			return mapSSHErr(err)
+		}
+		if _, present := spec["allowedAddresses"]; present {
+			addrs, _ := spec["allowedAddresses"].([]string)
+			if addrs == nil {
+				if raw, ok := spec["allowedAddresses"].([]any); ok {
+					addrs = make([]string, 0, len(raw))
+					for _, item := range raw {
+						s, _ := item.(string)
+						addrs = append(addrs, s)
+					}
+				}
+			}
+			if _, err := ssheng.NormalizeAddresses(addrs, true); err != nil {
+				return mapSSHErr(err)
+			}
+		}
+		return nil
+	case KindCommandProfile:
+		schema, _ := spec["parameterSchema"].(map[string]any)
+		parsed, err := ssheng.ParseSchema(schema)
+		if err != nil {
+			return mapSSHErr(err)
+		}
+		tmpl, _ := spec["template"].(string)
+		if _, err := ssheng.NormalizeTemplate(tmpl, parsed); err != nil {
+			return mapSSHErr(err)
+		}
+		return nil
 	case KindPolicy:
 		policyKind, _ := spec["kind"].(string)
+		if policyKind == "ssh" {
+			rules, _ := spec["policy"].(map[string]any)
+			if rules == nil {
+				return fmt.Errorf("%w: policy is required", ErrInvalid)
+			}
+			if deny, _ := rules[ssheng.KeyDeny].(bool); deny {
+				return nil
+			}
+			hosts, hostsPresent := ssheng.Hosts(rules)
+			addrs, addrsPresent := ssheng.Addresses(rules)
+			if hostsPresent && len(hosts) == 0 {
+				return fmt.Errorf("%w: ssh policy host allowlist must not be empty", ErrInvalid)
+			}
+			if addrsPresent && len(addrs) == 0 {
+				return fmt.Errorf("%w: ssh policy address allowlist must not be empty", ErrInvalid)
+			}
+			return nil
+		}
 		if policyKind != "kubernetes" {
 			return nil
 		}
@@ -819,6 +1002,85 @@ func TargetNamespacesConsistent(targetSpec, policySpec map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// TargetAddressesConsistent reports whether the SSH target hostname/addresses
+// are allowed by a bound ssh policy. Empty present allowlists fail closed.
+func TargetAddressesConsistent(targetSpec, policySpec map[string]any) error {
+	if policySpec == nil {
+		return nil
+	}
+	kind, _ := policySpec["kind"].(string)
+	rules, _ := policySpec["policy"].(map[string]any)
+	if kind != "" && kind != "ssh" {
+		return fmt.Errorf("%w: SSH targets must bind an ssh policy", ErrInvalid)
+	}
+	host, _ := targetSpec["hostname"].(string)
+	if hosts, present := ssheng.Hosts(rules); present {
+		if len(hosts) == 0 || !ssheng.Allowed(hosts, host) {
+			return fmt.Errorf("%w: hostname must be on the bound ssh policy host allowlist", ErrInvalid)
+		}
+	}
+	if policyAddrs, present := ssheng.Addresses(rules); present {
+		if len(policyAddrs) == 0 {
+			return fmt.Errorf("%w: bound policy address allowlist must not be empty", ErrInvalid)
+		}
+		targetAddrs, targetPresent := targetAddressList(targetSpec)
+		if targetPresent && len(targetAddrs) == 0 {
+			return fmt.Errorf("%w: allowedAddresses must not be empty", ErrInvalid)
+		}
+		if targetPresent {
+			for _, addr := range targetAddrs {
+				if !ssheng.Allowed(policyAddrs, addr) {
+					return fmt.Errorf("%w: allowedAddresses must be a subset of the bound ssh policy", ErrInvalid)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func targetAddressList(spec map[string]any) ([]string, bool) {
+	if spec == nil {
+		return nil, false
+	}
+	raw, ok := spec["allowedAddresses"]
+	if !ok || raw == nil {
+		return nil, false
+	}
+	switch v := raw.(type) {
+	case []string:
+		return append([]string(nil), v...), true
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			s, _ := item.(string)
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	default:
+		return nil, true
+	}
+}
+
+// ValidateSSHRunParameters checks ssh.run values against a pinned profile spec.
+func ValidateSSHRunParameters(profileSpec map[string]any, values map[string]any) error {
+	_, err := ssheng.RenderFromSpec(profileSpec, values)
+	if err != nil {
+		return mapSSHErr(err)
+	}
+	return nil
+}
+
+func mapSSHErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := strings.TrimPrefix(err.Error(), ssheng.ErrInvalid.Error()+": ")
+	return fmt.Errorf("%w: %s", ErrInvalid, msg)
 }
 
 // RedactSpec strips secret-shaped keys so kubeconfig/plaintext never leave the API.

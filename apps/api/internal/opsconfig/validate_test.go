@@ -71,13 +71,13 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 	out, _, err := NormalizeSpec(KindPolicy, map[string]any{
 		"kind": "kubernetes",
 		"policy": map[string]any{
-			"namespaces":      []any{"prod"},
-			"kinds":           []any{"Deployment"},
-			"verbs":           []any{"apply"},
-			"allowedImages":   []any{"registry.example.com/api"},
+			"namespaces":          []any{"prod"},
+			"kinds":               []any{"Deployment"},
+			"verbs":               []any{"apply"},
+			"allowedImages":       []any{"registry.example.com/api"},
 			"allowedIngressHosts": []any{"app.example.com"},
-			"deny":            false,
-			"requireApproval": true,
+			"deny":                false,
+			"requireApproval":     true,
 		},
 	})
 	if err != nil {
@@ -159,6 +159,65 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 		if err == nil {
 			t.Fatalf("invalid expiresIn %q must be rejected", bad)
 		}
+	}
+}
+
+func TestNormalizeSSHTargetAndCommandProfile(t *testing.T) {
+	cred := "11111111-1111-4111-8111-111111111111"
+	_, _, err := NormalizeSpec(KindSSHTarget, map[string]any{
+		"credentialId": cred, "hostname": "bastion.example.com",
+		"hostKeyFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"allowedAddresses":   []any{},
+	})
+	if err == nil {
+		t.Fatal("empty allowedAddresses must be rejected")
+	}
+	spec, _, err := NormalizeSpec(KindSSHTarget, map[string]any{
+		"credentialId": cred, "hostname": "Bastion.Example.com",
+		"hostKeyFingerprint": "SHA256:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+		"allowedAddresses":   []any{"203.0.113.10"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec["hostname"] != "bastion.example.com" {
+		t.Fatalf("hostname = %v", spec["hostname"])
+	}
+	fp, _ := spec["hostKeyFingerprint"].(string)
+	if fp != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+		t.Fatalf("fingerprint = %s", fp)
+	}
+
+	_, _, err = NormalizeSpec(KindCommandProfile, map[string]any{
+		"parameterSchema": map[string]any{"type": "object", "properties": map[string]any{"unit": map[string]any{"type": "string"}}},
+		"template":        "echo $(whoami)",
+	})
+	if err == nil {
+		t.Fatal("interpolation must be rejected")
+	}
+	out, _, err := NormalizeSpec(KindCommandProfile, map[string]any{
+		"parameterSchema": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"unit": map[string]any{"type": "string", "pattern": `[A-Za-z0-9._-]+`}},
+			"required":   []any{"unit"},
+		},
+		"template": "systemctl restart {unit}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSSHRunParameters(out, map[string]any{"unit": "api; rm -rf /"}); err == nil {
+		t.Fatal("values outside schema must be rejected")
+	}
+	if err := ValidateSSHRunParameters(out, map[string]any{"unit": "nginx"}); err != nil {
+		t.Fatal(err)
+	}
+	redacted := RedactSpec(map[string]any{"privateKey": "-----BEGIN", "passphrase": "x", "hostname": "bastion.example.com"})
+	if _, ok := redacted["privateKey"]; ok {
+		t.Fatal("privateKey must be stripped")
+	}
+	if _, ok := redacted["passphrase"]; ok {
+		t.Fatal("passphrase must be stripped")
 	}
 }
 
