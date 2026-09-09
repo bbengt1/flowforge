@@ -164,7 +164,7 @@ export async function createOpsConfig(
   const path = collectionPath(kind);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
-    body: buildCreateBody(name, spec, slug),
+    body: buildCreateBody(name, spec, slug, kind),
   });
   return draftResult(result, path, kind);
 }
@@ -217,7 +217,7 @@ export async function saveOpsConfigDraft(
   const path = draftPath(kind, resourceId);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "PUT",
-    body: buildSaveDraftBody(revision, spec, name),
+    body: buildSaveDraftBody(revision, spec, name, kind),
   });
   return draftResult(result, path, kind);
 }

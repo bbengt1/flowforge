@@ -2,7 +2,8 @@
 
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import type { DevIdentity } from "@/lib/identity-headers";
-import { parseSpecJson, specJson } from "@/lib/ops-config";
+import { parseJsonObject, specJson } from "@/lib/ops-config";
+import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
   CONNECTION_TYPES,
   POLICY_KINDS,
@@ -438,13 +439,15 @@ export function ConfigSpecForm({
         </>
       ) : null}
 
-      <TextField
-        label="Optional policy pin (UUID)"
-        value={spec.policyId ?? ""}
-        disabled={readOnly}
-        className={inputClass}
-        onChange={(policyId) => patch({ policyId })}
-      />
+      {kindAcceptsPolicyId(kind) ? (
+        <TextField
+          label="Optional policy pin (UUID)"
+          value={spec.policyId ?? ""}
+          disabled={readOnly}
+          className={inputClass}
+          onChange={(policyId) => patch({ policyId })}
+        />
+      ) : null}
     </div>
   );
 }
@@ -554,7 +557,7 @@ function JsonField({
         disabled={disabled}
         rows={6}
         onBlur={(event) => {
-          const parsed = parseSpecJson(event.target.value);
+          const parsed = parseJsonObject(event.target.value);
           if (parsed) {
             onChange(parsed);
           }

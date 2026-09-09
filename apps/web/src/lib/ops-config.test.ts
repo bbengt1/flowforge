@@ -12,6 +12,7 @@ import {
   descriptorForKind,
   draftPath,
   emptySpecForKind,
+  kindAcceptsPolicyId,
   isOpsConfigCollection,
   isOpsConfigKind,
   kindFromCollection,
@@ -134,6 +135,18 @@ describe("ops-config contract (#41)", () => {
     });
     assert.equal(picked.credentialId, undefined);
     assert.equal(picked.endpoint?.apiServer, "https://k8s.example");
+    assert.equal(kindAcceptsPolicyId("cluster_target"), true);
+    assert.equal(kindAcceptsPolicyId("command_profile"), true);
+    assert.equal(kindAcceptsPolicyId("connection"), false);
+    assert.equal(
+      pickSafeSpec({ policyId: RESOURCE_ID, type: "http" }, "connection").policyId,
+      undefined,
+    );
+    assert.equal(
+      pickSafeSpec({ policyId: RESOURCE_ID, hostname: "edge.example" }, "ssh_target")
+        .policyId,
+      RESOURCE_ID,
+    );
   });
 });
 
@@ -187,6 +200,33 @@ describe("publish / pin immutability UX helpers", () => {
     assert.equal(sanitized.credentialId, RESOURCE_ID);
     assert.equal("privateKey" in sanitized, false);
     assert.equal("token" in sanitized, false);
+
+    const schema = sanitizeSpec({
+      inputSchema: {
+        type: "object",
+        required: ["token"],
+        properties: { token: { type: "string" } },
+      },
+      parameterSchema: { properties: { password: { type: "string" } } },
+      schema: { properties: { authorization: { type: "string" } } },
+      policy: { token: { path: "spec.token" } },
+    });
+    assert.deepEqual(schema.inputSchema, {
+      type: "object",
+      required: ["token"],
+      properties: { token: { type: "string" } },
+    });
+    assert.equal(
+      (schema.parameterSchema as { properties?: { password?: unknown } })
+        ?.properties?.password !== undefined,
+      true,
+    );
+    assert.equal(
+      (schema.schema as { properties?: { authorization?: unknown } })?.properties
+        ?.authorization !== undefined,
+      true,
+    );
+    assert.equal((schema.policy as { token?: unknown })?.token !== undefined, true);
   });
 
   it("compares specs client-side because #41 has no compare route", () => {

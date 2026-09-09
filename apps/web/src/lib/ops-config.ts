@@ -210,6 +210,15 @@ export function canPublishOpsConfig(
   return Boolean(permissions?.includes("opsconfig.publish"));
 }
 
+const OPAQUE_SPEC_KEYS = new Set([
+  "parameterSchema",
+  "inputSchema",
+  "schema",
+  "policy",
+  "endpointPolicy",
+  "recipientPolicy",
+]);
+
 export function sanitizeSpec(raw: unknown): OpsConfigSpec {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return {};
@@ -227,6 +236,10 @@ export function stripSecrets(
       stripped.push(key);
       continue;
     }
+    if (OPAQUE_SPEC_KEYS.has(key)) {
+      out[key] = cloneJson(item);
+      continue;
+    }
     if (item && typeof item === "object" && !Array.isArray(item)) {
       out[key] = stripSecrets(item as Record<string, unknown>, stripped);
       continue;
@@ -234,6 +247,18 @@ export function stripSecrets(
     out[key] = item;
   }
   return out;
+}
+
+export function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 export function isSecretKey(key: string): boolean {
@@ -381,15 +406,15 @@ export function specJson(spec: OpsConfigSpec): string {
 }
 
 export function parseSpecJson(text: string): OpsConfigSpec | null {
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    return sanitizeSpec(parsed);
-  } catch {
-    return null;
+  const parsed = parseJsonObject(text);
+  return parsed ? sanitizeSpec(parsed) : null;
+}
+
+function cloneJson(value: unknown): unknown {
+  if (value === undefined) {
+    return undefined;
   }
+  return JSON.parse(JSON.stringify(value));
 }
 
 export function clientCompareSpecs(
