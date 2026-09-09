@@ -7,6 +7,7 @@ import { listCredentials } from "@/lib/credential-client";
 import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
+import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
 import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { authorizedClusterTargets } from "@/lib/kubernetes";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/kubernetes-rollout-contract";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
+import { loadPublishedScriptRuntimeProfiles } from "@/lib/script-runtime-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSshCatalog } from "@/lib/ssh-client";
@@ -51,12 +53,18 @@ import {
   SCRIPT_PUBLISH_BOUNDARY_HELP,
   SCRIPT_ROUTE_MAP_SOURCE,
   isScriptConfigurableType,
-  isScriptRuntimeProfileSpec,
   runtimeProfileLanguage,
   scriptNodeErrorShapes,
   scriptPublishRules,
   type ScriptNodeCatalog,
 } from "@/lib/script-contract";
+import {
+  SCRIPT_RUNTIME_ISOLATION_HELP,
+  SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
+  authorizedScriptRuntimeProfiles,
+  runtimeProfileMapFromCatalog,
+  runtimeProfileSelectorLabel,
+} from "@/lib/script-runtime-contract";
 import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_INDETERMINATE_HELP,
@@ -227,11 +235,17 @@ export function ActionWizard({
     commandProfilesLoaded &&
     ((pins.command_profile ?? []).length === 0 || Boolean(pinProblems.command_profile));
   const runtimeProfilesLoaded = pinStatus.runtime_profile !== undefined;
+  const matchingRuntimeProfiles = authorizedScriptRuntimeProfiles({
+    pins: pins.runtime_profile,
+    nodeType: isScriptConfigurableType(draft.type) ? draft.type : undefined,
+    problem: pinProblems.runtime_profile,
+    statusCode: pinStatus.runtime_profile,
+  });
   const runtimeProfileSelectorClosed =
     isScriptConfigurableType(draft.type) &&
     runtimeProfilesLoaded &&
-    ((pins.runtime_profile ?? []).length === 0 || Boolean(pinProblems.runtime_profile));
-  const selectedRuntimeProfile = (pins.runtime_profile ?? []).find(
+    (matchingRuntimeProfiles.closed || Boolean(pinProblems.runtime_profile));
+  const selectedRuntimeProfile = matchingRuntimeProfiles.options.find(
     (pin) => pin.resourceId === draft.with.runtimeProfileId,
   );
   const wizardContext = {
@@ -298,18 +312,20 @@ export function ActionWizard({
       "cluster_target",
       "ssh_target",
       "command_profile",
-      "runtime_profile",
       "connection",
       "recipient_list",
       "message_template",
       "response_schema",
     ]);
-    void Promise.all(
-      [...kinds].map(async (kind) => {
-        const result = await listOpsConfig(identity, kind);
-        return [kind, result] as const;
-      }),
-    ).then((rows) => {
+    void Promise.all([
+      Promise.all(
+        [...kinds].map(async (kind) => {
+          const result = await listOpsConfig(identity, kind);
+          return [kind, result] as const;
+        }),
+      ),
+      loadPublishedScriptRuntimeProfiles(identity),
+    ]).then(([rows, runtime]) => {
       if (cancelled) {
         return;
       }
@@ -330,11 +346,14 @@ export function ActionWizard({
               ? authorizedSshTargets({ items: result.items }).options
               : kind === "command_profile"
                 ? authorizedCommandProfiles({ items: result.items }).options
-                : kind === "runtime_profile"
-                  ? publishedPinsFromList({ items: result.items }).options.filter(
-                      (pin) => isScriptRuntimeProfileSpec(pin.spec),
-                    )
-                  : publishedPinsFromList({ items: result.items }).options;
+                : publishedPinsFromList({ items: result.items }).options;
+      }
+      nextStatus.runtime_profile = runtime.statusCode;
+      if (!runtime.ok) {
+        nextProblems.runtime_profile = runtime.problem;
+        nextPins.runtime_profile = [];
+      } else {
+        nextPins.runtime_profile = runtime.items;
       }
       setPins(nextPins);
       setPinProblems(nextProblems);
@@ -755,7 +774,16 @@ function TargetStep({
                         ? "templateId"
                         : "responseSchemaRef";
         const value = typeof draft.with[field] === "string" ? String(draft.with[field]) : "";
-        const selected = (pins[kind] ?? []).find(
+        const listed =
+          kind === "runtime_profile"
+            ? authorizedScriptRuntimeProfiles({
+                pins: pins[kind],
+                nodeType: draft.type,
+                problem: pinProblems[kind],
+                statusCode: pinStatus[kind],
+              }).options
+            : (pins[kind] ?? []);
+        const selected = listed.find(
           (pin) => pin.resourceId === value || pin.versionId === value,
         );
         return (
@@ -774,9 +802,12 @@ function TargetStep({
                     : kind.replaceAll("_", " ")
             }
             value={selected?.versionId ?? ""}
-            pins={pins[kind] ?? []}
+            pins={listed}
             problem={pinProblems[kind] ?? null}
             statusCode={pinStatus[kind]}
+            optionLabel={
+              kind === "runtime_profile" ? runtimeProfileSelectorLabel : undefined
+            }
             onChange={(pin) => void onPin(kind, pin)}
           />
         );
@@ -799,7 +830,8 @@ function TargetStep({
       {isScriptConfigurableType(draft.type) ? (
         <p className="text-xs text-zinc-500">
           Display name + id only. Choose a published approved runtime/dependency
-          profile — not an arbitrary image. Secrets are never listed.{" "}
+          profile that matches this language — not an arbitrary image.{" "}
+          {SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP} Secrets are never listed.{" "}
           {SCRIPT_PUBLISH_BOUNDARY_HELP}
         </p>
       ) : null}
@@ -950,6 +982,12 @@ function ConfigureStep({
           <summary className="cursor-pointer text-sm font-medium text-teal-950">
             Script publish boundary (server-enforced)
           </summary>
+          <div className="mt-3">
+            <ScriptIsolationNotes
+              map={runtimeProfileMapFromCatalog(scriptCatalog)}
+              extraNotes={[SCRIPT_RUNTIME_ISOLATION_HELP]}
+            />
+          </div>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
             {SCRIPT_NODE_POLICY_NOTES.map((note) => (
               <li key={note}>{note}</li>
@@ -1402,7 +1440,8 @@ function ReviewStep({
         {isScriptConfigurableType(draft.type) ? (
           <p className="mt-2 text-xs text-zinc-600">
             {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
-            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP} YAML
+            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}{" "}
+            {SCRIPT_RUNTIME_ISOLATION_HELP} YAML
             stores source, entrypoint, runtimeProfileId, timeoutSeconds, and
             optional limits/schemas — never secrets, command/shell, or
             package/storageRef. Map source #97 (

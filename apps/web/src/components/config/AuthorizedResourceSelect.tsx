@@ -13,6 +13,7 @@ type AuthorizedResourceSelectProps = {
   problem: ProblemDetails | null;
   statusCode?: number;
   disabled?: boolean;
+  optionLabel?: (pin: OpsConfigPin) => string;
   onChange: (pin: OpsConfigPin | null) => void;
 };
 
@@ -24,6 +25,7 @@ export function AuthorizedResourceSelect({
   problem,
   statusCode,
   disabled,
+  optionLabel,
   onChange,
 }: AuthorizedResourceSelectProps) {
   const selected = authorizedSelectorOptions({
@@ -57,7 +59,7 @@ export function AuthorizedResourceSelect({
               key={`${pin.resourceId}:${pin.versionId}`}
               value={pin.versionId}
             >
-              {selectorOptionLabel(pin)}
+              {(optionLabel ?? selectorOptionLabel)(pin)}
             </option>
           ))}
         </select>

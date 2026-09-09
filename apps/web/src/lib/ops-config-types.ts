@@ -79,6 +79,15 @@ export type OpsConfigSpec = {
     timeoutSeconds?: number;
     processes?: number;
   };
+  /** Optional #98 runtime-profile egress. Omitted = default-deny. */
+  egress?: {
+    destinations?: Array<{
+      host?: string;
+      port?: number;
+      protocol?: string;
+    }>;
+    dnsConstrained?: boolean;
+  };
   type?: ConnectionType | string;
   endpointPolicy?: Record<string, unknown>;
   recipientPolicy?: Record<string, unknown>;
@@ -111,6 +120,8 @@ export type OpsConfigSummary = {
   credentialId?: string;
   policyId?: string;
   updatedAt?: string;
+  /** Present when list/detail includes a published spec (E9.2 hydration). */
+  spec?: OpsConfigSpec;
 };
 
 export type OpsConfigRecord = OpsConfigSummary;
@@ -162,6 +173,8 @@ export type OpsConfigCatalog = {
   kubernetesEngine?: Record<string, unknown>;
   /** Present when jonny ships E8.1 catalog fields. */
   sshEngine?: Record<string, unknown>;
+  /** Present when jonny ships E9.1+ scriptEngine catalog fields. */
+  scriptEngine?: Record<string, unknown>;
 };
 
 export type KindDescriptor = {

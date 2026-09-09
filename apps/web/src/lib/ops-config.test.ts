@@ -152,6 +152,22 @@ describe("ops-config contract (#41)", () => {
         .allowedAddresses,
       undefined,
     );
+    const runtime = pickSafeSpec(
+      {
+        language: "python",
+        imageDigest: `sha256:${"a".repeat(64)}`,
+        dependencyLockDigest: `sha256:${"b".repeat(64)}`,
+        limits: { cpuMillis: 500, memoryMib: 256, timeoutSeconds: 30, processes: 1 },
+        image: "python:3.12",
+        packageInstall: true,
+        egress: { destinations: ["*"] },
+      } as never,
+      "runtime_profile",
+    );
+    assert.equal(runtime.language, "python");
+    assert.equal("image" in runtime, false);
+    assert.equal("packageInstall" in runtime, false);
+    assert.equal(runtime.egress, undefined);
     const cluster = pickSafeSpec({
       credentialId: RESOURCE_ID,
       allowedNamespaces: [],

@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { AuthorizedResourceSelect } from "@/components/config/AuthorizedResourceSelect";
+import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import type { DevIdentity } from "@/lib/identity-headers";
-import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
+import { selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
-import { publishedPinsFromList } from "@/lib/workflow-action-wizard";
 import {
   SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
   SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
@@ -15,7 +15,6 @@ import {
   SCRIPT_PUBLISH_BOUNDARY_HELP,
   defaultScriptEntrypoint,
   isScriptConfigurableType,
-  isScriptRuntimeProfileSpec,
   runtimeProfileLanguage,
   scriptArtifactStatus,
   scriptNodeWithFields,
@@ -23,6 +22,12 @@ import {
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
+import { loadPublishedScriptRuntimeProfiles } from "@/lib/script-runtime-client";
+import {
+  SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
+  runtimeProfileMapFromCatalog,
+  runtimeProfileSelectorLabel,
+} from "@/lib/script-runtime-contract";
 import type { YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
 
 type ScriptAuthoringPanelProps = {
@@ -55,7 +60,7 @@ export function ScriptAuthoringPanel({
       return;
     }
     let cancelled = false;
-    void listOpsConfig(identity, "runtime_profile").then((result) => {
+    void loadPublishedScriptRuntimeProfiles(identity, node.type).then((result) => {
       if (cancelled) {
         return;
       }
@@ -66,11 +71,7 @@ export function ScriptAuthoringPanel({
         return;
       }
       setProblem(null);
-      setPins(
-        publishedPinsFromList({ items: result.items }).options.filter((pin) =>
-          isScriptRuntimeProfileSpec(pin.spec),
-        ),
-      );
+      setPins(result.items);
     });
     return () => {
       cancelled = true;
@@ -114,8 +115,11 @@ export function ScriptAuthoringPanel({
       <h2 className="text-base font-semibold">Script source</h2>
       <p className="mt-1 text-sm text-zinc-600">
         {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
-        {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}
+        {SCRIPT_EXECUTE_FAIL_CLOSED_HELP} {SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP}
       </p>
+      <div className="mt-3">
+        <ScriptIsolationNotes map={runtimeProfileMapFromCatalog(scriptCatalog)} />
+      </div>
       <div className="mt-3">
         <AuthorizedResourceSelect
           kind="runtime_profile"
@@ -125,6 +129,7 @@ export function ScriptAuthoringPanel({
           problem={problem}
           statusCode={statusCode}
           disabled={!onPatchNodeWith}
+          optionLabel={runtimeProfileSelectorLabel}
           onChange={(pin) => {
             if (!pin) {
               patch("runtimeProfileId", "");

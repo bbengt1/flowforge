@@ -264,6 +264,10 @@ describe("ops-config client", () => {
               credentialType: "ssh_private_key",
               privateKey: "should-be-stripped",
             },
+            scriptEngine: {
+              isolation: { nonRoot: true },
+              token: "should-be-stripped",
+            },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -295,6 +299,8 @@ describe("ops-config client", () => {
         "ssh_private_key",
       );
       assert.equal("privateKey" in (catalog.catalog.sshEngine ?? {}), false);
+      assert.equal(catalog.catalog.scriptEngine?.isolation !== undefined, true);
+      assert.equal("token" in (catalog.catalog.scriptEngine ?? {}), false);
     }
 
     const pins = await listWorkflowVersionPins(identity, WORKFLOW_ID, VERSION_ID);
