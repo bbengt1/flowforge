@@ -194,7 +194,11 @@ describe("action wizard catalog inference and recommendations", () => {
     assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.apply"), true);
     assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.get"), true);
     assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.list"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.rolloutStatus"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.rolloutStatus"), true);
+    assert.equal(
+      fallbackLibrary.find((item) => item.type === "kubernetes.rolloutStatus")?.source,
+      "contract-fallback",
+    );
     assert.equal(
       fallbackLibrary.find((item) => item.type === "kubernetes.apply")?.source,
       "contract-fallback",
@@ -241,6 +245,43 @@ describe("action wizard insert + redaction", () => {
     const edges = listYamlEdges(result.yaml);
     assert.ok(edges.some((edge) => edge.from === "seed.result" && edge.to === `${result.node.id}.parameters`));
     assert.match(result.yaml, /type: kubernetes\.apply/);
+  });
+
+  it("inserts a kubernetes.rolloutStatus node with kind and name and no force", () => {
+    const entry = palette.find((item) => item.type === "kubernetes.rolloutStatus")
+      ?? adaptActionLibrary(null).find((item) => item.type === "kubernetes.rolloutStatus");
+    const fields = wizardConfigFields(entry, "kubernetes.rolloutStatus");
+    assert.equal(fields.some((field) => field.name === "kind" && field.required), true);
+    assert.equal(fields.some((field) => field.name === "name" && field.required), true);
+    assert.equal(fields.some((field) => field.name === "force"), false);
+    assert.equal(fields.some((field) => field.name === "kubeconfig"), false);
+    assert.equal(defaultWithForType("kubernetes.rolloutStatus").wait, "ready");
+
+    const draft = emptyActionWizardDraft("kubernetes.rolloutStatus", "Watch API");
+    draft.with = {
+      ...draft.with,
+      clusterTargetId: "11111111-1111-4111-8111-111111111111",
+      namespace: "cp-ops-nprd",
+      kind: "Deployment",
+      name: "api",
+      wait: "ready",
+      timeoutSeconds: 60,
+    };
+    const missing = validateWizardDraft(
+      { ...draft, with: { clusterTargetId: draft.with.clusterTargetId, namespace: "app" } },
+      catalog,
+      entry,
+    );
+    assert.equal(missing.ok, false);
+    assert.ok(missing.errors.some((error) => /kind is required|name is required/.test(error)));
+
+    const result = applyWizardToYaml(STARTER_WORKFLOW_YAML, draft, catalog, entry);
+    assert.deepEqual(result.errors, []);
+    const added = listYamlNodes(result.yaml).find((node) => node.id === result.node.id);
+    assert.equal(added?.type, "kubernetes.rolloutStatus");
+    assert.equal(added?.with.kind, "Deployment");
+    assert.equal(added?.with.name, "api");
+    assert.equal("force" in (added?.with ?? {}), false);
   });
 
   it("rejects unauthorized types and secret-shaped with values before insert", () => {
@@ -409,7 +450,7 @@ describe("action wizard insert + redaction", () => {
           sideEffects: true,
           retrySafe: false,
           idempotent: true,
-          waitReady: "deferred-e7.3",
+          waitReady: "observed",
         },
       ],
       errors: [],
@@ -418,7 +459,16 @@ describe("action wizard insert + redaction", () => {
         force: false,
         serverDryRunAlways: true,
         clientDryRunAddsLocalValidationOnly: true,
-        waitReady: "deferred-e7.3",
+        waitReady: "observed",
+      },
+      observation: {
+        waitReady: "observed",
+        states: ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
+        kinds: ["Deployment", "StatefulSet", "DaemonSet", "Job"],
+        verb: "watch",
+        cancel: "stop-wait",
+        timeout: "stop-wait",
+        neverDeletesOrRollsBack: true,
       },
     };
     const fromEngine = wizardConfigFields(entry, "kubernetes.apply", engineCatalog);
@@ -426,7 +476,13 @@ describe("action wizard insert + redaction", () => {
     assert.equal(fromEngine.some((field) => field.name === "force"), false);
     assert.match(
       fromEngine.find((field) => field.name === "wait")?.description ?? "",
-      /deferred-e7\.3/,
+      /waitReady=observed|never deletes or rolls back/,
+    );
+    assert.equal(
+      (fromEngine.find((field) => field.name === "wait")?.description ?? "").includes(
+        "deferred-e7.3",
+      ),
+      false,
     );
   });
 });

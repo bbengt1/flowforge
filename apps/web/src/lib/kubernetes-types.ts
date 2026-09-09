@@ -119,13 +119,24 @@ export type KubernetesEngineErrorShape = {
   meaning: string;
 };
 
-/** Fixed SSA rules from GET /kubernetes/catalog `apply` (#78). */
+/** Fixed SSA rules from GET /kubernetes/catalog `apply` (#78 / #79). */
 export type KubernetesEngineApplyRules = {
   fieldManager: string;
   force: boolean;
   serverDryRunAlways: boolean;
   clientDryRunAddsLocalValidationOnly: boolean;
   waitReady: string;
+};
+
+/** E7.3 observation map from GET /kubernetes/catalog `observation` (#79). */
+export type KubernetesEngineObservationRules = {
+  waitReady: string;
+  states: string[];
+  kinds: string[];
+  verb: string;
+  cancel: string;
+  timeout: string;
+  neverDeletesOrRollsBack: boolean;
 };
 
 export type KubernetesEngineCatalog = {
@@ -154,4 +165,5 @@ export type KubernetesEngineCatalog = {
   nodes: KubernetesEngineNodeContract[];
   errors: KubernetesEngineErrorShape[];
   apply: KubernetesEngineApplyRules;
+  observation?: KubernetesEngineObservationRules;
 };

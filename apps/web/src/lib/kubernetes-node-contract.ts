@@ -12,6 +12,19 @@
  * Relates to #71 / Part of #69. Keep #71 open — jonny owns the engine.
  */
 
+import {
+  KUBERNETES_ROLLOUT_KINDS,
+  KUBERNETES_ROLLOUT_NODE_TYPE,
+  KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
+  KUBERNETES_WAIT_READY_OBSERVED,
+  isKubernetesRolloutKind,
+  isKubernetesRolloutType,
+  recognitionForKind,
+  rolloutIdentityFromWith,
+  rolloutKindsFromCatalog,
+  rolloutNodeDescription,
+  rolloutWaitReadyMessage,
+} from "./kubernetes-rollout-contract.ts";
 import { KUBERNETES_ALLOWED_KINDS } from "./kubernetes-types.ts";
 import type {
   KubernetesEngineApplyRules,
@@ -40,17 +53,18 @@ export const KUBERNETES_NODE_ROUTE_MAP_SOURCE = "e72-#78" as const;
 export const KUBERNETES_FIELD_MANAGER = "flowforge" as const;
 export const KUBERNETES_FORCE_APPLY = false;
 export const KUBERNETES_DEFAULT_TIMEOUT_SECONDS = 60;
-export const KUBERNETES_OBSERVATION_DEFERRED = "deferred-e7.3" as const;
+export const KUBERNETES_OBSERVATION_DEFERRED = KUBERNETES_WAIT_READY_OBSERVED;
 
 export const KUBERNETES_MVP_NODE_TYPES = [
   "kubernetes.apply",
   "kubernetes.get",
   "kubernetes.list",
+  "kubernetes.rolloutStatus",
 ] as const;
 
 export type KubernetesMvpNodeType = (typeof KUBERNETES_MVP_NODE_TYPES)[number];
 
-export const KUBERNETES_ROLLOUT_STUB_TYPE = "kubernetes.rolloutStatus" as const;
+export const KUBERNETES_ROLLOUT_STUB_TYPE = KUBERNETES_ROLLOUT_NODE_TYPE;
 
 export const KUBERNETES_DRY_RUN_MODES = ["client", "server"] as const;
 export type KubernetesDryRunMode = (typeof KUBERNETES_DRY_RUN_MODES)[number];
@@ -93,7 +107,7 @@ export const KUBERNETES_NODE_POLICY_NOTES = [
   "Force apply, deletion, rollback, and pasted kubeconfigs are not available.",
   "FieldManager is fixed to flowforge with Force=false. Ownership conflicts are returned, never stolen.",
   "Apply always runs a strict server-side dry-run before persist. Client dry-run never replaces it.",
-  "wait=ready is accepted; observation is deferred-e7.3 (no rollout watch in this story).",
+  "wait=ready starts a bounded rollout observation. Timeout or cancel stops waiting — never delete or rollback.",
   "The UI never receives or stores kubeconfigs or plaintext credentials.",
 ] as const;
 
@@ -112,18 +126,16 @@ export const KUBERNETES_NAMESPACE_REQUIRED_MESSAGE =
 export const KUBERNETES_KUBECONFIG_DENIED_MESSAGE =
   "Kubeconfigs and plaintext credentials cannot be pasted into node configuration.";
 
-export const KUBERNETES_ROLLOUT_STUB_MESSAGE =
-  "Rollout observation is E7.3. Configure the cluster target and namespace only — full rollout UX is not in this story.";
+export const KUBERNETES_ROLLOUT_STUB_MESSAGE = rolloutNodeDescription();
 
-export const KUBERNETES_WAIT_READY_MESSAGE =
-  "wait=ready is accepted. Rollout observation is deferred-e7.3 — this is not a rollout watch.";
+export const KUBERNETES_WAIT_READY_MESSAGE = rolloutWaitReadyMessage();
 
 export const DEFAULT_KUBERNETES_APPLY_RULES: KubernetesEngineApplyRules = {
   fieldManager: KUBERNETES_FIELD_MANAGER,
   force: false,
   serverDryRunAlways: true,
   clientDryRunAddsLocalValidationOnly: true,
-  waitReady: KUBERNETES_OBSERVATION_DEFERRED,
+  waitReady: KUBERNETES_WAIT_READY_OBSERVED,
 };
 
 const NAMESPACE_DNS = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -150,11 +162,11 @@ export function isKubernetesMvpNodeType(
 }
 
 export function isKubernetesRolloutStubType(type: string): boolean {
-  return type === KUBERNETES_ROLLOUT_STUB_TYPE;
+  return isKubernetesRolloutType(type);
 }
 
 export function isKubernetesConfigurableType(type: string): boolean {
-  return isKubernetesMvpNodeType(type) || isKubernetesRolloutStubType(type);
+  return isKubernetesMvpNodeType(type) || isKubernetesRolloutType(type);
 }
 
 export function catalogListsKubernetesType(
@@ -167,17 +179,13 @@ export function catalogListsKubernetesType(
 }
 
 /**
- * MVP nodes always have a fallback. rolloutStatus is a stub only when
- * GET /workflows/catalog already lists it (live catalog on main does).
+ * MVP nodes always have a fallback, including rolloutStatus (E7.3).
  */
 export function kubernetesLibraryTypes(
-  catalog: WorkflowCatalog | null | undefined,
+  catalog?: WorkflowCatalog | null,
 ): readonly string[] {
-  const types: string[] = [...KUBERNETES_MVP_NODE_TYPES];
-  if (catalogListsKubernetesType(catalog, KUBERNETES_ROLLOUT_STUB_TYPE)) {
-    types.push(KUBERNETES_ROLLOUT_STUB_TYPE);
-  }
-  return types;
+  void catalog;
+  return [...KUBERNETES_MVP_NODE_TYPES];
 }
 
 export function hasKubernetesNodeContract(
@@ -233,9 +241,7 @@ export function engineErrorShapes(
 export function waitReadyMessage(
   catalog?: KubernetesEngineCatalog | null,
 ): string {
-  const observation =
-    applyRulesFromCatalog(catalog).waitReady || KUBERNETES_OBSERVATION_DEFERRED;
-  return `wait=ready is accepted. Rollout observation is ${observation} — this is not a rollout watch.`;
+  return rolloutWaitReadyMessage(catalog);
 }
 
 export function kubernetesNodeWithFields(
@@ -375,12 +381,50 @@ export function kubernetesNodeWithFields(
     ];
   }
 
-  if (type === KUBERNETES_ROLLOUT_STUB_TYPE) {
-    return common.map((field) =>
-      field.name === "wait"
-        ? { ...field, defaultValue: "ready", description: KUBERNETES_ROLLOUT_STUB_MESSAGE }
-        : field,
-    );
+  if (isKubernetesRolloutType(type)) {
+    const kinds = rolloutKindsFromCatalog(engineCatalog);
+    return [
+      common.find((field) => field.name === "clusterTargetId")!,
+      common.find((field) => field.name === "namespace")!,
+      {
+        name: "kind",
+        kind: "enum",
+        required: true,
+        enum: [...kinds],
+        label: "Kind",
+        controlHint: "enum",
+        description: `Workload to observe. ${kinds.map((kind) => `${kind}: ${recognitionForKind(kind)}`).join("; ")}.`,
+      },
+      {
+        name: "name",
+        kind: "string",
+        required: true,
+        label: "Name",
+        controlHint: "text",
+        description:
+          "Resource name. Required unless resource {kind,name} is supplied.",
+      },
+      {
+        name: "resource",
+        kind: "object",
+        label: "Resource",
+        controlHint: "text",
+        advanced: true,
+        description:
+          "Optional {kind,name} identity. Alternative to kind and name. Verb is watch.",
+      },
+      {
+        ...common.find((field) => field.name === "wait")!,
+        defaultValue: "ready",
+        description: waitNote,
+      },
+      {
+        ...common.find((field) => field.name === "timeoutSeconds")!,
+        advanced: false,
+        description: `Bounded observation timeout (${KUBERNETES_MIN_TIMEOUT_SECONDS}–${KUBERNETES_MAX_TIMEOUT_SECONDS}). ${KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}`,
+      },
+      common.find((field) => field.name === "policyId")!,
+    ];
   }
 
   return common;
@@ -418,7 +462,14 @@ export function overlayKubernetesFields(
           field.enum?.length
             ? field.enum
             : field.name === "kind"
-              ? [...allowedKinds]
+              ? isKubernetesRolloutType(type)
+                ? (() => {
+                    const kinds = allowedKinds.filter((kind) =>
+                      isKubernetesRolloutKind(kind),
+                    );
+                    return kinds.length > 0 ? kinds : [...KUBERNETES_ROLLOUT_KINDS];
+                  })()
+                : [...allowedKinds]
               : base?.enum,
         description:
           field.name === "wait"
@@ -565,6 +616,26 @@ export function validateKubernetesNodeConfig(
     if (!name) {
       errors.push("name is required for kubernetes.get.");
     } else if (!NAMESPACE_DNS.test(name)) {
+      errors.push("name must be a DNS label.");
+    }
+  }
+  if (isKubernetesRolloutType(type)) {
+    const identity = rolloutIdentityFromWith(withValue);
+    const rolloutKinds = rolloutKindsFromCatalog(context.engineCatalog);
+    const allowedRollout = rolloutKinds.filter((item) =>
+      [...allowedKinds].includes(item),
+    );
+    const check = allowedRollout.length > 0 ? allowedRollout : rolloutKinds;
+    if (!identity.kind) {
+      errors.push("kind is required (or resource.kind).");
+    } else if (![...check].includes(identity.kind)) {
+      errors.push(
+        `kind ${identity.kind} is not a rollout workload (${[...check].join(", ")}).`,
+      );
+    }
+    if (!identity.name) {
+      errors.push("name is required for kubernetes.rolloutStatus unless resource.name is set.");
+    } else if (!NAMESPACE_DNS.test(identity.name)) {
       errors.push("name must be a DNS label.");
     }
   }
@@ -889,9 +960,14 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
     type: "kubernetes.rolloutStatus",
     phase: CATALOG_PHASE_CORE,
     title: "Rollout status",
-    description: KUBERNETES_ROLLOUT_STUB_MESSAGE,
+    description: rolloutNodeDescription(),
     inputs: [
-      inherit("resource", "object", true, "Resource identity. Full rollout UX is E7.3."),
+      inherit(
+        "resource",
+        "object",
+        false,
+        "Optional {kind,name} identity. with.kind and with.name are also accepted.",
+      ),
     ],
     outputs: [
       resultPort,
@@ -904,12 +980,20 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
       retrySafe: true,
       sideEffects: false,
       idempotent: true,
-      cancellation: "path-local",
-      verification: "none",
+      cancellation: "stop-wait",
+      verification: "observe-generation",
       defaultMaxAttempts: 1,
     },
     bounds: defaultBounds(KUBERNETES_MAX_TIMEOUT_SECONDS),
-    redaction: redaction(["clusterTargetId", "namespace"]),
+    redaction: redaction([
+      "clusterTargetId",
+      "namespace",
+      "kind",
+      "name",
+      "observation",
+      "correlationId",
+      "policyRevision",
+    ]),
   },
 };
 
