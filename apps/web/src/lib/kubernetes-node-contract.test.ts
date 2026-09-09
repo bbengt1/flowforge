@@ -102,7 +102,7 @@ const engineCatalog: KubernetesEngineCatalog = {
       fieldManager: "flowforge",
       force: false,
       serverDryRunAlways: true,
-      waitReady: "deferred-e7.3",
+      waitReady: "observed",
     },
   ],
   errors: [
@@ -117,7 +117,16 @@ const engineCatalog: KubernetesEngineCatalog = {
     force: false,
     serverDryRunAlways: true,
     clientDryRunAddsLocalValidationOnly: true,
-    waitReady: "deferred-e7.3",
+    waitReady: "observed",
+  },
+  observation: {
+    waitReady: "observed",
+    states: ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
+    kinds: ["Deployment", "StatefulSet", "DaemonSet", "Job"],
+    verb: "watch",
+    cancel: "stop-wait",
+    timeout: "stop-wait",
+    neverDeletesOrRollsBack: true,
   },
 };
 
@@ -130,7 +139,7 @@ describe("kubernetes node contract adapter", () => {
     assert.equal(KUBERNETES_FIELD_MANAGER, "flowforge");
     assert.equal(KUBERNETES_FORCE_APPLY, false);
     assert.equal(KUBERNETES_DEFAULT_TIMEOUT_SECONDS, 60);
-    assert.equal(KUBERNETES_OBSERVATION_DEFERRED, "deferred-e7.3");
+    assert.equal(KUBERNETES_OBSERVATION_DEFERRED, "observed");
     assert.deepEqual(
       [...KUBERNETES_FORBIDDEN_WITH_KEYS],
       ["force", "kubeconfig", "server", "fieldManager"],
@@ -218,8 +227,9 @@ describe("kubernetes node config validation", () => {
       fields.find((field) => field.name === "fieldManager")?.defaultValue,
       "flowforge",
     );
-    assert.match(waitReadyMessage(engineCatalog), /contract-fallback/);
+    assert.match(waitReadyMessage(engineCatalog), /waitReady=observed/);
     assert.match(waitReadyMessage(engineCatalog), /never deletes or rolls back/);
+    assert.equal(waitReadyMessage(engineCatalog).includes("deferred-e7.3"), false);
     assert.equal(applyRulesFromCatalog(engineCatalog).force, false);
     assert.equal(applyRulesFromCatalog(engineCatalog).fieldManager, "flowforge");
 
@@ -316,7 +326,13 @@ describe("kubernetes node config validation", () => {
       timeoutSeconds: 60,
     });
     assert.deepEqual(ready, []);
-    assert.match(waitReadyMessage(), /contract-fallback/);
+    assert.match(waitReadyMessage(), /waitReady=observed/);
+    const viaResource = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      resource: { kind: "StatefulSet", name: "db" },
+    });
+    assert.deepEqual(viaResource, []);
     const rollout = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
       clusterTargetId: TARGET_ID,
       namespace: "app",

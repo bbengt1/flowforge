@@ -1,9 +1,8 @@
 /**
  * Single retarget adapter for Chloe's E7.3 Kubernetes rollout
- * status UI. Prefer GET /workflows/catalog + GET /kubernetes/catalog
- * (`nodes[]`, `apply.waitReady`) when present. Until jonny's
- * status/contract map lands, fallback entries stay marked
- * `contract-fallback`.
+ * status UI. Wired to jonny's **#79** map on `main`:
+ * GET /workflows/catalog + GET /kubernetes/catalog
+ * (`nodes[]`, `apply.waitReady`, `observation`).
  *
  * Consumes existing execution detail / steps / jobs / audit (E5).
  * Cookie session + CSRF; JSON camelCase; RFC 9457.
@@ -22,17 +21,15 @@ import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 
 export const KUBERNETES_ROLLOUT_STORY = 72;
 export const KUBERNETES_ROLLOUT_EPIC = 69;
-/** 0 until jonny's E7.3 status/contract map lands on main. */
-export const KUBERNETES_ROLLOUT_API_PR = 0;
-export const KUBERNETES_ROLLOUT_ROUTE_MAP_SOURCE =
-  "e73-pending-jonny-map" as const;
+/** Jonny's E7.3 observation map on main. */
+export const KUBERNETES_ROLLOUT_API_PR = 79;
+export const KUBERNETES_ROLLOUT_ROUTE_MAP_SOURCE = "e73-#79" as const;
 
 export const KUBERNETES_ROLLOUT_NODE_TYPE = "kubernetes.rolloutStatus" as const;
 export const KUBERNETES_ROLLOUT_VERB = "watch" as const;
 
-export const KUBERNETES_OBSERVATION_DEFERRED = "deferred-e7.3" as const;
-/** Fallback token when the catalog still says deferred-e7.3. */
-export const KUBERNETES_OBSERVATION_WATCH = "watch" as const;
+/** Catalog signal that wait=ready performs a bounded watch (#79). */
+export const KUBERNETES_WAIT_READY_OBSERVED = "observed" as const;
 
 export const KUBERNETES_ROLLOUT_KINDS = [
   "Deployment",
@@ -54,12 +51,12 @@ export const KUBERNETES_ROLLOUT_RECOGNITION = {
 } as const;
 
 export const KUBERNETES_ROLLOUT_PHASES = [
-  "watching",
   "ready",
   "failed",
   "timeout",
   "canceled",
-  "pending-engine",
+  "skipped",
+  "progressing",
 ] as const;
 
 export type KubernetesRolloutPhase = (typeof KUBERNETES_ROLLOUT_PHASES)[number];
@@ -77,10 +74,16 @@ export const KUBERNETES_ROLLOUT_REDACTION_HELP =
   "Results are redacted diagnostics only. Secrets, kubeconfigs, and unexpected secret field names are stripped and treated as a contract bug.";
 
 export const KUBERNETES_ROLLOUT_KIND_MESSAGE =
-  "kind must be Deployment, StatefulSet, DaemonSet, or Job.";
+  "kind must be Deployment, StatefulSet, DaemonSet, or Job (or supplied via resource).";
 
 export const KUBERNETES_ROLLOUT_NAME_MESSAGE =
-  "name is required for kubernetes.rolloutStatus.";
+  "name is required for kubernetes.rolloutStatus unless resource.name is set.";
+
+export const KUBERNETES_ROLLOUT_SKIPPED_HELP =
+  "Kind is not observable. ConfigMap, Service, CronJob, Ingress, and NetworkPolicy with wait=ready return observation=skipped and do not require watch.";
+
+export const KUBERNETES_ROLLOUT_IDENTITY_HELP =
+  "Identify the workload with kind+name, or resource {kind,name}.";
 
 export type RolloutObservationSource = "catalog" | "contract-fallback";
 
@@ -97,14 +100,42 @@ export type KubernetesRolloutResource = {
   uid?: string;
 };
 
+export type KubernetesRolloutProgress = {
+  kind: string;
+  name: string;
+  namespace: string;
+  generation: number | null;
+  observedGeneration: number | null;
+  readyReplicas: number | null;
+  updatedReplicas: number | null;
+  availableReplicas: number | null;
+  desiredNumberScheduled: number | null;
+  updatedNumberScheduled: number | null;
+  numberAvailable: number | null;
+  completions: number | null;
+  succeeded: number | null;
+  failed: number | null;
+  state: string;
+  reason: string;
+};
+
 export type KubernetesRolloutAuditSnapshot = {
   actorId: string;
+  operation: string;
   clusterTargetId: string;
+  namespace: string;
   policyRevision: string;
+  policyDigest: string;
+  manifestDigest: string;
   resources: KubernetesRolloutResource[];
+  serverDryRun: boolean;
+  applied: boolean;
+  watch: string;
+  observation: string;
   correlationId: string;
   action: string;
   outcome: string;
+  errorCode: string;
   occurredAt: string;
   source: RolloutObservationSource;
 };
@@ -132,12 +163,15 @@ export type KubernetesRolloutObservation = {
   succeeded: number | null;
   failed: number | null;
   completions: number | null;
-  stopReason: "timeout" | "canceled" | "ready" | "failed" | "";
+  stopReason: "timeout" | "canceled" | "ready" | "failed" | "skipped" | "";
   stopCopy: string;
   note: string;
+  progress: KubernetesRolloutProgress[];
   resources: KubernetesRolloutResource[];
   correlationId: string;
   policyRevision: string;
+  policyDigest: string;
+  manifestDigest: string;
   actorId: string;
   source: RolloutObservationSource;
   strippedKeys: string[];
@@ -152,6 +186,22 @@ export function isKubernetesRolloutKind(
   kind: string,
 ): kind is KubernetesRolloutKind {
   return (KUBERNETES_ROLLOUT_KINDS as readonly string[]).includes(kind);
+}
+
+export function rolloutIdentityFromWith(withValue: Record<string, unknown>): {
+  kind: string;
+  name: string;
+} {
+  const resource =
+    withValue.resource &&
+    typeof withValue.resource === "object" &&
+    !Array.isArray(withValue.resource)
+      ? (withValue.resource as Record<string, unknown>)
+      : {};
+  return {
+    kind: String(withValue.kind ?? resource.kind ?? "").trim(),
+    name: String(withValue.name ?? resource.name ?? "").trim(),
+  };
 }
 
 export function recognitionForKind(kind: string): string {
@@ -175,10 +225,8 @@ export function recognitionSummary(): string {
 }
 
 /**
- * Catalog `apply.waitReady` / rollout node `waitReady` still say
- * deferred-e7.3 on main. E7.3 UI fallback treats wait=ready as a
- * real observation once this story lands. When jonny's map posts a
- * non-deferred token, drop the fallback marker.
+ * #79 catalog: apply.waitReady and observation.waitReady are
+ * `observed`. Prefer those tokens when present.
  */
 export function observationModeFromCatalog(
   catalog?: KubernetesEngineCatalog | null,
@@ -187,14 +235,20 @@ export function observationModeFromCatalog(
     isKubernetesRolloutType(item.type),
   );
   const token = String(
-    node?.waitReady || catalog?.apply?.waitReady || "",
+    catalog?.observation?.waitReady ||
+      node?.waitReady ||
+      catalog?.apply?.waitReady ||
+      "",
   ).trim();
-  if (token && token !== KUBERNETES_OBSERVATION_DEFERRED) {
+  if (token === KUBERNETES_WAIT_READY_OBSERVED) {
+    return { live: true, token, source: "catalog" };
+  }
+  if (token) {
     return { live: true, token, source: "catalog" };
   }
   return {
     live: true,
-    token: KUBERNETES_OBSERVATION_WATCH,
+    token: KUBERNETES_WAIT_READY_OBSERVED,
     source: "contract-fallback",
   };
 }
@@ -214,40 +268,35 @@ export function effectiveWaitReady(
 export function rolloutWaitReadyMessage(
   catalog?: KubernetesEngineCatalog | null,
 ): string {
-  const mode = observationModeFromCatalog(catalog);
-  const base = `wait=ready starts a bounded rollout observation (${recognitionSummary()}). ${KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}`;
-  if (mode.source === "contract-fallback") {
-    return `${base} Observation map is contract-fallback until jonny's status contract lands.`;
-  }
-  return base;
+  const token = effectiveWaitReady(catalog);
+  return `wait=ready performs a bounded rollout observation (${recognitionSummary()}). Catalog waitReady=${token}. Non-observable kinds return observation=skipped. ${KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}`;
 }
 
 export function rolloutNodeDescription(
-  catalog?: KubernetesEngineCatalog | null,
+  _catalog?: KubernetesEngineCatalog | null,
 ): string {
-  const mode = observationModeFromCatalog(catalog);
-  const base =
-    "Bounded watch of Deployment, StatefulSet, DaemonSet, or Job progress. Timeout or cancel stops waiting — never delete or rollback.";
-  if (mode.source === "contract-fallback") {
-    return `${base} contract-fallback until jonny's status/contract map.`;
-  }
-  return base;
+  return "Bounded watch of Deployment, StatefulSet, DaemonSet, or Job. Verb is watch and needs kubernetes.read. Identify the workload with kind+name or resource {kind,name}. Timeout or cancel stops waiting — never delete or rollback.";
 }
 
 export function rolloutKindsFromCatalog(
   catalog?: KubernetesEngineCatalog | null,
 ): readonly string[] {
+  const fromObservation = catalog?.observation?.kinds?.length
+    ? catalog.observation.kinds
+    : [...KUBERNETES_ROLLOUT_KINDS];
   const allowed = catalog?.allowedKinds?.length
     ? catalog.allowedKinds
-    : [...KUBERNETES_ROLLOUT_KINDS];
-  const filtered = allowed.filter((kind) => isKubernetesRolloutKind(kind));
+    : fromObservation;
+  const filtered = fromObservation.filter(
+    (kind) =>
+      isKubernetesRolloutKind(kind) &&
+      (allowed.length === 0 || allowed.includes(kind)),
+  );
   return filtered.length > 0 ? filtered : [...KUBERNETES_ROLLOUT_KINDS];
 }
 
 export function phaseLabel(phase: KubernetesRolloutPhase): string {
   switch (phase) {
-    case "watching":
-      return "Watching rollout";
     case "ready":
       return "Ready";
     case "failed":
@@ -256,8 +305,10 @@ export function phaseLabel(phase: KubernetesRolloutPhase): string {
       return "Timed out";
     case "canceled":
       return "Canceled";
-    case "pending-engine":
-      return "Waiting for engine observation";
+    case "skipped":
+      return "Skipped (not observable)";
+    case "progressing":
+      return "Progressing";
     default:
       return phase;
   }
@@ -269,6 +320,9 @@ export function stopCopyForPhase(phase: KubernetesRolloutPhase): string {
   }
   if (phase === "canceled") {
     return KUBERNETES_ROLLOUT_CANCEL_HELP;
+  }
+  if (phase === "skipped") {
+    return KUBERNETES_ROLLOUT_SKIPPED_HELP;
   }
   return KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE;
 }
@@ -371,24 +425,40 @@ export function parseRolloutObservation(
   const redactedOutput = redactRolloutPayload(step.output);
   const redactedInput = redactRolloutPayload(step.input);
   const redactedError = redactRolloutPayload(step.error);
+  const output = asRecord(redactedOutput.value);
+  const result = asRecord(output?.result) ?? output;
+  const status = asRecord(result?.status) ?? asRecord(output?.status);
+  const input = asRecord(redactedInput.value);
+  const resource = asRecord(input?.resource) ?? asRecord(result?.resource);
   const bag = mergeBags(
-    asRecord(redactedOutput.value),
-    asRecord(asRecord(redactedOutput.value)?.result),
-    asRecord(asRecord(redactedOutput.value)?.status),
-    asRecord(redactedInput.value),
-    asRecord(asRecord(redactedInput.value)?.with),
+    output,
+    result,
+    status,
+    input,
+    asRecord(input?.with),
+    resource,
     asRecord(redactedError.value),
   );
-  const kind = String(bag.kind ?? firstResource(bag)?.kind ?? "").trim();
-  const name = String(bag.name ?? firstResource(bag)?.name ?? "").trim();
+  const progress = parseProgressList(status?.progress ?? result?.progress ?? bag.progress);
+  const firstProgress = progress[0];
+  const kind = String(
+    bag.kind ?? firstProgress?.kind ?? firstResource(bag)?.kind ?? "",
+  ).trim();
+  const name = String(
+    bag.name ?? firstProgress?.name ?? firstResource(bag)?.name ?? "",
+  ).trim();
   const namespace = String(
-    bag.namespace ?? firstResource(bag)?.namespace ?? "",
+    bag.namespace ?? firstProgress?.namespace ?? firstResource(bag)?.namespace ?? "",
   ).trim();
   const observation = String(
-    bag.observation ?? mode.token,
-  ).trim() || mode.token;
+    result?.observation ?? bag.observation ?? "",
+  ).trim();
   const phase = inferPhase(bag, step.status, observation);
-  const snapshot = auditSnapshotForStep(step, auditEvents, bag);
+  const resultAudit = snapshotFromResultAudit(
+    asRecord(result?.audit) ?? asRecord(output?.audit),
+    bag,
+  );
+  const snapshot = resultAudit ?? auditSnapshotForStep(step, auditEvents, bag);
   const strippedKeys = unique([
     ...redactedOutput.strippedKeys,
     ...redactedInput.strippedKeys,
@@ -418,19 +488,35 @@ export function parseRolloutObservation(
     wait: String(bag.wait ?? "ready").trim() || "ready",
     timeoutSeconds: numberOrNull(bag.timeoutSeconds),
     availableReplicas: numberOrNull(
-      bag.availableReplicas ?? bag.available,
+      firstProgress?.availableReplicas ?? bag.availableReplicas ?? bag.available,
     ),
-    readyReplicas: numberOrNull(bag.readyReplicas ?? bag.ready),
-    updatedNumber: numberOrNull(bag.updatedNumber ?? bag.updated),
-    desiredNumber: numberOrNull(bag.desiredNumber ?? bag.desired),
-    observedGeneration: numberOrNull(bag.observedGeneration),
-    generation: numberOrNull(bag.generation),
-    succeeded: numberOrNull(bag.succeeded),
-    failed: numberOrNull(bag.failed),
-    completions: numberOrNull(bag.completions ?? bag.completion),
+    readyReplicas: numberOrNull(
+      firstProgress?.readyReplicas ?? bag.readyReplicas ?? bag.ready,
+    ),
+    updatedNumber: numberOrNull(
+      firstProgress?.updatedNumberScheduled ??
+        firstProgress?.updatedReplicas ??
+        bag.updatedNumber ??
+        bag.updated,
+    ),
+    desiredNumber: numberOrNull(
+      firstProgress?.desiredNumberScheduled ?? bag.desiredNumber ?? bag.desired,
+    ),
+    observedGeneration: numberOrNull(
+      firstProgress?.observedGeneration ?? bag.observedGeneration,
+    ),
+    generation: numberOrNull(firstProgress?.generation ?? bag.generation),
+    succeeded: numberOrNull(firstProgress?.succeeded ?? bag.succeeded),
+    failed: numberOrNull(firstProgress?.failed ?? bag.failed),
+    completions: numberOrNull(
+      firstProgress?.completions ?? bag.completions ?? bag.completion,
+    ),
     stopReason,
     stopCopy: stopCopyForPhase(phase),
-    note: String(bag.observationNote ?? bag.note ?? "").trim(),
+    note: String(
+      firstProgress?.reason ?? bag.observationNote ?? bag.note ?? "",
+    ).trim(),
+    progress,
     resources: resourcesFrom(bag, snapshot.snapshot.resources),
     correlationId:
       String(bag.correlationId ?? snapshot.snapshot.correlationId).trim() ||
@@ -438,6 +524,8 @@ export function parseRolloutObservation(
     policyRevision:
       String(bag.policyRevision ?? snapshot.snapshot.policyRevision).trim() ||
       "",
+    policyDigest: snapshot.snapshot.policyDigest,
+    manifestDigest: snapshot.snapshot.manifestDigest,
     actorId: snapshot.snapshot.actorId,
     source: mode.source,
     strippedKeys,
@@ -447,10 +535,22 @@ export function parseRolloutObservation(
 
 export function collectRolloutAuditSnapshots(
   events: readonly ExecutionAuditEvent[] | null | undefined,
+  steps?: readonly ExecutionStep[] | null,
 ): KubernetesRolloutAuditSnapshot[] {
-  return (events ?? [])
+  const fromResults: KubernetesRolloutAuditSnapshot[] = [];
+  for (const step of steps ?? []) {
+    const output = asRecord(step.output);
+    const result = asRecord(output?.result) ?? output;
+    const audit = asRecord(result?.audit) ?? asRecord(output?.audit);
+    const parsed = snapshotFromResultAudit(audit, {});
+    if (parsed) {
+      fromResults.push(parsed.snapshot);
+    }
+  }
+  const fromEvents = (events ?? [])
     .filter((event) => isRolloutAuditAction(event.action))
     .map((event) => redactAuditSnapshot(event).snapshot);
+  return [...fromResults, ...fromEvents];
 }
 
 export function auditSnapshotForStep(
@@ -473,20 +573,84 @@ export function auditSnapshotForStep(
   if (match) {
     return redactAuditSnapshot(match, bag);
   }
+  return emptyAuditSnapshot(bag);
+}
+
+function emptyAuditSnapshot(
+  bag: Record<string, unknown>,
+): {
+  snapshot: KubernetesRolloutAuditSnapshot;
+  strippedKeys: string[];
+  failedClosed: boolean;
+} {
   return {
     snapshot: {
       actorId: "",
+      operation: "",
       clusterTargetId: String(bag.clusterTargetId ?? "").trim(),
+      namespace: String(bag.namespace ?? "").trim(),
       policyRevision: String(bag.policyRevision ?? "").trim(),
+      policyDigest: String(bag.policyDigest ?? "").trim(),
+      manifestDigest: String(bag.manifestDigest ?? "").trim(),
       resources: resourcesFrom(bag, []),
+      serverDryRun: bag.serverDryRun === true,
+      applied: bag.applied === true,
+      watch: String(bag.watch ?? bag.observation ?? "").trim(),
+      observation: String(bag.observation ?? "").trim(),
       correlationId: String(bag.correlationId ?? "").trim(),
       action: "",
       outcome: "",
+      errorCode: "",
       occurredAt: "",
-      source: "contract-fallback",
+      source: "catalog",
     },
     strippedKeys: [],
     failedClosed: false,
+  };
+}
+
+function snapshotFromResultAudit(
+  audit: Record<string, unknown> | null,
+  bag: Record<string, unknown>,
+): {
+  snapshot: KubernetesRolloutAuditSnapshot;
+  strippedKeys: string[];
+  failedClosed: boolean;
+} | null {
+  if (!audit) {
+    return null;
+  }
+  const redacted = redactRolloutPayload(audit);
+  const details = asRecord(redacted.value) ?? {};
+  return {
+    snapshot: {
+      actorId: String(details.actorId ?? "").trim(),
+      operation: String(details.operation ?? "").trim(),
+      clusterTargetId: String(
+        details.clusterTargetId ?? bag.clusterTargetId ?? "",
+      ).trim(),
+      namespace: String(details.namespace ?? bag.namespace ?? "").trim(),
+      policyRevision: String(
+        details.policyRevision ?? bag.policyRevision ?? "",
+      ).trim(),
+      policyDigest: String(details.policyDigest ?? "").trim(),
+      manifestDigest: String(details.manifestDigest ?? "").trim(),
+      resources: resourcesFrom(details, resourcesFrom(bag, [])),
+      serverDryRun: details.serverDryRun === true,
+      applied: details.applied === true,
+      watch: String(details.watch ?? details.observation ?? "").trim(),
+      observation: String(details.observation ?? "").trim(),
+      correlationId: String(
+        details.correlationId ?? bag.correlationId ?? "",
+      ).trim(),
+      action: String(details.operation ?? "kubernetes.watch").trim(),
+      outcome: String(details.outcome ?? "").trim(),
+      errorCode: String(details.errorCode ?? "").trim(),
+      occurredAt: "",
+      source: "catalog",
+    },
+    strippedKeys: redacted.strippedKeys,
+    failedClosed: redacted.failedClosed,
   };
 }
 
@@ -521,12 +685,14 @@ function redactAuditSnapshot(
       actorId: String(
         event.actorId || details.actorId || rawDetails.actorId || details.actor || "",
       ).trim(),
+      operation: String(details.operation ?? "").trim(),
       clusterTargetId: String(
         details.clusterTargetId ||
           identities.clusterTargetId ||
           bag.clusterTargetId ||
           "",
       ).trim(),
+      namespace: String(details.namespace ?? bag.namespace ?? "").trim(),
       policyRevision: String(
         details.policyRevision ||
           identities.policyRevision ||
@@ -534,14 +700,21 @@ function redactAuditSnapshot(
           bag.policyRevision ||
           "",
       ).trim(),
+      policyDigest: String(details.policyDigest ?? "").trim(),
+      manifestDigest: String(details.manifestDigest ?? "").trim(),
       resources,
+      serverDryRun: details.serverDryRun === true,
+      applied: details.applied === true,
+      watch: String(details.watch ?? details.observation ?? "").trim(),
+      observation: String(details.observation ?? "").trim(),
       correlationId: String(
         event.correlationId || details.correlationId || bag.correlationId || "",
       ).trim(),
       action: event.action,
-      outcome: event.outcome,
+      outcome: event.outcome || String(details.outcome ?? "").trim(),
+      errorCode: String(details.errorCode ?? "").trim(),
       occurredAt: event.occurredAt,
-      source: "contract-fallback",
+      source: "catalog",
     },
     strippedKeys: redacted.strippedKeys,
     failedClosed: redacted.failedClosed,
@@ -568,27 +741,28 @@ function inferPhase(
   stepStatus: string,
   observation: string,
 ): KubernetesRolloutPhase {
-  const explicit = String(bag.phase ?? bag.observationPhase ?? "").trim().toLowerCase();
-  if (explicit === "timeout" || explicit === "timedout" || explicit === "timed-out") {
+  const token = String(
+    observation || bag.observation || bag.phase || bag.observationPhase || "",
+  )
+    .trim()
+    .toLowerCase();
+  if ((KUBERNETES_ROLLOUT_PHASES as readonly string[]).includes(token)) {
+    return token as KubernetesRolloutPhase;
+  }
+  if (token === "timedout" || token === "timed-out" || bag.timedOut === true) {
     return "timeout";
   }
-  if (explicit === "canceled" || explicit === "cancelled") {
+  if (token === "cancelled" || bag.canceled === true || bag.cancelled === true) {
     return "canceled";
   }
-  if (explicit === "failed" || explicit === "failure") {
+  if (token === "failure" || token === "rollout-failed") {
     return "failed";
   }
-  if (explicit === "ready" || explicit === "complete" || explicit === "succeeded") {
+  if (token === "complete" || token === "succeeded") {
     return "ready";
   }
-  if (explicit === "watching" || explicit === "progressing") {
-    return "watching";
-  }
-  if (bag.timedOut === true || bag.timeout === true) {
-    return "timeout";
-  }
-  if (bag.canceled === true || bag.cancelled === true) {
-    return "canceled";
+  if (token === "watching") {
+    return "progressing";
   }
   const status = String(stepStatus ?? "").toLowerCase();
   if (status === "canceled") {
@@ -597,25 +771,60 @@ function inferPhase(
   if (status === "failed") {
     return "failed";
   }
-  if (observation === KUBERNETES_OBSERVATION_DEFERRED) {
-    return "pending-engine";
-  }
   if (status === "succeeded") {
     return "ready";
   }
   if (status === "running" || status === "queued" || status === "pinned") {
-    return "watching";
+    return "progressing";
   }
-  return "watching";
+  return "progressing";
 }
 
 function stopReasonFor(
   phase: KubernetesRolloutPhase,
 ): KubernetesRolloutObservation["stopReason"] {
-  if (phase === "timeout" || phase === "canceled" || phase === "ready" || phase === "failed") {
+  if (
+    phase === "timeout" ||
+    phase === "canceled" ||
+    phase === "ready" ||
+    phase === "failed" ||
+    phase === "skipped"
+  ) {
     return phase;
   }
   return "";
+}
+
+function parseProgressList(raw: unknown): KubernetesRolloutProgress[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const items: KubernetesRolloutProgress[] = [];
+  for (const item of raw) {
+    const rec = asRecord(item);
+    if (!rec) {
+      continue;
+    }
+    items.push({
+      kind: String(rec.kind ?? "").trim(),
+      name: String(rec.name ?? "").trim(),
+      namespace: String(rec.namespace ?? "").trim(),
+      generation: numberOrNull(rec.generation),
+      observedGeneration: numberOrNull(rec.observedGeneration),
+      readyReplicas: numberOrNull(rec.readyReplicas),
+      updatedReplicas: numberOrNull(rec.updatedReplicas),
+      availableReplicas: numberOrNull(rec.availableReplicas),
+      desiredNumberScheduled: numberOrNull(rec.desiredNumberScheduled),
+      updatedNumberScheduled: numberOrNull(rec.updatedNumberScheduled),
+      numberAvailable: numberOrNull(rec.numberAvailable),
+      completions: numberOrNull(rec.completions),
+      succeeded: numberOrNull(rec.succeeded),
+      failed: numberOrNull(rec.failed),
+      state: String(rec.state ?? "").trim(),
+      reason: String(rec.reason ?? "").trim(),
+    });
+  }
+  return items;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

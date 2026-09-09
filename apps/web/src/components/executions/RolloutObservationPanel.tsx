@@ -59,7 +59,7 @@ export function RolloutObservationPanel({
                 </div>
                 <p className="text-xs font-medium text-zinc-700">
                   {item.phase}
-                  {item.source === "contract-fallback" ? " · contract-fallback" : ""}
+                  {item.observation ? ` · ${item.observation}` : ""}
                 </p>
               </div>
               <p className="mt-2 text-sm text-zinc-700">
@@ -100,6 +100,26 @@ export function RolloutObservationPanel({
                   </div>
                 ) : null}
               </dl>
+              {item.progress.length > 0 ? (
+                <ul className="mt-3 grid gap-2">
+                  {item.progress.map((row, index) => (
+                    <li
+                      key={`${row.kind}/${row.namespace}/${row.name}/${index}`}
+                      className="rounded-lg bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-700"
+                    >
+                      {[row.kind, row.namespace, row.name].filter(Boolean).join("/")}
+                      {row.state ? ` · ${row.state}` : ""}
+                      {row.reason ? ` · ${row.reason}` : ""}
+                      {row.readyReplicas != null
+                        ? ` · ready ${row.readyReplicas}`
+                        : ""}
+                      {row.observedGeneration != null
+                        ? ` · observedGen ${row.observedGeneration}`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {item.resources.length > 0 ? (
                 <p className="mt-2 font-mono text-xs text-zinc-600">
                   {item.resources
@@ -159,6 +179,24 @@ export function RolloutObservationPanel({
                       {event.policyRevision || "—"}
                     </dd>
                   </div>
+                  {event.policyDigest ? (
+                    <div>
+                      <dt className="text-zinc-500">Policy digest</dt>
+                      <dd className="font-mono break-all">{event.policyDigest}</dd>
+                    </div>
+                  ) : null}
+                  {event.manifestDigest ? (
+                    <div>
+                      <dt className="text-zinc-500">Manifest digest</dt>
+                      <dd className="font-mono break-all">{event.manifestDigest}</dd>
+                    </div>
+                  ) : null}
+                  {event.watch ? (
+                    <div>
+                      <dt className="text-zinc-500">Watch</dt>
+                      <dd className="font-mono">{event.watch}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt className="text-zinc-500">Correlation id</dt>
                     <dd className="font-mono break-all">
@@ -210,7 +248,9 @@ function phaseIcon(phase: KubernetesRolloutObservation["phase"]): string {
       return "⏱";
     case "canceled":
       return "■";
-    case "pending-engine":
+    case "skipped":
+      return "–";
+    case "progressing":
       return "…";
     default:
       return "◉";

@@ -450,7 +450,7 @@ describe("action wizard insert + redaction", () => {
           sideEffects: true,
           retrySafe: false,
           idempotent: true,
-          waitReady: "deferred-e7.3",
+          waitReady: "observed",
         },
       ],
       errors: [],
@@ -459,7 +459,16 @@ describe("action wizard insert + redaction", () => {
         force: false,
         serverDryRunAlways: true,
         clientDryRunAddsLocalValidationOnly: true,
-        waitReady: "deferred-e7.3",
+        waitReady: "observed",
+      },
+      observation: {
+        waitReady: "observed",
+        states: ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
+        kinds: ["Deployment", "StatefulSet", "DaemonSet", "Job"],
+        verb: "watch",
+        cancel: "stop-wait",
+        timeout: "stop-wait",
+        neverDeletesOrRollsBack: true,
       },
     };
     const fromEngine = wizardConfigFields(entry, "kubernetes.apply", engineCatalog);
@@ -467,7 +476,13 @@ describe("action wizard insert + redaction", () => {
     assert.equal(fromEngine.some((field) => field.name === "force"), false);
     assert.match(
       fromEngine.find((field) => field.name === "wait")?.description ?? "",
-      /contract-fallback|never deletes or rolls back/,
+      /waitReady=observed|never deletes or rolls back/,
+    );
+    assert.equal(
+      (fromEngine.find((field) => field.name === "wait")?.description ?? "").includes(
+        "deferred-e7.3",
+      ),
+      false,
     );
   });
 });

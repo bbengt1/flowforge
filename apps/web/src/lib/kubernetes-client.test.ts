@@ -238,7 +238,7 @@ describe("kubernetes client", () => {
             fieldManager: "flowforge",
             force: false,
             serverDryRunAlways: true,
-            waitReady: "deferred-e7.3",
+            waitReady: "observed",
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -252,7 +252,7 @@ describe("kubernetes client", () => {
       assert.equal(catalog.catalog.nodes[0]?.type, "kubernetes.apply");
       assert.equal(catalog.catalog.errors[0]?.code, "ownership-conflict");
       assert.equal(catalog.catalog.apply.fieldManager, "flowforge");
-      assert.equal(catalog.catalog.apply.waitReady, "deferred-e7.3");
+      assert.equal(catalog.catalog.apply.waitReady, "observed");
     }
     assert.match(seen[0] ?? "", /\/api\/v1\/kubernetes\/catalog$/);
 

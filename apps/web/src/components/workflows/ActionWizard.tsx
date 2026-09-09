@@ -21,7 +21,6 @@ import {
   KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
   effectiveWaitReady,
   isKubernetesRolloutType,
-  observationModeFromCatalog,
   rolloutNodeDescription,
 } from "@/lib/kubernetes-rollout-contract";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
@@ -740,11 +739,9 @@ function ConfigureStep({
             Apply uses FieldManager={applyRules.fieldManager}, Force=
             {String(applyRules.force)}, serverDryRunAlways=
             {String(applyRules.serverDryRunAlways)}. wait=ready →{" "}
-            {effectiveWaitReady(engineCatalog)}
-            {observationModeFromCatalog(engineCatalog).source === "contract-fallback"
-              ? " (contract-fallback)"
-              : ""}
-            . {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
+            {effectiveWaitReady(engineCatalog)} (bounded watch of
+            Deployment/StatefulSet/DaemonSet/Job; other kinds skip).{" "}
+            {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
           </p>
           {engineErrors.length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
@@ -1070,11 +1067,8 @@ function ReviewStep({
           <p className="mt-2 text-xs text-zinc-600">
             SSA FieldManager={applyRules.fieldManager} Force={String(applyRules.force)}.
             Server dry-run always runs before persist. wait=ready →{" "}
-            {effectiveWaitReady(engineCatalog)}
-            {observationModeFromCatalog(engineCatalog).source === "contract-fallback"
-              ? " (contract-fallback)"
-              : ""}
-            . {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
+            {effectiveWaitReady(engineCatalog)} (observable kinds only;
+            others observation=skipped). {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
             {engineErrors.some((item) => item.code === "ownership-conflict")
               ? " Ownership conflicts return 409; force is never applied."
               : ""}

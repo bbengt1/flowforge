@@ -23,6 +23,7 @@
  * `kubernetes-node-contract.ts` — wired to jonny's #78 map on
  * `main` (`GET /workflows/catalog` + `GET /kubernetes/catalog`
  * `nodes[]` / `errors[]` / `apply`). Relates to #71 / Part of #69.
+ * E7.3 observation is `kubernetes-rollout-contract.ts` (`e73-#79`).
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";

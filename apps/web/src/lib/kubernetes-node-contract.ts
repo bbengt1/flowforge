@@ -16,9 +16,11 @@ import {
   KUBERNETES_ROLLOUT_KINDS,
   KUBERNETES_ROLLOUT_NODE_TYPE,
   KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
+  KUBERNETES_WAIT_READY_OBSERVED,
   isKubernetesRolloutKind,
   isKubernetesRolloutType,
   recognitionForKind,
+  rolloutIdentityFromWith,
   rolloutKindsFromCatalog,
   rolloutNodeDescription,
   rolloutWaitReadyMessage,
@@ -51,7 +53,7 @@ export const KUBERNETES_NODE_ROUTE_MAP_SOURCE = "e72-#78" as const;
 export const KUBERNETES_FIELD_MANAGER = "flowforge" as const;
 export const KUBERNETES_FORCE_APPLY = false;
 export const KUBERNETES_DEFAULT_TIMEOUT_SECONDS = 60;
-export const KUBERNETES_OBSERVATION_DEFERRED = "deferred-e7.3" as const;
+export const KUBERNETES_OBSERVATION_DEFERRED = KUBERNETES_WAIT_READY_OBSERVED;
 
 export const KUBERNETES_MVP_NODE_TYPES = [
   "kubernetes.apply",
@@ -133,7 +135,7 @@ export const DEFAULT_KUBERNETES_APPLY_RULES: KubernetesEngineApplyRules = {
   force: false,
   serverDryRunAlways: true,
   clientDryRunAddsLocalValidationOnly: true,
-  waitReady: KUBERNETES_OBSERVATION_DEFERRED,
+  waitReady: KUBERNETES_WAIT_READY_OBSERVED,
 };
 
 const NAMESPACE_DNS = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -399,7 +401,17 @@ export function kubernetesNodeWithFields(
         required: true,
         label: "Name",
         controlHint: "text",
-        description: "Resource name. DNS-1123 label.",
+        description:
+          "Resource name. Required unless resource {kind,name} is supplied.",
+      },
+      {
+        name: "resource",
+        kind: "object",
+        label: "Resource",
+        controlHint: "text",
+        advanced: true,
+        description:
+          "Optional {kind,name} identity. Alternative to kind and name. Verb is watch.",
       },
       {
         ...common.find((field) => field.name === "wait")!,
@@ -599,31 +611,32 @@ export function validateKubernetesNodeConfig(
       );
     }
   }
-  if (type === "kubernetes.get" || isKubernetesRolloutType(type)) {
+  if (type === "kubernetes.get") {
     const name = typeof withValue.name === "string" ? withValue.name.trim() : "";
     if (!name) {
-      errors.push(
-        isKubernetesRolloutType(type)
-          ? "name is required for kubernetes.rolloutStatus."
-          : "name is required for kubernetes.get.",
-      );
+      errors.push("name is required for kubernetes.get.");
     } else if (!NAMESPACE_DNS.test(name)) {
       errors.push("name must be a DNS label.");
     }
   }
   if (isKubernetesRolloutType(type)) {
-    const kind = typeof withValue.kind === "string" ? withValue.kind.trim() : "";
+    const identity = rolloutIdentityFromWith(withValue);
     const rolloutKinds = rolloutKindsFromCatalog(context.engineCatalog);
     const allowedRollout = rolloutKinds.filter((item) =>
       [...allowedKinds].includes(item),
     );
     const check = allowedRollout.length > 0 ? allowedRollout : rolloutKinds;
-    if (!kind) {
-      errors.push("kind is required.");
-    } else if (![...check].includes(kind)) {
+    if (!identity.kind) {
+      errors.push("kind is required (or resource.kind).");
+    } else if (![...check].includes(identity.kind)) {
       errors.push(
-        `kind ${kind} is not a rollout workload (${[...check].join(", ")}).`,
+        `kind ${identity.kind} is not a rollout workload (${[...check].join(", ")}).`,
       );
+    }
+    if (!identity.name) {
+      errors.push("name is required for kubernetes.rolloutStatus unless resource.name is set.");
+    } else if (!NAMESPACE_DNS.test(identity.name)) {
+      errors.push("name must be a DNS label.");
     }
   }
 
@@ -952,15 +965,15 @@ const KUBERNETES_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
       inherit(
         "resource",
         "object",
-        true,
-        "Resource identity (kind, name, namespace) to observe.",
+        false,
+        "Optional {kind,name} identity. with.kind and with.name are also accepted.",
       ),
     ],
     outputs: [
       resultPort,
       inherit("status", "object", false, "Redacted observation status."),
     ],
-    requiredWith: ["clusterTargetId", "namespace", "kind", "name"],
+    requiredWith: ["clusterTargetId", "namespace"],
     allowedWith: fieldsToAllowed("kubernetes.rolloutStatus"),
     policy: {
       permissions: ["workflow.execute", "kubernetes.read", "clusterTarget.use"],

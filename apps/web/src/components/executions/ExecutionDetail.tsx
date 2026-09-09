@@ -852,7 +852,10 @@ export function ExecutionDetail({
               steps: view.steps,
               auditEvents: view.auditEvents,
             })}
-            auditSnapshots={collectRolloutAuditSnapshots(view.auditEvents)}
+            auditSnapshots={collectRolloutAuditSnapshots(
+              view.auditEvents,
+              view.steps,
+            )}
           />
 
           <ExecutionArtifacts

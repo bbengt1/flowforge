@@ -190,10 +190,12 @@ describe("kubernetes policy parse / write", () => {
     assert.equal(catalog?.apply.fieldManager, "flowforge");
     assert.equal(catalog?.apply.force, false);
     assert.equal(catalog?.apply.serverDryRunAlways, true);
-    assert.equal(catalog?.apply.waitReady, "deferred-e7.3");
+    assert.equal(catalog?.apply.waitReady, "observed");
+    assert.equal(catalog?.observation?.waitReady, "observed");
+    assert.equal(catalog?.observation?.verb, "watch");
   });
 
-  it("parses GET /kubernetes/catalog nodes[] / errors[] / apply from #78", () => {
+  it("parses GET /kubernetes/catalog nodes[] / errors[] / apply / observation from #79", () => {
     const catalog = parseKubernetesEngineCatalog({
       credentialType: "kubernetes",
       allowedKinds: ["ConfigMap", "Service"],
@@ -214,7 +216,7 @@ describe("kubernetes policy parse / write", () => {
           fieldManager: "flowforge",
           force: false,
           serverDryRunAlways: true,
-          waitReady: "deferred-e7.3",
+          waitReady: "observed",
         },
         {
           type: "kubernetes.get",
@@ -235,7 +237,16 @@ describe("kubernetes policy parse / write", () => {
         force: false,
         serverDryRunAlways: true,
         clientDryRunAddsLocalValidationOnly: true,
-        waitReady: "deferred-e7.3",
+        waitReady: "observed",
+      },
+      observation: {
+        waitReady: "observed",
+        states: ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
+        kinds: ["Deployment", "StatefulSet", "DaemonSet", "Job"],
+        verb: "watch",
+        cancel: "stop-wait",
+        timeout: "stop-wait",
+        neverDeletesOrRollsBack: true,
       },
     });
     assert.ok(catalog);
@@ -246,7 +257,14 @@ describe("kubernetes policy parse / write", () => {
     assert.equal(catalog?.errors[0]?.status, 409);
     assert.equal(catalog?.apply.fieldManager, "flowforge");
     assert.equal(catalog?.apply.force, false);
-    assert.equal(catalog?.apply.waitReady, "deferred-e7.3");
+    assert.equal(catalog?.apply.waitReady, "observed");
+    assert.equal(catalog?.observation?.waitReady, "observed");
+    assert.deepEqual(catalog?.observation?.kinds, [
+      "Deployment",
+      "StatefulSet",
+      "DaemonSet",
+      "Job",
+    ]);
   });
 });
 

@@ -20,6 +20,7 @@ import {
   type KubernetesEngineCatalog,
   type KubernetesEngineErrorShape,
   type KubernetesEngineNodeContract,
+  type KubernetesEngineObservationRules,
   type KubernetesEvaluationKey,
   type KubernetesPolicyBody,
 } from "./kubernetes-types.ts";
@@ -280,6 +281,7 @@ export function parseKubernetesEngineCatalog(
     nodes: parseEngineNodes(rec.nodes),
     errors: parseEngineErrors(rec.errors),
     apply: parseEngineApply(rec.apply),
+    observation: parseEngineObservation(rec.observation),
   };
 }
 
@@ -372,7 +374,29 @@ function parseEngineApply(raw: unknown): KubernetesEngineApplyRules {
     serverDryRunAlways: rec.serverDryRunAlways !== false,
     clientDryRunAddsLocalValidationOnly:
       rec.clientDryRunAddsLocalValidationOnly !== false,
-    waitReady: String(rec.waitReady ?? "deferred-e7.3").trim() || "deferred-e7.3",
+    waitReady: String(rec.waitReady ?? "observed").trim() || "observed",
+  };
+}
+
+function parseEngineObservation(raw: unknown): KubernetesEngineObservationRules {
+  const rec =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const states = stringList(rec.states);
+  const kinds = stringList(rec.kinds);
+  return {
+    waitReady: String(rec.waitReady ?? "observed").trim() || "observed",
+    states: states.length
+      ? states
+      : ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
+    kinds: kinds.length
+      ? kinds
+      : ["Deployment", "StatefulSet", "DaemonSet", "Job"],
+    verb: String(rec.verb ?? "watch").trim() || "watch",
+    cancel: String(rec.cancel ?? "stop-wait").trim() || "stop-wait",
+    timeout: String(rec.timeout ?? "stop-wait").trim() || "stop-wait",
+    neverDeletesOrRollsBack: rec.neverDeletesOrRollsBack !== false,
   };
 }
 
