@@ -143,6 +143,21 @@ E6.3 (Chloe) adds the **Add action** wizard as the primary canvas authoring path
 
 Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.tsx`.
 
+## E6.4 execution history and replay
+
+E6.4 (Chloe) extends E5.1–E5.3 `/executions` and the E6.2/E6.3 editor run control. `apps/api` is unchanged. Prefer existing E5 routes. Session cookies + `X-CSRF-Token` stay the same.
+
+- **Published-version run:** `/workflows/{id}` run control lists published versions only. Pre-run review shows version digest, trigger input (optional JSON, secrets stripped), pinned target/environment, `POST /policy/evaluate`, and side-effect warnings. Start is still `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey?, input?}`. Drafts never execute.
+- **Graph replay:** `/executions/{id}` overlays step status on the E6.2 canvas projection of the pinned version YAML (`GET /workflows/{id}/versions/{versionId}`). Invalid YAML is never guessed. Current node, duration, attempts, waiting/approval, safe outputs, artifacts, correlation ID, and redacted logs are shown. Status uses icon + text — `indeterminate` is unmistakable.
+- **Cancel / retry:** E5.2 rules unchanged. Cancel is idempotent. Retry is hidden for `indeterminate` and provider nodes.
+- **Compare:** two executions on `/executions` or detail — client-side diff of redacted summaries (status, inputs, outcomes, policy, pins). Same-workflow YAML can still use `POST /workflows/{id}/compare`. Secrets are stripped; plaintext never appears in the diff.
+- **Approvals:** waiting state lists `GET /approvals?executionId=`. Decide links go to `/approvals/{id}`. **Wait / resume controls stay disabled until E10** — no invented wait APIs.
+- **Accessibility:** history list is a keyboard listbox (arrows / Home / End / Enter). Detail has skip links and error navigation to failed or indeterminate nodes. Status is never color alone.
+
+Helpers: `apps/web/src/lib/execution-replay.ts`. Components: `ExecutionReplay.tsx`, `ExecutionCompare.tsx`.
+
+**API gaps (jonny, not blocking):** no execution-vs-execution compare route; no replay projection endpoint (client uses version YAML + steps); wait/resume remain E10.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

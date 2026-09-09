@@ -10,16 +10,29 @@ import {
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_KEY_HELP,
   IDEMPOTENCY_REPLAY_MESSAGE,
+  PRE_RUN_PUBLISHED_ONLY_HELP,
+  PRE_RUN_SIDE_EFFECT_HELP,
   executionHistoryHref,
 } from "@/lib/execution-contract";
 import { isIdempotencyConflict } from "@/lib/execution";
+import { buildPreRunReview, publishedRunVersions } from "@/lib/execution-replay";
+import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { shortDigest } from "@/lib/workflow";
-import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
+import type {
+  WorkflowCatalog,
+  WorkflowExecution,
+  WorkflowVersion,
+} from "@/lib/workflow-types";
 
 type RunControlProps = {
   versions: WorkflowVersion[];
   selectedVersionId: string;
+  selectedVersion?: WorkflowVersion | null;
+  catalog?: WorkflowCatalog | null;
+  versionPins?: OpsConfigPin[];
+  triggerInput: string;
+  onTriggerInput: (value: string) => void;
   execution: WorkflowExecution | null;
   pending: boolean;
   dirty: boolean;
@@ -40,6 +53,11 @@ type RunControlProps = {
 export function RunControl({
   versions,
   selectedVersionId,
+  selectedVersion,
+  catalog,
+  versionPins,
+  triggerInput,
+  onTriggerInput,
   execution,
   pending,
   dirty,
@@ -56,7 +74,18 @@ export function RunControl({
   onRun,
   onRefreshPin,
 }: RunControlProps) {
-  const canRun = Boolean(selectedVersionId) && !pending && !runBlocked;
+  const published = publishedRunVersions(versions);
+  const review = buildPreRunReview({
+    version: selectedVersion ?? published.find((item) => item.id === selectedVersionId),
+    versions: published,
+    selectedVersionId,
+    pins: versionPins,
+    triggerInput: triggerInput.trim() ? safeJson(triggerInput) : null,
+    evaluation,
+    catalog,
+  });
+  const canRun =
+    Boolean(selectedVersionId) && !pending && !runBlocked && review.published;
   const replayed =
     Boolean(execution?.replayed || execution?.reused) || lastStartStatus === 200;
   const created = lastStartStatus === 201 && !replayed;
@@ -71,9 +100,7 @@ export function RunControl({
         Run published version
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Executions require a published{" "}
-        <code className="font-mono text-xs">workflowVersionId</code>. Drafts
-        cannot run. POST body is{" "}
+        {PRE_RUN_PUBLISHED_ONLY_HELP} POST body is{" "}
         <code className="font-mono text-xs">
           {"{workflowVersionId, idempotencyKey?, input?}"}
         </code>
@@ -82,7 +109,7 @@ export function RunControl({
         <code className="font-mono text-xs">200</code> is a replay.
       </p>
 
-      {versions.length === 0 ? (
+      {published.length === 0 ? (
         <p className="mt-4 text-sm text-zinc-600">
           Publish a version before running. There is no draft option here.
         </p>
@@ -96,7 +123,7 @@ export function RunControl({
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
             >
               <option value="">Select a published version</option>
-              {versions.map((version) => (
+              {published.map((version) => (
                 <option key={version.id} value={version.id}>
                   v{version.versionNumber} · {shortDigest(version.digest)}
                 </option>
@@ -119,6 +146,18 @@ export function RunControl({
               {IDEMPOTENCY_KEY_HELP}
             </span>
           </label>
+          <label className="block text-sm">
+            <span className="text-zinc-600">Trigger input (optional JSON)</span>
+            <textarea
+              value={triggerInput}
+              onChange={(event) => onTriggerInput(event.target.value)}
+              rows={3}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder='{"dryRun":true}'
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+            />
+          </label>
           <div className="flex items-end">
             <button
               type="button"
@@ -140,7 +179,52 @@ export function RunControl({
       ) : null}
 
       {selectedVersionId ? (
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
+          <section
+            aria-labelledby="pre-run-review-heading"
+            className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3"
+          >
+            <h3 id="pre-run-review-heading" className="text-sm font-semibold">
+              Pre-run review
+            </h3>
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-zinc-500">Version digest</dt>
+                <dd className="font-mono text-xs break-all">
+                  {review.digest || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Triggers</dt>
+                <dd className="font-mono text-xs">
+                  {review.triggers.map((item) => item.type).join(", ") || "—"}
+                </dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-zinc-500">Target / environment</dt>
+                <dd>{review.environment}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-zinc-500">Trigger input (redacted)</dt>
+                <dd>
+                  <pre className="mt-1 overflow-auto rounded-lg bg-white p-2 font-mono text-xs text-zinc-700">
+                    {review.triggerInputText}
+                  </pre>
+                </dd>
+              </div>
+            </dl>
+            {review.sideEffectWarnings.length > 0 ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-950">
+                <li>{PRE_RUN_SIDE_EFFECT_HELP}</li>
+                {review.sideEffectWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            ) : null}
+            {!review.published ? (
+              <p className="mt-3 text-sm text-amber-950">{review.blockReason}</p>
+            ) : null}
+          </section>
           <PreRunPolicyReview
             evaluation={evaluation}
             pending={evaluationPending}
@@ -210,4 +294,12 @@ export function RunControl({
       ) : null}
     </section>
   );
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { _invalidJson: true };
+  }
 }

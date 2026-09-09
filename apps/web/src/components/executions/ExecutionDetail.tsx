@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionArtifacts } from "@/components/executions/ExecutionArtifacts";
+import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
+import { ExecutionReplay } from "@/components/executions/ExecutionReplay";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import {
   cancelExecution,
   downloadExecutionArtifact,
@@ -31,6 +35,8 @@ import {
   RETRY_INDETERMINATE_MESSAGE,
   STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
+import { listExecutionApprovals } from "@/lib/approval-client";
+import type { ApprovalRequest } from "@/lib/approval-types";
 import {
   boundRedactedDisplay,
   canCancelExecution,
@@ -45,6 +51,18 @@ import {
   retentionStatusMessage,
   retryAffordanceMessage,
 } from "@/lib/execution";
+import {
+  compareRedactedExecutions,
+  executionErrorNavLinks,
+} from "@/lib/execution-replay";
+import { adaptActionLibrary } from "@/lib/workflow-action-library";
+import { compareWorkflow, fetchWorkflowCatalog, getWorkflowVersion } from "@/lib/workflow-client";
+import { versionCompareRef } from "@/lib/workflow";
+import type {
+  CompareWorkflowResult,
+  WorkflowCatalog,
+  WorkflowVersion,
+} from "@/lib/workflow-types";
 import type { ExecutionLogSlice } from "@/lib/execution-types";
 import { EXECUTION_CANCEL_PERMISSION } from "@/lib/execution-types";
 import type { ExecutionDetail as ExecutionDetailModel } from "@/lib/execution-types";
@@ -97,6 +115,16 @@ export function ExecutionDetail({
   const [stepLogs, setStepLogs] = useState<Record<string, ExecutionLogSlice>>(
     {},
   );
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [version, setVersion] = useState<WorkflowVersion | null>(null);
+  const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
+  const [selection, setSelection] = useState<EditorSelection>({ kind: "workflow" });
+  const [compareId, setCompareId] = useState("");
+  const [compareDetail, setCompareDetail] = useState<ExecutionDetailModel | null>(
+    null,
+  );
+  const [versionCompare, setVersionCompare] =
+    useState<CompareWorkflowResult | null>(null);
   const requestGate = useRef(createGenerationGate());
 
   const ready =
@@ -151,6 +179,27 @@ export function ExecutionDetail({
     setDetail(result.execution);
     setStrippedKeys(result.strippedKeys);
     void loadStepLogs(result.execution.steps.map((step) => step.id));
+    const workflowIdForPin = result.execution.workflowId || workflowId;
+    if (workflowIdForPin && result.execution.workflowVersionId) {
+      const [versionResult, catalogResult, approvalResult] = await Promise.all([
+        getWorkflowVersion(
+          identity,
+          workflowIdForPin,
+          result.execution.workflowVersionId,
+        ),
+        fetchWorkflowCatalog(identity),
+        listExecutionApprovals(identity, workflowIdForPin, result.execution.id),
+      ]);
+      if (versionResult.ok) {
+        setVersion(versionResult.version);
+      }
+      if (catalogResult.ok) {
+        setCatalog(catalogResult.catalog);
+      }
+      if (approvalResult.ok) {
+        setApprovals(approvalResult.items);
+      }
+    }
   }
 
   async function loadStepLogs(stepIds: string[]) {
@@ -370,7 +419,24 @@ export function ExecutionDetail({
         </p>
       ) : null}
 
-      {problem ? <ProblemBanner problem={problem} /> : null}
+      <nav aria-label="Execution errors" className="text-sm">
+        <a
+          href="#execution-errors"
+          className="sr-only focus:not-sr-only focus:rounded-md focus:border focus:border-teal-800 focus:bg-white focus:px-3 focus:py-2"
+        >
+          Skip to errors
+        </a>
+        <a
+          href="#graph-replay-heading"
+          className="sr-only focus:not-sr-only focus:ml-2 focus:rounded-md focus:border focus:border-teal-800 focus:bg-white focus:px-3 focus:py-2"
+        >
+          Skip to graph replay
+        </a>
+      </nav>
+
+      <div id="execution-errors">
+        {problem ? <ProblemBanner problem={problem} /> : null}
+      </div>
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">
           last request_id {lastRequestId}
@@ -394,8 +460,44 @@ export function ExecutionDetail({
         </button>
       </div>
 
-      {view ? (
+      {view && detail ? (
         <>
+          {(() => {
+            const errorLinks = executionErrorNavLinks({
+              steps: view.steps,
+              problem,
+            });
+            if (errorLinks.length === 0) {
+              return null;
+            }
+            return (
+              <nav
+                aria-label="Failed and indeterminate steps"
+                className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm"
+              >
+                <p className="font-medium">Error navigation</p>
+                <ul className="mt-2 space-y-1">
+                  {errorLinks.map((link) => (
+                    <li key={`${link.href}-${link.label}`}>
+                      <a
+                        href={link.href}
+                        onClick={(event) => {
+                          if (link.nodeId) {
+                            event.preventDefault();
+                            setSelection({ kind: "node", id: link.nodeId });
+                            document.getElementById(link.id)?.focus();
+                          }
+                        }}
+                        className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                      >
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            );
+          })()}
           <section
             className={
               view.header.indeterminate
@@ -548,13 +650,107 @@ export function ExecutionDetail({
             ) : null}
           </section>
 
+          <ExecutionReplay
+            detail={detail}
+            version={version}
+            catalog={catalog}
+            entries={adaptActionLibrary(catalog)}
+            approvals={approvals}
+            artifacts={view.artifacts}
+            selection={selection}
+            onSelect={setSelection}
+            logsText={
+              selection.kind === "node"
+                ? stepLogs[
+                    view.steps.find((step) => step.nodeId === selection.id)?.id ??
+                      ""
+                  ]?.text
+                : undefined
+            }
+          />
+
+          <ExecutionApprovalState
+            executionStatus={view.header.status}
+            approvals={approvals}
+          />
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold">Compare another run</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Client-side diff of redacted summaries. Secrets stay{" "}
+              <code className="font-mono text-xs">[redacted]</code>.
+            </p>
+            <form
+              className="mt-3 flex flex-wrap items-end gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const id = compareId.trim();
+                if (!id) {
+                  return;
+                }
+                void loadExecutionHistory(
+                  identity,
+                  id,
+                  workflowId || detail?.workflowId,
+                ).then(async (result) => {
+                  setLastRequestId(result.requestId);
+                  if (!result.ok) {
+                    setProblem(result.problem);
+                    return;
+                  }
+                  setCompareDetail(result.execution);
+                  const leftRef = versionCompareRef(detail.workflowVersionId);
+                  const rightRef = versionCompareRef(result.execution.workflowVersionId);
+                  if (
+                    detail.workflowId &&
+                    detail.workflowId === result.execution.workflowId &&
+                    leftRef &&
+                    rightRef
+                  ) {
+                    const yaml = await compareWorkflow(identity, detail.workflowId, {
+                      left: leftRef,
+                      right: rightRef,
+                    });
+                    setVersionCompare(yaml.ok ? yaml.compare : null);
+                  } else {
+                    setVersionCompare(null);
+                  }
+                });
+              }}
+            >
+              <label className="text-sm">
+                <span className="font-medium">Other execution id</span>
+                <input
+                  value={compareId}
+                  onChange={(event) => setCompareId(event.target.value)}
+                  className="mt-1 block w-80 rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+              >
+                Compare
+              </button>
+            </form>
+            {compareDetail ? (
+              <div className="mt-4">
+                <ExecutionCompare
+                  result={compareRedactedExecutions(detail, compareDetail)}
+                  versionCompare={versionCompare}
+                />
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Steps</h2>
             <p className="mt-1 text-sm text-zinc-600">
               Redacted step state with bounded logs and output. Secret
               values show as{" "}
               <code className="font-mono text-xs">[redacted]</code>. Graph
-              replay stays E6.
+              replay above uses the pinned published version when YAML is
+              available.
             </p>
             <p className="mt-1 text-xs text-zinc-500">{BOUNDED_LOG_HELP}</p>
             {view.steps.length === 0 ? (

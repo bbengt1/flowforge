@@ -1,22 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   listExecutions,
   listWorkflowExecutions,
+  loadExecutionHistory,
 } from "@/lib/execution-client";
-import { IDEMPOTENCY_REPLAY_MESSAGE } from "@/lib/execution-contract";
+import {
+  IDEMPOTENCY_REPLAY_MESSAGE,
+  KEYBOARD_HISTORY_HELP,
+} from "@/lib/execution-contract";
 import {
   canSeeExecutionsNav,
   documentedExecutionStatuses,
   executionListDisplay,
   isExecutionForbidden,
 } from "@/lib/execution";
+import {
+  compareRedactedExecutions,
+  historyKeyAction,
+} from "@/lib/execution-replay";
 import type { ExecutionListQuery, ExecutionRecord } from "@/lib/execution-types";
+import { compareWorkflow } from "@/lib/workflow-client";
+import { versionCompareRef } from "@/lib/workflow";
+import type { CompareWorkflowResult } from "@/lib/workflow-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { callIdentityProxy } from "@/lib/identity-client";
@@ -58,6 +71,15 @@ export function ExecutionHistory() {
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [compareLeftId, setCompareLeftId] = useState("");
+  const [compareRightId, setCompareRightId] = useState("");
+  const [compareResult, setCompareResult] = useState<ReturnType<
+    typeof compareRedactedExecutions
+  > | null>(null);
+  const [versionCompare, setVersionCompare] =
+    useState<CompareWorkflowResult | null>(null);
+  const router = useRouter();
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -256,6 +278,97 @@ export function ExecutionHistory() {
         </form>
       </section>
 
+      {forbidden || denied ? null : visible.length > 1 ? (
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold">Compare executions</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            Two redacted summaries. YAML compare uses the existing workflow
+            compare route when both pins share a workflow.
+          </p>
+          <form
+            className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                const [left, right] = await Promise.all([
+                  loadExecutionHistory(identity, compareLeftId),
+                  loadExecutionHistory(identity, compareRightId),
+                ]);
+                if (!left.ok || !right.ok) {
+                  setProblem((left.ok ? right : left).problem);
+                  return;
+                }
+                setCompareResult(
+                  compareRedactedExecutions(left.execution, right.execution),
+                );
+                const leftRef = versionCompareRef(left.execution.workflowVersionId);
+                const rightRef = versionCompareRef(
+                  right.execution.workflowVersionId,
+                );
+                if (
+                  left.execution.workflowId &&
+                  left.execution.workflowId === right.execution.workflowId &&
+                  leftRef &&
+                  rightRef
+                ) {
+                  const yaml = await compareWorkflow(
+                    identity,
+                    left.execution.workflowId,
+                    { left: leftRef, right: rightRef },
+                  );
+                  setVersionCompare(yaml.ok ? yaml.compare : null);
+                } else {
+                  setVersionCompare(null);
+                }
+              })();
+            }}
+          >
+            <label className="text-sm">
+              <span className="font-medium">Left</span>
+              <select
+                value={compareLeftId}
+                onChange={(event) => setCompareLeftId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value="">Select an execution</option>
+                {visible.map((row) => (
+                  <option key={`left-${row.id}`} value={row.id}>
+                    {row.workflowLabel} · {row.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="font-medium">Right</span>
+              <select
+                value={compareRightId}
+                onChange={(event) => setCompareRightId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value="">Select an execution</option>
+                {visible.map((row) => (
+                  <option key={`right-${row.id}`} value={row.id}>
+                    {row.workflowLabel} · {row.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={!compareLeftId || !compareRightId}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                Compare
+              </button>
+            </div>
+          </form>
+          <div className="mt-4">
+            <ExecutionCompare result={compareResult} versionCompare={versionCompare} />
+          </div>
+        </section>
+      ) : null}
+
       {forbidden || denied ? null : visible.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
           <h2 className="text-lg font-semibold">No executions yet</h2>
@@ -275,14 +388,39 @@ export function ExecutionHistory() {
           </p>
         </section>
       ) : (
-        <ul className="grid gap-3">
-          {visible.map((row) => (
+        <div>
+        <p className="mb-3 text-xs text-zinc-500">{KEYBOARD_HISTORY_HELP}</p>
+        <ul
+          role="listbox"
+          aria-label="Execution history"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            const next = historyKeyAction(event.key, focusIndex, visible.length);
+            if (next.index !== focusIndex) {
+              event.preventDefault();
+              setFocusIndex(next.index);
+            }
+            if (next.activate) {
+              event.preventDefault();
+              const href = visible[next.index]?.href;
+              if (href) {
+                router.push(href);
+              }
+            }
+          }}
+          className="grid gap-3 outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+        >
+          {visible.map((row, index) => (
             <li
               key={row.id}
+              role="option"
+              aria-selected={index === focusIndex}
               className={
                 row.indeterminate
                   ? "rounded-xl border-2 border-amber-700 bg-amber-50 p-4 shadow-sm"
-                  : "rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                  : index === focusIndex
+                    ? "rounded-xl border border-teal-800 bg-white p-4 shadow-sm ring-2 ring-teal-700/20"
+                    : "rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
               }
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -335,6 +473,7 @@ export function ExecutionHistory() {
             </li>
           ))}
         </ul>
+        </div>
       )}
     </div>
   );

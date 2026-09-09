@@ -3,6 +3,7 @@ import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingS
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
 import { approvalStatusLabel, isExecutionAwaitingApproval } from "@/lib/approval";
 import type { ApprovalRequest } from "@/lib/approval-types";
+import { approvalWaitControls } from "@/lib/execution-replay";
 
 type ExecutionApprovalStateProps = {
   executionStatus: string;
@@ -14,6 +15,7 @@ export function ExecutionApprovalState({
   approvals,
 }: ExecutionApprovalStateProps) {
   const waiting = isExecutionAwaitingApproval(executionStatus);
+  const waitControls = approvalWaitControls();
   if (!waiting && approvals.length === 0) {
     return null;
   }
@@ -45,9 +47,36 @@ export function ExecutionApprovalState({
             </p>
             <ApprovalValidityBanner approval={item} />
             <ApprovalBindingSnapshot binding={item.binding} />
+            <p className="text-sm">
+              <Link
+                href={`/approvals/${item.id}`}
+                className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              >
+                Decide {item.id}
+              </Link>
+            </p>
           </li>
         ))}
       </ul>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!waitControls.waitEnabled}
+          title={waitControls.waitHelp}
+          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Wait for approval
+        </button>
+        <button
+          type="button"
+          disabled={!waitControls.resumeEnabled}
+          title={waitControls.resumeHelp}
+          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Resume
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-zinc-500">{waitControls.waitHelp}</p>
     </section>
   );
 }

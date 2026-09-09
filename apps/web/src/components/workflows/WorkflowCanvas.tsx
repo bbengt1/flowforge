@@ -27,8 +27,11 @@ type WorkflowCanvasProps = {
   selection: EditorSelection;
   entries: ActionLibraryEntry[];
   onSelect: (selection: EditorSelection) => void;
-  onInsertType: (type: string) => void;
-  onConnect: (from: string, to: string) => string[];
+  onInsertType?: (type: string) => void;
+  onConnect?: (from: string, to: string) => string[];
+  readOnly?: boolean;
+  currentNodeId?: string;
+  heading?: string;
 };
 
 const NODE_W = 188;
@@ -43,6 +46,9 @@ export function WorkflowCanvas({
   onSelect,
   onInsertType,
   onConnect,
+  readOnly = false,
+  currentNodeId,
+  heading,
 }: WorkflowCanvasProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0, scale: 1 });
@@ -99,6 +105,10 @@ export function WorkflowCanvas({
     }
     const from = formatPortRef({ nodeId: linkFrom.nodeId, port: linkFrom.port });
     const to = formatPortRef({ nodeId: toNode, port: toPort });
+    if (!onConnect) {
+      setLinkFrom(null);
+      return;
+    }
     const errors = onConnect(from, to);
     setConnectError(errors[0] ?? null);
     setLinkFrom(null);
@@ -146,10 +156,12 @@ export function WorkflowCanvas({
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
         <div>
           <h2 id="canvas-heading" className="text-base font-semibold">
-            Canvas
+            {heading ?? (readOnly ? "Graph replay" : "Canvas")}
           </h2>
           <p className="text-xs text-zinc-500">
-            Pan, zoom (Ctrl+wheel), select. Connect output → compatible input.
+            {readOnly
+              ? "Read-only overlay of step status on the pinned published version. Pan, zoom, and select with the keyboard."
+              : "Pan, zoom (Ctrl+wheel), select. Connect output → compatible input."}
             {pending ? " Validating…" : ""}
           </p>
         </div>
@@ -193,11 +205,17 @@ export function WorkflowCanvas({
         onPointerLeave={() => setDragging(null)}
         onWheel={wheelZoom}
         onDragOver={(event) => {
+          if (readOnly || !onInsertType) {
+            return;
+          }
           if ([...event.dataTransfer.types].includes(ACTION_DRAG_MIME)) {
             event.preventDefault();
           }
         }}
         onDrop={(event) => {
+          if (readOnly || !onInsertType) {
+            return;
+          }
           const type = event.dataTransfer.getData(ACTION_DRAG_MIME);
           if (type) {
             event.preventDefault();
@@ -266,14 +284,24 @@ export function WorkflowCanvas({
               x={positions.get(node.id)?.x ?? 0}
               y={positions.get(node.id)?.y ?? 0}
               selected={selection.kind === "node" && selection.id === node.id}
+              current={currentNodeId === node.id}
+              readOnly={readOnly}
               linkFrom={linkFrom}
               entries={entries}
               onSelect={() => onSelect({ kind: "node", id: node.id })}
               onOutput={(port) => {
+                if (readOnly) {
+                  return;
+                }
                 setConnectError(null);
                 setLinkFrom({ nodeId: node.id, port });
               }}
-              onInput={(port) => tryConnect(node.id, port)}
+              onInput={(port) => {
+                if (readOnly) {
+                  return;
+                }
+                tryConnect(node.id, port);
+              }}
             />
           ))}
           {graph.edges.map((edge) => (
@@ -303,6 +331,8 @@ function CanvasNode({
   x,
   y,
   selected,
+  current,
+  readOnly,
   linkFrom,
   entries,
   onSelect,
@@ -314,6 +344,8 @@ function CanvasNode({
   x: number;
   y: number;
   selected: boolean;
+  current?: boolean;
+  readOnly?: boolean;
   linkFrom: { nodeId: string; port: string } | null;
   entries: ActionLibraryEntry[];
   onSelect: () => void;
@@ -322,15 +354,30 @@ function CanvasNode({
 }) {
   return (
     <div
+      id={readOnly ? `replay-node-${node.id}` : undefined}
       data-canvas-node={node.id}
       role="group"
-      aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}`}
+      aria-current={current ? "true" : undefined}
+      aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}${
+        current ? " current node" : ""
+      }`}
+      tabIndex={0}
       onPointerDown={(event) => {
         event.stopPropagation();
         onSelect();
       }}
-      className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm ${
-        selected ? "border-teal-800 ring-2 ring-teal-700/30" : "border-zinc-300"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700 ${
+        selected || current
+          ? "border-teal-800 ring-2 ring-teal-700/30"
+          : node.state === "indeterminate"
+            ? "border-2 border-amber-700"
+            : "border-zinc-300"
       }`}
       style={{ left: x, top: y, width: NODE_W, minHeight: NODE_H }}
     >
@@ -354,7 +401,7 @@ function CanvasNode({
               key={`in-${port.name}`}
               port={port}
               direction="in"
-              available={inputAvailable(node, nodes, port, linkFrom, entries)}
+              available={!readOnly && inputAvailable(node, nodes, port, linkFrom, entries)}
               onClick={() => onInput(port.name)}
             />
           ))}
@@ -365,7 +412,7 @@ function CanvasNode({
               key={`out-${port.name}`}
               port={port}
               direction="out"
-              available
+              available={!readOnly}
               onClick={() => onOutput(port.name)}
             />
           ))}

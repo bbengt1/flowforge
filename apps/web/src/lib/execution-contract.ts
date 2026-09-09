@@ -126,6 +126,33 @@ export const RETRY_CSRF_HELP =
 export const STATUS_POLL_HELP =
   "While queued or running, this page polls GET /executions/{id} for steps and jobs. It never calls /jobs/*.";
 
+/** E6.4 replay / pre-run / compare. No new API routes. */
+export const EXECUTION_REPLAY_STORY = 63;
+export const EXECUTION_AUTHORING_EPIC = 59;
+export const E10_APPROVAL_WAIT_ENABLED = false;
+export const E10_APPROVAL_RESUME_ENABLED = false;
+
+export const APPROVAL_WAIT_DISABLED_HELP =
+  "Approval wait stays disabled until E10 durable flow.approval. This UI does not call a wait API.";
+
+export const APPROVAL_RESUME_DISABLED_HELP =
+  "Resume stays disabled until E10. This UI does not invent a resume route; decide the bound approval instead.";
+
+export const PRE_RUN_PUBLISHED_ONLY_HELP =
+  "Only a published workflowVersionId can run. Drafts are never sent on POST /workflows/{id}/executions.";
+
+export const PRE_RUN_SIDE_EFFECT_HELP =
+  "This published version includes nodes that may change a remote system. Review the digest, trigger input, targets, and policy before starting.";
+
+export const COMPARE_REDACTION_HELP =
+  "Compare shows redacted summaries only. Secret field names are stripped; values never appear as plaintext.";
+
+export const GRAPH_REPLAY_HELP =
+  "Replay overlays step status on the E6.2 canvas projection of the pinned published version YAML. Invalid YAML is never guessed.";
+
+export const KEYBOARD_HISTORY_HELP =
+  "Arrow keys move through the history list. Enter or Space opens the focused execution. Error links jump to the failed or indeterminate step.";
+
 export const ARTIFACT_METADATA_HELP =
   "Artifact cards show encrypted metadata only: name, digest, size, classification, and retention. Bucket credentials and durable public URLs are never displayed or stored.";
 
