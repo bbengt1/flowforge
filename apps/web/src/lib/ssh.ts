@@ -417,9 +417,7 @@ export function parameterSchemaGaps(rows: SshParameterConstraint[]): string[] {
   return gaps;
 }
 
-export function parseSshEngineCatalog(
-  catalog: OpsConfigCatalog | Record<string, unknown> | null | undefined,
-): SshEngineCatalog {
+export function parseSshEngineCatalog(catalog: unknown): SshEngineCatalog {
   if (!catalog || typeof catalog !== "object") {
     return { ...SSH_CONTRACT_FALLBACK_CATALOG };
   }
