@@ -1,0 +1,114 @@
+package ssh
+
+import "strings"
+
+// Canonical evaluation keys for kind=ssh policies.
+const (
+	KeyAllowedHosts     = "allowedHosts"
+	KeyHosts            = "hosts"
+	KeyAllowedAddresses = "allowedAddresses"
+	KeyAddresses        = "addresses"
+	KeyDeny             = "deny"
+	KeyRequireApproval  = "requireApproval"
+	KeyApproverRole     = "approverRole"
+	KeyExpiresIn        = "expiresIn"
+	KeyOperations       = "operations"
+)
+
+// SSHPolicyKeys is the closed set of keys for kind=ssh.
+func SSHPolicyKeys() []string {
+	return []string{
+		KeyAllowedHosts, KeyHosts,
+		KeyAllowedAddresses, KeyAddresses,
+		KeyDeny, KeyRequireApproval, KeyApproverRole, KeyExpiresIn, KeyOperations,
+	}
+}
+
+// EvaluationKey describes a documented policy field and its aliases.
+type EvaluationKey struct {
+	Canonical             string   `json:"canonical"`
+	Aliases               []string `json:"aliases"`
+	FailClosedWhenPresent bool     `json:"failClosedWhenPresent"`
+	RequiredForPublish    bool     `json:"requiredForPublish"`
+}
+
+// EvaluationKeys is the UI/engine vocabulary for SSH policy.
+func EvaluationKeys() []EvaluationKey {
+	return []EvaluationKey{
+		{Canonical: KeyAllowedHosts, Aliases: []string{KeyAllowedHosts, KeyHosts}, FailClosedWhenPresent: true},
+		{Canonical: KeyAllowedAddresses, Aliases: []string{KeyAllowedAddresses, KeyAddresses}, FailClosedWhenPresent: true},
+		{Canonical: KeyDeny, Aliases: []string{KeyDeny}},
+		{Canonical: KeyRequireApproval, Aliases: []string{KeyRequireApproval}},
+		{Canonical: KeyApproverRole, Aliases: []string{KeyApproverRole}},
+		{Canonical: KeyExpiresIn, Aliases: []string{KeyExpiresIn}},
+		{Canonical: KeyOperations, Aliases: []string{KeyOperations}, FailClosedWhenPresent: true},
+	}
+}
+
+// Hosts is the host allowlist (canonical or alias).
+func Hosts(rules map[string]any) ([]string, bool) {
+	return allowlist(rules, KeyAllowedHosts, KeyHosts)
+}
+
+// Addresses is the address allowlist (canonical or alias).
+func Addresses(rules map[string]any) ([]string, bool) {
+	return allowlist(rules, KeyAllowedAddresses, KeyAddresses)
+}
+
+func allowlist(rules map[string]any, keys ...string) ([]string, bool) {
+	if rules == nil {
+		return nil, false
+	}
+	for _, key := range keys {
+		raw, ok := rules[key]
+		if !ok || raw == nil {
+			continue
+		}
+		return stringSlice(rules, key), true
+	}
+	return nil, false
+}
+
+// Allowed reports whether got is in items. An empty present list denies.
+func Allowed(items []string, got string) bool {
+	got = strings.TrimSpace(got)
+	if got == "" || len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		if strings.EqualFold(item, got) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSlice(m map[string]any, key string) []string {
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, s := range v {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			s, _ := item.(string)
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}

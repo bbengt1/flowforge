@@ -551,6 +551,9 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 	if !s.authorizeKubernetesNodes(w, r, perms, ver.DefinitionYAML) {
 		return
 	}
+	if !s.authorizeSSHNodes(w, r, perms, ver.DefinitionYAML) {
+		return
+	}
 	s.writeExecutionDetail(w, r, scope, exec, http.StatusCreated)
 }
 

@@ -24,15 +24,15 @@ Automatic retries default to zero because remote side effects may not be idempot
 
 ## Initial implementation layout
 
+E8.1 (control-plane) lives on the E4.2 ops-config store. Isolated execution is E8.2.
+
 ```text
 internal/ssh/
-  model.go target.go command_profile.go policy.go client.go execute.go redaction.go
-internal/workflows/nodes/ssh.go
-internal/executions/ssh_runner.go
-internal/api/v1/ssh_handlers.go
-internal/store/ssh_targets.go
-internal/store/command_profiles.go
-migrations/0002_ssh_targets_and_command_profiles.sql
+  model.go target.go schema.go render.go policy.go catalog.go
+internal/opsconfig/          # ssh_target + command_profile kinds, pins
+internal/httpapi/opsconfig.go
+GET /api/v1/ssh/catalog
+internal/ssh/client.go execute.go   # E8.2
 ```
 
 ## Required validation
