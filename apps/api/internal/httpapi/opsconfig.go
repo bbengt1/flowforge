@@ -645,6 +645,10 @@ func (s *Server) validateSSHRunPins(w http.ResponseWriter, r *http.Request, yaml
 			writeOpsError(w, r, err)
 			return false
 		}
+		if err := opsconfig.ValidateSSHRunRetry(pin.Spec, node.With); err != nil {
+			WriteProblem(w, r, http.StatusBadRequest, CodeRetryDenied, "Retry Denied", "retryPolicy.maxAttempts>0 requires a retrySafe command profile with a verification probe.")
+			return false
+		}
 	}
 	return true
 }

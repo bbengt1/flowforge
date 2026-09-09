@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -46,11 +47,15 @@ type Requirement struct {
 
 // OperationResult is the per-node evaluation outcome.
 type OperationResult struct {
-	NodeID      string       `json:"nodeId"`
-	Operation   string       `json:"operation"`
-	Decision    string       `json:"decision"`
-	Reason      string       `json:"reason,omitempty"`
-	Requirement *Requirement `json:"requirement,omitempty"`
+	NodeID                 string       `json:"nodeId"`
+	Operation              string       `json:"operation"`
+	Decision               string       `json:"decision"`
+	Reason                 string       `json:"reason,omitempty"`
+	Requirement            *Requirement `json:"requirement,omitempty"`
+	RetrySafe              bool         `json:"retrySafe,omitempty"`
+	RetryMaxAttempts       int          `json:"retryMaxAttempts"`
+	RetryAllowed           bool         `json:"retryAllowed,omitempty"`
+	VerificationDeclared   bool         `json:"verificationDeclared,omitempty"`
 }
 
 // Result is the workflow-level evaluation used by preview and dispatch.
@@ -129,6 +134,9 @@ func Evaluate(in Input) (Result, error) {
 func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Time) OperationResult {
 	op := strings.TrimSpace(node.Type)
 	item := OperationResult{NodeID: node.ID, Operation: op, Decision: DecisionAllow}
+	if op == ssh.NodeSSHRun {
+		attachSSHRetry(&item, node, pins)
+	}
 	targetKind, targetID := targetRef(node)
 	var target opsconfig.Pin
 	if targetID != "" {
@@ -423,6 +431,28 @@ func manifestKindAllowed(manifests string, allowed []string) bool {
 		}
 	}
 	return true
+}
+
+func attachSSHRetry(item *OperationResult, node workflow.Node, pins map[string]opsconfig.Pin) {
+	item.RetryMaxAttempts = ssh.MaxAttemptsFromWith(node.With)
+	profileID := stringField(node.With, opsconfig.YAMLCommandProfileID)
+	if profileID == "" {
+		return
+	}
+	pin, ok := pins[profileID]
+	if !ok || pin.Spec == nil {
+		return
+	}
+	item.RetrySafe, _ = pin.Spec["retrySafe"].(bool)
+	_, item.VerificationDeclared = pin.Spec["verification"].(map[string]any)
+	dec := ssh.EvaluateRetry(ssh.RetryEval{
+		Status:          "failed",
+		Attempt:         1,
+		MaxAttempts:     item.RetryMaxAttempts,
+		RetrySafe:       item.RetrySafe,
+		HasVerification: item.VerificationDeclared,
+	})
+	item.RetryAllowed = dec.Allowed
 }
 
 func targetRef(node workflow.Node) (string, string) {

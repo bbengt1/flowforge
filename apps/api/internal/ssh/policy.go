@@ -174,12 +174,18 @@ func ProfileContextFromSpec(id string, spec map[string]any) ProfileContext {
 	}
 	retry, _ := spec["retrySafe"].(bool)
 	tmpl, _ := spec["template"].(string)
-	return ProfileContext{
+	ctx := ProfileContext{
 		ID:        strings.TrimSpace(id),
 		RetrySafe: retry,
 		Template:  tmpl,
 		Spec:      spec,
 	}
+	if raw, ok := spec["parameterSchema"].(map[string]any); ok {
+		if schema, err := ParseSchema(raw); err == nil {
+			ctx.Schema = schema
+		}
+	}
+	return ctx
 }
 
 // ValidatePolicy re-checks deny, host, address, and operation allowlists

@@ -308,6 +308,19 @@ func normalizeCommandProfile(spec map[string]any) (map[string]any, error) {
 		retrySafe = b
 	}
 	out["retrySafe"] = retrySafe
+	verifyRaw, err := objectField(spec, "verification")
+	if err != nil {
+		return nil, err
+	}
+	if retrySafe {
+		canonVerify, verr := ssheng.NormalizeVerification(verifyRaw, parsed)
+		if verr != nil {
+			return nil, mapSSHErr(verr)
+		}
+		out["verification"] = canonVerify
+	} else if verifyRaw != nil {
+		return nil, fmt.Errorf("%w: verification is only valid when retrySafe is true", ErrInvalid)
+	}
 	policy, err := optionalUUID(spec, "policyId")
 	if err != nil {
 		return nil, err
@@ -315,7 +328,7 @@ func normalizeCommandProfile(spec map[string]any) (map[string]any, error) {
 	if policy != "" {
 		out["policyId"] = policy
 	}
-	if err := rejectUnknown(spec, "parameterSchema", "template", "retrySafe", "policyId"); err != nil {
+	if err := rejectUnknown(spec, "parameterSchema", "template", "retrySafe", "verification", "policyId"); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -1082,6 +1095,24 @@ func ValidateSSHRunParameters(profileSpec map[string]any, values map[string]any)
 	_, err := ssheng.RenderFromSpec(profileSpec, values)
 	if err != nil {
 		return mapSSHErr(err)
+	}
+	return nil
+}
+
+// ValidateSSHRunRetry rejects maxAttempts>0 unless the pinned profile is
+// retrySafe and declares a verification probe. Default maxAttempts is 0.
+func ValidateSSHRunRetry(profileSpec map[string]any, nodeWith map[string]any) error {
+	max := ssheng.MaxAttemptsFromWith(nodeWith)
+	if max < 0 || max > ssheng.MaxRetryAttempts {
+		return fmt.Errorf("%w: retryPolicy.maxAttempts must be between 0 and 5", ErrInvalid)
+	}
+	retrySafe, _ := profileSpec["retrySafe"].(bool)
+	_, hasVerify := profileSpec["verification"].(map[string]any)
+	if max == 0 {
+		return nil
+	}
+	if !retrySafe || !hasVerify {
+		return fmt.Errorf("%w: retryPolicy.maxAttempts>0 requires a retrySafe profile with verification", ErrInvalid)
 	}
 	return nil
 }

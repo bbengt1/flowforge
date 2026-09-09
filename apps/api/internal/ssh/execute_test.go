@@ -277,8 +277,11 @@ func TestTimeout(t *testing.T) {
 	req := baseReq(server, map[string]any{"unit": "nginx"})
 	req.TimeoutSeconds = 1
 	res := Execute(context.Background(), req)
-	if res.OK || res.Error == nil || res.Error.Code != CodeTimeout {
-		t.Fatalf("timeout: %+v", res.Error)
+	if res.OK || res.Error == nil || res.Error.Code != CodeIndeterminate {
+		t.Fatalf("timeout after dispatch must be indeterminate: %+v", res.Error)
+	}
+	if len(server.Commands()) == 0 {
+		t.Fatal("command was dispatched; outcome is unknown")
 	}
 }
 
@@ -416,21 +419,14 @@ func TestAuthzPolicyRetryAndLeaseStub(t *testing.T) {
 		}
 	})
 
-	t.Run("retrySafe records policy but does not re-run", func(t *testing.T) {
-		server.ResetRecords()
+	t.Run("retrySafe without verification is denied", func(t *testing.T) {
 		req := baseReq(server, map[string]any{"unit": "nginx"})
 		req.Profile.RetrySafe = true
 		req.Profile.Spec["retrySafe"] = true
 		req.RetryPolicy.MaxAttempts = 2
 		res := Execute(context.Background(), req)
-		if !res.OK {
-			t.Fatalf("retrySafe: %+v", res.Error)
-		}
-		if res.Retry.MaxAttempts != 2 || res.Retry.ExecutedAttempts != 1 || res.Retry.Semantics != "E8.3" {
-			t.Fatalf("retry state = %+v", res.Retry)
-		}
-		if len(server.Commands()) != 1 {
-			t.Fatalf("blind re-run: %#v", server.Commands())
+		if res.OK || res.Error == nil || res.Error.Code != CodeInvalidVerification {
+			t.Fatalf("retrySafe without probe: %+v", res.Error)
 		}
 	})
 
@@ -483,10 +479,13 @@ func TestCatalogIsolationAndRetryDefaults(t *testing.T) {
 	for _, e := range cat.Errors {
 		found[e.Code] = true
 	}
-	for _, code := range []string{CodeHostKeyMismatch, CodeAddressDenied, CodeTimeout, CodeAuthDenied, CodeForwardingDenied} {
+	for _, code := range []string{CodeHostKeyMismatch, CodeAddressDenied, CodeTimeout, CodeAuthDenied, CodeForwardingDenied, CodeRetryDenied, CodeInvalidVerification, CodeIndeterminate} {
 		if !found[code] {
 			t.Fatalf("missing error %s", code)
 		}
+	}
+	if cat.Retry.BlindRetry || cat.Retry.LeaseLossOutcome != "indeterminate" || !cat.Retry.RequiresVerificationWhenRetrySafe {
+		t.Fatalf("retry rules = %+v", cat.Retry)
 	}
 }
 

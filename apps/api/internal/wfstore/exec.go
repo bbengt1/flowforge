@@ -6,6 +6,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
 
 type preparedStart struct {
@@ -65,7 +66,7 @@ func materializePlan(executionID string, nodes []plannedNode, now time.Time) ([]
 			NodeType:       node.Type,
 			Attempt:        1,
 			Status:         ExecutionQueued,
-			PolicySnapshot: map[string]any{},
+			PolicySnapshot: retrySnapshotFromNode(node.Type, node.With),
 			TargetSnapshot: map[string]any{},
 			Input:          redactObject(node.With),
 			Output:         map[string]any{},
@@ -87,6 +88,15 @@ func materializePlan(executionID string, nodes []plannedNode, now time.Time) ([]
 		jobs = append(jobs, job)
 	}
 	return steps, jobs
+}
+
+func retrySnapshotFromNode(nodeType string, with map[string]any) map[string]any {
+	if nodeType != ssh.NodeSSHRun {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"maxAttempts": ssh.MaxAttemptsFromWith(with),
+	}
 }
 
 func cloneExecution(exec Execution, wf Workflow) Execution {

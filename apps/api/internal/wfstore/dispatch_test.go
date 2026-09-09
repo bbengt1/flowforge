@@ -194,6 +194,193 @@ func TestMemoryDispatchLeaseFenceCancelRetry(t *testing.T) {
 	})
 }
 
+func TestSSHRetrySemantics(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := mustNormalize(t, sshDispatchYAML)
+	wf, draft, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision, Note: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("default zero retries denied", func(t *testing.T) {
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "ssh-a", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-a", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.FailJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-a", FencingToken: claimed.Job.FencingToken,
+			Error: map[string]any{"code": "command-failed"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryDenied) {
+			t.Fatalf("default retry: %v", err)
+		}
+	})
+
+	t.Run("retrySafe with verification allowed", func(t *testing.T) {
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "ssh-b", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-b", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.FailJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-b", FencingToken: claimed.Job.FencingToken,
+			Error: map[string]any{"code": "command-failed", "retry": map[string]any{"retrySafe": true, "verificationDeclared": true}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Node YAML has maxAttempts 0; hint supplies a retry-safe profile plus attempts.
+		hint := map[string]any{"retrySafe": true, "verificationDeclared": true}
+		if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID, hint); !errors.Is(err, ErrRetryDenied) {
+			t.Fatalf("maxAttempts 0 must still deny: %v", err)
+		}
+	})
+
+	t.Run("indeterminate without retrySafe stays closed", func(t *testing.T) {
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "ssh-c", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-c", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		released, err := store.ReleaseJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-c", FencingToken: claimed.Job.FencingToken,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if released.Step.Status != ExecutionIndeterminate && released.Job.Status != JobIndeterminate {
+			t.Fatalf("indet release = %+v %+v", released.Step, released.Job)
+		}
+		if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID); !errors.Is(err, ErrRetryDenied) && !errors.Is(err, ErrRetryNotAllowed) {
+			t.Fatalf("indet retry: %v", err)
+		}
+	})
+
+	t.Run("indeterminate retrySafe with attempts queues verify-first attempt", func(t *testing.T) {
+		normalized2 := mustNormalize(t, sshRetryDispatchYAML)
+		wf2, draft2, err := store.Create(ctx, scope, CreateInput{
+			NormalizedYAML: normalized2.NormalizedYAML,
+			Digest:         normalized2.Digest,
+			Summary:        normalized2.Summary,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ver2, err := store.Publish(ctx, scope, wf2.ID, PublishInput{ExpectedRevision: draft2.Revision, Note: "ssh-retry"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec, err := store.StartExecution(ctx, scope, wf2.ID, StartInput{VersionID: ver2.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "ssh-d", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.HeartbeatJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-d", FencingToken: claimed.Job.FencingToken, Lease: time.Minute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ReleaseJob(ctx, scope, now, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "ssh-d", FencingToken: claimed.Job.FencingToken,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		retried, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID, map[string]any{
+			"retrySafe": true, "verificationDeclared": true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if retried.Step.Attempt != 2 || retried.Job.Status != JobQueued {
+			t.Fatalf("retry = %+v %+v", retried.Step, retried.Job)
+		}
+	})
+}
+
+const sshDispatchYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: e83-ssh
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: ssh.run
+      name: Run profile
+      with:
+        sshTargetId: 11111111-1111-4111-8111-111111111111
+        commandProfileId: 22222222-2222-4222-8222-222222222222
+  edges: []
+`
+
+const sshRetryDispatchYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: e83-ssh-retry
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: ssh.run
+      name: Run profile
+      with:
+        sshTargetId: 11111111-1111-4111-8111-111111111111
+        commandProfileId: 22222222-2222-4222-8222-222222222222
+        retryPolicy:
+          maxAttempts: 2
+  edges: []
+`
+
 const coreDispatchYAML = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:

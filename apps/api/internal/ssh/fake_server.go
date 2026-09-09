@@ -24,7 +24,10 @@ type FakeServer struct {
 	Delay          time.Duration
 	Stdout         string
 	ExitStatus     uint32
-	mu             sync.Mutex
+	// OnExec overrides stdout/exit per recorded command. Used by E8.3
+	// verification tests. Returning a non-nil *status uses that exit code.
+	OnExec func(cmd string) (stdout string, status uint32)
+	mu     sync.Mutex
 	listener       net.Listener
 	authMethods    []string
 	passwords      []string
@@ -147,7 +150,11 @@ func (s *FakeServer) session(ch cryptossh.Channel, requests <-chan *cryptossh.Re
 			delay := s.Delay
 			stdout := s.Stdout
 			status := s.ExitStatus
+			hook := s.OnExec
 			s.mu.Unlock()
+			if hook != nil {
+				stdout, status = hook(cmd)
+			}
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}

@@ -141,7 +141,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | --- | --- | --- | --- |
 | `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1) and `sshEngine` (E8.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
-| `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry-safe flags (schema only), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -162,7 +162,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | --- | --- |
 | `cluster_target` | `credentialId` (workspace `kubernetes` / kubeconfig credential only), `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces` (non-empty DNS-1123 labels), `policyId` (published `kind=kubernetes` policy; target namespaces must be a subset), `serviceAccount.{name,namespace?,roleTemplate?}` (`roleTemplate` defaults to `namespace-scoped-runner`; ClusterRoles are not MVP). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include kubeconfig. |
 | `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `username` (non-root; default at execute is `flowforge`; `root`/`toor`/`administrator` rejected), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
-| `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (schema flag; E8.3 implements retry semantics), `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
+| `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (default `false`; when `true`, `verification` is required); optional `verification` `{template, expectExitCode?, expectStdoutContains?, onMatch?, onMismatch?, onError?}`; `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
 | `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
 | `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
@@ -319,7 +319,7 @@ Out of scope: `apps/web` rewrite, deletion, rollback, force apply, SSH/script en
 
 ## SSH target and command-profile management (E8.1)
 
-Control-plane hardening on the existing E4.2 `ssh-targets` / `command-profiles` collections. E8.2 (below) is the isolated `ssh.run` worker. E8.3 implements retry/indeterminate verification (`retrySafe` is accepted as a flag; E8.2 never blindly re-runs).
+Control-plane hardening on the existing E4.2 `ssh-targets` / `command-profiles` collections. E8.2 (below) is the isolated `ssh.run` worker. E8.3 (below) implements retry/indeterminate verification.
 
 **UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`sshEngine`) or `GET /ssh/catalog` for parameter types, render rules, retry-safe flags, and error codes. SSH-target credential pickers must list only workspace `type=ssh_private_key` credentials (secret fields `privateKey` / `passphrase`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/ssh/catalog` the same way as kubernetes/ops-config. Do not rewrite `apps/web` in this API story. Keep #82 open until target/profile UI surfaces land.
 
@@ -328,7 +328,7 @@ Suggested UI flow:
 1. Create a vault credential `type=ssh_private_key` (E4.1). Never echo the private key or passphrase.
 2. Optionally create/publish a `policies` resource with `kind=ssh` and `allowedHosts` / `allowedAddresses` (empty present lists are rejected).
 3. Create/publish an `ssh-targets` draft: `{name, spec:{credentialId, hostname, hostKeyFingerprint, port?, allowedAddresses?, policyId?}}`.
-4. Create/publish a `command-profiles` draft: `{name, spec:{parameterSchema, template, retrySafe?, policyId?}}`. Template placeholders are `{name}` only. The API renderer quotes string values with POSIX single quotes; it never interpolates `$()`, backticks, `${`, or `{{`.
+4. Create/publish a `command-profiles` draft: `{name, spec:{parameterSchema, template, retrySafe?, verification?, policyId?}}`. Template placeholders are `{name}` only. The API renderer quotes string values with POSIX single quotes; it never interpolates `$()`, backticks, `${`, or `{{`. `retrySafe=true` requires `verification.template` (an idempotent probe).
 5. Select as today (`POST /ssh-targets/{id}/select`, `POST /command-profiles/{id}/select`). Publish/select re-checks credential type, fingerprint format, allowlists, and parameter schema. Workflow publish pins the exact target + profile revisions and rejects `ssh.run` parameters outside the pinned schema.
 6. Later draft edits do **not** retarget a pin. Published revisions are immutable. Drafts remain editable to create the next revision.
 
@@ -353,7 +353,8 @@ Suggested UI flow:
 | `parameterSchema` | yes | object | `{type:"object", additionalProperties:false, required?, properties}` |
 | `parameterSchema.properties.*` | — | object | `type`: `string` \| `integer` \| `boolean`. String: `enum`, `minLength`, `maxLength`, `pattern`, `sensitive`. Integer: `enum`, `minimum`, `maximum`. Names: `[A-Za-z][A-Za-z0-9_]{0,31}`. Max 16 properties. |
 | `template` | yes | string | Reviewed command with `{name}` placeholders matching properties. No interpolation tokens. |
-| `retrySafe` | no | boolean | Default `false`. Semantics are E8.3. |
+| `retrySafe` | no | boolean | Default `false`. When `true`, `verification` is required. |
+| `verification` | when `retrySafe` | object | Idempotent probe. `template` (reviewed `{name}`), `expectExitCode` (default 0), `expectStdoutContains?`, `onMatch` (`already-applied` default), `onMismatch` (`safe-to-retry` default), `onError` (`indeterminate` only). |
 | `policyId` | no | UUID | Published `kind=ssh` policy |
 
 ### Catalog (`GET /ssh/catalog`)
@@ -364,11 +365,11 @@ Suggested UI flow:
 | `credentialSecretFields` | `privateKey`, `passphrase` (never returned on ops-config) |
 | `parameterTypes[]` | Allowed schema types + constraints |
 | `render` | `owner=reviewed-profile-renderer`, `quoting=posix-single-quotes`, `rawShellInterpolation=false`, forbidden tokens |
-| `retry` | `defaultMaxAttempts=0`, `retrySafeFlag`, `semantics=E8.3`. E8.2 records the field and does not retry. |
+| `retry` | `defaultMaxAttempts=0`, `blindRetry=false`, `leaseLossOutcome=indeterminate`, `requiresVerificationWhenRetrySafe`, `whenRetryAllowed`, `ui` (indeterminate badge / when Retry is enabled), `probe` (verification contract) |
 | `publishRules` | Required fields, empty-allowlist rejection, fingerprint format, pin immutability |
 | `evaluationKeys[]` | SSH policy aliases (`allowedHosts`/`hosts`, `allowedAddresses`/`addresses`) |
 | `nodes[]` | `ssh.run` wizard map (`sshTargetId`, `commandProfileId`, `parameters`, `timeoutSeconds`, `retryPolicy`) |
-| `errors[]` | Codes for Chloe: `invalid-target`, `invalid-fingerprint`, `invalid-address`, `empty-allowlist`, `invalid-schema`, `invalid-template`, `interpolation-denied`, `parameter-rejected`, `credential-denied`, `forbidden`, `host-key-mismatch`, `address-denied`, `timeout`, `canceled`, `auth-denied`, `forwarding-denied`, `root-denied`, `handle-forbidden`, `retry-denied`, `policy-denied`, `connect-failed`, `command-failed`, `indeterminate` |
+| `errors[]` | Codes for Chloe: `invalid-target`, `invalid-fingerprint`, `invalid-address`, `empty-allowlist`, `invalid-schema`, `invalid-template`, `interpolation-denied`, `parameter-rejected`, `credential-denied`, `forbidden`, `host-key-mismatch`, `address-denied`, `timeout`, `canceled`, `auth-denied`, `forwarding-denied`, `root-denied`, `handle-forbidden`, `retry-denied`, `invalid-verification`, `policy-denied`, `connect-failed`, `command-failed`, `indeterminate` |
 | `permissions[]` | `workflow.execute`, `ssh.run`, `sshTarget.use`, `commandProfile.use` |
 | `isolation` | Hard denies (password/agent/port-forward/proxy/auto-accept/shell), known-host fingerprint match, resolve-then-allowlist, connect verified address only, ephemeral handle, default username `flowforge` |
 
@@ -388,7 +389,7 @@ Worker library path for `ssh.run`. No new browser routes. Workers claim E5.2 job
 | `commandProfileId` | yes | Published command profile UUID. Parameters must match the pinned schema. |
 | `parameters` | no | Typed object. Reviewed renderer POSIX-quotes strings. Extra/missing/invalid → `parameter-rejected`. |
 | `timeoutSeconds` | no | 1–3600, default 60. Bounds connect + command. |
-| `retryPolicy` | no | `{maxAttempts:0-5}`. **Default `maxAttempts=0`.** `maxAttempts>0` requires profile `retrySafe=true` and is still not retried in E8.2. |
+| `retryPolicy` | no | `{maxAttempts:0-5}`. **Default `maxAttempts=0`.** `maxAttempts>0` requires pinned profile `retrySafe=true` **and** `verification`. |
 | `policyId` | no | Optional published `kind=ssh` policy UUID. |
 
 Permissions: `workflow.execute`, `ssh.run`, `sshTarget.use`, `commandProfile.use`. Policy is revalidated immediately before connect.
@@ -404,11 +405,11 @@ Outputs: `result` (redacted summary), `stdout` (bounded, secret-stripped), `exit
 5. Key-only auth. Password, keyboard-interactive, agent forwarding, port forwarding, proxy commands, and interactive shells (`RequestPty` / `Shell`) are hard-denied.
 6. Non-root remote account: default `flowforge`. `root` / `toor` / `administrator` → `root-denied`. Optional target `username` is stored when present.
 7. Redacted results + audit: parameter **names** always; sensitive values `[redacted]`; command text is stored as `commandDigest` only; exit outcome; correlation ID. PEM / private-key shaped stdout is `[redacted]`.
-8. E8.3 stub: `LeaseLost` or uncertain dispatch → `indeterminate`. The engine never blindly repeats the command.
+8. Lease loss or unknown provider outcome after dispatch → `indeterminate`. The engine never blindly repeats the command. See E8.3.
 
 ### Result / error shapes
 
-Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port, username, resolvedAddresses, connectedAddress, parameterNames, parameters, commandDigest, stdout, exitCode, retry:{maxAttempts,executedAttempts,retrySafe,semantics,note}, policyRevision?, policyDigest?, correlationId, audit}`.
+Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port, username, resolvedAddresses, connectedAddress, parameterNames, parameters, commandDigest, stdout, exitCode, retry:{maxAttempts,executedAttempts,retrySafe,allowed,requiresVerification,verificationDeclared,semantics,note,verification?}, policyRevision?, policyDigest?, correlationId, audit}`.
 
 | `error.code` | HTTP-ish | When |
 | --- | --- | --- |
@@ -418,11 +419,52 @@ Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port
 | `address-denied` | 403 | Resolved address outside allowlist or DNS without allowlist |
 | `auth-denied` / `forwarding-denied` / `root-denied` / `handle-forbidden` / `policy-denied` | 403 | Hard denies / expired handle / policy |
 | `timeout` / `canceled` | 408 | Bounded wait |
-| `retry-denied` | 400 | `maxAttempts>0` without `retrySafe` |
-| `connect-failed` / `command-failed` | 502 | Transport |
-| `indeterminate` | 409 | Lease lost after dispatch (no retry) |
+| `retry-denied` | 400 / 409 | `maxAttempts>0` without `retrySafe`+verification, or a step/execution retry that is not allowed |
+| `invalid-verification` | 400 | `retrySafe=true` without a valid `verification` probe |
+| `connect-failed` / `command-failed` | 502 | Transport / known non-zero exit |
+| `indeterminate` | 409 | Lease lost after dispatch, unknown provider outcome, or verification could not confirm state. **Never a silent re-run.** |
 
-Out of scope: full lease-loss verification loop (E8.3); `apps/web` rewrite; Kubernetes/script engines.
+## SSH indeterminate / retry semantics (E8.3)
+
+Default retries are **zero**. A retry is allowed only when the **pinned** command profile has `retrySafe=true`, declares `verification`, and the node `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise the engine and `POST /executions/{id}/retry` fail closed (`retry-denied`). Chloe should keep #84 open for UI; this API is the contract.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Read `GET /ssh/catalog` `retry.ui` + `retry.probe` and `GET /workflows/catalog` `ssh.run.policy.defaultMaxAttempts=0`. Cookie session + `X-CSRF-Token`. Show an unmistakable `indeterminate` badge (not color alone). Enable **Retry** only when `result.retry.allowed` is true (or evaluate `retryAllowed` on `POST /policy/evaluate` for `ssh.run`). Hide/disable Retry for non-retrySafe indeterminate — never imply the remote command did not run.
+
+### When retry is allowed
+
+| Condition | Retry |
+| --- | --- |
+| Omitted / `maxAttempts=0` (default) | No. First attempt only. |
+| `maxAttempts>0` and profile `retrySafe=false` | `retry-denied` at execute, publish pin, and retry API. |
+| `retrySafe=true` without `verification` | `invalid-verification` at profile save/publish. |
+| `retrySafe=true` + verification + remaining attempts + status `failed` / `canceled` / `indeterminate` | Yes — **after** the probe. |
+| Lease loss / unknown outcome after dispatch | Status `indeterminate`. No command on that call. A later attempt may run **only** the verification probe first. |
+
+### Verification contract
+
+`spec.verification` is an idempotent read-only probe rendered with the same `parameterSchema` and POSIX quoting as `template`. It is **never** the mutating command.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `template` | required | Reviewed `{name}` probe |
+| `expectExitCode` | `0` | Match |
+| `expectStdoutContains` | omitted | Optional substring match on redacted stdout |
+| `onMatch` | `already-applied` | Probe matched: do **not** re-run the mutating command; treat as success |
+| `onMismatch` | `safe-to-retry` | Probe did not match: one more mutating attempt is allowed |
+| `onError` | `indeterminate` | Probe itself failed; stay indeterminate |
+
+`result.retry.verification.outcome` is `already-applied` / `safe-to-retry` / `indeterminate`. `audit.verificationOutcome` is secret-free.
+
+### Execution retry APIs
+
+`POST /executions/{id}/retry` and `.../steps/{stepId}/retry` still require `workflow.execute`. Core `data.*` / `flow.*` rules are unchanged. For `ssh.run`:
+
+- Default `maxAttempts=0` → `409` `retry-denied`
+- Non-retrySafe or missing verification → `409` `retry-denied`
+- `indeterminate` without retrySafe → stays indeterminate; retry denied
+- retrySafe + verification + remaining attempts → `201` queues a new attempt that **must verify first** (never a blind re-run)
+
+Out of scope: `apps/web` rewrite; Kubernetes/script engines.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 
@@ -438,7 +480,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2 adds `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, redaction). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
@@ -521,7 +563,7 @@ Suggested UI flow:
 
 1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only.
 2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
-3. Retry: only for `failed` or `canceled` **core** `data.*` / `flow.*` steps. `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Provider nodes and `indeterminate` → `409`.
+3. Retry: `failed` or `canceled` **core** `data.*` / `flow.*` steps, or `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Other provider nodes → `409`. SSH that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
 4. Do **not** call `/jobs/claim` from the UI. That is the worker client.
 
 Worker client (not the UI):
@@ -544,8 +586,8 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/jobs/{jobId}/complete` | Succeed with redacted `output`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/jobs/{jobId}/fail` | Fail with redacted `error`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step, or E8.3-eligible `ssh.run`. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
 
 ## Execution artifacts (E5.3)
 
@@ -633,6 +675,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, or a retry/cancel that is not allowed |
+| `retry-denied` | 409 | SSH (or other) retry rejected: default `maxAttempts=0`, profile not `retrySafe`, missing verification, or no attempts remain. Indeterminate non-retrySafe SSH stays closed. |
 | `method-not-allowed` | 405 | Known path, unsupported method |
 | `request-too-large` | 413 | Body exceeds 1048576 bytes |
 | `internal-error` | 500 | Unexpected failure |

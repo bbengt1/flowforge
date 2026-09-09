@@ -258,3 +258,54 @@ spec:
 		t.Fatalf("refs = %+v", refs)
 	}
 }
+
+func TestCommandProfileRetrySafeRequiresVerification(t *testing.T) {
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties":           map[string]any{"unit": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}},
+		"required":             []any{"unit"},
+	}
+	_, _, err := NormalizeSpec(KindCommandProfile, map[string]any{
+		"parameterSchema": schema,
+		"template":        "touch /tmp/{unit}",
+		"retrySafe":       true,
+	})
+	if err == nil {
+		t.Fatal("retrySafe without verification must fail")
+	}
+	_, _, err = NormalizeSpec(KindCommandProfile, map[string]any{
+		"parameterSchema": schema,
+		"template":        "touch /tmp/{unit}",
+		"retrySafe":       false,
+		"verification":    map[string]any{"template": "test -f /tmp/{unit}"},
+	})
+	if err == nil {
+		t.Fatal("verification without retrySafe must fail")
+	}
+	out, _, err := NormalizeSpec(KindCommandProfile, map[string]any{
+		"parameterSchema": schema,
+		"template":        "touch /tmp/{unit}",
+		"retrySafe":       true,
+		"verification":    map[string]any{"template": "test -f /tmp/{unit}"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["retrySafe"] != true {
+		t.Fatalf("retrySafe = %+v", out["retrySafe"])
+	}
+	verify, _ := out["verification"].(map[string]any)
+	if verify["onMatch"] != "already-applied" || verify["template"] != "test -f /tmp/{unit}" {
+		t.Fatalf("verification = %+v", verify)
+	}
+	if err := ValidateSSHRunRetry(out, map[string]any{"retryPolicy": map[string]any{"maxAttempts": 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSSHRunRetry(map[string]any{"retrySafe": false}, map[string]any{"retryPolicy": map[string]any{"maxAttempts": 2}}); err == nil {
+		t.Fatal("maxAttempts without retrySafe must fail")
+	}
+	if err := ValidateSSHRunRetry(out, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+}

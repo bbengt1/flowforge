@@ -307,7 +307,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeInvalidRequest: true, CodeUnauthenticated: true, CodeForbidden: true,
 		CodeNotFound: true, CodeConflict: true, CodeMethodNotAllowed: true, CodeRequestTooLarge: true,
 		CodeInternalError: true, CodeDependencyUnavailable: true,
-		CodeInvalidWorkflow: true,
+		CodeInvalidWorkflow: true, CodeRetryDenied: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)

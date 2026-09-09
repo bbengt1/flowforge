@@ -266,7 +266,7 @@ func (m *Memory) CancelExecution(_ context.Context, scope isolation.Scope, now t
 	return cloneExecution(exec.record, wf.record), nil
 }
 
-func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Time, executionID, stepID string) (RetryResult, error) {
+func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {
 	if scope.Zero() {
 		return RetryResult{}, ErrNoScope
 	}
@@ -282,14 +282,20 @@ func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Ti
 	if !ok || exec.workspaceID != scope.WorkspaceID() {
 		return RetryResult{}, ErrNotFound
 	}
-	if exec.record.Status == ExecutionIndeterminate {
-		return RetryResult{}, ErrRetryNotAllowed
+	if exec.record.Status == ExecutionIndeterminate && (len(hint) == 0 || hint[0] == nil) {
+		// SSH retry-safe + verification may still queue a verify-first attempt.
 	}
 	stepIdx := indexStep(exec.steps, stepID)
 	if stepIdx < 0 {
 		return RetryResult{}, ErrNotFound
 	}
 	src := exec.steps[stepIdx]
+	if exec.record.Status == ExecutionIndeterminate && src.NodeType != "ssh.run" {
+		return RetryResult{}, ErrRetryNotAllowed
+	}
+	if len(hint) > 0 {
+		applyRetryHint(&src, hint[0])
+	}
 	if err := canRetryStep(src); err != nil {
 		return RetryResult{}, err
 	}

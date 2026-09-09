@@ -24,7 +24,10 @@ type AuditSnapshot struct {
 	ErrorCode         string         `json:"errorCode,omitempty"`
 	PolicyRevision    string         `json:"policyRevision,omitempty"`
 	PolicyDigest      string         `json:"policyDigest,omitempty"`
-	RetryMaxAttempts  int            `json:"retryMaxAttempts"`
+	RetryMaxAttempts      int            `json:"retryMaxAttempts"`
+	RetrySafe             bool           `json:"retrySafe"`
+	RetryAllowed          bool           `json:"retryAllowed"`
+	VerificationOutcome   string         `json:"verificationOutcome,omitempty"`
 }
 
 // SnapshotAudit builds a redacted audit view of an engine result.
@@ -53,7 +56,7 @@ func SnapshotAudit(req Request, res Result) AuditSnapshot {
 			params[name] = redactedMarker
 		}
 	}
-	return AuditSnapshot{
+	snap := AuditSnapshot{
 		ActorID:           strings.TrimSpace(req.ActorID),
 		Operation:         res.Operation,
 		SSHTargetID:       res.SSHTargetID,
@@ -74,7 +77,13 @@ func SnapshotAudit(req Request, res Result) AuditSnapshot {
 		PolicyRevision:    res.PolicyRevision,
 		PolicyDigest:      res.PolicyDigest,
 		RetryMaxAttempts:  res.Retry.MaxAttempts,
+		RetrySafe:         res.Retry.RetrySafe,
+		RetryAllowed:      res.Retry.Allowed,
 	}
+	if res.Retry.Verification != nil {
+		snap.VerificationOutcome = res.Retry.Verification.Outcome
+	}
+	return snap
 }
 
 func auditMap(snap AuditSnapshot) map[string]any {
@@ -91,8 +100,13 @@ func auditMap(snap AuditSnapshot) map[string]any {
 		"correlationId":    snap.CorrelationID,
 		"outcome":          snap.Outcome,
 		"retryMaxAttempts": snap.RetryMaxAttempts,
+		"retrySafe":        snap.RetrySafe,
+		"retryAllowed":     snap.RetryAllowed,
 		"policyRevision":   snap.PolicyRevision,
 		"policyDigest":     snap.PolicyDigest,
+	}
+	if snap.VerificationOutcome != "" {
+		raw["verificationOutcome"] = snap.VerificationOutcome
 	}
 	if snap.ActorID != "" {
 		raw["actorId"] = snap.ActorID
