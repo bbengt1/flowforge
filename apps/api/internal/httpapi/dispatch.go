@@ -99,6 +99,21 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	if err := s.revalidateScriptDispatch(r, scope, result); err != nil {
+		fail := map[string]any{"code": scripts.CodeArtifactRevoked, "message": "Revoked or unverified script artifacts cannot be executed."}
+		if ee := scriptEngineError(err); ee != nil {
+			fail["code"] = ee.Code
+			fail["message"] = ee.Message
+		}
+		_, _ = s.workflows.FailJob(r.Context(), scope, s.now(), wfstore.JobActionInput{
+			JobID:        result.Job.ID,
+			WorkerID:     result.Job.WorkerID,
+			FencingToken: result.Job.FencingToken,
+			Error:        fail,
+		})
+		writeScriptError(w, r, err)
+		return
+	}
 	token, err := wfstore.SignJobTicket(s.jobKey, result.Binding)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
@@ -130,6 +145,34 @@ func (s *Server) recoverJobs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) heartbeatJob(w http.ResponseWriter, r *http.Request) {
 	s.workerJobAction(w, r, func(scope isolation.Scope, in wfstore.JobActionInput) (wfstore.DispatchResult, error) {
+		job, err := s.workflows.GetJob(r.Context(), scope, in.JobID)
+		if err != nil {
+			return wfstore.DispatchResult{}, err
+		}
+		if job.Status != wfstore.JobRunning && job.HeartbeatAt == nil {
+			step, stepErr := s.workflows.GetStep(r.Context(), scope, job.ExecutionID, job.ExecutionStepID)
+			if stepErr != nil {
+				return wfstore.DispatchResult{}, stepErr
+			}
+			exec, execErr := s.workflows.GetExecutionByID(r.Context(), scope, job.ExecutionID)
+			if execErr != nil {
+				return wfstore.DispatchResult{}, execErr
+			}
+			if err := s.revalidateScriptDispatch(r, scope, wfstore.DispatchResult{Execution: exec, Step: step, Job: job}); err != nil {
+				fail := map[string]any{"code": scripts.CodeArtifactRevoked, "message": "Revoked or unverified script artifacts cannot be executed."}
+				if ee := scriptEngineError(err); ee != nil {
+					fail["code"] = ee.Code
+					fail["message"] = ee.Message
+				}
+				_, _ = s.workflows.FailJob(r.Context(), scope, s.now(), wfstore.JobActionInput{
+					JobID:        job.ID,
+					WorkerID:     in.WorkerID,
+					FencingToken: in.FencingToken,
+					Error:        fail,
+				})
+				return wfstore.DispatchResult{}, err
+			}
+		}
 		return s.workflows.HeartbeatJob(r.Context(), scope, s.now(), in)
 	})
 }
@@ -194,10 +237,147 @@ func (s *Server) workerJobAction(w http.ResponseWriter, r *http.Request, fn func
 		Error:        req.Error,
 	})
 	if err != nil {
+		var ee *scripts.EngineError
+		if errors.As(err, &ee) || errors.Is(err, scripts.ErrRevoked) || errors.Is(err, scripts.ErrMutable) || errors.Is(err, scripts.ErrUnscanned) || errors.Is(err, scripts.ErrUnsigned) || errors.Is(err, scripts.ErrScanFailed) {
+			writeScriptError(w, r, err)
+			return
+		}
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, dispatchJobResponse{Job: result.Job, Step: result.Step, Execution: result.Execution})
+}
+
+type emergencyStopRequest struct {
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
+	WorkspaceIDAlt string `json:"workspaceId"`
+	StepID         string `json:"stepId"`
+	Uncertain      bool   `json:"uncertain"`
+}
+
+func (s *Server) emergencyStopExecution(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.workflowScope(w, r, authz.PermScriptEmergencyStop)
+	if !ok {
+		return
+	}
+	var req emergencyStopRequest
+	if r.ContentLength > 0 {
+		if !DecodeJSON(w, r, &req) {
+			return
+		}
+		if hostIdentitySet(req.ID, req.WorkspaceID, req.WorkspaceIDAlt) {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Host-supplied workspace identity is not accepted.")
+			return
+		}
+	}
+	executionID := strings.TrimSpace(r.PathValue("executionId"))
+	stepID := strings.TrimSpace(firstNonEmpty(r.PathValue("stepId"), req.StepID))
+	exec, err := s.workflows.GetExecutionByID(r.Context(), scope, executionID)
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	if !s.authorizeScriptEmergencyStop(w, r, scope, exec, stepID) {
+		return
+	}
+	result, err := s.workflows.EmergencyStop(r.Context(), scope, s.now(), wfstore.EmergencyStopInput{
+		ExecutionID: executionID,
+		StepID:      stepID,
+		Uncertain:   req.Uncertain,
+	})
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	s.writeExecutionDetail(w, r, scope, result.Execution, http.StatusOK)
+}
+
+func (s *Server) authorizeScriptEmergencyStop(w http.ResponseWriter, r *http.Request, scope isolation.Scope, exec wfstore.Execution, stepID string) bool {
+	user, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return false
+	}
+	_, _, _, perms, ok := s.requireAccess(w, r, user, authz.PermScriptEmergencyStop)
+	if !ok {
+		return false
+	}
+	steps, err := s.workflows.ListSteps(r.Context(), scope, exec.ID)
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return false
+	}
+	checked := false
+	for _, step := range steps {
+		if stepID != "" && step.ID != stepID {
+			continue
+		}
+		if !scripts.IsScriptNode(step.NodeType) {
+			continue
+		}
+		if err := scripts.AuthorizeEmergencyStop(perms, s.scriptNodePolicySpec(r.Context(), scope, exec, step)); err != nil {
+			writeScriptError(w, r, err)
+			return false
+		}
+		checked = true
+		if stepID != "" {
+			return true
+		}
+	}
+	if !checked {
+		if err := scripts.AuthorizeEmergencyStop(perms, nil); err != nil {
+			writeScriptError(w, r, err)
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) scriptNodePolicySpec(ctx context.Context, scope isolation.Scope, exec wfstore.Execution, step wfstore.ExecutionStep) map[string]any {
+	if s.ops == nil || s.workflows == nil {
+		return nil
+	}
+	ver, err := s.workflows.GetVersion(ctx, scope, exec.WorkflowID, exec.WorkflowVersionID)
+	if err != nil {
+		return nil
+	}
+	pins, err := s.resolveEvalPins(ctx, scope, ver.DefinitionYAML)
+	if err != nil {
+		return nil
+	}
+	res, errs := workflow.ParseAndNormalize([]byte(ver.DefinitionYAML))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return nil
+	}
+	var policyID string
+	for _, node := range res.Document.Spec.Nodes {
+		if node.ID == step.NodeID && scripts.IsScriptNode(node.Type) {
+			policyID, _ = node.With["policyId"].(string)
+			break
+		}
+	}
+	policyID = strings.TrimSpace(policyID)
+	if policyID == "" {
+		return nil
+	}
+	for _, pin := range pins {
+		if pin.Kind == opsconfig.KindPolicy && pin.ResourceID == policyID {
+			return pin.Spec
+		}
+	}
+	return nil
+}
+
+func (s *Server) revalidateScriptDispatch(r *http.Request, scope isolation.Scope, result wfstore.DispatchResult) error {
+	if s.scripts == nil || !scripts.IsScriptNode(result.Step.NodeType) {
+		return nil
+	}
+	ver, err := s.workflows.GetVersion(r.Context(), scope, result.Execution.WorkflowID, result.Execution.WorkflowVersionID)
+	if err != nil {
+		return err
+	}
+	nodes := scriptNodeSpecs(ver.DefinitionYAML)
+	return s.scripts.VerifyNodePins(r.Context(), scope, ver.ID, nodes)
 }
 
 func (s *Server) cancelExecution(w http.ResponseWriter, r *http.Request) {

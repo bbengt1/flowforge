@@ -9,8 +9,16 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
+
+type revokeScriptRequest struct {
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
+	WorkspaceIDAlt string `json:"workspaceId"`
+	Reason         string `json:"reason"`
+}
 
 type publishScriptRequest struct {
 	ID                      string         `json:"id"`
@@ -98,6 +106,46 @@ func (s *Server) getScriptArtifact(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeScriptError(w, r, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, art)
+}
+
+func (s *Server) revokeScriptArtifact(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.workflowScope(w, r, authz.PermScriptRevoke)
+	if !ok {
+		return
+	}
+	if !s.requireScriptPipeline(w, r) {
+		return
+	}
+	var req revokeScriptRequest
+	if r.ContentLength > 0 {
+		if !DecodeJSON(w, r, &req) {
+			return
+		}
+		if hostIdentitySet(req.ID, req.WorkspaceID, req.WorkspaceIDAlt) {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Host-supplied workspace identity is not accepted.")
+			return
+		}
+	}
+	art, err := s.scripts.Revoke(r.Context(), scope, scripts.RevokeInput{
+		ArtifactID: strings.TrimSpace(r.PathValue("artifactId")),
+		Reason:     req.Reason,
+		Now:        s.now(),
+	})
+	if err != nil {
+		writeScriptError(w, r, err)
+		return
+	}
+	if s.workflows != nil {
+		_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+			Action:        scripts.AuditRevoke,
+			ResourceType:  "script_artifact",
+			ResourceID:    art.ID,
+			Outcome:       "revoked",
+			CorrelationID: RequestIDFromContext(r.Context()),
+			Details:       scripts.RevokeAudit(art, scope.ActorID(), strings.TrimSpace(req.Reason)),
+		})
 	}
 	writeJSON(w, http.StatusOK, art)
 }
@@ -238,6 +286,14 @@ func scriptNodeSpecs(yamlDoc string) []scripts.NodeSpec {
 	return out
 }
 
+func scriptEngineError(err error) *scripts.EngineError {
+	var ee *scripts.EngineError
+	if errors.As(err, &ee) {
+		return ee
+	}
+	return nil
+}
+
 func writeScriptError(w http.ResponseWriter, r *http.Request, err error) {
 	var ee *scripts.EngineError
 	if errors.As(err, &ee) && ee != nil {
@@ -255,6 +311,13 @@ func writeScriptError(w http.ResponseWriter, r *http.Request, err error) {
 			code = CodeArtifactUnsigned
 		case scripts.CodeArtifactScanFailed:
 			code = CodeArtifactScanFailed
+		case scripts.CodeArtifactRevoked:
+			code = CodeArtifactRevoked
+		case scripts.CodeEmergencyStopped:
+			code = CodeConflict
+		case scripts.CodeEmergencyStopDenied, scripts.CodePolicyDenied:
+			WriteForbidden(w, r)
+			return
 		case scripts.CodePermissionDenied:
 			WriteForbidden(w, r)
 			return
@@ -297,6 +360,8 @@ func writeScriptError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusBadRequest, CodeArtifactUnsigned, "Invalid Request", "Unsigned script artifacts cannot be executed.")
 	case errors.Is(err, scripts.ErrScanFailed):
 		WriteProblem(w, r, http.StatusBadRequest, CodeArtifactScanFailed, "Invalid Request", "Script artifacts with a failed scan cannot be executed.")
+	case errors.Is(err, scripts.ErrRevoked):
+		WriteProblem(w, r, http.StatusConflict, CodeArtifactRevoked, "Conflict", "Revoked script artifacts cannot be executed.")
 	case errors.Is(err, scripts.ErrImmutable), errors.Is(err, scripts.ErrConflict):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Script artifacts and version pins are immutable.")
 	case errors.Is(err, scripts.ErrStoreUnavailable):

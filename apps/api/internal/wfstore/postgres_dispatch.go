@@ -7,6 +7,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -279,6 +280,167 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 		return Execution{}, mapDBErr(err)
 	}
 	return exec, nil
+}
+
+func (p *Postgres) EmergencyStop(ctx context.Context, scope isolation.Scope, now time.Time, in EmergencyStopInput) (EmergencyStopResult, error) {
+	if scope.Zero() {
+		return EmergencyStopResult{}, ErrNoScope
+	}
+	if !authz.ValidUUID(in.ExecutionID) {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if in.StepID != "" && !authz.ValidUUID(in.StepID) {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	exec, err := getExecutionTx(ctx, tx, in.ExecutionID)
+	if err != nil {
+		return EmergencyStopResult{}, err
+	}
+	stepRows, err := tx.Query(ctx, `SELECT `+stepColumns+` FROM execution_steps WHERE execution_id = $1::uuid`, in.ExecutionID)
+	if err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+	var steps []ExecutionStep
+	for stepRows.Next() {
+		step, scanErr := scanStep(stepRows)
+		if scanErr != nil {
+			stepRows.Close()
+			return EmergencyStopResult{}, scanErr
+		}
+		steps = append(steps, step)
+	}
+	stepRows.Close()
+	if err := stepRows.Err(); err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+	jobRows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE execution_id = $1::uuid`, in.ExecutionID)
+	if err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+	var jobs []ExecutionJob
+	for jobRows.Next() {
+		job, scanErr := scanJob(jobRows)
+		if scanErr != nil {
+			jobRows.Close()
+			return EmergencyStopResult{}, scanErr
+		}
+		jobs = append(jobs, job)
+	}
+	jobRows.Close()
+	if err := jobRows.Err(); err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+
+	stopped := 0
+	uncertain := false
+	matched := 0
+	for _, step := range steps {
+		if in.StepID != "" && step.ID != in.StepID {
+			continue
+		}
+		if !scripts.IsScriptNode(step.NodeType) {
+			if in.StepID != "" {
+				return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+			}
+			continue
+		}
+		matched++
+		var chosen *ExecutionJob
+		for i := range jobs {
+			if jobs[i].ExecutionStepID != step.ID {
+				continue
+			}
+			if jobIsOpen(jobs[i].Status) {
+				chosen = &jobs[i]
+				break
+			}
+			if jobs[i].Status == JobIndeterminate && chosen == nil {
+				chosen = &jobs[i]
+			}
+		}
+		if chosen == nil {
+			continue
+		}
+		if !jobIsOpen(chosen.Status) {
+			if chosen.Status == JobIndeterminate {
+				uncertain = true
+			}
+			continue
+		}
+		next := emergencyStopJobStatus(*chosen, in.Uncertain)
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_jobs SET status = $2, updated_at = $1 WHERE id = $3::uuid
+		`, now, next, chosen.ID); err != nil {
+			return EmergencyStopResult{}, mapDBErr(err)
+		}
+		stepStatus := emergencyStopStepStatus(next)
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			   SET status = $2, finished_at = COALESCE(finished_at, $1), updated_at = $1
+			 WHERE id = $3::uuid
+		`, now, stepStatus, step.ID); err != nil {
+			return EmergencyStopResult{}, mapDBErr(err)
+		}
+		if next == JobIndeterminate {
+			uncertain = true
+		}
+		stopped++
+	}
+	if in.StepID != "" && matched == 0 {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if matched == 0 {
+		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+	}
+	if stopped == 0 {
+		if exec.Status == ExecutionIndeterminate {
+			if err := tx.Commit(ctx); err != nil {
+				return EmergencyStopResult{}, mapDBErr(err)
+			}
+			return EmergencyStopResult{Execution: exec, Outcome: ExecutionIndeterminate, Uncertain: true}, nil
+		}
+		if isTerminalExecution(exec.Status) && exec.Status != ExecutionPinned {
+			return EmergencyStopResult{}, ErrAlreadyTerminal
+		}
+		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+	}
+	if err := rollupExecutionTx(ctx, tx, in.ExecutionID, now); err != nil {
+		return EmergencyStopResult{}, err
+	}
+	exec, err = getExecutionTx(ctx, tx, in.ExecutionID)
+	if err != nil {
+		return EmergencyStopResult{}, err
+	}
+	outcome := exec.Status
+	if uncertain {
+		outcome = ExecutionIndeterminate
+	}
+	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:       scripts.AuditEmergencyStop,
+		ResourceType: "execution",
+		ResourceID:   in.ExecutionID,
+		Outcome:      outcome,
+		Details:      scripts.EmergencyStopAudit(in.ExecutionID, in.StepID, "", outcome, scope.ActorID(), uncertain || in.Uncertain),
+	}); err != nil {
+		return EmergencyStopResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return EmergencyStopResult{}, mapDBErr(err)
+	}
+	return EmergencyStopResult{
+		Execution: exec,
+		Outcome:   outcome,
+		Uncertain: uncertain || in.Uncertain,
+		Stopped:   stopped,
+	}, nil
 }
 
 func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {

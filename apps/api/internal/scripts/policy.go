@@ -2,11 +2,9 @@ package scripts
 
 import "net/http"
 
-// VerifyForDispatch re-checks signature, scan, and mutability immediately
-// before a runner may start. Execute calls this on every run.
-//
-// Typed I/O (E9.3) and revocation/emergency-stop (E9.4) remain hooks:
-// revoked_at is already fail-closed here; emergency stop is not implemented.
+// VerifyForDispatch re-checks signature, scan status, mutability, and
+// revocation immediately before a runner may start. Execute, publish reuse,
+// start, claim, and heartbeat-before-dispatch all call this and fail closed.
 func VerifyForDispatch(art Artifact, key []byte) error {
 	if art.Status != StatusPublished {
 		return ErrMutable

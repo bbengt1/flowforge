@@ -1241,6 +1241,106 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /executions/{executionId}/emergency-stop:
+    post:
+      operationId: emergencyStopExecution
+      summary: Emergency-stop a running script execution
+      description: |
+        Requires `script.emergencyStop` (operator/admin) and an allowing
+        kind=script policy when one is bound (`allowEmergencyStop` defaults
+        to allow when omitted). Stops the runner. A queued/claimed job that
+        has not heartbeated is `canceled`. A running job or `uncertain=true`
+        is `indeterminate` until verified — never claimed succeeded or failed.
+        Viewers receive `403`. Host-supplied workspace IDs are `400`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptEmergencyStopRequest"
+      responses:
+        "200":
+          description: Stopped execution detail
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /executions/{executionId}/steps/{stepId}/emergency-stop:
+    post:
+      operationId: emergencyStopExecutionStep
+      summary: Emergency-stop one script step
+      description: |
+        Same contract as `POST /executions/{executionId}/emergency-stop`
+        scoped to one `script.python` / `script.go` step.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptEmergencyStopRequest"
+      responses:
+        "200":
+          description: Stopped execution detail
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /executions/{executionId}/retry:
     post:
       operationId: retryExecution
@@ -3485,8 +3585,8 @@ paths:
         node fields, publish/scan/sign/pin rules, runtime-profile digest
         pinning, E9.2 isolation guarantees (UID/FS/caps/no_new_privs/egress),
         E9.3 typed I/O + retry/indeterminate contract (io, retry.ui, retry.probe,
-        scoped handles, allowlisted env), error codes, and the E9.4 revocation
-        hook. Does not start a runner.
+        scoped handles, allowlisted env), and E9.4 revocation + emergency-stop
+        (`revocation`, `emergencyStop`, error codes). Does not start a runner.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -3584,6 +3684,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScriptArtifact"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /scripts/{artifactId}/revoke:
+    post:
+      operationId: revokeScriptArtifact
+      summary: Revoke a published script artifact
+      description: |
+        Requires `script.revoke` (operator/admin). Sets `revokedAt` (idempotent).
+        Revoked artifacts cannot start; start/claim/heartbeat-before-dispatch
+        and `VerifyForDispatch` fail closed with `artifact-revoked`. Never
+        returns the package blob. Host-supplied workspace IDs are `400`.
+        Cross-workspace IDs are `404`. Audit `script.artifact.revoke` is
+        secret-free.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptRevokeRequest"
+      responses:
+        "200":
+          description: Revoked artifact metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptArtifact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -4953,6 +5103,48 @@ components:
         hooks:
           type: object
           additionalProperties: {type: string}
+        revocation:
+          type: object
+          properties:
+            permission: {type: string}
+            route: {type: string}
+            idempotent: {type: boolean}
+            blocksNewRuns: {type: boolean}
+            recheckOn:
+              type: array
+              items: {type: string}
+            failClosed: {type: boolean}
+            errorCode: {type: string}
+            auditAction: {type: string}
+            auditSecretFree: {type: boolean}
+            note: {type: string}
+        emergencyStop:
+          type: object
+          properties:
+            permission: {type: string}
+            route: {type: string}
+            policyGated: {type: boolean}
+            missingPolicyAllows: {type: boolean}
+            policyAllowField: {type: string}
+            uncertainOutcome: {type: string}
+            beforeDispatch: {type: string}
+            neverAssumeAbsent: {type: boolean}
+            states:
+              type: array
+              items: {type: string}
+            auditAction: {type: string}
+            auditSecretFree: {type: boolean}
+            denyWithoutPermission: {type: string}
+            note: {type: string}
+    ScriptRevokeRequest:
+      type: object
+      properties:
+        reason: {type: string, maxLength: 256}
+    ScriptEmergencyStopRequest:
+      type: object
+      properties:
+        stepId: {type: string, format: uuid}
+        uncertain: {type: boolean}
     ScriptArtifact:
       type: object
       required: [id, language, entrypoint, digest, signature, scanStatus, status, createdAt]
@@ -4972,6 +5164,7 @@ components:
         createdBy: {type: string}
         createdAt: {type: string, format: date-time}
         revokedAt: {type: string, format: date-time}
+        revokedBy: {type: string}
     ScriptVersionPin:
       type: object
       required: [workflowVersionId, nodeId, artifactId, digest, scanStatus]

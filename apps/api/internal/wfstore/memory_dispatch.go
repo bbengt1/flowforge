@@ -6,6 +6,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 )
 
 func (m *Memory) GetJob(_ context.Context, scope isolation.Scope, jobID string) (ExecutionJob, error) {
@@ -264,6 +265,112 @@ func (m *Memory) CancelExecution(_ context.Context, scope isolation.Scope, now t
 	}, now)
 	wf := m.workflows[exec.record.WorkflowID]
 	return cloneExecution(exec.record, wf.record), nil
+}
+
+func (m *Memory) EmergencyStop(_ context.Context, scope isolation.Scope, now time.Time, in EmergencyStopInput) (EmergencyStopResult, error) {
+	if scope.Zero() {
+		return EmergencyStopResult{}, ErrNoScope
+	}
+	if !authz.ValidUUID(in.ExecutionID) {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if in.StepID != "" && !authz.ValidUUID(in.StepID) {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exec, ok := m.executions[in.ExecutionID]
+	if !ok || exec.workspaceID != scope.WorkspaceID() {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	stopped := 0
+	uncertain := false
+	matched := 0
+	for i := range exec.steps {
+		step := &exec.steps[i]
+		if in.StepID != "" && step.ID != in.StepID {
+			continue
+		}
+		if !scripts.IsScriptNode(step.NodeType) {
+			if in.StepID != "" {
+				return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+			}
+			continue
+		}
+		matched++
+		jidx := -1
+		for j := range exec.jobs {
+			if exec.jobs[j].ExecutionStepID == step.ID && (jobIsOpen(exec.jobs[j].Status) || exec.jobs[j].Status == JobIndeterminate) {
+				jidx = j
+				if jobIsOpen(exec.jobs[j].Status) {
+					break
+				}
+			}
+		}
+		if jidx < 0 {
+			continue
+		}
+		job := exec.jobs[jidx]
+		if !jobIsOpen(job.Status) {
+			if job.Status == JobIndeterminate {
+				uncertain = true
+			}
+			continue
+		}
+		next := emergencyStopJobStatus(job, in.Uncertain)
+		job.Status = next
+		job.UpdatedAt = now
+		exec.jobs[jidx] = job
+		applyStepStatus(step, emergencyStopStepStatus(next), now)
+		if next == JobIndeterminate {
+			uncertain = true
+		}
+		stopped++
+	}
+	if in.StepID != "" && matched == 0 {
+		return EmergencyStopResult{}, ErrNotFound
+	}
+	if matched == 0 {
+		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+	}
+	if stopped == 0 {
+		if exec.record.Status == ExecutionIndeterminate {
+			wf := m.workflows[exec.record.WorkflowID]
+			return EmergencyStopResult{
+				Execution: cloneExecution(exec.record, wf.record),
+				Outcome:   ExecutionIndeterminate,
+				Uncertain: true,
+			}, nil
+		}
+		if isTerminalExecution(exec.record.Status) && exec.record.Status != ExecutionPinned {
+			return EmergencyStopResult{}, ErrAlreadyTerminal
+		}
+		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
+	}
+	m.rollupLocked(&exec, now)
+	m.executions[in.ExecutionID] = exec
+	outcome := exec.record.Status
+	if uncertain {
+		outcome = ExecutionIndeterminate
+	}
+	m.appendAuditLocked(scope, AuditWrite{
+		Action:        scripts.AuditEmergencyStop,
+		ResourceType:  "execution",
+		ResourceID:    in.ExecutionID,
+		Outcome:       outcome,
+		CorrelationID: exec.record.CorrelationID,
+		Details:       scripts.EmergencyStopAudit(in.ExecutionID, in.StepID, "", outcome, scope.ActorID(), uncertain || in.Uncertain),
+	}, now)
+	wf := m.workflows[exec.record.WorkflowID]
+	return EmergencyStopResult{
+		Execution: cloneExecution(exec.record, wf.record),
+		Outcome:   outcome,
+		Uncertain: uncertain || in.Uncertain,
+		Stopped:   stopped,
+	}, nil
 }
 
 func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {

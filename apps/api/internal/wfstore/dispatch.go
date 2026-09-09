@@ -271,6 +271,20 @@ func mapFrom(m map[string]any, key string) map[string]any {
 	return v
 }
 
+func emergencyStopJobStatus(job ExecutionJob, uncertain bool) string {
+	if uncertain || job.Status == JobRunning || job.HeartbeatAt != nil {
+		return JobIndeterminate
+	}
+	return JobCanceled
+}
+
+func emergencyStopStepStatus(jobStatus string) string {
+	if jobStatus == JobIndeterminate {
+		return ExecutionIndeterminate
+	}
+	return ExecutionCanceled
+}
+
 func jobIsOpen(status string) bool {
 	switch status {
 	case JobQueued, JobClaimed, JobRunning:

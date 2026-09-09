@@ -1,5 +1,7 @@
 package scripts
 
+import "github.com/bbengt1/flowforge/apps/api/internal/authz"
+
 // PublishRules documents fail-closed publish/pin constraints for Chloe.
 type PublishRules struct {
 	RequiredWith             []string `json:"requiredWith"`
@@ -11,6 +13,7 @@ type PublishRules struct {
 	UnscannedRejected        bool     `json:"unscannedRejected"`
 	UnsignedRejected         bool     `json:"unsignedRejected"`
 	FailedScanRejected       bool     `json:"failedScanRejected"`
+	RevokedRejected          bool     `json:"revokedRejected"`
 	PublishedRevisionsPinned bool     `json:"publishedRevisionsPinned"`
 	DigestPinnedRuntime      bool     `json:"digestPinnedRuntime"`
 	MaxSourceBytes           int      `json:"maxSourceBytes"`
@@ -140,17 +143,50 @@ type ErrorShape struct {
 	Meaning string `json:"meaning"`
 }
 
+// RevocationRules documents E9.4 artifact revoke for Chloe.
+type RevocationRules struct {
+	Permission      string   `json:"permission"`
+	Route           string   `json:"route"`
+	Idempotent      bool     `json:"idempotent"`
+	BlocksNewRuns   bool     `json:"blocksNewRuns"`
+	RecheckOn       []string `json:"recheckOn"`
+	FailClosed      bool     `json:"failClosed"`
+	ErrorCode       string   `json:"errorCode"`
+	AuditAction     string   `json:"auditAction"`
+	AuditSecretFree bool     `json:"auditSecretFree"`
+	Note            string   `json:"note"`
+}
+
+// EmergencyStopRules documents E9.4 authorized runner halt for Chloe.
+type EmergencyStopRules struct {
+	Permission          string   `json:"permission"`
+	Route               string   `json:"route"`
+	PolicyGated         bool     `json:"policyGated"`
+	MissingPolicyAllows bool     `json:"missingPolicyAllows"`
+	PolicyAllowField    string   `json:"policyAllowField"`
+	UncertainOutcome    string   `json:"uncertainOutcome"`
+	BeforeDispatch      string   `json:"beforeDispatch"`
+	NeverAssumeAbsent   bool     `json:"neverAssumeAbsent"`
+	States              []string `json:"states"`
+	AuditAction         string   `json:"auditAction"`
+	AuditSecretFree     bool     `json:"auditSecretFree"`
+	DenyWithoutPerm     string   `json:"denyWithoutPermission"`
+	Note                string   `json:"note"`
+}
+
 // EngineCatalog is the Chloe / worker vocabulary for E9.1–E9.4.
 type EngineCatalog struct {
-	Languages    []string          `json:"languages"`
-	PublishRules PublishRules      `json:"publishRules"`
-	Nodes        []NodeContract    `json:"nodes"`
-	Errors       []ErrorShape      `json:"errors"`
-	Permissions  []string          `json:"permissions"`
-	Isolation    IsolationRules    `json:"isolation"`
-	IO           IORules           `json:"io"`
-	Retry        RetryRules        `json:"retry"`
-	Hooks        map[string]string `json:"hooks"`
+	Languages     []string           `json:"languages"`
+	PublishRules  PublishRules       `json:"publishRules"`
+	Nodes         []NodeContract     `json:"nodes"`
+	Errors        []ErrorShape       `json:"errors"`
+	Permissions   []string           `json:"permissions"`
+	Isolation     IsolationRules     `json:"isolation"`
+	IO            IORules            `json:"io"`
+	Retry         RetryRules         `json:"retry"`
+	Revocation    RevocationRules    `json:"revocation"`
+	EmergencyStop EmergencyStopRules `json:"emergencyStop"`
+	Hooks         map[string]string  `json:"hooks"`
 }
 
 // Catalog returns documented engine constraints. No runner is started.
@@ -168,6 +204,7 @@ func Catalog() EngineCatalog {
 			UnscannedRejected:        true,
 			UnsignedRejected:         true,
 			FailedScanRejected:       true,
+			RevokedRejected:          true,
 			PublishedRevisionsPinned: true,
 			DigestPinnedRuntime:      true,
 			MaxSourceBytes:           MaxSourceBytes,
@@ -204,8 +241,8 @@ func Catalog() EngineCatalog {
 				"deploy/kubernetes/script-runner-deployment.yaml",
 				"deploy/kubernetes/script-runner-networkpolicy.yaml",
 			},
-			Note:  "E9.2 isolated runner plus E9.3 typed I/O. Execute validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job. Lease loss is indeterminate — never a blind re-run.",
-			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec", "ValidateExecutionInput", "PublicHandles"},
+			Note:  "E9.2 isolated runner plus E9.3 typed I/O plus E9.4 revocation/emergency-stop. Execute rechecks signature, scan, and revoked_at, validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job. Lease loss and uncertain emergency stop are indeterminate — never a blind re-run.",
+			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec", "ValidateExecutionInput", "PublicHandles", "Revoke", "EmergencyStop"},
 		},
 		IO: IORules{
 			MaxInputBytes:        MaxInputBytes,
@@ -254,10 +291,37 @@ func Catalog() EngineCatalog {
 				Note:                  "declared-hook is an idempotent check of prior output / expect. already-applied resolves success without re-running. safe-to-retry allows one more mutating attempt. indeterminate stays loud and does not re-run.",
 			},
 		},
+		Revocation: RevocationRules{
+			Permission:      authz.PermScriptRevoke,
+			Route:           "POST /scripts/{artifactId}/revoke",
+			Idempotent:      true,
+			BlocksNewRuns:   true,
+			RecheckOn:       []string{"start", "claim", "heartbeat-before-dispatch", "Execute", "VerifyForDispatch"},
+			FailClosed:      true,
+			ErrorCode:       CodeArtifactRevoked,
+			AuditAction:     AuditRevoke,
+			AuditSecretFree: true,
+			Note:            "Revoked artifacts cannot start. Dispatch rechecks signature, scan, and revoked_at and fails closed. Already-running executions use emergency stop, not automatic halt.",
+		},
+		EmergencyStop: EmergencyStopRules{
+			Permission:          authz.PermScriptEmergencyStop,
+			Route:               "POST /executions/{executionId}/emergency-stop",
+			PolicyGated:         true,
+			MissingPolicyAllows: true,
+			PolicyAllowField:    "policy.allowEmergencyStop",
+			UncertainOutcome:    "indeterminate",
+			BeforeDispatch:      "canceled",
+			NeverAssumeAbsent:   true,
+			States:              []string{"queued", "running", "canceled", "indeterminate"},
+			AuditAction:         AuditEmergencyStop,
+			AuditSecretFree:     true,
+			DenyWithoutPerm:     "403 permission-denied",
+			Note:                "Requires script.emergencyStop. kind=script policy may set allowEmergencyStop=false (or deny). Running/uncertain stops stay indeterminate until verified — never claim success or failure blindly.",
+		},
 		Hooks: map[string]string{
 			"E9.2": "isolated runner (VerifyForDispatch then Execute)",
 			"E9.3": "typed I/O + scoped handles + output redaction + lease-loss recovery",
-			"E9.4": "artifact revocation + emergency stop",
+			"E9.4": "artifact revocation + emergency stop (implemented)",
 		},
 		Nodes:  NodeContracts(),
 		Errors: ErrorCatalog(),
@@ -320,9 +384,9 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeArtifactUnscanned, Status: 400, Meaning: "Artifact scan_status is pending or missing."},
 		{Code: CodeArtifactUnsigned, Status: 400, Meaning: "Artifact signature is missing or does not verify."},
 		{Code: CodeArtifactScanFailed, Status: 400, Meaning: "Artifact scan_status is failed."},
-		{Code: CodeArtifactRevoked, Status: 409, Meaning: "E9.4: revoked artifacts cannot start. Hook only in E9.1."},
-		{Code: CodePermissionDenied, Status: 403, Meaning: "Missing workflow.execute, script.run, or runtimeProfile.use."},
-		{Code: CodePolicyDenied, Status: 403, Meaning: "kind=script policy deny."},
+		{Code: CodeArtifactRevoked, Status: 409, Meaning: "Revoked artifacts cannot start. Rechecked at start, claim, heartbeat-before-dispatch, and Execute."},
+		{Code: CodePermissionDenied, Status: 403, Meaning: "Missing workflow.execute, script.run, runtimeProfile.use, script.revoke, or script.emergencyStop."},
+		{Code: CodePolicyDenied, Status: 403, Meaning: "kind=script policy deny, including emergency-stop deny (allowEmergencyStop=false)."},
 		{Code: CodeIsolationDenied, Status: 403, Meaning: "Requested runner environment violates isolation (UID, FS, caps, mounts)."},
 		{Code: CodeRootDenied, Status: 403, Meaning: "Runner UID/GID must be non-root (65532)."},
 		{Code: CodeWritableRootFSDenied, Status: 403, Meaning: "Root filesystem is read-only; only /workspace is writable."},
@@ -335,12 +399,13 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeDockerSocketDenied, Status: 403, Meaning: "Host Docker socket is denied."},
 		{Code: CodeServiceAccountDenied, Status: 403, Meaning: "Kubernetes service-account mounts are denied (MVP)."},
 		{Code: CodeResourceLimit, Status: 400, Meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile."},
-		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch, unknown provider outcome, or verification could not confirm state. Never a silent re-run."},
+		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch, unknown provider outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run."},
+		{Code: CodeEmergencyStopped, Status: 409, Meaning: "Emergency stop halted the script before dispatch. The runner was not started."},
+		{Code: CodeEmergencyStopDenied, Status: 403, Meaning: "Missing script.emergencyStop or kind=script policy denies emergency stop."},
 		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied."},
 		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true without a valid idempotency key or verification.behavior, or verification set on a non-retrySafe node."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, unscoped, or contained plaintext secrets. Handles only."},
 		{Code: CodeEnvDenied, Status: 403, Meaning: "Runtime environment key is outside the allowlist, or plaintext credentials were supplied as env."},
 		{Code: CodeRunnerNotImplemented, Status: 501, Meaning: "Live container runtime requested (RequireLiveRuntime) but only the CI harness is available."},
-		{Code: CodeRevocationNotImplemented, Status: 501, Meaning: "E9.4 revocation API is not enabled."},
 	}
 }

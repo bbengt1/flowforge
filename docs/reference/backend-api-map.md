@@ -142,7 +142,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
-| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation contract, and E9.3 typed I/O + recovery (`io`, `retry.ui`, `retry.probe`, handle injection, error codes). E9.4 revocation remains a hook. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation, E9.3 I/O/retry, and E9.4 `revocation` + `emergencyStop`. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -473,7 +473,7 @@ Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, opti
 
 ## Script source validation and publish pipeline (E9.1)
 
-Control-plane publish/scan/sign/pin for `script.python` and `script.go`. Isolated runners are E9.2 below. Typed I/O execution (E9.3) and revocation/emergency-stop (E9.4) remain hooks. Relates to #92 / Part of #91. Keep #92 open until Chloe's UI lands; do not treat this API story as closing the issue.
+Control-plane publish/scan/sign/pin for `script.python` and `script.go`. Isolated runners are E9.2 below. Typed I/O execution is E9.3. Revocation/emergency-stop is E9.4 below. Relates to #92 / Part of #91. Keep #92 open until Chloe's UI lands; do not treat this API story as closing the issue.
 
 **UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Cross-workspace artifact or runtime-profile UUIDs are `404`. Read `GET /scripts/catalog` (or `GET /ops-config/catalog` → `scriptEngine`) for node fields, publish rules, and error codes. Wizard/library should use `GET /workflows/catalog` `script.python` / `script.go` `allowedWith`. YAML still holds source; the artifact digest lives **outside** YAML on version pins. Execution uses the pinned digest only.
 
@@ -494,9 +494,10 @@ Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRI
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/scripts/catalog` | Node fields, publish rules, E9.2 isolation, E9.3 I/O + retry/indeterminate contract, error codes. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Node fields, publish rules, isolation, I/O/retry, revocation + emergency-stop, error codes. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
 | `POST /api/v1/scripts` | Dedicated package/scan/sign. Requires `workflow.publish`. Body `language`, `source`, `entrypoint`, `runtimeProfileId` (optional version, schemas, limits). Host-supplied workspace IDs rejected. | `201` artifact | `400` `401` `403` `404` |
-| `GET /api/v1/scripts/{artifactId}` | Metadata + digest + scan/signature. Never the package blob. Requires `workflow.view`. | `200` artifact | `401` `403` `404` |
+| `GET /api/v1/scripts/{artifactId}` | Metadata + digest + scan/signature + `revokedAt?`. Never the package blob. Requires `workflow.view`. | `200` artifact | `401` `403` `404` |
+| `POST /api/v1/scripts/{artifactId}/revoke` | Revoke a published artifact. Requires `script.revoke`. Idempotent. Body `{reason?}`. | `200` artifact | `400` `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts` | Pins bound at publish. Requires `workflow.view`. | `200` `{items}` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/publish` | Also packages/scans/signs/pins script nodes. | `201` `{workflow,version,pins,scriptArtifacts}` | `400` `401` `403` `404` `409` |
 
@@ -522,7 +523,7 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 
 ### Artifact JSON (never `package` / `storageRef`)
 
-`id`, `language`, `entrypoint`, `digest` (`sha256:<hex>`), `signature` (`hmac-sha256:<hex>`), `scanStatus` (`clean` required to execute), `status` (`published` required to execute), `runtimeProfileId`, `runtimeProfileVersionId`, `runtimeProfileDigest`, `sourceBytes`, `metadata` (secret-free), `createdBy`, `createdAt`, `revokedAt?` (reserved for E9.4).
+`id`, `language`, `entrypoint`, `digest` (`sha256:<hex>`), `signature` (`hmac-sha256:<hex>`), `scanStatus` (`clean` required to execute), `status` (`published` required to execute), `runtimeProfileId`, `runtimeProfileVersionId`, `runtimeProfileDigest`, `sourceBytes`, `metadata` (secret-free), `createdBy`, `createdAt`, `revokedAt?`, `revokedBy?`.
 
 ### Catalog error codes (`GET /scripts/catalog` → `errors[]`)
 
@@ -541,7 +542,7 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `artifact-unscanned` | 400 | `scanStatus` pending or missing |
 | `artifact-unsigned` | 400 | Signature missing or does not verify |
 | `artifact-scan-failed` | 400 | `scanStatus` is failed |
-| `artifact-revoked` | 409 | E9.4 hook only |
+| `artifact-revoked` | 409 | Revoked artifacts cannot start (rechecked at start/claim/heartbeat-before-dispatch/Execute) |
 | `permission-denied` | 403 | Missing `workflow.execute`, `script.run`, or `runtimeProfile.use` |
 | `isolation-denied` | 403 | Requested runner environment violates isolation |
 | `root-denied` | 403 | Runner UID/GID must be non-root (`65532`) |
@@ -555,13 +556,14 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `docker-socket-denied` | 403 | Host Docker socket is denied |
 | `service-account-denied` | 403 | Kubernetes SA mounts are denied (MVP) |
 | `resource-limit` | 400 | CPU / memory / process / time exceeded the pin |
-| `indeterminate` | 409 | Lease lost after dispatch, unknown outcome, or verification could not confirm state. Never a silent re-run |
+| `indeterminate` | 409 | Lease lost after dispatch, unknown outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run |
+| `emergency-stopped` | 409 | Emergency stop halted the script before dispatch |
+| `emergency-stop-denied` | 403 | Missing `script.emergencyStop` or policy `allowEmergencyStop=false` |
 | `retry-denied` | 400 / 409 | `maxAttempts>0` without retrySafe+idempotencyKey+verification, or a step retry that is not allowed |
 | `invalid-verification` | 400 | `retrySafe=true` without a valid idempotency key or `verification.behavior` |
 | `handle-forbidden` | 403 | Handle missing, expired, unscoped, or contained plaintext secrets |
 | `env-denied` | 403 | Runtime env key outside the allowlist, or plaintext credentials supplied as env |
 | `runner-not-implemented` | 501 | Live container runtime requested; CI harness only |
-| `revocation-not-implemented` | 501 | E9.4 revocation API is not enabled |
 
 Out of scope for E9.1: `apps/web` rewrite, typed I/O execution (E9.3), revocation/emergency-stop (E9.4), SSH/K8s engines.
 
@@ -593,7 +595,7 @@ Python: approved digest-pinned image + lock. Go: precompiled signed binary from 
 
 ### Result shape (job output)
 
-`{ok, operation, language, entrypoint, artifactId, artifactDigest, signatureVerified, scanStatus, runtimeProfileId, runtimeProfileDigest, isolation, binary?, stdout, stderr, exitCode, input, output, handles, env, inputValidated, outputValidated, retry, correlationId, audit, error?}`. Never includes package blobs, `storageRef`, or plaintext credentials. Lease loss → `error.code=indeterminate` (no rerun). Emergency stop stays E9.4.
+`{ok, operation, language, entrypoint, artifactId, artifactDigest, signatureVerified, scanStatus, runtimeProfileId, runtimeProfileDigest, isolation, binary?, stdout, stderr, exitCode, input, output, handles, env, inputValidated, outputValidated, retry, correlationId, audit, error?}`. Never includes package blobs, `storageRef`, or plaintext credentials. Lease loss or uncertain emergency stop → `error.code=indeterminate` (no rerun).
 
 Out of scope for E9.2: `apps/web` rewrite, typed I/O + lease-loss recovery (now E9.3 below), artifact revocation + emergency stop (E9.4).
 
@@ -643,7 +645,32 @@ Default retries are **zero**. A node is retry-safe only when it declares `retryS
 - `indeterminate` without retrySafe → stays indeterminate; retry denied
 - retrySafe + key + verification + remaining attempts → `201` queues a new attempt that **must verify first** (never a blind re-run)
 
-Out of scope: `apps/web` rewrite; artifact revocation + emergency stop (E9.4).
+Out of scope: `apps/web` rewrite; artifact revocation + emergency stop (E9.4 below).
+
+## Artifact revocation and emergency stop (E9.4)
+
+Workspace-scoped revoke plus authorized emergency-stop. Relates to #95 / Part of #91. **Keep #95 open** until Chloe's revoke/stop UI lands. Do not treat this API story as closing the issue.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Read `GET /scripts/catalog` → `revocation` + `emergencyStop` + `errors[]`.
+
+Suggested UI flow:
+
+1. Inspect artifact: `GET /scripts/{artifactId}` — show `revokedAt` when present. Never show package blobs / `storageRef`.
+2. Revoke: `POST /scripts/{artifactId}/revoke` `{reason?}` (`script.revoke`, operator/admin). Viewer → `403`. Idempotent `200` with `revokedAt`. Optional reason is secret-free (≤256 bytes).
+3. After revoke, new starts fail closed (`409` `artifact-revoked`) before a run is created. Claim and first-heartbeat revalidate the same way and fail the unstarted job — they do not start a runner.
+4. Emergency stop a running script: `POST /executions/{id}/emergency-stop` `{stepId?, uncertain?}` or `POST /executions/{id}/steps/{stepId}/emergency-stop`. Requires `script.emergencyStop`. A bound `kind=script` policy may set `allowEmergencyStop: false` (`403`). Viewer → `403`.
+5. Queued / claimed (no heartbeat) → status `canceled` (runner never started). Running or `uncertain=true` → `indeterminate` until a verification hook resolves it. Never render success or failure from an uncertain stop. Unmistakable `indeterminate` badge (same as E9.3).
+6. Audit: `script.artifact.revoke` and `script.emergency_stop` are identifiers only (artifact digest, actor, outcome). No secrets, package bytes, or storage locators.
+
+RBAC: operator/admin have `script.revoke` and `script.emergencyStop`. Viewer/editor/publisher/approver do not.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `POST /api/v1/scripts/{artifactId}/revoke` | Revoke. Requires `script.revoke`. | `200` artifact | `400` `401` `403` `404` |
+| `POST /api/v1/executions/{executionId}/emergency-stop` | Stop script steps. Requires `script.emergencyStop`. Policy-gated. | `200` detail | `400` `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/emergency-stop` | Stop one script step. | `200` detail | `400` `401` `403` `404` `409` |
+
+Out of scope: `apps/web` rewrite; new engine features beyond revoke/stop.
 
 ## Workflow YAML contract (E3.1)
 
@@ -761,6 +788,8 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/jobs/{jobId}/complete` | Succeed with redacted `output`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/jobs/{jobId}/fail` | Fail with redacted `error`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/emergency-stop` | E9.4: stop a script step. Requires `script.emergencyStop`. Uncertain/running → `indeterminate`. | `200` detail | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/emergency-stop` | E9.4: stop one script step. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step, E8.3-eligible `ssh.run`, or E9.3-eligible script. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
 | `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
 

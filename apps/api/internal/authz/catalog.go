@@ -36,6 +36,8 @@ const (
 	PermKubernetesRead      = "kubernetes.read"
 	PermSSHRun              = "ssh.run"
 	PermScriptRun           = "script.run"
+	PermScriptRevoke        = "script.revoke"
+	PermScriptEmergencyStop = "script.emergencyStop"
 	PermOpsConfigView       = "opsconfig.view"
 	PermOpsConfigEdit       = "opsconfig.edit"
 	PermOpsConfigPublish    = "opsconfig.publish"
@@ -95,6 +97,8 @@ func Permissions() []Permission {
 		{Key: PermKubernetesRead, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
 		{Key: PermScriptRun, Family: FamilyExecute},
+		{Key: PermScriptRevoke, Family: FamilyExecute},
+		{Key: PermScriptEmergencyStop, Family: FamilyExecute},
 		{Key: PermOpsConfigView, Family: FamilyView},
 		{Key: PermOpsConfigEdit, Family: FamilyEdit},
 		{Key: PermOpsConfigPublish, Family: FamilyPublish},
@@ -135,6 +139,7 @@ func Roles() []Role {
 			Permissions: []string{
 				PermWorkflowView, PermWorkflowExecute, PermExecutionView, PermExecutionCancel,
 				PermCredentialView, PermCredentialUse, PermApprovalView, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermScriptRun,
+				PermScriptRevoke, PermScriptEmergencyStop,
 				PermAlertView, PermAlertAck,
 				PermOpsConfigView, PermOpsConfigUse,
 				PermClusterTargetUse, PermSSHTargetUse, PermCommandProfileUse, PermRuntimeProfileUse,

@@ -64,6 +64,8 @@ const (
 	CodeIndeterminate            = "indeterminate"
 	CodeRunnerNotImplemented     = "runner-not-implemented"
 	CodeRevocationNotImplemented = "revocation-not-implemented"
+	CodeEmergencyStopped         = "emergency-stopped"
+	CodeEmergencyStopDenied      = "emergency-stop-denied"
 	CodeRetryDenied              = "retry-denied"
 	CodeInvalidVerification      = "invalid-verification"
 	CodeHandleForbidden          = "handle-forbidden"

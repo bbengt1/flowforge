@@ -193,7 +193,44 @@ func cloneArtifact(in Artifact) Artifact {
 		t := *in.RevokedAt
 		out.RevokedAt = &t
 	}
+	out.RevokedBy = in.RevokedBy
 	return out
+}
+
+func (m *Memory) Revoke(_ context.Context, scope isolation.Scope, id string, now time.Time, actorID, reason string) (Artifact, error) {
+	if scope.Zero() {
+		return Artifact{}, ErrNoScope
+	}
+	if !authz.ValidUUID(id) {
+		return Artifact{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	row, ok := m.artifacts[id]
+	if !ok || row.workspaceID != scope.WorkspaceID() {
+		return Artifact{}, ErrNotFound
+	}
+	if row.record.RevokedAt == nil || row.record.RevokedAt.IsZero() {
+		t := now
+		row.record.RevokedAt = &t
+		if actorID != "" {
+			row.record.RevokedBy = actorID
+		}
+		if row.record.Metadata == nil {
+			row.record.Metadata = map[string]any{}
+		}
+		if reason != "" {
+			row.record.Metadata["revokeReason"] = reason
+		}
+		if actorID != "" {
+			row.record.Metadata["revokedBy"] = actorID
+		}
+		m.artifacts[id] = row
+	}
+	return cloneArtifact(row.record), nil
 }
 
 func newID() string {

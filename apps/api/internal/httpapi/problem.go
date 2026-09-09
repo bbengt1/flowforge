@@ -29,6 +29,7 @@ const (
 	CodeArtifactUnscanned     = "artifact-unscanned"
 	CodeArtifactUnsigned      = "artifact-unsigned"
 	CodeArtifactScanFailed    = "artifact-scan-failed"
+	CodeArtifactRevoked       = "artifact-revoked"
 	CodeIsolationDenied       = "isolation-denied"
 	CodeMetadataDenied        = "metadata-denied"
 	CodeEgressDenied          = "egress-denied"

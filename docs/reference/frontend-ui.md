@@ -263,6 +263,15 @@ E9.3 (Chloe UI) authors declared input/output schemas and surfaces redacted resu
 - **Fail closed:** HTTP 403 empties selectors as in E9.1/E9.2. Unexpected secret fields are stripped and treated as a contract bug.
 - **Unchanged:** E9.1 source/publish; E9.2 runtime-profile isolation; no invented routes; `apps/api` untouched.
 
+## E9.4 artifact revocation and emergency stop (Chloe UI)
+
+E9.4 (Chloe UI) wires jonny's revoke + emergency-stop map on `main`. `apps/api` is unchanged in the Chloe PR. Prefer `GET /scripts/catalog` (`revocation`, `emergencyStop`, `errors[]`) plus `POST /scripts/{id}/revoke` and `POST /executions/{id}/emergency-stop`. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #95 / Part of #91 — **Keep #95 open** (this UI story). Do not close with the API PR alone.
+
+- **Artifacts:** show `revokedAt` on `GET /scripts/{id}`. **Revoke** requires `script.revoke` (operator/admin). Viewer → `403`. Idempotent. Optional secret-free `reason`.
+- **Execute fail-closed:** revoked → `409 artifact-revoked` at start and at claim / first heartbeat. Do not offer Run on a revoked digest.
+- **Emergency stop:** `POST /executions/{id}/emergency-stop` (`script.emergencyStop`). Policy may deny (`allowEmergencyStop=false`). Running / uncertain → loud `indeterminate` — never imply the script did not run. Queued (never heartbeated) may show `canceled`.
+- **Unchanged:** E9.1–E9.3 authoring/I/O/retry; `apps/api` untouched in the Chloe UI PR.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
