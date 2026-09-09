@@ -123,6 +123,15 @@ export function paletteCommands(
       action: { type: "run-published" },
     });
   }
+  if (!context.workflowId && allowed(permissions, canExecuteWorkflows)) {
+    commands.push({
+      id: "manual-start",
+      label: "Start published version",
+      hint: "Authenticated manual start from workflow home",
+      keywords: ["start", "run", "execute", "manual"],
+      action: { type: "navigate", href: "/workflows?start=1" },
+    });
+  }
   if (allowed(permissions, (perms) => canSeeExecutionsNav(perms ?? []))) {
     commands.push({
       id: "open-execution",

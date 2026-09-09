@@ -272,6 +272,17 @@ E9.4 (Chloe UI) wires jonny's **#103** map on `main` (`e94-#103`). `apps/api` is
 - **Emergency stop:** distinct from Cancel. `POST /executions/{id}/emergency-stop` (`script.emergencyStop`). Policy may deny (`allowEmergencyStop=false`; missing policy allows). Queued / claimed (no heartbeat) → `canceled`. Running / `uncertain=true` → loud `indeterminate` until verified — never imply the script did not run. No blind retry after stop.
 - **Unchanged:** E9.1–E9.3 authoring/I/O/retry; `apps/api` untouched in the Chloe UI PR.
 
+## E10.1 authenticated manual starts (Chloe UI)
+
+E10.1 (Chloe UI) enables the full authenticated start flow on existing E5 routes. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/manual-start-contract.ts`. Jonny owns start APIs (#106); until that map lands on `main`, the adapter uses a marked **e5-fallback**: `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input?}`. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Do not invent `POST /executions`. Relates to #106 / Part of #105 — **Keep #106 open** (jonny owns start APIs).
+
+- **Published version only:** home, editor run control, and execution history pick a published `workflowVersionId`. Drafts never run.
+- **Typed bounded input:** fields come from the published version YAML manual trigger `schema` / `inputSchema` (JSON Schema subset). Secret property names are omitted. Payload is object-only and capped at 16 KiB. When no schema is declared, optional JSON uses the contract-fallback object schema.
+- **Idempotency:** the UI generates a letter-prefixed key (1–128) and always sends it. 201 is a new run; 200 replays the same (workspace, version, key); 409 is a fingerprint mismatch.
+- **Authorization:** `workflow.execute` is required. Unknown permissions, HTTP 401, HTTP 403, and missing CSRF fail closed — the UI does not treat a run as started.
+- **Audit confirmation:** pre-start review shows version digest, redacted input, and the idempotency key (the secret-free record audit will keep).
+- **Unchanged:** E5 start route, E6.4 wait/resume still disabled, `apps/api` untouched.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

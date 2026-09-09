@@ -71,10 +71,17 @@ import {
 } from "@/lib/workflow";
 import {
   canStartPublishedRun,
-  parseTriggerInput,
   publishedRunVersions,
 } from "@/lib/execution-replay";
 import { PRE_RUN_PUBLISHED_ONLY_HELP } from "@/lib/execution-contract";
+import {
+  MANUAL_START_FORBIDDEN_MESSAGE,
+  buildManualStartRequest,
+  generateManualStartIdempotencyKey,
+  isManualStartAuthFailure,
+  manualStartAuthFailureMessage,
+} from "@/lib/manual-start-contract";
+import { canExecuteWorkflows } from "@/lib/workspace-nav";
 import {
   compareWorkflow,
   createWorkflow,
@@ -179,8 +186,13 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
   const [runVersion, setRunVersion] = useState<WorkflowVersion | null>(null);
-  const [runIdempotencyKey, setRunIdempotencyKey] = useState("");
+  const [runIdempotencyKey, setRunIdempotencyKey] = useState(
+    generateManualStartIdempotencyKey,
+  );
   const [runTriggerInput, setRunTriggerInput] = useState("");
+  const [runFieldValues, setRunFieldValues] = useState<Record<string, string>>(
+    {},
+  );
   const [lastStartStatus, setLastStartStatus] = useState<number | null>(null);
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
   const [policyEval, setPolicyEval] = useState<PolicyEvaluation | null>(null);
@@ -788,9 +800,43 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     if (!workflow || !runVersionId) {
       return;
     }
-    const start = canStartPublishedRun({
+    if (!canExecuteWorkflows(permissions)) {
+      setProblem({
+        type: "urn:flowforge:problem:forbidden",
+        title: "Start forbidden",
+        status: 403,
+        detail: MANUAL_START_FORBIDDEN_MESSAGE,
+        instance: "/workflows",
+        code: "forbidden",
+        request_id: "local-run-published-16",
+      });
+      return;
+    }
+    const prepared = buildManualStartRequest({
       versions,
       selectedVersionId: runVersionId,
+      yaml: runVersion?.definitionYaml,
+      fieldValues: runFieldValues,
+      jsonText: runTriggerInput,
+      idempotencyKey: runIdempotencyKey,
+      permissions,
+    });
+    if (!prepared.ok || !prepared.body) {
+      setProblem({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Cannot start",
+        status: 400,
+        detail: prepared.reason || PRE_RUN_PUBLISHED_ONLY_HELP,
+        instance: "/workflows",
+        code: "invalid-request",
+        request_id: "local-run-published-16",
+      });
+      return;
+    }
+    setRunIdempotencyKey(prepared.idempotencyKey);
+    const start = canStartPublishedRun({
+      versions,
+      selectedVersionId: prepared.body.workflowVersionId,
     });
     if (!start.ok) {
       setProblem({
@@ -808,7 +854,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     setProblem(null);
     const evaluation = await evaluatePolicyForRun(identity, {
       workflowId: workflow.id,
-      workflowVersionId: runVersionId,
+      workflowVersionId: prepared.body.workflowVersionId,
     });
     setLastRequestId(evaluation.requestId);
     if (!evaluation.ok) {
@@ -835,37 +881,29 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         return;
       }
     }
-    const parsedInput = parseTriggerInput(runTriggerInput);
-    if (!parsedInput.ok) {
-      setProblem({
-        type: "urn:flowforge:problem:invalid-request",
-        title: "Invalid trigger input",
-        status: 400,
-        detail: parsedInput.error,
-        instance: "/workflows",
-        code: "invalid-request",
-        request_id: "local-run-input-16",
-      });
-      setPending(null);
-      return;
-    }
-    const extras = {
-      ...(runIdempotencyKey.trim()
-        ? { idempotencyKey: runIdempotencyKey.trim() }
-        : {}),
-      ...(parsedInput.value ? { input: parsedInput.value } : {}),
-    };
     const result = await startWorkflowExecution(
       identity,
       workflow.id,
-      runVersionId,
-      extras,
+      prepared.body.workflowVersionId,
+      {
+        idempotencyKey: prepared.body.idempotencyKey,
+        input: prepared.body.input,
+      },
     );
     setLastRequestId(result.requestId);
     setLastStartStatus(result.statusCode);
     setPending(null);
     if (!result.ok) {
-      setProblem(result.problem);
+      setProblem(
+        isManualStartAuthFailure(result.problem)
+          ? {
+              ...result.problem,
+              detail:
+                manualStartAuthFailureMessage(result.problem) ||
+                result.problem.detail,
+            }
+          : result.problem,
+      );
       return;
     }
     setProblem(null);
@@ -1443,8 +1481,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             runProblem={problem}
             idempotencyKey={runIdempotencyKey}
             onIdempotencyKey={setRunIdempotencyKey}
+            fieldValues={runFieldValues}
+            onFieldValues={setRunFieldValues}
+            permissions={permissions}
             onSelectVersion={(versionId) => {
               setRunVersionId(versionId);
+              setRunFieldValues({});
               void evaluateSelectedVersion(versionId);
             }}
             onRun={() => void runPublished()}

@@ -9,11 +9,37 @@ import {
   insertCoreNode,
   isForbiddenYamlKey,
   listYamlNodes,
+  listYamlTriggers,
   serializeCoreWith,
   serializeNodeBlock,
   updateYamlNode,
 } from "./workflow-yaml-nodes.ts";
 import { CORE_NEUTRAL_NODE_TYPES } from "./workflow-core-nodes.ts";
+
+describe("listYamlTriggers", () => {
+  it("reads a manual trigger schema from published YAML", () => {
+    const yaml = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: restart
+spec:
+  triggers:
+    - id: manual
+      type: manual
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          ticket:
+            type: string
+  nodes: []
+`;
+    const triggers = listYamlTriggers(yaml);
+    assert.equal(triggers[0]?.id, "manual");
+    assert.equal(triggers[0]?.type, "manual");
+    assert.equal((triggers[0]?.schema as { type?: string } | undefined)?.type, "object");
+  });
+});
 
 describe("insertCoreNode", () => {
   it("appends a canonical flow.delay block into starter YAML", () => {

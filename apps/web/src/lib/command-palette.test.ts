@@ -29,6 +29,7 @@ describe("paletteCommands", () => {
     assert.equal(ids.includes("new-workflow"), false);
     assert.equal(ids.includes("publish"), false);
     assert.equal(ids.includes("run-published"), false);
+    assert.equal(ids.includes("manual-start"), false);
     assert.equal(ids.includes("nav-vault"), false);
   });
 
@@ -62,6 +63,7 @@ describe("paletteCommands", () => {
     assert.ok(ids.includes("new-workflow"));
     assert.equal(ids.includes("publish"), false);
     assert.equal(ids.includes("run-published"), false);
+    assert.equal(ids.includes("manual-start"), true);
     assert.equal(ids.includes("validate"), false);
     assert.equal(isWorkflowHomePath("/workflows"), true);
     assert.equal(isWorkflowHomePath("/workflows/abc"), false);

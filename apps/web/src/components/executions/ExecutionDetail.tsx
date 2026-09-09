@@ -36,6 +36,7 @@ import {
   RETRY_INDETERMINATE_MESSAGE,
   STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
+import { manualStartHref } from "@/lib/manual-start-contract";
 import { listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import {
@@ -872,7 +873,13 @@ export function ExecutionDetail({
               </pre>
             </div>
             {detail?.workflowId ? (
-              <p className="mt-4 text-sm">
+              <p className="mt-4 flex flex-wrap gap-3 text-sm">
+                <Link
+                  href={manualStartHref(detail.workflowId)}
+                  className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                >
+                  Start another published version
+                </Link>
                 <Link
                   href={`/workflows/${detail.workflowId}`}
                   className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
