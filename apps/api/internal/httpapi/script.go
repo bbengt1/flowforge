@@ -258,6 +258,20 @@ func writeScriptError(w http.ResponseWriter, r *http.Request, err error) {
 		case scripts.CodePermissionDenied:
 			WriteForbidden(w, r)
 			return
+		case scripts.CodeIsolationDenied:
+			code = CodeIsolationDenied
+		case scripts.CodeMetadataDenied:
+			code = CodeMetadataDenied
+		case scripts.CodeEgressDenied:
+			code = CodeEgressDenied
+		case scripts.CodePackageInstallDenied:
+			code = CodePackageInstallDenied
+		case scripts.CodeImageDenied:
+			code = CodeImageDenied
+		case scripts.CodeResourceLimit:
+			code = CodeResourceLimit
+		case scripts.CodeIndeterminate:
+			code = CodeIndeterminate
 		default:
 			code = CodeInvalidRequest
 		}

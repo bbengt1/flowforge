@@ -1,0 +1,81 @@
+# Isolated short-lived script runner (E9.2).
+#
+# This pod template is the production isolation contract for script.python /
+# script.go. Workers create Jobs from it after scripts.Execute /
+# VerifyForDispatch. CI does not start these pods — go tests use
+# scripts.HarnessRuntime, which asserts the same gates without runc.
+#
+# Guarantees:
+# - non-root UID/GID 65532
+# - read-only root filesystem + ephemeral /workspace
+# - CPU/memory/process limits from the pinned runtime profile (defaults below)
+# - drop ALL capabilities, no_new_privs (allowPrivilegeEscalation: false)
+# - no host Docker socket, no cloud metadata, no Kubernetes SA mount
+# - digest-pinned image only (replace the placeholder before production)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowforge-script-runner
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: script-runner
+    app.kubernetes.io/part-of: flowforge
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: script-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flowforge
+        app.kubernetes.io/component: script-runner
+        app.kubernetes.io/part-of: flowforge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          # Replace with the approved runtime_profile.imageDigest before use.
+          # CI and check-deploy-defaults reject floating mutable tags.
+          image: ghcr.io/bbengt1/flowforge-script-runner:foundation
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+      # Explicit denials: do not add a host Docker socket, metadata routes,
+      # or serviceAccountName unless a future policy story authorizes them.

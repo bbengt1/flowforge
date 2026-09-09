@@ -29,6 +29,13 @@ const (
 	CodeArtifactUnscanned     = "artifact-unscanned"
 	CodeArtifactUnsigned      = "artifact-unsigned"
 	CodeArtifactScanFailed    = "artifact-scan-failed"
+	CodeIsolationDenied       = "isolation-denied"
+	CodeMetadataDenied        = "metadata-denied"
+	CodeEgressDenied          = "egress-denied"
+	CodePackageInstallDenied  = "package-install-denied"
+	CodeImageDenied           = "image-denied"
+	CodeResourceLimit         = "resource-limit"
+	CodeIndeterminate         = "indeterminate"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

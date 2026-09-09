@@ -14,12 +14,12 @@ func scriptBounds() *NodeBounds {
 
 func scriptPythonContract() NodeType {
 	return scriptNodeContract(scripts.NodePython, scripts.LanguagePython, "Run Python script",
-		"Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.")
+		"Run published signed Python source in an isolated runner. Execution uses the pinned digest and digest-locked image, not draft source.")
 }
 
 func scriptGoContract() NodeType {
 	return scriptNodeContract(scripts.NodeGo, scripts.LanguageGo, "Run Go script",
-		"Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.")
+		"Run a precompiled signed Go binary built from the published source. Isolation gates apply before the controlled builder.")
 }
 
 func scriptNodeContract(typ, _, title, description string) NodeType {

@@ -142,7 +142,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
-| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, error codes, and E9.2–E9.4 hooks. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, E9.2 isolation contract (UID/FS/caps/`no_new_privs`/egress/runtime profile), and E9.3–E9.4 hooks. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -164,7 +164,7 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 | `cluster_target` | `credentialId` (workspace `kubernetes` / kubeconfig credential only), `endpoint.apiServer` or `tlsServerName`; optional `allowedNamespaces` (non-empty DNS-1123 labels), `policyId` (published `kind=kubernetes` policy; target namespaces must be a subset), `serviceAccount.{name,namespace?,roleTemplate?}` (`roleTemplate` defaults to `namespace-scoped-runner`; ClusterRoles are not MVP). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include kubeconfig. |
 | `ssh_target` | `credentialId` (workspace `ssh_private_key` credential only), `hostname`, `hostKeyFingerprint` (`sha256:<64 hex>` or OpenSSH `SHA256:<base64>`, canonicalized to `sha256:<hex>`); optional `port` (default 22), `username` (non-root; default at execute is `flowforge`; `root`/`toor`/`administrator` rejected), `allowedAddresses` (IP/CIDR; present empty list is rejected; no `0.0.0.0/0`), `policyId` (published `kind=ssh` policy). Wrong credential type → `400`. Cross-workspace `credentialId` → `404`. Specs never include `privateKey` / `passphrase` / kubeconfig. |
 | `command_profile` | `parameterSchema` (restricted object schema: `string` / `integer` / `boolean` properties, `additionalProperties: false`), `template` (reviewed `{name}` placeholders only; no `$()`, `` ` ``, `${`, `{{`, `$`); optional `retrySafe` (default `false`; when `true`, `verification` is required); optional `verification` `{template, expectExitCode?, expectStdoutContains?, onMatch?, onMismatch?, onError?}`; `policyId` (published `kind=ssh` policy). The reviewed renderer owns POSIX single-quote substitution and rejects values outside the schema. |
-| `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}` |
+| `runtime_profile` | `language` (`python`/`go`), `imageDigest`, `dependencyLockDigest`, `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`; optional `egress.{destinations[{host,port,protocol}],dnsConstrained:true}` (omitted = default-deny; metadata/loopback/wildcards rejected) |
 | `connection` | `type` (`http`/`webhook`/`smtp`), `endpointPolicy.{hosts,methods,pathPrefixes}`; optional `credentialId`, ports/TLS/redirects |
 | `recipient_list` | `recipientPolicy.emails` and/or `domains` (allowlist only) |
 | `message_template` | `inputSchema`, `contentClassification`, `body`; optional `subject` |
@@ -473,7 +473,7 @@ Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, opti
 
 ## Script source validation and publish pipeline (E9.1)
 
-Control-plane publish/scan/sign/pin for `script.python` and `script.go`. Isolated runners (E9.2), typed I/O execution (E9.3), and revocation/emergency-stop (E9.4) are not implemented — catalogs document hooks only. Relates to #92 / Part of #91. Keep #92 open until Chloe's UI lands; do not treat this API story as closing the issue.
+Control-plane publish/scan/sign/pin for `script.python` and `script.go`. Isolated runners are E9.2 below. Typed I/O execution (E9.3) and revocation/emergency-stop (E9.4) remain hooks. Relates to #92 / Part of #91. Keep #92 open until Chloe's UI lands; do not treat this API story as closing the issue.
 
 **UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Cross-workspace artifact or runtime-profile UUIDs are `404`. Read `GET /scripts/catalog` (or `GET /ops-config/catalog` → `scriptEngine`) for node fields, publish rules, and error codes. Wizard/library should use `GET /workflows/catalog` `script.python` / `script.go` `allowedWith`. YAML still holds source; the artifact digest lives **outside** YAML on version pins. Execution uses the pinned digest only.
 
@@ -494,7 +494,7 @@ Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRI
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/scripts/catalog` | Node fields, publish rules, error codes, isolation hooks. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Node fields, publish rules, E9.2 isolation contract, error codes. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
 | `POST /api/v1/scripts` | Dedicated package/scan/sign. Requires `workflow.publish`. Body `language`, `source`, `entrypoint`, `runtimeProfileId` (optional version, schemas, limits). Host-supplied workspace IDs rejected. | `201` artifact | `400` `401` `403` `404` |
 | `GET /api/v1/scripts/{artifactId}` | Metadata + digest + scan/signature. Never the package blob. Requires `workflow.view`. | `200` artifact | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts` | Pins bound at publish. Requires `workflow.view`. | `200` `{items}` | `401` `403` `404` |
@@ -537,11 +537,56 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `artifact-scan-failed` | 400 | `scanStatus` is failed |
 | `artifact-revoked` | 409 | E9.4 hook only |
 | `permission-denied` | 403 | Missing `workflow.execute`, `script.run`, or `runtimeProfile.use` |
-| `runner-not-implemented` | 501 | E9.2 isolated runner is not enabled |
+| `isolation-denied` | 403 | Requested runner environment violates isolation |
+| `root-denied` | 403 | Runner UID/GID must be non-root (`65532`) |
+| `writable-rootfs-denied` | 403 | Root filesystem is read-only |
+| `capability-denied` | 403 | All Linux capabilities are dropped |
+| `privilege-escalation-denied` | 403 | `no_new_privs` required |
+| `metadata-denied` | 403 | Cloud metadata (`169.254.169.254`) is denied |
+| `egress-denied` | 403 | Destination outside the default-deny allowlist |
+| `package-install-denied` | 403 | Runtime `pip` / `go get` / `apt` is denied |
+| `image-denied` | 400 | Arbitrary or mutable base images |
+| `docker-socket-denied` | 403 | Host Docker socket is denied |
+| `service-account-denied` | 403 | Kubernetes SA mounts are denied (MVP) |
+| `resource-limit` | 400 | CPU / memory / process / time exceeded the pin |
+| `indeterminate` | 409 | Lease lost after dispatch (E9.3 recovery hook) |
+| `runner-not-implemented` | 501 | Live container runtime requested; CI harness only |
 | `typed-io-not-implemented` | 501 | E9.3 typed I/O is not enabled |
 | `revocation-not-implemented` | 501 | E9.4 revocation API is not enabled |
 
-Out of scope: `apps/web` rewrite, isolated container runners (E9.2), typed I/O execution (E9.3), revocation/emergency-stop (E9.4), SSH/K8s engines.
+Out of scope for E9.1: `apps/web` rewrite, typed I/O execution (E9.3), revocation/emergency-stop (E9.4), SSH/K8s engines.
+
+## Isolated script runners (E9.2)
+
+Workers claim an E5.2 job, then call `scripts.Execute` after `VerifyForDispatch`. No new browser routes. Read `GET /scripts/catalog` → `isolation` + `errors[]` + `runtimeProfile`. Relates to #93 / Part of #91. **Do not close #93** — Chloe may land runtime-profile UI separately. Keep #93 open.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Catalog isolation fields are additive (existing booleans stay). Wizard/library can show isolation guarantees from `GET /scripts/catalog`. Execution still starts with `POST /workflows/{id}/executions` as today; the worker — not the browser — runs the isolated script.
+
+### Runtime profile fields the runner consumes
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `language` | yes | `python` or `go` (must match the node) |
+| `imageDigest` | yes | `sha256:<64 hex>` only. Mutable tags (`:latest`, `python:3.12`) rejected |
+| `dependencyLockDigest` | yes | `sha256:<64 hex>` locked dependency profile |
+| `limits.cpuMillis` | yes | 1–8000. Node `cpuMillis` must not exceed this |
+| `limits.memoryMib` | yes | 32–2048. Node `memoryMiB` must not exceed this |
+| `limits.timeoutSeconds` | yes | 1–3600. Node `timeoutSeconds` must not exceed this |
+| `limits.processes` | yes | 1–256 |
+| `egress.destinations` | no | `[{host,port,protocol}]`. Omitted = default-deny. Metadata / loopback / `*` rejected |
+| `egress.dnsConstrained` | no | Must be `true` when present |
+
+### Isolation guarantees (`GET /scripts/catalog` → `isolation`)
+
+Non-root UID/GID `65532`, read-only root FS, ephemeral writable `/workspace`, drop `ALL` capabilities, `no_new_privs`, no host Docker socket, no cloud metadata, no Kubernetes SA mount (MVP deny), approved digest-pinned images only, runtime package install denied, default-deny egress with constrained DNS.
+
+Python: approved digest-pinned image + lock. Go: precompiled signed binary from the published source in a controlled builder. CI uses `HarnessRuntime` + `StubBuilder` (HMAC of the published digest) so `go test` does not need runc or a Go toolchain. Manifests: `deploy/kubernetes/script-runner-deployment.yaml` and `script-runner-networkpolicy.yaml`.
+
+### Result shape (job output)
+
+`{ok, operation, language, entrypoint, artifactId, artifactDigest, signatureVerified, scanStatus, runtimeProfileId, runtimeProfileDigest, isolation, binary?, stdout, stderr, exitCode, correlationId, audit, error?}`. Never includes package blobs, `storageRef`, or secret handles. Lease loss → `error.code=indeterminate` (no rerun). Typed I/O schema enforcement and emergency stop stay E9.3 / E9.4.
+
+Out of scope: `apps/web` rewrite, typed I/O + lease-loss recovery (E9.3), artifact revocation + emergency stop (E9.4).
 
 ## Workflow YAML contract (E3.1)
 

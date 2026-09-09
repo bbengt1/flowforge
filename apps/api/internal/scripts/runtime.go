@@ -37,6 +37,15 @@ func ValidateRuntimeProfile(language string, spec map[string]any) error {
 			return engineError(CodeInvalidRuntimeProfile, "runtime profile limits."+key+" is required.", http.StatusBadRequest)
 		}
 	}
+	if raw, ok := spec["egress"]; ok && raw != nil {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return engineError(CodeInvalidRuntimeProfile, "runtime profile egress must be an object.", http.StatusBadRequest)
+		}
+		if _, err := ParseEgressPolicy(m); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

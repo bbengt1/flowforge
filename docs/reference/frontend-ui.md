@@ -239,9 +239,9 @@ E9.1 (Chloe UI) wires jonny's **#97** map on `main` (`e91-#97`). `apps/api` is u
 
 - **Library / wizard:** `script.python` / `script.go` (`Run Python script` / `Run Go script`). Required `with`: `source`, `entrypoint` (basename), published `runtimeProfileId` (language match), `timeoutSeconds` (1–3600). Optional `memoryMiB` (32–2048), `cpuMillis`, `processes`, schemas, `policyId`. Forbidden: `env` / `environment` / `secrets` / `credentials` / `privateKey` / `token` / `password` / `kubeconfig` / `command` / `shell`.
 - **Publish boundary:** Draft save writes YAML only. Publish packages, scans, signs, and pins. UI shows digest + `scanStatus` + signature present/missing — never package blobs or `storageRef`.
-- **Execute fail-closed:** drafts / mutable / unscanned / unsigned / scan-failed → 400; needs `script.run` + `runtimeProfile.use`. Isolated runners are E9.2.
+- **Execute fail-closed:** drafts / mutable / unscanned / unsigned / scan-failed → 400; needs `script.run` + `runtimeProfile.use`. Isolated runners are E9.2 (`GET /scripts/catalog` → `isolation` + new error codes). Do not rewrite `apps/web` in the API story.
 - **Fail closed:** HTTP 403 empties the runtime-profile selector. Host-supplied `id` / `workspaceId` is 400 UX.
-- **Unchanged:** `apps/api` untouched. No extra routes beyond #97.
+- **Unchanged:** `apps/api` untouched in the Chloe UI PR. No extra routes beyond #97.
 
 ## Foundation operator shell
 

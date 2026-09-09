@@ -1,0 +1,32 @@
+# Default-deny NetworkPolicy for isolated script runners (E9.2).
+#
+# Ingress is denied. Egress is default-deny except constrained cluster DNS
+# (kube-system:53) so allowlisted destinations can be resolved. Cloud
+# metadata (169.254.169.254) and the host Docker socket are not reachable.
+# Additional destination/port allowlists are applied in-process by
+# scripts.EvaluateEgress from the pinned runtime profile / script policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flowforge-script-runner
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: script-runner
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: script-runner
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -26,19 +26,23 @@ Retries are zero by default. A node may be retry-safe only when it declares an i
 
 ## Initial implementation layout
 
-E9.1 (this story) implements the control-plane publish pipeline only. E9.2–E9.4 remain hooks (`VerifyForDispatch`, `RunnerNotImplemented`, `revoked_at`).
+E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 typed I/O and E9.4 revocation/emergency-stop remain hooks (`revoked_at` is already fail-closed at dispatch).
 
 ```text
 apps/api/internal/scripts/
   model.go source.go validator.go package.go signer.go scan.go
   policy.go runtime.go redaction.go catalog.go pipeline.go
+  isolation.go egress.go execute.go harness.go builder.go
   store.go memory.go postgres.go
 apps/api/internal/workflow/script_contract.go
 apps/api/internal/httpapi/script.go
 apps/api/migrations/000013_script_artifacts.sql
+deploy/kubernetes/
+  script-runner-deployment.yaml
+  script-runner-networkpolicy.yaml
 ```
 
-Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`. Isolated runner manifests (`deploy/kubernetes/script-runner-*.yaml`) are E9.2.
+Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`, required `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`, optional `egress.destinations` (default-deny; DNS is constrained). Python uses that image+lock. Go is a precompiled signed binary from a controlled builder; CI uses a documented stub (`StubBuilder`) that still enforces isolation gates. Full containers are not started in `go test` — `HarnessRuntime` asserts UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / limits / package-install. Production pods use `deploy/kubernetes/script-runner-*.yaml` (non-root 65532, no SA token, no docker.sock, default-deny NetworkPolicy + kube-system DNS).
 
 ## Required validation
 

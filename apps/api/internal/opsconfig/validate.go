@@ -378,7 +378,89 @@ func normalizeRuntimeProfile(spec map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	out["limits"] = lim
-	if err := rejectUnknown(spec, "language", "imageDigest", "dependencyLockDigest", "limits"); err != nil {
+	egress, err := normalizeRuntimeEgress(spec)
+	if err != nil {
+		return nil, err
+	}
+	if egress != nil {
+		out["egress"] = egress
+	}
+	if err := rejectUnknown(spec, "language", "imageDigest", "dependencyLockDigest", "limits", "egress"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeRuntimeEgress(spec map[string]any) (map[string]any, error) {
+	raw, err := objectField(spec, "egress")
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	out := map[string]any{"dnsConstrained": true}
+	if v, ok := raw["dnsConstrained"]; ok {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: egress.dnsConstrained must be a boolean", ErrInvalid)
+		}
+		if !b {
+			return nil, fmt.Errorf("%w: unconstrained DNS is denied", ErrInvalid)
+		}
+	}
+	items, ok := raw["destinations"]
+	if !ok || items == nil {
+		if err := rejectUnknown(raw, "destinations", "dnsConstrained"); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	arr, ok := items.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: egress.destinations must be an array", ErrInvalid)
+	}
+	if len(arr) > 32 {
+		return nil, fmt.Errorf("%w: egress.destinations exceeds 32 items", ErrInvalid)
+	}
+	dests := make([]any, 0, len(arr))
+	for _, item := range arr {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: egress.destinations entries must be objects", ErrInvalid)
+		}
+		host, ok, err := optionalString(m, "host", 1, 253)
+		if err != nil || !ok {
+			return nil, fmt.Errorf("%w: egress destination host is required", ErrInvalid)
+		}
+		host = strings.ToLower(host)
+		if host == "*" || host == "0.0.0.0" || host == "localhost" || host == "127.0.0.1" || strings.HasPrefix(host, "169.254.") || strings.Contains(host, "metadata.google") || strings.Contains(host, "docker.sock") {
+			return nil, fmt.Errorf("%w: egress destination is denied", ErrInvalid)
+		}
+		port := 443
+		if rawPort, exists := m["port"]; exists && rawPort != nil {
+			n, err := asInt(rawPort)
+			if err != nil || n < 1 || n > 65535 {
+				return nil, fmt.Errorf("%w: egress destination port is out of range", ErrInvalid)
+			}
+			port = n
+		}
+		proto := "tcp"
+		if p, present, err := optionalString(m, "protocol", 1, 16); err != nil {
+			return nil, err
+		} else if present {
+			proto = strings.ToLower(p)
+			if proto != "tcp" && proto != "udp" {
+				return nil, fmt.Errorf("%w: egress protocol must be tcp or udp", ErrInvalid)
+			}
+		}
+		if err := rejectUnknown(m, "host", "port", "protocol"); err != nil {
+			return nil, err
+		}
+		dests = append(dests, map[string]any{"host": host, "port": port, "protocol": proto})
+	}
+	out["destinations"] = dests
+	if err := rejectUnknown(raw, "destinations", "dnsConstrained"); err != nil {
 		return nil, err
 	}
 	return out, nil

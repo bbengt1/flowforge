@@ -3483,8 +3483,8 @@ paths:
       description: |
         Requires `opsconfig.view`. Documents `script.python` / `script.go`
         node fields, publish/scan/sign/pin rules, runtime-profile digest
-        pinning, error codes, and E9.2–E9.4 isolation hooks.
-        Does not start a runner.
+        pinning, E9.2 isolation guarantees (UID/FS/caps/no_new_privs/egress),
+        error codes, and E9.3–E9.4 hooks. Does not start a runner.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4916,6 +4916,34 @@ components:
             noHostDockerSocket: {type: boolean}
             runtimePackageInstall: {type: boolean}
             approvedImagesOnly: {type: boolean}
+            uid: {type: integer}
+            gid: {type: integer}
+            ephemeralWorkspace: {type: string}
+            dropCapabilityNames:
+              type: array
+              items: {type: string}
+            allowPrivilegeEscalation: {type: boolean}
+            noServiceAccountMount: {type: boolean}
+            defaultDenyEgress: {type: boolean}
+            dnsConstrained: {type: boolean}
+            metadataCIDRs:
+              type: array
+              items: {type: string}
+            runtimeProfile:
+              type: object
+              properties:
+                language: {type: string}
+                imageDigest: {type: string}
+                dependencyLockDigest: {type: string}
+                limits:
+                  type: array
+                  items: {type: string}
+                egress: {type: string}
+                mutableTagsRejected: {type: boolean}
+            ciHarness: {type: string}
+            kubernetesManifests:
+              type: array
+              items: {type: string}
             note: {type: string}
             hooks:
               type: array
