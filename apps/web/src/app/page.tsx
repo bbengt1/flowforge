@@ -22,7 +22,7 @@ export default async function Home() {
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-8 px-6 py-16">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E1 foundation · E2 identity · E3 YAML · E4 vault
+          E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -51,14 +51,21 @@ export default async function Home() {
           >
             workflow operator
           </Link>
-          , or manage encrypted workspace credentials on the{" "}
+          , manage encrypted workspace credentials on the{" "}
           <Link
             className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
             href="/credentials"
           >
             credential vault
           </Link>
-          .
+          , or version targets, profiles, and related config on the{" "}
+          <Link
+            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+            href="/config"
+          >
+            operational config
+          </Link>
+          operator.
         </p>
       </header>
 
@@ -141,6 +148,24 @@ export default async function Home() {
             href="/credentials"
           >
             Open credential vault
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Operational config</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E4.2 UI stacked on the #41 ops-config map on main.
+          Drafts stay editable and save with body revision; publish mints an
+          immutable pin. Select is POST (no authorized/compare/restore
+          routes). E4.1 vault and E3 workflow surfaces stay intact.
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/config"
+          >
+            Open targets / profiles / config
           </Link>
         </p>
       </section>

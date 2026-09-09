@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SessionStatusChip } from "@/components/session/SessionStatusChip";
+import { OperatorNav } from "@/components/OperatorNav";
 import { getPublicSwaggerUrl } from "@/lib/config";
 
 export function SiteHeader() {
@@ -11,39 +11,7 @@ export function SiteHeader() {
         <Link href="/" className="text-sm font-semibold tracking-tight">
           FlowForge
         </Link>
-        <nav aria-label="Operator" className="flex items-center gap-4">
-          <SessionStatusChip />
-          <Link
-            href="/workflows"
-            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
-          >
-            Workflows
-          </Link>
-          <Link
-            href="/credentials"
-            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
-          >
-            Credentials
-          </Link>
-          <Link
-            href="/membership"
-            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
-          >
-            Membership
-          </Link>
-          <Link
-            href="/isolation"
-            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
-          >
-            Isolation
-          </Link>
-          <a
-            className="text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600"
-            href={swaggerUrl}
-          >
-            OpenAPI / Swagger
-          </a>
-        </nav>
+        <OperatorNav swaggerUrl={swaggerUrl} />
       </div>
     </header>
   );

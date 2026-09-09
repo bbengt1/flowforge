@@ -215,6 +215,71 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/credentials/11111111-1111-4111-8111-111111111111/deletion-impact",
       ],
+      ["GET", ["ops-config", "catalog"], "/api/v1/ops-config/catalog"],
+      ["POST", ["ops-config", "select"], "/api/v1/ops-config/select"],
+      ["GET", ["cluster-targets"], "/api/v1/cluster-targets"],
+      ["POST", ["cluster-targets"], "/api/v1/cluster-targets"],
+      [
+        "GET",
+        ["ssh-targets", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/ssh-targets/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PUT",
+        ["command-profiles", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/command-profiles/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "PUT",
+        ["runtime-profiles", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/runtime-profiles/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "POST",
+        ["connections", "11111111-1111-4111-8111-111111111111", "publish"],
+        "/api/v1/connections/11111111-1111-4111-8111-111111111111/publish",
+      ],
+      [
+        "POST",
+        ["recipient-lists", "11111111-1111-4111-8111-111111111111", "select"],
+        "/api/v1/recipient-lists/11111111-1111-4111-8111-111111111111/select",
+      ],
+      [
+        "POST",
+        ["policies", "11111111-1111-4111-8111-111111111111", "disable"],
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/disable",
+      ],
+      [
+        "POST",
+        ["policies", "11111111-1111-4111-8111-111111111111", "enable"],
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/enable",
+      ],
+      [
+        "GET",
+        ["message-templates", "11111111-1111-4111-8111-111111111111", "versions"],
+        "/api/v1/message-templates/11111111-1111-4111-8111-111111111111/versions",
+      ],
+      [
+        "GET",
+        [
+          "response-schemas",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+        ],
+        "/api/v1/response-schemas/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "GET",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+          "pins",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/pins",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -243,6 +308,58 @@ describe("resolveIdentityProxyTarget", () => {
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
     );
+  });
+
+  it("does not treat reserved ops-config actions as resource ids", () => {
+    const unknown = resolveIdentityProxyTarget("GET", [
+      "cluster-targets",
+      "publish",
+    ]);
+    assert.equal("status" in unknown, true);
+    if ("status" in unknown) {
+      assert.equal(unknown.status, 404);
+    }
+    const catalogWrite = resolveIdentityProxyTarget("POST", [
+      "ops-config",
+      "catalog",
+    ]);
+    assert.equal("status" in catalogWrite, true);
+    if ("status" in catalogWrite) {
+      assert.equal(catalogWrite.status, 405);
+    }
+    const retiredAuthorized = resolveIdentityProxyTarget("GET", [
+      "cluster-targets",
+      "authorized",
+    ]);
+    assert.equal("status" in retiredAuthorized, true);
+    if ("status" in retiredAuthorized) {
+      assert.equal(retiredAuthorized.status, 404);
+    }
+    const retiredCompare = resolveIdentityProxyTarget("POST", [
+      "recipient-lists",
+      "11111111-1111-4111-8111-111111111111",
+      "compare",
+    ]);
+    assert.equal("status" in retiredCompare, true);
+    if ("status" in retiredCompare) {
+      assert.equal(retiredCompare.status, 404);
+    }
+    const retiredRestore = resolveIdentityProxyTarget("POST", [
+      "policies",
+      "11111111-1111-4111-8111-111111111111",
+      "versions",
+      "22222222-2222-4222-8222-222222222222",
+      "restore",
+    ]);
+    assert.equal("status" in retiredRestore, true);
+    if ("status" in retiredRestore) {
+      assert.equal(retiredRestore.status, 404);
+    }
+    const invented = resolveIdentityProxyTarget("GET", ["targets"]);
+    assert.equal("status" in invented, true);
+    if ("status" in invented) {
+      assert.equal(invented.status, 404);
+    }
   });
 
   it("does not treat reserved credential actions as vault ids", () => {

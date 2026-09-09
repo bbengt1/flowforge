@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { CatalogPanel } from "@/components/workflows/CatalogPanel";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
 import { NodeInspector } from "@/components/workflows/NodeInspector";
@@ -24,6 +25,8 @@ import {
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
+import { listWorkflowVersionPins } from "@/lib/ops-config-client";
+import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
@@ -113,6 +116,9 @@ export function WorkflowOperator() {
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
+  const [versionPins, setVersionPins] = useState<Record<string, OpsConfigPin[]>>(
+    {},
+  );
   const [paletteQuery, setPaletteQuery] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -260,6 +266,7 @@ export function WorkflowOperator() {
     setExecution(null);
     setRunVersionId("");
     setVersions([]);
+    setVersionPins({});
   }
 
   async function refreshVersions(workflowId: string) {
@@ -271,6 +278,13 @@ export function WorkflowOperator() {
     }
     setVersions(result.items);
     setRunVersionId(result.items[0]?.id ?? "");
+    const pinEntries = await Promise.all(
+      result.items.map(async (version) => {
+        const pins = await listWorkflowVersionPins(identity, workflowId, version.id);
+        return [version.id, pins.ok ? pins.items : []] as const;
+      }),
+    );
+    setVersionPins(Object.fromEntries(pinEntries));
   }
 
   async function openWorkflow(record: WorkflowRecord) {
@@ -409,6 +423,12 @@ export function WorkflowOperator() {
     setWorkflow(result.workflow);
     setPublishedVersion(result.version);
     setPublishNote("");
+    if (result.pins.length) {
+      setVersionPins((current) => ({
+        ...current,
+        [result.version.id]: result.pins,
+      }));
+    }
     await refreshVersions(workflow.id);
   }
 
@@ -762,6 +782,7 @@ export function WorkflowOperator() {
             onCompare={() => void runCompare()}
             onExport={(version) => void exportVersion(version)}
             onRestore={(version) => void restoreVersion(version)}
+            versionPins={versionPins}
           />
           <RunControl
             versions={versions}
@@ -775,6 +796,8 @@ export function WorkflowOperator() {
           />
         </div>
       ) : null}
+
+      <WorkflowConfigPins identity={identity} ready={canCall} />
     </div>
   );
 }

@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -111,7 +111,7 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, and the E4.1 credential vault:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, and the E4.2 versioned operational-config operator:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -281,6 +281,19 @@ Masked, paste-safe secret fields; clear them from component state after `201`/`2
 - **Delete:** `GET .../deletion-impact` then typed-name confirmation before `DELETE /credentials/{id}` `{confirm:true}`. Active executions block delete (`409`).
 - **Proxies:** `/api/control-plane/credentials` plus `/catalog`, `/{id}`, `.../rotate`, `.../disable`, `.../enable`, `.../test`, `.../use`, `.../usage`, `.../deletion-impact`, `.../events`. Session cookies, CSRF, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Authorization and request bodies are never logged.
 - **Operator routes:** `/credentials` (list/search), `/credentials/new` (wizard), `/credentials/{id}` (detail). Types: `kubernetes`, `ssh_private_key`, `token`, `webhook_secret`, `provider`.
+
+## E4.2 versioned operational config (Chloe UI)
+
+`/config` is Chloe's operator for workspace-scoped cluster/SSH targets, command/runtime profiles, connections, recipient lists, message templates, response schemas, and policies. Stacked on the **#41** map now on `main` (`docs/reference/backend-api-map.md`). This UI does **not** close **#36** and does not change `apps/api`. Relates to #36 (already closed by #41) / Part of #34.
+
+- **Draft / publish:** `POST /{collection}` `{name, slug?, spec}` → `{resource, draft}`. Save is `PUT /{collection}/{id}/draft` `{revision, spec, name?}` — **not** If-Match. `409` reloads the draft. Publish is `POST …/publish` `{revision?, note?}`. Draft and version JSON have **no `name`**; the resource head holds display name. Published detail is read-only.
+- **Selectors / pins:** there is **no** `GET …/authorized`, compare, or restore route. Picker lists published heads, then `POST /{collection}/{id}/select` `{versionId?}` or batch `POST /ops-config/select` `{refs:[{kind,resourceId,versionId?}]}`. Pin shape is `{kind, resourceId, versionId, versionNumber, digest, name?, slug?, spec?}`. Restore in UI = PUT draft from a version snapshot. Compare, if shown, is client-side spec JSON only. Workflow pins: `GET /workflows/{workflowId}/versions/{versionId}/pins`.
+- **Credentials:** E4.1 vault stays the secret store. Target/connection forms select credentials by display name/id only. Specs use #41 fields (`endpoint.apiServer`, `type` + `endpointPolicy.pathPrefixes`, `limits.*`, `kind` + `policy`, `recipientPolicy.emails`/`domains`).
+- **RBAC nav:** Targets / Profiles / Config appear when `GET /workspace` includes `opsconfig.view` (viewers included). Edit/publish buttons still require `opsconfig.edit` / `opsconfig.publish`.
+- **Session:** cookie session + `X-CSRF-Token` on POST/PUT; tenant + workbench identity; `credentials: include`. Host-supplied `id` / `workspaceId` are never sent on writes.
+- **Proxies:** `/api/control-plane/ops-config/{catalog,select}` plus `{cluster-targets,ssh-targets,command-profiles,runtime-profiles,connections,recipient-lists,message-templates,response-schemas,policies}` `{id}`, `…/draft` (GET|PUT), `…/publish`, `…/select`, `…/disable`, `…/enable`, `…/versions`, and `GET /workflows/{id}/versions/{versionId}/pins`.
+- **Operator routes:** `/config`, `/config/{collection}`, `/config/{collection}/new`, `/config/{collection}/{id}`, `/config/{collection}/{id}/versions/{versionId}`.
+- **Workflow editor:** `/workflows` adds a light published-pin picker (list + POST select). Version history reads `GET /workflows/{id}/versions/{versionId}/pins`. Run control shows execution `pins[]` from start/get execution. E3 draft/publish/run and the E4.1 vault are unchanged.
 
 ## Initial implementation components
 

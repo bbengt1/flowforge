@@ -15,6 +15,7 @@ import {
   isWorkflowExport,
   isWorkflowRecord,
   isWorkflowVersion,
+  readExecutionPayload,
   workflowErrorsFromProblem,
   type AppliedDraft,
   type AppliedNormalize,
@@ -41,6 +42,8 @@ import type {
   WorkflowVersion,
   WorkflowVersionList,
 } from "./workflow-types.ts";
+import { parseAuthorizedPins } from "./ops-config.ts";
+import type { OpsConfigPin } from "./ops-config-types.ts";
 
 export const WORKFLOW_CATALOG_PATH = "/workflows/catalog";
 export const WORKFLOW_VALIDATE_PATH = "/workflows/validate";
@@ -152,6 +155,7 @@ export type PublishClientSuccess = {
   requestId: string;
   workflow: WorkflowRecord;
   version: WorkflowVersion;
+  pins: OpsConfigPin[];
 };
 
 export type VersionsClientSuccess = {
@@ -427,6 +431,7 @@ export async function publishWorkflow(
     requestId: result.requestId,
     workflow: result.data.workflow,
     version: result.data.version,
+    pins: parseAuthorizedPins(result.data.pins),
   };
 }
 
@@ -653,7 +658,8 @@ function executionResult(
   if (!result.ok) {
     return failure(result);
   }
-  if (!isWorkflowExecution(result.data)) {
+  const payload = readExecutionPayload(result.data);
+  if (!isWorkflowExecution(payload)) {
     return malformed(
       result.requestId,
       result.statusCode,
@@ -661,10 +667,11 @@ function executionResult(
       "Execution payload was missing workflowVersionId or workflowDigest.",
     );
   }
+  const pins = parseAuthorizedPins((payload as { pins?: unknown }).pins);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    execution: result.data,
+    execution: { ...payload, pins },
   };
 }

@@ -347,6 +347,21 @@ export function isWorkflowExecution(value: unknown): value is WorkflowExecution 
   );
 }
 
+/** #41 flattens Execution + pins[]; also accept a wrapped {execution,pins}. */
+export function readExecutionPayload(value: unknown): unknown {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const row = value as Record<string, unknown>;
+  if (row.execution && typeof row.execution === "object") {
+    return {
+      ...(row.execution as Record<string, unknown>),
+      pins: row.pins ?? (row.execution as { pins?: unknown }).pins,
+    };
+  }
+  return value;
+}
+
 export function isCompareResult(value: unknown): value is CompareWorkflowResult {
   if (!value || typeof value !== "object") {
     return false;

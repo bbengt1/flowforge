@@ -9,6 +9,8 @@ import {
   draftCompareRef,
   executionStartBody,
   isConflictProblem,
+  isWorkflowExecution,
+  readExecutionPayload,
   isCorePhase,
   isInvalidWorkflowProblem,
   isNormalizeResponse,
@@ -241,5 +243,17 @@ describe("draft conflict and run guards", () => {
     });
     assert.equal(versionCompareRef("draft"), null);
     assert.deepEqual(optionalCreateFields("  slug  ", ""), { slug: "slug" });
+  });
+
+  it("reads flattened #41 execution + pins[]", () => {
+    const flattened = readExecutionPayload({
+      id: "33333333-3333-4333-8333-333333333333",
+      workflowId: draft.workflowId,
+      workflowVersionId: "22222222-2222-4222-8222-222222222222",
+      workflowDigest: "sha256:v1",
+      pins: [{ kind: "policy", resourceId: draft.workflowId }],
+    });
+    assert.equal(isWorkflowExecution(flattened), true);
+    assert.equal((flattened as { pins?: unknown[] }).pins?.length, 1);
   });
 });

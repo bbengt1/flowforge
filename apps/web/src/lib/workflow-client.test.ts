@@ -276,6 +276,16 @@ describe("workflow client", () => {
           workflowDigest: "sha256:v1",
           status: "pinned",
           createdAt: "2026-09-08T21:00:00.000Z",
+          pins: [
+            {
+              kind: "cluster_target",
+              resourceId: "11111111-1111-4111-8111-111111111111",
+              versionId: "22222222-2222-4222-8222-222222222222",
+              versionNumber: 2,
+              digest: "sha256:aa",
+              name: "prod-cluster",
+            },
+          ],
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
@@ -308,6 +318,8 @@ describe("workflow client", () => {
         result.execution.workflowVersionId,
         "22222222-2222-4222-8222-222222222222",
       );
+      assert.equal(result.execution.pins?.[0]?.name, "prod-cluster");
+      assert.equal(result.execution.pins?.[0]?.resourceId, "11111111-1111-4111-8111-111111111111");
     }
   });
 });
