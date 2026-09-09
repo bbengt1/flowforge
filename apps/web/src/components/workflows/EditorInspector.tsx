@@ -254,6 +254,9 @@ function CredentialHints({
           <p className="mt-1 text-xs text-zinc-500">
             Authorized published cluster targets only. Display name and
             version — never kubeconfig.
+            {node.type === "kubernetes.rolloutStatus"
+              ? " Timeout or cancel stops waiting; it never deletes or rolls back resources."
+              : ""}
           </p>
         </div>
       ) : null}

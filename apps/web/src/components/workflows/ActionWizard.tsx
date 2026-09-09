@@ -12,13 +12,18 @@ import { authorizedClusterTargets } from "@/lib/kubernetes";
 import {
   KUBERNETES_FIELD_MANAGER,
   KUBERNETES_NODE_POLICY_NOTES,
-  KUBERNETES_ROLLOUT_STUB_MESSAGE,
   applyRulesFromCatalog,
   engineErrorShapes,
   isKubernetesConfigurableType,
-  isKubernetesRolloutStubType,
   waitReadyMessage,
 } from "@/lib/kubernetes-node-contract";
+import {
+  KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
+  effectiveWaitReady,
+  isKubernetesRolloutType,
+  observationModeFromCatalog,
+  rolloutNodeDescription,
+} from "@/lib/kubernetes-rollout-contract";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
@@ -357,6 +362,7 @@ export function ActionWizard({
               allowedNamespaces={wizardContext.allowedNamespaces}
               applyRules={applyRules}
               engineErrors={engineErrors}
+              engineCatalog={engineCatalog}
               waitReadyCopy={waitReadyMessage(engineCatalog)}
               onChange={setDraft}
             />
@@ -380,6 +386,7 @@ export function ActionWizard({
               preview={preview}
               applyRules={applyRules}
               engineErrors={engineErrors}
+              engineCatalog={engineCatalog}
               evaluation={evaluation ?? null}
               evaluationPending={Boolean(evaluationPending)}
               evaluationProblem={evaluationProblem ?? null}
@@ -664,6 +671,7 @@ function ConfigureStep({
   allowedNamespaces,
   applyRules,
   engineErrors,
+  engineCatalog,
   waitReadyCopy,
   onChange,
 }: {
@@ -672,6 +680,7 @@ function ConfigureStep({
   allowedNamespaces: readonly string[];
   applyRules: ReturnType<typeof applyRulesFromCatalog>;
   engineErrors: ReturnType<typeof engineErrorShapes>;
+  engineCatalog: KubernetesEngineCatalog | null;
   waitReadyCopy: string;
   onChange: (draft: ActionWizardDraft) => void;
 }) {
@@ -712,9 +721,9 @@ function ConfigureStep({
           marked contract fallback.
         </p>
       ) : null}
-      {isKubernetesRolloutStubType(draft.type) ? (
-        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
-          {KUBERNETES_ROLLOUT_STUB_MESSAGE}
+      {isKubernetesRolloutType(draft.type) ? (
+        <p className="rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-sm text-teal-950">
+          {rolloutNodeDescription(engineCatalog)} {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
         </p>
       ) : null}
       {kubernetes ? (
@@ -731,7 +740,11 @@ function ConfigureStep({
             Apply uses FieldManager={applyRules.fieldManager}, Force=
             {String(applyRules.force)}, serverDryRunAlways=
             {String(applyRules.serverDryRunAlways)}. wait=ready →{" "}
-            {applyRules.waitReady}.
+            {effectiveWaitReady(engineCatalog)}
+            {observationModeFromCatalog(engineCatalog).source === "contract-fallback"
+              ? " (contract-fallback)"
+              : ""}
+            . {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
           </p>
           {engineErrors.length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
@@ -1009,6 +1022,7 @@ function ReviewStep({
   evaluationProblem,
   applyRules,
   engineErrors,
+  engineCatalog,
 }: {
   draft: ActionWizardDraft;
   validation: ReturnType<typeof validateWizardDraft>;
@@ -1020,6 +1034,7 @@ function ReviewStep({
   evaluationProblem: ProblemDetails | null;
   applyRules: ReturnType<typeof applyRulesFromCatalog>;
   engineErrors: ReturnType<typeof engineErrorShapes>;
+  engineCatalog: KubernetesEngineCatalog | null;
 }) {
   const errors = [...validation.errors, ...localErrors];
   return (
@@ -1054,7 +1069,12 @@ function ReviewStep({
         {draft.type.startsWith("kubernetes.") ? (
           <p className="mt-2 text-xs text-zinc-600">
             SSA FieldManager={applyRules.fieldManager} Force={String(applyRules.force)}.
-            Server dry-run always runs before persist. wait=ready → {applyRules.waitReady}.
+            Server dry-run always runs before persist. wait=ready →{" "}
+            {effectiveWaitReady(engineCatalog)}
+            {observationModeFromCatalog(engineCatalog).source === "contract-fallback"
+              ? " (contract-fallback)"
+              : ""}
+            . {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
             {engineErrors.some((item) => item.code === "ownership-conflict")
               ? " Ownership conflicts return 409; force is never applied."
               : ""}

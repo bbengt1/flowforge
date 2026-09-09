@@ -8,6 +8,7 @@ import { ExecutionArtifacts } from "@/components/executions/ExecutionArtifacts";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionReplay } from "@/components/executions/ExecutionReplay";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
+import { RolloutObservationPanel } from "@/components/executions/RolloutObservationPanel";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
@@ -74,6 +75,12 @@ import type { CurrentWorkspace } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import {
+  KUBERNETES_ROLLOUT_CANCEL_HELP,
+  collectRolloutAuditSnapshots,
+  collectRolloutObservations,
+  executionHasRolloutObservation,
+} from "@/lib/kubernetes-rollout-contract";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -574,6 +581,11 @@ export function ExecutionDetail({
                 </p>
               )}
             </div>
+            {executionHasRolloutObservation(view.steps) ? (
+              <p className="mt-2 text-sm text-zinc-700">
+                {KUBERNETES_ROLLOUT_CANCEL_HELP}
+              </p>
+            ) : null}
             <p className="mt-2 text-xs text-zinc-500">{CANCEL_CSRF_HELP}</p>
             <p className="mt-1 text-xs text-zinc-500">{RETRY_CSRF_HELP}</p>
             <p className="mt-1 text-xs text-zinc-500">{STATUS_POLL_HELP}</p>
@@ -834,6 +846,14 @@ export function ExecutionDetail({
               </ul>
             )}
           </section>
+
+          <RolloutObservationPanel
+            observations={collectRolloutObservations({
+              steps: view.steps,
+              auditEvents: view.auditEvents,
+            })}
+            auditSnapshots={collectRolloutAuditSnapshots(view.auditEvents)}
+          />
 
           <ExecutionArtifacts
             artifacts={view.artifacts}

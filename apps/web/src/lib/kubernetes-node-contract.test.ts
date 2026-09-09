@@ -139,6 +139,7 @@ describe("kubernetes node contract adapter", () => {
 
   it("falls back to marked contract entries when catalog is thin or missing", () => {
     assert.deepEqual([...kubernetesLibraryTypes(null)], [...KUBERNETES_MVP_NODE_TYPES]);
+    assert.ok(kubernetesLibraryTypes(null).includes("kubernetes.rolloutStatus"));
     assert.equal(catalogListsKubernetesType(catalog, "kubernetes.rolloutStatus"), true);
     assert.ok(kubernetesLibraryTypes(catalog).includes("kubernetes.rolloutStatus"));
 
@@ -164,7 +165,7 @@ describe("kubernetes node contract adapter", () => {
     assert.ok(merged.some((item) => item.type === "kubernetes.rolloutStatus"));
     assert.match(
       kubernetesFallbackNode("kubernetes.rolloutStatus").description ?? "",
-      /E7\.3/,
+      /bounded watch/i,
     );
 
     const overlaid = adaptKubernetesNodeEntries(null, engineCatalog);
@@ -217,7 +218,8 @@ describe("kubernetes node config validation", () => {
       fields.find((field) => field.name === "fieldManager")?.defaultValue,
       "flowforge",
     );
-    assert.match(waitReadyMessage(engineCatalog), /deferred-e7\.3/);
+    assert.match(waitReadyMessage(engineCatalog), /contract-fallback/);
+    assert.match(waitReadyMessage(engineCatalog), /never deletes or rolls back/);
     assert.equal(applyRulesFromCatalog(engineCatalog).force, false);
     assert.equal(applyRulesFromCatalog(engineCatalog).fieldManager, "flowforge");
 
@@ -305,7 +307,7 @@ describe("kubernetes node config validation", () => {
     );
   });
 
-  it("accepts wait=ready as deferred-e7.3 and rejects a non-flowforge fieldManager", () => {
+  it("accepts wait=ready as bounded observation and rejects a non-flowforge fieldManager", () => {
     const ready = validateKubernetesNodeConfig("kubernetes.apply", {
       clusterTargetId: TARGET_ID,
       namespace: "app",
@@ -314,7 +316,33 @@ describe("kubernetes node config validation", () => {
       timeoutSeconds: 60,
     });
     assert.deepEqual(ready, []);
-    assert.match(waitReadyMessage(), /deferred-e7\.3/);
+    assert.match(waitReadyMessage(), /contract-fallback/);
+    const rollout = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      kind: "Deployment",
+      name: "api",
+      wait: "ready",
+      timeoutSeconds: 60,
+    });
+    assert.deepEqual(rollout, []);
+    const rolloutKind = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      kind: "ConfigMap",
+      name: "settings",
+    });
+    assert.ok(rolloutKind.some((error) => /rollout workload/.test(error)));
+    const rolloutName = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
+      clusterTargetId: TARGET_ID,
+      namespace: "app",
+      kind: "Job",
+    });
+    assert.ok(rolloutName.some((error) => /name is required/.test(error)));
+    const fields = kubernetesNodeWithFields("kubernetes.rolloutStatus");
+    assert.equal(fields.some((field) => field.name === "force"), false);
+    assert.equal(fields.find((field) => field.name === "kind")?.required, true);
+    assert.equal(fields.find((field) => field.name === "name")?.required, true);
 
     const manager = validateKubernetesNodeConfig("kubernetes.get", {
       clusterTargetId: TARGET_ID,

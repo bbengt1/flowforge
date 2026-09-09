@@ -142,7 +142,7 @@ describe("action library catalog filter", () => {
     assert.equal(fallback.some((item) => item.type === "kubernetes.apply"), true);
     assert.equal(fallback.some((item) => item.type === "kubernetes.get"), true);
     assert.equal(fallback.some((item) => item.type === "kubernetes.list"), true);
-    assert.equal(fallback.some((item) => item.type === "kubernetes.rolloutStatus"), false);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.rolloutStatus"), true);
     assert.equal(rejectDisabledActionType("kubernetes.apply", null).ok, true);
   });
 });

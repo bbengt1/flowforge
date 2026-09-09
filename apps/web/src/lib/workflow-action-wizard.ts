@@ -24,6 +24,7 @@ import {
   waitReadyMessage,
   type KubernetesNodeWithField,
 } from "./kubernetes-node-contract.ts";
+import { isKubernetesRolloutType, rolloutKindsFromCatalog } from "./kubernetes-rollout-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
@@ -289,7 +290,9 @@ export function wizardConfigFields(
       return overlayKubernetesFields(
         engineFields?.length ? engineFields : (entry?.allowedWith ?? []),
         type,
-        engineCatalog?.allowedKinds,
+        isKubernetesRolloutType(type)
+          ? rolloutKindsFromCatalog(engineCatalog)
+          : engineCatalog?.allowedKinds,
         waitReadyMessage(engineCatalog),
       )
         .filter((field) => isExposedKubernetesField(field.name))
@@ -787,6 +790,9 @@ function inferredFieldsForType(type: string, requiredWith: string[]): WizardConf
       );
     } else {
       fields.push(field("kind", "string", "text", { required: true }));
+    }
+    if (type === "kubernetes.get" || type === "kubernetes.rolloutStatus") {
+      fields.push(field("name", "string", "text", { required: true }));
     }
     return fields;
   }

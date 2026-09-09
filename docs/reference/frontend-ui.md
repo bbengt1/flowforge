@@ -178,7 +178,17 @@ E7.2 (Chloe) adds placeable `kubernetes.apply` / `kubernetes.get` / `kubernetes.
 - **Wizard:** published workspace `type=kubernetes` cluster targets (display name + id, `POST …/select`). Namespace is required and constrained to the target allowlist when the pin reports one. Apply uses a multi-document YAML editor. get/list choose an MVP kind. Shared `with`: `clusterTargetId`, `namespace`, optional `dryRun` (`client`|`server` — client never replaces the mandatory server-side dry-run on apply), `wait` (`none`|`ready`; ready → `observation=deferred-e7.3`, not a rollout watch), `timeoutSeconds` (1–3600, default 60), read-only `fieldManager=flowforge`, optional `policyId`. Extra: apply → `manifests`; get → `kind`+`name`; list → `kind`.
 - **Apply rules:** surface catalog `apply` (`FieldManager=flowforge`, `Force=false`, server dry-run always) and engine `errors[]` (ownership conflict is 409). No force toggle.
 - **Fail closed:** no kubeconfig paste, no Secret `data` / `stringData` / `binaryData`. Cluster-scoped resources, namespaces, CRDs, RBAC, admission webhooks, privileged / hostPath / host namespaces, unsafe Ingress, and `:latest` tags are denied in local manifest checks. Target selectors fail closed on 403 / empty lists.
-- **Unchanged:** The UI never receives or stores kubeconfigs. E7.1 `/config` cluster-target and policy screens stay the source of allowlists. Rollout watch stays E7.3.
+- **Unchanged:** The UI never receives or stores kubeconfigs. E7.1 `/config` cluster-target and policy screens stay the source of allowlists. Rollout watch is E7.3 below.
+
+## E7.3 Kubernetes rollout status (Chloe UI)
+
+E7.3 (Chloe) promotes `kubernetes.rolloutStatus` from the E7.2 stub to a placeable, configurable observation node and surfaces bounded watch progress on execution detail. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/kubernetes-rollout-contract.ts` (`e73-pending-jonny-map`). Prefer `GET /workflows/catalog` plus `GET /kubernetes/catalog` when listed; otherwise use marked `contract-fallback`. Relates to #72 / Part of #69 — **Keep #72 open** (jonny owns observation + audit). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Library / wizard:** `kubernetes.rolloutStatus` is always placeable (fallback + catalog). Configure `clusterTargetId`, `namespace`, `kind` (Deployment / StatefulSet / DaemonSet / Job), `name`, `timeoutSeconds` (1–3600, default 60), optional `wait=ready` and `policyId`. No force / rollback / delete controls.
+- **wait=ready:** operators configure it as a real bounded observation. Copy states timeout or cancel stops waiting and never deletes or rolls back resources. Until jonny's status map lands, the UI marks observation as `contract-fallback` (`watch`) even when catalog `apply.waitReady` is still `deferred-e7.3`. When the catalog posts a non-deferred token, drop the fallback marker.
+- **Recognition (engine doc; retarget to jonny's map):** Deployment availability + observed generation; StatefulSet ready replicas; DaemonSet updated/available counts; Job completion/failure.
+- **Execution:** poll existing E5 `GET /executions/{id}` steps / jobs / audit. Show redacted observation progress/outcome and audit snapshots (actor, target, policy revision, resource identities, correlation ID). Unexpected secret / kubeconfig fields fail closed.
+- **Unchanged:** E7.1 `/config` targets and policies; E7.2 apply/get/list; no invented routes; `apps/api` untouched.
 
 ## Foundation operator shell
 
