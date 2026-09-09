@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1–E5.3 list/detail, cancel/retry, artifacts; `execution.view` / `execution.cancel` / `workflow.execute`), Alerts (E5.4; `alert.view` / `alert.ack`), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1–E5.3 list/detail, cancel/retry, artifacts; `execution.view` / `execution.cancel` / `workflow.execute`), Alerts / Audit (E5.4; `alert.view` / `alert.ack`; audit browse is `GET /audit-events`), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -397,7 +397,7 @@ Suggested UI flow:
 
 ## E5.4 operational alerts (Chloe UI)
 
-Jonny's alert APIs land against **`main`** (Relates to #49 / Part of #45 — do **not** close #49 alone; this is the last E5 story). Do **not** stack the UI on an API feature branch. **Base is `main`.** This UI does **not** change `apps/api`. Cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on ack is `400`. Cross-workspace UUIDs are `404`. Do not invent SIEM webhooks or extra write routes.
+Jonny's alert APIs are on `main` via **#58** (Relates to #49 / Part of #45 — do **not** close #49 alone; this is the last E5 story). Do **not** stack the UI on an API feature branch. **Base is `main`.** This UI does **not** change `apps/api`. Cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on ack is `400`. Cross-workspace UUIDs are `404`. Do not invent SIEM webhooks, catalog, or resolve routes.
 
 **Canonical routes**
 
@@ -414,6 +414,8 @@ Suggested flow:
 3. Detail: render identifiers + `requestId` / `correlationId`. If `resourceType=execution`, link to `/executions/{resourceId}`. Optional audit: `GET /audit-events?action=alert.{kind}`.
 4. Ack with CSRF. Already-acked → `200`. Viewer ack → `403` fail-closed.
 5. Strip unexpected `details`, `token`, `authorization`, `storageRef`, or secret-shaped values. Alerts never include secret material.
+
+**Implemented:** paths live in `apps/web/src/lib/alert-contract.ts` against the #58 map on `main`. `/alerts` + `/alerts/{id}` show identifiers only. Ack is CSRF + empty `{}` and fail-closed on 403. `/audit` is a read-only browse of `GET /audit-events` (not E2.2 `GET /workspace/audit-events`); no edit/delete. E5.1–E5.3 execution/artifact surfaces stay intact.
 
 **Proxies:** `/api/control-plane/alerts`, `/{id}`, `/{id}/ack`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved.
 

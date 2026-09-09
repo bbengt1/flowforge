@@ -401,6 +401,28 @@ describe("resolveIdentityProxyTarget", () => {
         "/api/v1/artifact-downloads/88888888-8888-4888-8888-888888888888",
       ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
+      ["GET", ["alerts"], "/api/v1/alerts"],
+      ["GET", ["alerts", "catalog"], "/api/v1/alerts/catalog"],
+      [
+        "GET",
+        ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+        "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ],
+      [
+        "POST",
+        ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ack"],
+        "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/ack",
+      ],
+      [
+        "POST",
+        ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "resolve"],
+        "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/resolve",
+      ],
+      [
+        "GET",
+        ["audit-events", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+        "/api/v1/audit-events/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -647,6 +669,31 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("apiPath" in isolationStub, true);
     if ("apiPath" in isolationStub) {
       assert.equal(isolationStub.apiPath, "/api/v1/workspace/audit-events");
+    }
+    const productAudit = resolveIdentityProxyTarget("GET", ["audit-events"]);
+    assert.equal("apiPath" in productAudit, true);
+    if ("apiPath" in productAudit) {
+      assert.equal(productAudit.apiPath, "/api/v1/audit-events");
+    }
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+      const mutateList = resolveIdentityProxyTarget(method, ["audit-events"]);
+      assert.equal("status" in mutateList, true, method);
+      if ("status" in mutateList) {
+        assert.equal(mutateList.status, 405);
+      }
+      const mutateRow = resolveIdentityProxyTarget(method, [
+        "audit-events",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ]);
+      assert.equal("status" in mutateRow, true, `${method} row`);
+      if ("status" in mutateRow) {
+        assert.equal(mutateRow.status, 405);
+      }
+    }
+    const inventAlertWrite = resolveIdentityProxyTarget("POST", ["alerts"]);
+    assert.equal("status" in inventAlertWrite, true);
+    if ("status" in inventAlertWrite) {
+      assert.equal(inventAlertWrite.status, 405);
     }
   });
 
