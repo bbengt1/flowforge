@@ -3,16 +3,22 @@
  *
  * E5.1 (#51 on `main`): list/detail + idempotent start.
  * E5.2 (#47): cancel/retry/status, retargeted to Jonny's #53 map.
+ * E5.3 (#48): redacted step/logs + artifact metadata + download grants.
  *
  * Status (steps, jobs, leaseExpiresAt, heartbeatAt, fencingToken) comes
  * from polling `GET /api/v1/executions/{id}` — never `/jobs/*`
  * (claim / heartbeat / complete / fail / recover).
  *
+ * Artifact routes are scaffolded against the documented E5.3 outcome
+ * (encrypted metadata + short-lived grants). Flip the UPSTREAM_*
+ * constants in this file when jonny publishes the map — do not stack
+ * on an API feature branch.
+ *
  * Browser stays on same-origin `/api/v1/…`. Next rewrites to
  * `/api/control-plane/*`; identity-proxy maps onto the Go API.
  *
- * Relates to #47 / Part of #45. Cites #53. Do not change `apps/api`.
- * Do not close #47 alone.
+ * Relates to #48 / Part of #45. Cites #53. Do not change `apps/api`.
+ * Do not close #48 alone.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -20,6 +26,7 @@ import type { AuditEventQuery, ExecutionListQuery } from "./execution-types.ts";
 
 export const EXECUTION_STORY = 46;
 export const EXECUTION_DISPATCH_STORY = 47;
+export const EXECUTION_STATUS_STORY = 48;
 export const EXECUTION_EPIC = 45;
 export const EXECUTION_API_PR = 53;
 
@@ -32,6 +39,14 @@ export const EXECUTION_AUDIT_EVENTS_ACTION = "audit-events";
 export const EXECUTION_CANCEL_ACTION = "cancel";
 export const EXECUTION_CANCEL_UPSTREAM_ACTION = "cancel";
 export const EXECUTION_RETRY_ACTION = "retry";
+export const EXECUTION_ARTIFACTS_ACTION = "artifacts";
+export const EXECUTION_ARTIFACTS_UPSTREAM_ACTION = "artifacts";
+export const EXECUTION_DOWNLOAD_ACTION = "download";
+export const EXECUTION_DOWNLOAD_UPSTREAM_ACTION = "download";
+export const EXECUTION_LOGS_ACTION = "logs";
+export const EXECUTION_LOGS_UPSTREAM_ACTION = "logs";
+export const ARTIFACT_UI_COLLECTION = "artifacts";
+export const ARTIFACT_UPSTREAM_COLLECTION = "artifacts";
 /** #53 published POST …/retry and POST …/steps/{stepId}/retry. */
 export const EXECUTION_RETRY_ROUTE_PUBLISHED = true;
 /** Poll GET /executions/{id} while queued/running. Never poll /jobs/*. */
@@ -104,6 +119,39 @@ export const RETRY_CSRF_HELP =
 export const STATUS_POLL_HELP =
   "While queued or running, this page polls GET /executions/{id} for steps and jobs. It never calls /jobs/*.";
 
+export const ARTIFACT_METADATA_HELP =
+  "Artifact cards show encrypted metadata only: name, digest, size, classification, and retention. Bucket credentials and durable public URLs are never displayed or stored.";
+
+export const DOWNLOAD_GRANT_HELP =
+  "Each download requests a new short-lived grant. Authorization is re-evaluated per request. The grant URL or handle is used once and discarded — it is never persisted in UI state.";
+
+export const DOWNLOAD_FORBIDDEN_MESSAGE =
+  "Download authorization failed (HTTP 403). Auth is re-evaluated per grant. This UI fails closed and does not retry with a cached URL.";
+
+export const DOWNLOAD_EXPIRED_MESSAGE =
+  "The download grant expired. Request a new grant — this UI does not reuse an expired URL or handle.";
+
+export const DOWNLOAD_APPLIED_MESSAGE =
+  "Download grant accepted. The short-lived locator was used once and discarded.";
+
+export const DOWNLOAD_CSRF_HELP =
+  "Download grant sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called. Grant tokens are never logged.";
+
+export const DOWNLOAD_UNAVAILABLE_MESSAGE =
+  "This artifact cannot be downloaded. Retention may have removed metadata and payload, or a legal hold / missing grant blocked access.";
+
+export const BOUNDED_LOG_HELP =
+  "Step logs and outputs are bounded and already-redacted. Secret values appear as [redacted]. Unexpected secret field names are stripped.";
+
+export const RETENTION_HELP =
+  "After retention expires, both artifact metadata and object payload are removed. This UI never keeps a durable download URL past that point.";
+
+export const LEGAL_HOLD_HELP =
+  "Legal hold preserves evidence. Retention deletion is deferred and download/access events belong on the audit trail. Operator copy stays secret-free.";
+
+export const ARTIFACT_ISOLATION_HOOK_HELP =
+  "GET /workspace/artifacts/{id} is the E2.2 isolation hook, not the product artifact API.";
+
 export function executionsPath(): string {
   return `/${EXECUTION_UI_COLLECTION}`;
 }
@@ -153,6 +201,39 @@ export function executionStepRetryPath(
   return `${executionStepPath(executionId, stepId)}/${EXECUTION_RETRY_ACTION}`;
 }
 
+export function executionStepLogsPath(
+  executionId: string,
+  stepId: string,
+): string {
+  return `${executionStepPath(executionId, stepId)}/${EXECUTION_LOGS_ACTION}`;
+}
+
+export function executionArtifactsPath(executionId: string): string {
+  return `${executionPath(executionId)}/${EXECUTION_ARTIFACTS_ACTION}`;
+}
+
+export function executionArtifactPath(
+  executionId: string,
+  artifactId: string,
+): string {
+  return `${executionArtifactsPath(executionId)}/${artifactId}`;
+}
+
+export function executionArtifactDownloadPath(
+  executionId: string,
+  artifactId: string,
+): string {
+  return `${executionArtifactPath(executionId, artifactId)}/${EXECUTION_DOWNLOAD_ACTION}`;
+}
+
+export function artifactPath(artifactId: string): string {
+  return `/${ARTIFACT_UI_COLLECTION}/${artifactId}`;
+}
+
+export function artifactDownloadPath(artifactId: string): string {
+  return `${artifactPath(artifactId)}/${EXECUTION_DOWNLOAD_ACTION}`;
+}
+
 export function workflowExecutionRetryPath(
   workflowId: string,
   executionId: string,
@@ -172,6 +253,11 @@ export function buildRetryBody(input?: { stepId?: string }): {
   if (input?.stepId) {
     return { stepId: input.stepId };
   }
+  return {};
+}
+
+/** Empty JSON body — never send host-supplied id / workspaceId / cached grant. */
+export function buildDownloadGrantBody(): Record<string, never> {
   return {};
 }
 
@@ -252,7 +338,8 @@ export function executionHistoryHref(
 export function isExecutionProxySegments(segments: string[]): boolean {
   if (
     segments[0] === EXECUTION_UI_COLLECTION ||
-    segments[0] === WORKSPACE_AUDIT_EVENTS_COLLECTION
+    segments[0] === WORKSPACE_AUDIT_EVENTS_COLLECTION ||
+    segments[0] === ARTIFACT_UI_COLLECTION
   ) {
     return true;
   }
@@ -287,6 +374,22 @@ export function retargetCollectionPath(
   return uiApiPath;
 }
 
+function retargetNestedAction(
+  path: string,
+  fromAction: string,
+  toAction: string,
+): string {
+  if (fromAction === toAction) {
+    return path;
+  }
+  const from = `/${fromAction}`;
+  const to = `/${toAction}`;
+  if (path.endsWith(from) || path.includes(`${from}?`)) {
+    return path.replace(from, to);
+  }
+  return path;
+}
+
 export function retargetExecutionApiPath(uiApiPath: string): string {
   if (
     uiApiPath === `/api/v1/${WORKSPACE_AUDIT_EVENTS_COLLECTION}` ||
@@ -294,19 +397,43 @@ export function retargetExecutionApiPath(uiApiPath: string): string {
   ) {
     return uiApiPath;
   }
-  const collected = retargetCollectionPath(
+  const artifacts = retargetCollectionPath(
+    uiApiPath,
+    ARTIFACT_UI_COLLECTION,
+    ARTIFACT_UPSTREAM_COLLECTION,
+  );
+  if (artifacts !== uiApiPath || uiApiPath.startsWith(`/api/v1/${ARTIFACT_UI_COLLECTION}`)) {
+    return retargetNestedAction(
+      artifacts,
+      EXECUTION_DOWNLOAD_ACTION,
+      EXECUTION_DOWNLOAD_UPSTREAM_ACTION,
+    );
+  }
+  let collected = retargetCollectionPath(
     uiApiPath,
     EXECUTION_UI_COLLECTION,
     EXECUTION_UPSTREAM_COLLECTION,
   );
-  if (EXECUTION_CANCEL_ACTION === EXECUTION_CANCEL_UPSTREAM_ACTION) {
-    return collected;
-  }
-  const from = `/${EXECUTION_CANCEL_ACTION}`;
-  const to = `/${EXECUTION_CANCEL_UPSTREAM_ACTION}`;
-  if (collected.endsWith(from) || collected.includes(`${from}?`)) {
-    return collected.replace(from, to);
-  }
+  collected = retargetNestedAction(
+    collected,
+    EXECUTION_CANCEL_ACTION,
+    EXECUTION_CANCEL_UPSTREAM_ACTION,
+  );
+  collected = retargetNestedAction(
+    collected,
+    EXECUTION_ARTIFACTS_ACTION,
+    EXECUTION_ARTIFACTS_UPSTREAM_ACTION,
+  );
+  collected = retargetNestedAction(
+    collected,
+    EXECUTION_DOWNLOAD_ACTION,
+    EXECUTION_DOWNLOAD_UPSTREAM_ACTION,
+  );
+  collected = retargetNestedAction(
+    collected,
+    EXECUTION_LOGS_ACTION,
+    EXECUTION_LOGS_UPSTREAM_ACTION,
+  );
   return collected;
 }
 
@@ -353,12 +480,57 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   {
     methods: ["GET"],
     match: (s) =>
+      s.length === 5 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_STEPS_ACTION &&
+      isResourceId(s[3]) &&
+      s[4] === EXECUTION_LOGS_ACTION,
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 4 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_ARTIFACTS_ACTION &&
+      isResourceId(s[3]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_ARTIFACTS_ACTION &&
+      isResourceId(s[3]) &&
+      s[4] === EXECUTION_DOWNLOAD_ACTION,
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
       s.length === 3 &&
       s[0] === EXECUTION_UI_COLLECTION &&
       isResourceId(s[1]) &&
       (s[2] === EXECUTION_STEPS_ACTION ||
         s[2] === EXECUTION_JOBS_ACTION ||
-        s[2] === EXECUTION_AUDIT_EVENTS_ACTION),
+        s[2] === EXECUTION_AUDIT_EVENTS_ACTION ||
+        s[2] === EXECUTION_ARTIFACTS_ACTION),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 &&
+      s[0] === ARTIFACT_UI_COLLECTION &&
+      isResourceId(s[1]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === ARTIFACT_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_DOWNLOAD_ACTION,
   },
   {
     methods: ["POST"],

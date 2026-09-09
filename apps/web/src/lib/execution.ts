@@ -1,5 +1,6 @@
 /**
- * E5.1 list/detail helpers plus E5.2 cancel/status presentation.
+ * E5.1 list/detail helpers plus E5.2 cancel/status presentation
+ * and E5.3 redacted logs / artifact metadata / download grants.
  *
  * List/detail show safe metadata plus already-redacted input/output/audit
  * (`[redacted]`). Unexpected secret field names are a contract bug: strip,
@@ -7,34 +8,47 @@
  * alone) and never implies an unverified remote action did not occur.
  * Cancel is separately authorized. 403 is fail-closed.
  * Retry follows the #53 map and is never offered for indeterminate.
+ * Artifact cards persist encrypted metadata only — never durable URLs
+ * or bucket credentials. Download grants are used once and discarded.
  */
 
 import {
   CANCEL_APPLIED_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
+  DOWNLOAD_EXPIRED_MESSAGE,
+  DOWNLOAD_FORBIDDEN_MESSAGE,
+  DOWNLOAD_UNAVAILABLE_MESSAGE,
   EXECUTION_PROBLEM_CODES,
   EXECUTION_RETRY_ROUTE_PUBLISHED,
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
   INDETERMINATE_STATUS_HELP,
+  LEGAL_HOLD_HELP,
+  RETENTION_HELP,
   RETRY_INDETERMINATE_MESSAGE,
   RETRY_UNAVAILABLE_MESSAGE,
   executionHistoryHref,
 } from "./execution-contract.ts";
 import {
+  ARTIFACT_LOCATOR_KEYS,
   CANCELABLE_STATUSES,
   EXECUTION_CANCEL_PERMISSION,
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
+  MAX_LOG_CHARS,
+  MAX_LOG_LINES,
   RETRYABLE_STATUSES,
   WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
+  type DownloadGrantView,
+  type ExecutionArtifact,
   type ExecutionAuditEvent,
   type ExecutionDetail,
   type ExecutionDetailView,
   type ExecutionJob,
   type ExecutionListQuery,
   type ExecutionListRow,
+  type ExecutionLogSlice,
   type ExecutionRecord,
   type ExecutionStatus,
   type ExecutionStatusPresentation,
@@ -182,7 +196,39 @@ const NEVER_STRIP_KEYS = new Set([
   "auditevents",
   "audit_events",
   "events",
+  "artifacts",
+  "digest",
+  "sizebytes",
+  "size_bytes",
+  "classification",
+  "contentclassification",
+  "content_classification",
+  "legalhold",
+  "legal_hold",
+  "expiresat",
+  "expires_at",
+  "deleted",
+  "deletedat",
+  "deleted_at",
+  "filename",
+  "kind",
+  "redacted",
+  "truncated",
+  "bytecount",
+  "byte_count",
+  "maxbytes",
+  "max_bytes",
+  "lines",
+  "logs",
 ]);
+
+const ARTIFACT_LOCATOR_KEY_SET = new Set(
+  ARTIFACT_LOCATOR_KEYS.map((key) => normalizeLocatorKey(key)),
+);
+
+function normalizeLocatorKey(key: string): string {
+  return key.trim().toLowerCase().replace(/-/g, "_");
+}
 
 export function isUuid(value: string | undefined): boolean {
   return Boolean(value && UUID.test(value));
@@ -777,6 +823,321 @@ export function parseItemList<T>(
   return out;
 }
 
+export function isArtifactLocatorKey(key: string): boolean {
+  return ARTIFACT_LOCATOR_KEY_SET.has(normalizeLocatorKey(key));
+}
+
+export function isDurableArtifactLocator(value: string | undefined): boolean {
+  const folded = value?.trim() ?? "";
+  if (!folded) {
+    return false;
+  }
+  return (
+    /^(s3|gs|azblob|azure|minio):\/\//i.test(folded) ||
+    /^https?:\/\/.+\.(s3|blob|storage)\./i.test(folded) ||
+    /[?&](X-Amz-Expires|X-Amz-Signature|sig=|token=)/i.test(folded)
+  );
+}
+
+export function artifactStateHasDurableUrl(value: unknown): boolean {
+  if (typeof value === "string") {
+    return isDurableArtifactLocator(value) || /^https?:\/\//i.test(value.trim());
+  }
+  if (Array.isArray(value)) {
+    return value.some(artifactStateHasDurableUrl);
+  }
+  const row = asRecord(value);
+  if (!row) {
+    return false;
+  }
+  return Object.entries(row).some(([key, child]) => {
+    if (isArtifactLocatorKey(key) && child != null && child !== "") {
+      return true;
+    }
+    return artifactStateHasDurableUrl(child);
+  });
+}
+
+export function sanitizeArtifactMetadata(
+  value: unknown,
+  strippedKeys: string[] = [],
+  path = "",
+): unknown {
+  const cleaned = stripSecretFields(value, strippedKeys, path);
+  if (Array.isArray(cleaned)) {
+    return cleaned.map((item, index) =>
+      sanitizeArtifactMetadata(
+        item,
+        strippedKeys,
+        path ? `${path}[${index}]` : `[${index}]`,
+      ),
+    );
+  }
+  const row = asRecord(cleaned);
+  if (!row) {
+    return cleaned;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(row)) {
+    const childPath = path ? `${path}.${key}` : key;
+    if (isArtifactLocatorKey(key)) {
+      strippedKeys.push(childPath);
+      continue;
+    }
+    if (typeof child === "string" && isDurableArtifactLocator(child)) {
+      strippedKeys.push(childPath);
+      continue;
+    }
+    out[key] = sanitizeArtifactMetadata(child, strippedKeys, childPath);
+  }
+  return out;
+}
+
+export function parseExecutionArtifact(
+  raw: unknown,
+  executionId = "",
+): ExecutionArtifact | null {
+  const stripped: string[] = [];
+  const cleaned = sanitizeArtifactMetadata(raw, stripped);
+  const row = asRecord(cleaned);
+  if (!row) {
+    return null;
+  }
+  const id = readString(row.id);
+  if (!isUuid(id)) {
+    return null;
+  }
+  return {
+    id,
+    executionId: readString(row.executionId, row.execution_id) || executionId,
+    executionStepId: readString(row.executionStepId, row.execution_step_id),
+    name: readString(row.name, row.filename, row.fileName, row.file_name),
+    digest: readString(row.digest),
+    sizeBytes: readNumber(row.sizeBytes, row.size_bytes),
+    classification: readString(
+      row.classification,
+      row.contentClassification,
+      row.content_classification,
+    ),
+    retentionUntil: readString(row.retentionUntil, row.retention_until),
+    expiresAt: readString(row.expiresAt, row.expires_at),
+    kind: readString(row.kind),
+    redacted: typeof row.redacted === "boolean" ? row.redacted : true,
+    legalHold: readBoolean(row.legalHold, row.legal_hold),
+    deleted: readBoolean(row.deleted),
+    deletedAt: readString(row.deletedAt, row.deleted_at),
+  };
+}
+
+export function boundRedactedDisplay(
+  value: unknown,
+  maxChars = MAX_LOG_CHARS,
+  maxLines = MAX_LOG_LINES,
+): ExecutionLogSlice {
+  const stripped: string[] = [];
+  const cleaned = stripSecretFields(value, stripped);
+  let text = redactedJson(cleaned);
+  if (typeof cleaned === "string") {
+    text = cleaned;
+  }
+  if (!text || text === "—") {
+    return {
+      stepId: "",
+      text: "—",
+      truncated: false,
+      byteCount: 0,
+      maxBytes: maxChars,
+    };
+  }
+  const lines = text.split("\n");
+  let truncated = false;
+  if (lines.length > maxLines) {
+    text = `${lines.slice(0, maxLines).join("\n")}\n…`;
+    truncated = true;
+  }
+  if (text.length > maxChars) {
+    text = `${text.slice(0, maxChars)}…`;
+    truncated = true;
+  }
+  return {
+    stepId: "",
+    text,
+    truncated,
+    byteCount: text.length,
+    maxBytes: maxChars,
+  };
+}
+
+export function parseExecutionLogs(
+  raw: unknown,
+  stepId = "",
+): ExecutionLogSlice {
+  const stripped: string[] = [];
+  const cleaned = stripSecretFields(raw, stripped);
+  const row = asRecord(cleaned);
+  const items = row
+    ? Array.isArray(row.items)
+      ? row.items
+      : Array.isArray(row.lines)
+        ? row.lines
+        : null
+    : Array.isArray(cleaned)
+      ? cleaned
+      : null;
+  let source: unknown = cleaned;
+  if (items) {
+    source = items
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        const line = asRecord(item);
+        return readString(line?.line, line?.text, line?.message) || redactedJson(item);
+      })
+      .join("\n");
+  } else if (row) {
+    source = row.text ?? row.output ?? row.logs ?? cleaned;
+  }
+  const bounded = boundRedactedDisplay(source);
+  const truncated =
+    bounded.truncated ||
+    readBoolean(row?.truncated, row?.truncatedBytes);
+  return {
+    ...bounded,
+    stepId,
+    truncated,
+    byteCount: readNumber(row?.byteCount, row?.byte_count) ?? bounded.byteCount,
+    maxBytes: readNumber(row?.maxBytes, row?.max_bytes) ?? bounded.maxBytes,
+  };
+}
+
+export type EphemeralDownloadGrant = {
+  artifactId: string;
+  expiresAt: string;
+  url: string;
+  handle: string;
+};
+
+export function parseDownloadGrant(
+  raw: unknown,
+  artifactId = "",
+): EphemeralDownloadGrant | null {
+  const stripped: string[] = [];
+  const cleaned = stripSecretFields(raw, stripped);
+  const row = asRecord(cleaned);
+  if (!row) {
+    return null;
+  }
+  const nested = asRecord(row.grant) ?? asRecord(row.download) ?? row;
+  const id =
+    readString(nested.artifactId, nested.artifact_id, nested.id) || artifactId;
+  if (!id) {
+    return null;
+  }
+  return {
+    artifactId: id,
+    expiresAt: readString(nested.expiresAt, nested.expires_at),
+    url: readString(
+      nested.downloadUrl,
+      nested.download_url,
+      nested.url,
+      nested.href,
+      nested.location,
+    ),
+    handle: readString(nested.handle, nested.downloadToken, nested.download_token),
+  };
+}
+
+export function wipeDownloadGrant(grant: EphemeralDownloadGrant): void {
+  grant.url = "";
+  grant.handle = "";
+}
+
+export function downloadGrantView(
+  grant: Pick<EphemeralDownloadGrant, "artifactId" | "expiresAt">,
+  now = Date.now(),
+): DownloadGrantView {
+  return {
+    artifactId: grant.artifactId,
+    expiresAt: grant.expiresAt,
+    expired: isDownloadGrantExpired(grant, now),
+  };
+}
+
+export function isDownloadGrantExpired(
+  grant: Pick<EphemeralDownloadGrant, "expiresAt">,
+  now = Date.now(),
+): boolean {
+  const expiresAt = grant.expiresAt?.trim();
+  if (!expiresAt) {
+    return true;
+  }
+  const parsed = Date.parse(expiresAt);
+  if (!Number.isFinite(parsed)) {
+    return true;
+  }
+  return parsed <= now;
+}
+
+export function canDownloadArtifact(artifact: ExecutionArtifact | null | undefined): boolean {
+  if (!artifact) {
+    return false;
+  }
+  if (artifact.deleted && !artifact.legalHold) {
+    return false;
+  }
+  return true;
+}
+
+export function downloadGrantFailureMessage(options: {
+  forbidden?: boolean;
+  expired?: boolean;
+  statusCode?: number;
+}): string {
+  if (options.forbidden || options.statusCode === 403) {
+    return DOWNLOAD_FORBIDDEN_MESSAGE;
+  }
+  if (options.expired || options.statusCode === 410) {
+    return DOWNLOAD_EXPIRED_MESSAGE;
+  }
+  return DOWNLOAD_UNAVAILABLE_MESSAGE;
+}
+
+export function retentionStatusMessage(options: {
+  retentionUntil?: string;
+  deleted?: boolean;
+  legalHold?: boolean;
+}): string {
+  if (options.legalHold) {
+    return LEGAL_HOLD_HELP;
+  }
+  if (options.deleted) {
+    return RETENTION_HELP;
+  }
+  const until = options.retentionUntil?.trim();
+  if (!until) {
+    return RETENTION_HELP;
+  }
+  return `${RETENTION_HELP} Scheduled removal: ${until}.`;
+}
+
+export function legalHoldStatusMessage(legalHold: boolean): string {
+  return legalHold ? LEGAL_HOLD_HELP : "";
+}
+
+export function formatArtifactSize(sizeBytes: number | null | undefined): string {
+  if (sizeBytes == null || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+    return "—";
+  }
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function parseExecutionDetail(raw: unknown): ExecutionDetail | null {
   const record = parseExecutionRecord(raw);
   if (!record) {
@@ -793,6 +1154,7 @@ export function parseExecutionDetail(raw: unknown): ExecutionDetail | null {
     body.audit_events ??
     nested.events ??
     body.events;
+  const artifactSource = nested.artifacts ?? body.artifacts;
   return {
     ...record,
     pins: parseAuthorizedPins(nested.pins ?? body.pins),
@@ -803,6 +1165,10 @@ export function parseExecutionDetail(raw: unknown): ExecutionDetail | null {
       parseExecutionJob(item, record.id),
     ),
     auditEvents: parseItemList(auditSource, parseExecutionEvent),
+    artifacts: parseItemList(artifactSource, (item) =>
+      parseExecutionArtifact(item, record.id),
+    ),
+    legalHold: readBoolean(nested.legalHold, nested.legal_hold, body.legalHold),
   };
 }
 
@@ -875,9 +1241,12 @@ export function executionDetailDisplay(
     jobs: detail.jobs,
     jobViews: detail.jobs.map(jobDispatchView),
     auditEvents: detail.auditEvents,
+    artifacts: detail.artifacts,
     input: detail.input,
     policySnapshot: detail.policySnapshot,
     permittedActions: detail.permittedActions,
+    retentionUntil: detail.retentionUntil,
+    legalHold: detail.legalHold,
   };
 }
 
@@ -936,6 +1305,20 @@ export function executionDetailText(detail: ExecutionDetail): string {
         " ",
       ),
     ),
+    ...view.artifacts.map((artifact) =>
+      [
+        artifact.id,
+        artifact.name,
+        artifact.digest,
+        formatArtifactSize(artifact.sizeBytes),
+        artifact.classification,
+        artifact.retentionUntil,
+        artifact.legalHold ? "legal-hold" : "",
+        artifact.deleted ? "deleted" : "",
+      ].join(" "),
+    ),
+    view.legalHold ? LEGAL_HOLD_HELP : "",
+    view.retentionUntil,
   ];
   return parts.join("\n");
 }

@@ -3,23 +3,28 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
+import { ExecutionArtifacts } from "@/components/executions/ExecutionArtifacts";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   cancelExecution,
+  downloadExecutionArtifact,
+  getExecutionStepLogs,
   loadExecutionHistory,
   pollExecutionStatus,
   retryExecution,
   retryExecutionStep,
 } from "@/lib/execution-client";
 import {
+  BOUNDED_LOG_HELP,
   CANCEL_CSRF_HELP,
   CANCEL_FORBIDDEN_MESSAGE,
   EXECUTION_STATUS_POLL_MS,
   IDEMPOTENCY_KEY_HELP,
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
+  RETENTION_HELP,
   RETRY_CONFLICT_MESSAGE,
   RETRY_CSRF_HELP,
   RETRY_FORBIDDEN_MESSAGE,
@@ -27,17 +32,20 @@ import {
   STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
 import {
+  boundRedactedDisplay,
   canCancelExecution,
   canRetryExecution,
   canRetryExecutionStep,
   canSeeExecutionsNav,
+  downloadGrantFailureMessage,
   executionDetailDisplay,
   isExecutionForbidden,
   isIndeterminateStatus,
   normalizeExecutionStatus,
-  redactedJson,
+  retentionStatusMessage,
   retryAffordanceMessage,
 } from "@/lib/execution";
+import type { ExecutionLogSlice } from "@/lib/execution-types";
 import { EXECUTION_CANCEL_PERMISSION } from "@/lib/execution-types";
 import type { ExecutionDetail as ExecutionDetailModel } from "@/lib/execution-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -84,6 +92,11 @@ export function ExecutionDetail({
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [downloadPending, setDownloadPending] = useState<string | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [stepLogs, setStepLogs] = useState<Record<string, ExecutionLogSlice>>(
+    {},
+  );
   const requestGate = useRef(createGenerationGate());
 
   const ready =
@@ -137,6 +150,22 @@ export function ExecutionDetail({
     }
     setDetail(result.execution);
     setStrippedKeys(result.strippedKeys);
+    void loadStepLogs(result.execution.steps.map((step) => step.id));
+  }
+
+  async function loadStepLogs(stepIds: string[]) {
+    const next: Record<string, ExecutionLogSlice> = {};
+    await Promise.all(
+      stepIds.map(async (stepId) => {
+        const logs = await getExecutionStepLogs(identity, executionId, stepId);
+        if (logs.ok) {
+          next[stepId] = logs.logs;
+        }
+      }),
+    );
+    if (Object.keys(next).length > 0) {
+      setStepLogs((current) => ({ ...current, ...next }));
+    }
   }
 
   async function onCancel() {
@@ -213,6 +242,45 @@ export function ExecutionDetail({
     await refresh();
   }
 
+  async function onDownload(artifactId: string) {
+    if (downloadPending) {
+      return;
+    }
+    const artifact = detail?.artifacts.find((item) => item.id === artifactId);
+    setDownloadPending(artifactId);
+    setProblem(null);
+    setDownloadMessage(null);
+    const result = await downloadExecutionArtifact(
+      identity,
+      executionId,
+      artifactId,
+      {
+        artifact,
+        open: (url) => {
+          const link = document.createElement("a");
+          link.href = url;
+          link.rel = "noopener noreferrer";
+          link.target = "_blank";
+          link.click();
+        },
+      },
+    );
+    setLastRequestId(result.requestId);
+    setDownloadPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      setDownloadMessage(
+        downloadGrantFailureMessage({
+          forbidden: result.forbidden,
+          expired: result.statusCode === 410,
+          statusCode: result.statusCode,
+        }),
+      );
+      return;
+    }
+    setDownloadMessage(result.message);
+  }
+
   useEffect(() => {
     if (!ready) {
       return;
@@ -254,6 +322,10 @@ export function ExecutionDetail({
                 result.execution.auditEvents.length > 0
                   ? result.execution.auditEvents
                   : current.auditEvents,
+              artifacts:
+                result.execution.artifacts.length > 0
+                  ? result.execution.artifacts
+                  : current.artifacts,
             };
           });
           setStrippedKeys(result.strippedKeys);
@@ -340,6 +412,22 @@ export function ExecutionDetail({
                 {INDETERMINATE_STATUS_HELP}
               </p>
             ) : null}
+            {view.legalHold ? (
+              <p role="status" className="mt-3 text-sm font-medium text-amber-950">
+                {retentionStatusMessage({
+                  retentionUntil: view.retentionUntil,
+                  legalHold: true,
+                })}
+              </p>
+            ) : view.retentionUntil ? (
+              <p className="mt-3 text-sm text-zinc-600">
+                {retentionStatusMessage({
+                  retentionUntil: view.retentionUntil,
+                })}
+              </p>
+            ) : (
+              <p className="mt-3 text-xs text-zinc-500">{RETENTION_HELP}</p>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {canCancel ? (
                 <button
@@ -440,7 +528,7 @@ export function ExecutionDetail({
               </p>
               <p className="mt-1 text-xs text-zinc-500">{REDACTED_HELP}</p>
               <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-                {redactedJson(view.input)}
+                {boundRedactedDisplay(view.input).text}
               </pre>
             </div>
             {detail?.workflowId ? (
@@ -458,10 +546,12 @@ export function ExecutionDetail({
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Steps</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Redacted step summary. Secret values show as{" "}
+              Redacted step state with bounded logs and output. Secret
+              values show as{" "}
               <code className="font-mono text-xs">[redacted]</code>. Graph
-              replay is E5.3 / E6.
+              replay stays E6.
             </p>
+            <p className="mt-1 text-xs text-zinc-500">{BOUNDED_LOG_HELP}</p>
             {view.steps.length === 0 ? (
               <p className="mt-3 text-sm text-zinc-600">
                 No steps returned yet.
@@ -516,14 +606,43 @@ export function ExecutionDetail({
                         {RETRY_INDETERMINATE_MESSAGE}
                       </p>
                     ) : null}
-                    <pre className="mt-3 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-                      {redactedJson(step.output ?? step.error ?? step.input)}
-                    </pre>
+                    {(() => {
+                      const logs =
+                        stepLogs[step.id] ??
+                        boundRedactedDisplay(
+                          step.output ?? step.error ?? step.input,
+                        );
+                      return (
+                        <div className="mt-3">
+                          <p className="text-xs font-medium text-zinc-600">
+                            Bounded logs / output
+                          </p>
+                          <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+                            {logs.text}
+                          </pre>
+                          {logs.truncated ? (
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Output truncated at {logs.maxBytes} characters.
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
             )}
           </section>
+
+          <ExecutionArtifacts
+            artifacts={view.artifacts}
+            retentionUntil={view.retentionUntil}
+            legalHold={view.legalHold}
+            pendingId={downloadPending}
+            message={downloadMessage}
+            disabled={pending || cancelPending}
+            onDownload={(artifact) => void onDownload(artifact.id)}
+          />
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Jobs</h2>

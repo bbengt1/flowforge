@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
   cancelExecution,
+  downloadExecutionArtifact,
   getExecution,
+  listExecutionArtifacts,
   listExecutions,
   listWorkflowExecutions,
   listWorkspaceAuditEvents,
@@ -727,6 +729,163 @@ describe("execution client", () => {
     if (!denied.ok) {
       assert.equal(denied.statusCode, 403);
       assert.equal(denied.forbidden, true);
+    }
+  });
+
+  it("lists artifact metadata without persisting durable URLs", async () => {
+    withSession();
+    globalThis.fetch = (async (input) => {
+      assert.equal(String(input), `/api/v1/executions/${EXECUTION_ID}/artifacts`);
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "77777777-7777-4777-8777-777777777777",
+              name: "plan.json",
+              digest: "sha256:dddd",
+              sizeBytes: 12,
+              classification: "internal",
+              downloadUrl: "https://bucket.s3.amazonaws.com/durable",
+              bucket: "flowforge-prod",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await listExecutionArtifacts(identity, EXECUTION_ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.name, "plan.json");
+      assert.equal(JSON.stringify(result.items).includes("amazonaws"), false);
+      assert.equal(JSON.stringify(result.items).includes("flowforge-prod"), false);
+    }
+  });
+
+  it("requests a download grant with CSRF, consumes it once, and drops the URL", async () => {
+    withSession();
+    const opened: string[] = [];
+    const seen: { url?: string; body?: string; csrf?: string | null }[] = [];
+    globalThis.fetch = (async (input, init) => {
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: headers.get(CSRF_HEADER),
+      });
+      return new Response(
+        JSON.stringify({
+          artifactId: "77777777-7777-4777-8777-777777777777",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          downloadUrl: "https://short.example/grant?token=once",
+          handle: "ephemeral-handle",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+      { open: (url) => opened.push(url) },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      seen[0]?.url,
+      `/api/v1/executions/${EXECUTION_ID}/artifacts/77777777-7777-4777-8777-777777777777/download`,
+    );
+    assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(seen[0]?.body, "{}");
+    assert.equal(opened.length, 1);
+    assert.equal(opened[0], "https://short.example/grant?token=once");
+    if (result.ok) {
+      assert.equal("url" in result.grant, false);
+      assert.equal("handle" in result.grant, false);
+      assert.equal(JSON.stringify(result).includes("short.example"), false);
+      assert.equal(JSON.stringify(result).includes("ephemeral-handle"), false);
+    }
+  });
+
+  it("fails download grants closed on missing CSRF, 403, and expiry", async () => {
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("should-not-run", { status: 500 });
+    }) as typeof fetch;
+
+    const missing = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+    );
+    assert.equal(missing.ok, false);
+    assert.equal(fetched, false);
+    if (!missing.ok) {
+      assert.equal(missing.statusCode, 403);
+      assert.equal(missing.forbidden, true);
+    }
+
+    withSession();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "execution.view is required.",
+          instance: `/api/v1/executions/${EXECUTION_ID}/artifacts/77777777-7777-4777-8777-777777777777/download`,
+          code: "forbidden",
+          request_id: "dl-forbid-16xxxxxx",
+        }),
+        { status: 403, headers: { "Content-Type": PROBLEM_JSON } },
+      )) as typeof fetch;
+
+    const denied = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+    );
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.forbidden, true);
+    }
+
+    withSession();
+    let opened = 0;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          artifactId: "77777777-7777-4777-8777-777777777777",
+          expiresAt: "2020-01-01T00:00:00.000Z",
+          downloadUrl: "https://short.example/expired",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as typeof fetch;
+
+    const expired = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+      { open: () => {
+        opened += 1;
+      } },
+    );
+    assert.equal(expired.ok, false);
+    assert.equal(opened, 0);
+    if (!expired.ok) {
+      assert.equal(expired.statusCode, 410);
     }
   });
 });

@@ -1,4 +1,4 @@
-/** Shapes from jonny's E5.1 OpenAPI (#51) plus E5.2 #53 cancel/retry. Do not invent fields or routes. */
+/** Shapes from jonny's E5.1 OpenAPI (#51), E5.2 #53 cancel/retry, and the E5.3 artifact scaffold. Do not invent fields or routes. */
 
 import type { OpsConfigPin } from "./ops-config-types.ts";
 
@@ -37,6 +37,56 @@ export const CANCELABLE_STATUSES = ["queued", "running"] as const;
 export const RETRYABLE_STATUSES = ["failed", "canceled"] as const;
 
 export const REDACTED_MARKER = "[redacted]";
+
+/** Encrypted artifact metadata only — never bucket credentials or durable URLs. */
+export const ARTIFACT_METADATA_FIELDS = [
+  "name",
+  "digest",
+  "sizeBytes",
+  "classification",
+  "retentionUntil",
+] as const;
+
+export const ARTIFACT_LOCATOR_KEYS = [
+  "url",
+  "downloadUrl",
+  "download_url",
+  "publicUrl",
+  "public_url",
+  "signedUrl",
+  "signed_url",
+  "presignedUrl",
+  "presigned_url",
+  "href",
+  "location",
+  "storageRef",
+  "storage_ref",
+  "bucket",
+  "bucketName",
+  "bucket_name",
+  "objectKey",
+  "object_key",
+  "accessKey",
+  "access_key",
+  "accessKeyId",
+  "access_key_id",
+  "secretAccessKey",
+  "secret_access_key",
+  "endpoint",
+  "s3Uri",
+  "s3_uri",
+  "gsUri",
+  "gs_uri",
+  "handle",
+  "downloadToken",
+  "download_token",
+  "grantToken",
+  "grant_token",
+] as const;
+
+/** Bounded log/output display — defense in depth on top of API redaction. */
+export const MAX_LOG_CHARS = 8192;
+export const MAX_LOG_LINES = 200;
 
 /** Documented list query for GET /executions and GET /workflows/{id}/executions. */
 export type ExecutionListQuery = {
@@ -114,6 +164,38 @@ export type ExecutionJob = {
   leaseId: string;
 };
 
+export type ExecutionArtifact = {
+  id: string;
+  executionId: string;
+  executionStepId: string;
+  name: string;
+  digest: string;
+  sizeBytes: number | null;
+  classification: string;
+  retentionUntil: string;
+  expiresAt: string;
+  kind: string;
+  redacted: boolean;
+  legalHold: boolean;
+  deleted: boolean;
+  deletedAt: string;
+};
+
+export type ExecutionLogSlice = {
+  stepId: string;
+  text: string;
+  truncated: boolean;
+  byteCount: number;
+  maxBytes: number;
+};
+
+/** Safe operator view of a grant. URL/handle must never land here. */
+export type DownloadGrantView = {
+  artifactId: string;
+  expiresAt: string;
+  expired: boolean;
+};
+
 export type ExecutionAuditEvent = {
   id: string;
   action: string;
@@ -132,6 +214,8 @@ export type ExecutionDetail = ExecutionRecord & {
   steps: ExecutionStep[];
   jobs: ExecutionJob[];
   auditEvents: ExecutionAuditEvent[];
+  artifacts: ExecutionArtifact[];
+  legalHold: boolean;
 };
 
 export type ExecutionListRow = {
@@ -187,7 +271,10 @@ export type ExecutionDetailView = {
   jobs: ExecutionJob[];
   jobViews: JobDispatchView[];
   auditEvents: ExecutionAuditEvent[];
+  artifacts: ExecutionArtifact[];
   input: unknown;
   policySnapshot: unknown;
   permittedActions: string[];
+  retentionUntil: string;
+  legalHold: boolean;
 };

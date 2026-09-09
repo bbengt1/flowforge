@@ -7,7 +7,7 @@ export default function ExecutionsPage() {
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E5.1 / E5.2 · Chloe UI
+          E5.1 / E5.2 / E5.3 · Chloe UI
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Execution history
@@ -22,7 +22,9 @@ export default function ExecutionsPage() {
           canceled, failed, and{" "}
           <code className="font-mono text-sm">indeterminate</code> use icon +
           text — color is never the only signal. Cancel and retry live on
-          the detail page (#53). Relates to #47 / Part of #45.
+          the detail page (#53). Artifact metadata and short-lived
+          downloads live on the same detail page (#48). Relates to #48 /
+          Part of #45.
         </p>
       </header>
       <ExecutionHistory />

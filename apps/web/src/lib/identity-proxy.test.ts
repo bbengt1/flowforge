@@ -367,6 +367,53 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps/44444444-4444-4444-8444-444444444444/retry",
       ],
+      [
+        "GET",
+        ["executions", "33333333-3333-4333-8333-333333333333", "artifacts"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/artifacts",
+      ],
+      [
+        "GET",
+        [
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "artifacts",
+          "77777777-7777-4777-8777-777777777777",
+        ],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/artifacts/77777777-7777-4777-8777-777777777777",
+      ],
+      [
+        "POST",
+        [
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "artifacts",
+          "77777777-7777-4777-8777-777777777777",
+          "download",
+        ],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/artifacts/77777777-7777-4777-8777-777777777777/download",
+      ],
+      [
+        "GET",
+        [
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "steps",
+          "44444444-4444-4444-8444-444444444444",
+          "logs",
+        ],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/steps/44444444-4444-4444-8444-444444444444/logs",
+      ],
+      [
+        "GET",
+        ["artifacts", "77777777-7777-4777-8777-777777777777"],
+        "/api/v1/artifacts/77777777-7777-4777-8777-777777777777",
+      ],
+      [
+        "POST",
+        ["artifacts", "77777777-7777-4777-8777-777777777777", "download"],
+        "/api/v1/artifacts/77777777-7777-4777-8777-777777777777/download",
+      ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
     ];
 
@@ -551,6 +598,17 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in cancelGet, true);
     if ("status" in cancelGet) {
       assert.equal(cancelGet.status, 405);
+    }
+    const downloadGet = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "artifacts",
+      "77777777-7777-4777-8777-777777777777",
+      "download",
+    ]);
+    assert.equal("status" in downloadGet, true);
+    if ("status" in downloadGet) {
+      assert.equal(downloadGet.status, 405);
     }
     const reservedAsId = resolveIdentityProxyTarget("GET", [
       "executions",
