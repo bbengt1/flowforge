@@ -77,10 +77,10 @@ Canvas and YAML are two synchronized views of one draft:
 Credentials are workspace-scoped encrypted backend resources, never browser persistence or YAML fields.
 
 - Credential types: `kubernetes`, `ssh_private_key`, `token`, `webhook_secret`, and `provider`.
-- Add credential wizard: display name/tags, type, secret fields, target metadata, ownership, allowed use, rotation date, and optional test connection. Sensitive fields are masked, paste-safe, and cleared from UI memory after submission.
-- The API encrypts values before persistence; UI receives only metadata, safe status, permitted actions, and last test/rotation timestamps. Plaintext is never returned after create/update.
-- Credential details support metadata edit, permission/usage view, rotate/replace, disable, test, and audit history. Deletion requires confirmation and reports affected drafts/workflows before it proceeds.
-- The workflow editor selects credentials by display name/reference; it does not expose secret values. Credential cards indicate health and policy state without revealing connection strings, keys, tokens, or provider internals.
+- Add credential wizard: display name/tags, type from `GET /credentials/catalog`, secret fields, safe metadata, and optional `expiresAt`. Sensitive fields are masked, paste-safe, and cleared from UI memory after submission.
+- The API encrypts values before persistence; UI receives only metadata (`displayName`, `type`, `status`, `tags`, `fingerprint`, test/rotation timestamps, `permittedActions`). Plaintext is never returned after create/update.
+- Credential details support metadata edit, usage, rotate/replace, disable/enable, test, use (204), and events. Deletion loads `deletion-impact` then `DELETE` with `{confirm:true}`.
+- The workflow editor selects credentials by display name/reference; it does not expose secret values. Credential cards show status, last test, and fingerprint without revealing connection strings, keys, tokens, or provider internals.
 
 Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` (wizard), `/credentials/{id}` (detail). Contract adapter: `apps/web/src/lib/credential-contract.ts`. Unexpected secret fields on API responses are stripped and treated as a contract bug.
 

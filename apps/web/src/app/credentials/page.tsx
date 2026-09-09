@@ -13,12 +13,11 @@ export default function CredentialsPage() {
           Credential vault
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Workspace-scoped encrypted credentials. List and search by display
-          name or tags only. The UI never persists or renders plaintext —
-          create and rotate send secret fields once, then clear them. Jonny
-          owns vault APIs and encryption; this operator is ready to retarget
-          when that route map lands. Cookie session + CSRF and tenant/workbench
-          identity match E2.3 / E2.1.
+          Workspace-scoped encrypted credentials against jonny&apos;s #38
+          contract. List is metadata only; filter by display name or tags in
+          the browser. Create and rotate send <code>secret</code> once, then
+          clear it. The UI never reads <code>CREDENTIAL_KEK</code>. Cookie
+          session + CSRF and tenant/workbench identity match E2.3 / E2.1.
         </p>
       </header>
       <CredentialVault />

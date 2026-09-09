@@ -1,49 +1,55 @@
 /**
- * Thin typed vault client. Secrets travel only in the create/rotate
- * request body; responses are sanitized before they reach callers.
+ * Thin typed vault client against jonny's #38 routes. Secrets travel
+ * only in the create/rotate request body; responses are sanitized
+ * before they reach callers.
  *
  * Session: credentials:include + X-CSRF-Token on mutations (via
  * callIdentityProxy). Host-supplied workspace IDs are never sent.
+ * CREDENTIAL_KEK is never read or sent.
  */
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
+  FALLBACK_CREDENTIAL_CATALOG,
   buildCreateCredentialBody,
+  buildDeleteCredentialBody,
   buildRotateCredentialBody,
   buildUpdateCredentialBody,
-  credentialAuditPath,
   credentialDeletionImpactPath,
   credentialDisablePath,
   credentialEnablePath,
-  credentialListSearch,
+  credentialEventsPath,
+  credentialListPath,
   credentialPath,
   credentialRotatePath,
   credentialTestPath,
   credentialUsagePath,
+  credentialUsePath,
+  credentialsCatalogPath,
   credentialsPath,
   forgetSecretDraft,
 } from "./credential-contract.ts";
 import {
-  sanitizeAuditEvents,
+  sanitizeCatalog,
   sanitizeCredentialList,
   sanitizeCredentialRecord,
   sanitizeDeletionImpact,
+  sanitizeEvents,
+  sanitizeTestResponse,
   sanitizeUsage,
-  stripSecretFields,
 } from "./credential.ts";
 import type {
   CreateCredentialBody,
-  CredentialAuditEvent,
+  CredentialCatalog,
   CredentialDeletionImpact,
-  CredentialListQuery,
+  CredentialEvent,
   CredentialRecord,
   CredentialSecretDraft,
   CredentialTestResult,
   CredentialType,
   CredentialUsage,
-  RotateCredentialBody,
   UpdateCredentialBody,
 } from "./credential-types.ts";
 
@@ -71,6 +77,15 @@ export type CredentialListSuccess = {
   strippedKeys: string[];
 };
 
+export type CredentialCatalogSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  catalog: CredentialCatalog;
+  usedFallback: boolean;
+  strippedKeys: string[];
+};
+
 export type CredentialUsageSuccess = {
   ok: true;
   statusCode: number;
@@ -79,11 +94,11 @@ export type CredentialUsageSuccess = {
   strippedKeys: string[];
 };
 
-export type CredentialAuditSuccess = {
+export type CredentialEventsSuccess = {
   ok: true;
   statusCode: number;
   requestId: string;
-  items: CredentialAuditEvent[];
+  items: CredentialEvent[];
   strippedKeys: string[];
 };
 
@@ -100,6 +115,7 @@ export type CredentialTestSuccess = {
   statusCode: number;
   requestId: string;
   test: CredentialTestResult;
+  credential?: CredentialRecord;
   strippedKeys: string[];
 };
 
@@ -110,12 +126,41 @@ export type CredentialEmptySuccess = {
   strippedKeys: string[];
 };
 
+export async function getCredentialCatalog(
+  identity: DevIdentity,
+): Promise<CredentialCatalogSuccess | CredentialClientFailure> {
+  const result = await callIdentityProxy<unknown>(
+    credentialsCatalogPath(),
+    identity,
+  );
+  if (!result.ok) {
+    return failure(result);
+  }
+  const sanitized = sanitizeCatalog(result.data);
+  if (sanitized.value.types.length === 0) {
+    return {
+      ok: true,
+      statusCode: result.statusCode,
+      requestId: result.requestId,
+      catalog: FALLBACK_CREDENTIAL_CATALOG,
+      usedFallback: true,
+      strippedKeys: sanitized.strippedKeys,
+    };
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    catalog: sanitized.value,
+    usedFallback: false,
+    strippedKeys: sanitized.strippedKeys,
+  };
+}
+
 export async function listCredentials(
   identity: DevIdentity,
-  query: CredentialListQuery = {},
 ): Promise<CredentialListSuccess | CredentialClientFailure> {
-  const path = credentialListSearch(query);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const result = await callIdentityProxy<unknown>(credentialListPath(), identity);
   if (!result.ok) {
     return failure(result);
   }
@@ -132,8 +177,9 @@ export async function listCredentials(
 export async function createCredential(
   identity: DevIdentity,
   body: CreateCredentialBody,
+  catalog: CredentialCatalog = FALLBACK_CREDENTIAL_CATALOG,
 ): Promise<CredentialRecordSuccess | CredentialClientFailure> {
-  const payload = buildCreateCredentialBody(body);
+  const payload = buildCreateCredentialBody(body, catalog);
   const result = await callIdentityProxy<unknown>(credentialsPath(), identity, {
     method: "POST",
     body: payload,
@@ -170,14 +216,10 @@ export async function rotateCredential(
   credentialId: string,
   type: CredentialType,
   secret: CredentialSecretDraft,
-  testOnRotate = false,
+  catalog: CredentialCatalog = FALLBACK_CREDENTIAL_CATALOG,
 ): Promise<CredentialRecordSuccess | CredentialClientFailure> {
   const path = credentialRotatePath(credentialId);
-  const payload: RotateCredentialBody = buildRotateCredentialBody(
-    type,
-    secret,
-    testOnRotate,
-  );
+  const payload = buildRotateCredentialBody(type, secret, catalog);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
     body: payload,
@@ -223,27 +265,34 @@ export async function testCredential(
   if (!result.ok) {
     return failure(result);
   }
-  const sanitized = stripSecretFields(result.data);
-  const raw = isObject(sanitized.value) ? sanitized.value : {};
-  const status =
-    raw.status === "passed" || raw.status === "failed" || raw.status === "untested"
-      ? raw.status
-      : "untested";
+  const sanitized = sanitizeTestResponse(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    test: {
-      status,
-      testedAt:
-        typeof raw.testedAt === "string"
-          ? raw.testedAt
-          : typeof raw.tested_at === "string"
-            ? raw.tested_at
-            : undefined,
-      message: typeof raw.message === "string" ? raw.message : undefined,
-    },
+    test: sanitized.value.result,
+    credential: sanitized.value.credential ?? undefined,
     strippedKeys: sanitized.strippedKeys,
+  };
+}
+
+export async function recordCredentialUse(
+  identity: DevIdentity,
+  credentialId: string,
+): Promise<CredentialEmptySuccess | CredentialClientFailure> {
+  const path = credentialUsePath(credentialId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: {},
+  });
+  if (!result.ok) {
+    return failure(result);
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    strippedKeys: [],
   };
 }
 
@@ -257,6 +306,14 @@ export async function getCredentialUsage(
     return failure(result);
   }
   const sanitized = sanitizeUsage(result.data);
+  if (!sanitized.value) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Usage payload was missing credentialId.",
+    );
+  }
   return {
     ok: true,
     statusCode: result.statusCode,
@@ -266,16 +323,16 @@ export async function getCredentialUsage(
   };
 }
 
-export async function getCredentialAudit(
+export async function getCredentialEvents(
   identity: DevIdentity,
   credentialId: string,
-): Promise<CredentialAuditSuccess | CredentialClientFailure> {
-  const path = credentialAuditPath(credentialId);
+): Promise<CredentialEventsSuccess | CredentialClientFailure> {
+  const path = credentialEventsPath(credentialId);
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     return failure(result);
   }
-  const sanitized = sanitizeAuditEvents(result.data);
+  const sanitized = sanitizeEvents(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
@@ -319,6 +376,7 @@ export async function deleteCredential(
   const path = credentialPath(credentialId);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "DELETE",
+    body: buildDeleteCredentialBody(),
   });
   if (!result.ok) {
     return failure(result);
@@ -389,8 +447,4 @@ function malformed(
     },
     strippedKeys: [],
   };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

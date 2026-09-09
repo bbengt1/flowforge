@@ -10,9 +10,9 @@ import { ProblemBanner } from "@/components/ProblemBanner";
 import { SecretField } from "@/components/credentials/SecretField";
 import {
   clearSecretDraftAfterSubmit,
-  credentialHealthLabel,
-  credentialPolicyLabel,
+  credentialStatusLabel,
   credentialTypeLabel,
+  formatRef,
   formatTagsInput,
   parseTagsInput,
   recordHasAction,
@@ -22,23 +22,28 @@ import {
   disableCredential,
   enableCredential,
   getCredential,
-  getCredentialAudit,
+  getCredentialCatalog,
   getCredentialDeletionImpact,
+  getCredentialEvents,
   getCredentialUsage,
   rotateCredential,
   testCredential,
   updateCredential,
+  recordCredentialUse,
 } from "@/lib/credential-client";
-import { emptySecretDraft, secretFieldsForType } from "@/lib/credential-contract";
 import {
-  CREDENTIAL_ALLOWED_USES,
-  type CredentialAllowedUse,
-  type CredentialAuditEvent,
-  type CredentialDeletionImpact,
-  type CredentialRecord,
-  type CredentialSecretDraft,
-  type CredentialTestResult,
-  type CredentialUsage,
+  FALLBACK_CREDENTIAL_CATALOG,
+  catalogTypeInfo,
+  emptySecretDraft,
+} from "@/lib/credential-contract";
+import type {
+  CredentialCatalog,
+  CredentialDeletionImpact,
+  CredentialEvent,
+  CredentialRecord,
+  CredentialSecretDraft,
+  CredentialTestResult,
+  CredentialUsage,
 } from "@/lib/credential-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -69,40 +74,53 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   );
 
   const [record, setRecord] = useState<CredentialRecord | null>(null);
+  const [catalog, setCatalog] = useState<CredentialCatalog>(
+    FALLBACK_CREDENTIAL_CATALOG,
+  );
   const [displayName, setDisplayName] = useState("");
   const [tagsInput, setTagsInput] = useState("");
-  const [rotateAfter, setRotateAfter] = useState("");
-  const [allowedUse, setAllowedUse] = useState<CredentialAllowedUse[]>([]);
+  const [metadata, setMetadata] = useState<Record<string, string>>({});
+  const [expiresAt, setExpiresAt] = useState("");
   const [secret, setSecret] = useState<CredentialSecretDraft>(emptySecretDraft());
   const [usage, setUsage] = useState<CredentialUsage | null>(null);
-  const [audit, setAudit] = useState<CredentialAuditEvent[]>([]);
+  const [events, setEvents] = useState<CredentialEvent[]>([]);
   const [impact, setImpact] = useState<CredentialDeletionImpact | null>(null);
   const [typedName, setTypedName] = useState("");
+  const [testResult, setTestResult] = useState<CredentialTestResult | null>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [testResult, setTestResult] = useState<CredentialTestResult | null>(null);
-  const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
-  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+  const [useAck, setUseAck] = useState<string | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
     hasWorkspaceLookup(identity);
+  const typeInfo = record ? catalogTypeInfo(catalog, record.type) : undefined;
+  const secretFields = typeInfo?.secretFields ?? [];
+  const metadataFields = typeInfo?.metadataFields ?? [];
 
-  useEffect(() => {
-    if (ready) {
-      void load();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [credentialId, ready]);
+  function applyRecord(next: CredentialRecord, extraKeys: string[] = []) {
+    setRecord(next);
+    setDisplayName(next.displayName);
+    setTagsInput(formatTagsInput(next.tags));
+    setMetadata({ ...next.metadata });
+    setExpiresAt(next.expiresAt ?? "");
+    setStrippedKeys(extraKeys);
+  }
 
-  async function load() {
+  async function refresh() {
     setPending("load");
     setProblem(null);
-    const result = await getCredential(identity, credentialId);
-    setLastRequestId(result.requestId);
+    const [result, catalogResult] = await Promise.all([
+      getCredential(identity, credentialId),
+      getCredentialCatalog(identity),
+    ]);
     setPending(null);
+    if (catalogResult.ok) {
+      setCatalog(catalogResult.catalog);
+    }
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -110,25 +128,36 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     applyRecord(result.credential, result.strippedKeys);
   }
 
-  function applyRecord(next: CredentialRecord, stripped: string[]) {
-    setRecord(next);
-    setDisplayName(next.displayName);
-    setTagsInput(formatTagsInput(next.tags));
-    setRotateAfter(next.rotateAfter?.slice(0, 10) ?? "");
-    setAllowedUse(next.allowedUse);
-    setStrippedKeys(stripped);
-  }
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    void getCredential(identity, credentialId).then((result) => {
+      if (result.ok) {
+        applyRecord(result.credential, result.strippedKeys);
+      } else {
+        setProblem(result.problem);
+      }
+    });
+    void getCredentialCatalog(identity).then((result) => {
+      if (result.ok) {
+        setCatalog(result.catalog);
+      }
+    });
+  }, [ready, credentialId, identity]);
 
   async function saveMetadata() {
+    if (!record || !recordHasAction(record, "manage")) {
+      return;
+    }
     setPending("save");
     setProblem(null);
     const result = await updateCredential(identity, credentialId, {
       displayName,
       tags: parseTagsInput(tagsInput),
-      allowedUse,
-      rotateAfter: rotateAfter || null,
+      metadata,
+      expiresAt: expiresAt.trim() || null,
     });
-    setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -138,7 +167,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   }
 
   async function rotate() {
-    if (!record) {
+    if (!record || !recordHasAction(record, "rotate")) {
       return;
     }
     setPending("rotate");
@@ -148,10 +177,31 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       credentialId,
       record.type,
       secret,
-      false,
+      catalog,
     );
     setSecret(clearSecretDraftAfterSubmit(secret));
-    setLastRequestId(result.requestId);
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    applyRecord(result.credential, result.strippedKeys);
+  }
+
+  async function toggleStatus() {
+    if (!record) {
+      return;
+    }
+    const action = record.status === "disabled" ? "enable" : "disable";
+    if (!recordHasAction(record, action)) {
+      return;
+    }
+    setPending(action);
+    setProblem(null);
+    const result =
+      action === "enable"
+        ? await enableCredential(identity, credentialId)
+        : await disableCredential(identity, credentialId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -164,7 +214,6 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     setPending("test");
     setProblem(null);
     const result = await testCredential(identity, credentialId);
-    setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -172,40 +221,29 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     }
     setTestResult(result.test);
     setStrippedKeys(result.strippedKeys);
-    if (record) {
-      setRecord({
-        ...record,
-        lastTestStatus: result.test.status,
-        lastTestedAt: result.test.testedAt,
-        health: result.test.status === "passed" ? "healthy" : "failed",
-      });
+    if (result.credential) {
+      applyRecord(result.credential, result.strippedKeys);
     }
   }
 
-  async function toggleDisabled() {
-    if (!record) {
-      return;
-    }
-    setPending("disable");
+  async function recordUse() {
+    setPending("use");
     setProblem(null);
-    const result =
-      record.status === "disabled"
-        ? await enableCredential(identity, credentialId)
-        : await disableCredential(identity, credentialId);
-    setLastRequestId(result.requestId);
+    setUseAck(null);
+    const result = await recordCredentialUse(identity, credentialId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
     }
-    applyRecord(result.credential, result.strippedKeys);
+    setUseAck("Use recorded (204 empty).");
+    void refresh();
   }
 
   async function loadUsage() {
     setPending("usage");
     setProblem(null);
     const result = await getCredentialUsage(identity, credentialId);
-    setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -215,17 +253,16 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     setStrippedKeys(result.strippedKeys);
   }
 
-  async function loadAudit() {
-    setPending("audit");
+  async function loadEvents() {
+    setPending("events");
     setProblem(null);
-    const result = await getCredentialAudit(identity, credentialId);
-    setLastRequestId(result.requestId);
+    const result = await getCredentialEvents(identity, credentialId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
     }
-    setAudit(result.items);
+    setEvents(result.items);
     setStrippedKeys(result.strippedKeys);
   }
 
@@ -233,7 +270,6 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     setPending("impact");
     setProblem(null);
     const result = await getCredentialDeletionImpact(identity, credentialId);
-    setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -247,7 +283,6 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     setPending("delete");
     setProblem(null);
     const result = await deleteCredential(identity, credentialId);
-    setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
@@ -256,39 +291,40 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     router.replace("/credentials");
   }
 
-  const secretKeys = record ? secretFieldsForType(record.type) : [];
-
   return (
     <div className="space-y-6">
       <IsolationIdentityPanel />
       <p>
         <Link
           href="/credentials"
-          className="text-sm text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
         >
           Back to vault
         </Link>
       </p>
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-amber-900">
           Unexpected secret fields were stripped: {strippedKeys.join(", ")}.
         </p>
       ) : null}
 
-      {!record ? (
+      {!ready ? (
         <p className="text-sm text-zinc-600">
-          {ready
-            ? pending === "load"
-              ? "Loading credential metadata…"
-              : "Credential metadata is not loaded."
-            : "Establish a cookie session and tenant + workbench first."}
+          Establish a cookie session and tenant + workbench before opening a
+          credential.
         </p>
+      ) : !record ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={pending === "load"}
+            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+          >
+            {pending === "load" ? "Loading…" : "Load credential"}
+          </button>
+        </div>
       ) : (
         <>
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -296,27 +332,44 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
               <div>
                 <h2 className="text-lg font-semibold">{record.displayName}</h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  {credentialTypeLabel(record.type)} · {record.status}
+                  {credentialTypeLabel(record.type, catalog)} ·{" "}
+                  {credentialStatusLabel(record.status)}
                 </p>
               </div>
-              <dl className="grid gap-1 text-sm">
-                <div>
-                  <dt className="inline text-zinc-500">health </dt>
-                  <dd className="inline font-medium">
-                    {credentialHealthLabel(record.health)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="inline text-zinc-500">policy </dt>
-                  <dd className="inline font-medium">
-                    {credentialPolicyLabel(record.policyState)}
-                  </dd>
-                </div>
-              </dl>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+              >
+                Reload
+              </button>
             </div>
+            <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+              <Meta label="fingerprint" value={record.fingerprint || "—"} mono />
+              <Meta label="last test" value={record.lastTestStatus} />
+              <Meta label="last tested" value={record.lastTestedAt ?? "—"} mono />
+              <Meta label="last test reason" value={record.lastTestReason ?? "—"} />
+              <Meta label="rotated" value={record.rotatedAt ?? "—"} mono />
+              <Meta label="expires" value={record.expiresAt ?? "—"} mono />
+              <Meta label="use count" value={String(record.useCount)} />
+              <Meta label="last used" value={record.lastUsedAt ?? "—"} mono />
+              <Meta
+                label="key reference"
+                value={record.keyReference || "—"}
+                mono
+              />
+            </dl>
+          </section>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h3 className="text-base font-semibold">Safe metadata</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              <code className="font-mono text-xs">PATCH /credentials/{"{id}"}</code>{" "}
+              accepts displayName, tags, metadata, and expiresAt. Sending{" "}
+              <code className="font-mono text-xs">secret</code> is 400.
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm">
                 <span className="font-medium">Display name</span>
                 <input
                   value={displayName}
@@ -325,7 +378,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                   className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
                 />
               </label>
-              <label className="text-sm">
+              <label className="block text-sm">
                 <span className="font-medium">Tags</span>
                 <input
                   value={tagsInput}
@@ -334,51 +387,97 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                   className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
                 />
               </label>
-              <label className="text-sm">
-                <span className="font-medium">Rotate after</span>
+              {metadataFields.map((field) => (
+                <label key={field.name} className="block text-sm">
+                  <span className="font-medium">{field.name}</span>
+                  <input
+                    value={metadata[field.name] ?? ""}
+                    onChange={(event) =>
+                      setMetadata((current) => ({
+                        ...current,
+                        [field.name]: event.target.value,
+                      }))
+                    }
+                    autoComplete="off"
+                    className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                  />
+                </label>
+              ))}
+              <label className="block text-sm">
+                <span className="font-medium">Expires at</span>
                 <input
-                  type="date"
-                  value={rotateAfter}
-                  onChange={(event) => setRotateAfter(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  value={expiresAt}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  placeholder="2026-12-31T23:59:59Z"
+                  autoComplete="off"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
                 />
               </label>
-            </div>
-
-            <fieldset className="mt-4">
-              <legend className="text-sm font-medium">Allowed use</legend>
-              <div className="mt-2 flex flex-wrap gap-3">
-                {CREDENTIAL_ALLOWED_USES.map((use) => (
-                  <label key={use} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={allowedUse.includes(use)}
-                      onChange={(event) => {
-                        setAllowedUse((current) =>
-                          event.target.checked
-                            ? [...current, use]
-                            : current.filter((item) => item !== use),
-                        );
-                      }}
-                    />
-                    <span className="font-mono text-xs">{use}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => void saveMetadata()}
-                disabled={pending !== null || !recordHasAction(record, "edit")}
+                disabled={pending === "save" || !recordHasAction(record, "manage")}
                 className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
               >
                 {pending === "save" ? "Saving…" : "Save metadata"}
               </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h3 className="text-base font-semibold">Rotate secret</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              <code className="font-mono text-xs">POST .../rotate</code>{" "}
+              {"{secret}"}. Fields clear after submit.
+            </p>
+            <div className="mt-4 space-y-3">
+              {secretFields.map((field) => (
+                <SecretField
+                  key={field.name}
+                  id={`rotate-${field.name}`}
+                  label={field.name}
+                  multiline={field.input === "textarea"}
+                  required={field.required}
+                  value={secret[field.name] ?? ""}
+                  onChange={(value) =>
+                    setSecret((current) => ({ ...current, [field.name]: value }))
+                  }
+                />
+              ))}
               <button
                 type="button"
-                onClick={() => setTestOpen(true)}
+                onClick={() => void rotate()}
+                disabled={pending === "rotate" || !recordHasAction(record, "rotate")}
+                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              >
+                {pending === "rotate" ? "Rotating…" : "Rotate"}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h3 className="text-base font-semibold">Actions</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void toggleStatus()}
+                disabled={
+                  pending === "disable" ||
+                  pending === "enable" ||
+                  (record.status === "disabled"
+                    ? !recordHasAction(record, "enable")
+                    : !recordHasAction(record, "disable"))
+                }
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                {record.status === "disabled" ? "Enable" : "Disable"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTestOpen(true);
+                  setTestResult(null);
+                }}
                 disabled={!recordHasAction(record, "test")}
                 className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
               >
@@ -386,190 +485,88 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
               </button>
               <button
                 type="button"
-                onClick={() => void toggleDisabled()}
-                disabled={
-                  pending !== null ||
-                  (!recordHasAction(record, "disable") &&
-                    !recordHasAction(record, "enable"))
-                }
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                onClick={() => void recordUse()}
+                disabled={pending === "use" || !recordHasAction(record, "use")}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
               >
-                {record.status === "disabled" ? "Enable" : "Disable"}
+                {pending === "use" ? "Recording…" : "Record use"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadUsage()}
+                disabled={pending === "usage"}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                {pending === "usage" ? "Loading…" : "Load usage"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadEvents()}
+                disabled={pending === "events"}
+                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                {pending === "events" ? "Loading…" : "Load events"}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setTypedName("");
                   setDeleteOpen(true);
+                  setImpact(null);
+                  setTypedName("");
                 }}
                 disabled={!recordHasAction(record, "delete")}
-                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 hover:bg-red-100 disabled:opacity-60"
+                className="rounded-lg border border-red-800 bg-red-800 px-3 py-2 text-sm font-medium text-white hover:bg-red-900 disabled:opacity-60"
               >
                 Delete…
               </button>
             </div>
-          </section>
-
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Rotate / replace</h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              Submit a new secret payload. After success the inputs are
-              cleared and only metadata remains.
-            </p>
-            <div className="mt-4 space-y-4">
-              {secretKeys.includes("kubeconfig") ? (
-                <SecretField
-                  id="rotate-kubeconfig"
-                  label="Kubeconfig"
-                  multiline
-                  value={secret.kubeconfig ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, kubeconfig: value }))
-                  }
-                />
-              ) : null}
-              {secretKeys.includes("token") ? (
-                <SecretField
-                  id="rotate-token"
-                  label="Token"
-                  value={secret.token ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, token: value }))
-                  }
-                />
-              ) : null}
-              {secretKeys.includes("privateKey") ? (
-                <SecretField
-                  id="rotate-key"
-                  label="SSH private key"
-                  multiline
-                  value={secret.privateKey ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, privateKey: value }))
-                  }
-                />
-              ) : null}
-              {secretKeys.includes("passphrase") ? (
-                <SecretField
-                  id="rotate-passphrase"
-                  label="Key passphrase (optional)"
-                  value={secret.passphrase ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, passphrase: value }))
-                  }
-                />
-              ) : null}
-              {secretKeys.includes("apiKey") ? (
-                <SecretField
-                  id="rotate-api-key"
-                  label="API key"
-                  value={secret.apiKey ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, apiKey: value }))
-                  }
-                />
-              ) : null}
-              {secretKeys.includes("secret") ? (
-                <SecretField
-                  id="rotate-secret"
-                  label="Webhook secret"
-                  value={secret.secret ?? ""}
-                  onChange={(value) =>
-                    setSecret((current) => ({ ...current, secret: value }))
-                  }
-                />
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => void rotate()}
-              disabled={pending !== null || !recordHasAction(record, "rotate")}
-              className="mt-4 rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-            >
-              {pending === "rotate" ? "Rotating…" : "Replace secret"}
-            </button>
-          </section>
-
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Permissions and usage</h2>
-              <button
-                type="button"
-                onClick={() => void loadUsage()}
-                disabled={pending !== null}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-              >
-                {pending === "usage" ? "Loading…" : "Load usage"}
-              </button>
-            </div>
-            {!usage ? (
-              <p className="mt-2 text-sm text-zinc-600">
-                Usage is loaded on demand. Rows are workflow names only.
+            {useAck ? (
+              <p role="status" className="mt-3 text-sm text-zinc-600">
+                {useAck}
               </p>
-            ) : (
-              <div className="mt-3 grid gap-4 md:grid-cols-2">
-                <div>
-                  <h3 className="text-sm font-medium">Grants</h3>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {usage.permissions.length === 0 ? (
-                      <li className="text-zinc-600">No explicit grants returned.</li>
-                    ) : (
-                      usage.permissions.map((item) => (
-                        <li key={`${item.principalDisplayName}-${item.permission}`}>
-                          {item.principalDisplayName} · {item.permission}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium">Workflow references</h3>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {usage.usages.length === 0 ? (
-                      <li className="text-zinc-600">No drafts or versions listed.</li>
-                    ) : (
-                      usage.usages.map((item) => (
-                        <li key={`${item.workflowId}-${item.kind}-${item.nodeId ?? ""}`}>
-                          {item.workflowName} · {item.kind}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
-              </div>
-            )}
+            ) : null}
           </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Audit history</h2>
-              <button
-                type="button"
-                onClick={() => void loadAudit()}
-                disabled={pending !== null}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-              >
-                {pending === "audit" ? "Loading…" : "Load audit"}
-              </button>
-            </div>
-            {audit.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-600">
-                Redacted events only. Secret values are never in the trail.
+          {usage ? (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-semibold">Usage</h3>
+              <p className="mt-1 font-mono text-xs text-zinc-500">
+                count {usage.useCount}
+                {usage.lastUsedAt ? ` · last ${usage.lastUsedAt}` : ""}
+                {usage.lastUsedBy ? ` · ${usage.lastUsedBy}` : ""}
               </p>
-            ) : (
-              <ol className="mt-3 space-y-2 text-sm">
-                {audit.map((event) => (
-                  <li key={event.id} className="rounded-lg border border-zinc-100 p-3">
+              <RefList title="Drafts" refs={usage.drafts} />
+              <RefList title="Versions" refs={usage.versions} />
+              <RefList title="Executions" refs={usage.executions} />
+            </section>
+          ) : null}
+
+          {events.length ? (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-semibold">Events</h3>
+              <ul className="mt-3 space-y-2 text-sm">
+                {events.map((event) => (
+                  <li
+                    key={event.id}
+                    className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2"
+                  >
                     <p className="font-medium">{event.eventType}</p>
                     <p className="font-mono text-xs text-zinc-500">
                       {event.occurredAt}
-                      {event.actorDisplayName ? ` · ${event.actorDisplayName}` : ""}
+                      {event.actorId ? ` · ${event.actorId}` : ""}
                     </p>
+                    {Object.keys(event.details).length ? (
+                      <p className="mt-1 text-xs text-zinc-600">
+                        {Object.entries(event.details)
+                          .map(([key, value]) => `${key}=${value}`)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
-              </ol>
-            )}
-          </section>
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
 
@@ -590,6 +587,50 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
         onConfirm={() => void confirmDelete()}
         onClose={() => setDeleteOpen(false)}
       />
+    </div>
+  );
+}
+
+function Meta({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-zinc-500">{label}</dt>
+      <dd className={mono ? "break-all font-mono text-xs" : "font-medium"}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function RefList({
+  title,
+  refs,
+}: {
+  title: string;
+  refs: CredentialUsage["drafts"];
+}) {
+  return (
+    <div className="mt-3">
+      <h4 className="text-sm font-medium">{title}</h4>
+      {refs.length === 0 ? (
+        <p className="mt-1 text-sm text-zinc-600">None.</p>
+      ) : (
+        <ul className="mt-1 list-disc pl-5 text-sm">
+          {refs.map((ref) => (
+            <li key={`${ref.kind}-${ref.workflowId}-${ref.versionId ?? ref.executionId ?? ""}`}>
+              {formatRef(ref)}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

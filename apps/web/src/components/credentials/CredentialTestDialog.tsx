@@ -33,9 +33,13 @@ export function CredentialTestDialog({
           Test connection
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
-          The control plane tests the stored encrypted payload. This page
-          never sends or displays plaintext. Results are status and
-          timestamp only.
+          <code className="font-mono text-xs">POST .../test</code> checks the
+          stored encrypted payload. This page never sends or displays
+          plaintext. The API returns{" "}
+          <code className="font-mono text-xs">
+            {"{result:{status,reason,checkedAt},credential}"}
+          </code>
+          .
         </p>
         {result ? (
           <dl className="mt-4 grid gap-1 text-sm">
@@ -43,16 +47,16 @@ export function CredentialTestDialog({
               <dt className="inline text-zinc-500">status </dt>
               <dd className="inline font-medium">{result.status}</dd>
             </div>
-            {result.testedAt ? (
+            {result.checkedAt ? (
               <div>
-                <dt className="inline text-zinc-500">tested_at </dt>
-                <dd className="inline font-mono text-xs">{result.testedAt}</dd>
+                <dt className="inline text-zinc-500">checkedAt </dt>
+                <dd className="inline font-mono text-xs">{result.checkedAt}</dd>
               </div>
             ) : null}
-            {result.message ? (
+            {result.reason ? (
               <div>
-                <dt className="inline text-zinc-500">message </dt>
-                <dd className="inline">{result.message}</dd>
+                <dt className="inline text-zinc-500">reason </dt>
+                <dd className="inline">{result.reason}</dd>
               </div>
             ) : null}
           </dl>

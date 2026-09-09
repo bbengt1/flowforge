@@ -168,6 +168,7 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333",
       ],
+      ["GET", ["credentials", "catalog"], "/api/v1/credentials/catalog"],
       ["GET", ["credentials"], "/api/v1/credentials"],
       ["POST", ["credentials"], "/api/v1/credentials"],
       [
@@ -194,6 +195,16 @@ describe("resolveIdentityProxyTarget", () => {
         "POST",
         ["credentials", "11111111-1111-4111-8111-111111111111", "test"],
         "/api/v1/credentials/11111111-1111-4111-8111-111111111111/test",
+      ],
+      [
+        "POST",
+        ["credentials", "11111111-1111-4111-8111-111111111111", "use"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111/use",
+      ],
+      [
+        "GET",
+        ["credentials", "11111111-1111-4111-8111-111111111111", "events"],
+        "/api/v1/credentials/11111111-1111-4111-8111-111111111111/events",
       ],
       [
         "GET",
@@ -239,6 +250,15 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in unknown, true);
     if ("status" in unknown) {
       assert.equal(unknown.status, 404);
+    }
+    const inventedAudit = resolveIdentityProxyTarget("GET", [
+      "credentials",
+      "11111111-1111-4111-8111-111111111111",
+      "audit",
+    ]);
+    assert.equal("status" in inventedAudit, true);
+    if ("status" in inventedAudit) {
+      assert.equal(inventedAudit.status, 404);
     }
     const listWrite = resolveIdentityProxyTarget("DELETE", ["credentials"]);
     assert.equal("status" in listWrite, true);

@@ -1,108 +1,111 @@
 /**
  * Safe credential vault types for Chloe's E4.1 UI (#35).
  *
- * Responses are metadata only. Plaintext secret fields are never part of
- * a persisted or displayed record. Unexpected secret keys are stripped
- * by `sanitizeCredentialRecord` and treated as a contract bug.
- *
- * TODO(#35): retarget field names when jonny publishes the vault route map.
+ * Shapes match jonny's #38 contract (`vault.Metadata`, catalog, usage,
+ * deletion-impact, events). Responses are metadata only. Plaintext
+ * secret fields are never part of a persisted or displayed record.
  */
 
 export const CREDENTIAL_MVP_TYPES = [
-  "kubernetes_target",
+  "kubernetes",
   "ssh_private_key",
   "token",
   "webhook_secret",
+  "provider",
 ] as const;
 
 export type CredentialType = (typeof CREDENTIAL_MVP_TYPES)[number];
 
-export const CREDENTIAL_STATUSES = [
-  "active",
-  "disabled",
-  "expired",
-  "rotating",
-] as const;
+export const CREDENTIAL_STATUSES = ["active", "disabled"] as const;
 
 export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number];
 
-export const CREDENTIAL_HEALTH_STATES = [
-  "unknown",
-  "healthy",
-  "degraded",
+export const CREDENTIAL_TEST_STATUSES = [
+  "passed",
   "failed",
   "untested",
 ] as const;
 
-export type CredentialHealth = (typeof CREDENTIAL_HEALTH_STATES)[number];
-
-export const CREDENTIAL_POLICY_STATES = [
-  "allowed",
-  "restricted",
-  "pending_approval",
-] as const;
-
-export type CredentialPolicyState = (typeof CREDENTIAL_POLICY_STATES)[number];
+export type CredentialTestStatus = (typeof CREDENTIAL_TEST_STATUSES)[number];
 
 export const CREDENTIAL_ACTIONS = [
   "view",
-  "edit",
+  "use",
+  "test",
   "rotate",
   "disable",
   "enable",
-  "test",
   "delete",
-  "use",
+  "manage",
 ] as const;
 
 export type CredentialAction = (typeof CREDENTIAL_ACTIONS)[number];
 
-export const CREDENTIAL_ALLOWED_USES = [
-  "credential.use",
-  "workflow.execute",
-  "webhook.verify",
-  "kubernetes.apply",
-  "ssh.run",
+export const CREDENTIAL_EVENT_TYPES = [
+  "created",
+  "rotated",
+  "disabled",
+  "enabled",
+  "tested",
+  "used",
+  "metadata_updated",
+  "deleted",
 ] as const;
 
-export type CredentialAllowedUse = (typeof CREDENTIAL_ALLOWED_USES)[number];
+export type CredentialEventType = (typeof CREDENTIAL_EVENT_TYPES)[number];
 
-/** Safe target metadata — never kubeconfig, keys, tokens, or connection strings. */
-export type CredentialTargetMetadata = {
-  clusterName?: string;
-  apiServerHost?: string;
-  hostname?: string;
-  port?: number;
-  username?: string;
-  hostKeyFingerprint?: string;
-  issuerHint?: string;
-  audienceHint?: string;
-  destinationLabel?: string;
+export const CREDENTIAL_REF_KINDS = [
+  "draft",
+  "version",
+  "execution",
+] as const;
+
+export type CredentialRefKind = (typeof CREDENTIAL_REF_KINDS)[number];
+
+export type CatalogFieldInput = "text" | "textarea" | "password";
+
+export type CredentialCatalogField = {
+  name: string;
+  input: CatalogFieldInput;
+  required: boolean;
 };
 
-export type CredentialOwnership = {
-  ownerDisplayName?: string;
-  ownerId?: string;
+export type CredentialTypeInfo = {
+  type: CredentialType;
+  displayName: string;
+  secretFields: CredentialCatalogField[];
+  metadataFields: CredentialCatalogField[];
 };
 
+export type CredentialCatalog = {
+  types: CredentialTypeInfo[];
+};
+
+/** Metadata-only record. Never includes `secret` or ciphertext. */
 export type CredentialRecord = {
   id: string;
-  displayName: string;
-  tags: string[];
   type: CredentialType;
+  displayName: string;
   status: CredentialStatus;
-  health: CredentialHealth;
-  policyState: CredentialPolicyState;
-  permittedActions: CredentialAction[];
+  tags: string[];
+  metadata: Record<string, string>;
+  fingerprint: string;
+  encryptionVersion: number;
+  keyReference: string;
+  lastTestStatus: CredentialTestStatus;
   lastTestedAt?: string;
-  lastTestStatus?: "passed" | "failed" | "untested";
+  lastTestReason?: string;
+  lastUsedAt?: string;
+  lastUsedBy?: string;
+  useCount: number;
   rotatedAt?: string;
-  rotateAfter?: string;
+  expiresAt?: string;
+  disabledAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
   createdAt?: string;
   updatedAt?: string;
-  ownerDisplayName?: string;
-  allowedUse: CredentialAllowedUse[];
-  targetMetadata: CredentialTargetMetadata;
+  permittedActions: CredentialAction[];
 };
 
 export type CredentialList = {
@@ -117,120 +120,99 @@ export type CredentialListQuery = {
 };
 
 /** Type-specific secret fields sent once on create/rotate — never retained. */
-export type CredentialSecretDraft = {
-  kubeconfig?: string;
-  token?: string;
-  privateKey?: string;
-  passphrase?: string;
-  apiKey?: string;
-  secret?: string;
-};
+export type CredentialSecretDraft = Record<string, string>;
 
 export type CreateCredentialBody = {
+  type: CredentialType;
   displayName: string;
   tags?: string[];
-  type: CredentialType;
+  metadata?: Record<string, string>;
+  expiresAt?: string;
   secret: CredentialSecretDraft;
-  targetMetadata?: CredentialTargetMetadata;
-  ownership?: CredentialOwnership;
-  allowedUse?: CredentialAllowedUse[];
-  rotateAfter?: string;
-  testOnCreate?: boolean;
 };
 
 export type UpdateCredentialBody = {
   displayName?: string;
   tags?: string[];
-  targetMetadata?: CredentialTargetMetadata;
-  ownership?: CredentialOwnership;
-  allowedUse?: CredentialAllowedUse[];
-  rotateAfter?: string | null;
+  metadata?: Record<string, string>;
+  expiresAt?: string | null;
 };
 
 export type RotateCredentialBody = {
   secret: CredentialSecretDraft;
-  testOnRotate?: boolean;
+};
+
+export type DeleteCredentialBody = {
+  confirm: true;
 };
 
 export type CredentialTestResult = {
-  status: "passed" | "failed" | "untested";
-  testedAt?: string;
-  message?: string;
+  status: CredentialTestStatus;
+  reason?: string;
+  checkedAt?: string;
 };
 
-export type CredentialUsageItem = {
+export type CredentialTestResponse = {
+  result: CredentialTestResult;
+  credential: CredentialRecord;
+};
+
+export type CredentialRef = {
+  kind: CredentialRefKind;
   workflowId: string;
+  workflowSlug?: string;
   workflowName: string;
-  nodeId?: string;
   versionId?: string;
-  kind: "draft" | "version";
-};
-
-export type CredentialPermissionGrant = {
-  principalType: string;
-  principalDisplayName: string;
-  permission: string;
+  versionNumber?: number;
+  executionId?: string;
+  executionStatus?: string;
 };
 
 export type CredentialUsage = {
-  permissions: CredentialPermissionGrant[];
-  usages: CredentialUsageItem[];
+  credentialId: string;
+  lastUsedAt?: string;
+  lastUsedBy?: string;
+  useCount: number;
+  drafts: CredentialRef[];
+  versions: CredentialRef[];
+  executions: CredentialRef[];
 };
 
-export type CredentialAuditEvent = {
+export type CredentialEvent = {
   id: string;
+  credentialId: string;
   eventType: string;
-  actorDisplayName?: string;
+  actorId?: string;
+  details: Record<string, string>;
   occurredAt: string;
-  detailsRedacted?: Record<string, string>;
 };
 
-export type CredentialAuditList = {
-  items: CredentialAuditEvent[];
-};
-
-export type DeletionImpactDraft = {
-  workflowId: string;
-  name: string;
-  slug?: string;
-};
-
-export type DeletionImpactVersion = {
-  workflowId: string;
-  versionId: string;
-  versionNumber?: number;
-  name: string;
-};
-
-export type DeletionImpactExecution = {
-  executionId: string;
-  workflowName: string;
-  status: string;
+export type CredentialEventList = {
+  items: CredentialEvent[];
 };
 
 export type CredentialDeletionImpact = {
   credentialId: string;
   displayName: string;
+  status: CredentialStatus;
   canDelete: boolean;
-  blockingReason?: string;
-  affectedDrafts: DeletionImpactDraft[];
-  affectedVersions: DeletionImpactVersion[];
-  activeExecutions: DeletionImpactExecution[];
+  blockReason?: string;
+  drafts: CredentialRef[];
+  versions: CredentialRef[];
+  activeExecutions: CredentialRef[];
 };
 
 export type WizardStep =
   | "identity"
   | "type"
   | "secret"
-  | "target"
-  | "policy"
+  | "metadata"
   | "review";
 
 export const WIZARD_STEPS: readonly WizardStep[] = [
   "identity",
   "type",
   "secret",
-  "target",
-  "policy",
+  "metadata",
   "review",
 ];

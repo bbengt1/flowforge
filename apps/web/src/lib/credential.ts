@@ -9,31 +9,26 @@
 import { forgetSecretDraft } from "./credential-contract.ts";
 import type {
   CredentialAction,
-  CredentialAllowedUse,
-  CredentialAuditEvent,
+  CredentialCatalog,
+  CredentialCatalogField,
   CredentialDeletionImpact,
-  CredentialHealth,
-  CredentialListQuery,
-  CredentialPermissionGrant,
-  CredentialPolicyState,
+  CredentialEvent,
   CredentialRecord,
+  CredentialRef,
   CredentialSecretDraft,
   CredentialStatus,
-  CredentialTargetMetadata,
+  CredentialTestResult,
   CredentialType,
+  CredentialTypeInfo,
   CredentialUsage,
-  CredentialUsageItem,
-  DeletionImpactDraft,
-  DeletionImpactExecution,
-  DeletionImpactVersion,
+  CatalogFieldInput,
 } from "./credential-types.ts";
 import {
   CREDENTIAL_ACTIONS,
-  CREDENTIAL_ALLOWED_USES,
-  CREDENTIAL_HEALTH_STATES,
   CREDENTIAL_MVP_TYPES,
-  CREDENTIAL_POLICY_STATES,
+  CREDENTIAL_REF_KINDS,
   CREDENTIAL_STATUSES,
+  CREDENTIAL_TEST_STATUSES,
 } from "./credential-types.ts";
 
 const SECRET_KEY_ALIASES = new Set([
@@ -83,126 +78,102 @@ const SECRET_KEY_PARTS = [
   "ciphertext",
 ];
 
-const SAFE_RECORD_KEYS = new Set([
-  "id",
-  "displayName",
-  "display_name",
-  "tags",
-  "type",
-  "status",
-  "health",
-  "policyState",
-  "policy_state",
-  "permittedActions",
-  "permitted_actions",
-  "lastTestedAt",
-  "last_tested_at",
-  "lastTestStatus",
-  "last_test_status",
-  "rotatedAt",
-  "rotated_at",
-  "rotateAfter",
-  "rotate_after",
-  "createdAt",
-  "created_at",
-  "updatedAt",
-  "updated_at",
-  "ownerDisplayName",
-  "owner_display_name",
-  "allowedUse",
-  "allowed_use",
-  "targetMetadata",
-  "target_metadata",
-]);
-
-const SAFE_TARGET_KEYS = new Set([
-  "clusterName",
-  "cluster_name",
-  "apiServerHost",
-  "api_server_host",
-  "hostname",
-  "port",
-  "username",
-  "hostKeyFingerprint",
-  "host_key_fingerprint",
-  "issuerHint",
-  "issuer_hint",
-  "audienceHint",
-  "audience_hint",
-  "destinationLabel",
-  "destination_label",
-]);
-
-/** Metadata keys that contain "credential" but are not secret material. */
+/** Metadata keys that contain "credential" / "token" but are not secret material. */
 const NEVER_STRIP_KEYS = new Set([
   "id",
+  "credential",
   "credentialid",
   "credential_id",
   "displayname",
   "display_name",
-  "ownerdisplayname",
-  "owner_display_name",
-  "actordisplayname",
-  "actor_display_name",
-  "principaldisplayname",
-  "principal_display_name",
   "workflowid",
   "workflow_id",
+  "workflowslug",
+  "workflow_slug",
   "workflowname",
   "workflow_name",
   "versionid",
   "version_id",
+  "versionnumber",
+  "version_number",
   "executionid",
   "execution_id",
+  "executionstatus",
+  "execution_status",
   "eventtype",
   "event_type",
   "occurredat",
   "occurred_at",
-  "detailsredacted",
-  "details_redacted",
+  "actorid",
+  "actor_id",
   "candelete",
   "can_delete",
-  "blockingreason",
-  "blocking_reason",
-  "affecteddrafts",
-  "affected_drafts",
-  "affectedversions",
-  "affected_versions",
-  "activeexecutions",
-  "active_executions",
+  "blockreason",
+  "block_reason",
   "permittedactions",
   "permitted_actions",
-  "policystate",
-  "policy_state",
   "lasttestedat",
   "last_tested_at",
   "lastteststatus",
   "last_test_status",
+  "lasttestreason",
+  "last_test_reason",
+  "lastusedat",
+  "last_used_at",
+  "lastusedby",
+  "last_used_by",
+  "usecount",
+  "use_count",
   "rotatedat",
   "rotated_at",
-  "rotateafter",
-  "rotate_after",
-  "alloweduse",
-  "allowed_use",
-  "targetmetadata",
-  "target_metadata",
-  "testoncreate",
-  "test_on_create",
-  "testonrotate",
-  "test_on_rotate",
+  "expiresat",
+  "expires_at",
+  "disabledat",
+  "disabled_at",
+  "createdby",
+  "created_by",
+  "updatedby",
+  "updated_by",
+  "createdat",
+  "created_at",
+  "updatedat",
+  "updated_at",
+  "encryptionversion",
+  "encryption_version",
+  "keyreference",
+  "key_reference",
+  "fingerprint",
+  "metadata",
+  "activeexecutions",
+  "active_executions",
   "items",
-  "tags",
+  "types",
   "type",
   "status",
-  "health",
-  "permissions",
-  "usages",
+  "tags",
   "kind",
   "name",
-  "slug",
-  "message",
-  "testedat",
-  "tested_at",
+  "input",
+  "required",
+  "reason",
+  "checkedat",
+  "checked_at",
+  "result",
+  "details",
+  "drafts",
+  "versions",
+  "executions",
+  "secretfields",
+  "secret_fields",
+  "metadatafields",
+  "metadata_fields",
+  "contextname",
+  "context_name",
+  "keytype",
+  "key_type",
+  "tokenkind",
+  "token_kind",
+  "provider",
 ]);
 
 export type Sanitized<T> = {
@@ -287,31 +258,32 @@ export function sanitizeCredentialRecord(
   }
   const record: CredentialRecord = {
     id,
-    displayName,
-    tags: readStringList(raw.tags),
     type,
+    displayName,
     status: readEnum(raw.status, CREDENTIAL_STATUSES) ?? "active",
-    health: readEnum(raw.health, CREDENTIAL_HEALTH_STATES) ?? "unknown",
-    policyState:
-      readEnum(raw.policyState, CREDENTIAL_POLICY_STATES) ??
-      readEnum(raw.policy_state, CREDENTIAL_POLICY_STATES) ??
-      "allowed",
-    permittedActions: readActionList(
-      raw.permittedActions ?? raw.permitted_actions,
-    ),
+    tags: readStringList(raw.tags),
+    metadata: readStringMap(raw.metadata),
+    fingerprint: readString(raw.fingerprint),
+    encryptionVersion: readNumber(raw.encryptionVersion, raw.encryption_version),
+    keyReference: readString(raw.keyReference, raw.key_reference),
+    lastTestStatus:
+      readEnum(raw.lastTestStatus, CREDENTIAL_TEST_STATUSES) ??
+      readEnum(raw.last_test_status, CREDENTIAL_TEST_STATUSES) ??
+      "untested",
     lastTestedAt: optionalString(raw.lastTestedAt, raw.last_tested_at),
-    lastTestStatus: readTestStatus(raw.lastTestStatus ?? raw.last_test_status),
+    lastTestReason: optionalString(raw.lastTestReason, raw.last_test_reason),
+    lastUsedAt: optionalString(raw.lastUsedAt, raw.last_used_at),
+    lastUsedBy: optionalString(raw.lastUsedBy, raw.last_used_by),
+    useCount: readNumber(raw.useCount, raw.use_count),
     rotatedAt: optionalString(raw.rotatedAt, raw.rotated_at),
-    rotateAfter: optionalString(raw.rotateAfter, raw.rotate_after),
+    expiresAt: optionalString(raw.expiresAt, raw.expires_at),
+    disabledAt: optionalString(raw.disabledAt, raw.disabled_at),
+    createdBy: optionalString(raw.createdBy, raw.created_by),
+    updatedBy: optionalString(raw.updatedBy, raw.updated_by),
     createdAt: optionalString(raw.createdAt, raw.created_at),
     updatedAt: optionalString(raw.updatedAt, raw.updated_at),
-    ownerDisplayName: optionalString(
-      raw.ownerDisplayName,
-      raw.owner_display_name,
-    ),
-    allowedUse: readAllowedUse(raw.allowedUse ?? raw.allowed_use),
-    targetMetadata: readTargetMetadata(
-      raw.targetMetadata ?? raw.target_metadata,
+    permittedActions: readActionList(
+      raw.permittedActions ?? raw.permitted_actions,
     ),
   };
   return { value: record, strippedKeys: stripped.strippedKeys };
@@ -338,6 +310,33 @@ export function sanitizeCredentialList(value: unknown): Sanitized<CredentialReco
   return { value: records, strippedKeys: extraKeys };
 }
 
+export function sanitizeCatalog(value: unknown): Sanitized<CredentialCatalog> {
+  const stripped = stripSecretFields(value);
+  const typesRaw = isPlainObject(stripped.value) ? stripped.value.types : [];
+  const types: CredentialTypeInfo[] = [];
+  if (Array.isArray(typesRaw)) {
+    for (const item of typesRaw) {
+      if (!isPlainObject(item)) {
+        continue;
+      }
+      const type = readEnum(item.type, CREDENTIAL_MVP_TYPES);
+      const displayName = readString(item.displayName, item.display_name);
+      if (!type || !displayName) {
+        continue;
+      }
+      types.push({
+        type,
+        displayName,
+        secretFields: readCatalogFields(item.secretFields ?? item.secret_fields),
+        metadataFields: readCatalogFields(
+          item.metadataFields ?? item.metadata_fields,
+        ),
+      });
+    }
+  }
+  return { value: { types }, strippedKeys: stripped.strippedKeys };
+}
+
 export function sanitizeDeletionImpact(
   value: unknown,
 ): Sanitized<CredentialDeletionImpact | null> {
@@ -354,78 +353,111 @@ export function sanitizeDeletionImpact(
   const impact: CredentialDeletionImpact = {
     credentialId,
     displayName,
+    status: readEnum(raw.status, CREDENTIAL_STATUSES) ?? "active",
     canDelete: raw.canDelete !== false && raw.can_delete !== false,
-    blockingReason: optionalString(raw.blockingReason, raw.blocking_reason),
-    affectedDrafts: readDraftImpacts(raw.affectedDrafts ?? raw.affected_drafts),
-    affectedVersions: readVersionImpacts(
-      raw.affectedVersions ?? raw.affected_versions,
-    ),
-    activeExecutions: readExecutionImpacts(
-      raw.activeExecutions ?? raw.active_executions,
-    ),
+    blockReason: optionalString(raw.blockReason, raw.block_reason),
+    drafts: readRefs(raw.drafts),
+    versions: readRefs(raw.versions),
+    activeExecutions: readRefs(raw.activeExecutions ?? raw.active_executions),
   };
   if (impact.activeExecutions.length > 0) {
     impact.canDelete = false;
-    impact.blockingReason =
-      impact.blockingReason ||
+    impact.blockReason =
+      impact.blockReason ||
       "Active executions still reference this credential.";
   }
   return { value: impact, strippedKeys: stripped.strippedKeys };
 }
 
-export function sanitizeUsage(value: unknown): Sanitized<CredentialUsage> {
+export function sanitizeUsage(value: unknown): Sanitized<CredentialUsage | null> {
   const stripped = stripSecretFields(value);
-  const raw = isPlainObject(stripped.value) ? stripped.value : {};
+  if (!isPlainObject(stripped.value)) {
+    return { value: null, strippedKeys: stripped.strippedKeys };
+  }
+  const raw = stripped.value;
+  const credentialId = readString(raw.credentialId, raw.credential_id);
+  if (!credentialId) {
+    return { value: null, strippedKeys: stripped.strippedKeys };
+  }
   return {
     value: {
-      permissions: readPermissions(raw.permissions),
-      usages: readUsages(raw.usages),
+      credentialId,
+      lastUsedAt: optionalString(raw.lastUsedAt, raw.last_used_at),
+      lastUsedBy: optionalString(raw.lastUsedBy, raw.last_used_by),
+      useCount: readNumber(raw.useCount, raw.use_count),
+      drafts: readRefs(raw.drafts),
+      versions: readRefs(raw.versions),
+      executions: readRefs(raw.executions),
     },
     strippedKeys: stripped.strippedKeys,
   };
 }
 
-export function sanitizeAuditEvents(
-  value: unknown,
-): Sanitized<CredentialAuditEvent[]> {
+export function sanitizeEvents(value: unknown): Sanitized<CredentialEvent[]> {
   const stripped = stripSecretFields(value);
   const items = isPlainObject(stripped.value)
     ? stripped.value.items
     : Array.isArray(stripped.value)
       ? stripped.value
       : [];
-  const events: CredentialAuditEvent[] = [];
+  const events: CredentialEvent[] = [];
   if (Array.isArray(items)) {
     for (const item of items) {
       if (!isPlainObject(item)) {
         continue;
       }
       const id = readString(item.id);
+      const credentialId = readString(item.credentialId, item.credential_id);
       const eventType = readString(item.eventType, item.event_type);
       const occurredAt = readString(item.occurredAt, item.occurred_at);
-      if (!id || !eventType || !occurredAt) {
+      if (!id || !credentialId || !eventType || !occurredAt) {
         continue;
       }
-      const details = item.detailsRedacted ?? item.details_redacted;
       events.push({
         id,
+        credentialId,
         eventType,
-        actorDisplayName: optionalString(
-          item.actorDisplayName,
-          item.actor_display_name,
-        ),
+        actorId: optionalString(item.actorId, item.actor_id),
+        details: readStringMap(item.details),
         occurredAt,
-        detailsRedacted: readRedactedDetails(details),
       });
     }
   }
   return { value: events, strippedKeys: stripped.strippedKeys };
 }
 
+export function sanitizeTestResponse(value: unknown): Sanitized<{
+  result: CredentialTestResult;
+  credential: CredentialRecord | null;
+}> {
+  const stripped = stripSecretFields(value);
+  const raw = isPlainObject(stripped.value) ? stripped.value : {};
+  const resultRaw = isPlainObject(raw.result) ? raw.result : raw;
+  const credential = sanitizeCredentialRecord(raw.credential);
+  const status =
+    readEnum(resultRaw.status, CREDENTIAL_TEST_STATUSES) ?? "untested";
+  return {
+    value: {
+      result: {
+        status,
+        reason: optionalString(resultRaw.reason),
+        checkedAt: optionalString(resultRaw.checkedAt, resultRaw.checked_at),
+      },
+      credential: credential.value,
+    },
+    strippedKeys: [...stripped.strippedKeys, ...credential.strippedKeys],
+  };
+}
+
 /** List/search matches display name and tags only — never secret material. */
 export function matchesCredentialSearch(
   record: CredentialRecord,
-  query: CredentialListQuery,
+  query: {
+    q?: string;
+    type?: CredentialType | "";
+    tag?: string;
+    status?: CredentialStatus | "";
+  },
 ): boolean {
   const q = query.q?.trim().toLowerCase();
   if (q) {
@@ -451,7 +483,12 @@ export function matchesCredentialSearch(
 
 export function filterCredentialList(
   items: CredentialRecord[],
-  query: CredentialListQuery,
+  query: {
+    q?: string;
+    type?: CredentialType | "";
+    tag?: string;
+    status?: CredentialStatus | "";
+  },
 ): CredentialRecord[] {
   return items.filter((item) => matchesCredentialSearch(item, query));
 }
@@ -478,7 +515,7 @@ export function deletionConfirmationState(
       canProceed: false,
       requiresAck: true,
       blockingReason:
-        impact.blockingReason || "Deletion is blocked by the control plane.",
+        impact.blockReason || "Deletion is blocked by the control plane.",
     };
   }
   const expected = impact.displayName.trim();
@@ -493,60 +530,58 @@ export function deletionConfirmationState(
   return { canProceed: true, requiresAck: false };
 }
 
-export function credentialTypeLabel(type: CredentialType): string {
+export function credentialTypeLabel(
+  type: CredentialType,
+  catalog?: CredentialCatalog,
+): string {
+  const fromCatalog = catalog?.types.find((item) => item.type === type);
+  if (fromCatalog) {
+    return fromCatalog.displayName;
+  }
   switch (type) {
-    case "kubernetes_target":
-      return "Kubernetes target credential";
+    case "kubernetes":
+      return "Kubernetes kubeconfig";
     case "ssh_private_key":
       return "SSH private key";
     case "token":
       return "Token / API key";
     case "webhook_secret":
       return "Webhook secret";
+    case "provider":
+      return "Provider connector";
     default:
       return type;
   }
 }
 
-export function credentialHealthLabel(health: CredentialHealth): string {
-  switch (health) {
-    case "healthy":
-      return "Healthy";
-    case "degraded":
-      return "Degraded";
-    case "failed":
-      return "Failed";
-    case "untested":
-      return "Untested";
-    default:
-      return "Unknown";
-  }
-}
-
-export function credentialPolicyLabel(state: CredentialPolicyState): string {
-  switch (state) {
-    case "restricted":
-      return "Restricted";
-    case "pending_approval":
-      return "Approval required";
-    default:
-      return "Allowed";
-  }
+export function credentialStatusLabel(status: CredentialStatus): string {
+  return status === "disabled" ? "Disabled" : "Active";
 }
 
 export function parseTagsInput(value: string): string[] {
   return value
     .split(/[,]+/)
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag) => /^[a-z0-9-]{1,40}$/.test(tag));
 }
 
 export function formatTagsInput(tags: string[]): string {
   return tags.join(", ");
 }
 
+export function formatRef(ref: CredentialRef): string {
+  const name = ref.workflowName || ref.workflowSlug || ref.workflowId;
+  if (ref.kind === "version" && ref.versionNumber) {
+    return `${name} v${ref.versionNumber}`;
+  }
+  if (ref.kind === "execution") {
+    return `${name} · ${ref.executionStatus || ref.executionId || "execution"}`;
+  }
+  return ref.workflowSlug ? `${name} (${ref.workflowSlug})` : name;
+}
+
 /**
- * After a successful create/rotate/test, overwrite secret strings and
+ * After a successful create/rotate, overwrite secret strings and
  * return a fresh empty draft. Callers must replace React state with the
  * return value — do not keep the previous object.
  */
@@ -568,88 +603,57 @@ export function recordHasAction(
   return record.permittedActions.includes(action);
 }
 
-export function isSafeRecordKey(key: string): boolean {
-  return SAFE_RECORD_KEYS.has(key);
+export function isCredentialType(value: unknown): value is CredentialType {
+  return readEnum(value, CREDENTIAL_MVP_TYPES) !== undefined;
 }
 
-function readTargetMetadata(value: unknown): CredentialTargetMetadata {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-  const meta: CredentialTargetMetadata = {};
-  const clusterName = optionalString(value.clusterName, value.cluster_name);
-  const apiServerHost = optionalString(
-    value.apiServerHost,
-    value.api_server_host,
-  );
-  const hostname = optionalString(value.hostname);
-  const username = optionalString(value.username);
-  const hostKeyFingerprint = optionalString(
-    value.hostKeyFingerprint,
-    value.host_key_fingerprint,
-  );
-  const issuerHint = optionalString(value.issuerHint, value.issuer_hint);
-  const audienceHint = optionalString(value.audienceHint, value.audience_hint);
-  const destinationLabel = optionalString(
-    value.destinationLabel,
-    value.destination_label,
-  );
-  const port = typeof value.port === "number" && Number.isFinite(value.port)
-    ? value.port
-    : undefined;
-  if (clusterName) meta.clusterName = clusterName;
-  if (apiServerHost) meta.apiServerHost = apiServerHost;
-  if (hostname) meta.hostname = hostname;
-  if (port !== undefined) meta.port = port;
-  if (username) meta.username = username;
-  if (hostKeyFingerprint) meta.hostKeyFingerprint = hostKeyFingerprint;
-  if (issuerHint) meta.issuerHint = issuerHint;
-  if (audienceHint) meta.audienceHint = audienceHint;
-  if (destinationLabel) meta.destinationLabel = destinationLabel;
-  for (const key of Object.keys(value)) {
-    if (!SAFE_TARGET_KEYS.has(key) && isSecretFieldName(key)) {
-      continue;
-    }
-  }
-  return meta;
+export function isCredentialStatus(value: unknown): value is CredentialStatus {
+  return readEnum(value, CREDENTIAL_STATUSES) !== undefined;
 }
 
-function readDraftImpacts(value: unknown): DeletionImpactDraft[] {
+function readCatalogFields(value: unknown): CredentialCatalogField[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const out: DeletionImpactDraft[] = [];
+  const out: CredentialCatalogField[] = [];
   for (const item of value) {
     if (!isPlainObject(item)) {
       continue;
     }
-    const workflowId = readString(item.workflowId, item.workflow_id);
     const name = readString(item.name);
-    if (!workflowId || !name) {
+    if (!name) {
       continue;
     }
+    const input = readCatalogInput(item.input);
     out.push({
-      workflowId,
       name,
-      slug: optionalString(item.slug),
+      input,
+      required: item.required === true,
     });
   }
   return out;
 }
 
-function readVersionImpacts(value: unknown): DeletionImpactVersion[] {
+function readCatalogInput(value: unknown): CatalogFieldInput {
+  if (value === "textarea" || value === "password" || value === "text") {
+    return value;
+  }
+  return "text";
+}
+
+function readRefs(value: unknown): CredentialRef[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const out: DeletionImpactVersion[] = [];
+  const out: CredentialRef[] = [];
   for (const item of value) {
     if (!isPlainObject(item)) {
       continue;
     }
     const workflowId = readString(item.workflowId, item.workflow_id);
-    const versionId = readString(item.versionId, item.version_id);
-    const name = readString(item.name);
-    if (!workflowId || !versionId || !name) {
+    const workflowName = readString(item.workflowName, item.workflow_name);
+    const kind = readEnum(item.kind, CREDENTIAL_REF_KINDS);
+    if (!workflowId || !workflowName || !kind) {
       continue;
     }
     const versionNumber =
@@ -658,99 +662,26 @@ function readVersionImpacts(value: unknown): DeletionImpactVersion[] {
         : typeof item.version_number === "number"
           ? item.version_number
           : undefined;
-    out.push({ workflowId, versionId, name, versionNumber });
-  }
-  return out;
-}
-
-function readExecutionImpacts(value: unknown): DeletionImpactExecution[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const out: DeletionImpactExecution[] = [];
-  for (const item of value) {
-    if (!isPlainObject(item)) {
-      continue;
-    }
-    const executionId = readString(item.executionId, item.execution_id);
-    const workflowName = readString(item.workflowName, item.workflow_name);
-    const status = readString(item.status);
-    if (!executionId || !workflowName || !status) {
-      continue;
-    }
-    out.push({ executionId, workflowName, status });
-  }
-  return out;
-}
-
-function readPermissions(value: unknown): CredentialPermissionGrant[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const out: CredentialPermissionGrant[] = [];
-  for (const item of value) {
-    if (!isPlainObject(item)) {
-      continue;
-    }
-    const principalType = readString(item.principalType, item.principal_type);
-    const principalDisplayName = readString(
-      item.principalDisplayName,
-      item.principal_display_name,
-    );
-    const permission = readString(item.permission);
-    if (!principalType || !principalDisplayName || !permission) {
-      continue;
-    }
-    out.push({ principalType, principalDisplayName, permission });
-  }
-  return out;
-}
-
-function readUsages(value: unknown): CredentialUsageItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const out: CredentialUsageItem[] = [];
-  for (const item of value) {
-    if (!isPlainObject(item)) {
-      continue;
-    }
-    const workflowId = readString(item.workflowId, item.workflow_id);
-    const workflowName = readString(item.workflowName, item.workflow_name);
-    const kind = item.kind === "version" ? "version" : "draft";
-    if (!workflowId || !workflowName) {
-      continue;
-    }
     out.push({
+      kind,
       workflowId,
       workflowName,
-      nodeId: optionalString(item.nodeId, item.node_id),
+      workflowSlug: optionalString(item.workflowSlug, item.workflow_slug),
       versionId: optionalString(item.versionId, item.version_id),
-      kind,
+      versionNumber,
+      executionId: optionalString(item.executionId, item.execution_id),
+      executionStatus: optionalString(
+        item.executionStatus,
+        item.execution_status,
+      ),
     });
   }
   return out;
 }
 
-function readRedactedDetails(
-  value: unknown,
-): Record<string, string> | undefined {
-  if (!isPlainObject(value)) {
-    return undefined;
-  }
-  const out: Record<string, string> = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (isSecretFieldName(key) || typeof child !== "string") {
-      continue;
-    }
-    out[key] = child;
-  }
-  return Object.keys(out).length ? out : undefined;
-}
-
 function readActionList(value: unknown): CredentialAction[] {
   if (!Array.isArray(value)) {
-    return [...CREDENTIAL_ACTIONS];
+    return [];
   }
   const out: CredentialAction[] = [];
   for (const item of value) {
@@ -760,29 +691,6 @@ function readActionList(value: unknown): CredentialAction[] {
     }
   }
   return out;
-}
-
-function readAllowedUse(value: unknown): CredentialAllowedUse[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const out: CredentialAllowedUse[] = [];
-  for (const item of value) {
-    const use = readEnum(item, CREDENTIAL_ALLOWED_USES);
-    if (use && !out.includes(use)) {
-      out.push(use);
-    }
-  }
-  return out;
-}
-
-function readTestStatus(
-  value: unknown,
-): "passed" | "failed" | "untested" | undefined {
-  if (value === "passed" || value === "failed" || value === "untested") {
-    return value;
-  }
-  return undefined;
 }
 
 function readEnum<T extends string>(
@@ -809,6 +717,15 @@ function optionalString(...values: unknown[]): string | undefined {
   return value || undefined;
 }
 
+function readNumber(...values: unknown[]): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
 function readStringList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -819,14 +736,23 @@ function readStringList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function readStringMap(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (isSecretFieldName(key) || typeof child !== "string") {
+      continue;
+    }
+    const trimmed = child.trim();
+    if (trimmed) {
+      out[key] = trimmed;
+    }
+  }
+  return out;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isCredentialType(value: unknown): value is CredentialType {
-  return readEnum(value, CREDENTIAL_MVP_TYPES) !== undefined;
-}
-
-export function isCredentialStatus(value: unknown): value is CredentialStatus {
-  return readEnum(value, CREDENTIAL_STATUSES) !== undefined;
 }

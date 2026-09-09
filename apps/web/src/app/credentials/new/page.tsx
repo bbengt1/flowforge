@@ -13,8 +13,8 @@ export default function NewCredentialPage() {
           New vault credential
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Display name, type, masked secret fields, target metadata, ownership,
-          allowed use, and optional test. After a successful create the secret
+          Catalog-driven wizard: display name, type, masked secret fields,
+          safe metadata, and optional expiresAt. After create the secret
           inputs are emptied and only metadata is kept.
         </p>
       </header>

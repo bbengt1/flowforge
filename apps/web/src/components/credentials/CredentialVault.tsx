@@ -6,10 +6,11 @@ import { CredentialCard } from "@/components/credentials/CredentialCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { filterCredentialList } from "@/lib/credential";
-import { listCredentials } from "@/lib/credential-client";
+import { getCredentialCatalog, listCredentials } from "@/lib/credential-client";
+import { FALLBACK_CREDENTIAL_CATALOG } from "@/lib/credential-contract";
 import {
-  CREDENTIAL_MVP_TYPES,
   CREDENTIAL_STATUSES,
+  type CredentialCatalog,
   type CredentialListQuery,
   type CredentialRecord,
 } from "@/lib/credential-types";
@@ -37,6 +38,9 @@ export function CredentialVault() {
   );
 
   const [items, setItems] = useState<CredentialRecord[]>([]);
+  const [catalog, setCatalog] = useState<CredentialCatalog>(
+    FALLBACK_CREDENTIAL_CATALOG,
+  );
   const [query, setQuery] = useState<CredentialListQuery>({
     q: "",
     type: "",
@@ -60,20 +64,21 @@ export function CredentialVault() {
   async function refresh() {
     setPending(true);
     setProblem(null);
-    const result = await listCredentials(identity, {
-      q: query.q,
-      type: query.type,
-      tag: query.tag,
-      status: query.status,
-    });
-    setLastRequestId(result.requestId);
+    const [list, catalogResult] = await Promise.all([
+      listCredentials(identity),
+      getCredentialCatalog(identity),
+    ]);
+    setLastRequestId(list.requestId);
     setPending(false);
-    if (!result.ok) {
-      setProblem(result.problem);
+    if (!list.ok) {
+      setProblem(list.problem);
       return;
     }
-    setItems(result.items);
-    setStrippedKeys(result.strippedKeys);
+    setItems(list.items);
+    setStrippedKeys(list.strippedKeys);
+    if (catalogResult.ok) {
+      setCatalog(catalogResult.catalog);
+    }
   }
 
   return (
@@ -98,8 +103,9 @@ export function CredentialVault() {
           <div>
             <h2 className="text-lg font-semibold">Workspace vault</h2>
             <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-              Search by display name or tags only. Plaintext secrets are
-              never queried, stored in this tab, or rendered on cards.
+              <code className="font-mono text-xs">GET /credentials</code>{" "}
+              returns metadata only. Filter by display name or tags in the
+              browser. Plaintext is never queried, stored, or rendered.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -124,7 +130,6 @@ export function CredentialVault() {
           className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void refresh();
           }}
         >
           <label className="text-sm">
@@ -151,9 +156,9 @@ export function CredentialVault() {
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
             >
               <option value="">Any</option>
-              {CREDENTIAL_MVP_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
+              {catalog.types.map((item) => (
+                <option key={item.type} value={item.type}>
+                  {item.displayName}
                 </option>
               ))}
             </select>
@@ -189,15 +194,6 @@ export function CredentialVault() {
               ))}
             </select>
           </label>
-          <div className="sm:col-span-2 lg:col-span-4">
-            <button
-              type="submit"
-              disabled={pending || !ready}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-            >
-              Search metadata
-            </button>
-          </div>
         </form>
       </section>
 
@@ -226,7 +222,7 @@ export function CredentialVault() {
         <ul className="grid gap-4 md:grid-cols-2">
           {visible.map((credential) => (
             <li key={credential.id}>
-              <CredentialCard credential={credential} />
+              <CredentialCard credential={credential} catalog={catalog} />
             </li>
           ))}
         </ul>

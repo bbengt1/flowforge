@@ -3,10 +3,13 @@ import { afterEach, describe, it } from "node:test";
 import {
   createCredential,
   deleteCredential,
+  getCredentialCatalog,
   getCredentialDeletionImpact,
+  getCredentialEvents,
   listCredentials,
   rotateCredential,
   testCredential,
+  recordCredentialUse,
 } from "./credential-client.ts";
 import { emptySecretDraft } from "./credential-contract.ts";
 import type { DevIdentity } from "./identity-headers.ts";
@@ -47,20 +50,23 @@ function metadataPayload(overrides: Record<string, unknown> = {}) {
   return {
     id: CREDENTIAL_ID,
     displayName: "prod-k8s",
-    type: "kubernetes_target",
+    type: "kubernetes",
     tags: ["prod"],
     status: "active",
-    health: "healthy",
-    policyState: "allowed",
-    permittedActions: ["view", "rotate", "test", "delete"],
+    metadata: { contextName: "ops" },
+    fingerprint: "sha256:abc",
+    encryptionVersion: 1,
+    keyReference: "env:CREDENTIAL_KEK",
+    lastTestStatus: "passed",
     lastTestedAt: "2026-09-08T21:00:00.000Z",
     rotatedAt: "2026-09-08T20:00:00.000Z",
+    permittedActions: ["view", "manage", "rotate", "test", "delete", "use"],
     ...overrides,
   };
 }
 
 describe("credential client", () => {
-  it("lists with credentials include and metadata-only search", async () => {
+  it("lists metadata without invented query params", async () => {
     withSession();
     const seen: { url?: string; init?: RequestInit } = {};
     globalThis.fetch = (async (input, init) => {
@@ -85,11 +91,11 @@ describe("credential client", () => {
       );
     }) as typeof fetch;
 
-    const result = await listCredentials(identity, { q: "prod", tag: "prod" });
+    const result = await listCredentials(identity);
     assert.equal(result.ok, true);
-    assert.equal(seen.url, "/api/v1/credentials?q=prod&tag=prod");
+    assert.equal(seen.url, "/api/v1/credentials");
     assert.equal(seen.init?.credentials, "include");
-    assert.doesNotMatch(seen.url ?? "", /privateKey|kubeconfig|BEGIN/);
+    assert.doesNotMatch(seen.url ?? "", /q=|type=|privateKey|kubeconfig|BEGIN/);
     if (result.ok) {
       assert.equal(result.items.length, 2);
       assert.equal(result.items[1]?.displayName, "ssh-edge");
@@ -114,9 +120,13 @@ describe("credential client", () => {
       if (url.endsWith("/test")) {
         return new Response(
           JSON.stringify({
-            status: "passed",
-            testedAt: "2026-09-08T22:00:00.000Z",
-            token: "should-be-stripped",
+            result: {
+              status: "passed",
+              reason: "payload shape is valid",
+              checkedAt: "2026-09-08T22:00:00.000Z",
+              token: "should-be-stripped",
+            },
+            credential: metadataPayload(),
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -131,15 +141,16 @@ describe("credential client", () => {
     createDraft.kubeconfig = "apiVersion: v1\nkind: Config\n";
     const created = await createCredential(identity, {
       displayName: "prod-k8s",
-      type: "kubernetes_target",
+      type: "kubernetes",
       secret: createDraft,
       tags: ["prod"],
-      testOnCreate: true,
+      metadata: { contextName: "ops" },
     });
     assert.equal(created.ok, true);
     assert.equal(createDraft.kubeconfig, "");
     if (created.ok) {
       assert.equal(created.credential.displayName, "prod-k8s");
+      assert.equal(created.credential.type, "kubernetes");
       assert.equal(
         JSON.stringify(created.credential).includes("kind: Config"),
         false,
@@ -152,9 +163,8 @@ describe("credential client", () => {
     const rotated = await rotateCredential(
       identity,
       CREDENTIAL_ID,
-      "kubernetes_target",
+      "kubernetes",
       rotateDraft,
-      true,
     );
     assert.equal(rotated.ok, true);
     assert.equal(rotateDraft.kubeconfig, "");
@@ -163,19 +173,22 @@ describe("credential client", () => {
     assert.equal(tested.ok, true);
     if (tested.ok) {
       assert.equal(tested.test.status, "passed");
+      assert.equal(tested.test.reason, "payload shape is valid");
       assert.equal(
         JSON.stringify(tested.test).includes("should-be-stripped"),
         false,
       );
-      assert.ok(tested.strippedKeys.includes("token"));
+      assert.ok(tested.strippedKeys.some((key) => key.includes("token")));
     }
 
     assert.equal(seen[0]?.url, "/api/v1/credentials");
     assert.equal(seen[0]?.headers.get(CSRF_HEADER), "csrf-ok");
     assert.match(seen[0]?.body ?? "", /kind: Config/);
+    assert.doesNotMatch(seen[0]?.body ?? "", /testOnCreate|targetMetadata|ownership/);
     assert.equal(seen[1]?.url, `/api/v1/credentials/${CREDENTIAL_ID}/rotate`);
     assert.equal(seen[1]?.headers.get(CSRF_HEADER), "csrf-ok");
     assert.match(seen[1]?.body ?? "", /replacement-kubeconfig/);
+    assert.doesNotMatch(seen[1]?.body ?? "", /testOnRotate/);
     assert.equal(seen[2]?.url, `/api/v1/credentials/${CREDENTIAL_ID}/test`);
     assert.equal(seen[2]?.headers.get(CSRF_HEADER), "csrf-ok");
     assert.equal(seen[2]?.body, "{}");
@@ -184,23 +197,101 @@ describe("credential client", () => {
     }
   });
 
-  it("loads deletion impact then deletes with CSRF", async () => {
+  it("loads catalog, records use as 204, and reads events not audit", async () => {
     withSession();
-    const seen: Array<{ url: string; method?: string; headers: Headers }> = [];
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      seen.push(String(input));
+      const url = String(input);
+      if (url.endsWith("/catalog")) {
+        return new Response(
+          JSON.stringify({
+            types: [
+              {
+                type: "kubernetes",
+                displayName: "Kubernetes kubeconfig",
+                secretFields: [
+                  { name: "kubeconfig", input: "textarea", required: true },
+                ],
+                metadataFields: [{ name: "contextName", input: "text" }],
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/use")) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "evt-1",
+              credentialId: CREDENTIAL_ID,
+              eventType: "used",
+              occurredAt: "2026-09-08T22:00:00.000Z",
+              details: { outcome: "ok" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const catalog = await getCredentialCatalog(identity);
+    assert.equal(catalog.ok, true);
+    if (catalog.ok) {
+      assert.equal(catalog.usedFallback, false);
+      assert.equal(catalog.catalog.types[0]?.type, "kubernetes");
+    }
+    const used = await recordCredentialUse(identity, CREDENTIAL_ID);
+    assert.equal(used.ok, true);
+    if (used.ok) {
+      assert.equal(used.statusCode, 204);
+    }
+    const events = await getCredentialEvents(identity, CREDENTIAL_ID);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.equal(events.items[0]?.eventType, "used");
+    }
+    assert.deepEqual(seen, [
+      "/api/v1/credentials/catalog",
+      `/api/v1/credentials/${CREDENTIAL_ID}/use`,
+      `/api/v1/credentials/${CREDENTIAL_ID}/events`,
+    ]);
+  });
+
+  it("loads deletion impact then deletes with confirm:true and CSRF", async () => {
+    withSession();
+    const seen: Array<{
+      url: string;
+      method?: string;
+      headers: Headers;
+      body: string;
+    }> = [];
     globalThis.fetch = (async (input, init) => {
       seen.push({
         url: String(input),
         method: init?.method,
         headers: new Headers(init?.headers),
+        body: typeof init?.body === "string" ? init.body : "",
       });
       if (String(input).endsWith("/deletion-impact")) {
         return new Response(
           JSON.stringify({
             credentialId: CREDENTIAL_ID,
             displayName: "prod-k8s",
+            status: "active",
             canDelete: true,
-            affectedDrafts: [{ workflowId: CREDENTIAL_ID, name: "rollout" }],
-            affectedVersions: [],
+            drafts: [
+              {
+                kind: "draft",
+                workflowId: CREDENTIAL_ID,
+                workflowName: "rollout",
+              },
+            ],
+            versions: [],
             activeExecutions: [],
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -213,7 +304,7 @@ describe("credential client", () => {
     assert.equal(impact.ok, true);
     if (impact.ok) {
       assert.equal(impact.impact.canDelete, true);
-      assert.equal(impact.impact.affectedDrafts[0]?.name, "rollout");
+      assert.equal(impact.impact.drafts[0]?.workflowName, "rollout");
     }
     const deleted = await deleteCredential(identity, CREDENTIAL_ID);
     assert.equal(deleted.ok, true);
@@ -224,6 +315,7 @@ describe("credential client", () => {
     assert.equal(seen[1]?.url, `/api/v1/credentials/${CREDENTIAL_ID}`);
     assert.equal(seen[1]?.method, "DELETE");
     assert.equal(seen[1]?.headers.get(CSRF_HEADER), "csrf-ok");
+    assert.equal(seen[1]?.body, JSON.stringify({ confirm: true }));
   });
 
   it("fail-closes create locally when a session has no CSRF token", async () => {

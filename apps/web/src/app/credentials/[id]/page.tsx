@@ -18,9 +18,10 @@ export default async function CredentialDetailPage({ params }: PageProps) {
           Credential metadata
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Edit safe metadata, review usage, rotate or replace the secret,
-          disable, test, and confirm deletion impact. Plaintext is never
-          returned after create or rotate.
+          Edit safe metadata, rotate, disable or enable, test, record use
+          (204), review usage and events, then delete with{" "}
+          <code>{`{confirm:true}`}</code> after deletion-impact. Plaintext
+          is never returned after create or rotate.
         </p>
       </header>
       <CredentialDetail credentialId={id} />

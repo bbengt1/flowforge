@@ -1,6 +1,6 @@
 "use client";
 
-import { deletionConfirmationState } from "@/lib/credential";
+import { deletionConfirmationState, formatRef } from "@/lib/credential";
 import type { CredentialDeletionImpact } from "@/lib/credential-types";
 
 type DeleteImpactDialogProps = {
@@ -42,8 +42,11 @@ export function DeleteImpactDialog({
           Confirm deletion
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Deletion reports affected drafts and published workflows first.
-          Active executions block delete. Secret values are never shown.
+          Load{" "}
+          <code className="font-mono text-xs">GET .../deletion-impact</code>{" "}
+          first. Delete sends{" "}
+          <code className="font-mono text-xs">{`{confirm:true}`}</code>. Active
+          executions block delete. Secret values are never shown.
         </p>
 
         {!impact ? (
@@ -60,25 +63,17 @@ export function DeleteImpactDialog({
             <ImpactList
               title="Affected drafts"
               empty="No drafts reference this credential."
-              items={impact.affectedDrafts.map(
-                (item) => `${item.name}${item.slug ? ` (${item.slug})` : ""}`,
-              )}
+              items={impact.drafts.map(formatRef)}
             />
             <ImpactList
               title="Affected published versions"
               empty="No published versions reference this credential."
-              items={impact.affectedVersions.map((item) =>
-                item.versionNumber
-                  ? `${item.name} v${item.versionNumber}`
-                  : item.name,
-              )}
+              items={impact.versions.map(formatRef)}
             />
             <ImpactList
               title="Active executions"
               empty="No active executions."
-              items={impact.activeExecutions.map(
-                (item) => `${item.workflowName} · ${item.status}`,
-              )}
+              items={impact.activeExecutions.map(formatRef)}
             />
 
             {confirmation.blockingReason ? (

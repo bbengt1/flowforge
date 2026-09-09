@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  FALLBACK_CREDENTIAL_CATALOG,
   buildCreateCredentialBody,
+  buildDeleteCredentialBody,
   buildRotateCredentialBody,
-  credentialListSearch,
+  credentialEventsPath,
+  credentialListPath,
   emptySecretDraft,
   forgetSecretDraft,
   secretFieldsForType,
@@ -15,10 +18,12 @@ import {
   filterCredentialList,
   isSecretFieldName,
   matchesCredentialSearch,
-  sanitizeAuditEvents,
+  sanitizeCatalog,
   sanitizeCredentialList,
   sanitizeCredentialRecord,
   sanitizeDeletionImpact,
+  sanitizeEvents,
+  sanitizeTestResponse,
   stripSecretFields,
 } from "./credential.ts";
 import type { CredentialRecord } from "./credential-types.ts";
@@ -27,13 +32,16 @@ const sample: CredentialRecord = {
   id: "11111111-1111-4111-8111-111111111111",
   displayName: "prod-k8s",
   tags: ["prod", "cluster"],
-  type: "kubernetes_target",
+  type: "kubernetes",
   status: "active",
-  health: "healthy",
-  policyState: "allowed",
-  permittedActions: ["view", "edit", "rotate", "test", "delete"],
-  allowedUse: ["credential.use"],
-  targetMetadata: { clusterName: "ops", apiServerHost: "k8s.example.test" },
+  metadata: { contextName: "ops" },
+  fingerprint: "sha256:abc",
+  encryptionVersion: 1,
+  keyReference: "env:CREDENTIAL_KEK",
+  lastTestStatus: "passed",
+  lastTestedAt: "2026-09-08T21:00:00.000Z",
+  useCount: 0,
+  permittedActions: ["view", "manage", "rotate", "test", "delete"],
 };
 
 describe("credential secret hygiene", () => {
@@ -45,8 +53,11 @@ describe("credential secret hygiene", () => {
     assert.equal(isSecretFieldName("ciphertext"), true);
     assert.equal(isSecretFieldName("dek_envelope"), true);
     assert.equal(isSecretFieldName("displayName"), false);
+    assert.equal(isSecretFieldName("credential"), false);
     assert.equal(isSecretFieldName("credentialId"), false);
     assert.equal(isSecretFieldName("lastTestStatus"), false);
+    assert.equal(isSecretFieldName("fingerprint"), false);
+    assert.equal(isSecretFieldName("tokenKind"), false);
     assert.equal(isSecretFieldName("tags"), false);
   });
 
@@ -54,19 +65,22 @@ describe("credential secret hygiene", () => {
     const sanitized = sanitizeCredentialRecord({
       id: sample.id,
       displayName: "prod-k8s",
-      type: "kubernetes_target",
+      type: "kubernetes",
       tags: ["prod"],
       status: "active",
+      fingerprint: "sha256:abc",
       kubeconfig: "apiVersion: v1\nkind: Config",
       secret: { token: "super-secret-token" },
-      targetMetadata: {
-        clusterName: "ops",
+      metadata: {
+        contextName: "ops",
         connectionString: "https://user:pass@k8s",
       },
     });
     assert.ok(sanitized.value);
     assert.equal(sanitized.value?.displayName, "prod-k8s");
-    assert.equal(sanitized.value?.targetMetadata.clusterName, "ops");
+    assert.equal(sanitized.value?.type, "kubernetes");
+    assert.equal(sanitized.value?.metadata.contextName, "ops");
+    assert.equal(sanitized.value?.metadata.connectionString, undefined);
     assert.ok(sanitized.strippedKeys.includes("kubeconfig"));
     assert.ok(sanitized.strippedKeys.includes("secret"));
     assert.ok(
@@ -119,18 +133,14 @@ describe("credential secret hygiene", () => {
     assert.equal(matchesCredentialSearch(sample, { type: "token" }), false);
   });
 
-  it("list search query string never includes secret keys", () => {
-    const path = credentialListSearch({
-      q: "prod-k8s",
-      type: "kubernetes_target",
-      tag: "prod",
-      status: "active",
-    });
+  it("list path has no invented query params and never includes secret keys", () => {
+    const path = credentialListPath();
+    assert.equal(path, "/credentials");
+    assert.doesNotMatch(path, /kubeconfig|privateKey|token=|secret=|\?/i);
     assert.equal(
-      path,
-      "/credentials?q=prod-k8s&type=kubernetes_target&tag=prod&status=active",
+      credentialEventsPath(sample.id),
+      `/credentials/${sample.id}/events`,
     );
-    assert.doesNotMatch(path, /kubeconfig|privateKey|token=|secret=/i);
   });
 
   it("create/rotate builders send secrets once then forget them", () => {
@@ -139,28 +149,35 @@ describe("credential secret hygiene", () => {
     draft.token = "k8s-token-value";
     const body = buildCreateCredentialBody({
       displayName: " prod-k8s ",
-      tags: [" prod ", ""],
-      type: "kubernetes_target",
+      tags: [" Prod ", ""],
+      type: "kubernetes",
       secret: draft,
-      testOnCreate: true,
+      metadata: { contextName: "ops", kubeconfig: "must-not-copy" },
     });
     assert.equal(body.secret.kubeconfig, "-----BEGIN FAKE-----");
+    assert.equal(body.secret.token, undefined);
     assert.equal(body.displayName, "prod-k8s");
     assert.deepEqual(body.tags, ["prod"]);
+    assert.deepEqual(body.metadata, { contextName: "ops" });
+    assert.equal("testOnCreate" in body, false);
+    assert.equal("targetMetadata" in body, false);
 
     const forgotten = forgetSecretDraft(draft);
     assert.equal(draft.kubeconfig, "");
     assert.equal(draft.token, "");
     assert.equal(forgotten.kubeconfig, "");
     assert.equal(secretFieldsForType("ssh_private_key").includes("privateKey"), true);
+    assert.equal(secretFieldsForType("provider").includes("token"), true);
 
     const rotateDraft = emptySecretDraft();
     rotateDraft.privateKey = "-----BEGIN OPENSSH PRIVATE KEY-----";
-    const rotate = buildRotateCredentialBody("ssh_private_key", rotateDraft, true);
+    const rotate = buildRotateCredentialBody("ssh_private_key", rotateDraft);
     assert.equal(rotate.secret.privateKey, "-----BEGIN OPENSSH PRIVATE KEY-----");
     assert.equal(rotate.secret.kubeconfig, undefined);
+    assert.equal("testOnRotate" in rotate, false);
     clearSecretDraftAfterSubmit(rotateDraft);
     assert.equal(rotateDraft.privateKey, "");
+    assert.deepEqual(buildDeleteCredentialBody(), { confirm: true });
   });
 
   it("delete-impact confirmation requires typed display name and blocks active executions", () => {
@@ -170,14 +187,23 @@ describe("credential secret hygiene", () => {
     const blocked = sanitizeDeletionImpact({
       credentialId: sample.id,
       displayName: "prod-k8s",
+      status: "active",
       canDelete: true,
-      affectedDrafts: [{ workflowId: sample.id, name: "rollout" }],
-      affectedVersions: [],
+      drafts: [
+        {
+          kind: "draft",
+          workflowId: sample.id,
+          workflowName: "rollout",
+        },
+      ],
+      versions: [],
       activeExecutions: [
         {
-          executionId: "33333333-3333-4333-8333-333333333333",
+          kind: "execution",
+          workflowId: sample.id,
           workflowName: "rollout",
-          status: "running",
+          executionId: "33333333-3333-4333-8333-333333333333",
+          executionStatus: "running",
         },
       ],
     }).value;
@@ -190,13 +216,22 @@ describe("credential secret hygiene", () => {
     const ready = sanitizeDeletionImpact({
       credential_id: sample.id,
       display_name: "prod-k8s",
+      status: "active",
       can_delete: true,
-      affected_drafts: [{ workflow_id: sample.id, name: "rollout", slug: "rollout" }],
-      affected_versions: [
+      drafts: [
         {
+          kind: "draft",
           workflow_id: sample.id,
+          workflow_name: "rollout",
+          workflow_slug: "rollout",
+        },
+      ],
+      versions: [
+        {
+          kind: "version",
+          workflow_id: sample.id,
+          workflow_name: "rollout",
           version_id: "44444444-4444-4444-8444-444444444444",
-          name: "rollout",
           version_number: 2,
         },
       ],
@@ -205,26 +240,64 @@ describe("credential secret hygiene", () => {
     assert.ok(ready);
     assert.equal(deletionConfirmationState(ready, "wrong").canProceed, false);
     assert.equal(deletionConfirmationState(ready, "prod-k8s").canProceed, true);
-    assert.equal(ready.affectedDrafts[0]?.name, "rollout");
-    assert.equal(ready.affectedVersions[0]?.versionNumber, 2);
+    assert.equal(ready.drafts[0]?.workflowName, "rollout");
+    assert.equal(ready.versions[0]?.versionNumber, 2);
   });
 
-  it("audit sanitizer drops secret details and keeps redacted metadata", () => {
-    const events = sanitizeAuditEvents({
+  it("events sanitizer drops secret details and keeps redacted metadata", () => {
+    const events = sanitizeEvents({
       items: [
         {
           id: "evt-1",
-          eventType: "credential.rotated",
-          actorDisplayName: "Chloe",
+          credentialId: sample.id,
+          eventType: "rotated",
+          actorId: "operator-chloe",
           occurredAt: "2026-09-08T22:00:00.000Z",
-          detailsRedacted: { outcome: "ok", token: "leaked" },
+          details: { outcome: "ok", token: "leaked" },
         },
       ],
     });
-    assert.equal(events.value[0]?.eventType, "credential.rotated");
-    assert.equal(events.value[0]?.detailsRedacted?.outcome, "ok");
-    assert.equal(events.value[0]?.detailsRedacted?.token, undefined);
+    assert.equal(events.value[0]?.eventType, "rotated");
+    assert.equal(events.value[0]?.details.outcome, "ok");
+    assert.equal(events.value[0]?.details.token, undefined);
     assert.ok(events.strippedKeys.some((key) => key.endsWith("token")));
+  });
+
+  it("test response uses result.reason/checkedAt and strips leaked secrets", () => {
+    const tested = sanitizeTestResponse({
+      result: {
+        status: "passed",
+        reason: "payload shape is valid",
+        checkedAt: "2026-09-08T22:00:00.000Z",
+        token: "should-be-stripped",
+      },
+      credential: {
+        ...sample,
+        secret: { kubeconfig: "nope" },
+      },
+    });
+    assert.equal(tested.value.result.status, "passed");
+    assert.equal(tested.value.result.reason, "payload shape is valid");
+    assert.equal(tested.value.credential?.displayName, "prod-k8s");
+    assert.equal(
+      JSON.stringify(tested.value).includes("should-be-stripped"),
+      false,
+    );
+    assert.ok(tested.strippedKeys.some((key) => key.includes("token")));
+  });
+
+  it("catalog sanitizer keeps field names only", () => {
+    const catalog = sanitizeCatalog({
+      types: FALLBACK_CREDENTIAL_CATALOG.types,
+      secret: { token: "nope" },
+    });
+    assert.equal(catalog.value.types.length, 5);
+    assert.equal(catalog.value.types[0]?.type, "kubernetes");
+    assert.deepEqual(
+      catalog.value.types.map((item) => item.type),
+      ["kubernetes", "ssh_private_key", "token", "webhook_secret", "provider"],
+    );
+    assert.ok(catalog.strippedKeys.includes("secret"));
   });
 
   it("never treats secret maps as safe storage values", () => {
@@ -235,7 +308,7 @@ describe("credential secret hygiene", () => {
     assert.ok(leaked.includes("kubeconfig"));
     const safe = stripSecretFields({
       q: "prod-k8s",
-      type: "kubernetes_target",
+      type: "kubernetes",
     });
     assert.deepEqual(safe.strippedKeys, []);
   });

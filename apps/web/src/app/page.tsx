@@ -129,12 +129,11 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Credential vault</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E4.1 UI for workspace-scoped encrypted credentials.
-          List and search by safe name/tags, add via a masked wizard, then
-          rotate, test, disable, or delete with impact reporting. Plaintext
-          is never retained after submit. Vault APIs may still be in flight
-          — the contract adapter is{" "}
-          <code className="font-mono text-xs">credential-contract.ts</code>.
+          Chloe&apos;s E4.1 UI stacked on jonny&apos;s #38 vault APIs.
+          List metadata, add via a catalog-driven masked wizard, then
+          rotate, test, use, disable, or delete with{" "}
+          <code className="font-mono text-xs">{`{confirm:true}`}</code> after
+          deletion-impact. Plaintext is never retained after submit.
         </p>
         <p className="mt-4">
           <Link
