@@ -349,6 +349,28 @@ func validateNodeWith(n Node, path string) ErrorList {
 				}
 			}
 		}
+		if n.Type == "kubernetes.rolloutStatus" {
+			if raw, ok := n.With["kind"]; ok {
+				s, ok := raw.(string)
+				if !ok || !kubernetes.ObservableKind(s) {
+					errs = append(errs, fieldError(path+".with.kind", n.pos.Line, n.pos.Column, CodeInvalidWith, "kind must be Deployment, StatefulSet, DaemonSet, or Job."))
+				}
+			}
+			if raw, ok := n.With["name"]; ok {
+				s, ok := raw.(string)
+				if !ok || !validDNSLabel(s) {
+					errs = append(errs, fieldError(path+".with.name", n.pos.Line, n.pos.Column, CodeInvalidName, "name must be a DNS label."))
+				}
+			}
+			if raw, ok := n.With["resource"]; ok {
+				m, ok := raw.(map[string]any)
+				if !ok {
+					errs = append(errs, fieldError(path+".with.resource", n.pos.Line, n.pos.Column, CodeInvalidType, "resource must be a mapping with kind and name."))
+				} else if k, _ := m["kind"].(string); k != "" && !kubernetes.ObservableKind(k) {
+					errs = append(errs, fieldError(path+".with.resource.kind", n.pos.Line, n.pos.Column, CodeInvalidWith, "kind must be Deployment, StatefulSet, DaemonSet, or Job."))
+				}
+			}
+		}
 		if n.Type == "kubernetes.get" {
 			if raw, ok := n.With["name"]; ok {
 				s, ok := raw.(string)

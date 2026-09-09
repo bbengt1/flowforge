@@ -100,6 +100,9 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 			}
 			found = true
 		}
+		if n.Type == "kubernetes.rolloutStatus" && (n.Policy == nil || n.Redaction == nil || len(n.AllowedWith) == 0) {
+			t.Fatalf("kubernetes.rolloutStatus contract incomplete: %+v", n)
+		}
 	}
 	if !found {
 		t.Fatal("core catalog missing kubernetes.apply")

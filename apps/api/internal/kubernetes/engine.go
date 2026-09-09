@@ -9,7 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 )
 
-// Request is one kubernetes.apply / get / list execution.
+// Request is one kubernetes.apply / get / list / rolloutStatus execution.
 type Request struct {
 	Operation       string
 	ClusterTargetID string
@@ -26,6 +26,8 @@ type Request struct {
 	Client          ClusterClient
 	Handle          *Handle
 	CorrelationID   string
+	ActorID         string
+	Resource        map[string]any
 }
 
 // Result is the redacted engine outcome persisted on the job.
@@ -47,6 +49,7 @@ type Result struct {
 	PolicyRevision  string             `json:"policyRevision,omitempty"`
 	PolicyDigest    string             `json:"policyDigest,omitempty"`
 	CorrelationID   string             `json:"correlationId,omitempty"`
+	Audit           map[string]any     `json:"audit,omitempty"`
 	Error           *EngineError       `json:"error,omitempty"`
 }
 
@@ -66,7 +69,7 @@ func Execute(ctx context.Context, req Request) Result {
 	}
 	if err := authorizeRequest(req, out.Operation); err != nil {
 		out.Error = err
-		return redactResult(out)
+		return attachAudit(req, redactResult(out))
 	}
 	timeout := req.TimeoutSeconds
 	if timeout <= 0 {
@@ -85,19 +88,21 @@ func Execute(ctx context.Context, req Request) Result {
 	client, err := resolveClient(req)
 	if err != nil {
 		out.Error = err
-		return redactResult(out)
+		return attachAudit(req, redactResult(out))
 	}
 
 	switch out.Operation {
 	case "apply":
-		return redactResult(runApply(ctx, req, out, client))
+		return attachAudit(req, redactResult(runApply(ctx, req, out, client)))
 	case "get":
-		return redactResult(runGet(ctx, req, out, client))
+		return attachAudit(req, redactResult(runGet(ctx, req, out, client)))
 	case "list":
-		return redactResult(runList(ctx, req, out, client))
+		return attachAudit(req, redactResult(runList(ctx, req, out, client)))
+	case "watch":
+		return attachAudit(req, redactResult(runWatch(ctx, req, out, client)))
 	default:
 		out.Error = engineError(CodeVerbDenied, "unsupported kubernetes operation", http.StatusBadRequest)
-		return redactResult(out)
+		return attachAudit(req, redactResult(out))
 	}
 }
 
@@ -164,6 +169,12 @@ func runApply(ctx context.Context, req Request, out Result, client ClusterClient
 		out.Error = verr
 		return out
 	}
+	if out.Wait == "ready" {
+		if verr := validateWatchPolicy(req, previewObservableDocs(docs)); verr != nil {
+			out.Error = verr
+			return out
+		}
+	}
 
 	var identities []ResourceIdentity
 	for i := range docs {
@@ -184,11 +195,107 @@ func runApply(ctx context.Context, req Request, out Result, client ClusterClient
 	out.Resources = identities
 	out.Status = map[string]any{"count": len(identities), "fieldManager": FieldManager, "force": false}
 	if out.Wait == "ready" {
-		out.Observation = ObservationDeferred
-		out.Status["observation"] = ObservationDeferred
-		out.Status["observationNote"] = "Bounded rollout watch is E7.3. wait=ready does not observe Deployment/StatefulSet/DaemonSet/Job status in E7.2."
+		return finishObservation(ctx, req, out, client, identities)
 	}
 	out.OK = true
+	return out
+}
+
+func runWatch(ctx context.Context, req Request, out Result, client ClusterClient) Result {
+	kind, name := resourceRef(req)
+	if err := ValidatePolicy(ValidationInput{
+		Operation: "watch",
+		Namespace: req.Namespace,
+		Kind:      kind,
+		Name:      name,
+		Policy:    req.Policy,
+		Target:    req.Target,
+	}); err != nil {
+		out.Error = err
+		return out
+	}
+	if strings.TrimSpace(name) == "" {
+		out.Error = engineError(CodeInvalidManifest, "kubernetes.rolloutStatus requires with.name or a resource identity", http.StatusBadRequest)
+		return out
+	}
+	id := ResourceIdentity{
+		Kind:      kind,
+		Namespace: strings.TrimSpace(req.Namespace),
+		Name:      name,
+	}
+	return finishObservation(ctx, req, out, client, []ResourceIdentity{id})
+}
+
+func finishObservation(ctx context.Context, req Request, out Result, client ClusterClient, identities []ResourceIdentity) Result {
+	if err := validateWatchPolicy(req, identities); err != nil {
+		out.Error = err
+		return out
+	}
+	state, progress, err := observeIdentities(ctx, client, identities)
+	if out.Status == nil {
+		out.Status = map[string]any{}
+	}
+	out.Observation = state
+	out.Status["observation"] = state
+	out.Status["progress"] = progressAsMaps(progress)
+	out.Status["cancelDeletes"] = false
+	if err != nil {
+		out.Error = err
+		out.OK = false
+		return out
+	}
+	out.OK = true
+	if len(out.Resources) == 0 {
+		out.Resources = identities
+	}
+	return out
+}
+
+func validateWatchPolicy(req Request, identities []ResourceIdentity) *EngineError {
+	for _, id := range identities {
+		if !ObservableKind(id.Kind) {
+			continue
+		}
+		if err := ValidatePolicy(ValidationInput{
+			Operation: "watch",
+			Namespace: req.Namespace,
+			Kind:      id.Kind,
+			Name:      id.Name,
+			Policy:    req.Policy,
+			Target:    req.Target,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resourceRef(req Request) (kind, name string) {
+	kind = strings.TrimSpace(req.Kind)
+	name = strings.TrimSpace(req.Name)
+	if req.Resource != nil {
+		if k, _ := req.Resource["kind"].(string); kind == "" {
+			kind = strings.TrimSpace(k)
+		}
+		if n, _ := req.Resource["name"].(string); name == "" {
+			name = strings.TrimSpace(n)
+		}
+	}
+	return kind, name
+}
+
+func previewObservableDocs(docs []Document) []ResourceIdentity {
+	var out []ResourceIdentity
+	for _, doc := range docs {
+		if ObservableKind(doc.Kind) {
+			out = append(out, ResourceIdentity{
+				APIVersion: doc.APIVersion,
+				Kind:       doc.Kind,
+				Namespace:  doc.Namespace,
+				Name:       doc.Name,
+			})
+		}
+	}
 	return out
 }
 
@@ -329,6 +436,11 @@ func redactResult(in Result) Result {
 			}
 		}
 		in.Items = redacted
+	}
+	if in.Audit != nil {
+		if v, ok := RedactValue(in.Audit).(map[string]any); ok {
+			in.Audit = v
+		}
 	}
 	return in
 }

@@ -72,12 +72,7 @@ func coreNodeTypes() []NodeType {
 		kubernetesApplyContract(),
 		kubernetesGetContract(),
 		kubernetesListContract(),
-		{
-			Type: "kubernetes.rolloutStatus", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "resource", Kind: PortObject, Required: true}},
-			Outputs:      []Port{result, {Name: "status", Kind: PortObject}},
-			RequiredWith: []string{"clusterTargetId", "namespace"},
-		},
+		kubernetesRolloutContract(),
 		{
 			Type: "ssh.run", Phase: PhaseCore,
 			Inputs: []Port{{Name: "parameters", Kind: PortObject}},

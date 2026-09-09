@@ -80,6 +80,11 @@ func TestWorkflowCatalogRequiresView(t *testing.T) {
 				t.Fatalf("kubernetes.apply catalog incomplete: %+v", n)
 			}
 		}
+		if n.Type == "kubernetes.rolloutStatus" {
+			if n.Policy == nil || len(n.AllowedWith) == 0 || n.Redaction == nil || n.Policy.Cancellation != "stop-wait" {
+				t.Fatalf("kubernetes.rolloutStatus catalog incomplete: %+v", n)
+			}
+		}
 	}
 	if !found {
 		t.Fatal("catalog missing flow.condition")

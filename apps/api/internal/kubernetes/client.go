@@ -35,6 +35,10 @@ type ClusterClient interface {
 	Apply(ctx context.Context, obj Unstructured, opts ApplyOptions) (Unstructured, error)
 	Get(ctx context.Context, kind, namespace, name string) (Unstructured, error)
 	List(ctx context.Context, kind, namespace string, opts ListOptions) ([]Unstructured, error)
+	// Watch fetches one object using the watch verb. The engine polls Watch
+	// until ready, failed, timeout, or cancel. Implementations must not
+	// delete or roll back resources.
+	Watch(ctx context.Context, kind, namespace, name string) (Unstructured, error)
 }
 
 func identityOf(obj Unstructured) ResourceIdentity {

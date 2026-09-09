@@ -64,7 +64,18 @@ type ApplyRules struct {
 	WaitReady          string `json:"waitReady"`
 }
 
-// EngineCatalog is the Chloe / worker vocabulary for E7.1 and E7.2.
+// ObservationRules documents bounded rollout watch for Chloe.
+type ObservationRules struct {
+	WaitReady    string   `json:"waitReady"`
+	States       []string `json:"states"`
+	Kinds        []string `json:"kinds"`
+	Verb         string   `json:"verb"`
+	Cancel       string   `json:"cancel"`
+	Timeout      string   `json:"timeout"`
+	NeverMutates bool     `json:"neverDeletesOrRollsBack"`
+}
+
+// EngineCatalog is the Chloe / worker vocabulary for E7.1–E7.3.
 type EngineCatalog struct {
 	CredentialType        string                `json:"credentialType"`
 	CredentialSecretField string                `json:"credentialSecretField"`
@@ -77,6 +88,7 @@ type EngineCatalog struct {
 	Nodes                 []NodeContract        `json:"nodes"`
 	Errors                []ErrorShape          `json:"errors"`
 	Apply                 ApplyRules            `json:"apply"`
+	Observation           ObservationRules      `json:"observation"`
 }
 
 // Catalog returns documented engine constraints. No cluster is contacted.
@@ -111,7 +123,16 @@ func Catalog() EngineCatalog {
 			Force:              false,
 			ServerDryRunAlways: true,
 			ClientDryRunExtra:  true,
-			WaitReady:          ObservationDeferred,
+			WaitReady:          WaitReadyObserved,
+		},
+		Observation: ObservationRules{
+			WaitReady:    WaitReadyObserved,
+			States:       []string{ObservationReady, ObservationFailed, ObservationTimeout, ObservationCanceled, ObservationSkipped, ObservationProgressing},
+			Kinds:        append([]string(nil), ObservableKinds...),
+			Verb:         "watch",
+			Cancel:       "stop-wait",
+			Timeout:      "stop-wait",
+			NeverMutates: true,
 		},
 	}
 }
@@ -121,7 +142,7 @@ func commonNodeFields(extra ...NodeField) []NodeField {
 		{Name: "clusterTargetId", Kind: "uuid", Required: true, Description: "Published cluster target UUID. YAML stores only the resource id."},
 		{Name: "namespace", Kind: "string", Required: true, Description: "DNS-1123 namespace. Must be on the target and policy allowlists."},
 		{Name: "dryRun", Kind: "enum", Enum: []string{"client", "server"}, Description: "client adds local validation only. Apply always performs strict server-side dry-run before persist."},
-		{Name: "wait", Kind: "enum", Enum: []string{"none", "ready"}, Description: "none returns after apply. ready is accepted but rollout observation is deferred to E7.3."},
+		{Name: "wait", Kind: "enum", Enum: []string{"none", "ready"}, Description: "none returns after apply. ready performs a bounded Deployment/StatefulSet/DaemonSet/Job watch. Cancel and timeout stop waiting; they never delete or roll back."},
 		{Name: "timeoutSeconds", Kind: "integer", Description: "Bounded 1–3600. Default 60."},
 		{Name: "fieldManager", Kind: "enum", Enum: []string{FieldManager}, Description: "Service-owned. Must be flowforge when set."},
 		{Name: "policyId", Kind: "uuid", Description: "Optional published kubernetes policy UUID."},
@@ -129,7 +150,7 @@ func commonNodeFields(extra ...NodeField) []NodeField {
 	return append(base, extra...)
 }
 
-// NodeContracts is the Chloe wizard map for apply/get/list.
+// NodeContracts is the Chloe wizard map for apply/get/list/rolloutStatus.
 func NodeContracts() []NodeContract {
 	force := false
 	return []NodeContract{
@@ -141,7 +162,7 @@ func NodeContracts() []NodeContract {
 			AllowedWith:  commonNodeFields(NodeField{Name: "manifests", Kind: "string", Description: "Multi-document YAML. Secret data is denied. Images must be allowlisted and digest-pinned."}),
 			Outputs:      []string{"result", "resources", "status"},
 			SideEffects:  true, RetrySafe: false, Idempotent: true,
-			FieldManager: FieldManager, Force: &force, ServerDryRunAlways: true, WaitReady: ObservationDeferred,
+			FieldManager: FieldManager, Force: &force, ServerDryRunAlways: true, WaitReady: WaitReadyObserved,
 		},
 		{
 			Type: "kubernetes.get", Verb: "get", Title: "Get resource",
@@ -166,6 +187,20 @@ func NodeContracts() []NodeContract {
 			Outputs:     []string{"result", "items"},
 			SideEffects: false, RetrySafe: true, Idempotent: true,
 		},
+		{
+			Type: "kubernetes.rolloutStatus", Verb: "watch", Title: "Rollout status",
+			Description:  "Bounded watch of Deployment, StatefulSet, DaemonSet, or Job. Timeout or cancel stops waiting and never deletes or rolls back resources.",
+			Permissions:  RequiredPermissions("watch"),
+			RequiredWith: []string{"clusterTargetId", "namespace"},
+			AllowedWith: commonNodeFields(
+				NodeField{Name: "kind", Kind: "enum", Enum: append([]string(nil), ObservableKinds...), Description: "Deployment, StatefulSet, DaemonSet, or Job."},
+				NodeField{Name: "name", Kind: "string", Description: "Resource name. Required unless resource input supplies it."},
+				NodeField{Name: "resource", Kind: "object", Description: "Optional {kind,name} identity. Alternative to with.kind and with.name."},
+			),
+			Outputs:     []string{"result", "status"},
+			SideEffects: false, RetrySafe: true, Idempotent: true,
+			WaitReady: WaitReadyObserved,
+		},
 	}
 }
 
@@ -188,6 +223,8 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeApplyFailed, Status: 502, Meaning: "Persistent apply failed after a successful dry-run."},
 		{Code: CodeReadFailed, Status: 404, Meaning: "Get/list did not return the requested namespaced object."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, or contained an unsafe kubeconfig."},
-		{Code: CodeTimeout, Status: 408, Meaning: "Bounded timeoutSeconds elapsed."},
+		{Code: CodeTimeout, Status: 408, Meaning: "Bounded timeoutSeconds elapsed. Resources are left in place."},
+		{Code: CodeCanceled, Status: 408, Meaning: "Observation was canceled. Resources are not deleted or rolled back."},
+		{Code: CodeRolloutFailed, Status: 409, Meaning: "Deployment progress deadline exceeded or Job failed. Resources are not deleted or rolled back."},
 	}
 }

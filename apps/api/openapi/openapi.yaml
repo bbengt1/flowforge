@@ -4504,6 +4504,20 @@ components:
             serverDryRunAlways: {type: boolean}
             clientDryRunAddsLocalValidationOnly: {type: boolean}
             waitReady: {type: string}
+        observation:
+          type: object
+          properties:
+            waitReady: {type: string}
+            states:
+              type: array
+              items: {type: string}
+            kinds:
+              type: array
+              items: {type: string}
+            verb: {type: string}
+            cancel: {type: string}
+            timeout: {type: string}
+            neverDeletesOrRollsBack: {type: boolean}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]
