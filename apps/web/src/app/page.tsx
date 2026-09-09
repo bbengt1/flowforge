@@ -206,13 +206,16 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Execution history</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E5.1 list/detail UI against jonny&apos;s persistence
-          query APIs (routes still in flight). Filter by workflow, status,
-          and time. Metadata is redacted;{" "}
-          <code className="font-mono text-xs">indeterminate</code> is
-          distinct. Existing{" "}
-          <code className="font-mono text-xs">POST …/executions</code> run
-          control is unchanged. Relates to #46 / Part of #45.
+          Chloe&apos;s E5.1 list/detail UI against jonny&apos;s #51 query
+          APIs. Workspace and per-workflow lists; detail includes
+          steps/jobs/pins/audit. Secrets show as{" "}
+          <code className="font-mono text-xs">[redacted]</code>. Run
+          control POSTs{" "}
+          <code className="font-mono text-xs">
+            {"{workflowVersionId, idempotencyKey?, input?}"}
+          </code>{" "}
+          with CSRF — 201 new / 200 replay / 409 key conflict. Relates to
+          #46 / Part of #45.
         </p>
         <p className="mt-4">
           <Link

@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { listExecutions } from "@/lib/execution-client";
+import {
+  listExecutions,
+  listWorkflowExecutions,
+} from "@/lib/execution-client";
 import { IDEMPOTENCY_REPLAY_MESSAGE } from "@/lib/execution-contract";
 import {
   canSeeExecutionsNav,
@@ -23,6 +26,8 @@ import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { listWorkflows } from "@/lib/workflow-client";
 import type { WorkflowRecord } from "@/lib/workflow-types";
+
+const DEFAULT_LIMIT = 50;
 
 export function ExecutionHistory() {
   const identity = useSyncExternalStore(
@@ -46,8 +51,7 @@ export function ExecutionHistory() {
   const [query, setQuery] = useState<ExecutionListQuery>({
     workflowId: "",
     status: "",
-    startedAfter: "",
-    startedBefore: "",
+    limit: DEFAULT_LIMIT,
   });
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
@@ -65,17 +69,19 @@ export function ExecutionHistory() {
     () => (forbidden || denied ? [] : executionListDisplay(items)),
     [items, forbidden, denied],
   );
+  const perWorkflow = Boolean(query.workflowId?.trim());
 
   async function refresh() {
     setPending(true);
     setProblem(null);
+    const filter = {
+      status: query.status,
+      limit: query.limit || DEFAULT_LIMIT,
+    };
     const [list, workspace, workflowList] = await Promise.all([
-      listExecutions(identity, {
-        workflowId: query.workflowId,
-        status: query.status,
-        startedAfter: query.startedAfter,
-        startedBefore: query.startedBefore,
-      }),
+      query.workflowId?.trim()
+        ? listWorkflowExecutions(identity, query.workflowId.trim(), filter)
+        : listExecutions(identity, filter),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
       listWorkflows(identity),
     ]);
@@ -108,16 +114,8 @@ export function ExecutionHistory() {
       void refresh();
     }, 0);
     return () => window.clearTimeout(timer);
-    // Reload when session/workspace or documented filters change.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
-  }, [
-    ready,
-    identity,
-    query.workflowId,
-    query.status,
-    query.startedAfter,
-    query.startedBefore,
-  ]);
+  }, [ready, identity, query.workflowId, query.status, query.limit]);
 
   return (
     <div className="space-y-6">
@@ -153,10 +151,30 @@ export function ExecutionHistory() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Workspace executions</h2>
+            <h2 className="text-lg font-semibold">
+              {perWorkflow ? "Workflow executions" : "Workspace executions"}
+            </h2>
             <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-              Safe metadata only: id, workflow, version pin, status, time, and
-              correlation id. Secrets and unredacted outputs are never shown.
+              {perWorkflow ? (
+                <>
+                  <code className="font-mono text-xs">
+                    GET /workflows/{"{id}"}/executions
+                  </code>
+                </>
+              ) : (
+                <>
+                  <code className="font-mono text-xs">GET /executions</code>
+                </>
+              )}{" "}
+              · query <code className="font-mono text-xs">status</code>,{" "}
+              <code className="font-mono text-xs">limit</code>
+              {perWorkflow ? null : (
+                <>
+                  . Pick a workflow to use the per-workflow list.
+                </>
+              )}{" "}
+              Cards show safe metadata only. Secrets appear as{" "}
+              <code className="font-mono text-xs">[redacted]</code>.
             </p>
           </div>
           <button
@@ -170,7 +188,7 @@ export function ExecutionHistory() {
         </div>
 
         <form
-          className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="mt-5 grid gap-3 sm:grid-cols-3"
           onSubmit={(event) => event.preventDefault()}
         >
           <label className="text-sm">
@@ -186,7 +204,7 @@ export function ExecutionHistory() {
               disabled={denied}
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             >
-              <option value="">Any</option>
+              <option value="">Workspace (all)</option>
               {workflows.map((workflow) => (
                 <option key={workflow.id} value={workflow.id}>
                   {workflow.name || workflow.slug}
@@ -216,34 +234,24 @@ export function ExecutionHistory() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="font-medium">Started after</span>
-            <input
-              type="datetime-local"
-              value={toLocalInput(query.startedAfter)}
+            <span className="font-medium">Limit</span>
+            <select
+              value={String(query.limit ?? DEFAULT_LIMIT)}
               onChange={(event) =>
                 setQuery((current) => ({
                   ...current,
-                  startedAfter: fromLocalInput(event.target.value),
+                  limit: Number(event.target.value),
                 }))
               }
               disabled={denied}
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="font-medium">Started before</span>
-            <input
-              type="datetime-local"
-              value={toLocalInput(query.startedBefore)}
-              onChange={(event) =>
-                setQuery((current) => ({
-                  ...current,
-                  startedBefore: fromLocalInput(event.target.value),
-                }))
-              }
-              disabled={denied}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            />
+            >
+              {[10, 25, 50, 100].map((limit) => (
+                <option key={limit} value={limit}>
+                  {limit}
+                </option>
+              ))}
+            </select>
           </label>
         </form>
       </section>
@@ -253,7 +261,9 @@ export function ExecutionHistory() {
           <h2 className="text-lg font-semibold">No executions yet</h2>
           <p className="mt-2 text-sm text-zinc-600">
             Start a published version from the workflow operator. Duplicate
-            idempotency keys reuse the existing run.
+            idempotency keys replay the existing run (
+            <code className="font-mono text-xs">200</code>). Same key +
+            different input is <code className="font-mono text-xs">409</code>.
           </p>
           <p className="mt-4">
             <Link
@@ -317,7 +327,7 @@ export function ExecutionHistory() {
                   </dd>
                 </div>
               </dl>
-              {row.reused ? (
+              {row.replayed ? (
                 <p className="mt-3 text-sm text-zinc-700">
                   {IDEMPOTENCY_REPLAY_MESSAGE}
                 </p>
@@ -328,27 +338,4 @@ export function ExecutionHistory() {
       )}
     </div>
   );
-}
-
-function toLocalInput(iso: string | undefined): string {
-  if (!iso) {
-    return "";
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): string {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toISOString();
 }

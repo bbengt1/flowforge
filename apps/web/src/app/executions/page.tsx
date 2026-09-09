@@ -13,9 +13,12 @@ export default function ExecutionsPage() {
           Execution history
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Workspace-scoped list against jonny&apos;s persistence query APIs
-          (routes still in flight). Filter by workflow, status, and time.
-          Cards show safe metadata only.{" "}
+          Workspace history via{" "}
+          <code className="font-mono text-sm">GET /executions</code> and
+          per-workflow{" "}
+          <code className="font-mono text-sm">GET /workflows/{"{id}"}/executions</code>{" "}
+          from #51. Filter by workflow, status, and limit. Secrets appear as{" "}
+          <code className="font-mono text-sm">[redacted]</code>.{" "}
           <code className="font-mono text-sm">indeterminate</code> is called
           out distinctly. Graph replay, artifacts, and cancel/retry are later
           slices. Relates to #46 / Part of #45.

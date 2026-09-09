@@ -1,55 +1,57 @@
 /**
- * Single retarget adapter for E5.1 execution history (Chloe UI).
+ * Single adapter for Chloe's E5.1 UI against jonny's #51 route map.
  *
- * Browser fetches stay on same-origin `/api/v1/executions*`. Next rewrites
- * those to `/api/control-plane/*`, and identity-proxy maps them onto the
- * Go API. Jonny's persistence query routes are still in flight — change
- * `EXECUTION_UPSTREAM_COLLECTION` here if they land under another prefix.
- *
- * Existing start remains `POST /workflows/{workflowId}/executions`
- * `{workflowVersionId}` (E3.2). This adapter only allowlists query GETs.
+ * Exact paths only — do not invent collections or query params.
+ * Browser stays on same-origin `/api/v1/…`. Next rewrites to
+ * `/api/control-plane/*`; identity-proxy maps onto the Go API.
  *
  * Relates to #46 / Part of #45. Do not change `apps/api`.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
-import type { ExecutionListQuery } from "./execution-types.ts";
+import type { AuditEventQuery, ExecutionListQuery } from "./execution-types.ts";
 
 export const EXECUTION_STORY = 46;
 export const EXECUTION_EPIC = 45;
+export const EXECUTION_API_PR = 51;
 
-/** UI + Next proxy collection under `/api/v1/`. */
 export const EXECUTION_UI_COLLECTION = "executions";
-
-/**
- * Upstream Go collection. Identity mapping until jonny publishes.
- * Example retarget: `"workspace/executions"`.
- */
 export const EXECUTION_UPSTREAM_COLLECTION = "executions";
 
 export const EXECUTION_STEPS_ACTION = "steps";
 export const EXECUTION_JOBS_ACTION = "jobs";
-export const EXECUTION_EVENTS_ACTION = "events";
+export const EXECUTION_AUDIT_EVENTS_ACTION = "audit-events";
+export const WORKSPACE_AUDIT_EVENTS_COLLECTION = "audit-events";
 
 export const EXECUTION_WORKFLOW_QUERY = "workflowId";
-export const EXECUTION_WORKFLOW_VERSION_QUERY = "workflowVersionId";
 export const EXECUTION_STATUS_QUERY = "status";
-export const EXECUTION_STARTED_AFTER_QUERY = "startedAfter";
-export const EXECUTION_STARTED_BEFORE_QUERY = "startedBefore";
-export const EXECUTION_CORRELATION_QUERY = "correlationId";
+export const EXECUTION_LIMIT_QUERY = "limit";
+export const AUDIT_RESOURCE_TYPE_QUERY = "resourceType";
+export const AUDIT_RESOURCE_ID_QUERY = "resourceId";
+export const AUDIT_ACTION_QUERY = "action";
 
 export const EXECUTION_PROBLEM_CODES = {
   invalidRequest: "invalid-request",
   unauthenticated: "unauthenticated",
   forbidden: "forbidden",
   notFound: "not-found",
+  conflict: "conflict",
 } as const;
 
 export const IDEMPOTENCY_REPLAY_MESSAGE =
-  "This (workspace, workflow version, idempotency key) reused an existing run and did not start a second execution.";
+  "Replayed existing run (HTTP 200). The same (workspace, workflow version, idempotency key) did not start a second execution.";
+
+export const IDEMPOTENCY_CREATED_MESSAGE =
+  "Started a new execution (HTTP 201).";
+
+export const IDEMPOTENCY_CONFLICT_MESSAGE =
+  "This idempotency key was already used with a different input (HTTP 409). The API did not start a new run. Do not retry with a new key unless you intend a new execution.";
 
 export const IDEMPOTENCY_KEY_HELP =
-  "Idempotency keys are unique per workspace and workflow version. A duplicate key does not create a second run when the API returns that behavior.";
+  "Optional. Unique per workspace and workflow version. Same key + same input returns the original run (200). Same key + different input is 409.";
+
+export const REDACTED_HELP =
+  "Secret values from the API appear as [redacted]. Unexpected secret field names are stripped.";
 
 export function executionsPath(): string {
   return `/${EXECUTION_UI_COLLECTION}`;
@@ -63,36 +65,84 @@ export function executionStepsPath(executionId: string): string {
   return `${executionPath(executionId)}/${EXECUTION_STEPS_ACTION}`;
 }
 
+export function executionStepPath(
+  executionId: string,
+  stepId: string,
+): string {
+  return `${executionStepsPath(executionId)}/${stepId}`;
+}
+
 export function executionJobsPath(executionId: string): string {
   return `${executionPath(executionId)}/${EXECUTION_JOBS_ACTION}`;
 }
 
+export function executionAuditEventsPath(executionId: string): string {
+  return `${executionPath(executionId)}/${EXECUTION_AUDIT_EVENTS_ACTION}`;
+}
+
+/** @deprecated Use executionAuditEventsPath — #51 is …/audit-events, not …/events. */
 export function executionEventsPath(executionId: string): string {
-  return `${executionPath(executionId)}/${EXECUTION_EVENTS_ACTION}`;
+  return executionAuditEventsPath(executionId);
+}
+
+export function workspaceAuditEventsPath(): string {
+  return `/${WORKSPACE_AUDIT_EVENTS_COLLECTION}`;
+}
+
+export function workflowExecutionsCollectionPath(workflowId: string): string {
+  return `/workflows/${workflowId}/executions`;
+}
+
+export function workflowExecutionPath(
+  workflowId: string,
+  executionId: string,
+): string {
+  return `${workflowExecutionsCollectionPath(workflowId)}/${executionId}`;
+}
+
+function appendQuery(
+  path: string,
+  pairs: Array<[string, string | number | undefined]>,
+): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of pairs) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      params.set(key, String(value));
+    } else if (typeof value === "string" && value.trim()) {
+      params.set(key, value.trim());
+    }
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 export function listExecutionsPath(filter: ExecutionListQuery = {}): string {
-  const params = new URLSearchParams();
-  if (filter.workflowId?.trim()) {
-    params.set(EXECUTION_WORKFLOW_QUERY, filter.workflowId.trim());
-  }
-  if (filter.workflowVersionId?.trim()) {
-    params.set(EXECUTION_WORKFLOW_VERSION_QUERY, filter.workflowVersionId.trim());
-  }
-  if (filter.status?.trim()) {
-    params.set(EXECUTION_STATUS_QUERY, filter.status.trim());
-  }
-  if (filter.startedAfter?.trim()) {
-    params.set(EXECUTION_STARTED_AFTER_QUERY, filter.startedAfter.trim());
-  }
-  if (filter.startedBefore?.trim()) {
-    params.set(EXECUTION_STARTED_BEFORE_QUERY, filter.startedBefore.trim());
-  }
-  if (filter.correlationId?.trim()) {
-    params.set(EXECUTION_CORRELATION_QUERY, filter.correlationId.trim());
-  }
-  const query = params.toString();
-  return query ? `${executionsPath()}?${query}` : executionsPath();
+  return appendQuery(executionsPath(), [
+    [EXECUTION_WORKFLOW_QUERY, filter.workflowId],
+    [EXECUTION_STATUS_QUERY, filter.status],
+    [EXECUTION_LIMIT_QUERY, filter.limit],
+  ]);
+}
+
+export function listWorkflowExecutionsPath(
+  workflowId: string,
+  filter: Pick<ExecutionListQuery, "status" | "limit"> = {},
+): string {
+  return appendQuery(workflowExecutionsCollectionPath(workflowId), [
+    [EXECUTION_STATUS_QUERY, filter.status],
+    [EXECUTION_LIMIT_QUERY, filter.limit],
+  ]);
+}
+
+export function listWorkspaceAuditEventsPath(
+  filter: AuditEventQuery = {},
+): string {
+  return appendQuery(workspaceAuditEventsPath(), [
+    [AUDIT_RESOURCE_TYPE_QUERY, filter.resourceType],
+    [AUDIT_RESOURCE_ID_QUERY, filter.resourceId],
+    [AUDIT_ACTION_QUERY, filter.action],
+    [EXECUTION_LIMIT_QUERY, filter.limit],
+  ]);
 }
 
 export function executionHistoryHref(
@@ -104,21 +154,17 @@ export function executionHistoryHref(
   return id ? `${base}?workflowId=${encodeURIComponent(id)}` : base;
 }
 
-/** Existing E3.2 pin read — fallback when workspace list/detail is 404. */
-export function workflowExecutionPinPath(
-  workflowId: string,
-  executionId: string,
-): string {
-  return `/workflows/${workflowId}/executions/${executionId}`;
-}
-
 export function isExecutionProxySegments(segments: string[]): boolean {
-  return segments[0] === EXECUTION_UI_COLLECTION;
+  return (
+    segments[0] === EXECUTION_UI_COLLECTION ||
+    segments[0] === WORKSPACE_AUDIT_EVENTS_COLLECTION
+  );
 }
 
 /**
- * Rewrite a UI `/api/v1/executions…` path onto jonny's upstream collection.
+ * Rewrite a UI `/api/v1/executions…` path onto the upstream collection.
  * Query strings are preserved by the proxy `withRequestSearch` hop.
+ * `/audit-events` is already the #51 workspace audit path (not E2.2).
  */
 export function retargetCollectionPath(
   uiApiPath: string,
@@ -138,6 +184,12 @@ export function retargetCollectionPath(
 }
 
 export function retargetExecutionApiPath(uiApiPath: string): string {
+  if (
+    uiApiPath === `/api/v1/${WORKSPACE_AUDIT_EVENTS_COLLECTION}` ||
+    uiApiPath.startsWith(`/api/v1/${WORKSPACE_AUDIT_EVENTS_COLLECTION}?`)
+  ) {
+    return uiApiPath;
+  }
   return retargetCollectionPath(
     uiApiPath,
     EXECUTION_UI_COLLECTION,
@@ -158,11 +210,21 @@ function eq(segments: string[], expected: readonly string[]): boolean {
 }
 
 /**
- * Allowlisted Next proxy routes. identity-proxy spreads this array so a
- * retarget only edits this file.
+ * Allowlisted Next proxy routes from #51. identity-proxy spreads this
+ * array. POST start stays on `/workflows/{id}/executions` (already
+ * allowlisted with CSRF). Do not add POST /executions.
  */
 export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, [EXECUTION_UI_COLLECTION]) },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 4 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_STEPS_ACTION &&
+      isResourceId(s[3]),
+  },
   {
     methods: ["GET"],
     match: (s) =>
@@ -171,7 +233,7 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       isResourceId(s[1]) &&
       (s[2] === EXECUTION_STEPS_ACTION ||
         s[2] === EXECUTION_JOBS_ACTION ||
-        s[2] === EXECUTION_EVENTS_ACTION),
+        s[2] === EXECUTION_AUDIT_EVENTS_ACTION),
   },
   {
     methods: ["GET"],
@@ -179,5 +241,17 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       s.length === 2 &&
       s[0] === EXECUTION_UI_COLLECTION &&
       isResourceId(s[1]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) => eq(s, [WORKSPACE_AUDIT_EVENTS_COLLECTION]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "executions",
   },
 ];

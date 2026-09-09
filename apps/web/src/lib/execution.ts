@@ -1,19 +1,21 @@
 /**
- * E5.1 execution history helpers.
+ * E5.1 execution history helpers aligned to jonny's #51 OpenAPI.
  *
- * List/detail show safe metadata only. Unexpected secret fields on API
- * responses are treated as a contract bug: strip, never display.
- * `indeterminate` is a first-class status. 403 is fail-closed.
+ * List/detail show safe metadata plus already-redacted input/output/audit
+ * (`[redacted]`). Unexpected secret field names are a contract bug: strip,
+ * never display. `indeterminate` is first-class. 403 is fail-closed.
  */
 
 import {
   EXECUTION_PROBLEM_CODES,
+  IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
   executionHistoryHref,
 } from "./execution-contract.ts";
 import {
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
+  REDACTED_MARKER,
   type ExecutionAuditEvent,
   type ExecutionDetail,
   type ExecutionDetailView,
@@ -24,6 +26,7 @@ import {
   type ExecutionStatus,
   type ExecutionStep,
 } from "./execution-types.ts";
+import { parseAuthorizedPins } from "./ops-config.ts";
 import type { ProblemDetails } from "./problem.ts";
 
 const UUID =
@@ -61,10 +64,6 @@ const SECRET_KEY_ALIASES = new Set([
   "token",
   "webhook_secret",
   "webhooksecret",
-  "output",
-  "input",
-  "stdout",
-  "stderr",
 ]);
 
 const SECRET_KEY_PARTS = [
@@ -80,7 +79,7 @@ const SECRET_KEY_PARTS = [
   "ciphertext",
 ];
 
-/** Metadata keys that contain "token" / "id" but are not secret material. */
+/** Documented metadata + already-redacted payloads from #51. */
 const NEVER_STRIP_KEYS = new Set([
   "id",
   "workflowid",
@@ -102,13 +101,16 @@ const NEVER_STRIP_KEYS = new Set([
   "finished_at",
   "createdat",
   "created_at",
+  "updatedat",
+  "updated_at",
+  "retentionuntil",
+  "retention_until",
   "correlationid",
   "correlation_id",
   "idempotencykey",
   "idempotency_key",
+  "replayed",
   "reused",
-  "idempotentreplay",
-  "idempotent_replay",
   "requestedby",
   "requested_by",
   "triggerid",
@@ -144,19 +146,21 @@ const NEVER_STRIP_KEYS = new Set([
   "occurred_at",
   "actorid",
   "actor_id",
-  "detailsredacted",
-  "details_redacted",
-  "inputredacted",
-  "input_redacted",
-  "outputredacted",
-  "output_redacted",
-  "errorredacted",
-  "error_redacted",
+  "hostcontext",
+  "host_context",
+  "policysnapshot",
+  "policy_snapshot",
+  "input",
+  "output",
+  "error",
+  "details",
   "items",
   "steps",
   "jobs",
-  "events",
   "pins",
+  "auditevents",
+  "audit_events",
+  "events",
 ]);
 
 export function isUuid(value: string | undefined): boolean {
@@ -206,6 +210,10 @@ export function stripSecretFields(
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const childPath = path ? `${path}.${key}` : key;
     if (isSecretFieldName(key)) {
+      if (child === REDACTED_MARKER) {
+        out[key] = REDACTED_MARKER;
+        continue;
+      }
       strippedKeys.push(childPath);
       continue;
     }
@@ -253,6 +261,13 @@ function readBoolean(...candidates: unknown[]): boolean {
   return false;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
 export function isIndeterminateStatus(status: string | undefined): boolean {
   return status?.trim().toLowerCase() === "indeterminate";
 }
@@ -265,15 +280,44 @@ export function executionStatusLabel(status: ExecutionStatus | undefined): strin
   return folded;
 }
 
+/** POST start: 200 + replayed, or an explicit replayed flag. GET 200 is not a replay. */
 export function isIdempotentReplay(record: {
+  replayed?: boolean;
   reused?: boolean;
   statusCode?: number;
+  method?: string;
 }): boolean {
-  return Boolean(record.reused) || record.statusCode === 200;
+  if (record.replayed || record.reused) {
+    return true;
+  }
+  return record.method === "POST" && record.statusCode === 200;
 }
 
-export function idempotencyReplayMessage(reused: boolean): string {
-  return reused ? IDEMPOTENCY_REPLAY_MESSAGE : "";
+export function isExecutionCreated(statusCode: number | undefined): boolean {
+  return statusCode === 201;
+}
+
+export function isIdempotencyConflict(
+  problem: ProblemDetails | null | undefined,
+): boolean {
+  return (
+    problem?.status === 409 ||
+    problem?.code === EXECUTION_PROBLEM_CODES.conflict
+  );
+}
+
+export function idempotencyReplayMessage(replayed: boolean): string {
+  return replayed ? IDEMPOTENCY_REPLAY_MESSAGE : "";
+}
+
+export function startOutcomeMessage(statusCode: number, replayed: boolean): string {
+  if (replayed || statusCode === 200) {
+    return IDEMPOTENCY_REPLAY_MESSAGE;
+  }
+  if (statusCode === 201) {
+    return IDEMPOTENCY_CREATED_MESSAGE;
+  }
+  return "";
 }
 
 export function canSeeExecutionsNav(
@@ -297,14 +341,11 @@ export function isExecutionForbidden(
 export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
-  if (!cleaned || typeof cleaned !== "object" || Array.isArray(cleaned)) {
+  const row = asRecord(cleaned);
+  if (!row) {
     return null;
   }
-  const row = cleaned as Record<string, unknown>;
-  const nested =
-    row.execution && typeof row.execution === "object"
-      ? (row.execution as Record<string, unknown>)
-      : row;
+  const nested = asRecord(row.execution) ?? row;
   const id = readString(nested.id);
   const workflowId = readString(nested.workflowId, nested.workflow_id);
   const workflowVersionId = readString(
@@ -329,18 +370,15 @@ export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
     startedAt: readString(nested.startedAt, nested.started_at),
     finishedAt: readString(nested.finishedAt, nested.finished_at),
     createdAt: readString(nested.createdAt, nested.created_at),
+    updatedAt: readString(nested.updatedAt, nested.updated_at),
+    retentionUntil: readString(nested.retentionUntil, nested.retention_until),
     correlationId: readString(nested.correlationId, nested.correlation_id),
     idempotencyKey: readString(nested.idempotencyKey, nested.idempotency_key),
-    reused: readBoolean(
-      nested.reused,
-      nested.idempotentReplay,
-      nested.idempotent_replay,
-      nested.duplicate,
-      nested.alreadyExists,
-      nested.already_exists,
-    ),
+    replayed: readBoolean(nested.replayed, nested.reused),
     requestedBy: readString(nested.requestedBy, nested.requested_by),
     triggerId: readString(nested.triggerId, nested.trigger_id),
+    input: nested.input ?? null,
+    policySnapshot: nested.policySnapshot ?? nested.policy_snapshot ?? null,
   };
 }
 
@@ -366,10 +404,10 @@ export function parseExecutionStep(
 ): ExecutionStep | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
-  if (!cleaned || typeof cleaned !== "object" || Array.isArray(cleaned)) {
+  const row = asRecord(cleaned);
+  if (!row) {
     return null;
   }
-  const row = cleaned as Record<string, unknown>;
   const id = readString(row.id);
   const nodeId = readString(row.nodeId, row.node_id);
   if (!id || !nodeId) {
@@ -380,14 +418,16 @@ export function parseExecutionStep(
     executionId: readString(row.executionId, row.execution_id) || executionId,
     nodeId,
     nodeType: readString(row.nodeType, row.node_type),
-    nodeName: readString(row.nodeName, row.node_name),
     attempt: readNumber(row.attempt) ?? 1,
     status: readString(row.status) || "queued",
     startedAt: readString(row.startedAt, row.started_at),
     finishedAt: readString(row.finishedAt, row.finished_at),
-    outputRedacted: row.outputRedacted ?? row.output_redacted ?? null,
-    errorRedacted: row.errorRedacted ?? row.error_redacted ?? null,
-    inputRedacted: row.inputRedacted ?? row.input_redacted ?? null,
+    createdAt: readString(row.createdAt, row.created_at),
+    input: row.input ?? null,
+    output: row.output ?? null,
+    error: row.error ?? null,
+    fencingToken: readNumber(row.fencingToken, row.fencing_token),
+    workerId: readString(row.workerId, row.worker_id),
   };
 }
 
@@ -397,10 +437,10 @@ export function parseExecutionJob(
 ): ExecutionJob | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
-  if (!cleaned || typeof cleaned !== "object" || Array.isArray(cleaned)) {
+  const row = asRecord(cleaned);
+  if (!row) {
     return null;
   }
-  const row = cleaned as Record<string, unknown>;
   const id = readString(row.id);
   if (!id) {
     return null;
@@ -415,16 +455,17 @@ export function parseExecutionJob(
     leaseExpiresAt: readString(row.leaseExpiresAt, row.lease_expires_at),
     heartbeatAt: readString(row.heartbeatAt, row.heartbeat_at),
     workerId: readString(row.workerId, row.worker_id),
+    fencingToken: readNumber(row.fencingToken, row.fencing_token),
   };
 }
 
 export function parseExecutionEvent(raw: unknown): ExecutionAuditEvent | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
-  if (!cleaned || typeof cleaned !== "object" || Array.isArray(cleaned)) {
+  const row = asRecord(cleaned);
+  if (!row) {
     return null;
   }
-  const row = cleaned as Record<string, unknown>;
   const id = readString(row.id);
   const action = readString(row.action, row.eventType, row.event_type);
   if (!id || !action) {
@@ -439,7 +480,8 @@ export function parseExecutionEvent(raw: unknown): ExecutionAuditEvent | null {
     correlationId: readString(row.correlationId, row.correlation_id),
     occurredAt: readString(row.occurredAt, row.occurred_at, row.createdAt),
     actorId: readString(row.actorId, row.actor_id),
-    detailsRedacted: row.detailsRedacted ?? row.details_redacted ?? null,
+    details: row.details ?? null,
+    hostContext: row.hostContext ?? row.host_context ?? null,
   };
 }
 
@@ -473,24 +515,25 @@ export function parseExecutionDetail(raw: unknown): ExecutionDetail | null {
   }
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
-  const body =
-    cleaned && typeof cleaned === "object" && !Array.isArray(cleaned)
-      ? (cleaned as Record<string, unknown>)
-      : {};
-  const nested =
-    body.execution && typeof body.execution === "object"
-      ? (body.execution as Record<string, unknown>)
-      : body;
+  const body = asRecord(cleaned) ?? {};
+  const nested = asRecord(body.execution) ?? body;
+  const auditSource =
+    nested.auditEvents ??
+    nested.audit_events ??
+    body.auditEvents ??
+    body.audit_events ??
+    nested.events ??
+    body.events;
   return {
     ...record,
-    inputRedacted: nested.inputRedacted ?? nested.input_redacted ?? null,
+    pins: parseAuthorizedPins(nested.pins ?? body.pins),
     steps: parseItemList(nested.steps ?? body.steps, (item) =>
       parseExecutionStep(item, record.id),
     ),
     jobs: parseItemList(nested.jobs ?? body.jobs, (item) =>
       parseExecutionJob(item, record.id),
     ),
-    events: parseItemList(nested.events ?? body.events, parseExecutionEvent),
+    auditEvents: parseItemList(auditSource, parseExecutionEvent),
   };
 }
 
@@ -499,39 +542,22 @@ export function filterExecutionList(
   query: ExecutionListQuery,
 ): ExecutionRecord[] {
   const workflowId = query.workflowId?.trim();
-  const workflowVersionId = query.workflowVersionId?.trim();
   const status = query.status?.trim().toLowerCase();
-  const startedAfter = query.startedAfter?.trim();
-  const startedBefore = query.startedBefore?.trim();
-  const correlationId = query.correlationId?.trim();
+  const limit =
+    typeof query.limit === "number" && Number.isFinite(query.limit)
+      ? Math.max(0, Math.min(100, Math.trunc(query.limit)))
+      : undefined;
 
-  return items.filter((item) => {
+  const filtered = items.filter((item) => {
     if (workflowId && item.workflowId !== workflowId) {
-      return false;
-    }
-    if (workflowVersionId && item.workflowVersionId !== workflowVersionId) {
       return false;
     }
     if (status && item.status.toLowerCase() !== status) {
       return false;
     }
-    if (startedAfter) {
-      const stamp = item.startedAt || item.createdAt;
-      if (stamp && stamp < startedAfter) {
-        return false;
-      }
-    }
-    if (startedBefore) {
-      const stamp = item.startedAt || item.createdAt;
-      if (stamp && stamp > startedBefore) {
-        return false;
-      }
-    }
-    if (correlationId && item.correlationId !== correlationId) {
-      return false;
-    }
     return true;
   });
+  return limit == null ? filtered : filtered.slice(0, limit);
 }
 
 export function versionPinLabel(record: ExecutionRecord): string {
@@ -561,7 +587,7 @@ export function executionListRow(record: ExecutionRecord): ExecutionListRow {
     finishedAt: record.finishedAt || "—",
     correlationId: record.correlationId || "—",
     idempotencyKey: record.idempotencyKey || "—",
-    reused: record.reused,
+    replayed: record.replayed,
   };
 }
 
@@ -574,11 +600,13 @@ export function executionDetailDisplay(
 ): ExecutionDetailView {
   return {
     header: executionListRow(detail),
-    reusedMessage: idempotencyReplayMessage(detail.reused),
+    replayedMessage: idempotencyReplayMessage(detail.replayed),
+    pins: detail.pins,
     steps: detail.steps,
     jobs: detail.jobs,
-    events: detail.events,
-    inputRedacted: detail.inputRedacted,
+    auditEvents: detail.auditEvents,
+    input: detail.input,
+    policySnapshot: detail.policySnapshot,
   };
 }
 
@@ -595,7 +623,7 @@ export function executionListText(items: ExecutionRecord[]): string {
         row.finishedAt,
         row.correlationId,
         row.idempotencyKey,
-        row.reused ? IDEMPOTENCY_REPLAY_MESSAGE : "",
+        row.replayed ? IDEMPOTENCY_REPLAY_MESSAGE : "",
       ].join(" "),
     )
     .join("\n");
@@ -605,32 +633,38 @@ export function executionDetailText(detail: ExecutionDetail): string {
   const view = executionDetailDisplay(detail);
   const parts = [
     executionListText([detail]),
-    view.reusedMessage,
-    JSON.stringify(view.inputRedacted ?? null),
+    view.replayedMessage,
+    redactedJson(view.input),
     ...view.steps.map((step) =>
       [
         step.id,
         step.nodeId,
         step.nodeType,
-        step.nodeName,
         step.status,
-        JSON.stringify(step.outputRedacted ?? null),
-        JSON.stringify(step.errorRedacted ?? null),
+        redactedJson(step.output ?? step.error),
       ].join(" "),
     ),
     ...view.jobs.map((job) =>
       [job.id, job.status, job.workerId, job.executionStepId].join(" "),
     ),
-    ...view.events.map((event) =>
-      [
-        event.id,
-        event.action,
-        event.outcome,
-        JSON.stringify(event.detailsRedacted ?? null),
-      ].join(" "),
+    ...view.auditEvents.map((event) =>
+      [event.id, event.action, event.outcome, redactedJson(event.details)].join(
+        " ",
+      ),
     ),
   ];
   return parts.join("\n");
+}
+
+export function containsUnredactedSecret(text: string): boolean {
+  const folded = text.toLowerCase();
+  return (
+    folded.includes("-----begin") ||
+    folded.includes("hunter2") ||
+    folded.includes("super-secret") ||
+    folded.includes("should-not-leak") ||
+    folded.includes("cluster-admin")
+  );
 }
 
 export function redactedJson(value: unknown): string {
@@ -643,7 +677,7 @@ export function redactedJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return "—";
+    return REDACTED_MARKER;
   }
 }
 

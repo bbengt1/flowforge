@@ -130,6 +130,14 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s.length === 3 &&
       s[0] === "workflows" &&
       isResourceId(s[1]) &&
+      s[2] === "executions",
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
       s[2] === "versions",
   },
   {
@@ -250,9 +258,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
   // approval-contract.ts.
   ...APPROVAL_PROXY_ROUTES,
-  // E5.1 execution history UI (#46). Paths live in execution-contract.ts
-  // so a later jonny retarget edits one file. Existing
-  // POST /workflows/{id}/executions start stays above this block.
+  // E5.1 execution history UI (#46 / #51). Paths live in
+  // execution-contract.ts. POST /workflows/{id}/executions start stays
+  // above this block (CSRF). Do not invent POST /executions.
   ...EXECUTION_PROXY_ROUTES,
 ];
 

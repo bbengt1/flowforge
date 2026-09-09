@@ -1,14 +1,14 @@
-/** Shapes for Chloe's E5.1 execution history UI. Jonny's query APIs are in flight. */
+/** Shapes from jonny's E5.1 OpenAPI (PR #51). Do not invent fields or routes. */
+
+import type { OpsConfigPin } from "./ops-config-types.ts";
 
 export const EXECUTION_STATUSES = [
   "queued",
   "pinned",
   "running",
-  "waiting",
   "succeeded",
   "failed",
   "canceled",
-  "cancelled",
   "indeterminate",
 ] as const;
 
@@ -16,13 +16,26 @@ export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number] | string;
 
 export const EXECUTION_VIEW_PERMISSION = "execution.view";
 
+export const REDACTED_MARKER = "[redacted]";
+
+/** Documented list query for GET /executions and GET /workflows/{id}/executions. */
 export type ExecutionListQuery = {
   workflowId?: string;
-  workflowVersionId?: string;
   status?: string;
-  startedAfter?: string;
-  startedBefore?: string;
-  correlationId?: string;
+  limit?: number;
+};
+
+export type AuditEventQuery = {
+  resourceType?: string;
+  resourceId?: string;
+  action?: string;
+  limit?: number;
+};
+
+export type ExecutionStartBody = {
+  workflowVersionId: string;
+  idempotencyKey?: string;
+  input?: Record<string, unknown>;
 };
 
 export type ExecutionRecord = {
@@ -37,11 +50,15 @@ export type ExecutionRecord = {
   startedAt: string;
   finishedAt: string;
   createdAt: string;
+  updatedAt: string;
+  retentionUntil: string;
   correlationId: string;
   idempotencyKey: string;
-  reused: boolean;
+  replayed: boolean;
   requestedBy: string;
   triggerId: string;
+  input: unknown;
+  policySnapshot: unknown;
 };
 
 export type ExecutionStep = {
@@ -49,14 +66,16 @@ export type ExecutionStep = {
   executionId: string;
   nodeId: string;
   nodeType: string;
-  nodeName: string;
   attempt: number;
   status: ExecutionStatus;
   startedAt: string;
   finishedAt: string;
-  outputRedacted: unknown;
-  errorRedacted: unknown;
-  inputRedacted: unknown;
+  createdAt: string;
+  input: unknown;
+  output: unknown;
+  error: unknown;
+  fencingToken: number | null;
+  workerId: string;
 };
 
 export type ExecutionJob = {
@@ -69,6 +88,7 @@ export type ExecutionJob = {
   leaseExpiresAt: string;
   heartbeatAt: string;
   workerId: string;
+  fencingToken: number | null;
 };
 
 export type ExecutionAuditEvent = {
@@ -80,14 +100,15 @@ export type ExecutionAuditEvent = {
   correlationId: string;
   occurredAt: string;
   actorId: string;
-  detailsRedacted: unknown;
+  details: unknown;
+  hostContext: unknown;
 };
 
 export type ExecutionDetail = ExecutionRecord & {
-  inputRedacted: unknown;
+  pins: OpsConfigPin[];
   steps: ExecutionStep[];
   jobs: ExecutionJob[];
-  events: ExecutionAuditEvent[];
+  auditEvents: ExecutionAuditEvent[];
 };
 
 export type ExecutionListRow = {
@@ -101,14 +122,16 @@ export type ExecutionListRow = {
   finishedAt: string;
   correlationId: string;
   idempotencyKey: string;
-  reused: boolean;
+  replayed: boolean;
 };
 
 export type ExecutionDetailView = {
   header: ExecutionListRow;
-  reusedMessage: string;
+  replayedMessage: string;
+  pins: OpsConfigPin[];
   steps: ExecutionStep[];
   jobs: ExecutionJob[];
-  events: ExecutionAuditEvent[];
-  inputRedacted: unknown;
+  auditEvents: ExecutionAuditEvent[];
+  input: unknown;
+  policySnapshot: unknown;
 };

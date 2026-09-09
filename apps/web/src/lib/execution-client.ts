@@ -1,22 +1,23 @@
 /**
- * Thin typed E5.1 execution history client.
+ * Thin typed E5.1 client against jonny's #51 map.
  *
- * Paths come only from execution-contract.ts so a later jonny route map
- * retargets in one place. Session: credentials:include. Host-supplied
- * workspace IDs are never sent. Unexpected secrets are stripped before
- * callers see the payload. Never log request bodies or cookies.
+ * Paths come only from execution-contract.ts. Session: credentials:include.
+ * Host-supplied workspace IDs are never sent. Unexpected secrets are
+ * stripped before callers see the payload. Never log request bodies.
  */
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
-  executionEventsPath,
+  executionAuditEventsPath,
   executionJobsPath,
   executionPath,
   executionStepsPath,
   listExecutionsPath,
-  workflowExecutionPinPath,
+  listWorkflowExecutionsPath,
+  listWorkspaceAuditEventsPath,
+  workflowExecutionPath,
 } from "./execution-contract.ts";
 import {
   isExecutionForbidden,
@@ -29,6 +30,7 @@ import {
   stripSecretFields,
 } from "./execution.ts";
 import type {
+  AuditEventQuery,
   ExecutionAuditEvent,
   ExecutionDetail,
   ExecutionJob,
@@ -90,7 +92,24 @@ export async function listExecutions(
   identity: DevIdentity,
   filter: ExecutionListQuery = {},
 ): Promise<ExecutionListSuccess | ExecutionClientFailure> {
-  const path = listExecutionsPath(filter);
+  return listFromPath(identity, listExecutionsPath(filter));
+}
+
+export async function listWorkflowExecutions(
+  identity: DevIdentity,
+  workflowId: string,
+  filter: Pick<ExecutionListQuery, "status" | "limit"> = {},
+): Promise<ExecutionListSuccess | ExecutionClientFailure> {
+  return listFromPath(
+    identity,
+    listWorkflowExecutionsPath(workflowId, filter),
+  );
+}
+
+async function listFromPath(
+  identity: DevIdentity,
+  path: string,
+): Promise<ExecutionListSuccess | ExecutionClientFailure> {
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     return failure(result);
@@ -116,83 +135,83 @@ export async function getExecution(
   if (result.ok) {
     return detailResult(result, path, executionId);
   }
-  if (
-    result.statusCode === 404 &&
-    workflowId?.trim()
-  ) {
-    return getExecutionPinFallback(identity, workflowId.trim(), executionId);
+  if (result.statusCode === 404 && workflowId?.trim()) {
+    return getWorkflowExecutionDetail(
+      identity,
+      workflowId.trim(),
+      executionId,
+    );
   }
   return failure(result);
+}
+
+export async function getWorkflowExecutionDetail(
+  identity: DevIdentity,
+  workflowId: string,
+  executionId: string,
+): Promise<ExecutionDetailSuccess | ExecutionClientFailure> {
+  const path = workflowExecutionPath(workflowId, executionId);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  return detailResult(result, path, executionId);
 }
 
 export async function getExecutionSteps(
   identity: DevIdentity,
   executionId: string,
 ): Promise<ExecutionStepsSuccess | ExecutionClientFailure> {
-  const path = executionStepsPath(executionId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    items: parseItemList(result.data, (item) =>
-      parseExecutionStep(item, executionId),
-    ),
-    strippedKeys,
-  };
+  return itemsResult(
+    await callIdentityProxy<unknown>(executionStepsPath(executionId), identity),
+    (item) => parseExecutionStep(item, executionId),
+  );
 }
 
 export async function getExecutionJobs(
   identity: DevIdentity,
   executionId: string,
 ): Promise<ExecutionJobsSuccess | ExecutionClientFailure> {
-  const path = executionJobsPath(executionId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    items: parseItemList(result.data, (item) =>
-      parseExecutionJob(item, executionId),
-    ),
-    strippedKeys,
-  };
+  return itemsResult(
+    await callIdentityProxy<unknown>(executionJobsPath(executionId), identity),
+    (item) => parseExecutionJob(item, executionId),
+  );
 }
 
 export async function getExecutionEvents(
   identity: DevIdentity,
   executionId: string,
 ): Promise<ExecutionEventsSuccess | ExecutionClientFailure> {
-  const path = executionEventsPath(executionId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    items: parseItemList(result.data, parseExecutionEvent),
-    strippedKeys,
-  };
+  return getExecutionAuditEvents(identity, executionId);
+}
+
+export async function getExecutionAuditEvents(
+  identity: DevIdentity,
+  executionId: string,
+): Promise<ExecutionEventsSuccess | ExecutionClientFailure> {
+  return itemsResult(
+    await callIdentityProxy<unknown>(
+      executionAuditEventsPath(executionId),
+      identity,
+    ),
+    parseExecutionEvent,
+  );
+}
+
+export async function listWorkspaceAuditEvents(
+  identity: DevIdentity,
+  filter: AuditEventQuery = {},
+): Promise<ExecutionEventsSuccess | ExecutionClientFailure> {
+  return itemsResult(
+    await callIdentityProxy<unknown>(
+      listWorkspaceAuditEventsPath(filter),
+      identity,
+    ),
+    parseExecutionEvent,
+  );
 }
 
 /**
- * Load detail, then fill missing steps/jobs/events from nested GETs.
- * Nested 404 (routes not published yet) is ignored. Nested 403 fails
- * that section closed.
+ * Load detail (includes steps/jobs/pins/audit when #51 returns them),
+ * then fill missing collections from nested GETs. Nested 404 is ignored.
+ * Nested 403 fails that section closed.
  */
 export async function loadExecutionHistory(
   identity: DevIdentity,
@@ -209,12 +228,14 @@ export async function loadExecutionHistory(
   const missing = {
     steps: execution.steps.length === 0,
     jobs: execution.jobs.length === 0,
-    events: execution.events.length === 0,
+    auditEvents: execution.auditEvents.length === 0,
   };
   const extras = await Promise.all([
     missing.steps ? getExecutionSteps(identity, executionId) : null,
     missing.jobs ? getExecutionJobs(identity, executionId) : null,
-    missing.events ? getExecutionEvents(identity, executionId) : null,
+    missing.auditEvents
+      ? getExecutionAuditEvents(identity, executionId)
+      : null,
   ]);
 
   const [steps, jobs, events] = extras;
@@ -236,8 +257,19 @@ export async function loadExecutionHistory(
     strippedKeys.push(...jobs.strippedKeys);
   }
   if (events?.ok) {
-    execution = { ...execution, events: events.items };
+    execution = { ...execution, auditEvents: events.items };
     strippedKeys.push(...events.strippedKeys);
+  } else if (missing.auditEvents) {
+    const workspace = await listWorkspaceAuditEvents(identity, {
+      resourceType: "execution",
+      resourceId: executionId,
+    });
+    if (workspace.ok) {
+      execution = { ...execution, auditEvents: workspace.items };
+      strippedKeys.push(...workspace.strippedKeys);
+    } else if (workspace.forbidden) {
+      return workspace;
+    }
   }
 
   return {
@@ -249,14 +281,30 @@ export async function loadExecutionHistory(
   };
 }
 
-async function getExecutionPinFallback(
-  identity: DevIdentity,
-  workflowId: string,
-  executionId: string,
-): Promise<ExecutionDetailSuccess | ExecutionClientFailure> {
-  const path = workflowExecutionPinPath(workflowId, executionId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  return detailResult(result, path, executionId);
+function itemsResult<T>(
+  result: IdentityClientResult<unknown>,
+  parse: (item: unknown) => T | null,
+):
+  | {
+      ok: true;
+      statusCode: number;
+      requestId: string;
+      items: T[];
+      strippedKeys: string[];
+    }
+  | ExecutionClientFailure {
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseItemList(result.data, parse),
+    strippedKeys,
+  };
 }
 
 function detailResult(

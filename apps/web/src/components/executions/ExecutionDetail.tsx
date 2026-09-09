@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { loadExecutionHistory } from "@/lib/execution-client";
-import { IDEMPOTENCY_KEY_HELP } from "@/lib/execution-contract";
+import {
+  IDEMPOTENCY_KEY_HELP,
+  REDACTED_HELP,
+} from "@/lib/execution-contract";
 import {
   canSeeExecutionsNav,
   executionDetailDisplay,
@@ -201,17 +205,33 @@ export function ExecutionDetail({
                 </dd>
               </div>
             </dl>
-            {view.reusedMessage ? (
+            {view.replayedMessage ? (
               <p role="status" className="mt-4 text-sm text-zinc-800">
-                {view.reusedMessage}
+                {view.replayedMessage}
               </p>
             ) : view.header.idempotencyKey !== "—" ? (
               <p className="mt-4 text-sm text-zinc-600">{IDEMPOTENCY_KEY_HELP}</p>
             ) : null}
+            <div className="mt-4">
+              <p className="text-xs font-medium text-zinc-600">Config pins</p>
+              <ConfigPinList
+                pins={view.pins}
+                empty="No ops-config pins on this execution."
+              />
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-zinc-600">
+                Redacted input
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">{REDACTED_HELP}</p>
+              <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+                {redactedJson(view.input)}
+              </pre>
+            </div>
             {detail?.workflowId ? (
               <p className="mt-4 text-sm">
                 <Link
-                  href={`/workflows`}
+                  href="/workflows"
                   className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
                   Open workflow operator
@@ -223,11 +243,13 @@ export function ExecutionDetail({
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Steps</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Redacted step summary only. Graph replay is E5.3 / E6.
+              Redacted step summary. Secret values show as{" "}
+              <code className="font-mono text-xs">[redacted]</code>. Graph
+              replay is E5.3 / E6.
             </p>
             {view.steps.length === 0 ? (
               <p className="mt-3 text-sm text-zinc-600">
-                No steps returned. Nested query routes may still be unpublished.
+                No steps returned yet.
               </p>
             ) : (
               <ul className="mt-4 grid gap-3">
@@ -242,9 +264,7 @@ export function ExecutionDetail({
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium">
-                          {step.nodeName || step.nodeId}
-                        </p>
+                        <p className="font-medium">{step.nodeId}</p>
                         <p className="font-mono text-xs text-zinc-600">
                           {step.nodeType || "node"} · attempt {step.attempt}
                         </p>
@@ -252,7 +272,7 @@ export function ExecutionDetail({
                       <ExecutionStatusBadge status={step.status} />
                     </div>
                     <pre className="mt-3 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-                      {redactedJson(step.outputRedacted ?? step.errorRedacted)}
+                      {redactedJson(step.output ?? step.error ?? step.input)}
                     </pre>
                   </li>
                 ))}
@@ -263,7 +283,8 @@ export function ExecutionDetail({
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Jobs</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Dispatch / lease summary. Cancel and retry are later slices.
+              Dispatch records. Lease and fencing fields are reserved for
+              E5.2 — this UI does not claim jobs.
             </p>
             {view.jobs.length === 0 ? (
               <p className="mt-3 text-sm text-zinc-600">No jobs returned.</p>
@@ -289,13 +310,19 @@ export function ExecutionDetail({
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Audit events</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Redacted rows only. Unexpected secret fields are stripped.
+              From{" "}
+              <code className="font-mono text-xs">
+                GET /executions/{"{id}"}/audit-events
+              </code>{" "}
+              or workspace{" "}
+              <code className="font-mono text-xs">GET /audit-events</code>
+              — not the E2.2 isolation stub. {REDACTED_HELP}
             </p>
-            {view.events.length === 0 ? (
+            {view.auditEvents.length === 0 ? (
               <p className="mt-3 text-sm text-zinc-600">No audit events returned.</p>
             ) : (
               <ul className="mt-4 grid gap-2">
-                {view.events.map((event) => (
+                {view.auditEvents.map((event) => (
                   <li
                     key={event.id}
                     className="rounded-xl border border-zinc-200 px-4 py-3 text-sm"
@@ -310,9 +337,9 @@ export function ExecutionDetail({
                       {event.occurredAt || "—"}
                       {event.correlationId ? ` · ${event.correlationId}` : ""}
                     </p>
-                    {event.detailsRedacted != null ? (
+                    {event.details != null ? (
                       <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-                        {redactedJson(event.detailsRedacted)}
+                        {redactedJson(event.details)}
                       </pre>
                     ) : null}
                   </li>

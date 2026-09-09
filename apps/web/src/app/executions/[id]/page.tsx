@@ -23,9 +23,11 @@ export default async function ExecutionDetailPage({
           Execution
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Header, steps/jobs summary, and redacted audit events. Unexpected
-          secret fields are stripped. Duplicate idempotency keys reuse the
-          existing run when the API returns that behavior.
+          Header, steps, jobs, pins, and redacted audit events from #51.
+          Secrets appear as{" "}
+          <code className="font-mono text-sm">[redacted]</code>. Unexpected
+          secret field names are stripped. HTTP 200 on start is a replay;
+          same key + different input is 409.
         </p>
       </header>
       <ExecutionDetail executionId={id} workflowId={query.workflowId} />

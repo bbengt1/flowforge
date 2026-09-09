@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   EXECUTION_UPSTREAM_COLLECTION,
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
-  executionEventsPath,
+  executionAuditEventsPath,
   executionHistoryHref,
   executionJobsPath,
   executionPath,
+  executionStepPath,
   executionStepsPath,
   listExecutionsPath,
+  listWorkflowExecutionsPath,
+  listWorkspaceAuditEventsPath,
   retargetCollectionPath,
   retargetExecutionApiPath,
 } from "./execution-contract.ts";
@@ -21,10 +26,12 @@ import {
   executionStatusLabel,
   filterExecutionList,
   isExecutionForbidden,
+  isIdempotencyConflict,
   isIndeterminateStatus,
   isSecretFieldName,
   parseExecutionDetail,
   parseExecutionList,
+  startOutcomeMessage,
   stripSecretFields,
 } from "./execution.ts";
 import type { ExecutionDetail, ExecutionRecord } from "./execution-types.ts";
@@ -48,26 +55,33 @@ function sampleRecord(
     startedAt: "2026-09-09T01:00:00.000Z",
     finishedAt: "2026-09-09T01:02:00.000Z",
     createdAt: "2026-09-09T01:00:00.000Z",
+    updatedAt: "2026-09-09T01:02:00.000Z",
+    retentionUntil: "2026-12-08T01:00:00.000Z",
     correlationId: "corr-16-characters",
     idempotencyKey: "deploy-prod-1",
-    reused: false,
+    replayed: false,
     requestedBy: "operator-chloe",
     triggerId: "",
+    input: { dryRun: "[redacted]" },
+    policySnapshot: null,
     ...overrides,
   };
 }
 
 describe("execution contract adapter", () => {
-  it("builds list query params and nested GET paths under /executions", () => {
+  it("builds only documented #51 list query params and nested GET paths", () => {
     assert.equal(listExecutionsPath(), "/executions");
     assert.equal(
       listExecutionsPath({
         workflowId: WORKFLOW_ID,
         status: "indeterminate",
-        startedAfter: "2026-09-01T00:00:00.000Z",
-        startedBefore: "2026-09-09T00:00:00.000Z",
+        limit: 25,
       }),
-      `/executions?workflowId=${WORKFLOW_ID}&status=indeterminate&startedAfter=2026-09-01T00%3A00%3A00.000Z&startedBefore=2026-09-09T00%3A00%3A00.000Z`,
+      `/executions?workflowId=${WORKFLOW_ID}&status=indeterminate&limit=25`,
+    );
+    assert.equal(
+      listWorkflowExecutionsPath(WORKFLOW_ID, { status: "queued", limit: 10 }),
+      `/workflows/${WORKFLOW_ID}/executions?status=queued&limit=10`,
     );
     assert.equal(executionPath(EXECUTION_ID), `/executions/${EXECUTION_ID}`);
     assert.equal(
@@ -75,28 +89,50 @@ describe("execution contract adapter", () => {
       `/executions/${EXECUTION_ID}/steps`,
     );
     assert.equal(
+      executionStepPath(EXECUTION_ID, VERSION_ID),
+      `/executions/${EXECUTION_ID}/steps/${VERSION_ID}`,
+    );
+    assert.equal(
       executionJobsPath(EXECUTION_ID),
       `/executions/${EXECUTION_ID}/jobs`,
     );
     assert.equal(
-      executionEventsPath(EXECUTION_ID),
-      `/executions/${EXECUTION_ID}/events`,
+      executionAuditEventsPath(EXECUTION_ID),
+      `/executions/${EXECUTION_ID}/audit-events`,
+    );
+    assert.equal(
+      listWorkspaceAuditEventsPath({
+        resourceType: "execution",
+        resourceId: EXECUTION_ID,
+      }),
+      `/audit-events?resourceType=execution&resourceId=${EXECUTION_ID}`,
     );
     assert.equal(
       executionHistoryHref(EXECUTION_ID, WORKFLOW_ID),
       `/executions/${EXECUTION_ID}?workflowId=${WORKFLOW_ID}`,
     );
+    assert.equal(
+      listExecutionsPath({
+        workflowId: WORKFLOW_ID,
+        status: "queued",
+      }).includes("startedAfter"),
+      false,
+    );
   });
 
-  it("retargets /api/v1/executions when the upstream collection changes", () => {
+  it("retargets /api/v1/executions and leaves /audit-events unchanged", () => {
     assert.equal(EXECUTION_UPSTREAM_COLLECTION, "executions");
     assert.equal(
       retargetExecutionApiPath("/api/v1/executions"),
       "/api/v1/executions",
     );
     assert.equal(
-      retargetExecutionApiPath(`/api/v1/executions/${EXECUTION_ID}/events`),
-      `/api/v1/executions/${EXECUTION_ID}/events`,
+      retargetExecutionApiPath(`/api/v1/executions/${EXECUTION_ID}/audit-events`),
+      `/api/v1/executions/${EXECUTION_ID}/audit-events`,
+    );
+    assert.equal(
+      retargetExecutionApiPath("/api/v1/audit-events"),
+      "/api/v1/audit-events",
     );
     assert.equal(
       retargetCollectionPath(
@@ -110,34 +146,36 @@ describe("execution contract adapter", () => {
 });
 
 describe("execution redaction and list/detail rendering", () => {
-  it("treats unexpected secret fields as bugs to strip", () => {
+  it("keeps documented input/output and strips unexpected secret fields", () => {
     assert.equal(isSecretFieldName("kubeconfig"), true);
     assert.equal(isSecretFieldName("privateKey"), true);
-    assert.equal(isSecretFieldName("output"), true);
+    assert.equal(isSecretFieldName("output"), false);
+    assert.equal(isSecretFieldName("input"), false);
+    assert.equal(isSecretFieldName("details"), false);
     assert.equal(isSecretFieldName("secret"), true);
     assert.equal(isSecretFieldName("correlationId"), false);
     assert.equal(isSecretFieldName("idempotencyKey"), false);
+    assert.equal(isSecretFieldName("replayed"), false);
     assert.equal(isSecretFieldName("fencingToken"), false);
-    assert.equal(isSecretFieldName("workflowVersionId"), false);
 
     const strippedKeys: string[] = [];
     const cleaned = stripSecretFields(
       {
         id: EXECUTION_ID,
         kubeconfig: "apiVersion: v1",
-        output: { token: "super-secret-token" },
-        outputRedacted: { result: "ok" },
+        input: { apiKey: "[redacted]" },
+        output: { result: "[redacted]", privateKey: "-----BEGIN" },
       },
       strippedKeys,
     ) as Record<string, unknown>;
     assert.equal(cleaned.kubeconfig, undefined);
-    assert.equal(cleaned.output, undefined);
-    assert.deepEqual(cleaned.outputRedacted, { result: "ok" });
+    assert.deepEqual(cleaned.input, { apiKey: "[redacted]" });
+    assert.deepEqual(cleaned.output, { result: "[redacted]" });
     assert.ok(strippedKeys.some((key) => key.includes("kubeconfig")));
-    assert.ok(strippedKeys.some((key) => key.includes("output")));
+    assert.ok(strippedKeys.some((key) => key.includes("privateKey")));
   });
 
-  it("parses list/detail and never renders unredacted secrets", () => {
+  it("parses list/detail, shows [redacted], and never renders unredacted secrets", () => {
     const list = parseExecutionList({
       items: [
         {
@@ -145,14 +183,15 @@ describe("execution redaction and list/detail rendering", () => {
           workflowId: WORKFLOW_ID,
           workflowName: "rollout",
           workflowVersionId: VERSION_ID,
-          workflowVersionNumber: 3,
           workflowDigest: "sha256:abcdef0123456789",
           status: "indeterminate",
           startedAt: "2026-09-09T01:00:00.000Z",
           finishedAt: "2026-09-09T01:02:00.000Z",
+          createdAt: "2026-09-09T01:00:00.000Z",
           correlationId: "corr-16-characters",
           idempotencyKey: "deploy-prod-1",
-          reused: true,
+          replayed: true,
+          input: { token: "[redacted]" },
           secret: "should-not-leak",
           kubeconfig: "apiVersion: v1\nkind: Config",
         },
@@ -160,20 +199,20 @@ describe("execution redaction and list/detail rendering", () => {
     });
     assert.equal(list.length, 1);
     assert.equal(list[0]?.status, "indeterminate");
-    assert.equal(list[0]?.reused, true);
+    assert.equal(list[0]?.replayed, true);
+    assert.deepEqual(list[0]?.input, { token: "[redacted]" });
 
     const rendered = executionListText(list);
     assert.match(rendered, /indeterminate/);
     assert.match(rendered, /corr-16-characters/);
     assert.match(rendered, /deploy-prod-1/);
-    assert.match(rendered, /v3/);
+    assert.match(rendered, /did not start a second/);
     assert.equal(rendered.includes("should-not-leak"), false);
     assert.equal(rendered.includes("kind: Config"), false);
-    assert.equal(rendered.includes("apiVersion"), false);
 
     const rows = executionListDisplay(list);
     assert.equal(rows[0]?.indeterminate, true);
-    assert.equal(rows[0]?.reused, true);
+    assert.equal(rows[0]?.replayed, true);
 
     const detail = parseExecutionDetail({
       id: EXECUTION_ID,
@@ -181,41 +220,62 @@ describe("execution redaction and list/detail rendering", () => {
       workflowVersionId: VERSION_ID,
       workflowName: "rollout",
       status: "failed",
+      createdAt: "2026-09-09T01:00:00.000Z",
       correlationId: "corr-16-characters",
+      replayed: false,
+      input: { secret: "[redacted]" },
       token: "bearer-secret",
+      pins: [
+        {
+          kind: "cluster_target",
+          resourceId: WORKFLOW_ID,
+          versionId: VERSION_ID,
+          versionNumber: 2,
+          name: "prod",
+        },
+      ],
       steps: [
         {
-          id: "step-1",
+          id: "44444444-4444-4444-8444-444444444444",
           nodeId: "apply",
           nodeType: "kubernetes.apply",
           status: "indeterminate",
-          output: { kubeconfig: "cluster-admin" },
-          outputRedacted: { applied: true },
+          attempt: 1,
+          input: {},
+          output: { kubeconfig: "[redacted]", applied: true },
+          error: {},
         },
       ],
-      jobs: [{ id: "job-1", status: "lost-lease", workerId: "worker-a" }],
-      events: [
+      jobs: [
         {
-          id: "evt-1",
+          id: "55555555-5555-4555-8555-555555555555",
+          status: "queued",
+          executionStepId: "44444444-4444-4444-8444-444444444444",
+        },
+      ],
+      auditEvents: [
+        {
+          id: "66666666-6666-4666-8666-666666666666",
           action: "execution.started",
           outcome: "ok",
-          details: { password: "hunter2" },
-          detailsRedacted: { reason: "lease-lost" },
+          details: { password: "[redacted]", reason: "lease-lost" },
         },
       ],
     });
     assert.ok(detail);
     const view = executionDetailDisplay(detail as ExecutionDetail);
     assert.equal(view.steps[0]?.status, "indeterminate");
+    assert.equal(view.pins[0]?.name, "prod");
+    assert.equal(view.auditEvents.length, 1);
     const text = executionDetailText(detail as ExecutionDetail);
+    assert.match(text, /\[redacted\]/);
     assert.match(text, /lease-lost/);
     assert.match(text, /applied/);
     assert.equal(text.includes("bearer-secret"), false);
-    assert.equal(text.includes("cluster-admin"), false);
-    assert.equal(text.includes("hunter2"), false);
+    assert.equal(text.includes("-----BEGIN"), false);
   });
 
-  it("surfaces indeterminate distinctly and filters by workflow/status/time", () => {
+  it("surfaces indeterminate distinctly and filters by documented query only", () => {
     assert.equal(isIndeterminateStatus("indeterminate"), true);
     assert.equal(isIndeterminateStatus("failed"), false);
     assert.equal(executionStatusLabel("cancelled"), "canceled");
@@ -226,7 +286,6 @@ describe("execution redaction and list/detail rendering", () => {
         id: "44444444-4444-4444-8444-444444444444",
         status: "indeterminate",
         workflowId: "55555555-5555-4555-8555-555555555555",
-        startedAt: "2026-09-01T00:00:00.000Z",
       }),
     ];
     assert.equal(
@@ -237,25 +296,34 @@ describe("execution redaction and list/detail rendering", () => {
       filterExecutionList(items, { workflowId: WORKFLOW_ID }).length,
       1,
     );
-    assert.equal(
-      filterExecutionList(items, {
-        startedAfter: "2026-09-08T00:00:00.000Z",
-      }).length,
-      1,
-    );
+    assert.equal(filterExecutionList(items, { limit: 1 }).length, 1);
   });
 
-  it("surfaces idempotent replay copy when the API reused a run", () => {
-    const reused = sampleRecord({ reused: true });
+  it("surfaces 201 vs 200 replay and 409 key conflict copy", () => {
+    const replayed = sampleRecord({ replayed: true });
     const view = executionDetailDisplay({
-      ...reused,
-      inputRedacted: { dryRun: true },
+      ...replayed,
+      pins: [],
       steps: [],
       jobs: [],
-      events: [],
+      auditEvents: [],
     });
-    assert.equal(view.reusedMessage, IDEMPOTENCY_REPLAY_MESSAGE);
-    assert.match(executionListText([reused]), /did not start a second/);
+    assert.equal(view.replayedMessage, IDEMPOTENCY_REPLAY_MESSAGE);
+    assert.equal(startOutcomeMessage(200, true), IDEMPOTENCY_REPLAY_MESSAGE);
+    assert.equal(startOutcomeMessage(201, false), IDEMPOTENCY_CREATED_MESSAGE);
+    assert.equal(
+      isIdempotencyConflict({
+        type: "urn:flowforge:problem:conflict",
+        title: "Conflict",
+        status: 409,
+        detail: "idempotency fingerprint mismatch",
+        instance: "/api/v1/workflows/x/executions",
+        code: "conflict",
+        request_id: "conflict-req-16xx",
+      }),
+      true,
+    );
+    assert.match(IDEMPOTENCY_CONFLICT_MESSAGE, /409/);
   });
 });
 
@@ -275,18 +343,6 @@ describe("execution RBAC fail-closed", () => {
         request_id: "req-id-16charsxx",
       }),
       true,
-    );
-    assert.equal(
-      isExecutionForbidden({
-        type: "urn:flowforge:problem:not-found",
-        title: "Not Found",
-        status: 404,
-        detail: "missing",
-        instance: "/api/v1/executions",
-        code: "not-found",
-        request_id: "req-id-16charsxx",
-      }),
-      false,
     );
   });
 });

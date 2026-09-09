@@ -5,7 +5,14 @@ import { ExecutionApprovalState } from "@/components/approvals/ExecutionApproval
 import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
-import { executionHistoryHref, IDEMPOTENCY_REPLAY_MESSAGE } from "@/lib/execution-contract";
+import {
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IDEMPOTENCY_CREATED_MESSAGE,
+  IDEMPOTENCY_KEY_HELP,
+  IDEMPOTENCY_REPLAY_MESSAGE,
+  executionHistoryHref,
+} from "@/lib/execution-contract";
+import { isIdempotencyConflict } from "@/lib/execution";
 import type { ProblemDetails } from "@/lib/problem";
 import { shortDigest } from "@/lib/workflow";
 import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
@@ -21,6 +28,10 @@ type RunControlProps = {
   evaluationPending: boolean;
   evaluationProblem: ProblemDetails | null;
   executionApprovals: ApprovalRequest[];
+  lastStartStatus: number | null;
+  runProblem: ProblemDetails | null;
+  idempotencyKey: string;
+  onIdempotencyKey: (value: string) => void;
   onSelectVersion: (versionId: string) => void;
   onRun: () => void;
   onRefreshPin: () => void;
@@ -37,11 +48,19 @@ export function RunControl({
   evaluationPending,
   evaluationProblem,
   executionApprovals,
+  lastStartStatus,
+  runProblem,
+  idempotencyKey,
+  onIdempotencyKey,
   onSelectVersion,
   onRun,
   onRefreshPin,
 }: RunControlProps) {
   const canRun = Boolean(selectedVersionId) && !pending && !runBlocked;
+  const replayed =
+    Boolean(execution?.replayed || execution?.reused) || lastStartStatus === 200;
+  const created = lastStartStatus === 201 && !replayed;
+  const keyConflict = isIdempotencyConflict(runProblem);
 
   return (
     <section
@@ -54,8 +73,13 @@ export function RunControl({
       <p className="mt-1 text-sm text-zinc-600">
         Executions require a published{" "}
         <code className="font-mono text-xs">workflowVersionId</code>. Drafts
-        cannot run. The pin stays on that version/digest after later draft
-        edits.
+        cannot run. POST body is{" "}
+        <code className="font-mono text-xs">
+          {"{workflowVersionId, idempotencyKey?, input?}"}
+        </code>
+        . CSRF is required.{" "}
+        <code className="font-mono text-xs">201</code> is a new run;{" "}
+        <code className="font-mono text-xs">200</code> is a replay.
       </p>
 
       {versions.length === 0 ? (
@@ -63,7 +87,7 @@ export function RunControl({
           Publish a version before running. There is no draft option here.
         </p>
       ) : (
-        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="mt-4 grid gap-3">
           <label className="block text-sm">
             <span className="text-zinc-600">Published version</span>
             <select
@@ -78,6 +102,22 @@ export function RunControl({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-zinc-600">Idempotency key (optional)</span>
+            <input
+              type="text"
+              value={idempotencyKey}
+              maxLength={128}
+              onChange={(event) => onIdempotencyKey(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Same key + same input replays"
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+            />
+            <span className="mt-1 block text-xs text-zinc-500">
+              {IDEMPOTENCY_KEY_HELP}
+            </span>
           </label>
           <div className="flex items-end">
             <button
@@ -107,6 +147,18 @@ export function RunControl({
             problem={evaluationProblem}
           />
         </div>
+      ) : null}
+
+      {keyConflict ? (
+        <p role="status" className="mt-3 text-sm text-amber-950">
+          {IDEMPOTENCY_CONFLICT_MESSAGE}
+        </p>
+      ) : null}
+
+      {created ? (
+        <p role="status" className="mt-3 text-sm text-zinc-800">
+          {IDEMPOTENCY_CREATED_MESSAGE}
+        </p>
       ) : null}
 
       {execution ? (
@@ -143,8 +195,10 @@ export function RunControl({
               Open execution history
             </Link>
           </div>
-          {execution.reused ? (
+          {replayed ? (
             <p className="text-sm text-zinc-700">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
+          ) : created ? (
+            <p className="text-sm text-zinc-700">{IDEMPOTENCY_CREATED_MESSAGE}</p>
           ) : null}
           <div className="pt-2">
             <ExecutionApprovalState

@@ -191,8 +191,9 @@ The Go API now persists drafts and immutable versions. Chloe owns the draft/publ
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | `workflow.view` | JSON export or `Accept: application/yaml` |
 | `POST` | `/api/v1/workflows/{workflowId}/compare` | `workflow.view` | `{left,right}` where `kind` is `draft` or `version` (`versionId` or `versionNumber`) |
 | `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | `workflow.edit` | `{expectedRevision?}` → new draft revision; version unchanged |
-| `POST` | `/api/v1/workflows/{workflowId}/executions` | `workflow.execute` | **must** send `{workflowVersionId}`. Drafts cannot run. |
-| `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | `execution.view` | pin is stable after later draft edits |
+| `POST` | `/api/v1/workflows/{workflowId}/executions` | `workflow.execute` | **must** send `{workflowVersionId, idempotencyKey?, input?}`. `201` new / `200` replay / `409` key conflict. Drafts cannot run. |
+| `GET` | `/api/v1/workflows/{workflowId}/executions` | `execution.view` | per-workflow list (`status`, `limit`) |
+| `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | `execution.view` | detail + steps/jobs/pins/audit; pin is stable |
 
 Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/workflows/{workflowId}`, `.../draft`, `.../publish`, `.../compare`, `.../versions`, `.../versions/{versionId}`, `.../versions/{versionId}/export`, `.../versions/{versionId}/restore`, `.../executions`, `.../executions/{executionId}`. Forward session cookies, CSRF, tenant + workbench headers, `If-Match`, and `X-Request-ID`; preserve `application/problem+json` including `errors[]`.
 
@@ -226,7 +227,7 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 - **Conflict:** on `409` `conflict`, `GET` the draft and offer **Reload server draft**. The editor is not overwritten until the operator confirms.
 - **Publish:** `POST /workflows/{id}/publish` `{revision, note?}`. Publish uses the last saved draft (unsaved editor buffer is not published). Show the immutable version digest.
 - **History:** versions list, JSON export download (`filename` + `definitionYaml`), compare draft vs version or version vs version, restore-as-new-draft (`expectedRevision`).
-- **Run:** `POST /workflows/{id}/executions` **must** send `{workflowVersionId}`. The selector lists published versions only — never a draft. Re-read pin after later edits.
+- **Run:** `POST /workflows/{id}/executions` **must** send `{workflowVersionId}`. Optional `idempotencyKey` / `input`. CSRF on POST. `201` new / `200` `replayed` / `409` same key + different input. The selector lists published versions only — never a draft. Re-read pin after later edits.
 - **Proxies:** `/api/control-plane/workflows` plus `/{workflowId}`, `.../draft`, `.../publish`, `.../compare`, `.../versions`, `.../versions/{versionId}`, `.../export`, `.../restore`, `.../executions`, `.../executions/{executionId}`. CSRF on POST/PUT; `If-Match` forwarded; problem+json including `errors[]` preserved.
 
 | Method | Path | CSRF | Notes |
@@ -240,7 +241,8 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | no | JSON export |
 | `POST` | `/api/v1/workflows/{workflowId}/compare` | yes | `{left,right}` `draft` \| `version` |
 | `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | yes | restore-as-new-draft |
-| `POST` | `/api/v1/workflows/{workflowId}/executions` | yes | **requires** `workflowVersionId` |
+| `POST` | `/api/v1/workflows/{workflowId}/executions` | yes | `{workflowVersionId, idempotencyKey?, input?}` · `201`/`200`/`409` |
+| `GET` | `/api/v1/workflows/{workflowId}/executions` | no | per-workflow list |
 | `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | no | pin is stable |
 
 ## E4.1 credential vault contract (API → UI)
@@ -329,17 +331,18 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E5.1 execution history (Chloe UI)
 
-`/executions` is Chloe's minimal workspace-scoped history operator for #46. Jonny owns persistence + query APIs (still in flight). This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay, artifacts, and cancel/retry stay out (E5.3 / E6).
+`/executions` is Chloe's minimal workspace-scoped history operator for #46, wired to jonny's #51 map. This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay, artifacts, and cancel/retry stay out (E5.3 / E6).
 
-- **Contract adapter:** all query paths live in `apps/web/src/lib/execution-contract.ts`. Browser calls stay on `/api/v1/executions*`. Change `EXECUTION_UPSTREAM_COLLECTION` when jonny publishes a different prefix.
-- **List:** `GET /executions` query `workflowId`, `workflowVersionId`, `status`, `startedAfter`, `startedBefore`, `correlationId`. Cards show id, workflow, version pin, status, started/finished, correlation id, and idempotency key. Secrets and unredacted outputs are stripped.
-- **Detail:** `GET /executions/{id}` plus optional `…/steps`, `…/jobs`, `…/events`. A 404 on the workspace collection may fall back to the existing E3.2 pin `GET /workflows/{workflowId}/executions/{executionId}` when `?workflowId=` is present. Nested 403 fails closed.
+- **Contract adapter:** paths live in `apps/web/src/lib/execution-contract.ts`. Exact #51 routes only — do not invent collections or query params.
+- **List:** workspace `GET /executions` (`workflowId`, `status`, `limit`) and per-workflow `GET /workflows/{id}/executions` (`status`, `limit`). Cards show id, workflow, version pin, status, started/finished, correlation id, and idempotency key.
+- **Detail:** `GET /executions/{id}` (or `GET /workflows/{id}/executions/{id}`) includes redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`. Optional extras: `…/steps`, `…/jobs`, `…/audit-events`. Workspace audit is `GET /audit-events` (`resourceType`, `resourceId`, `action`) — not E2.2 `GET /workspace/audit-events`. Nested 403 fails closed.
+- **Redaction:** API secrets appear as `[redacted]`. Unexpected secret field names are stripped and treated as a contract bug.
 - **Indeterminate:** status badge + border + text — color is never the only signal. Do not imply an unverified remote action did not occur.
-- **Idempotency:** when the API returns `reused` / `idempotentReplay` (or POST start is `200`), surface that `(workspace, workflow version, idempotency key)` did not create a second run.
+- **Idempotency:** `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey?, input?}` with CSRF. `201` new run; `200` + `replayed: true` reuses the original; same key + different input is `409` `conflict`. Do not retry 409 with a new key unless the operator intends a new run.
 - **RBAC nav:** Executions appears when `GET /workspace` includes `execution.view`. List/detail 403 is fail-closed (no leftover rows).
-- **Run control:** existing `POST /workflows/{id}/executions` `{workflowVersionId}` is unchanged. The pin panel links to `/executions/{id}`.
+- **Run control:** published-version selector only. Optional idempotency key. Pin panel links to `/executions/{id}`.
 - **Operator routes:** `/executions`, `/executions/{id}`.
-- **Proxies:** `/api/control-plane/executions`, `/{id}`, `…/steps`, `…/jobs`, `…/events`. Session cookies, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Authorization and bodies are never logged.
+- **Proxies:** `/api/control-plane/executions`, `/{id}`, `…/steps`, `…/steps/{stepId}`, `…/jobs`, `…/audit-events`, `/audit-events`, and `GET /workflows/{id}/executions`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Authorization and bodies are never logged.
 
 ## Initial implementation components
 
