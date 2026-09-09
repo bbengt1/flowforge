@@ -35,7 +35,7 @@ The Kubernetes files are a foundation only: configure the database egress policy
 Web image and Next.js headers (`#11`):
 
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, writable paths limited to `/tmp` and `/app/.next/cache`.
-- Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when `WEB_EMBED_FRAME_ANCESTORS` lists exact host origins. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
+- Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when `WEB_EMBED_FRAME_ANCESTORS` and/or `WEB_PORTAL_FRAME_ANCESTORS` list exact host origins. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
 - Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. The web image already pins `node:22-alpine` by digest.
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):

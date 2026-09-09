@@ -58,37 +58,41 @@ type Server struct {
 	embedRing        *embed.Ring
 	embedJTI         embed.JTIConsumer
 	embedIssuers     []string
+	portalIssuers    []string
+	portalFrames     []string
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
-	DB               postgres.Checker
-	Store            identity.Store
-	Scoped           isolation.Store
-	Sessions         session.Store
-	Workflows        wfstore.Store
-	Vault            vault.Store
-	Hooks            webhook.Store
-	Schedules        schedule.Store
-	Ops              opsconfig.Store
-	Approvals        approval.Store
-	Alerts           opsalert.Store
-	Keys             vault.Keys
-	JobBindingKey    []byte
-	ScriptSigningKey []byte
-	Scripts          scripts.Store
-	Objects          artifact.Objects
-	DownloadTTL      time.Duration
-	ArtifactMaxBytes int
-	Cache            *isolation.Cache
-	Log              *slog.Logger
-	Registry         *observability.Registry
-	Security         Security
-	Now              func() time.Time
-	EmbedKeys        embed.Material
-	EmbedRing        *embed.Ring
-	EmbedJTI         embed.JTIConsumer
-	EmbedIssuers     []string
+	DB                   postgres.Checker
+	Store                identity.Store
+	Scoped               isolation.Store
+	Sessions             session.Store
+	Workflows            wfstore.Store
+	Vault                vault.Store
+	Hooks                webhook.Store
+	Schedules            schedule.Store
+	Ops                  opsconfig.Store
+	Approvals            approval.Store
+	Alerts               opsalert.Store
+	Keys                 vault.Keys
+	JobBindingKey        []byte
+	ScriptSigningKey     []byte
+	Scripts              scripts.Store
+	Objects              artifact.Objects
+	DownloadTTL          time.Duration
+	ArtifactMaxBytes     int
+	Cache                *isolation.Cache
+	Log                  *slog.Logger
+	Registry             *observability.Registry
+	Security             Security
+	Now                  func() time.Time
+	EmbedKeys            embed.Material
+	EmbedRing            *embed.Ring
+	EmbedJTI             embed.JTIConsumer
+	EmbedIssuers         []string
+	PortalIssuers        []string
+	PortalFrameAncestors []string
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -295,7 +299,9 @@ func newServer(d Deps) http.Handler {
 		embedKeys:        d.EmbedKeys,
 		embedRing:        d.EmbedRing,
 		embedJTI:         d.EmbedJTI,
-		embedIssuers:     append([]string(nil), d.EmbedIssuers...),
+		embedIssuers:     mergeIssuers(d.EmbedIssuers, d.PortalIssuers),
+		portalIssuers:    append([]string(nil), d.PortalIssuers...),
+		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
 	}
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
@@ -359,6 +365,8 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/embed/assertions", s.mintEmbedAssertion)
 	mux.HandleFunc("POST /api/v1/embed/exchange", s.exchangeEmbedAssertion)
 	mux.HandleFunc("POST /api/v1/embed/keys/rotate", s.rotateEmbedKeys)
+	mux.HandleFunc("GET /api/v1/portal/adapter", s.getPortalAdapter)
+	mux.HandleFunc("POST /api/v1/portal/adapter/assertions", s.mintPortalAssertion)
 	mux.HandleFunc("GET /api/v1/workflows/catalog", s.getWorkflowCatalog)
 	mux.HandleFunc("POST /api/v1/workflows/validate", s.validateWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/normalize", s.normalizeWorkflow)
@@ -618,6 +626,25 @@ func muxMethodNotAllowed(mux *http.ServeMux, r *http.Request) (string, string) {
 		return "", ""
 	}
 	return "The " + r.Method + " method is not allowed for this path.", strings.Join(allowed, ", ")
+}
+
+func mergeIssuers(embedList, portalList []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, list := range [][]string{embedList, portalList} {
+		for _, iss := range list {
+			iss = strings.TrimSpace(iss)
+			if iss == "" {
+				continue
+			}
+			if _, ok := seen[iss]; ok {
+				continue
+			}
+			seen[iss] = struct{}{}
+			out = append(out, iss)
+		}
+	}
+	return out
 }
 
 // ReadyChecker adapts a ping function to postgres.Checker.

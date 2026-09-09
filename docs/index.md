@@ -16,6 +16,7 @@
 - [Script engine](reference/script-engine.md): isolated Python and Go automation.
 - [Technical reference](reference/index.md): authoritative implementation map.
 - [Embed SDK / contract](reference/embed-sdk.md): versioned host assertion, durable `jti`, key rotation, and `/embed/v1` deep links.
+- [CP Ops Portal adapter](reference/portal-adapter.md): Portal host wiring, role → capability map, and integration boundary (no shared DB/executor).
 - [Deployment and local development](deployment.md): startup, safety controls, and recovery rehearsal.
 
 ## Intended audiences

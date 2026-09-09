@@ -249,12 +249,19 @@ export const EMBED_PROXY_ROUTES: readonly EmbedProxyRoute[] = [
 
 export function frameAncestorsForPath(
   pathname: string,
-  env: { WEB_EMBED_FRAME_ANCESTORS?: string } = {},
+  env: {
+    WEB_EMBED_FRAME_ANCESTORS?: string;
+    WEB_PORTAL_FRAME_ANCESTORS?: string;
+  } = {},
 ): string {
   if (!isEmbedMountPath(pathname)) {
     return "'none'";
   }
-  const allow = parseEmbedFrameAncestors(env.WEB_EMBED_FRAME_ANCESTORS);
+  const allow = parseEmbedFrameAncestors(
+    [env.WEB_EMBED_FRAME_ANCESTORS, env.WEB_PORTAL_FRAME_ANCESTORS]
+      .filter(Boolean)
+      .join(" "),
+  );
   if (allow.length === 0) {
     return "'none'";
   }
@@ -402,10 +409,17 @@ export function isEmbedUiPath(pathname: string | null | undefined): boolean {
 
 export function embedPostMessageAllowlist(env: {
   WEB_EMBED_FRAME_ANCESTORS?: string;
+  WEB_PORTAL_FRAME_ANCESTORS?: string;
   NEXT_PUBLIC_EMBED_FRAME_ANCESTORS?: string;
 } = {}): string[] {
   return parseEmbedFrameAncestors(
-    env.WEB_EMBED_FRAME_ANCESTORS || env.NEXT_PUBLIC_EMBED_FRAME_ANCESTORS,
+    [
+      env.WEB_EMBED_FRAME_ANCESTORS,
+      env.WEB_PORTAL_FRAME_ANCESTORS,
+      env.NEXT_PUBLIC_EMBED_FRAME_ANCESTORS,
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
 }
 

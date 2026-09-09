@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.16.0
+  version: 0.17.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -512,6 +512,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmbedJWKS"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /portal/adapter:
+    get:
+      operationId: getPortalAdapter
+      summary: CP Ops Portal adapter contract
+      description: |
+        E11.3 FlowForge-side Portal adapter. Documents host wiring
+        (Portal entry → role map → E11.1 mint → `/embed/v1` → E11.1
+        exchange), the Portal role → FlowForge capability map, issuer
+        allowlist, and frame-ancestors. Portal never shares the
+        FlowForge database or executor. Portal entry RBAC is not
+        FlowForge authorization.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Portal adapter contract
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalAdapterCatalog"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /portal/adapter/assertions:
+    post:
+      operationId: mintPortalAssertion
+      summary: Mint an embed assertion for the CP Ops Portal
+      description: |
+        Portal backend, after its own RBAC, maps `portalRoles` to
+        FlowForge capabilities and mints via E11.1 `embed.Mint`
+        (`aud=flowforge`, portal issuer, tenant, workbench). Not a
+        parallel auth path. `capabilities` must remain a subset of the
+        minting caller. Compact JWS is returned once. Cookie callers
+        need CSRF; header-only Portal backends skip CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/DisplayName"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MintPortalAssertionRequest"
+      responses:
+        "201":
+          description: Assertion minted
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedEmbedAssertion"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -6550,6 +6624,43 @@ components:
     EmbedCatalog:
       type: object
       description: Versioned embed SDK/contract for Chloe and host backends.
+    PortalAdapterCatalog:
+      type: object
+      description: Versioned CP Ops Portal adapter contract and host wiring map.
+    MintPortalAssertionRequest:
+      type: object
+      description: Portal-backend mint. Provide portalRoles and/or capabilities.
+      properties:
+        subject:
+          type: string
+          description: End-user subject. Defaults to the minting caller.
+        displayName:
+          type: string
+        issuer:
+          type: string
+          description: Assertion iss. Must be on PORTAL_ISSUER_ALLOWLIST when set.
+        tenantId:
+          type: string
+          format: uuid
+        workbenchKey:
+          type: string
+        workspaceId:
+          type: string
+          format: uuid
+          description: Optional binding. Must match server resolution. Never the lookup key.
+        portalRoles:
+          type: array
+          items: {type: string}
+          description: Portal roles (`portal.viewer` or `viewer`, …) mapped to FlowForge capabilities.
+        capabilities:
+          type: array
+          items: {type: string}
+          description: Extra FlowForge permission keys. Must be known catalog keys.
+        ttlSeconds:
+          type: integer
+          minimum: 15
+          maximum: 300
+
     EmbedJWKS:
       type: object
       required: [keys, signingReady]

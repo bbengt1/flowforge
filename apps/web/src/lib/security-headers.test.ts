@@ -128,6 +128,18 @@ describe("embed framing", () => {
       env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
     }).map((header) => header.key);
     assert.equal(headers.includes("X-Frame-Options"), false);
+    const portalOnly = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/embed/v1",
+      env: { WEB_PORTAL_FRAME_ANCESTORS: "https://portal.cp-ops.example" },
+    });
+    assert.match(portalOnly, /frame-ancestors https:\/\/portal\.cp-ops\.example/);
+    assert.equal(
+      embedFramingAllowed("/embed/v1", {
+        WEB_PORTAL_FRAME_ANCESTORS: "https://portal.cp-ops.example",
+      }),
+      true,
+    );
   });
 });
 

@@ -5,8 +5,9 @@
  * (HSTS when the request is actually TLS). Keep this module free of next/server
  * so next.config and node:test can import it.
  *
- * Embed (E11.1) relaxes frame-ancestors to WEB_EMBED_FRAME_ANCESTORS on
- * /embed/v1 only. Standalone stays deny/none so the shell cannot be clickjacked.
+ * Embed (E11.1) relaxes frame-ancestors to WEB_EMBED_FRAME_ANCESTORS
+ * and/or WEB_PORTAL_FRAME_ANCESTORS on /embed/v1 only. Standalone stays
+ * deny/none so the shell cannot be clickjacked.
  */
 
 import {
@@ -28,6 +29,7 @@ export type HeaderEnv = {
   WEB_CSP_CONNECT_SRC?: string;
   WEB_HSTS?: string;
   WEB_EMBED_FRAME_ANCESTORS?: string;
+  WEB_PORTAL_FRAME_ANCESTORS?: string;
 };
 
 const DEFAULT_API_ORIGIN = "http://localhost:8080";
@@ -109,6 +111,7 @@ export function buildContentSecurityPolicy(
     "form-action 'self'",
     `frame-ancestors ${frameAncestorsForPath(options.pathname ?? "/", {
       WEB_EMBED_FRAME_ANCESTORS: env.WEB_EMBED_FRAME_ANCESTORS,
+      WEB_PORTAL_FRAME_ANCESTORS: env.WEB_PORTAL_FRAME_ANCESTORS,
     })}`,
     "frame-src 'none'",
     "worker-src 'self'",
@@ -140,7 +143,11 @@ export function embedFramingAllowed(
 ): boolean {
   return (
     isEmbedMountPath(pathname) &&
-    parseEmbedFrameAncestors(env.WEB_EMBED_FRAME_ANCESTORS).length > 0
+    parseEmbedFrameAncestors(
+      [env.WEB_EMBED_FRAME_ANCESTORS, env.WEB_PORTAL_FRAME_ANCESTORS]
+        .filter(Boolean)
+        .join(" "),
+    ).length > 0
   );
 }
 
