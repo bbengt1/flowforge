@@ -19,6 +19,7 @@ const PICKER_KINDS: OpsConfigKind[] = [
   "recipient_list",
   "message_template",
   "response_schema",
+  "policy",
 ];
 
 type WorkflowConfigPinsProps = {

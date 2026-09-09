@@ -258,15 +258,24 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
   }
 }
 
+export function kindAcceptsPolicyId(kind: OpsConfigKind): boolean {
+  return (
+    kind === "cluster_target" ||
+    kind === "ssh_target" ||
+    kind === "command_profile"
+  );
+}
+
 /** Host-supplied id / workspaceId are never sent on writes. */
 export function buildCreateBody(
   name: string,
   spec: OpsConfigSpec,
   slug?: string,
+  kind?: OpsConfigKind,
 ): CreateConfigBody {
   const body: CreateConfigBody = {
     name: name.trim(),
-    spec: pickSafeSpec(spec),
+    spec: pickSafeSpec(spec, kind),
   };
   const trimmedSlug = slug?.trim();
   if (trimmedSlug) {
@@ -279,10 +288,11 @@ export function buildSaveDraftBody(
   revision: number,
   spec: OpsConfigSpec,
   name?: string,
+  kind?: OpsConfigKind,
 ): SaveDraftBody {
   const body: SaveDraftBody = {
     revision,
-    spec: pickSafeSpec(spec),
+    spec: pickSafeSpec(spec, kind),
   };
   const trimmed = name?.trim();
   if (trimmed) {
@@ -355,11 +365,17 @@ const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "policy",
 ];
 
-export function pickSafeSpec(spec: OpsConfigSpec): OpsConfigSpec {
+export function pickSafeSpec(
+  spec: OpsConfigSpec,
+  kind?: OpsConfigKind,
+): OpsConfigSpec {
   const out: OpsConfigSpec = {};
   for (const key of SPEC_KEYS) {
     const value = spec[key];
     if (value === undefined || value === null) {
+      continue;
+    }
+    if (key === "policyId" && kind && !kindAcceptsPolicyId(kind)) {
       continue;
     }
     if (key === "credentialId" || key === "policyId") {
