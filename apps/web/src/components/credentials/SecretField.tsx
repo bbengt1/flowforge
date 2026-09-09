@@ -48,8 +48,7 @@ export function SecretField({
           data-1p-ignore="true"
           data-form-type="other"
           rows={6}
-          className={`${shared} min-h-32`}
-          style={{ WebkitTextSecurity: "disc" }}
+          className={`${shared} min-h-32 [-webkit-text-security:disc]`}
         />
       ) : (
         <input
