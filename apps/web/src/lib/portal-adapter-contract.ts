@@ -292,6 +292,9 @@ export const PORTAL_DENIED_MESSAGE =
 export const PORTAL_HOSTILE_ISSUER_MESSAGE =
   "Hostile Portal issuer (HTTP 403). The issuer is not on PORTAL_ISSUER_ALLOWLIST. Portal admin is not FlowForge membership.";
 
+export const PORTAL_NO_BOOTSTRAP_MESSAGE =
+  "Embed sessions cannot create tenants or sibling workbenches (HTTP 403). Portal admin does not grant platform.administer or FlowForge membership bootstrap.";
+
 export const PORTAL_REPLAY_MESSAGE =
   "This assertion was already used (HTTP 409). Exchange is POST /embed/exchange only. Request a new mint.";
 

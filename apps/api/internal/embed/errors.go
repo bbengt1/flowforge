@@ -26,4 +26,5 @@ var (
 	ErrRotationUnready  = errors.New("embed key rotation overlap is not enabled")
 	ErrTenancyUnready   = errors.New("embed tenancy propagation is not enabled")
 	ErrTenancyMismatch  = errors.New("embed session tenant/workbench does not match host context")
+	ErrBootstrap        = errors.New("embed sessions cannot create tenants or workspaces")
 )

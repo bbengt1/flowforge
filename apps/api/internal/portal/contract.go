@@ -117,7 +117,7 @@ func HostWiring() []HostStep {
 			ID:    "authorize",
 			Actor: "flowforge",
 			Do:    "Later API calls use the cookie session + CSRF + exchanged tenant/workbench headers. FlowForge membership ∩ minted capabilities is the grant.",
-			Note:  "A Portal admin who is not a FlowForge member cannot administer. Host-supplied tenant is never authorization.",
+			Note:  "A Portal admin who is not a FlowForge member cannot administer or bootstrap tenants/sibling workbenches. platform.administer is never minted. Host-supplied tenant is never authorization.",
 		},
 	}
 }

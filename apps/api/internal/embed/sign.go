@@ -150,7 +150,7 @@ func validateCapabilities(caps []string) error {
 	seen := map[string]struct{}{}
 	for _, c := range caps {
 		c = strings.TrimSpace(c)
-		if c == "" || !authz.Known(c) {
+		if c == "" || !authz.Known(c) || authz.PlatformScopedPermission(c) {
 			return ErrCapability
 		}
 		if _, ok := seen[c]; ok {

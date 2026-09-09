@@ -70,6 +70,8 @@ func writePortalError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, portal.ErrRoleRequired), errors.Is(err, portal.ErrUnknownRole),
 		errors.Is(err, portal.ErrUnknownCapability):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Portal roles or capabilities are missing or not in the capability map.")
+	case errors.Is(err, portal.ErrPlatformCapability):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Portal capabilities must not include platform.administer.")
 	case errors.Is(err, portal.ErrIssuer), errors.Is(err, portal.ErrHostileHost):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Portal issuer is not on the allowlist.")
 	default:

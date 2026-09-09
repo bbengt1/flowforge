@@ -47,14 +47,14 @@ Host backends mint a short-lived Ed25519 (EdDSA) assertion; the embed shell exch
 | `GET /api/v1/embed/catalog` | SDK `embed.v1`, claims, standalone/embed routes, key management, completed E11.2 hooks. No auth. | `200` catalog | — |
 | `GET /api/v1/embed/jwks` | Public Ed25519 keys (active + overlap). Never `d` / PEM / seed. | `200` `{keys,signingReady}` | — |
 | `POST /api/v1/embed/assertions` | Host mint with the **active** key. Identity headers or session. Workspace from tenant + workbench. `capabilities` ⊂ caller perms. | `201` minted assertion (JWS once) | `400` `401` `403` `503` |
-| `POST /api/v1/embed/exchange` | Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume `jti`, bind tenancy onto `ff_session`. Body `{assertion,sdk?}`. No CSRF. | `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}` (`session.embed` present) | `400` missing claims `401` audience/expired/nbf/signature/unknown kid `403` tenancy `409` replay `503` |
+| `POST /api/v1/embed/exchange` | Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume `jti`, bind tenancy onto `ff_session`. Body `{assertion,sdk?}`. No CSRF. Bound sessions cannot `POST /tenants` or `POST /workspaces`. | `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}` (`session.embed` present) | `400` missing claims `401` audience/expired/nbf/signature/unknown kid `403` tenancy `409` replay `503` |
 | `POST /api/v1/embed/keys/rotate` | Register the previous active public JWK as overlap, or retire an overlap kid (`platform.administer` via `PLATFORM_ADMINS`). `workspace.administer` is `403`. Mint stays on the active env key. | `200` JWKS | `400` `401` `403` `503` |
 
 Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`. Defaults: subject/issuer = caller; TTL 60s (15s–5m). Assertion claims: `iss`, `aud=flowforge`, `sub`, `nbf`, `exp`, `jti`, `tenant_id`, `workbench_key`, `workspace_id?`, `capabilities`, `sdk=embed.v1`.
 
 Rotate body: `{action:"register-overlap"|"retire", publicJwk, overlapUntil?, kid?}`. Ops (platform-admin only): register the **current** public JWK as overlap (must match the process active key), deploy new `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`, retire after max assertion TTL. A caller-supplied foreign Ed25519 key is `400`. `EMBED_OVERLAP_KEYS` is the env form of the same public set.
 
-Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. Chloe UI honors that bind on chrome and deep links (`apps/web/src/lib/embed-tenancy-contract.ts`, `EMBED_TENANCY_RULES`).
+Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. They **cannot** bootstrap tenants or sibling workbenches (`POST /tenants` / `POST /workspaces` → `403`), even if the principal is on `PLATFORM_ADMINS`. Chloe UI honors that bind on chrome and deep links (`apps/web/src/lib/embed-tenancy-contract.ts`, `EMBED_TENANCY_RULES`). **No embed UI change** — Membership create-tenant/create-workspace is standalone / platform-admin only; hide or treat `403` as expected from `/embed/v1/membership`.
 
 ## CP Ops Portal adapter (E11.3)
 
@@ -67,9 +67,9 @@ Replace/adapt Portal’s protected workflow surface without sharing the FlowForg
 | `GET /api/v1/portal/adapter` | Adapter `portal.v1`, capability map, host wiring, issuer/frame allowlists. No auth. Never includes DB/executor/credentials. | `200` catalog | — |
 | `POST /api/v1/portal/adapter/assertions` | Portal-backend mint. `portalRoles` → FlowForge capabilities, then E11.1 `embed.Mint`. Identity headers + tenant/workbench. Issuer must be on `PORTAL_ISSUER_ALLOWLIST` when set. | `201` minted assertion (JWS once) | `400` unknown role `401` `403` hostile issuer / binding `503` |
 
-Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`. Roles: `portal.viewer` / `viewer`, `portal.editor` / `editor`, `portal.publisher` / `publisher`, `portal.operator` / `operator`, `portal.approver` / `approver`, `portal.admin` / `admin`.
+Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`. Roles: `portal.viewer` / `viewer`, `portal.editor` / `editor`, `portal.publisher` / `publisher`, `portal.operator` / `operator`, `portal.approver` / `approver`, `portal.admin` / `admin`. `portal.admin` does **not** include `platform.administer` and cannot bootstrap tenants or membership.
 
-Epic #120 negatives (fail closed): hostile host issuer, replayed assertion (`409` on exchange), cross-tenant/workbench (`403`), no credential plaintext or raw runner-log exposure.
+Epic #120 negatives (fail closed): hostile host issuer, replayed assertion (`409` on exchange), cross-tenant/workbench (`403`), no credential plaintext or raw runner-log exposure, embed session tenant/workspace create (`403`), Portal `admin` extra `platform.administer` (`400`).
 
 ## Workspace identity and RBAC (E2.1)
 
@@ -82,9 +82,9 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 | `GET /api/v1/permission-matrix` | Role/permission catalog covering view, edit, publish, execute, credential, approval, and administration (including platform-scoped `platform.administer`). | `200` `{permissions,roles}` | `401` |
 | `GET /api/v1/roles` | Persisted role vocabulary. | `200` `{items}` | `401` |
 | `GET /api/v1/permissions` | Persisted permission vocabulary. | `200` `{items}` | `401` |
-| `POST /api/v1/tenants` | Create a tenant. Requires `platform.administer` (`PLATFORM_ADMINS`). Unauthenticated is `401`; any other caller is `403`. | `201` tenant | `400` `401` `403` `409` |
+| `POST /api/v1/tenants` | Create a tenant. Requires `platform.administer` (`PLATFORM_ADMINS`) on a **non-embed** session. Unauthenticated is `401`; embed sessions and any other caller are `403`. | `201` tenant | `400` `401` `403` `409` |
 | `GET /api/v1/workspaces` | Workspaces the caller belongs to (server-side bindings). | `200` `{items}` | `401` |
-| `POST /api/v1/workspaces` | Create a workspace unique on `(tenant_id, workbench_key)`; caller is bound as `admin`. Requires `platform.administer`. Body `id` / `workspace_id` rejected. | `201` workspace | `400` `401` `403` `404` `409` |
+| `POST /api/v1/workspaces` | Create a workspace unique on `(tenant_id, workbench_key)`; caller is bound as `admin`. Requires `platform.administer` on a **non-embed** session. Embed sessions (including sibling-workbench bodies) are `403`. Body `id` / `workspace_id` rejected. | `201` workspace | `400` `401` `403` `404` `409` |
 | `GET /api/v1/workspace` | Current workspace, roles, and permissions after membership check. | `200` | `400` `401` `403` `404` |
 | `GET /api/v1/workspace/members` | List members. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
 | `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. | `200` member | `400` `401` `403` `404` `409` |

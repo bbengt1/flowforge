@@ -84,6 +84,13 @@ func PropagateTenancy(bound SessionTenancy, host authz.WorkspaceClaim) (SessionT
 	return bound, nil
 }
 
+// DeniesBootstrap reports whether an embed-bound session may create
+// tenants, workspaces, or sibling workbenches. Bound sessions always
+// deny; platform.administer on the principal does not override.
+func DeniesBootstrap(bound bool) bool {
+	return bound
+}
+
 // IntersectCapabilities returns membership permissions that also appear
 // on the embed assertion. An embed session never escalates past the
 // minted capability set. Empty assertion capabilities fail closed.
@@ -103,6 +110,9 @@ func IntersectCapabilities(membership, assertion []string) []string {
 	seen := map[string]struct{}{}
 	for _, c := range membership {
 		c = strings.TrimSpace(c)
+		if authz.PlatformScopedPermission(c) {
+			continue
+		}
 		if _, ok := allow[c]; !ok {
 			continue
 		}

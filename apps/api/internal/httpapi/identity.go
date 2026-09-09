@@ -234,7 +234,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.requirePlatformAdmin(w, r, user) {
+	if !s.requireBootstrapAdmin(w, r, user) {
 		return
 	}
 	var req createTenantRequest
@@ -254,7 +254,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.requirePlatformAdmin(w, r, user) {
+	if !s.requireBootstrapAdmin(w, r, user) {
 		return
 	}
 	var req createWorkspaceRequest

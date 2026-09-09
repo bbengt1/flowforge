@@ -40,7 +40,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 | `tenant_id` | yes | Context; never authorization by itself. Bound onto the session |
 | `workbench_key` | yes | With `tenant_id` is the workspace identity. Bound onto the session |
 | `workspace_id` | no | Binding only. Must match server resolution. Never the lookup key |
-| `capabilities` | yes | FlowForge permission keys; mint requires a subset of the caller. Caps the embed session |
+| `capabilities` | yes | FlowForge workspace permission keys; mint requires a subset of the caller. Caps the embed session. `platform.administer` is never mintable |
 | `sdk` | yes | `embed.v1` |
 | `display_name` | no | Display context until the API verifies the subject |
 | `host` | no | Minting caller issuer when minting for another subject |
@@ -56,7 +56,10 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    **Never** put the assertion in a URL, `localStorage`, or logs.
 4. Response sets `ff_session` / `ff_csrf` and returns workspace + capabilities.
    The session record stores `(tenant_id, workbench_key, workspace_id, capabilities)`
-   as `session.embed`. Navigate to the embed mount (`/embed/v1/…`).
+   as `session.embed`. That bind is the only workspace the session may use.
+   The session **cannot** `POST /tenants` or `POST /workspaces` (sibling
+   workbenches included), even if the principal is a platform-admin.
+   Navigate to the embed mount (`/embed/v1/…`).
 5. Subsequent API calls use the cookie session + `X-CSRF-Token` like standalone.
    The UI **must** send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`
    from the **exchanged** workspace / `session.embed`, never from host query.
@@ -79,7 +82,8 @@ Portal entry RBAC is not FlowForge authorization. See
 | Send both headers | Every later `/api/v1` / `/api/control-plane` call sends tenant id (or slug) **and** workbench key matching the bound session. |
 | Host is display only | Deep-link `tenant`, `workbench`, `host`, `displayName` stay unverified chrome until exchange. They never authorize. |
 | Mismatch fails closed | If the host later supplies a different tenant or workbench, the API returns `403`. Do not retry with the host value. |
-| Capabilities cap | `session.embed.capabilities` is the minted set. Membership cannot escalate past it. Hide UI actions the session cannot perform. |
+| Capabilities cap | `session.embed.capabilities` is the minted set. Membership cannot escalate past it. Hide UI actions the session cannot perform. `platform.administer` is never in this set. |
+| No bootstrap | Do not offer create-tenant / create-workspace from embed chrome. Those routes return `403` for embed sessions. Standalone platform-admin bootstrap is unchanged. |
 | GET `/session` | When `session.embed` is present, treat it as the source of truth over host route state. |
 | Configuration / jobs / history | Lookups, job tickets, caches, realtime, history, and audit are scoped by the server-derived workspace that matches that pair. Do not send `X-FlowForge-Workspace-ID` as the lookup key. |
 
@@ -125,7 +129,7 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + overlap) |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | Validate + atomic `jti` consume + bind tenancy onto `ff_session` |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | Validate + atomic `jti` consume + bind tenancy onto `ff_session`. Bound sessions cannot create tenants or workspaces. |
 | `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap, or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
@@ -179,5 +183,5 @@ and `workspace_id` only.
 | --- | --- | --- |
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
 | `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. Rotate API is platform-admin only and accepts only the previous active public key. |
-| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. |
+| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |

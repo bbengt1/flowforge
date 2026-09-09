@@ -37,7 +37,7 @@ func CapabilityMap() []RoleBinding {
 		{RolePublisher, authz.RolePublisher, "Edit and publish. Cannot execute or administer."},
 		{RoleOperator, authz.RoleOperator, "Run published workflows and use credentials. Cannot edit definitions or administer."},
 		{RoleApprover, authz.RoleApprover, "Decide approvals. Cannot edit, execute, or administer."},
-		{RoleAdmin, authz.RoleAdmin, "Full FlowForge workspace administration. Still requires FlowForge membership after exchange."},
+		{RoleAdmin, authz.RoleAdmin, "Full FlowForge workspace administration if the subject is already a member. Does not include platform.administer and cannot bootstrap tenants or sibling workbenches."},
 	} {
 		ff := authz.ExpandRoles([]string{role.alias})
 		out = append(out, RoleBinding{
@@ -99,6 +99,9 @@ func MapRoles(roles []string) ([]string, error) {
 	if len(caps) == 0 {
 		return nil, ErrUnknownRole
 	}
+	if err := rejectPlatformCapabilities(caps); err != nil {
+		return nil, err
+	}
 	return caps, nil
 }
 
@@ -119,6 +122,9 @@ func UnionCapabilities(roles, extra []string) ([]string, error) {
 		if key == "" {
 			continue
 		}
+		if authz.PlatformScopedPermission(key) {
+			return nil, ErrPlatformCapability
+		}
 		if !authz.Known(key) {
 			return nil, ErrUnknownCapability
 		}
@@ -127,7 +133,19 @@ func UnionCapabilities(roles, extra []string) ([]string, error) {
 	if len(caps) == 0 {
 		return nil, ErrRoleRequired
 	}
+	if err := rejectPlatformCapabilities(caps); err != nil {
+		return nil, err
+	}
 	return uniqueCatalogOrder(caps), nil
+}
+
+func rejectPlatformCapabilities(keys []string) error {
+	for _, key := range keys {
+		if authz.PlatformScopedPermission(key) {
+			return ErrPlatformCapability
+		}
+	}
+	return nil
 }
 
 func uniqueCatalogOrder(keys []string) []string {

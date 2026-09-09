@@ -56,12 +56,13 @@ type KeyManagement struct {
 
 // CatalogRules are fail-closed product rules for the embed shell.
 type CatalogRules struct {
-	AssertionNotInURL     bool `json:"assertionNotInURL"`
-	HostIDsNotAuthz       bool `json:"hostIdsAreNotAuthorization"`
-	SingleUse             bool `json:"singleUse"`
-	AudienceBound         bool `json:"audienceBound"`
-	AsymmetricSigned      bool `json:"asymmetricSigned"`
-	StandaloneDeepLinksOK bool `json:"standaloneDeepLinksRemainValid"`
+	AssertionNotInURL            bool `json:"assertionNotInURL"`
+	HostIDsNotAuthz              bool `json:"hostIdsAreNotAuthorization"`
+	SingleUse                    bool `json:"singleUse"`
+	AudienceBound                bool `json:"audienceBound"`
+	AsymmetricSigned             bool `json:"asymmetricSigned"`
+	StandaloneDeepLinksOK        bool `json:"standaloneDeepLinksRemainValid"`
+	EmbedSessionsCannotBootstrap bool `json:"embedSessionsCannotBootstrap"`
 }
 
 // NewCatalog builds the E11.1 + E11.2 contract document.
@@ -81,7 +82,7 @@ func NewCatalog() Catalog {
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Assertion is never accepted from a URL."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap, or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the active env key. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
@@ -94,16 +95,17 @@ func NewCatalog() Catalog {
 		Hooks: []HookStatus{
 			{ID: "jti.consume", Status: "ready", Fail: "replayed jti is 409; store failure is 503", Note: "Atomic Postgres INSERT ON CONFLICT with TTL. MemoryJTI remains for process-local tests."},
 			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed; overlap register of a non-prior-active key fails closed; workspace.administer cannot rotate", Note: "Active signing key plus explicit overlap verification keys (env + rotate API). Rotate API accepts only the previous active public key and requires platform.administer."},
-			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit."},
+			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed; embed sessions cannot bootstrap tenants or sibling workbenches", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit. POST /tenants and POST /workspaces from an embed session are 403 even if the principal is a platform-admin."},
 			{ID: "portal.adapter", Status: "ready", Fail: "hostile host, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). FlowForge never shares its database or executor."},
 		},
 		Rules: CatalogRules{
-			AssertionNotInURL:     true,
-			HostIDsNotAuthz:       true,
-			SingleUse:             true,
-			AudienceBound:         true,
-			AsymmetricSigned:      true,
-			StandaloneDeepLinksOK: true,
+			AssertionNotInURL:            true,
+			HostIDsNotAuthz:              true,
+			SingleUse:                    true,
+			AudienceBound:                true,
+			AsymmetricSigned:             true,
+			StandaloneDeepLinksOK:        true,
+			EmbedSessionsCannotBootstrap: true,
 		},
 	}
 }
@@ -119,7 +121,7 @@ func claimDocs() []ClaimDoc {
 		{Name: "tenant_id", Required: true, JSON: "tenant_id", Note: "Workspace identity half. Bound onto the session. Host tenant is never authorization by itself."},
 		{Name: "workbench_key", Required: true, JSON: "workbench_key", Note: "Workspace identity half with tenant_id. Bound onto the session and required on later UI/API calls."},
 		{Name: "workspace_id", Required: false, JSON: "workspace_id", Note: "Optional binding. Must match server resolution. Never the lookup key."},
-		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge permission keys. Mint requires a subset of the caller."},
+		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge workspace permission keys. Mint requires a subset of the caller. platform.administer is never mintable."},
 		{Name: "sdk", Required: true, JSON: "sdk", Note: "embed.v1"},
 		{Name: "display_name", Required: false, JSON: "display_name", Note: "Display context until the API verifies the subject."},
 		{Name: "host", Required: false, JSON: "host", Note: "Minting caller issuer when minting for another subject."},

@@ -81,6 +81,11 @@ func TestMintRejectsWrongAudienceAndBadTTL(t *testing.T) {
 	if _, _, err := Mint(m, in); err != ErrCapability {
 		t.Fatalf("unknown cap: %v", err)
 	}
+	in = testMintInput(time.Now().UTC())
+	in.Capabilities = []string{authz.PermPlatformAdminister}
+	if _, _, err := Mint(m, in); err != ErrCapability {
+		t.Fatalf("platform.administer: %v", err)
+	}
 }
 
 func TestVerifyMissingClaims(t *testing.T) {
@@ -223,7 +228,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap {
 		t.Fatal("rules")
 	}
 	foundRotate := false
@@ -237,6 +242,12 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	}
 	if !foundRotate {
 		t.Fatal("catalog missing rotate route")
+	}
+	if DeniesBootstrap(false) {
+		t.Fatal("unbound session must allow the trusted bootstrap path")
+	}
+	if !DeniesBootstrap(true) {
+		t.Fatal("bound embed session must deny tenant/workspace bootstrap")
 	}
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
