@@ -81,7 +81,7 @@ func NewCatalog() Catalog {
 		API: []APIRoute{
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
-			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
+			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
 			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap, or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the active env key. Unknown kid fails closed."},
 		},
@@ -112,18 +112,18 @@ func NewCatalog() Catalog {
 
 func claimDocs() []ClaimDoc {
 	return []ClaimDoc{
-		{Name: "iss", Required: true, JSON: "iss", Note: "Host issuer that minted via FlowForge (caller issuer). Must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (merged with Portal issuers on exchange). Empty allowlist fails closed."},
+		{Name: "iss", Required: true, JSON: "iss", Note: "Host issuer that minted via FlowForge (always the authenticated caller). Client-supplied issuer that differs is 403. Must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (merged with Portal issuers on exchange). Empty allowlist fails closed."},
 		{Name: "aud", Required: true, JSON: "aud", Note: "Must be flowforge. Wrong audience fails closed."},
-		{Name: "sub", Required: true, JSON: "sub", Note: "End-user external subject."},
+		{Name: "sub", Required: true, JSON: "sub", Note: "End-user external subject. Bound to the minting caller unless the caller has embed.impersonate (PLATFORM_ADMINS)."},
 		{Name: "nbf", Required: true, JSON: "nbf", Note: "Unix seconds. Not-yet-valid fails closed."},
 		{Name: "exp", Required: true, JSON: "exp", Note: "Unix seconds. Short TTL (default 60s, max 5m)."},
 		{Name: "jti", Required: true, JSON: "jti", Note: "Unique token id. Single-use. Atomic durable consume with TTL; replay is 409."},
 		{Name: "tenant_id", Required: true, JSON: "tenant_id", Note: "Workspace identity half. Bound onto the session. Host tenant is never authorization by itself."},
 		{Name: "workbench_key", Required: true, JSON: "workbench_key", Note: "Workspace identity half with tenant_id. Bound onto the session and required on later UI/API calls."},
 		{Name: "workspace_id", Required: false, JSON: "workspace_id", Note: "Optional binding. Must match server resolution. Never the lookup key."},
-		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge workspace permission keys. Mint requires a subset of the caller. platform.administer is never mintable."},
+		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge workspace permission keys. Mint requires a subset of the caller. platform.administer and embed.impersonate are never mintable."},
 		{Name: "sdk", Required: true, JSON: "sdk", Note: "embed.v1"},
 		{Name: "display_name", Required: false, JSON: "display_name", Note: "Display context until the API verifies the subject."},
-		{Name: "host", Required: false, JSON: "host", Note: "Minting caller issuer when minting for another subject."},
+		{Name: "host", Required: false, JSON: "host", Note: "Minting caller issuer. Set when minting for another subject (embed.impersonate)."},
 	}
 }

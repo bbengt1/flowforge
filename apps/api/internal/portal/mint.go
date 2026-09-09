@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 )
 
@@ -22,22 +23,20 @@ type MintRequest struct {
 }
 
 // PrepareMint maps Portal roles and builds an E11.1 MintInput.
-// It does not sign. Signing stays in embed.Mint.
-func PrepareMint(req MintRequest, callerIssuer, callerSubject, display, tenantID, workbench, workspaceID string, allow []string, now time.Time) (embed.MintInput, []string, error) {
+// It does not sign. Signing stays in embed.Mint. Subject is bound to
+// the caller unless canImpersonate (embed.impersonate / PLATFORM_ADMINS).
+// Issuer is always the caller; a mismatched client issuer is rejected.
+func PrepareMint(req MintRequest, callerIssuer, callerSubject, display, tenantID, workbench, workspaceID string, allow []string, now time.Time, canImpersonate bool) (embed.MintInput, []string, bool, error) {
 	caps, err := UnionCapabilities(req.PortalRoles, req.Capabilities)
 	if err != nil {
-		return embed.MintInput{}, nil, err
+		return embed.MintInput{}, nil, false, err
 	}
-	issuer := strings.TrimSpace(req.Issuer)
-	if issuer == "" {
-		issuer = strings.TrimSpace(callerIssuer)
+	issuer, subject, impersonating, err := authz.BindMintIdentity(callerIssuer, callerSubject, req.Issuer, req.Subject, canImpersonate)
+	if err != nil {
+		return embed.MintInput{}, nil, false, err
 	}
 	if !IssuerAllowed(issuer, allow) {
-		return embed.MintInput{}, nil, ErrIssuer
-	}
-	subject := strings.TrimSpace(req.Subject)
-	if subject == "" {
-		subject = strings.TrimSpace(callerSubject)
+		return embed.MintInput{}, nil, false, ErrIssuer
 	}
 	name := strings.TrimSpace(req.DisplayName)
 	if name == "" && subject == strings.TrimSpace(callerSubject) {
@@ -56,5 +55,5 @@ func PrepareMint(req MintRequest, callerIssuer, callerSubject, display, tenantID
 		TTL:          ttl,
 		Audience:     Audience,
 		Now:          now,
-	}, caps, nil
+	}, caps, impersonating, nil
 }

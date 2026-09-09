@@ -63,7 +63,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   overlapping verification keys; unknown `kid` fails closed. The rotate API
   may register only the previous active public key and requires
   `platform.administer` (`PLATFORM_ADMINS`); `workspace.administer` is not
-  enough.   After exchange, the
+  enough. Mint binds `sub` and `iss` to the authenticated caller. A
+  different subject requires `embed.impersonate` (same `PLATFORM_ADMINS`
+  allowlist; empty is fail-closed). A different issuer is always `403`.
+  Workspace `admin` cannot impersonate. `embed.impersonate` is
+  platform-scoped and is never mintable. After exchange, the
   browser session is bound to `(tenant_id, workbench_key)`; that pair travels
   through API authorization, configuration lookups, jobs/workers, caches,
   realtime, history, and audit. The bound session cannot call tenant or

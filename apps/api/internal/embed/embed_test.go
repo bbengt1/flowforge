@@ -87,6 +87,11 @@ func TestMintRejectsWrongAudienceAndBadTTL(t *testing.T) {
 	if _, _, err := Mint(m, in); err != ErrCapability {
 		t.Fatalf("platform.administer: %v", err)
 	}
+	in = testMintInput(time.Now().UTC())
+	in.Capabilities = []string{authz.PermEmbedImpersonate}
+	if _, _, err := Mint(m, in); err != ErrCapability {
+		t.Fatalf("embed.impersonate: %v", err)
+	}
 }
 
 func TestVerifyMissingClaims(t *testing.T) {
@@ -232,8 +237,14 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap {
 		t.Fatal("rules")
 	}
-	foundRotate := false
+	foundRotate, foundMint := false, false
 	for _, r := range c.API {
+		if r.Path == "/api/v1/embed/assertions" {
+			foundMint = true
+			if !strings.Contains(r.Note, "embed.impersonate") || !strings.Contains(r.Note, "subset of the caller") {
+				t.Fatalf("mint note %q", r.Note)
+			}
+		}
 		if r.Path == "/api/v1/embed/keys/rotate" {
 			foundRotate = true
 			if !strings.Contains(r.Auth, "platform.administer") || strings.Contains(r.Auth, "workspace.administer") {
@@ -243,6 +254,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	}
 	if !foundRotate {
 		t.Fatal("catalog missing rotate route")
+	}
+	if !foundMint {
+		t.Fatal("catalog missing mint route")
 	}
 	if DeniesBootstrap(false) {
 		t.Fatal("unbound session must allow the trusted bootstrap path")

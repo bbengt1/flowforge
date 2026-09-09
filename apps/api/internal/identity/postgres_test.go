@@ -123,6 +123,9 @@ func TestMemoryRejectsPlatformAdminWorkspaceBinding(t *testing.T) {
 	if containsString(perms, authz.PermPlatformAdminister) {
 		t.Fatalf("workspace admin must not receive platform.administer: %v", perms)
 	}
+	if containsString(perms, authz.PermEmbedImpersonate) {
+		t.Fatalf("workspace admin must not receive embed.impersonate: %v", perms)
+	}
 }
 
 func containsString(in []string, want string) bool {

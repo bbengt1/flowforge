@@ -160,13 +160,21 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	subject := strings.TrimSpace(req.Subject)
-	if subject == "" {
-		subject = user.ExternalSubject
-	}
-	issuer := strings.TrimSpace(req.Issuer)
-	if issuer == "" {
-		issuer = user.Issuer
+	issuer, subject, impersonating, err := authz.BindMintIdentity(
+		user.Issuer, user.ExternalSubject, req.Issuer, req.Subject,
+		authz.CanEmbedImpersonate(user.Issuer, user.ExternalSubject, s.platformAdmins),
+	)
+	if err != nil {
+		reason := "impersonation"
+		if errors.Is(err, authz.ErrMintIssuerSpoof) {
+			reason = "issuer"
+		}
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing embed.impersonate")
+		}
+		WriteForbidden(w, r)
+		return
 	}
 	if !embed.IssuerAllowed(issuer, s.embedMintIssuers) {
 		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "issuer", "", s.embedMaterial().KeyID, issuer, subject)
@@ -195,7 +203,11 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		writeEmbedError(w, r, err)
 		return
 	}
-	s.auditEmbed(r, "embed.minted", session.OutcomeAllowed, "issued", minted.TokenID, minted.KeyID, issuer, subject)
+	reason := "issued"
+	if impersonating {
+		reason = "impersonated"
+	}
+	s.auditEmbed(r, "embed.minted", session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, issuer, subject)
 	writeJSON(w, http.StatusCreated, minted)
 }
 
@@ -328,6 +340,10 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion is not valid.")
 	case errors.Is(err, embed.ErrReplay):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The embed assertion has already been used.")
+	case errors.Is(err, authz.ErrMintImpersonation):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Mint subject must match the authenticated caller unless embed.impersonate is granted.")
+	case errors.Is(err, authz.ErrMintIssuerSpoof):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Mint issuer must match the authenticated caller.")
 	case errors.Is(err, embed.ErrTenancyMismatch):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Host-supplied tenant or workbench does not match the embed session.")
 	case errors.Is(err, embed.ErrBootstrap):

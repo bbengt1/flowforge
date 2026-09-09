@@ -102,7 +102,7 @@ func TestMembershipAuthorizationDenyByDefault(t *testing.T) {
 	for _, action := range []string{
 		authz.PermWorkflowEdit, authz.PermWorkflowPublish, authz.PermWorkflowExecute,
 		authz.PermCredentialManage, authz.PermApprovalDecide, authz.PermWorkspaceAdminister,
-		authz.PermPlatformAdminister,
+		authz.PermPlatformAdminister, authz.PermEmbedImpersonate,
 	} {
 		if contains(viewer.Permissions, action) {
 			t.Fatalf("viewer unexpectedly granted %s", action)

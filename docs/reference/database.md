@@ -32,7 +32,7 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. |
 | `users` | `id`, `issuer`, `external_subject`, `display_name`, `status` | OIDC/host identity reference; unique `(issuer, external_subject)`; no provider token. |
 | `roles` | `id`, `key`, `description` | Stable role vocabulary. |
-| `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`, `platform.administer`. |
+| `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`, `platform.administer`, `embed.impersonate`. |
 | `role_permissions` | `role_id`, `permission_id` | Role capability map. |
 | `workspace_role_bindings` | `workspace_id`, `user_id`, `role_id` | Workspace-scoped RBAC. |
 | `browser_sessions` | `id`, `user_id`, `token_hash`, `csrf_hash`, idle/absolute expiry, `revoked_at`, optional `embed_tenant_id` / `embed_workbench_key` / `embed_workspace_id` / `embed_capabilities` | Cookie secrets stored only as SHA-256; no RLS (identity substrate). Embed exchange binds `(tenant_id, workbench_key)` onto the session. |

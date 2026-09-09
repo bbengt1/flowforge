@@ -45,8 +45,20 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 		writeIdentityError(w, r, authz.ErrWorkspaceIdentityMismatch)
 		return
 	}
-	in, caps, err := portal.PrepareMint(req, user.Issuer, user.ExternalSubject, user.DisplayName, tenant.ID, ws.WorkbenchKey, ws.ID, s.portalIssuers, s.clockNow())
+	in, caps, impersonating, err := portal.PrepareMint(req, user.Issuer, user.ExternalSubject, user.DisplayName, tenant.ID, ws.WorkbenchKey, ws.ID, s.portalIssuers, s.clockNow(), authz.CanEmbedImpersonate(user.Issuer, user.ExternalSubject, s.platformAdmins))
 	if err != nil {
+		if errors.Is(err, authz.ErrMintImpersonation) || errors.Is(err, authz.ErrMintIssuerSpoof) {
+			reason := "impersonation"
+			if errors.Is(err, authz.ErrMintIssuerSpoof) {
+				reason = "issuer"
+			}
+			s.auditEmbed(r, "portal.rejected", session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+			if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+				s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing embed.impersonate")
+			}
+			WriteForbidden(w, r)
+			return
+		}
 		writePortalError(w, r, err)
 		return
 	}
@@ -61,7 +73,11 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 		writeEmbedError(w, r, err)
 		return
 	}
-	s.auditEmbed(r, "portal.minted", session.OutcomeAllowed, "issued", minted.TokenID, minted.KeyID, minted.Issuer, minted.Subject)
+	reason := "issued"
+	if impersonating {
+		reason = "impersonated"
+	}
+	s.auditEmbed(r, "portal.minted", session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, minted.Issuer, minted.Subject)
 	writeJSON(w, http.StatusCreated, minted)
 }
 
@@ -72,6 +88,10 @@ func writePortalError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Portal roles or capabilities are missing or not in the capability map.")
 	case errors.Is(err, portal.ErrPlatformCapability):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Portal capabilities must not include platform.administer.")
+	case errors.Is(err, authz.ErrMintImpersonation):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Mint subject must match the authenticated caller unless embed.impersonate is granted.")
+	case errors.Is(err, authz.ErrMintIssuerSpoof):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Mint issuer must match the authenticated caller.")
 	case errors.Is(err, portal.ErrIssuer), errors.Is(err, portal.ErrHostileHost):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Portal issuer is not on the allowlist. Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed.")
 	default:

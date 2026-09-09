@@ -721,7 +721,7 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 | --- | --- | --- | --- |
 | `GET` | `/api/v1/embed/catalog` | no | Contract. No auth |
 | `GET` | `/api/v1/embed/jwks` | no | Public keys only |
-| `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller |
+| `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`). This shell does not mint. |
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |
 
 E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell honors that contract (see below).
@@ -734,7 +734,7 @@ Jonny's Portal adapter APIs + host wiring map. Relates to #123 / Part of #120 �
 
 1. Portal RBAC allows entry (Portal-owned). This is not FlowForge authorization.
 2. Portal backend maps Portal roles → FlowForge capabilities (`GET /api/v1/portal/adapter` `capabilityMap`).
-3. Portal backend `POST /api/v1/portal/adapter/assertions` `{portalRoles}` (identity headers + tenant/workbench). Same mint as E11.1 (`aud=flowforge`). Compact JWS once.
+3. Portal backend `POST /api/v1/portal/adapter/assertions` `{portalRoles}` (identity headers + tenant/workbench). Same mint as E11.1 (`aud=flowforge`). Compact JWS once. Minting `{subject}` for a Portal end-user requires the Portal service principal on `PLATFORM_ADMINS` (`embed.impersonate`); otherwise `403`.
 4. Embed shell `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` — **body only**.
 5. Navigate to `/embed/v1/…`. Persist tenant + workbench from the exchanged session.
 
@@ -746,7 +746,7 @@ Thin chrome + exchange gate on the #125 map. `apps/api` is unchanged. Relates to
 
 - **Mount:** `/embed/v1` (same standalone hrefs under rewrite). `/embed` redirects to `/embed/v1` only — not a parallel product tree.
 - **Exchange:** `POST /embed/exchange` `{assertion, sdk?: "embed.v1"}` body-only. CSRF-exempt. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. Nested `assertion` is metadata (no compact JWS). Forget the JWS after POST.
-- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint.
+- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint. **ADV-004:** no embed-shell UI change. Subject/issuer bind is enforced on the API.
 - **postMessage:** `{type:"flowforge.embed.assertion",version:1,assertion}`. Cross-origin parents must be in `WEB_EMBED_FRAME_ANCESTORS` / `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS`. Same-origin is accepted.
 - **Secrets:** assertion never in query, hash, path, or `localStorage`. Host query values are display-only until exchange. Workspace lookup after exchange uses API `workspace` / `tenant`, not host query.
 - **CSP:** standalone stays `frame-ancestors 'none'` / `X-Frame-Options: DENY`. `WEB_EMBED_FRAME_ANCESTORS` relaxes framing on `/embed/v1` only.
@@ -774,13 +774,14 @@ Thin host wiring on jonny's **#129** map (`e113-#129`). `apps/api` is unchanged.
 | --- | --- | --- |
 | 1. Entry | Portal RBAC | Host-owned (`/portal/workflows`). Not FlowForge authz. |
 | 2. Map roles | Portal backend | `GET /api/v1/portal/adapter` → `capabilityMap` |
-| 3. Mint | Portal backend | `POST /api/v1/portal/adapter/assertions` `{portalRoles}` — same Ed25519 mint as embed |
+| 3. Mint | Portal backend | `POST /api/v1/portal/adapter/assertions` `{portalRoles}` — same Ed25519 mint as embed. `{subject}` for another user requires `embed.impersonate` / `PLATFORM_ADMINS` |
 | 4. Mount | Embed shell | `/embed/v1/…` — frame only if Portal origin in `WEB_PORTAL_FRAME_ANCESTORS` / `WEB_EMBED_FRAME_ANCESTORS` |
 | 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Replay → `409`. |
 
 - **Never:** assertion in query/hash/path/`localStorage`; Portal RBAC as FlowForge auth; shared DB/executor; retry a 403 with host tenant/workbench; Portal “admin” as FlowForge membership.
 - **CSP:** `/portal` and `/portal/workflows` set `frame-src 'self'` so the host can iframe same-origin `/embed/v1`. Production Portal origin must be in `WEB_PORTAL_FRAME_ANCESTORS` and/or `WEB_EMBED_FRAME_ANCESTORS` (`'self'` is accepted for the in-repo demo). Standalone stays `frame-ancestors 'none'` / `frame-src 'none'`.
 - **Proxies:** `GET /api/v1/portal/adapter` (no auth) and `POST /api/v1/portal/adapter/assertions` (CSRF if cookie). Exchange is not a Portal hop.
+- **ADV-004:** no Portal host UI change. Mint subject bind / `embed.impersonate` is API-only. The demo host still posts `{portalRoles}` as the caller.
 
 ## Required validation
 

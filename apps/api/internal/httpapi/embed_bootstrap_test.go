@@ -79,6 +79,7 @@ func TestPortalNonMemberAdminCannotBootstrapMembership(t *testing.T) {
 		EmbedJTI:      embed.NewMemoryJTI(),
 		PortalIssuers: []string{portalIssuer},
 		PlatformAdmins: []authz.PrincipalRef{
+			{Issuer: portalIssuer, Subject: "portal-svc"},
 			{Issuer: portalIssuer, Subject: "portal-guest"},
 		},
 		Now: func() time.Time { return *clock },
@@ -147,6 +148,12 @@ func TestPortalAdminCapabilityCannotMintPlatformAdminister(t *testing.T) {
 	}
 }
 
+func TestPortalAdminCapabilityCannotMintEmbedImpersonate(t *testing.T) {
+	env := newPortalEnv(t)
+	rec := env.mintPortal(t, `{"portalRoles":["portal.admin"],"capabilities":["embed.impersonate"]}`)
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+}
+
 func TestPlatformAdminNonEmbedCanStillBootstrap(t *testing.T) {
 	store := identity.NewMemory()
 	sessions := session.NewMemory()
@@ -189,6 +196,14 @@ func TestEmbedMintRejectsPlatformAdministerCapability(t *testing.T) {
 	rec := env.mint(t, `{"capabilities":["platform.administer"]}`)
 	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
 		t.Fatalf("mint platform.administer: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEmbedMintRejectsEmbedImpersonateCapability(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["embed.impersonate"]}`)
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Fatalf("mint embed.impersonate: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
