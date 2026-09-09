@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from "react";
 import { lineCount, offsetForLine } from "@/lib/workflow";
 import { highlightYaml } from "@/lib/workflow-yaml-highlight";
+import { readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
 
 type YamlEditorProps = {
   value: string;
@@ -38,6 +39,7 @@ export function YamlEditor({
   const lines = lineCount(value);
   const errorSet = new Set(errorLines.filter((line) => line > 0));
   const highlighted = highlightYaml(value);
+  const meta = readYamlWorkflowMeta(value);
 
   useEffect(() => {
     if (!focusLine || focusLine < 1) {
@@ -80,6 +82,11 @@ export function YamlEditor({
       <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
         <label htmlFor={textareaId} className="text-sm font-medium text-zinc-800">
           YAML
+          {meta.name ? (
+            <span className="ml-2 font-mono text-xs font-normal text-zinc-500">
+              {meta.name}
+            </span>
+          ) : null}
         </label>
         <p className="text-xs text-zinc-500">
           Synced with the canvas. Line/column errors jump here.

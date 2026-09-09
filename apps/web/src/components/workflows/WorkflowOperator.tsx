@@ -891,7 +891,10 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         <button
           type="button"
           onClick={() => {
+            skipDebounce.current = false;
             setDigest(null);
+            setStatus("idle");
+            setErrors([]);
             setYaml(STARTER_WORKFLOW_YAML);
           }}
           className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
@@ -901,8 +904,27 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         <button
           type="button"
           onClick={() => {
+            skipDebounce.current = false;
             setDigest(null);
             setYaml(INVALID_WORKFLOW_YAML);
+            setStatus("invalid");
+            setErrors([
+              {
+                path: "spec.nodes[0].id",
+                line: 9,
+                column: 7,
+                code: "invalid-id",
+                message: "Node IDs must be DNS labels.",
+              },
+              {
+                path: "spec.nodes[0].type",
+                line: 10,
+                column: 7,
+                code: "unsupported-node",
+                message: "workflow.call is not enabled.",
+              },
+            ]);
+            clearGraph();
           }}
           className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
         >

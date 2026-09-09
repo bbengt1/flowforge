@@ -99,23 +99,27 @@ export function ActionLibrary({
               <ul className="mt-2 divide-y divide-zinc-100">
                 {items.map((entry) => (
                   <li key={entry.type} className="py-2">
-                    <div
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(ACTION_DRAG_MIME, entry.type);
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      className="rounded-lg border border-transparent px-1 hover:border-zinc-200"
-                    >
+                    <div className="rounded-lg border border-transparent px-1 hover:border-zinc-200">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
+                        <div
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData(ACTION_DRAG_MIME, entry.type);
+                            event.dataTransfer.effectAllowed = "copy";
+                          }}
+                          className="min-w-0 cursor-grab"
+                        >
                           <p className="text-sm font-medium text-zinc-900">{entry.name}</p>
                           <p className="font-mono text-xs text-zinc-600">{entry.type}</p>
                         </div>
                         {onInsert ? (
                           <button
                             type="button"
-                            onClick={() => onInsert(entry)}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onInsert(entry);
+                            }}
                             className="rounded-md border border-teal-800 bg-teal-800 px-2 py-1 text-xs font-medium text-white hover:bg-teal-900"
                           >
                             Add
