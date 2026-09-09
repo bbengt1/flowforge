@@ -94,8 +94,8 @@ function serverMountedSnapshot(): boolean {
 }
 
 function subscribeNever(onStoreChange: () => void): () => void {
-  void onStoreChange;
-  return () => undefined;
+  const timer = setTimeout(onStoreChange, 0);
+  return () => clearTimeout(timer);
 }
 
 export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
