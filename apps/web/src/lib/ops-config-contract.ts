@@ -53,7 +53,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.cluster_target,
     group: "targets",
     title: "Kubernetes cluster targets",
-    summary: "Workspace cluster endpoint metadata. Kubeconfig stays in the vault.",
+    summary:
+      "Workspace cluster endpoint + vault credential + optional Kubernetes policy pin. Kubeconfig stays in the vault.",
     yamlRef: "clusterTargetId",
   },
   {
@@ -117,7 +118,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.policy,
     group: "config",
     title: "Policies",
-    summary: "Target and profile policy revisions. Referenced versions are immutable.",
+    summary:
+      "Target and profile policy revisions, including Kubernetes namespace/kind/verb allowlists. Referenced versions are immutable.",
     yamlRef: "policyId",
   },
 ];

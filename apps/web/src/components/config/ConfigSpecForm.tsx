@@ -1,7 +1,11 @@
 "use client";
 
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
+import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
+import { KubernetesPolicyForm } from "@/components/config/KubernetesPolicyForm";
+import { PolicyRefSelect } from "@/components/config/PolicyRefSelect";
 import type { DevIdentity } from "@/lib/identity-headers";
+import { isKubernetesPolicySpec } from "@/lib/kubernetes";
 import { parseJsonObject, specJson } from "@/lib/ops-config";
 import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
@@ -49,12 +53,14 @@ export function ConfigSpecForm({
           ready={ready}
           value={spec.credentialId ?? ""}
           disabled={readOnly}
+          allowedTypes={kind === "cluster_target" ? ["kubernetes"] : undefined}
           onChange={(credentialId) => patch({ credentialId })}
         />
       ) : null}
 
       {kind === "cluster_target" ? (
         <>
+          <KubernetesLeastPrivilegeNotes />
           <TextField
             label="API server"
             value={String(endpoint.apiServer ?? "")}
@@ -94,6 +100,13 @@ export function ConfigSpecForm({
             onChange={(value) =>
               patch({ allowedNamespaces: splitList(value) })
             }
+          />
+          <PolicyRefSelect
+            identity={identity}
+            ready={ready}
+            value={spec.policyId ?? ""}
+            disabled={readOnly}
+            onChange={(policyId) => patch({ policyId })}
           />
         </>
       ) : null}
@@ -429,17 +442,25 @@ export function ConfigSpecForm({
               ))}
             </select>
           </label>
-          <JsonField
-            label="Policy"
-            value={spec.policy ?? {}}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(policy) => patch({ policy })}
-          />
+          {isKubernetesPolicySpec(spec) ? (
+            <KubernetesPolicyForm
+              spec={spec}
+              readOnly={readOnly}
+              onChange={onChange}
+            />
+          ) : (
+            <JsonField
+              label="Policy"
+              value={spec.policy ?? {}}
+              disabled={readOnly}
+              className={inputClass}
+              onChange={(policy) => patch({ policy })}
+            />
+          )}
         </>
       ) : null}
 
-      {kindAcceptsPolicyId(kind) ? (
+      {kindAcceptsPolicyId(kind) && kind !== "cluster_target" ? (
         <TextField
           label="Optional policy pin (UUID)"
           value={spec.policyId ?? ""}

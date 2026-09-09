@@ -1,0 +1,225 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  applyKubernetesPolicyToSpec,
+  authorizedClusterTargets,
+  authorizedKubernetesPolicies,
+  clusterTargetSelectorLabel,
+  isKubernetesActionType,
+  kubernetesPolicyGaps,
+  kubernetesSecretKeysIn,
+  parseKubernetesPolicy,
+  sanitizeKubernetesSpec,
+} from "./kubernetes.ts";
+import type { OpsConfigPin, OpsConfigSummary } from "./ops-config-types.ts";
+
+const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
+const VERSION_ID = "22222222-2222-4222-8222-222222222222";
+const CREDENTIAL_ID = "33333333-3333-4333-8333-333333333333";
+
+function target(overrides: Partial<OpsConfigSummary> = {}): OpsConfigSummary {
+  return {
+    id: RESOURCE_ID,
+    kind: "cluster_target",
+    name: "prod-cluster",
+    status: "published",
+    draftRevision: 1,
+    latestVersionId: VERSION_ID,
+    latestVersionNumber: 2,
+    latestVersionDigest: "sha256:abcd",
+    credentialId: CREDENTIAL_ID,
+    ...overrides,
+  };
+}
+
+function pin(overrides: Partial<OpsConfigPin> = {}): OpsConfigPin {
+  return {
+    kind: "policy",
+    resourceId: RESOURCE_ID,
+    versionId: VERSION_ID,
+    versionNumber: 1,
+    digest: "sha256:aa",
+    name: "prod-k8s-policy",
+    spec: { kind: "kubernetes", policy: { allowedNamespaces: ["app"] } },
+    ...overrides,
+  };
+}
+
+describe("kubernetes policy parse / write", () => {
+  it("reads allowlist aliases and writes canonical E4.3 keys", () => {
+    const parsed = parseKubernetesPolicy({
+      kind: "kubernetes",
+      policy: {
+        namespaces: ["app", "jobs"],
+        kinds: ["Deployment", "Secret", "ConfigMap"],
+        verbs: ["get", "apply", "delete"],
+        requireApproval: true,
+        operations: ["kubernetes.apply"],
+        approverRole: "approver",
+        expiresIn: "PT1H",
+      },
+    });
+    assert.deepEqual(parsed.allowedNamespaces, ["app", "jobs"]);
+    assert.deepEqual(parsed.allowedKinds, ["Deployment", "ConfigMap"]);
+    assert.deepEqual(parsed.allowedVerbs, ["get", "apply"]);
+    assert.equal(parsed.requireApproval, true);
+    const spec = applyKubernetesPolicyToSpec({}, parsed);
+    assert.equal(spec.kind, "kubernetes");
+    const policy = spec.policy as Record<string, unknown>;
+    assert.deepEqual(policy.allowedNamespaces, ["app", "jobs"]);
+    assert.deepEqual(policy.allowedKinds, ["Deployment", "ConfigMap"]);
+    assert.equal(policy.requireApproval, true);
+    assert.equal(policy.approverRole, "approver");
+    assert.equal("kubeconfig" in policy, false);
+  });
+
+  it("reports least-privilege gaps when allowlists are empty", () => {
+    const gaps = kubernetesPolicyGaps({
+      allowedNamespaces: [],
+      allowedKinds: [],
+      allowedVerbs: [],
+      requireApproval: true,
+      operations: [],
+    });
+    assert.ok(gaps.some((gap) => /namespaces/i.test(gap)));
+    assert.ok(gaps.some((gap) => /kinds/i.test(gap)));
+    assert.ok(gaps.some((gap) => /verbs/i.test(gap)));
+    assert.ok(gaps.some((gap) => /operations/i.test(gap)));
+  });
+});
+
+describe("secret stripping", () => {
+  it("strips kubeconfig and other unexpected secrets from specs", () => {
+    const sanitized = sanitizeKubernetesSpec({
+      credentialId: CREDENTIAL_ID,
+      endpoint: { apiServer: "https://k8s.example" },
+      kubeconfig: "apiVersion: v1\nkind: Config",
+      token: "super-secret",
+      privateKey: "-----BEGIN FAKE-----",
+    });
+    assert.equal(sanitized.credentialId, CREDENTIAL_ID);
+    assert.equal(sanitized.endpoint?.apiServer, "https://k8s.example");
+    assert.equal("kubeconfig" in sanitized, false);
+    assert.equal("token" in sanitized, false);
+    assert.equal("privateKey" in sanitized, false);
+    const leaked = kubernetesSecretKeysIn({
+      spec: { kubeconfig: "cluster-admin", credentialId: CREDENTIAL_ID },
+    });
+    assert.ok(leaked.some((key) => key.includes("kubeconfig")));
+    assert.equal(
+      leaked.some((key) => key.toLowerCase().includes("credentialid")),
+      false,
+    );
+  });
+});
+
+describe("authorized cluster target selectors", () => {
+  it("fails closed on 403 and never lists the leaked target", () => {
+    const forbidden = authorizedClusterTargets({
+      statusCode: 403,
+      problem: {
+        type: "urn:flowforge:problem:forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Cross-workspace resource.",
+        instance: "/cluster-targets",
+        code: "forbidden",
+        request_id: "req-forbidden-16x",
+      },
+      items: [target()],
+    });
+    assert.equal(forbidden.closed, true);
+    assert.deepEqual(forbidden.options, []);
+    assert.match(forbidden.reason ?? "", /Forbidden/);
+    assert.equal(
+      JSON.stringify(forbidden.options).includes("kubeconfig"),
+      false,
+    );
+  });
+
+  it("lists only published credential-bound cluster targets", () => {
+    const result = authorizedClusterTargets({
+      items: [
+        target(),
+        target({
+          id: "44444444-4444-4444-8444-444444444444",
+          name: "unbound",
+          credentialId: "",
+          latestVersionId: "55555555-5555-4555-8555-555555555555",
+        }),
+        target({
+          id: "66666666-6666-4666-8666-666666666666",
+          name: "draft-only",
+          latestVersionId: undefined,
+          latestVersionNumber: undefined,
+        }),
+        target({
+          id: "77777777-7777-4777-8777-777777777777",
+          kind: "ssh_target",
+          name: "edge-ssh",
+        }),
+      ],
+    });
+    assert.equal(result.closed, false);
+    assert.deepEqual(
+      result.options.map((item) => item.name),
+      ["prod-cluster"],
+    );
+    assert.equal(result.options[0]?.resourceId, RESOURCE_ID);
+    assert.doesNotMatch(
+      clusterTargetSelectorLabel(result.options[0]!),
+      /kubeconfig|BEGIN|token/i,
+    );
+  });
+
+  it("fails closed when nothing is authorized", () => {
+    const empty = authorizedClusterTargets({ items: [] });
+    assert.equal(empty.closed, true);
+    assert.deepEqual(empty.options, []);
+  });
+});
+
+describe("authorized kubernetes policy selectors", () => {
+  it("fails closed on 403 and drops non-kubernetes pins", () => {
+    const forbidden = authorizedKubernetesPolicies({
+      statusCode: 403,
+      problem: {
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "not authorized",
+        instance: "/policies",
+        code: "forbidden",
+        request_id: "req-1",
+      },
+      pins: [pin()],
+    });
+    assert.equal(forbidden.closed, true);
+    assert.equal(forbidden.options.length, 0);
+
+    const filtered = authorizedKubernetesPolicies({
+      pins: [
+        pin(),
+        pin({
+          resourceId: "88888888-8888-4888-8888-888888888888",
+          spec: { kind: "ssh", policy: {} },
+          name: "ssh-policy",
+        }),
+      ],
+    });
+    assert.equal(filtered.closed, false);
+    assert.deepEqual(
+      filtered.options.map((item) => item.name),
+      ["prod-k8s-policy"],
+    );
+  });
+});
+
+describe("kubernetes action detection", () => {
+  it("recognizes MVP kubernetes node types only", () => {
+    assert.equal(isKubernetesActionType("kubernetes.apply"), true);
+    assert.equal(isKubernetesActionType("kubernetes.get"), true);
+    assert.equal(isKubernetesActionType("ssh.run"), false);
+    assert.equal(isKubernetesActionType("flow.delay"), false);
+  });
+});

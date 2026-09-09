@@ -15,7 +15,8 @@ const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
   {
     id: "targets",
     title: "Targets",
-    blurb: "Kubernetes clusters and SSH hosts. Endpoint metadata only — credentials stay in the vault.",
+    blurb:
+      "Kubernetes clusters and SSH hosts. Cluster targets bind a workspace vault credential and optional E7.1 Kubernetes policy. Endpoint metadata only — kubeconfig stays in the vault.",
   },
   {
     id: "profiles",
@@ -25,7 +26,8 @@ const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
   {
     id: "config",
     title: "Config",
-    blurb: "Connections, recipient lists, templates, response schemas, and policies.",
+    blurb:
+      "Connections, recipient lists, templates, response schemas, and policies. Kubernetes policies use namespace/kind/verb allowlists.",
   },
 ];
 

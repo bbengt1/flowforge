@@ -34,6 +34,7 @@ import {
   applyCoreNodeConfig,
   insertCatalogNode,
   listYamlNodes,
+  updateYamlNode,
   type CoreNodeWith,
 } from "@/lib/workflow-yaml-nodes";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -898,6 +899,23 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     return result.errors;
   }
 
+  function patchNodeWith(id: string, patch: Record<string, unknown>) {
+    const node = listYamlNodes(yaml).find((item) => item.id === id);
+    if (!node) {
+      return;
+    }
+    const next = updateYamlNode(yaml, {
+      id: node.id,
+      type: node.type,
+      name: node.name,
+      with: { ...node.with, ...patch },
+    });
+    if (next) {
+      setDigest(null);
+      setYaml(next);
+    }
+  }
+
   function importFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1232,6 +1250,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             canCall={canCall}
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
+            onPatchNodeWith={patchNodeWith}
           />
           <ValidationPanel
             status={status}

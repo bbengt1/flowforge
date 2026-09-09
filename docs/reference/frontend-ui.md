@@ -158,6 +158,18 @@ Helpers: `apps/web/src/lib/execution-replay.ts`. Components: `ExecutionReplay.ts
 
 **API gaps (jonny, not blocking):** no execution-vs-execution compare route; no replay projection endpoint (client uses version YAML + steps); wait/resume remain E10.
 
+## E7.1 cluster target and Kubernetes policy (Chloe UI)
+
+E7.1 (Chloe) extends the E4.2 `/config` cluster-target and policy surfaces for epic #69. `apps/api` is unchanged. **Do not stack on an API feature branch.** Jonny's dedicated route map is still in flight — the single retarget adapter is `apps/web/src/lib/kubernetes-contract.ts`. Default upstream is the #41 ops-config collections on `main` (`/cluster-targets`, `/policies`) with the same draft / publish / versions / select shape. Relates to #70 / Part of #69 — do not close #70 alone.
+
+- **Cluster targets:** bind a workspace `kubernetes` vault credential by display name/id only. Optional published Kubernetes policy pin via `POST /policies/{id}/select`. Endpoint metadata (`apiServer`, TLS) only. The UI never receives, stores, or renders kubeconfig or plaintext.
+- **Kubernetes policy:** structured allowlists for namespaces, kinds (`ConfigMap`, `Service`, `Deployment`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`, `Ingress`, `NetworkPolicy`), and verbs (`get`, `list`, `apply`, `watch`). Least-privilege notes are shown on the form. Approval-required operations (`requireApproval`, `operations`, `approverRole`, `expiresIn`) follow E4.3 evaluation keys. Empty allowlists fail closed.
+- **Selectors:** action wizard and node inspector list only authorized published cluster targets (credential-bound when the API reports `credentialId`). `POST …/select` remains the authorize step. HTTP 403 fails closed — no leftover rows.
+- **Session:** cookie session + `X-CSRF-Token` on POST/PUT. Host-supplied `id` / `workspaceId` are never sent on writes. Unexpected secret fields are stripped and treated as a contract bug.
+- **Proxies:** same-origin `/api/control-plane/{cluster-targets,policies}/…` plus existing ops-config catalog/select. `retargetKubernetesApiPath` rewrites onto upstream collections when jonny's map lands.
+- **Operator routes:** existing `/config/cluster-targets` and `/config/policies` — not a duplicate Targets app.
+- **Typed client:** `apps/web/src/lib/kubernetes-client.ts`. Helpers: `kubernetes.ts`.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
