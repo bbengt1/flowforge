@@ -23,12 +23,20 @@ export default async function ExecutionDetailPage({
           Execution
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Header, steps, jobs, pins, and redacted audit events from #51.
+          Header, steps, jobs, pins, and redacted audit events. Status
+          polls{" "}
+          <code className="font-mono text-sm">GET /executions/{"{id}"}</code>{" "}
+          (#53) — never <code className="font-mono text-sm">/jobs/*</code>.
           Cancel is{" "}
           <code className="font-mono text-sm">POST /executions/{"{id}"}/cancel</code>{" "}
           with CSRF and <code className="font-mono text-sm">execution.cancel</code>.
-          A second cancel is idempotent. HTTP 403 is fail-closed. Secrets
-          appear as <code className="font-mono text-sm">[redacted]</code>.
+          Retry is{" "}
+          <code className="font-mono text-sm">POST …/retry</code> for failed
+          or canceled core <code className="font-mono text-sm">data.*</code>{" "}
+          / <code className="font-mono text-sm">flow.*</code> steps only —
+          never <code className="font-mono text-sm">indeterminate</code>.
+          HTTP 403 is fail-closed. Secrets appear as{" "}
+          <code className="font-mono text-sm">[redacted]</code>.
         </p>
       </header>
       <ExecutionDetail executionId={id} workflowId={query.workflowId} />

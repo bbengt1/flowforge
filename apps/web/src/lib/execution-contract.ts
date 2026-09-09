@@ -1,16 +1,18 @@
 /**
  * Single adapter for Chloe's execution UI.
  *
- * E5.1 (#51 on `main`): list/detail/steps/jobs/audit + idempotent start.
- * E5.2 (#47): cancel + status hooks. Jonny's dispatch/lease/fencing
- * routes are still in flight — keep cancel/retry path names here so a
- * later map change does not scatter through UI. Do not invent retry
- * until the route is published (`EXECUTION_RETRY_ROUTE_PUBLISHED`).
+ * E5.1 (#51 on `main`): list/detail + idempotent start.
+ * E5.2 (#47): cancel/retry/status, retargeted to Jonny's #53 map.
+ *
+ * Status (steps, jobs, leaseExpiresAt, heartbeatAt, fencingToken) comes
+ * from polling `GET /api/v1/executions/{id}` — never `/jobs/*`
+ * (claim / heartbeat / complete / fail / recover).
  *
  * Browser stays on same-origin `/api/v1/…`. Next rewrites to
  * `/api/control-plane/*`; identity-proxy maps onto the Go API.
  *
- * Relates to #47 / Part of #45. Do not change `apps/api`.
+ * Relates to #47 / Part of #45. Cites #53. Do not change `apps/api`.
+ * Do not close #47 alone.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -19,7 +21,7 @@ import type { AuditEventQuery, ExecutionListQuery } from "./execution-types.ts";
 export const EXECUTION_STORY = 46;
 export const EXECUTION_DISPATCH_STORY = 47;
 export const EXECUTION_EPIC = 45;
-export const EXECUTION_API_PR = 51;
+export const EXECUTION_API_PR = 53;
 
 export const EXECUTION_UI_COLLECTION = "executions";
 export const EXECUTION_UPSTREAM_COLLECTION = "executions";
@@ -30,8 +32,10 @@ export const EXECUTION_AUDIT_EVENTS_ACTION = "audit-events";
 export const EXECUTION_CANCEL_ACTION = "cancel";
 export const EXECUTION_CANCEL_UPSTREAM_ACTION = "cancel";
 export const EXECUTION_RETRY_ACTION = "retry";
-/** Jonny has not published a retry route on `main`. Do not invent one. */
-export const EXECUTION_RETRY_ROUTE_PUBLISHED = false;
+/** #53 published POST …/retry and POST …/steps/{stepId}/retry. */
+export const EXECUTION_RETRY_ROUTE_PUBLISHED = true;
+/** Poll GET /executions/{id} while queued/running. Never poll /jobs/*. */
+export const EXECUTION_STATUS_POLL_MS = 2000;
 export const WORKSPACE_AUDIT_EVENTS_COLLECTION = "audit-events";
 
 export const EXECUTION_WORKFLOW_QUERY = "workflowId";
@@ -80,7 +84,25 @@ export const INDETERMINATE_STATUS_HELP =
   "Indeterminate means a remote side effect may have occurred and was not verified. Do not assume the action did not run.";
 
 export const RETRY_UNAVAILABLE_MESSAGE =
-  "Retry is not offered. No retry route is in the published map, and this UI will not invent one.";
+  "Retry is only offered for failed or canceled core data.* / flow.* steps. Provider nodes and other terminals are not retried from this UI.";
+
+export const RETRY_INDETERMINATE_MESSAGE =
+  "Retry is not offered for indeterminate outcomes. A remote side effect may have occurred and was not verified. Do not assume the action did not run.";
+
+export const RETRY_APPLIED_MESSAGE =
+  "Retry queued a new attempt (HTTP 201). The API did not silently re-run an indeterminate step.";
+
+export const RETRY_FORBIDDEN_MESSAGE =
+  "Retry requires workflow.execute. HTTP 403 is fail-closed; this UI does not start another attempt.";
+
+export const RETRY_CONFLICT_MESSAGE =
+  "The API rejected retry (HTTP 409). Indeterminate and provider nodes cannot be retried.";
+
+export const RETRY_CSRF_HELP =
+  "Retry sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
+
+export const STATUS_POLL_HELP =
+  "While queued or running, this page polls GET /executions/{id} for steps and jobs. It never calls /jobs/*.";
 
 export function executionsPath(): string {
   return `/${EXECUTION_UI_COLLECTION}`;
@@ -120,19 +142,36 @@ export function workflowExecutionCancelPath(
   return `${workflowExecutionPath(workflowId, executionId)}/${EXECUTION_CANCEL_ACTION}`;
 }
 
-/**
- * Retry is not in the published route map. Returns null so callers
- * cannot invent POST …/retry.
- */
-export function executionRetryPath(_executionId: string): string | null {
-  if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
-    return null;
-  }
-  return `${executionPath(_executionId)}/${EXECUTION_RETRY_ACTION}`;
+export function executionRetryPath(executionId: string): string {
+  return `${executionPath(executionId)}/${EXECUTION_RETRY_ACTION}`;
 }
 
-/** Empty JSON body. Never send host-supplied id / workspaceId. */
+export function executionStepRetryPath(
+  executionId: string,
+  stepId: string,
+): string {
+  return `${executionStepPath(executionId, stepId)}/${EXECUTION_RETRY_ACTION}`;
+}
+
+export function workflowExecutionRetryPath(
+  workflowId: string,
+  executionId: string,
+): string {
+  return `${workflowExecutionPath(workflowId, executionId)}/${EXECUTION_RETRY_ACTION}`;
+}
+
+/** Empty JSON body — Go `EmptyDispatchRequest`. Never send host-supplied id / workspaceId. */
 export function buildCancelBody(): Record<string, never> {
+  return {};
+}
+
+/** Go `RetryRequest` — optional stepId when retrying a known step. */
+export function buildRetryBody(input?: { stepId?: string }): {
+  stepId?: string;
+} {
+  if (input?.stepId) {
+    return { stepId: input.stepId };
+  }
   return {};
 }
 
@@ -221,7 +260,8 @@ export function isExecutionProxySegments(segments: string[]): boolean {
     segments[0] === "workflows" &&
     segments[2] === EXECUTION_UI_COLLECTION &&
     (segments[4] === EXECUTION_CANCEL_ACTION ||
-      segments[4] === EXECUTION_CANCEL_UPSTREAM_ACTION)
+      segments[4] === EXECUTION_CANCEL_UPSTREAM_ACTION ||
+      segments[4] === EXECUTION_RETRY_ACTION)
   );
 }
 
@@ -285,8 +325,9 @@ function eq(segments: string[], expected: readonly string[]): boolean {
 /**
  * Allowlisted Next proxy routes. identity-proxy spreads this array.
  * POST start stays on `/workflows/{id}/executions` (already
- * allowlisted with CSRF). Do not add POST /executions. Cancel is
- * POST `…/cancel` only. Retry is not allowlisted until published.
+ * allowlisted with CSRF). Do not add POST /executions or any
+ * `/jobs/*` worker route (claim / heartbeat / complete / fail /
+ * recover). Cancel and retry follow the #53 map.
  */
 export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, [EXECUTION_UI_COLLECTION]) },
@@ -298,6 +339,16 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       isResourceId(s[1]) &&
       s[2] === EXECUTION_STEPS_ACTION &&
       isResourceId(s[3]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_STEPS_ACTION &&
+      isResourceId(s[3]) &&
+      s[4] === EXECUTION_RETRY_ACTION,
   },
   {
     methods: ["GET"],
@@ -315,7 +366,7 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       s.length === 3 &&
       s[0] === EXECUTION_UI_COLLECTION &&
       isResourceId(s[1]) &&
-      s[2] === EXECUTION_CANCEL_ACTION,
+      (s[2] === EXECUTION_CANCEL_ACTION || s[2] === EXECUTION_RETRY_ACTION),
   },
   {
     methods: ["GET"],
@@ -344,6 +395,6 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       isResourceId(s[1]) &&
       s[2] === "executions" &&
       isResourceId(s[3]) &&
-      s[4] === EXECUTION_CANCEL_ACTION,
+      (s[4] === EXECUTION_CANCEL_ACTION || s[4] === EXECUTION_RETRY_ACTION),
   },
 ];

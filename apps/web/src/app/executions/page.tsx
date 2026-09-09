@@ -21,8 +21,8 @@ export default function ExecutionsPage() {
           <code className="font-mono text-sm">[redacted]</code>. Running,
           canceled, failed, and{" "}
           <code className="font-mono text-sm">indeterminate</code> use icon +
-          text — color is never the only signal. Cancel lives on the detail
-          page. Relates to #47 / Part of #45.
+          text — color is never the only signal. Cancel and retry live on
+          the detail page (#53). Relates to #47 / Part of #45.
         </p>
       </header>
       <ExecutionHistory />

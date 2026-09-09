@@ -23,7 +23,7 @@ export default async function Home() {
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
           E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
-          approvals · E5.1 executions · E5.2 cancel/status
+          approvals · E5.1 executions · E5.2 cancel/retry
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -206,14 +206,16 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Execution history</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E5.1 list/detail plus E5.2 cancel/status hooks.
-          Workspace and per-workflow lists; detail includes
-          steps/jobs/pins/audit and CSRF cancel (
-          <code className="font-mono text-xs">execution.cancel</code>).
-          Secrets show as{" "}
-          <code className="font-mono text-xs">[redacted]</code>.{" "}
+          Chloe&apos;s E5.1 list/detail plus E5.2 cancel/retry/status
+          (Jonny&apos;s #53 map). Workspace and per-workflow lists; detail
+          polls{" "}
+          <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
+          for steps/jobs and CSRF cancel/retry. Never{" "}
+          <code className="font-mono text-xs">/jobs/*</code>. Secrets show
+          as <code className="font-mono text-xs">[redacted]</code>.{" "}
           <code className="font-mono text-xs">indeterminate</code> uses
-          icon + text. Relates to #47 / Part of #45.
+          icon + text and is never silently retried. Relates to #47 /
+          Part of #45.
         </p>
         <p className="mt-4">
           <Link

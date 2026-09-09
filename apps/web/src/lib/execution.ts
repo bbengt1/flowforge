@@ -6,6 +6,7 @@
  * never display. `indeterminate` is first-class (icon + text, never color
  * alone) and never implies an unverified remote action did not occur.
  * Cancel is separately authorized. 403 is fail-closed.
+ * Retry follows the #53 map and is never offered for indeterminate.
  */
 
 import {
@@ -16,6 +17,7 @@ import {
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
   INDETERMINATE_STATUS_HELP,
+  RETRY_INDETERMINATE_MESSAGE,
   RETRY_UNAVAILABLE_MESSAGE,
   executionHistoryHref,
 } from "./execution-contract.ts";
@@ -24,6 +26,8 @@ import {
   EXECUTION_CANCEL_PERMISSION,
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
+  RETRYABLE_STATUSES,
+  WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
   type ExecutionAuditEvent,
   type ExecutionDetail,
@@ -399,42 +403,96 @@ export function canCancelExecution(options: {
   status?: ExecutionStatus;
   permittedActions?: readonly string[] | null;
 }): boolean {
+  if (isIndeterminateStatus(options.status)) {
+    return false;
+  }
   if (
     options.permissions != null &&
     !options.permissions.includes(EXECUTION_CANCEL_PERMISSION)
   ) {
     return false;
   }
-  const actions = (options.permittedActions ?? []).map((item) =>
-    item.trim().toLowerCase(),
-  );
-  if (actions.includes("cancel") || actions.includes("execution.cancel")) {
+  return isCancelableStatus(options.status);
+}
+
+/** Core #53 retry-safe families: data.* and flow.*. Provider nodes are never retried. */
+export function isCoreRetryableStepKind(nodeType: string | undefined): boolean {
+  const folded = nodeType?.trim().toLowerCase() ?? "";
+  return folded.startsWith("data.") || folded.startsWith("flow.");
+}
+
+export function isRetryableStatus(status: ExecutionStatus | undefined): boolean {
+  const folded = normalizeExecutionStatus(status);
+  return (RETRYABLE_STATUSES as readonly string[]).includes(folded);
+}
+
+function hasWorkflowExecute(permissions?: readonly string[] | null): boolean {
+  if (permissions == null) {
     return true;
   }
-  return isCancelableStatus(options.status);
+  return permissions.includes(WORKFLOW_EXECUTE_PERMISSION);
 }
 
 export function canRetryExecution(options: {
   permissions?: readonly string[] | null;
   permittedActions?: readonly string[] | null;
-  retrySafe?: boolean;
+  status?: ExecutionStatus;
+  steps?: readonly { status?: ExecutionStatus; nodeType?: string }[] | null;
 } = {}): boolean {
   if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
     return false;
   }
-  const actions = (options.permittedActions ?? []).map((item) =>
-    item.trim().toLowerCase(),
-  );
-  if (!actions.includes("retry") && options.retrySafe !== true) {
+  if (isIndeterminateStatus(options.status)) {
     return false;
   }
-  if (options.permissions == null) {
+  if (!isRetryableStatus(options.status)) {
+    return false;
+  }
+  if (!hasWorkflowExecute(options.permissions)) {
+    return false;
+  }
+  const steps = options.steps ?? [];
+  if (steps.some((step) => isIndeterminateStatus(step.status))) {
+    return false;
+  }
+  if (steps.length === 0) {
     return true;
   }
-  return options.permissions.includes("workflow.execute");
+  return steps.some(
+    (step) =>
+      isRetryableStatus(step.status) && isCoreRetryableStepKind(step.nodeType),
+  );
 }
 
-export function retryAffordanceMessage(): string {
+export function canRetryExecutionStep(options: {
+  permissions?: readonly string[] | null;
+  permittedActions?: readonly string[] | null;
+  executionStatus?: ExecutionStatus;
+  stepStatus?: ExecutionStatus;
+  nodeType?: string;
+}): boolean {
+  if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
+    return false;
+  }
+  if (
+    isIndeterminateStatus(options.executionStatus) ||
+    isIndeterminateStatus(options.stepStatus)
+  ) {
+    return false;
+  }
+  if (!isRetryableStatus(options.stepStatus)) {
+    return false;
+  }
+  if (!isCoreRetryableStepKind(options.nodeType)) {
+    return false;
+  }
+  return hasWorkflowExecute(options.permissions);
+}
+
+export function retryAffordanceMessage(status?: ExecutionStatus): string {
+  if (isIndeterminateStatus(status)) {
+    return RETRY_INDETERMINATE_MESSAGE;
+  }
   return RETRY_UNAVAILABLE_MESSAGE;
 }
 

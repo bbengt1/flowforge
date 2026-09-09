@@ -1,26 +1,33 @@
 /**
- * Thin typed execution client (E5.1 list/detail + E5.2 cancel).
+ * Thin typed execution client (E5.1 list/detail + E5.2 cancel/retry).
  *
- * Paths come only from execution-contract.ts. Session: credentials:include.
- * CSRF on POST cancel. Host-supplied workspace IDs are never sent.
- * Unexpected secrets are stripped. Never log request bodies.
+ * Paths come only from execution-contract.ts (#53). Session:
+ * credentials:include. CSRF on POST cancel/retry. Host-supplied
+ * workspace IDs are never sent. Unexpected secrets are stripped.
+ * Never log request bodies. Status is GET /executions/{id} only —
+ * never /jobs/*.
  */
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
+  RETRY_APPLIED_MESSAGE,
   buildCancelBody,
+  buildRetryBody,
   executionAuditEventsPath,
   executionCancelPath,
   executionJobsPath,
   executionPath,
+  executionRetryPath,
+  executionStepRetryPath,
   executionStepsPath,
   listExecutionsPath,
   listWorkflowExecutionsPath,
   listWorkspaceAuditEventsPath,
   workflowExecutionCancelPath,
   workflowExecutionPath,
+  workflowExecutionRetryPath,
 } from "./execution-contract.ts";
 import {
   cancelOutcomeMessage,
@@ -99,6 +106,15 @@ export type ExecutionCancelSuccess = {
   requestId: string;
   execution: ExecutionDetail | null;
   idempotent: boolean;
+  message: string;
+  strippedKeys: string[];
+};
+
+export type ExecutionRetrySuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  execution: ExecutionDetail | null;
   message: string;
   strippedKeys: string[];
 };
@@ -255,6 +271,109 @@ export async function cancelWorkflowExecution(
   return cancelResult(result, path, executionId, previousStatus);
 }
 
+/**
+ * POST /executions/{id}/retry with CSRF. Body is `{stepId?}` —
+ * never host-supplied id / workspaceId. Prefer retryExecutionStep
+ * when the clicked step is known. 403 is fail-closed. 409 for
+ * indeterminate / provider nodes.
+ */
+export async function retryExecution(
+  identity: DevIdentity,
+  executionId: string,
+  options: { workflowId?: string; stepId?: string } = {},
+): Promise<ExecutionRetrySuccess | ExecutionClientFailure> {
+  const path = executionRetryPath(executionId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildRetryBody({ stepId: options.stepId }),
+  });
+  if (
+    !result.ok &&
+    result.statusCode === 404 &&
+    options.workflowId?.trim()
+  ) {
+    return retryWorkflowExecution(
+      identity,
+      options.workflowId.trim(),
+      executionId,
+      options.stepId,
+    );
+  }
+  return retryResult(result, path, executionId);
+}
+
+export async function retryExecutionStep(
+  identity: DevIdentity,
+  executionId: string,
+  stepId: string,
+): Promise<ExecutionRetrySuccess | ExecutionClientFailure> {
+  const path = executionStepRetryPath(executionId, stepId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildRetryBody({ stepId }),
+  });
+  if (!result.ok && result.statusCode === 404) {
+    return retryExecution(identity, executionId, { stepId });
+  }
+  return retryResult(result, path, executionId);
+}
+
+export async function retryWorkflowExecution(
+  identity: DevIdentity,
+  workflowId: string,
+  executionId: string,
+  stepId?: string,
+): Promise<ExecutionRetrySuccess | ExecutionClientFailure> {
+  const path = workflowExecutionRetryPath(workflowId, executionId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildRetryBody({ stepId }),
+  });
+  return retryResult(result, path, executionId);
+}
+
+function retryResult(
+  result: IdentityClientResult<unknown>,
+  instance: string,
+  executionId: string,
+): ExecutionRetrySuccess | ExecutionClientFailure {
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  const raw =
+    result.data && typeof result.data === "object"
+      ? (result.data as Record<string, unknown>)
+      : {};
+  const parsed = parseExecutionDetail(raw.execution ?? result.data);
+  if (parsed && executionId && parsed.id !== executionId) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      instance,
+      "Retry payload id did not match the requested execution.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    execution: parsed,
+    message: RETRY_APPLIED_MESSAGE,
+    strippedKeys,
+  };
+}
+
+/** Poll GET /executions/{id} for steps/jobs. Never hits /jobs/*. */
+export async function pollExecutionStatus(
+  identity: DevIdentity,
+  executionId: string,
+  workflowId?: string,
+): Promise<ExecutionDetailSuccess | ExecutionClientFailure> {
+  return getExecution(identity, executionId, workflowId);
+}
+
 function cancelResult(
   result: IdentityClientResult<unknown>,
   instance: string,
@@ -333,9 +452,10 @@ export async function listWorkspaceAuditEvents(
 }
 
 /**
- * Load detail (includes steps/jobs/pins/audit when #51 returns them),
- * then fill missing collections from nested GETs. Nested 404 is ignored.
- * Nested 403 fails that section closed.
+ * Load detail from GET /executions/{id} (steps/jobs/pins come from that
+ * payload — #53). Audit may be filled from nested GET …/audit-events
+ * or workspace GET /audit-events. Never fetches /jobs/* or nested
+ * GET …/jobs for status.
  */
 export async function loadExecutionHistory(
   identity: DevIdentity,
@@ -349,50 +469,25 @@ export async function loadExecutionHistory(
   const strippedKeys = [...header.strippedKeys];
   let execution = header.execution;
 
-  const missing = {
-    steps: execution.steps.length === 0,
-    jobs: execution.jobs.length === 0,
-    auditEvents: execution.auditEvents.length === 0,
-  };
-  const extras = await Promise.all([
-    missing.steps ? getExecutionSteps(identity, executionId) : null,
-    missing.jobs ? getExecutionJobs(identity, executionId) : null,
-    missing.auditEvents
-      ? getExecutionAuditEvents(identity, executionId)
-      : null,
-  ]);
-
-  const [steps, jobs, events] = extras;
-  if (steps && !steps.ok && steps.forbidden) {
-    return steps;
-  }
-  if (jobs && !jobs.ok && jobs.forbidden) {
-    return jobs;
-  }
-  if (events && !events.ok && events.forbidden) {
-    return events;
-  }
-  if (steps?.ok) {
-    execution = { ...execution, steps: steps.items };
-    strippedKeys.push(...steps.strippedKeys);
-  }
-  if (jobs?.ok) {
-    execution = { ...execution, jobs: jobs.items };
-    strippedKeys.push(...jobs.strippedKeys);
-  }
-  if (events?.ok) {
-    execution = { ...execution, auditEvents: events.items };
-    strippedKeys.push(...events.strippedKeys);
-  } else if (missing.auditEvents) {
-    const workspace = await listWorkspaceAuditEvents(identity, {
-      resourceType: "execution",
-      resourceId: executionId,
-    });
-    if (workspace.ok) {
-      execution = { ...execution, auditEvents: workspace.items };
-      strippedKeys.push(...workspace.strippedKeys);
-    } else if (workspace.forbidden) {
-      return workspace;
+  if (execution.auditEvents.length === 0) {
+    const events = await getExecutionAuditEvents(identity, executionId);
+    if (!events.ok && events.forbidden) {
+      return events;
+    }
+    if (events.ok) {
+      execution = { ...execution, auditEvents: events.items };
+      strippedKeys.push(...events.strippedKeys);
+    } else {
+      const workspace = await listWorkspaceAuditEvents(identity, {
+        resourceType: "execution",
+        resourceId: executionId,
+      });
+      if (workspace.ok) {
+        execution = { ...execution, auditEvents: workspace.items };
+        strippedKeys.push(...workspace.strippedKeys);
+      } else if (workspace.forbidden) {
+        return workspace;
+      }
     }
   }
 

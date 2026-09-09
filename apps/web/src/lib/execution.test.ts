@@ -5,14 +5,17 @@ import {
   CANCEL_FORBIDDEN_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
   EXECUTION_CANCEL_ACTION,
+  EXECUTION_API_PR,
   EXECUTION_RETRY_ROUTE_PUBLISHED,
   EXECUTION_UPSTREAM_COLLECTION,
   IDEMPOTENCY_CONFLICT_MESSAGE,
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
   INDETERMINATE_STATUS_HELP,
+  RETRY_INDETERMINATE_MESSAGE,
   RETRY_UNAVAILABLE_MESSAGE,
   buildCancelBody,
+  buildRetryBody,
   executionAuditEventsPath,
   executionCancelPath,
   executionHistoryHref,
@@ -20,6 +23,7 @@ import {
   executionPath,
   executionRetryPath,
   executionStepPath,
+  executionStepRetryPath,
   executionStepsPath,
   listExecutionsPath,
   listWorkflowExecutionsPath,
@@ -31,7 +35,9 @@ import {
 import {
   canCancelExecution,
   canRetryExecution,
+  canRetryExecutionStep,
   canSeeExecutionsNav,
+  isCoreRetryableStepKind,
   cancelOutcomeMessage,
   executionDetailDisplay,
   executionDetailText,
@@ -148,8 +154,21 @@ describe("execution contract adapter", () => {
     assert.deepEqual(buildCancelBody(), {});
     assert.equal(Object.hasOwn(buildCancelBody(), "id"), false);
     assert.equal(Object.hasOwn(buildCancelBody(), "workspaceId"), false);
-    assert.equal(EXECUTION_RETRY_ROUTE_PUBLISHED, false);
-    assert.equal(executionRetryPath(EXECUTION_ID), null);
+    assert.equal(EXECUTION_API_PR, 53);
+    assert.equal(EXECUTION_RETRY_ROUTE_PUBLISHED, true);
+    assert.equal(
+      executionRetryPath(EXECUTION_ID),
+      `/executions/${EXECUTION_ID}/retry`,
+    );
+    assert.equal(
+      executionStepRetryPath(EXECUTION_ID, VERSION_ID),
+      `/executions/${EXECUTION_ID}/steps/${VERSION_ID}/retry`,
+    );
+    assert.deepEqual(buildRetryBody(), {});
+    assert.deepEqual(buildRetryBody({ stepId: VERSION_ID }), {
+      stepId: VERSION_ID,
+    });
+    assert.equal(Object.hasOwn(buildRetryBody(), "workspaceId"), false);
   });
 
   it("retargets /api/v1/executions and leaves /audit-events unchanged", () => {
@@ -343,7 +362,7 @@ describe("execution redaction and list/detail rendering", () => {
     assert.match(rendered, /indeterminate/);
   });
 
-  it("surfaces lease/claim/heartbeat metadata without inventing retry", () => {
+  it("surfaces lease/claim/heartbeat metadata and gates retry to #53", () => {
     const job = parseExecutionJob({
       id: "55555555-5555-4555-8555-555555555555",
       status: "claimed",
@@ -363,9 +382,53 @@ describe("execution redaction and list/detail rendering", () => {
     assert.equal(view.heartbeatAt, "2026-09-09T01:04:00.000Z");
     assert.equal(view.workerId, "worker-a");
     assert.equal(view.fencingToken, 7);
-    assert.equal(canRetryExecution({ permittedActions: ["retry"] }), false);
-    assert.equal(canRetryExecution({ retrySafe: true }), false);
-    assert.match(RETRY_UNAVAILABLE_MESSAGE, /will not invent/);
+    assert.equal(isCoreRetryableStepKind("data.set"), true);
+    assert.equal(isCoreRetryableStepKind("flow.delay"), true);
+    assert.equal(isCoreRetryableStepKind("kubernetes.apply"), false);
+    assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "failed", nodeType: "data.set" }],
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "indeterminate",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "indeterminate", nodeType: "data.set" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "failed", nodeType: "kubernetes.apply" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "failed",
+        stepStatus: "failed",
+        nodeType: "flow.fail",
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "indeterminate",
+        stepStatus: "failed",
+        nodeType: "data.set",
+      }),
+      false,
+    );
+    assert.match(RETRY_UNAVAILABLE_MESSAGE, /data\.\* \/ flow\.\*/);
+    assert.match(RETRY_INDETERMINATE_MESSAGE, /Do not assume the action did not run/);
   });
 
   it("authorizes cancel separately and treats a second cancel as idempotent", () => {
@@ -393,10 +456,24 @@ describe("execution redaction and list/detail rendering", () => {
     assert.equal(
       canCancelExecution({
         permissions: ["execution.cancel"],
+        status: "queued",
+      }),
+      true,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
+        status: "indeterminate",
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        permissions: ["execution.cancel"],
         status: "succeeded",
         permittedActions: ["cancel"],
       }),
-      true,
+      false,
     );
     assert.equal(
       isIdempotentCancel({ previousStatus: "canceled", status: "canceled" }),

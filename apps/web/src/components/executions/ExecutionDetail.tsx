@@ -6,23 +6,37 @@ import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { cancelExecution, loadExecutionHistory } from "@/lib/execution-client";
+import {
+  cancelExecution,
+  loadExecutionHistory,
+  pollExecutionStatus,
+  retryExecution,
+  retryExecutionStep,
+} from "@/lib/execution-client";
 import {
   CANCEL_CSRF_HELP,
   CANCEL_FORBIDDEN_MESSAGE,
+  EXECUTION_STATUS_POLL_MS,
   IDEMPOTENCY_KEY_HELP,
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
-  RETRY_UNAVAILABLE_MESSAGE,
+  RETRY_CONFLICT_MESSAGE,
+  RETRY_CSRF_HELP,
+  RETRY_FORBIDDEN_MESSAGE,
+  RETRY_INDETERMINATE_MESSAGE,
+  STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
 import {
   canCancelExecution,
   canRetryExecution,
+  canRetryExecutionStep,
   canSeeExecutionsNav,
   executionDetailDisplay,
   isExecutionForbidden,
   isIndeterminateStatus,
+  normalizeExecutionStatus,
   redactedJson,
+  retryAffordanceMessage,
 } from "@/lib/execution";
 import { EXECUTION_CANCEL_PERMISSION } from "@/lib/execution-types";
 import type { ExecutionDetail as ExecutionDetailModel } from "@/lib/execution-types";
@@ -67,6 +81,8 @@ export function ExecutionDetail({
   const [permissions, setPermissions] = useState<string[] | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
+  const [retryPending, setRetryPending] = useState<string | null>(null);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -84,7 +100,13 @@ export function ExecutionDetail({
   const showRetry = canRetryExecution({
     permissions,
     permittedActions: view?.permittedActions,
+    status: view?.header.status,
+    steps: view?.steps,
   });
+  const indeterminate = Boolean(view?.header.indeterminate);
+  const live =
+    normalizeExecutionStatus(view?.header.status) === "queued" ||
+    normalizeExecutionStatus(view?.header.status) === "running";
 
   async function refresh() {
     setPending(true);
@@ -139,6 +161,52 @@ export function ExecutionDetail({
     await refresh();
   }
 
+  async function onRetry(stepId?: string) {
+    if (indeterminate || retryPending) {
+      return;
+    }
+    if (stepId) {
+      if (
+        !canRetryExecutionStep({
+          permissions,
+          permittedActions: view?.permittedActions,
+          executionStatus: view?.header.status,
+          stepStatus: view?.steps.find((step) => step.id === stepId)?.status,
+          nodeType: view?.steps.find((step) => step.id === stepId)?.nodeType,
+        })
+      ) {
+        return;
+      }
+    } else if (!showRetry) {
+      return;
+    }
+    setRetryPending(stepId ?? "execution");
+    setProblem(null);
+    setRetryMessage(null);
+    const result = stepId
+      ? await retryExecutionStep(identity, executionId, stepId)
+      : await retryExecution(identity, executionId, {
+          workflowId: workflowId || detail?.workflowId,
+        });
+    setLastRequestId(result.requestId);
+    setRetryPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      if (result.forbidden) {
+        setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
+      } else if (result.statusCode === 409) {
+        setRetryMessage(RETRY_CONFLICT_MESSAGE);
+      }
+      return;
+    }
+    setRetryMessage(result.message);
+    if (result.execution) {
+      setDetail(result.execution);
+      setStrippedKeys(result.strippedKeys);
+    }
+    await refresh();
+  }
+
   useEffect(() => {
     if (!ready) {
       return;
@@ -149,6 +217,40 @@ export function ExecutionDetail({
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
   }, [ready, identity, executionId, workflowId]);
+
+  useEffect(() => {
+    if (!ready || denied || !live) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void pollExecutionStatus(identity, executionId, workflowId).then(
+        (result) => {
+          setLastRequestId(result.requestId);
+          if (!result.ok) {
+            if (result.forbidden) {
+              setProblem(result.problem);
+              setDetail(null);
+            }
+            return;
+          }
+          setDetail((current) => {
+            if (!current) {
+              return result.execution;
+            }
+            return {
+              ...result.execution,
+              auditEvents:
+                result.execution.auditEvents.length > 0
+                  ? result.execution.auditEvents
+                  : current.auditEvents,
+            };
+          });
+          setStrippedKeys(result.strippedKeys);
+        },
+      );
+    }, EXECUTION_STATUS_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [ready, denied, live, identity, executionId, workflowId]);
 
   return (
     <div className="space-y-6">
@@ -247,19 +349,33 @@ export function ExecutionDetail({
               {showRetry ? (
                 <button
                   type="button"
-                  disabled
-                  className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-500"
+                  onClick={() => void onRetry()}
+                  disabled={Boolean(retryPending) || pending || cancelPending}
+                  className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
                 >
-                  Retry
+                  {retryPending === "execution" ? "Retrying…" : "Retry execution"}
                 </button>
+              ) : indeterminate ? (
+                <p className="text-sm font-medium text-amber-950">
+                  {RETRY_INDETERMINATE_MESSAGE}
+                </p>
               ) : (
-                <p className="text-xs text-zinc-500">{RETRY_UNAVAILABLE_MESSAGE}</p>
+                <p className="text-xs text-zinc-500">
+                  {retryAffordanceMessage(view.header.status)}
+                </p>
               )}
             </div>
             <p className="mt-2 text-xs text-zinc-500">{CANCEL_CSRF_HELP}</p>
+            <p className="mt-1 text-xs text-zinc-500">{RETRY_CSRF_HELP}</p>
+            <p className="mt-1 text-xs text-zinc-500">{STATUS_POLL_HELP}</p>
             {cancelMessage ? (
               <p role="status" className="mt-3 text-sm text-zinc-800">
                 {cancelMessage}
+              </p>
+            ) : null}
+            {retryMessage ? (
+              <p role="status" className="mt-3 text-sm text-zinc-800">
+                {retryMessage}
               </p>
             ) : null}
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -363,6 +479,27 @@ export function ExecutionDetail({
                         {step.fencingToken != null
                           ? ` · fence ${step.fencingToken}`
                           : ""}
+                      </p>
+                    ) : null}
+                    {canRetryExecutionStep({
+                      permissions,
+                      permittedActions: view.permittedActions,
+                      executionStatus: view.header.status,
+                      stepStatus: step.status,
+                      nodeType: step.nodeType,
+                    }) ? (
+                      <button
+                        type="button"
+                        onClick={() => void onRetry(step.id)}
+                        disabled={Boolean(retryPending) || pending || cancelPending}
+                        className="mt-3 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                      >
+                        {retryPending === step.id ? "Retrying…" : "Retry step"}
+                      </button>
+                    ) : isIndeterminateStatus(step.status) ||
+                      isIndeterminateStatus(view.header.status) ? (
+                      <p className="mt-3 text-sm font-medium text-amber-950">
+                        {RETRY_INDETERMINATE_MESSAGE}
                       </p>
                     ) : null}
                     <pre className="mt-3 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
