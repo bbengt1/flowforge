@@ -31,8 +31,9 @@ func schemaAllowsValue(schema map[string]any, value any, depth int) bool {
 	if depth > maxSchemaDepth {
 		return false
 	}
-	if raw, ok := schema["type"].(string); ok && raw != "" {
-		if !valueMatchesSchemaType(value, raw) {
+	if raw, exists := schema["type"]; exists {
+		s, ok := raw.(string)
+		if !ok || !knownSchemaType(s) || !valueMatchesSchemaType(value, s) {
 			return false
 		}
 	}
@@ -143,7 +144,16 @@ func valueMatchesSchemaType(v any, typ string) bool {
 		_, ok := asAnySlice(v)
 		return ok
 	default:
+		return false
+	}
+}
+
+func knownSchemaType(typ string) bool {
+	switch strings.TrimSpace(typ) {
+	case "object", "string", "integer", "number", "boolean", "array":
 		return true
+	default:
+		return false
 	}
 }
 

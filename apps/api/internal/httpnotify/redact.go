@@ -67,7 +67,7 @@ func CollectSecretValues(payload map[string]any, policy EndpointPolicy, extras .
 	var add func(string)
 	add = func(s string) {
 		s = strings.TrimSpace(s)
-		if len(s) < minTrackedSecretLen {
+		if s == "" {
 			return
 		}
 		if _, ok := seen[s]; ok {

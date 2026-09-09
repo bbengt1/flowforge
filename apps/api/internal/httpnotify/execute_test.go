@@ -608,6 +608,9 @@ func TestSchemaRejectsWrongTypesAndExtraFields(t *testing.T) {
 	if !SchemaAllows(schema, map[string]any{"count": 3.0, "env": "staging"}) {
 		t.Fatal("whole JSON numbers and enum members must pass")
 	}
+	if SchemaAllows(map[string]any{"type": "integre"}, map[string]any{"count": 1}) {
+		t.Fatal("unsupported schema types must fail closed")
+	}
 
 	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"count":"wrong"}`))
@@ -644,6 +647,21 @@ func TestSecretValueEchoedUnderInnocentKey(t *testing.T) {
 	raw, _ := jsonish(res)
 	if strings.Contains(raw, "opaque-value-secret") || strings.Contains(raw, "handle-token-value") {
 		t.Fatalf("secret leaked: %s", raw)
+	}
+
+	srv2, _, port2 := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"echo":"123"}`))
+	})
+	conn.Policy.Ports = []int{port2}
+	conn.Policy.SecretFields = []string{"pin"}
+	req = baseHTTPReq(conn, http.MethodPost, "/", map[string]any{"pin": "123"})
+	req.Transport = srv2.Client().Transport
+	res = Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("short secret: %+v", res.Error)
+	}
+	if res.Body["echo"] != redactedMarker {
+		t.Fatalf("short secret not redacted: %+v", res.Body)
 	}
 }
 

@@ -417,3 +417,21 @@ func TestNormalizeConnectionAllowPrivateDestinations(t *testing.T) {
 		t.Fatal("non-boolean policy.allowPrivateDestinations must be rejected")
 	}
 }
+
+func TestNormalizeSpecRejectsUnsupportedPinnedSchemaTypes(t *testing.T) {
+	_, _, err := NormalizeSpec(KindResponseSchema, map[string]any{
+		"schema":   map[string]any{"type": "integre"},
+		"maxBytes": 4096,
+	})
+	if err == nil {
+		t.Fatal("unsupported response schema type must fail")
+	}
+	_, _, err = NormalizeSpec(KindMessageTemplate, map[string]any{
+		"inputSchema":           map[string]any{"type": "integre"},
+		"contentClassification": "internal",
+		"body":                  "Service is degraded.",
+	})
+	if err == nil {
+		t.Fatal("unsupported template schema type must fail")
+	}
+}
