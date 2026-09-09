@@ -225,6 +225,7 @@ export type PublishWorkflowResult = {
   workflow: WorkflowRecord;
   version: WorkflowVersion;
   pins?: OpsConfigPin[];
+  scriptArtifacts?: unknown;
 };
 
 export type CompareKind = "draft" | "version";

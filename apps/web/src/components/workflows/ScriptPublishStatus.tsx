@@ -1,12 +1,17 @@
 import {
+  SCRIPT_BLOB_FORBIDDEN_MESSAGE,
+  SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
   SCRIPT_PUBLISH_BOUNDARY_HELP,
   type ScriptArtifactStatus,
+  type ScriptVersionPin,
 } from "@/lib/script-contract";
 
 export function ScriptPublishStatus({
   status,
+  pins,
 }: {
   status: ScriptArtifactStatus;
+  pins?: readonly ScriptVersionPin[] | null;
 }) {
   return (
     <section
@@ -29,7 +34,25 @@ export function ScriptPublishStatus({
         ) : null}
       </p>
       <p className="mt-1 text-xs text-teal-900">{status.help}</p>
+      {pins && pins.length > 0 ? (
+        <ul className="mt-2 space-y-1 font-mono text-xs text-teal-950">
+          {pins.map((pin) => (
+            <li key={`${pin.nodeId}-${pin.artifactId}`}>
+              {pin.nodeId}
+              {pin.nodeType ? ` · ${pin.nodeType}` : ""}
+              {" · "}
+              <code className="break-all">{pin.digest}</code>
+              {" · scan="}
+              {pin.scanStatus || "—"}
+              {" · signature="}
+              {pin.signature ? "present" : "missing"}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <p className="mt-2 text-xs text-teal-900">{SCRIPT_PUBLISH_BOUNDARY_HELP}</p>
+      <p className="mt-1 text-xs text-teal-900">{SCRIPT_EXECUTE_FAIL_CLOSED_HELP}</p>
+      <p className="mt-1 text-xs text-teal-800">{SCRIPT_BLOB_FORBIDDEN_MESSAGE}</p>
     </section>
   );
 }

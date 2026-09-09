@@ -41,15 +41,21 @@ import {
   sshRetryRules,
   type SshNodeCatalog,
 } from "@/lib/ssh-node-contract";
+import { getScriptCatalog } from "@/lib/script-client";
 import {
   SCRIPT_CONTRACT_FALLBACK_HELP,
   SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
+  SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
   SCRIPT_MUTABLE_REJECT_HELP,
   SCRIPT_NODE_POLICY_NOTES,
   SCRIPT_PUBLISH_BOUNDARY_HELP,
+  SCRIPT_ROUTE_MAP_SOURCE,
   isScriptConfigurableType,
+  isScriptRuntimeProfileSpec,
   runtimeProfileLanguage,
   scriptNodeErrorShapes,
+  scriptPublishRules,
+  type ScriptNodeCatalog,
 } from "@/lib/script-contract";
 import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -110,6 +116,7 @@ type ActionWizardProps = {
   identity: DevIdentity;
   ready: boolean;
   catalog: WorkflowCatalog | null;
+  scriptCatalog?: ScriptNodeCatalog | null;
   entries: ActionLibraryEntry[];
   yaml: string;
   nodes: YamlWorkflowNode[];
@@ -129,6 +136,7 @@ export function ActionWizard({
   identity,
   ready,
   catalog,
+  scriptCatalog: scriptCatalogProp,
   entries,
   yaml,
   nodes,
@@ -161,9 +169,18 @@ export function ActionWizard({
   const [sshEngineCatalog, setSshEngineCatalog] = useState<SshEngineCatalog | null>(
     null,
   );
+  const [scriptCatalogState, setScriptCatalogState] =
+    useState<ScriptNodeCatalog | null>(null);
+  const scriptCatalog = scriptCatalogProp ?? scriptCatalogState;
 
   const entry = entries.find((item) => item.type === draft.type);
-  const fields = wizardConfigFields(entry, draft.type, engineCatalog, sshCatalog);
+  const fields = wizardConfigFields(
+    entry,
+    draft.type,
+    engineCatalog,
+    sshCatalog,
+    scriptCatalog,
+  );
   const targetKinds = opsConfigKindsForAction(draft.type);
   const enabledTargetKinds = (Object.entries(pins) as [OpsConfigKind, OpsConfigPin[]][])
     .filter(([, items]) => items.length > 0)
@@ -227,6 +244,7 @@ export function ActionWizard({
     parameterConstraints,
     profileRetrySafe,
     verificationDeclared,
+    scriptCatalog,
     runtimeProfileSelectorClosed,
     runtimeProfileLanguage: runtimeProfileLanguage(selectedRuntimeProfile?.spec),
   };
@@ -256,6 +274,12 @@ export function ActionWizard({
       }
       setSshCatalog(result.ok ? result.nodeCatalog : null);
       setSshEngineCatalog(result.ok ? result.catalog : null);
+    });
+    void getScriptCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setScriptCatalogState(result.ok ? result.catalog : null);
     });
     void listCredentials(identity).then((result) => {
       if (cancelled) {
@@ -306,7 +330,11 @@ export function ActionWizard({
               ? authorizedSshTargets({ items: result.items }).options
               : kind === "command_profile"
                 ? authorizedCommandProfiles({ items: result.items }).options
-                : publishedPinsFromList({ items: result.items }).options;
+                : kind === "runtime_profile"
+                  ? publishedPinsFromList({ items: result.items }).options.filter(
+                      (pin) => isScriptRuntimeProfileSpec(pin.spec),
+                    )
+                  : publishedPinsFromList({ items: result.items }).options;
       }
       setPins(nextPins);
       setPinProblems(nextProblems);
@@ -481,6 +509,7 @@ export function ActionWizard({
               engineCatalog={engineCatalog}
               waitReadyCopy={waitReadyMessage(engineCatalog)}
               sshCatalog={sshCatalog}
+              scriptCatalog={scriptCatalog}
               sshEngineCatalog={sshEngineCatalog}
               parameterConstraints={parameterConstraints}
               profileRetrySafe={profileRetrySafe}
@@ -509,6 +538,7 @@ export function ActionWizard({
               engineErrors={engineErrors}
               engineCatalog={engineCatalog}
               sshCatalog={sshCatalog}
+              scriptCatalog={scriptCatalog}
               profileRetrySafe={profileRetrySafe}
               verificationDeclared={verificationDeclared}
               evaluation={evaluation ?? null}
@@ -819,6 +849,7 @@ function ConfigureStep({
   engineCatalog,
   waitReadyCopy,
   sshCatalog,
+  scriptCatalog,
   sshEngineCatalog,
   parameterConstraints,
   profileRetrySafe,
@@ -833,6 +864,7 @@ function ConfigureStep({
   engineCatalog: KubernetesEngineCatalog | null;
   waitReadyCopy: string;
   sshCatalog: SshNodeCatalog | null;
+  scriptCatalog: ScriptNodeCatalog | null;
   sshEngineCatalog: SshEngineCatalog | null;
   parameterConstraints: readonly SshParameterConstraint[];
   profileRetrySafe: boolean;
@@ -896,12 +928,16 @@ function ConfigureStep({
       ) : null}
       {inferred && script ? (
         <p className="text-xs text-zinc-500">
-          Script <code className="font-mono">with</code> fields use the marked{" "}
-          <code className="font-mono">e91-contract-fallback</code> until jonny
-          posts the #92 scan/sign/pin map. Overlay{" "}
-          <code className="font-mono">GET /workflows/catalog</code>{" "}
-          <code className="font-mono">allowedWith</code> when listed.{" "}
-          {SCRIPT_CONTRACT_FALLBACK_HELP}
+          Script <code className="font-mono">with</code> fields prefer{" "}
+          <code className="font-mono">GET /scripts/catalog</code>{" "}
+          <code className="font-mono">nodes[]</code> from #97 (
+          <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
+          ), then <code className="font-mono">GET /ops-config/catalog</code>{" "}
+          <code className="font-mono">scriptEngine</code>, then{" "}
+          <code className="font-mono">GET /workflows/catalog</code>.{" "}
+          {scriptCatalog && scriptCatalog.source !== "contract-fallback"
+            ? `Using ${scriptCatalog.source}.`
+            : SCRIPT_CONTRACT_FALLBACK_HELP}
         </p>
       ) : null}
       {isKubernetesRolloutType(draft.type) ? (
@@ -921,11 +957,13 @@ function ConfigureStep({
           </ul>
           <p className="mt-3 text-sm text-teal-950">
             {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
-            {SCRIPT_MUTABLE_REJECT_HELP}
+            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}{" "}
+            Required: {scriptPublishRules(scriptCatalog).requiredWith.join(", ")}.
+            Source cap {scriptPublishRules(scriptCatalog).maxSourceBytes} bytes.
           </p>
-          {scriptNodeErrorShapes().length > 0 ? (
+          {scriptNodeErrorShapes(scriptCatalog).length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
-              {scriptNodeErrorShapes().slice(0, 8).map((item) => (
+              {scriptNodeErrorShapes(scriptCatalog).slice(0, 8).map((item) => (
                 <li key={item.code}>
                   <code className="font-mono">{item.code}</code> ({item.status}):{" "}
                   {item.meaning}
@@ -1285,6 +1323,7 @@ function ReviewStep({
   engineErrors,
   engineCatalog,
   sshCatalog,
+  scriptCatalog,
   profileRetrySafe,
   verificationDeclared,
 }: {
@@ -1300,6 +1339,7 @@ function ReviewStep({
   engineErrors: ReturnType<typeof engineErrorShapes>;
   engineCatalog: KubernetesEngineCatalog | null;
   sshCatalog: SshNodeCatalog | null;
+  scriptCatalog: ScriptNodeCatalog | null;
   profileRetrySafe: boolean;
   verificationDeclared: boolean;
 }) {
@@ -1362,9 +1402,12 @@ function ReviewStep({
         {isScriptConfigurableType(draft.type) ? (
           <p className="mt-2 text-xs text-zinc-600">
             {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
-            {SCRIPT_MUTABLE_REJECT_HELP} YAML stores source, entrypoint,
-            runtimeProfileId, limits, and optional I/O schema — never secrets
-            or arbitrary images.
+            {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP} YAML
+            stores source, entrypoint, runtimeProfileId, timeoutSeconds, and
+            optional limits/schemas — never secrets, command/shell, or
+            package/storageRef. Map source #97 (
+            <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
+            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}).
           </p>
         ) : null}
       </section>

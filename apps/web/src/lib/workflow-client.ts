@@ -43,6 +43,7 @@ import type {
   WorkflowVersionList,
 } from "./workflow-types.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
+import { parseScriptVersionPins, type ScriptVersionPin } from "./script-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
 
 export const WORKFLOW_CATALOG_PATH = "/workflows/catalog";
@@ -156,6 +157,7 @@ export type PublishClientSuccess = {
   workflow: WorkflowRecord;
   version: WorkflowVersion;
   pins: OpsConfigPin[];
+  scriptArtifacts: ScriptVersionPin[];
 };
 
 export type VersionsClientSuccess = {
@@ -495,6 +497,7 @@ export async function publishWorkflow(
     workflow: result.data.workflow,
     version: result.data.version,
     pins: parseAuthorizedPins(result.data.pins),
+    scriptArtifacts: parseScriptVersionPins(result.data.scriptArtifacts),
   };
 }
 

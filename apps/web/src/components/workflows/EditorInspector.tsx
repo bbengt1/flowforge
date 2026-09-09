@@ -6,7 +6,11 @@ import { KubernetesTargetSelect } from "@/components/config/KubernetesTargetSele
 import { ScriptAuthoringPanel } from "@/components/workflows/ScriptAuthoringPanel";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { isKubernetesActionType } from "@/lib/kubernetes";
-import { isScriptConfigurableType } from "@/lib/script-contract";
+import {
+  isScriptConfigurableType,
+  type ScriptNodeCatalog,
+  type ScriptVersionPin,
+} from "@/lib/script-contract";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
   formatBounds,
@@ -32,6 +36,8 @@ type EditorInspectorProps = {
   canCall: boolean;
   dirty?: boolean;
   hasPublishedVersion?: boolean;
+  scriptCatalog?: ScriptNodeCatalog | null;
+  scriptArtifacts?: readonly ScriptVersionPin[] | null;
   onSelectNode: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
@@ -50,6 +56,8 @@ export function EditorInspector({
   canCall,
   dirty,
   hasPublishedVersion,
+  scriptCatalog,
+  scriptArtifacts,
   onSelectNode,
   onApply,
   onPatchNodeWith,
@@ -85,6 +93,8 @@ export function EditorInspector({
           ready={canCall}
           dirty={dirty}
           hasPublishedVersion={hasPublishedVersion}
+          scriptCatalog={scriptCatalog}
+          scriptArtifacts={scriptArtifacts}
           onPatchNodeWith={onPatchNodeWith}
         />
       ) : null}

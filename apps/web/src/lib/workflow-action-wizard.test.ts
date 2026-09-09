@@ -262,6 +262,10 @@ describe("action wizard catalog inference and recommendations", () => {
       scriptFields.some((field) => field.name === "runtimeProfileId" && field.required),
       true,
     );
+    assert.equal(
+      scriptFields.some((field) => field.name === "timeoutSeconds" && field.required),
+      true,
+    );
     assert.equal(scriptFields.some((field) => field.name === "entrypoint"), true);
     assert.equal(scriptFields.some((field) => field.name === "inputSchema"), true);
     assert.equal(scriptFields.some((field) => field.name === "image"), false);
@@ -470,6 +474,7 @@ describe("action wizard insert + redaction", () => {
         ...draft,
         with: {
           ...draft.with,
+          token: "ghp_notareal",
           source: "pip install requests\nprint('ok')\n",
         },
       },

@@ -1,22 +1,22 @@
 /**
  * Single retarget adapter for Chloe's E9.1 script authoring / publish UI.
+ * Wired to jonny's **#97** map on `main` (`e91-#97`).
  *
- * jonny owns the publish/scan/sign/pin pipeline (#92). This file is the
- * only place to retarget when that route map lands. Do not invent routes.
+ *   GET  /scripts/catalog
+ *   GET  /ops-config/catalog            adds scriptEngine; runtime-profiles engine=script
+ *   POST /scripts                       package/scan/sign → artifact metadata (no blob)
+ *   GET  /scripts/{id}                  digest + scan/signature — never package/storageRef
+ *   POST /workflows/{id}/publish        also packages script nodes → {version,pins,scriptArtifacts}
+ *   GET  …/versions/{v}/script-artifacts  pins bound at publish
+ *
+ * Cookie session + `X-CSRF-Token` on POST. JSON camelCase. RFC 9457.
+ * Host-supplied `id` / `workspaceId` → 400 UX. Never show package blobs
+ * or storageRef. Relates to #92 (already closed by #97) / Part of #91 —
+ * do not re-close #92; keep epic #91 open until this UI PR merges.
  * Do not change `apps/api`.
- *
- * Existing collections this UI consumes (already on main):
- *   GET  /workflows/catalog
- *   GET  /runtime-profiles  + POST …/select
- *   PUT  /workflows/{id}/draft
- *   POST /workflows/{id}/publish
- *   GET  /workflows/{id}/versions[/{id}]
- *
- * Until jonny posts the map, catalog overlay and artifact-status fields
- * use the marked `e91-contract-fallback`. Cookie session + `X-CSRF-Token`,
- * camelCase JSON, RFC 9457. Relates to #92 / Part of #91. Keep #92 open.
  */
 
+import { isResourceId } from "./identity-proxy-ids.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
@@ -33,9 +33,9 @@ import { isForbiddenYamlKey, looksLikeSecretValue } from "./workflow-yaml-nodes.
 
 export const SCRIPT_STORY = 92;
 export const SCRIPT_EPIC = 91;
-/** 0 until jonny posts the scan/sign/pin route map. */
-export const SCRIPT_API_PR = 0;
-export const SCRIPT_ROUTE_MAP_SOURCE = "e91-contract-fallback" as const;
+/** Jonny's E9.1 publish/scan/sign/pin map on main. */
+export const SCRIPT_API_PR = 97;
+export const SCRIPT_ROUTE_MAP_SOURCE = "e91-#97" as const;
 
 export const SCRIPT_PYTHON_TYPE = "script.python" as const;
 export const SCRIPT_GO_TYPE = "script.go" as const;
@@ -47,12 +47,17 @@ export const SCRIPT_MIN_TIMEOUT_SECONDS = 1;
 export const SCRIPT_MAX_TIMEOUT_SECONDS = 3600;
 export const SCRIPT_DEFAULT_MEMORY_MIB = 128;
 export const SCRIPT_MIN_MEMORY_MIB = 32;
-export const SCRIPT_MAX_MEMORY_MIB = 4096;
+export const SCRIPT_MAX_MEMORY_MIB = 2048;
+export const SCRIPT_MIN_CPU_MILLIS = 1;
+export const SCRIPT_MAX_CPU_MILLIS = 8000;
+export const SCRIPT_MIN_PROCESSES = 1;
+export const SCRIPT_MAX_PROCESSES = 256;
+export const SCRIPT_MAX_SOURCE_BYTES = 64 * 1024;
 export const SCRIPT_DEFAULT_PYTHON_ENTRYPOINT = "main.py";
 export const SCRIPT_DEFAULT_GO_ENTRYPOINT = "main.go";
 
 export const SCRIPT_CONTRACT_FALLBACK_HELP =
-  "Using the marked e91-contract-fallback script map because jonny has not posted the #92 scan/sign/pin route map. Collections stay on /workflows/catalog, /runtime-profiles, draft save, and workflow publish.";
+  "Using the marked e91-#97 script map because GET /scripts/catalog was unavailable. Prefer GET /scripts/catalog (or GET /ops-config/catalog scriptEngine) plus GET /workflows/catalog.";
 
 export const SCRIPT_PUBLISH_BOUNDARY_HELP =
   "Publish packages approved source, scans and signs the package, and pins an immutable content-addressed artifact on the workflow version. Draft save writes the same YAML schema only — it does not create an executable artifact.";
@@ -76,7 +81,16 @@ export const SCRIPT_SOURCE_REQUIRED_MESSAGE =
   "source is required. Author visible Python or Go source that versions with the workflow.";
 
 export const SCRIPT_ENTRYPOINT_REQUIRED_MESSAGE =
-  "entrypoint is required (main.py or main.go).";
+  "entrypoint is required (basename only: main.py / main.go, or Go package.Function).";
+
+export const SCRIPT_ENTRYPOINT_INVALID_MESSAGE =
+  "entrypoint must be a basename only (no path). Python: *.py. Go: *.go or package.Function.";
+
+export const SCRIPT_TIMEOUT_REQUIRED_MESSAGE =
+  "timeoutSeconds is required (1–3600).";
+
+export const SCRIPT_BLOB_FORBIDDEN_MESSAGE =
+  "Package blobs and storageRef are never shown. Artifact metadata is digest, scan, and signature only.";
 
 export const SCRIPT_PROFILE_REQUIRED_MESSAGE =
   "runtimeProfileId is required. Choose a published approved runtime/dependency profile.";
@@ -93,16 +107,31 @@ export const SCRIPT_HOST_SUPPLIED_IDENTITY_HELP =
 export const SCRIPT_HOST_SUPPLIED_IDENTITY_DETAIL =
   "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers.";
 
+export const SCRIPT_EXECUTE_FAIL_CLOSED_HELP =
+  "Execute fails closed: drafts, mutable, unscanned, unsigned, or scan-failed artifacts return 400. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are E9.2.";
+
+export const SCRIPT_RUNTIME_PROFILE_ENGINE = "script" as const;
+
+/** Exact #97 forbidden `with` keys. */
 export const SCRIPT_FORBIDDEN_WITH_KEYS = [
-  "secret",
+  "env",
+  "environment",
   "secrets",
+  "credentials",
+  "privateKey",
   "token",
   "password",
-  "apiKey",
-  "privateKey",
   "kubeconfig",
+  "command",
+  "shell",
+] as const;
+
+/** Extra keys stripped before YAML insert (not in allowedWith). */
+export const SCRIPT_STRIP_WITH_KEYS = [
+  ...SCRIPT_FORBIDDEN_WITH_KEYS,
+  "secret",
+  "apiKey",
   "credential",
-  "credentials",
   "authorization",
   "image",
   "baseImage",
@@ -114,6 +143,14 @@ export const SCRIPT_FORBIDDEN_WITH_KEYS = [
   "pip",
   "goGet",
   "goMod",
+  "package",
+  "storageRef",
+] as const;
+
+export const SCRIPT_ARTIFACT_SECRET_KEYS = [
+  "package",
+  "storageRef",
+  "storage_ref",
 ] as const;
 
 export const SCRIPT_NODE_POLICY_NOTES = [
@@ -132,13 +169,31 @@ export const SCRIPT_NODE_PERMISSIONS = [
   "runtimeProfile.use",
 ] as const;
 
-/** Existing collections only. Do not invent /scripts/* until jonny's map. */
+export const SCRIPT_CATALOG_PATH = "/scripts/catalog";
+export const SCRIPTS_PATH = "/scripts";
+export const SCRIPT_OPS_CONFIG_CATALOG_PATH = "/ops-config/catalog";
+
+export function scriptArtifactPath(artifactId: string): string {
+  return `${SCRIPTS_PATH}/${artifactId}`;
+}
+
+export function workflowScriptArtifactsPath(
+  workflowId: string,
+  versionId: string,
+): string {
+  return `/workflows/${workflowId}/versions/${versionId}/script-artifacts`;
+}
+
 export const SCRIPT_EXISTING_API_PATHS = {
+  scriptsCatalog: SCRIPT_CATALOG_PATH,
+  scripts: SCRIPTS_PATH,
+  scriptArtifact: scriptArtifactPath,
+  opsConfigCatalog: SCRIPT_OPS_CONFIG_CATALOG_PATH,
   workflowCatalog: "/workflows/catalog",
   runtimeProfiles: "/runtime-profiles",
   workflowDraft: (workflowId: string) => `/workflows/${workflowId}/draft`,
   workflowPublish: (workflowId: string) => `/workflows/${workflowId}/publish`,
-  workflowVersions: (workflowId: string) => `/workflows/${workflowId}/versions`,
+  workflowScriptArtifacts: workflowScriptArtifactsPath,
 } as const;
 
 export type ScriptNodeWithField = CatalogWithField & {
@@ -151,6 +206,7 @@ export type ScriptNodeWithField = CatalogWithField & {
 
 export type ScriptNodeEngineContract = {
   type: string;
+  language?: string;
   title: string;
   description: string;
   permissions: string[];
@@ -169,24 +225,80 @@ export type ScriptNodeErrorShape = {
 };
 
 export type ScriptPublishRules = {
-  draftCreatesArtifact: false;
-  publishPackagesScansSigns: true;
-  pinOnWorkflowVersion: true;
-  executionUsesPinnedDigest: true;
-  rejectMutableUnscanned: true;
-  arbitraryPackageInstall: false;
-  arbitraryBaseImages: false;
+  requiredWith: string[];
+  allowedLanguages: string[];
+  sourceVisibleInYAML: boolean;
+  secretsForbiddenInYAML: boolean;
+  draftsCannotExecute: boolean;
+  mutableArtifactsRejected: boolean;
+  unscannedRejected: boolean;
+  unsignedRejected: boolean;
+  failedScanRejected: boolean;
+  publishedRevisionsPinned: boolean;
+  digestPinnedRuntime: boolean;
+  maxSourceBytes: number;
+  maxTimeoutSeconds: number;
 };
 
-export type ScriptNodeCatalogSource = "workflow-catalog" | "contract-fallback";
+export type ScriptIsolationRules = {
+  nonRoot: boolean;
+  readOnlyRootFS: boolean;
+  droppedCapabilities: boolean;
+  noNewPrivs: boolean;
+  noMetadataService: boolean;
+  noHostDockerSocket: boolean;
+  runtimePackageInstall: boolean;
+  approvedImagesOnly: boolean;
+  note: string;
+  hooks: string[];
+};
+
+export type ScriptNodeCatalogSource =
+  | "scripts-catalog"
+  | "ops-config-catalog"
+  | "workflow-catalog"
+  | "contract-fallback";
 
 export type ScriptNodeCatalog = {
   source: ScriptNodeCatalogSource;
+  languages: string[];
   nodes: ScriptNodeEngineContract[];
   errors: ScriptNodeErrorShape[];
   permissions: string[];
   publish: ScriptPublishRules;
+  isolation?: ScriptIsolationRules;
+  hooks?: Record<string, string>;
   notes?: string;
+};
+
+export type ScriptArtifact = {
+  id: string;
+  language: string;
+  entrypoint: string;
+  digest: string;
+  signature: string;
+  scanStatus: string;
+  status: string;
+  runtimeProfileId?: string;
+  runtimeProfileVersionId?: string;
+  runtimeProfileDigest?: string;
+  sourceBytes?: number;
+  metadata?: Record<string, unknown>;
+  createdBy?: string;
+  createdAt?: string;
+  revokedAt?: string;
+};
+
+export type ScriptVersionPin = {
+  workflowVersionId: string;
+  nodeId: string;
+  nodeType?: string;
+  artifactId: string;
+  digest: string;
+  scanStatus: string;
+  signature?: string;
+  language?: string;
+  entrypoint?: string;
 };
 
 export type ScriptNodeConfigContext = {
@@ -209,61 +321,55 @@ export type ScriptArtifactStatus = {
   help: string;
   digest?: string;
   scanStatus?: string;
-  source: "version" | "contract-fallback";
+  source: "version" | "scripts-catalog" | "contract-fallback";
 };
 
 export const DEFAULT_SCRIPT_PUBLISH_RULES: ScriptPublishRules = {
-  draftCreatesArtifact: false,
-  publishPackagesScansSigns: true,
-  pinOnWorkflowVersion: true,
-  executionUsesPinnedDigest: true,
-  rejectMutableUnscanned: true,
-  arbitraryPackageInstall: false,
-  arbitraryBaseImages: false,
+  requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
+  allowedLanguages: ["python", "go"],
+  sourceVisibleInYAML: true,
+  secretsForbiddenInYAML: true,
+  draftsCannotExecute: true,
+  mutableArtifactsRejected: true,
+  unscannedRejected: true,
+  unsignedRejected: true,
+  failedScanRejected: true,
+  publishedRevisionsPinned: true,
+  digestPinnedRuntime: true,
+  maxSourceBytes: SCRIPT_MAX_SOURCE_BYTES,
+  maxTimeoutSeconds: SCRIPT_MAX_TIMEOUT_SECONDS,
+};
+
+export const DEFAULT_SCRIPT_ISOLATION: ScriptIsolationRules = {
+  nonRoot: true,
+  readOnlyRootFS: true,
+  droppedCapabilities: true,
+  noNewPrivs: true,
+  noMetadataService: true,
+  noHostDockerSocket: true,
+  runtimePackageInstall: false,
+  approvedImagesOnly: true,
+  note: "E9.2 implements the isolated runner. E9.1 only packages, scans, signs, and pins.",
+  hooks: ["VerifyForDispatch", "RunnerNotImplemented"],
 };
 
 export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
-  {
-    code: "invalid-source",
-    status: 400,
-    meaning: "Source, entrypoint, or declared I/O schema is invalid.",
-  },
-  {
-    code: "package-install-denied",
-    status: 400,
-    meaning: SCRIPT_PACKAGE_INSTALL_MESSAGE,
-  },
-  {
-    code: "arbitrary-image-denied",
-    status: 400,
-    meaning: SCRIPT_ARBITRARY_IMAGE_MESSAGE,
-  },
-  {
-    code: "secret-in-yaml",
-    status: 400,
-    meaning: SCRIPT_SECRET_WITH_MESSAGE,
-  },
-  {
-    code: "invalid-request",
-    status: 400,
-    meaning: SCRIPT_HOST_SUPPLIED_IDENTITY_HELP,
-  },
-  {
-    code: "forbidden",
-    status: 403,
-    meaning:
-      "Missing workflow.execute, script.run, or runtimeProfile.use. Selectors fail closed.",
-  },
-  {
-    code: "mutable-artifact",
-    status: 409,
-    meaning: SCRIPT_MUTABLE_REJECT_HELP,
-  },
-  {
-    code: "unscanned-artifact",
-    status: 409,
-    meaning: "Unscanned artifacts cannot run. Publish must complete scan/sign/pin.",
-  },
+  { code: "invalid-source", status: 400, meaning: "Source is missing, not UTF-8, the wrong language shape, or exceeds 64 KiB." },
+  { code: "invalid-entrypoint", status: 400, meaning: "Entrypoint is empty, a path, or does not match the language (main.py / main.go)." },
+  { code: "invalid-runtime-profile", status: 400, meaning: "Runtime profile is missing, unpublished, or not digest-pinned." },
+  { code: "language-mismatch", status: 400, meaning: SCRIPT_PROFILE_LANGUAGE_MESSAGE },
+  { code: "invalid-schema", status: 400, meaning: "inputSchema or outputSchema is not the documented JSON Schema subset." },
+  { code: "secret-forbidden", status: 400, meaning: SCRIPT_SECRET_WITH_MESSAGE },
+  { code: "size-limit", status: 400, meaning: "Source, timeout, or resource limit exceeded the documented cap." },
+  { code: "artifact-mutable", status: 400, meaning: "A draft or unsigned package cannot be executed. Publish first." },
+  { code: "artifact-unscanned", status: 400, meaning: "Artifact scanStatus is pending or missing." },
+  { code: "artifact-unsigned", status: 400, meaning: "Artifact signature is missing or does not verify." },
+  { code: "artifact-scan-failed", status: 400, meaning: "Artifact scanStatus is failed." },
+  { code: "artifact-revoked", status: 409, meaning: "E9.4: revoked artifacts cannot start. Hook only in E9.1." },
+  { code: "permission-denied", status: 403, meaning: "Missing workflow.execute, script.run, or runtimeProfile.use." },
+  { code: "runner-not-implemented", status: 501, meaning: "E9.2 isolated runner is not enabled." },
+  { code: "typed-io-not-implemented", status: 501, meaning: "E9.3 typed I/O execution is not enabled." },
+  { code: "revocation-not-implemented", status: 501, meaning: "E9.4 revocation API is not enabled." },
 ];
 
 const UUID =
@@ -348,6 +454,17 @@ export function runtimeProfileLanguage(
   return "";
 }
 
+export function isScriptRuntimeProfileSpec(
+  spec: { engine?: unknown; language?: unknown } | null | undefined,
+): boolean {
+  const engine = String(spec?.engine ?? "").trim().toLowerCase();
+  if (engine) {
+    return engine === SCRIPT_RUNTIME_PROFILE_ENGINE;
+  }
+  const language = runtimeProfileLanguage(spec);
+  return language === "python" || language === "go" || language === "";
+}
+
 export function runtimeProfileMatchesNode(
   type: string,
   spec: { language?: unknown } | null | undefined,
@@ -422,10 +539,11 @@ export function scriptNodeWithFields(
     {
       name: "timeoutSeconds",
       kind: "integer",
+      required: true,
       label: "Timeout (seconds)",
       controlHint: "number",
       defaultValue: SCRIPT_DEFAULT_TIMEOUT_SECONDS,
-      description: `Bounded run timeout (${SCRIPT_MIN_TIMEOUT_SECONDS}–${SCRIPT_MAX_TIMEOUT_SECONDS}). Default ${SCRIPT_DEFAULT_TIMEOUT_SECONDS}.`,
+      description: `Required. Bounded run timeout (${SCRIPT_MIN_TIMEOUT_SECONDS}–${SCRIPT_MAX_TIMEOUT_SECONDS}). Default ${SCRIPT_DEFAULT_TIMEOUT_SECONDS}.`,
     },
     {
       name: "memoryMiB",
@@ -433,7 +551,23 @@ export function scriptNodeWithFields(
       label: "Memory (MiB)",
       controlHint: "number",
       defaultValue: SCRIPT_DEFAULT_MEMORY_MIB,
-      description: `Bounded memory (${SCRIPT_MIN_MEMORY_MIB}–${SCRIPT_MAX_MEMORY_MIB}). Default ${SCRIPT_DEFAULT_MEMORY_MIB}.`,
+      description: `Optional. Bounded memory (${SCRIPT_MIN_MEMORY_MIB}–${SCRIPT_MAX_MEMORY_MIB}). Must not exceed the pinned profile.`,
+    },
+    {
+      name: "cpuMillis",
+      kind: "integer",
+      label: "CPU (millicores)",
+      controlHint: "number",
+      advanced: true,
+      description: `Optional CPU millicores (${SCRIPT_MIN_CPU_MILLIS}–${SCRIPT_MAX_CPU_MILLIS}). Must not exceed the pinned profile.`,
+    },
+    {
+      name: "processes",
+      kind: "integer",
+      label: "Processes",
+      controlHint: "number",
+      advanced: true,
+      description: `Optional process cap (${SCRIPT_MIN_PROCESSES}–${SCRIPT_MAX_PROCESSES}). Must not exceed the pinned profile.`,
     },
     {
       name: "inputSchema",
@@ -499,6 +633,8 @@ export function overlayScriptFields(
           field.name === "inputSchema" ||
           field.name === "outputSchema" ||
           field.name === "policyId" ||
+          field.name === "cpuMillis" ||
+          field.name === "processes" ||
           base?.advanced,
         readOnly: base?.readOnly,
         controlHint,
@@ -518,7 +654,7 @@ export function stripScriptForbiddenWith(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value)) {
-    if ((SCRIPT_FORBIDDEN_WITH_KEYS as readonly string[]).includes(key)) {
+    if ((SCRIPT_STRIP_WITH_KEYS as readonly string[]).includes(key)) {
       continue;
     }
     if (isForbiddenYamlKey(key)) {
@@ -530,7 +666,7 @@ export function stripScriptForbiddenWith(
 }
 
 export function isExposedScriptWithField(name: string): boolean {
-  return !(SCRIPT_FORBIDDEN_WITH_KEYS as readonly string[]).includes(name);
+  return !(SCRIPT_STRIP_WITH_KEYS as readonly string[]).includes(name);
 }
 
 export function hostSuppliedScriptIdentityKeys(
@@ -580,41 +716,34 @@ export function validateScriptNodeConfig(
   }
   const forbidden = scriptForbiddenWithKeys(withValue);
   if (forbidden.length > 0) {
+    if (forbidden.some((key) => key === "command" || key === "shell")) {
+      errors.push("command and shell are not script node fields. Author source + entrypoint only.");
+    }
     if (
       forbidden.some((key) =>
-        ["image", "baseImage", "dockerfile", "Dockerfile", "imageDigest"].includes(
+        ["env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig"].includes(
           key,
         ),
       )
     ) {
-      errors.push(SCRIPT_ARBITRARY_IMAGE_MESSAGE);
-    }
-    if (
-      forbidden.some((key) =>
-        ["packages", "requirements", "pip", "goGet", "goMod"].includes(key),
-      )
-    ) {
-      errors.push(SCRIPT_PACKAGE_INSTALL_MESSAGE);
-    }
-    if (
-      forbidden.some(
-        (key) =>
-          ![
-            "image",
-            "baseImage",
-            "dockerfile",
-            "Dockerfile",
-            "imageDigest",
-            "packages",
-            "requirements",
-            "pip",
-            "goGet",
-            "goMod",
-          ].includes(key),
-      )
-    ) {
       errors.push(SCRIPT_SECRET_WITH_MESSAGE);
     }
+  }
+  if (
+    "image" in withValue ||
+    "baseImage" in withValue ||
+    "dockerfile" in withValue ||
+    "imageDigest" in withValue
+  ) {
+    errors.push(SCRIPT_ARBITRARY_IMAGE_MESSAGE);
+  }
+  if (
+    "packages" in withValue ||
+    "requirements" in withValue ||
+    "pip" in withValue ||
+    "goGet" in withValue
+  ) {
+    errors.push(SCRIPT_PACKAGE_INSTALL_MESSAGE);
   }
 
   const runtimeProfileId =
@@ -637,6 +766,9 @@ export function validateScriptNodeConfig(
   if (!source.trim()) {
     errors.push(SCRIPT_SOURCE_REQUIRED_MESSAGE);
   } else {
+    if (new TextEncoder().encode(source).length > SCRIPT_MAX_SOURCE_BYTES) {
+      errors.push(`source exceeds ${SCRIPT_MAX_SOURCE_BYTES} bytes.`);
+    }
     if (looksLikeSecretValue(source)) {
       errors.push(SCRIPT_SECRET_WITH_MESSAGE);
     }
@@ -654,9 +786,13 @@ export function validateScriptNodeConfig(
     errors.push(SCRIPT_ENTRYPOINT_REQUIRED_MESSAGE);
   } else if (looksLikeSecretValue(entrypoint) || isForbiddenYamlKey(entrypoint)) {
     errors.push(SCRIPT_SECRET_WITH_MESSAGE);
+  } else if (!isValidScriptEntrypoint(type, entrypoint)) {
+    errors.push(SCRIPT_ENTRYPOINT_INVALID_MESSAGE);
   }
 
-  if (withValue.timeoutSeconds !== undefined) {
+  if (withValue.timeoutSeconds === undefined || withValue.timeoutSeconds === "") {
+    errors.push(SCRIPT_TIMEOUT_REQUIRED_MESSAGE);
+  } else {
     const timeout = Number(withValue.timeoutSeconds);
     if (
       !Number.isFinite(timeout) ||
@@ -682,6 +818,31 @@ export function validateScriptNodeConfig(
     }
   }
 
+  if (withValue.cpuMillis !== undefined) {
+    const cpu = Number(withValue.cpuMillis);
+    if (
+      !Number.isFinite(cpu) ||
+      cpu < SCRIPT_MIN_CPU_MILLIS ||
+      cpu > SCRIPT_MAX_CPU_MILLIS
+    ) {
+      errors.push(
+        `cpuMillis must be between ${SCRIPT_MIN_CPU_MILLIS} and ${SCRIPT_MAX_CPU_MILLIS}.`,
+      );
+    }
+  }
+  if (withValue.processes !== undefined) {
+    const processes = Number(withValue.processes);
+    if (
+      !Number.isFinite(processes) ||
+      processes < SCRIPT_MIN_PROCESSES ||
+      processes > SCRIPT_MAX_PROCESSES
+    ) {
+      errors.push(
+        `processes must be between ${SCRIPT_MIN_PROCESSES} and ${SCRIPT_MAX_PROCESSES}.`,
+      );
+    }
+  }
+
   if (withValue.policyId !== undefined && withValue.policyId !== "") {
     const policyId = String(withValue.policyId).trim();
     if (!UUID.test(policyId)) {
@@ -695,6 +856,22 @@ export function validateScriptNodeConfig(
   return unique(errors);
 }
 
+export function isValidScriptEntrypoint(type: string, entrypoint: string): boolean {
+  if (!entrypoint || entrypoint.includes("/") || entrypoint.includes("\\") || entrypoint.includes("..")) {
+    return false;
+  }
+  if (type === SCRIPT_PYTHON_TYPE) {
+    return /^[A-Za-z][A-Za-z0-9._-]*\.py$/.test(entrypoint);
+  }
+  if (type === SCRIPT_GO_TYPE) {
+    return (
+      /^[A-Za-z][A-Za-z0-9._-]*\.go$/.test(entrypoint) ||
+      /^[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*$/.test(entrypoint)
+    );
+  }
+  return false;
+}
+
 export function yamlHasScriptNodes(yaml: string): boolean {
   return /type:\s*script\.(python|go)\b/.test(yaml);
 }
@@ -703,6 +880,7 @@ export function scriptArtifactStatus(input: {
   dirty?: boolean;
   hasPublishedVersion?: boolean;
   version?: WorkflowVersion | Record<string, unknown> | null;
+  scriptArtifacts?: readonly ScriptVersionPin[] | null;
 }): ScriptArtifactStatus {
   if (input.dirty) {
     return {
@@ -718,6 +896,61 @@ export function scriptArtifactStatus(input: {
       label: "Draft — no executable artifact",
       help: SCRIPT_PUBLISH_BOUNDARY_HELP,
       source: "contract-fallback",
+    };
+  }
+  const pins = (input.scriptArtifacts ?? []).filter((item) => item.artifactId);
+  if (pins.length > 0) {
+    const failed = pins.find(
+      (item) =>
+        item.scanStatus === "failed" ||
+        item.scanStatus === "unsigned" ||
+        !item.digest,
+    );
+    const pending = pins.find(
+      (item) => item.scanStatus === "pending" || item.scanStatus === "scanning",
+    );
+    const unsigned = pins.find((item) => !item.signature);
+    if (failed) {
+      return {
+        kind: "rejected",
+        label: "Artifact rejected",
+        help:
+          failed.scanStatus === "failed"
+            ? "scanStatus is failed. Mutable or failed-scan artifacts cannot run."
+            : SCRIPT_MUTABLE_REJECT_HELP,
+        digest: failed.digest,
+        scanStatus: failed.scanStatus,
+        source: "version",
+      };
+    }
+    if (pending) {
+      return {
+        kind: "scanning",
+        label: "Scan in progress",
+        help: "Publish packaged the source. Execution waits for a clean signed scan.",
+        digest: pending.digest,
+        scanStatus: pending.scanStatus,
+        source: "version",
+      };
+    }
+    if (unsigned) {
+      return {
+        kind: "rejected",
+        label: "Unsigned artifact",
+        help: "Artifact signature is missing. Execution requires a signed, scanned pin.",
+        digest: unsigned.digest,
+        scanStatus: unsigned.scanStatus,
+        source: "version",
+      };
+    }
+    const clean = pins.find((item) => item.scanStatus === "clean" && item.digest);
+    return {
+      kind: "signed-pinned",
+      label: "Signed and pinned",
+      help: SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
+      digest: clean?.digest ?? pins[0]?.digest,
+      scanStatus: clean?.scanStatus ?? pins[0]?.scanStatus,
+      source: "version",
     };
   }
   const parsed = parseVersionArtifact(input.version);
@@ -753,8 +986,8 @@ export function scriptArtifactStatus(input: {
   }
   return {
     kind: "published-unpinned",
-    label: "Published — artifact pin pending route map",
-    help: `${SCRIPT_PUBLISH_BOUNDARY_HELP} ${SCRIPT_CONTRACT_FALLBACK_HELP}`,
+    label: "Published — no script artifact pin",
+    help: `${SCRIPT_PUBLISH_BOUNDARY_HELP} Inspect GET …/versions/{v}/script-artifacts after publish.`,
     digest: parsed.digest,
     scanStatus: parsed.scanStatus,
     source: parsed.fromVersion ? "version" : "contract-fallback",
@@ -841,15 +1074,28 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
     .map(parseEngineError)
     .filter((item): item is ScriptNodeErrorShape => item !== null);
   const permissions = stringList(nested.permissions ?? rec.permissions);
+  const languages = stringList(nested.languages ?? rec.languages);
+  const publish = parsePublishRules(nested.publishRules ?? rec.publishRules);
+  const isolation = parseIsolation(nested.isolation ?? rec.isolation);
+  const hooks = parseHooks(nested.hooks ?? rec.hooks);
   if (nodes.length === 0 && errors.length === 0 && permissions.length === 0) {
     return { ...SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG };
   }
+  const source: ScriptNodeCatalogSource =
+    rec.scriptEngine && typeof rec.scriptEngine === "object"
+      ? "ops-config-catalog"
+      : nodes.length > 0
+        ? "scripts-catalog"
+        : "contract-fallback";
   return {
-    source: nodes.length > 0 ? "workflow-catalog" : "contract-fallback",
+    source,
+    languages: languages.length ? languages : ["python", "go"],
     nodes: nodes.length ? nodes : SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG.nodes,
     errors: errors.length ? errors : DEFAULT_SCRIPT_NODE_ERRORS,
     permissions: permissions.length ? permissions : [...SCRIPT_NODE_PERMISSIONS],
-    publish: DEFAULT_SCRIPT_PUBLISH_RULES,
+    publish,
+    isolation,
+    hooks,
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
       (nodes.length ? undefined : SCRIPT_CONTRACT_FALLBACK_HELP),
@@ -858,14 +1104,16 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
 
 export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
   source: "contract-fallback",
+  languages: ["python", "go"],
   nodes: [
     {
       type: SCRIPT_PYTHON_TYPE,
-      title: "Python script",
+      language: "python",
+      title: "Run Python script",
       description:
-        "Run approved Python source as an isolated node. Publish packages, scans, signs, and pins an immutable artifact. Draft save does not create an executable artifact.",
+        "Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.",
       permissions: [...SCRIPT_NODE_PERMISSIONS],
-      requiredWith: ["source", "entrypoint", "runtimeProfileId"],
+      requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
       allowedWith: [],
       outputs: ["result"],
       sideEffects: true,
@@ -874,11 +1122,12 @@ export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
     },
     {
       type: SCRIPT_GO_TYPE,
-      title: "Go script",
+      language: "go",
+      title: "Run Go script",
       description:
-        "Run approved Go source as an isolated node. Publish packages, scans, signs, and pins an immutable artifact. Draft save does not create an executable artifact.",
+        "Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.",
       permissions: [...SCRIPT_NODE_PERMISSIONS],
-      requiredWith: ["source", "entrypoint", "runtimeProfileId"],
+      requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
       allowedWith: [],
       outputs: ["result"],
       sideEffects: true,
@@ -889,6 +1138,12 @@ export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
   errors: DEFAULT_SCRIPT_NODE_ERRORS,
   permissions: [...SCRIPT_NODE_PERMISSIONS],
   publish: DEFAULT_SCRIPT_PUBLISH_RULES,
+  isolation: DEFAULT_SCRIPT_ISOLATION,
+  hooks: {
+    "E9.2": "isolated runner (VerifyForDispatch before exec)",
+    "E9.3": "typed I/O + scoped handles + output redaction",
+    "E9.4": "artifact revocation + emergency stop",
+  },
   notes: SCRIPT_CONTRACT_FALLBACK_HELP,
 };
 
@@ -957,7 +1212,7 @@ function thinFallback(type: string): CatalogNode {
     description: SCRIPT_PUBLISH_BOUNDARY_HELP,
     inputs: [],
     outputs: [],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId"],
+    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
     allowedWith: fieldsToAllowed(type),
   };
 }
@@ -966,16 +1221,16 @@ const SCRIPT_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
   "script.python": {
     type: SCRIPT_PYTHON_TYPE,
     phase: CATALOG_PHASE_CORE,
-    title: "Python script",
+    title: "Run Python script",
     description:
-      "Run approved Python source as an isolated node. Publish packages, scans, signs, and pins an immutable artifact. Draft save does not create an executable artifact.",
+      "Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.",
     inputs: [
       inherit("input", "object", false, "Validated JSON input. Secrets are scoped handles, never plaintext."),
     ],
     outputs: [
       inherit("result", "object", false, "Redacted result matching the declared output schema."),
     ],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId"],
+    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
     allowedWith: fieldsToAllowed(SCRIPT_PYTHON_TYPE),
     policy: scriptPolicy(),
     bounds: defaultBounds(),
@@ -990,16 +1245,16 @@ const SCRIPT_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
   "script.go": {
     type: SCRIPT_GO_TYPE,
     phase: CATALOG_PHASE_CORE,
-    title: "Go script",
+    title: "Run Go script",
     description:
-      "Run approved Go source as an isolated node. Publish packages, scans, signs, and pins an immutable artifact. Draft save does not create an executable artifact.",
+      "Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.",
     inputs: [
       inherit("input", "object", false, "Validated JSON input. Secrets are scoped handles, never plaintext."),
     ],
     outputs: [
       inherit("result", "object", false, "Redacted result matching the declared output schema."),
     ],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId"],
+    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
     allowedWith: fieldsToAllowed(SCRIPT_GO_TYPE),
     policy: scriptPolicy(),
     bounds: defaultBounds(),
@@ -1029,9 +1284,10 @@ function parseEngineNode(raw: unknown): ScriptNodeEngineContract | null {
     : [];
   return {
     type,
+    language: String(rec.language ?? "").trim() || expectedRuntimeLanguage(type),
     title:
       String(rec.title ?? "").trim() ||
-      (type === SCRIPT_GO_TYPE ? "Go script" : "Python script"),
+      (type === SCRIPT_GO_TYPE ? "Run Go script" : "Run Python script"),
     description: String(rec.description ?? "").trim(),
     permissions: stringList(rec.permissions),
     requiredWith: stringList(rec.requiredWith),
@@ -1191,3 +1447,231 @@ function stringList(value: unknown): string[] {
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
+
+function parsePublishRules(raw: unknown): ScriptPublishRules {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...DEFAULT_SCRIPT_PUBLISH_RULES };
+  }
+  const rec = raw as Record<string, unknown>;
+  return {
+    requiredWith: stringList(rec.requiredWith).length
+      ? stringList(rec.requiredWith)
+      : DEFAULT_SCRIPT_PUBLISH_RULES.requiredWith,
+    allowedLanguages: stringList(rec.allowedLanguages).length
+      ? stringList(rec.allowedLanguages)
+      : DEFAULT_SCRIPT_PUBLISH_RULES.allowedLanguages,
+    sourceVisibleInYAML: rec.sourceVisibleInYAML !== false,
+    secretsForbiddenInYAML: rec.secretsForbiddenInYAML !== false,
+    draftsCannotExecute: rec.draftsCannotExecute !== false,
+    mutableArtifactsRejected: rec.mutableArtifactsRejected !== false,
+    unscannedRejected: rec.unscannedRejected !== false,
+    unsignedRejected: rec.unsignedRejected !== false,
+    failedScanRejected: rec.failedScanRejected !== false,
+    publishedRevisionsPinned: rec.publishedRevisionsPinned !== false,
+    digestPinnedRuntime: rec.digestPinnedRuntime !== false,
+    maxSourceBytes: Number.isFinite(Number(rec.maxSourceBytes))
+      ? Number(rec.maxSourceBytes)
+      : SCRIPT_MAX_SOURCE_BYTES,
+    maxTimeoutSeconds: Number.isFinite(Number(rec.maxTimeoutSeconds))
+      ? Number(rec.maxTimeoutSeconds)
+      : SCRIPT_MAX_TIMEOUT_SECONDS,
+  };
+}
+
+function parseIsolation(raw: unknown): ScriptIsolationRules {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...DEFAULT_SCRIPT_ISOLATION };
+  }
+  const rec = raw as Record<string, unknown>;
+  return {
+    nonRoot: rec.nonRoot !== false,
+    readOnlyRootFS: rec.readOnlyRootFS !== false,
+    droppedCapabilities: rec.droppedCapabilities !== false,
+    noNewPrivs: rec.noNewPrivs !== false,
+    noMetadataService: rec.noMetadataService !== false,
+    noHostDockerSocket: rec.noHostDockerSocket !== false,
+    runtimePackageInstall: rec.runtimePackageInstall === true,
+    approvedImagesOnly: rec.approvedImagesOnly !== false,
+    note: String(rec.note ?? "").trim() || DEFAULT_SCRIPT_ISOLATION.note,
+    hooks: stringList(rec.hooks).length
+      ? stringList(rec.hooks)
+      : DEFAULT_SCRIPT_ISOLATION.hooks,
+  };
+}
+
+function parseHooks(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string" && value.trim()) {
+      out[key] = value.trim();
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+export function artifactHasForbiddenBlob(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return false;
+  }
+  const rec = raw as Record<string, unknown>;
+  return SCRIPT_ARTIFACT_SECRET_KEYS.some((key) => key in rec);
+}
+
+export function stripScriptArtifactSecrets(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if ((SCRIPT_ARTIFACT_SECRET_KEYS as readonly string[]).includes(key)) {
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+export function parseScriptArtifact(raw: unknown): ScriptArtifact | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const rec = stripScriptArtifactSecrets(raw as Record<string, unknown>);
+  const id = String(rec.id ?? "").trim();
+  const digest = String(rec.digest ?? "").trim();
+  if (!id || !digest) {
+    return null;
+  }
+  return {
+    id,
+    language: String(rec.language ?? "").trim(),
+    entrypoint: String(rec.entrypoint ?? "").trim(),
+    digest,
+    signature: String(rec.signature ?? "").trim(),
+    scanStatus: String(rec.scanStatus ?? "").trim(),
+    status: String(rec.status ?? "").trim(),
+    runtimeProfileId: firstString(rec.runtimeProfileId),
+    runtimeProfileVersionId: firstString(rec.runtimeProfileVersionId),
+    runtimeProfileDigest: firstString(rec.runtimeProfileDigest),
+    sourceBytes: Number.isFinite(Number(rec.sourceBytes))
+      ? Number(rec.sourceBytes)
+      : undefined,
+    metadata:
+      rec.metadata && typeof rec.metadata === "object" && !Array.isArray(rec.metadata)
+        ? stripScriptArtifactSecrets(rec.metadata as Record<string, unknown>)
+        : undefined,
+    createdBy: firstString(rec.createdBy),
+    createdAt: firstString(rec.createdAt),
+    revokedAt: firstString(rec.revokedAt),
+  };
+}
+
+export function parseScriptVersionPin(raw: unknown): ScriptVersionPin | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const rec = stripScriptArtifactSecrets(raw as Record<string, unknown>);
+  const artifactId = String(rec.artifactId ?? "").trim();
+  const digest = String(rec.digest ?? "").trim();
+  const nodeId = String(rec.nodeId ?? "").trim();
+  if (!artifactId || !digest || !nodeId) {
+    return null;
+  }
+  return {
+    workflowVersionId: String(rec.workflowVersionId ?? "").trim(),
+    nodeId,
+    nodeType: firstString(rec.nodeType),
+    artifactId,
+    digest,
+    scanStatus: String(rec.scanStatus ?? "").trim(),
+    signature: firstString(rec.signature),
+    language: firstString(rec.language),
+    entrypoint: firstString(rec.entrypoint),
+  };
+}
+
+export function parseScriptVersionPins(raw: unknown): ScriptVersionPin[] {
+  const items = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && Array.isArray((raw as { items?: unknown }).items)
+      ? (raw as { items: unknown[] }).items
+      : [];
+  return items
+    .map(parseScriptVersionPin)
+    .filter((item): item is ScriptVersionPin => item !== null);
+}
+
+export function buildScriptPublishBody(input: {
+  language: "python" | "go";
+  source: string;
+  entrypoint: string;
+  runtimeProfileId: string;
+  runtimeProfileVersionId?: string;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  timeoutSeconds?: number;
+  memoryMiB?: number;
+  cpuMillis?: number;
+  processes?: number;
+}): Record<string, unknown> {
+  return stripScriptForbiddenWith({
+    language: input.language,
+    source: input.source,
+    entrypoint: input.entrypoint,
+    runtimeProfileId: input.runtimeProfileId,
+    ...(input.runtimeProfileVersionId
+      ? { runtimeProfileVersionId: input.runtimeProfileVersionId }
+      : {}),
+    ...(input.inputSchema ? { inputSchema: input.inputSchema } : {}),
+    ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
+    timeoutSeconds: input.timeoutSeconds ?? SCRIPT_DEFAULT_TIMEOUT_SECONDS,
+    ...(input.memoryMiB !== undefined ? { memoryMiB: input.memoryMiB } : {}),
+    ...(input.cpuMillis !== undefined ? { cpuMillis: input.cpuMillis } : {}),
+    ...(input.processes !== undefined ? { processes: input.processes } : {}),
+  });
+}
+
+export function retargetScriptApiPath(uiApiPath: string): string {
+  return uiApiPath;
+}
+
+export function isScriptProxySegments(segments: string[]): boolean {
+  return (
+    segments[0] === "scripts" ||
+    (segments[0] === "workflows" &&
+      segments[2] === "versions" &&
+      segments[4] === "script-artifacts")
+  );
+}
+
+export type ScriptProxyRoute = {
+  methods: readonly string[];
+  match: (segments: string[]) => boolean;
+};
+
+export const SCRIPT_PROXY_ROUTES: readonly ScriptProxyRoute[] = [
+  {
+    methods: ["GET"],
+    match: (s) => s.length === 2 && s[0] === "scripts" && s[1] === "catalog",
+  },
+  {
+    methods: ["GET", "POST"],
+    match: (s) => s.length === 1 && s[0] === "scripts",
+  },
+  {
+    methods: ["GET"],
+    match: (s) => s.length === 2 && s[0] === "scripts" && isResourceId(s[1]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]) &&
+      s[4] === "script-artifacts",
+  },
+];
+

@@ -22,7 +22,10 @@ import {
   SCRIPT_SECRET_WITH_MESSAGE,
   SCRIPT_SOURCE_REQUIRED_MESSAGE,
   SCRIPT_STORY,
+  SCRIPT_STRIP_WITH_KEYS,
+  SCRIPT_TIMEOUT_REQUIRED_MESSAGE,
   adaptScriptNodeEntries,
+  artifactHasForbiddenBlob,
   catalogListsScriptType,
   defaultScriptWith,
   hasScriptNodeContract,
@@ -30,7 +33,10 @@ import {
   hostSuppliedScriptIdentityProblem,
   isScriptActionType,
   isScriptConfigurableType,
+  isScriptRuntimeProfileSpec,
+  parseScriptArtifact,
   parseScriptNodeCatalog,
+  parseScriptVersionPins,
   runtimeProfileLanguage,
   runtimeProfileMatchesNode,
   scriptArtifactStatus,
@@ -58,28 +64,55 @@ const catalog: WorkflowCatalog = {
 };
 
 describe("script contract adapter", () => {
-  it("cites E9.1 / E9 and the marked contract-fallback until jonny's map", () => {
+  it("cites E9.1 / #97 map and the closed #92 / open #91 issue pairing", () => {
     assert.equal(SCRIPT_STORY, 92);
     assert.equal(SCRIPT_EPIC, 91);
-    assert.equal(SCRIPT_API_PR, 0);
-    assert.equal(SCRIPT_ROUTE_MAP_SOURCE, "e91-contract-fallback");
+    assert.equal(SCRIPT_API_PR, 97);
+    assert.equal(SCRIPT_ROUTE_MAP_SOURCE, "e91-#97");
     assert.equal(SCRIPT_PYTHON_TYPE, "script.python");
     assert.equal(SCRIPT_GO_TYPE, "script.go");
     assert.equal(SCRIPT_DEFAULT_TIMEOUT_SECONDS, 30);
-    assert.ok(SCRIPT_FORBIDDEN_WITH_KEYS.includes("secret"));
-    assert.ok(SCRIPT_FORBIDDEN_WITH_KEYS.includes("image"));
-    assert.ok(SCRIPT_FORBIDDEN_WITH_KEYS.includes("pip"));
-    assert.match(SCRIPT_CONTRACT_FALLBACK_HELP, /e91-contract-fallback/);
+    assert.deepEqual([...SCRIPT_FORBIDDEN_WITH_KEYS], [
+      "env",
+      "environment",
+      "secrets",
+      "credentials",
+      "privateKey",
+      "token",
+      "password",
+      "kubeconfig",
+      "command",
+      "shell",
+    ]);
+    assert.ok(SCRIPT_STRIP_WITH_KEYS.includes("secret"));
+    assert.ok(SCRIPT_STRIP_WITH_KEYS.includes("image"));
+    assert.ok(SCRIPT_STRIP_WITH_KEYS.includes("pip"));
+    assert.ok(SCRIPT_STRIP_WITH_KEYS.includes("package"));
+    assert.ok(SCRIPT_STRIP_WITH_KEYS.includes("storageRef"));
+    assert.match(SCRIPT_CONTRACT_FALLBACK_HELP, /e91-#97/);
     assert.match(SCRIPT_PUBLISH_BOUNDARY_HELP, /Draft save/i);
     assert.match(SCRIPT_PUBLISH_BOUNDARY_HELP, /does not create an executable artifact/i);
     assert.match(SCRIPT_DRAFT_NOT_EXECUTABLE_HELP, /pinned artifact digest/i);
+    assert.equal(SCRIPT_EXISTING_API_PATHS.scriptsCatalog, "/scripts/catalog");
+    assert.equal(SCRIPT_EXISTING_API_PATHS.scripts, "/scripts");
+    assert.equal(SCRIPT_EXISTING_API_PATHS.opsConfigCatalog, "/ops-config/catalog");
     assert.equal(SCRIPT_EXISTING_API_PATHS.workflowCatalog, "/workflows/catalog");
     assert.equal(SCRIPT_EXISTING_API_PATHS.runtimeProfiles, "/runtime-profiles");
     assert.equal(
       SCRIPT_EXISTING_API_PATHS.workflowPublish("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
       "/workflows/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/publish",
     );
-    assert.doesNotMatch(SCRIPT_EXISTING_API_PATHS.workflowCatalog, /\/scripts\//);
+    assert.equal(
+      SCRIPT_EXISTING_API_PATHS.scriptArtifact("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+      "/scripts/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
+    assert.equal(
+      SCRIPT_EXISTING_API_PATHS.workflowScriptArtifacts(
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      ),
+      "/workflows/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/versions/cccccccc-cccc-4ccc-8ccc-cccccccccccc/script-artifacts",
+    );
   });
 
   it("falls back to marked contract entries when catalog is thin or missing", () => {
@@ -92,12 +125,13 @@ describe("script contract adapter", () => {
     assert.equal(isScriptConfigurableType("ssh.run"), false);
     assert.equal(catalogListsScriptType(catalog, "script.python"), true);
     const fallback = scriptFallbackNode("script.python");
-    assert.equal(fallback.title, "Python script");
-    assert.match(fallback.description ?? "", /Publish packages/i);
+    assert.equal(fallback.title, "Run Python script");
+    assert.match(fallback.description ?? "", /signed, scanned/i);
     assert.deepEqual(fallback.requiredWith, [
       "source",
       "entrypoint",
       "runtimeProfileId",
+      "timeoutSeconds",
     ]);
     assert.equal(fallback.policy?.retrySafe, false);
     assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "source"));
@@ -116,7 +150,7 @@ describe("script contract adapter", () => {
     assert.equal(missing[0]?.type, "script.python");
     assert.equal(missing[1]?.type, "script.go");
     const thin = adaptScriptNodeEntries(catalog);
-    assert.equal(thin[0]?.title, "Python script");
+    assert.equal(thin[0]?.title, "Run Python script");
     assert.ok((thin[0]?.allowedWith?.length ?? 0) > 0);
   });
 
@@ -147,16 +181,18 @@ describe("script contract adapter", () => {
     assert.equal("image" in stripped, false);
     assert.equal("pip" in stripped, false);
     assert.equal(stripped.runtimeProfileId, PROFILE_ID);
-    assert.deepEqual(scriptForbiddenWithKeys({ token: "x", baseImage: "x" }), [
+    assert.deepEqual(scriptForbiddenWithKeys({ token: "x", command: "x" }), [
       "token",
-      "baseImage",
+      "command",
     ]);
+    assert.deepEqual(scriptForbiddenWithKeys({ baseImage: "x" }), []);
   });
 
   it("requires source, entrypoint, and a published runtime profile", () => {
     const missing = validateScriptNodeConfig("script.python", {});
     assert.ok(missing.includes(SCRIPT_SOURCE_REQUIRED_MESSAGE));
     assert.ok(missing.includes(SCRIPT_PROFILE_REQUIRED_MESSAGE));
+    assert.ok(missing.includes(SCRIPT_TIMEOUT_REQUIRED_MESSAGE));
     assert.ok(missing.some((error) => /entrypoint/.test(error)));
 
     const closed = validateScriptNodeConfig(
@@ -264,7 +300,7 @@ describe("script contract adapter", () => {
       },
     });
     assert.equal(pending.kind, "published-unpinned");
-    assert.match(pending.help, /e91-contract-fallback/);
+    assert.match(pending.help, /script-artifacts/);
     assert.match(pending.help, /Publish packages/i);
 
     const pinned = scriptArtifactStatus({
@@ -291,6 +327,23 @@ describe("script contract adapter", () => {
       version: { scanStatus: "mutable", reason: "mutable tag" },
     });
     assert.equal(rejected.kind, "rejected");
+
+    const fromPins = scriptArtifactStatus({
+      hasPublishedVersion: true,
+      scriptArtifacts: [
+        {
+          workflowVersionId: PROFILE_ID,
+          nodeId: "summarize",
+          artifactId: PROFILE_ID,
+          digest: "sha256:cccccccccccccccccccccccccccccccc",
+          scanStatus: "clean",
+          signature: "ed25519:pin",
+        },
+      ],
+    });
+    assert.equal(fromPins.kind, "signed-pinned");
+    assert.equal(fromPins.digest, "sha256:cccccccccccccccccccccccccccccccc");
+    assert.equal(fromPins.scanStatus, "clean");
   });
 
   it("detects script nodes in YAML and overlays catalog nodes[] when present", () => {
@@ -324,7 +377,7 @@ describe("script contract adapter", () => {
         { code: "package-install-denied", status: 400, meaning: "No pip." },
       ],
     });
-    assert.equal(parsed.source, "workflow-catalog");
+    assert.equal(parsed.source, "scripts-catalog");
     assert.equal(parsed.nodes[0]?.title, "Approved Python");
     const fields = scriptNodeWithFields("script.python", parsed);
     assert.equal(fields.some((field) => field.name === "source"), true);
@@ -336,5 +389,59 @@ describe("script contract adapter", () => {
 
     const adapted = adaptScriptNodeEntries(catalog, parsed);
     assert.equal(adapted[0]?.title, "Approved Python");
+
+    const fromOps = parseScriptNodeCatalog({
+      scriptEngine: {
+        languages: ["python", "go"],
+        nodes: [
+          {
+            type: "script.go",
+            title: "Run Go script",
+            requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
+          },
+        ],
+        publishRules: { maxSourceBytes: 65536 },
+      },
+    });
+    assert.equal(fromOps.source, "ops-config-catalog");
+    assert.equal(fromOps.nodes.some((item) => item.type === "script.go"), true);
+  });
+
+  it("parses artifact metadata and never keeps package or storageRef", () => {
+    const blob = {
+      id: PROFILE_ID,
+      language: "python",
+      entrypoint: "main.py",
+      digest: "sha256:dddddddddddddddddddddddddddddddd",
+      signature: "ed25519:sig",
+      scanStatus: "clean",
+      status: "published",
+      package: "blob",
+      storageRef: "s3://secret",
+    };
+    assert.equal(artifactHasForbiddenBlob(blob), true);
+    const parsed = parseScriptArtifact(blob);
+    assert.ok(parsed);
+    assert.equal(parsed?.digest, "sha256:dddddddddddddddddddddddddddddddd");
+    assert.equal("package" in (parsed ?? {}), false);
+    assert.equal("storageRef" in (parsed ?? {}), false);
+    assert.equal(isScriptRuntimeProfileSpec({ engine: "script", language: "python" }), true);
+    assert.equal(isScriptRuntimeProfileSpec({ engine: "kubernetes" }), false);
+    assert.deepEqual(
+      parseScriptVersionPins({
+        items: [
+          {
+            workflowVersionId: PROFILE_ID,
+            nodeId: "summarize",
+            artifactId: PROFILE_ID,
+            digest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            scanStatus: "clean",
+            signature: "ed25519:pin",
+            package: "nope",
+          },
+        ],
+      }).map((item) => item.digest),
+      ["sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"],
+    );
   });
 });

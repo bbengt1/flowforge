@@ -10,14 +10,18 @@ import type { ProblemDetails } from "@/lib/problem";
 import { publishedPinsFromList } from "@/lib/workflow-action-wizard";
 import {
   SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
+  SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
   SCRIPT_NODE_POLICY_NOTES,
   SCRIPT_PUBLISH_BOUNDARY_HELP,
   defaultScriptEntrypoint,
   isScriptConfigurableType,
+  isScriptRuntimeProfileSpec,
   runtimeProfileLanguage,
   scriptArtifactStatus,
   scriptNodeWithFields,
   validateScriptNodeConfig,
+  type ScriptNodeCatalog,
+  type ScriptVersionPin,
 } from "@/lib/script-contract";
 import type { YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
 
@@ -27,6 +31,8 @@ type ScriptAuthoringPanelProps = {
   ready: boolean;
   dirty?: boolean;
   hasPublishedVersion?: boolean;
+  scriptCatalog?: ScriptNodeCatalog | null;
+  scriptArtifacts?: readonly ScriptVersionPin[] | null;
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 };
 
@@ -36,6 +42,8 @@ export function ScriptAuthoringPanel({
   ready,
   dirty,
   hasPublishedVersion,
+  scriptCatalog,
+  scriptArtifacts,
   onPatchNodeWith,
 }: ScriptAuthoringPanelProps) {
   const [pins, setPins] = useState<OpsConfigPin[]>([]);
@@ -58,7 +66,11 @@ export function ScriptAuthoringPanel({
         return;
       }
       setProblem(null);
-      setPins(publishedPinsFromList({ items: result.items }).options);
+      setPins(
+        publishedPinsFromList({ items: result.items }).options.filter((pin) =>
+          isScriptRuntimeProfileSpec(pin.spec),
+        ),
+      );
     });
     return () => {
       cancelled = true;
@@ -79,13 +91,18 @@ export function ScriptAuthoringPanel({
   const errors = validateScriptNodeConfig(node.type, node.with, {
     profileSelectorClosed: selectorClosed,
     profileLanguage: runtimeProfileLanguage(selected?.spec),
+    scriptCatalog,
   });
-  const fields = scriptNodeWithFields(node.type).filter(
+  const fields = scriptNodeWithFields(node.type, scriptCatalog).filter(
     (field) => field.name !== "runtimeProfileId",
+  );
+  const nodePins = (scriptArtifacts ?? []).filter(
+    (pin) => pin.nodeId === node.id || !pin.nodeId,
   );
   const status = scriptArtifactStatus({
     dirty,
     hasPublishedVersion,
+    scriptArtifacts: nodePins.length ? nodePins : scriptArtifacts,
   });
 
   function patch(name: string, value: unknown) {
@@ -96,7 +113,8 @@ export function ScriptAuthoringPanel({
     <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="text-base font-semibold">Script source</h2>
       <p className="mt-1 text-sm text-zinc-600">
-        {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}
+        {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
+        {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}
       </p>
       <div className="mt-3">
         <AuthorizedResourceSelect
@@ -203,7 +221,7 @@ export function ScriptAuthoringPanel({
           ))}
         </ul>
       </details>
-      <ScriptPublishStatus status={status} />
+      <ScriptPublishStatus status={status} pins={nodePins} />
     </section>
   );
 }
