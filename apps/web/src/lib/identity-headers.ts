@@ -70,6 +70,15 @@ export function hasWorkspaceLookup(identity: DevIdentity): boolean {
   );
 }
 
+/** Stable key for dropping stale UI state when the workspace changes. */
+export function workspaceLookupKey(identity: DevIdentity): string {
+  return [
+    identity.tenantId.trim(),
+    identity.tenantSlug.trim(),
+    identity.workbenchKey.trim(),
+  ].join("|");
+}
+
 export function pickForwardedIdentityHeaders(source: Headers): Headers {
   const out = new Headers();
   for (const name of FORWARDED_IDENTITY_HEADERS) {

@@ -6,6 +6,7 @@ import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
   commandHref,
   filterPaletteCommands,
+  isWorkflowHomePath,
   paletteCommands,
 } from "@/lib/command-palette";
 import { dispatchWorkspaceCommand } from "@/lib/workspace-commands";
@@ -76,12 +77,18 @@ export function CommandPalette() {
       return;
     }
     if (action.type === "new-workflow") {
-      dispatchWorkspaceCommand("new-workflow");
+      if (isWorkflowHomePath(pathname)) {
+        dispatchWorkspaceCommand("new-workflow");
+        return;
+      }
       router.push("/workflows?create=1");
       return;
     }
     if (action.type === "import-yaml") {
-      dispatchWorkspaceCommand("import-yaml");
+      if (isWorkflowHomePath(pathname)) {
+        dispatchWorkspaceCommand("import-yaml");
+        return;
+      }
       router.push("/workflows?import=1");
       return;
     }

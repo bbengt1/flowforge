@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
+import { workspaceLookupKey } from "@/lib/identity-headers";
 import { listAlerts } from "@/lib/alert-client";
 import { canSeeAlertsNav } from "@/lib/alert";
 import { listCredentials } from "@/lib/credential-client";
@@ -28,6 +29,16 @@ type GlobalSearchProps = {
 };
 
 export function GlobalSearch({ swaggerUrl }: GlobalSearchProps) {
+  const { identity } = useWorkspace();
+  return (
+    <GlobalSearchSession
+      key={workspaceLookupKey(identity)}
+      swaggerUrl={swaggerUrl}
+    />
+  );
+}
+
+function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
   const router = useRouter();
   const { identity, ready, permissions } = useWorkspace();
   const [query, setQuery] = useState("");

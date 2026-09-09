@@ -10,9 +10,11 @@ import { listApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { canSeeApprovalsNav } from "@/lib/approval";
 import { canSeeExecutionsNav } from "@/lib/execution";
-import { listExecutions } from "@/lib/execution-client";
+import { listWorkflowExecutions } from "@/lib/execution-client";
 import type { ExecutionRecord } from "@/lib/execution-types";
+import { workspaceLookupKey } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
+import { createGenerationGate } from "@/lib/request-generation";
 import { optionalCreateFields, shortDigest } from "@/lib/workflow";
 import {
   createWorkflow,
@@ -44,14 +46,21 @@ import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 
 export function WorkflowHome() {
+  const { identity } = useWorkspace();
+  return <WorkflowHomeSession key={workspaceLookupKey(identity)} />;
+}
+
+function WorkflowHomeSession() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { identity, ready, permissions, environment } = useWorkspace();
   const importRef = useRef<HTMLInputElement>(null);
   const consumedQuery = useRef(false);
+  const refreshGate = useRef(createGenerationGate());
   const [records, setRecords] = useState<WorkflowRecord[]>([]);
   const [drafts, setDrafts] = useState<Map<string, WorkflowDraft>>(new Map());
   const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
+  const [lastRunKnownIds, setLastRunKnownIds] = useState<Set<string>>(new Set());
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [filters, setFilters] = useState<WorkflowHomeFilters>(EMPTY_WORKFLOW_HOME_FILTERS);
   const [view, setView] = useState<WorkflowHomeView>("list");
@@ -71,8 +80,9 @@ export function WorkflowHome() {
         drafts,
         executions,
         approvals,
+        lastRunKnownIds,
       }),
-    [records, environment, drafts, executions, approvals],
+    [records, environment, drafts, executions, approvals, lastRunKnownIds],
   );
   const visible = useMemo(
     () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
@@ -81,12 +91,22 @@ export function WorkflowHome() {
   const options = useMemo(() => uniqueFilterValues(items), [items]);
 
   const refresh = useCallback(async () => {
+    const token = refreshGate.current.begin();
     if (!canView) {
+      setRecords([]);
+      setDrafts(new Map());
+      setExecutions([]);
+      setLastRunKnownIds(new Set());
+      setApprovals([]);
+      setPending(null);
       return;
     }
     setPending("list");
     setProblem(null);
     const list = await listWorkflows(identity);
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
+    }
     if (!list.ok) {
       setPending(null);
       setProblem(list.problem);
@@ -99,6 +119,9 @@ export function WorkflowHome() {
         return [item.id, draft.ok ? draft.draft : null] as const;
       }),
     );
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
+    }
     const nextDrafts = new Map<string, WorkflowDraft>();
     for (const [id, draft] of draftEntries) {
       if (draft) {
@@ -107,25 +130,57 @@ export function WorkflowHome() {
     }
     setDrafts(nextDrafts);
     if (canSeeExecutionsNav(permissions ?? [])) {
-      const runs = await listExecutions(identity, { limit: 50 });
-      if (runs.ok) {
-        setExecutions(runs.items);
+      const runEntries = await Promise.all(
+        list.items.map(async (item) => {
+          const runs = await listWorkflowExecutions(identity, item.id, {
+            limit: 1,
+          });
+          return [item.id, runs.ok ? runs.items : null] as const;
+        }),
+      );
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
       }
+      const nextRuns: ExecutionRecord[] = [];
+      const known = new Set<string>();
+      for (const [id, items] of runEntries) {
+        if (!items) {
+          continue;
+        }
+        known.add(id);
+        nextRuns.push(...items);
+      }
+      setExecutions(nextRuns);
+      setLastRunKnownIds(known);
+    } else {
+      setExecutions([]);
+      setLastRunKnownIds(new Set());
     }
     if (canSeeApprovalsNav(permissions ?? [])) {
       const inbox = await listApprovals(identity, { status: "pending" });
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
+      }
       if (inbox.ok) {
         setApprovals(inbox.items);
       }
+    } else {
+      setApprovals([]);
     }
-    setPending(null);
+    if (refreshGate.current.isCurrent(token)) {
+      setPending(null);
+    }
   }, [canView, identity, permissions]);
 
   useEffect(() => {
+    const gate = refreshGate.current;
     const timer = window.setTimeout(() => {
       void refresh();
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      gate.begin();
+    };
   }, [refresh]);
 
   const createFromYaml = useCallback(
@@ -311,6 +366,9 @@ export function WorkflowHome() {
             <h2 className="text-base font-semibold">Workflow home</h2>
             <p className="mt-1 text-sm text-zinc-600">
               Filter safe metadata. Secrets and YAML payloads are never searched here.
+              Folders use a name prefix (<code className="font-mono text-xs">ops/…</code>{" "}
+              or <code className="font-mono text-xs">ops: …</code>) or a slug like{" "}
+              <code className="font-mono text-xs">ops--name</code>.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -569,7 +627,11 @@ function WorkflowMeta({ item }: { item: WorkflowHomeItem }) {
       {item.pendingApprovals
         ? ` · ${item.pendingApprovals} approval${item.pendingApprovals === 1 ? "" : "s"}`
         : ""}
-      {item.lastRunStatus ? ` · last run ${item.lastRunStatus}` : ""}
+      {item.lastRunStatus
+        ? ` · last run ${item.lastRunStatus}`
+        : item.lastRunKnown
+          ? " · never run"
+          : ""}
       {item.latestVersionDigest
         ? ` · ${shortDigest(item.latestVersionDigest)}`
         : ""}

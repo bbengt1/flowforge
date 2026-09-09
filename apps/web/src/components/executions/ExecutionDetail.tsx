@@ -539,7 +539,7 @@ export function ExecutionDetail({
             {detail?.workflowId ? (
               <p className="mt-4 text-sm">
                 <Link
-                  href="/workflows"
+                  href={`/workflows/${detail.workflowId}`}
                   className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
                   Open workflow operator
