@@ -21,6 +21,8 @@ var (
 	ErrWorkbench        = errors.New("embed assertion workbench_key is not valid")
 	ErrTTL              = errors.New("embed assertion ttl is not valid")
 	ErrStoreUnavailable = errors.New("embed assertion store is unavailable")
+	ErrUnknownKey       = errors.New("embed assertion key id is not active or overlapping")
 	ErrRotationUnready  = errors.New("embed key rotation overlap is not enabled")
 	ErrTenancyUnready   = errors.New("embed tenancy propagation is not enabled")
+	ErrTenancyMismatch  = errors.New("embed session tenant/workbench does not match host context")
 )

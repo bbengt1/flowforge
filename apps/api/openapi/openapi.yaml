@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.15.0
+  version: 0.16.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -433,11 +433,12 @@ paths:
       operationId: exchangeEmbedAssertion
       summary: Exchange an embed assertion for a browser session
       description: |
-        Validates issuer, audience (`flowforge`), `nbf`/`exp`, `jti`,
-        signature, `tenant_id` + `workbench_key`, optional workspace binding,
-        and capabilities. Consumes `jti` once (E11.1 in-process stub; E11.2
-        durable atomic consume). Issues `ff_session` / `ff_csrf`. The
-        assertion must be POSTed in the JSON body — never placed in a URL.
+        Validates issuer (optional allowlist), audience (`flowforge`),
+        `nbf`/`exp`, `jti`, signature (active + overlap kids),
+        `tenant_id` + `workbench_key`, optional workspace binding, and
+        capabilities. Atomically consumes `jti` with TTL (replay is 409).
+        Issues `ff_session` / `ff_csrf` bound to that pair. The assertion
+        must be POSTed in the JSON body — never placed in a URL.
         No CSRF (no session yet).
       parameters:
         - $ref: "#/components/parameters/RequestID"
@@ -469,6 +470,54 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /embed/keys/rotate:
+    post:
+      operationId: rotateEmbedKeys
+      summary: Register or retire an embed overlap public key
+      description: |
+        Operator rotate API. Mint stays on the active `EMBED_SIGNING_KEY`.
+        `register-overlap` adds a verification-only public JWK for the
+        overlap window. `retire` removes it after in-flight assertions expire.
+        Unknown `kid` fails closed. Private keys are never accepted or returned.
+        Requires `workspace.administer`. Cookie callers need CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/DisplayName"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateEmbedKeyRequest"
+      responses:
+        "200":
+          description: Public JWKS after the rotate
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedJWKS"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -6432,6 +6481,19 @@ components:
         absolute_expires_at:
           type: string
           format: date-time
+        embed:
+          $ref: "#/components/schemas/SessionEmbedBinding"
+    SessionEmbedBinding:
+      type: object
+      description: Present on embed-exchanged sessions. Source of truth for workbench/tenant.
+      required: [tenantId, workbenchKey, workspaceId, capabilities]
+      properties:
+        tenantId: {type: string, format: uuid}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        capabilities:
+          type: array
+          items: {type: string}
     SessionResponse:
       type: object
       required: [session, principal, csrf_token]
@@ -6561,6 +6623,29 @@ components:
         keyId: {type: string}
         algorithm: {type: string, example: EdDSA}
         displayName: {type: string}
+    RotateEmbedKeyRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [register-overlap, retire]
+          default: register-overlap
+        kid:
+          type: string
+          description: Required for retire when publicJwk.kid is omitted.
+        publicJwk:
+          type: object
+          description: Public OKP/Ed25519 JWK only. Never include `d`.
+          properties:
+            kty: {type: string, enum: [OKP]}
+            crv: {type: string, enum: [Ed25519]}
+            x: {type: string}
+            kid: {type: string}
+            use: {type: string, enum: [sig]}
+            alg: {type: string, enum: [EdDSA]}
+        overlapUntil:
+          type: string
+          format: date-time
     ExchangeEmbedAssertionRequest:
       type: object
       required: [assertion]

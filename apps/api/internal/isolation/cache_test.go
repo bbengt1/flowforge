@@ -26,3 +26,25 @@ func TestCacheIsWorkspaceScoped(t *testing.T) {
 		t.Fatalf("got %q ok=%v", got, ok)
 	}
 }
+
+func TestCachePropagatesTenantWorkbench(t *testing.T) {
+	c := NewCache()
+	ops, err := AuthorizeTenancy("11111111-1111-1111-1111-111111111111", "", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := AuthorizeTenancy("11111111-1111-1111-1111-111111111111", "", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Set(ops, "history", "ops-value"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Get(other, "history"); ok {
+		t.Fatal("cache leaked across workbench")
+	}
+	got, ok := c.Get(ops, "history")
+	if !ok || got != "ops-value" {
+		t.Fatalf("got %q ok=%v", got, ok)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
@@ -402,9 +403,11 @@ func applyStepStatus(step *ExecutionStep, status string, now time.Time) {
 	}
 }
 
-func buildBinding(scopeWorkspace string, exec Execution, step ExecutionStep, job ExecutionJob, expiresAt, leaseExpires time.Time) JobBinding {
+func buildBinding(scope isolation.Scope, exec Execution, step ExecutionStep, job ExecutionJob, expiresAt, leaseExpires time.Time) JobBinding {
 	return JobBinding{
-		WorkspaceID:       scopeWorkspace,
+		WorkspaceID:       scope.WorkspaceID(),
+		TenantID:          scope.TenantID(),
+		WorkbenchKey:      scope.WorkbenchKey(),
 		ExecutionID:       exec.ID,
 		JobID:             job.ID,
 		StepID:            step.ID,
@@ -426,6 +429,12 @@ func AuthorizeJobBinding(got JobBinding, workspaceID, versionID, digest string, 
 		return ErrJobBinding
 	}
 	if workspaceID != "" && got.WorkspaceID != workspaceID {
+		return ErrJobBinding
+	}
+	if got.TenantID != "" && !authz.ValidUUID(got.TenantID) {
+		return ErrJobBinding
+	}
+	if got.WorkbenchKey != "" && !authz.ValidWorkbenchKey(got.WorkbenchKey) {
 		return ErrJobBinding
 	}
 	if versionID != "" && got.WorkflowVersionID != versionID {

@@ -61,6 +61,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. Never a secret. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
+| `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. |
+| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Optional allowed assertion `iss`. Empty accepts any valid issuer. |
 | `WEB_EMBED_FRAME_ANCESTORS` | unset | Exact origins allowed to frame `/embed/v1` only. Empty keeps `frame-ancestors 'none'`. `*` / `null` are ignored. |
 
 ## Recovery

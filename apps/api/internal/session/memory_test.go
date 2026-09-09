@@ -104,6 +104,30 @@ func TestMemoryRefreshRejectsStaleCSRF(t *testing.T) {
 	}
 }
 
+func TestMemoryCreateStoresEmbedBinding(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	issued, err := store.Create(ctx, "11111111-1111-1111-1111-111111111111", now, time.Minute, time.Hour, CreateOpts{
+		Binding: Binding{
+			TenantID:     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			WorkbenchKey: "ops",
+			WorkspaceID:  "22222222-2222-2222-2222-222222222222",
+			Capabilities: []string{"workflow.view"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Lookup(ctx, issued.Token, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Binding.Bound() || got.Binding.WorkbenchKey != "ops" {
+		t.Fatalf("binding %+v", got.Binding)
+	}
+}
+
 func TestMemoryAuditOmitsEmptyUser(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()

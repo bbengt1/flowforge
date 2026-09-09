@@ -64,4 +64,19 @@ func TestJobTicketRejectsAlteredExpiredAndCrossWorkspace(t *testing.T) {
 	if err := AuthorizeJobBinding(wrongDigest, binding.WorkspaceID, "", binding.WorkflowDigest, now); err != ErrJobBinding {
 		t.Fatalf("altered digest: %v", err)
 	}
+
+	bound := binding
+	bound.TenantID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	bound.WorkbenchKey = "ops"
+	v2, err := SignJobTicket(key, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotV2, err := ParseJobTicket(key, v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotV2.TenantID != bound.TenantID || gotV2.WorkbenchKey != "ops" {
+		t.Fatalf("v2 tenancy %+v", gotV2)
+	}
 }

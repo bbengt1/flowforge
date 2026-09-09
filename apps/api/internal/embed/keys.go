@@ -103,8 +103,14 @@ func LoadMaterial() (Material, error) {
 			id = "file:" + EnvSigningKeyFile
 		}
 	}
+	overlap, err := LoadOverlapFromEnv()
+	if err != nil {
+		return Material{}, err
+	}
 	if raw == "" {
-		return NewEphemeralMaterial(), nil
+		m := NewEphemeralMaterial()
+		m.Overlap = overlap
+		return m, nil
 	}
 	priv, pub, err := parsePrivateKey(raw)
 	if err != nil {
@@ -118,6 +124,7 @@ func LoadMaterial() (Material, error) {
 		Private: priv,
 		Public:  pub,
 		Status:  KeyStatusActive,
+		Overlap: overlap,
 	}, nil
 }
 
@@ -132,12 +139,16 @@ func NewEphemeralMaterial() Material {
 		priv = ed25519.NewKeyFromSeed(seed)
 		pub = priv.Public().(ed25519.PublicKey)
 	}
-	return Material{
+	m := Material{
 		KeyID:   "ephemeral:process",
 		Private: priv,
 		Public:  pub,
 		Status:  KeyStatusActive,
 	}
+	if overlap, err := LoadOverlapFromEnv(); err == nil {
+		m.Overlap = overlap
+	}
+	return m
 }
 
 // TestMaterial is a fixed non-production key for unit tests.

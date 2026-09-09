@@ -2,12 +2,13 @@ package session
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
 // Store persists hashed session cookies, CSRF secrets, and audit events.
 type Store interface {
-	Create(ctx context.Context, userID string, now time.Time, idle, absolute time.Duration) (Issued, error)
+	Create(ctx context.Context, userID string, now time.Time, idle, absolute time.Duration, opts ...CreateOpts) (Issued, error)
 	Lookup(ctx context.Context, token string, now time.Time) (Record, error)
 	Refresh(ctx context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error)
 	Revoke(ctx context.Context, token string, now time.Time) (Record, error)
@@ -28,6 +29,21 @@ func Valid(rec Record, now time.Time) error {
 		return ErrExpired
 	}
 	return nil
+}
+
+func mergeCreateBinding(opts []CreateOpts) Binding {
+	var b Binding
+	for _, opt := range opts {
+		if opt.Binding.Bound() {
+			b = Binding{
+				TenantID:     strings.TrimSpace(opt.Binding.TenantID),
+				WorkbenchKey: strings.TrimSpace(opt.Binding.WorkbenchKey),
+				WorkspaceID:  strings.TrimSpace(opt.Binding.WorkspaceID),
+				Capabilities: append([]string(nil), opt.Binding.Capabilities...),
+			}
+		}
+	}
+	return b
 }
 
 func normalizeTimeouts(idle, absolute time.Duration) (time.Duration, time.Duration) {

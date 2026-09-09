@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -10,14 +11,16 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 )
 
-// VerifyOptions controls assertion checks. E11.2 will add issuer allowlists
-// and durable jti consumption; E11.1 validates the contract and signature.
+// VerifyOptions controls assertion checks. Fail closed on iss/aud/nbf/exp/
+// jti/capabilities/workspace. Host IDs remain untrusted until resolved.
 type VerifyOptions struct {
-	Audience   string
-	Now        time.Time
-	SkipJTI    bool
-	Consumer   JTIConsumer
-	ResolvedWS string
+	Audience       string
+	Now            time.Time
+	SkipJTI        bool
+	Consumer       JTIConsumer
+	ResolvedWS     string
+	Context        context.Context
+	AllowedIssuers []string
 }
 
 // Verified is a signature-checked assertion. Host IDs remain untrusted
@@ -28,8 +31,9 @@ type Verified struct {
 	Header header
 }
 
-// Verify checks signature, SDK, required claims, audience, and time bounds.
-// Atomic durable jti consumption is an E11.2 hook (in-process stub here).
+// Verify checks signature (active + overlap), SDK, required claims,
+// audience, issuer allowlist, time bounds including nbf, capabilities,
+// workspace binding, and atomically consumes jti.
 func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -65,13 +69,12 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 		return Verified{}, ErrSDK
 	}
 	if !ed25519.Verify(m.Public, []byte(parts[0]+"."+parts[1]), sb) {
-		// E11.2: try overlap kids. E11.1 has none and fails closed.
 		if !verifyOverlap(m, h.Kid, []byte(parts[0]+"."+parts[1]), sb) {
 			return Verified{}, ErrSignature
 		}
 	}
 	if strings.TrimSpace(h.Kid) != "" && h.Kid != m.KeyID && !overlapHasKid(m, h.Kid) {
-		return Verified{}, ErrSignature
+		return Verified{}, ErrUnknownKey
 	}
 	var c Claims
 	if err := json.Unmarshal(pb, &c); err != nil {
@@ -91,6 +94,9 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 		return Verified{}, ErrAudience
 	}
 	if !authz.ValidIssuer(c.Issuer) {
+		return Verified{}, ErrIssuer
+	}
+	if !issuerAllowed(c.Issuer, opt.AllowedIssuers) {
 		return Verified{}, ErrIssuer
 	}
 	if !authz.ValidSubject(c.Subject) {
@@ -129,11 +135,19 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 		if consumer == nil {
 			return Verified{}, ErrReplay
 		}
-		if err := consumer.Consume(c.TokenID, time.Unix(c.ExpiresAt, 0).UTC()); err != nil {
+		ctx := opt.Context
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if err := consumer.Consume(ctx, c.TokenID, time.Unix(c.ExpiresAt, 0).UTC()); err != nil {
 			return Verified{}, err
 		}
 	}
-	return Verified{Claims: c, KeyID: m.KeyID, Header: h}, nil
+	kid := strings.TrimSpace(h.Kid)
+	if kid == "" {
+		kid = m.KeyID
+	}
+	return Verified{Claims: c, KeyID: kid, Header: h}, nil
 }
 
 func checkRequired(c Claims) error {
@@ -163,12 +177,21 @@ func checkRequired(c Claims) error {
 }
 
 func verifyOverlap(m Material, kid string, msg, sig []byte) bool {
-	// E11.2 hook: overlap public keys only. E11.1 returns false.
-	_ = kid
-	_ = msg
-	_ = sig
-	if len(m.Overlap) == 0 {
-		return false
+	kid = strings.TrimSpace(kid)
+	for _, k := range m.Overlap {
+		if k.Status != KeyStatusOverlap && k.Status != "" {
+			continue
+		}
+		if kid != "" && k.Kid != kid {
+			continue
+		}
+		pub, err := decodePublicX(k.X)
+		if err != nil {
+			continue
+		}
+		if ed25519.Verify(pub, msg, sig) {
+			return true
+		}
 	}
 	return false
 }

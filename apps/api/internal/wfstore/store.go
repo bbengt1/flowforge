@@ -407,6 +407,8 @@ type JobActionInput struct {
 // cross-workspace bindings before a provider call.
 type JobBinding struct {
 	WorkspaceID       string    `json:"workspaceId"`
+	TenantID          string    `json:"tenantId,omitempty"`
+	WorkbenchKey      string    `json:"workbenchKey,omitempty"`
 	ExecutionID       string    `json:"executionId"`
 	JobID             string    `json:"jobId"`
 	StepID            string    `json:"stepId"`

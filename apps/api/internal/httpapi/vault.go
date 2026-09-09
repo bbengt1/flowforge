@@ -88,7 +88,7 @@ func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, ws.TenantID, ws.WorkbenchKey)
 	if err != nil {
 		writeVaultError(w, r, err)
 		return
@@ -242,7 +242,7 @@ func (s *Server) testCredential(w http.ResponseWriter, r *http.Request) {
 		WriteForbidden(w, r)
 		return
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, ws.TenantID, ws.WorkbenchKey)
 	if err != nil {
 		writeVaultError(w, r, err)
 		return
@@ -348,7 +348,7 @@ func (s *Server) withCredential(w http.ResponseWriter, r *http.Request, perm str
 	if !ok {
 		return
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, ws.TenantID, ws.WorkbenchKey)
 	if err != nil {
 		writeVaultError(w, r, err)
 		return

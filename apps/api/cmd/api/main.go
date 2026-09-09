@@ -13,7 +13,6 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
-	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -54,7 +53,7 @@ func main() {
 			DownloadTTL:      cfg.ArtifactDownloadTTL,
 			ArtifactMaxBytes: cfg.ArtifactMaxBytes,
 			EmbedKeys:        cfg.EmbedKeys,
-			EmbedJTI:         embed.NewMemoryJTI(),
+			EmbedIssuers:     cfg.EmbedIssuers,
 			Security: httpapi.Security{
 				TrustedProxies: cfg.TrustedProxies,
 				RequireTLS:     cfg.RequireTLS,

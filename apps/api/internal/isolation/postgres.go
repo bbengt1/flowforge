@@ -36,9 +36,7 @@ func (p *Postgres) Create(ctx context.Context, scope Scope, rec Record) (Record,
 	if !ValidKind(rec.Kind) || strings.TrimSpace(rec.Name) == "" || len(rec.Name) > 200 {
 		return Record{}, ErrInvalid
 	}
-	if rec.Metadata == nil {
-		rec.Metadata = map[string]any{}
-	}
+	rec.Metadata = StampTenancy(rec.Metadata, scope)
 	meta, err := json.Marshal(rec.Metadata)
 	if err != nil {
 		return Record{}, ErrInvalid

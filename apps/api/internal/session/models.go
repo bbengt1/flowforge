@@ -43,6 +43,25 @@ const (
 	OutcomeDenied        = "denied"
 )
 
+// Binding is the optional embed workspace identity stored on a session
+// after assertion exchange. Standalone sessions leave it empty.
+type Binding struct {
+	TenantID     string
+	WorkbenchKey string
+	WorkspaceID  string
+	Capabilities []string
+}
+
+// Bound reports whether the session is an embed session.
+func (b Binding) Bound() bool {
+	return b.TenantID != "" && b.WorkbenchKey != ""
+}
+
+// CreateOpts are optional Create arguments.
+type CreateOpts struct {
+	Binding Binding
+}
+
 // Record is a server-side session. Token and CSRF secrets are never stored
 // on this value — only hashes live in the store.
 type Record struct {
@@ -53,6 +72,7 @@ type Record struct {
 	IdleExpiresAt     time.Time  `json:"idle_expires_at"`
 	AbsoluteExpiresAt time.Time  `json:"absolute_expires_at"`
 	RevokedAt         *time.Time `json:"-"`
+	Binding           Binding    `json:"-"`
 	csrfHash          []byte
 }
 

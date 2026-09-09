@@ -28,16 +28,13 @@ func (m *Memory) Create(_ context.Context, scope Scope, rec Record) (Record, err
 	if !ValidKind(rec.Kind) || strings.TrimSpace(rec.Name) == "" || len(rec.Name) > 200 {
 		return Record{}, ErrInvalid
 	}
-	if rec.Metadata == nil {
-		rec.Metadata = map[string]any{}
-	}
 	now := time.Now().UTC()
 	out := Record{
 		WorkspaceID: scope.WorkspaceID(),
 		ID:          newID(),
 		Kind:        rec.Kind,
 		Name:        strings.TrimSpace(rec.Name),
-		Metadata:    rec.Metadata,
+		Metadata:    StampTenancy(rec.Metadata, scope),
 		CreatedBy:   scope.ActorID(),
 		CreatedAt:   now,
 	}

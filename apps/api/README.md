@@ -37,6 +37,11 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
+| `GET` | `/api/v1/embed/catalog` | Versioned embed SDK/contract. |
+| `GET` | `/api/v1/embed/jwks` | Public embed keys (active + overlap). |
+| `POST` | `/api/v1/embed/assertions` | Mint a short-lived embed assertion. |
+| `POST` | `/api/v1/embed/exchange` | Exchange assertion for a tenancy-bound `ff_session`. |
+| `POST` | `/api/v1/embed/keys/rotate` | Register or retire an overlap public JWK (`workspace.administer`). |
 | `GET` | `/api/v1/workflows/catalog` | Core node/trigger catalog (`workflow.view`). E3.3 adds `rules` and full contracts (ports/classification/bounds/policy/redaction/`allowedWith`) for condition, delay, data set/map/validate, and flow stop/fail. |
 | `POST` | `/api/v1/workflows/validate` | Ephemeral YAML validation (`workflow.edit`). |
 | `POST` | `/api/v1/workflows/normalize` | Normalize YAML + digest (`workflow.edit`). |
@@ -135,6 +140,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
+| `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. |
+| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Optional allowed assertion `iss`. |
 
 Suggested local URL (compose service hostname `postgres`):
 

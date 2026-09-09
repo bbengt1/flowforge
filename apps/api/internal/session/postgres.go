@@ -28,7 +28,7 @@ func NewPostgres(db DB) *Postgres {
 }
 
 // Create issues a new session bound to userID.
-func (p *Postgres) Create(ctx context.Context, userID string, now time.Time, idle, absolute time.Duration) (Issued, error) {
+func (p *Postgres) Create(ctx context.Context, userID string, now time.Time, idle, absolute time.Duration, opts ...CreateOpts) (Issued, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return Issued{}, ErrInvalid
@@ -43,18 +43,36 @@ func (p *Postgres) Create(ctx context.Context, userID string, now time.Time, idl
 		return Issued{}, err
 	}
 	now = now.UTC()
+	bind := mergeCreateBinding(opts)
+	var tenantID, workbench, workspaceID any
+	if bind.Bound() {
+		tenantID = bind.TenantID
+		workbench = bind.WorkbenchKey
+		if bind.WorkspaceID != "" {
+			workspaceID = bind.WorkspaceID
+		}
+	}
+	caps := bind.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
 	var rec Record
 	var csrfHash []byte
 	err = p.db.QueryRow(ctx, `
 		INSERT INTO browser_sessions (
 			user_id, token_hash, csrf_hash, created_at, last_seen_at,
-			idle_expires_at, absolute_expires_at
-		) VALUES ($1::uuid, $2, $3, $4, $4, $5, $6)
+			idle_expires_at, absolute_expires_at,
+			embed_tenant_id, embed_workbench_key, embed_workspace_id, embed_capabilities
+		) VALUES ($1::uuid, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id::text, user_id::text, created_at, last_seen_at,
-		          idle_expires_at, absolute_expires_at, csrf_hash
-	`, userID, hashToken(token), hashToken(csrf), now, now.Add(idle), now.Add(absolute)).Scan(
+		          idle_expires_at, absolute_expires_at, csrf_hash,
+		          COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
+		          COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+	`, userID, hashToken(token), hashToken(csrf), now, now.Add(idle), now.Add(absolute),
+		tenantID, workbench, workspaceID, caps).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash,
+		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
 	)
 	if err != nil {
 		return Issued{}, mapDBErr(err)
@@ -107,10 +125,13 @@ func (p *Postgres) Refresh(ctx context.Context, token, presentedCSRF string, now
 		       idle_expires_at = $5
 		 WHERE token_hash = $1 AND csrf_hash = $2 AND revoked_at IS NULL
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
-		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at
+		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
+		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
 	`, hashToken(token), hashToken(presentedCSRF), hashToken(csrf), now, nextIdle).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
+		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -136,10 +157,13 @@ func (p *Postgres) Revoke(ctx context.Context, token string, now time.Time) (Rec
 		       last_seen_at = $2
 		 WHERE token_hash = $1
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
-		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at
+		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
+		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
 	`, hashToken(token), now).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
+		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
 	)
 	if err != nil {
 		return Record{}, mapDBErr(err)
@@ -229,12 +253,15 @@ func (p *Postgres) load(ctx context.Context, token string) (Record, error) {
 	var csrfHash []byte
 	err := p.db.QueryRow(ctx, `
 		SELECT id::text, user_id::text, created_at, last_seen_at,
-		       idle_expires_at, absolute_expires_at, csrf_hash, revoked_at
+		       idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
+		       COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
+		       COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
 		  FROM browser_sessions
 		 WHERE token_hash = $1
 	`, hashToken(token)).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
+		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
 	)
 	if err != nil {
 		return Record{}, mapDBErr(err)

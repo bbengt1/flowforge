@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
@@ -79,11 +80,11 @@ func (s *Server) requireScopedStore(w http.ResponseWriter, r *http.Request) bool
 }
 
 func (s *Server) requireScope(w http.ResponseWriter, r *http.Request, user identity.User, action string) (isolation.Scope, bool) {
-	ws, _, _, _, ok := s.requireAccess(w, r, user, action)
+	ws, tenant, _, _, ok := s.requireAccess(w, r, user, action)
 	if !ok {
 		return isolation.Scope{}, false
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
 	if err != nil {
 		writeIdentityError(w, r, err)
 		return isolation.Scope{}, false
@@ -112,6 +113,34 @@ func claimedWorkspace(r *http.Request) authz.WorkspaceClaim {
 
 func (s *Server) resolveWorkspace(w http.ResponseWriter, r *http.Request) (identity.Workspace, identity.Tenant, bool) {
 	claim := claimedWorkspace(r)
+	if pc := principalFromRequest(r); pc != nil && pc.session != nil && pc.session.Binding.Bound() {
+		bound, err := embed.PropagateTenancy(embed.SessionTenancy{
+			TenantID:     pc.session.Binding.TenantID,
+			WorkbenchKey: pc.session.Binding.WorkbenchKey,
+			WorkspaceID:  pc.session.Binding.WorkspaceID,
+			Capabilities: pc.session.Binding.Capabilities,
+		}, claim)
+		if err != nil {
+			writeEmbedError(w, r, err)
+			return identity.Workspace{}, identity.Tenant{}, false
+		}
+		ws, tenant, err := s.store.ResolveWorkspace(r.Context(), bound.TenantID, "", bound.WorkbenchKey)
+		if err != nil {
+			writeIdentityError(w, r, err)
+			return identity.Workspace{}, identity.Tenant{}, false
+		}
+		if bound.WorkspaceID != "" {
+			if err := authz.ConfirmResolvedID(ws.ID, bound.WorkspaceID); err != nil {
+				writeIdentityError(w, r, err)
+				return identity.Workspace{}, identity.Tenant{}, false
+			}
+		}
+		if err := authz.ConfirmResolvedID(ws.ID, claim.HostWorkspaceID); err != nil {
+			writeIdentityError(w, r, err)
+			return identity.Workspace{}, identity.Tenant{}, false
+		}
+		return ws, tenant, true
+	}
 	if err := authz.ValidateClaim(claim); err != nil {
 		writeIdentityError(w, r, err)
 		return identity.Workspace{}, identity.Tenant{}, false
@@ -141,6 +170,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 	if err != nil {
 		writeIdentityError(w, r, err)
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+	}
+	if pc := principalFromRequest(r); pc != nil && pc.session != nil && pc.session.Binding.Bound() {
+		perms = embed.IntersectCapabilities(perms, pc.session.Binding.Capabilities)
 	}
 	if action == "" {
 		if len(perms) == 0 {

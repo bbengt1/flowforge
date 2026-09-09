@@ -64,7 +64,7 @@ type CatalogRules struct {
 	StandaloneDeepLinksOK bool `json:"standaloneDeepLinksRemainValid"`
 }
 
-// NewCatalog builds the E11.1 contract document.
+// NewCatalog builds the E11.1 + E11.2 contract document.
 func NewCatalog() Catalog {
 	return Catalog{
 		SDK:          SDKVersion,
@@ -81,19 +81,20 @@ func NewCatalog() Catalog {
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate + consume jti (in-process stub) and issue ff_session. Assertion is never accepted from a URL."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Assertion is never accepted from a URL."},
+			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + workspace.administer", CSRF: "yes when ff_session present", Note: "Register or retire an overlap public JWK. Mint stays on the active env key. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
 			Algorithm:    Algorithm + " (" + Curve + ")",
 			PublicJWKS:   "/api/v1/embed/jwks",
 			PrivateNever: []string{"d", "privateKey", "private_key", "seed", "pem", "EMBED_SIGNING_KEY"},
-			Env:          []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer},
-			Rotation:     "E11.2: verify active + explicit overlap kids only. E11.1 signs/verifies the active key and leaves Overlap empty.",
+			Env:          []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer, EnvIssuerAllow, EnvOverlapKeys},
+			Rotation:     "Mint with the active EMBED_SIGNING_KEY. JWKS publishes active + overlap. Verify accepts overlap-window kids. POST /embed/keys/rotate registers/retires public overlap keys. Unknown kid fails closed.",
 		},
 		Hooks: []HookStatus{
-			{ID: "jti.consume", Status: "stub", Fail: "in-process MemoryJTI rejects replay; not durable across pods", Note: "E11.2 atomic Postgres consume with TTL."},
-			{ID: "key.rotation", Status: "stub", Fail: "unknown kid fails closed", Note: "E11.2 active + overlap verification keys."},
-			{ID: "tenancy.propagation", Status: "stub", Fail: "host tenant/workbench are context; authorization stays server-derived", Note: "E11.2 propagate (tenant_id, workbench_key) through UI, API, jobs, workers, caches, realtime, history, and audit."},
+			{ID: "jti.consume", Status: "ready", Fail: "replayed jti is 409; store failure is 503", Note: "Atomic Postgres INSERT ON CONFLICT with TTL. MemoryJTI remains for process-local tests."},
+			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed", Note: "Active signing key plus explicit overlap verification keys (env + rotate API)."},
+			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit."},
 		},
 		Rules: CatalogRules{
 			AssertionNotInURL:     true,
@@ -113,9 +114,9 @@ func claimDocs() []ClaimDoc {
 		{Name: "sub", Required: true, JSON: "sub", Note: "End-user external subject."},
 		{Name: "nbf", Required: true, JSON: "nbf", Note: "Unix seconds. Not-yet-valid fails closed."},
 		{Name: "exp", Required: true, JSON: "exp", Note: "Unix seconds. Short TTL (default 60s, max 5m)."},
-		{Name: "jti", Required: true, JSON: "jti", Note: "Unique token id. Single-use. E11.1 in-process consume; E11.2 atomic durable."},
-		{Name: "tenant_id", Required: true, JSON: "tenant_id", Note: "Workspace identity half. Context, never authorization by itself."},
-		{Name: "workbench_key", Required: true, JSON: "workbench_key", Note: "Workspace identity half with tenant_id."},
+		{Name: "jti", Required: true, JSON: "jti", Note: "Unique token id. Single-use. Atomic durable consume with TTL; replay is 409."},
+		{Name: "tenant_id", Required: true, JSON: "tenant_id", Note: "Workspace identity half. Bound onto the session. Host tenant is never authorization by itself."},
+		{Name: "workbench_key", Required: true, JSON: "workbench_key", Note: "Workspace identity half with tenant_id. Bound onto the session and required on later UI/API calls."},
 		{Name: "workspace_id", Required: false, JSON: "workspace_id", Note: "Optional binding. Must match server resolution. Never the lookup key."},
 		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge permission keys. Mint requires a subset of the caller."},
 		{Name: "sdk", Required: true, JSON: "sdk", Note: "embed.v1"},
