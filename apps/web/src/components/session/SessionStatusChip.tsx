@@ -7,15 +7,22 @@ import {
   formatSessionCountdown,
   sessionExpiryState,
 } from "@/lib/session";
+import { embedMountPath, isEmbedUiPath } from "@/lib/embed-contract";
 import { loadCurrentSession } from "@/lib/session-client";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 export function SessionStatusChip() {
   const pathname = usePathname();
+  const membershipHref = isEmbedUiPath(pathname)
+    ? embedMountPath("/membership")
+    : "/membership";
+  const isolationHref = isEmbedUiPath(pathname)
+    ? embedMountPath("/isolation")
+    : "/isolation";
   const sessionHref =
-    pathname === "/membership" || pathname === "/isolation"
+    pathname === membershipHref || pathname === isolationHref
       ? "#session"
-      : "/membership#session";
+      : `${membershipHref}#session`;
   const snapshot = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,

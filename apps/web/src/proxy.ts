@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  EMBED_MOUNT_HEADER,
+  EMBED_REJECTED_ASSERTION_HEADER,
+  isEmbedMountPath,
+  urlRejectedAssertion,
+} from "@/lib/embed-contract";
 import { applySecurityHeaders, createScriptNonce } from "@/lib/security-headers";
 
 /**
@@ -20,6 +26,14 @@ export function proxy(request: NextRequest) {
   };
 
   const requestHeaders = new Headers(request.headers);
+  if (isEmbedMountPath(request.nextUrl.pathname)) {
+    requestHeaders.set(EMBED_MOUNT_HEADER, "1");
+    if (
+      urlRejectedAssertion(request.nextUrl.search, request.nextUrl.hash)
+    ) {
+      requestHeaders.set(EMBED_REJECTED_ASSERTION_HEADER, "1");
+    }
+  }
   applySecurityHeaders(requestHeaders, headerOptions);
 
   const response = NextResponse.next({

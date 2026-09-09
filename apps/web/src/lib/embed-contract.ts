@@ -13,6 +13,11 @@ export const EMBED_AUDIENCE = "flowforge" as const;
 export const EMBED_ALGORITHM = "EdDSA" as const;
 export const EMBED_MOUNT_PREFIX = "/embed/v1";
 
+/** Set by src/proxy.ts so SSR sees the inbound /embed/v1 path after rewrite. */
+export const EMBED_MOUNT_HEADER = "x-flowforge-embed";
+/** Boolean flag only — never copies the assertion value. */
+export const EMBED_REJECTED_ASSERTION_HEADER = "x-flowforge-embed-rejected";
+
 export const EMBED_API_PREFIX = "/api/v1";
 export const EMBED_CATALOG_PATH = "/embed/catalog";
 export const EMBED_JWKS_PATH = "/embed/jwks";
@@ -251,4 +256,413 @@ export function frameAncestorsForPath(
     return "'none'";
   }
   return allow.join(" ");
+}
+
+/**
+ * Chloe embed-shell helpers on jonny's #125 map (`e111-#125`).
+ * Relates to #121 / Part of #120. Keep #121 open.
+ */
+export const EMBED_STORY = 121;
+export const EMBED_EPIC = 120;
+export const EMBED_API_PR = 125;
+export const EMBED_ROUTE_MAP_SOURCE = "e111-#125" as const;
+
+export const EMBED_ASSERTION_MESSAGE_TYPE = "flowforge.embed.assertion" as const;
+export const EMBED_ASSERTION_MESSAGE_VERSION = 1;
+export const EMBED_MAX_ASSERTION_BYTES = 16384;
+export const EMBED_JWS_COMPACT_RE =
+  /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+export const EMBED_JWKS_PRIVATE_FIELDS = [
+  "d",
+  "seed",
+  "pem",
+  "pkcs8",
+  "private_key",
+  "privateKey",
+  "EMBED_SIGNING_KEY",
+] as const;
+
+export const EMBED_HOST_DISPLAY_KEYS = [
+  "host",
+  "tenant",
+  "tenantId",
+  "workbench",
+  "displayName",
+] as const;
+
+export const EMBED_PROBLEM_CODES = {
+  invalidRequest: "invalid-request",
+  unauthenticated: "unauthenticated",
+  forbidden: "forbidden",
+  notFound: "not-found",
+  conflict: "conflict",
+  replay: "replay",
+} as const;
+
+export const EMBED_EXCHANGE_HELP =
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy. The compact JWS is body-only — never query, hash, path, or localStorage. Success sets ff_session + ff_csrf. Host identity is display context until this call succeeds.";
+
+export const EMBED_MINT_HELP =
+  "Mint is POST /embed/assertions from the host backend (CSRF if ff_session). This shell does not mint. E11.3 owns the Portal adapter.";
+
+export const EMBED_URL_SECRET_MESSAGE =
+  "Assertion tokens must not appear in the URL (query, hash, or path). Remove assertion/token/jws params and POST the compact JWS in the exchange body.";
+
+export const EMBED_EXCHANGED_MESSAGE =
+  "Assertion exchanged. FlowForge issued an ff_session / ff_csrf cookie session. Host identity is no longer the authority.";
+
+export const EMBED_SECRET_LEAK_MESSAGE =
+  "The API unexpectedly included a compact JWS or private key field. It was discarded and not shown. This is a contract bug.";
+
+export const EMBED_HOST_SUPPLIED_MESSAGE =
+  "Do not send id or workspace_id on the exchange body. Workspace scope comes from the verified assertion. Host-supplied identity is HTTP 400.";
+
+export const EMBED_UNAUTHENTICATED_MESSAGE =
+  "Session is missing or stale (HTTP 401). Host identity is still display-only. Exchange a fresh assertion.";
+
+export const EMBED_FORBIDDEN_MESSAGE =
+  "Embed exchange was forbidden (HTTP 403). Host route, tenant, and workbench values do not authorize. The API rejected the assertion.";
+
+export const EMBED_REPLAY_MESSAGE =
+  "This assertion was already used or is no longer valid (HTTP 409). Assertions are single-use. Request a new mint from the host backend.";
+
+export const EMBED_HOST_DISPLAY_HELP =
+  "Host session ≠ FlowForge session. tenant, workbench, host, and displayName on the deep link are display context only until exchange succeeds. They never authorize.";
+
+export type EmbedExchangeBody = {
+  assertion: string;
+  sdk?: typeof EMBED_SDK;
+};
+
+export type EmbedHostDisplay = {
+  host: string;
+  tenant: string;
+  tenantId: string;
+  workbench: string;
+  displayName: string;
+  unverified: true;
+};
+
+export type EmbedVerifiedContext = {
+  audience: string;
+  sdk: string;
+  tenantId: string;
+  tenantSlug: string;
+  workbenchKey: string;
+  workspaceId: string;
+  workspaceName: string;
+  capabilities: string[];
+  tokenId: string;
+  expiresAt?: string;
+};
+
+export type EmbedExchangeResult = {
+  context: EmbedVerifiedContext;
+  leaked: boolean;
+  strippedKeys: string[];
+};
+
+export type EmbedAssertionMessage = {
+  type: typeof EMBED_ASSERTION_MESSAGE_TYPE;
+  version: typeof EMBED_ASSERTION_MESSAGE_VERSION;
+  assertion: string;
+};
+
+export function isEmbedUiPath(pathname: string | null | undefined): boolean {
+  return Boolean(pathname && isEmbedMountPath(pathname));
+}
+
+export function embedPostMessageAllowlist(env: {
+  WEB_EMBED_FRAME_ANCESTORS?: string;
+  NEXT_PUBLIC_EMBED_FRAME_ANCESTORS?: string;
+} = {}): string[] {
+  return parseEmbedFrameAncestors(
+    env.WEB_EMBED_FRAME_ANCESTORS || env.NEXT_PUBLIC_EMBED_FRAME_ANCESTORS,
+  );
+}
+
+export function isCompactJws(value: string | undefined): boolean {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed.length > EMBED_MAX_ASSERTION_BYTES) {
+    return false;
+  }
+  return EMBED_JWS_COMPACT_RE.test(trimmed);
+}
+
+export function forgetEmbedAssertion(holder: { assertion: string }): string {
+  holder.assertion = "";
+  return "";
+}
+
+export function buildEmbedExchangeBody(assertion: string): EmbedExchangeBody {
+  return { assertion: assertion.trim(), sdk: EMBED_SDK };
+}
+
+export function validateEmbedAssertion(assertion: string):
+  | { ok: true; body: EmbedExchangeBody }
+  | { ok: false; errors: string[] } {
+  const trimmed = assertion.trim();
+  const errors: string[] = [];
+  if (!trimmed) {
+    errors.push("Assertion is required. POST the compact JWS in the body.");
+  } else if (trimmed.length > EMBED_MAX_ASSERTION_BYTES) {
+    errors.push(`Assertion exceeds ${EMBED_MAX_ASSERTION_BYTES} bytes.`);
+  } else if (!isCompactJws(trimmed)) {
+    errors.push(
+      "Assertion must be a compact JWS (three base64url segments). Do not put it in the URL.",
+    );
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, body: buildEmbedExchangeBody(trimmed) };
+}
+
+export function parseEmbedAssertionMessage(
+  data: unknown,
+): EmbedAssertionMessage | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  const raw = data as Record<string, unknown>;
+  if (raw.type !== EMBED_ASSERTION_MESSAGE_TYPE) {
+    return null;
+  }
+  const version =
+    typeof raw.version === "number" ? raw.version : Number(raw.version);
+  if (version !== EMBED_ASSERTION_MESSAGE_VERSION) {
+    return null;
+  }
+  const assertion =
+    typeof raw.assertion === "string" ? raw.assertion.trim() : "";
+  if (!isCompactJws(assertion)) {
+    return null;
+  }
+  return {
+    type: EMBED_ASSERTION_MESSAGE_TYPE,
+    version: EMBED_ASSERTION_MESSAGE_VERSION,
+    assertion,
+  };
+}
+
+export function isAllowedEmbedMessageOrigin(
+  origin: string,
+  allowlist: readonly string[],
+): boolean {
+  const trimmed = origin.trim();
+  if (!trimmed || trimmed === "null") {
+    return false;
+  }
+  if (allowlist.length === 0) {
+    return false;
+  }
+  return allowlist.includes(trimmed);
+}
+
+export function parseEmbedHostDisplay(
+  searchParams: URLSearchParams | Record<string, string | string[] | undefined>,
+): EmbedHostDisplay {
+  const read = (key: string): string => {
+    if (searchParams instanceof URLSearchParams) {
+      return searchParams.get(key)?.trim() ?? "";
+    }
+    const raw = searchParams[key];
+    if (Array.isArray(raw)) {
+      return raw[0]?.trim() ?? "";
+    }
+    return raw?.trim() ?? "";
+  };
+  return {
+    host: read("host"),
+    tenant: read("tenant"),
+    tenantId: read("tenantId"),
+    workbench: read("workbench"),
+    displayName: read("displayName"),
+    unverified: true,
+  };
+}
+
+export function urlRejectedAssertion(search: string, hash = ""): boolean {
+  if (stripAssertionParams(search).rejected) {
+    return true;
+  }
+  const rawHash = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!rawHash || !rawHash.includes("=")) {
+    return false;
+  }
+  return stripAssertionParams(rawHash).rejected;
+}
+
+export function publicJwksOnly(payload: unknown): {
+  leaked: boolean;
+  strippedKeys: string[];
+  keys: Record<string, unknown>[];
+} {
+  const strippedKeys: string[] = [];
+  const source =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  const rawKeys = Array.isArray(source.keys) ? source.keys : [];
+  const keys = rawKeys.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return {};
+    }
+    const copy = { ...(item as Record<string, unknown>) };
+    for (const field of EMBED_JWKS_PRIVATE_FIELDS) {
+      if (field in copy) {
+        delete copy[field];
+        strippedKeys.push(`keys[${index}].${field}`);
+      }
+    }
+    return copy;
+  });
+  return { leaked: strippedKeys.length > 0, strippedKeys, keys };
+}
+
+export function sanitizeEmbedExchangePayload(payload: unknown): {
+  leaked: boolean;
+  strippedKeys: string[];
+  record: Record<string, unknown>;
+} {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { leaked: false, strippedKeys: [], record: {} };
+  }
+  const record = { ...(payload as Record<string, unknown>) };
+  const strippedKeys: string[] = [];
+
+  if (typeof record.assertion === "string" && isCompactJws(record.assertion)) {
+    delete record.assertion;
+    strippedKeys.push("assertion");
+  } else if (
+    record.assertion &&
+    typeof record.assertion === "object" &&
+    !Array.isArray(record.assertion)
+  ) {
+    const meta = { ...(record.assertion as Record<string, unknown>) };
+    if (typeof meta.assertion === "string" && isCompactJws(meta.assertion)) {
+      delete meta.assertion;
+      strippedKeys.push("assertion.assertion");
+    }
+    record.assertion = meta;
+  }
+
+  return { leaked: strippedKeys.length > 0, strippedKeys, record };
+}
+
+export function parseEmbedVerifiedContext(
+  payload: unknown,
+): EmbedVerifiedContext {
+  const { record } = sanitizeEmbedExchangePayload(payload);
+  const assertion =
+    record.assertion &&
+    typeof record.assertion === "object" &&
+    !Array.isArray(record.assertion)
+      ? (record.assertion as Record<string, unknown>)
+      : {};
+  const workspace =
+    record.workspace &&
+    typeof record.workspace === "object" &&
+    !Array.isArray(record.workspace)
+      ? (record.workspace as Record<string, unknown>)
+      : {};
+  const tenant =
+    record.tenant &&
+    typeof record.tenant === "object" &&
+    !Array.isArray(record.tenant)
+      ? (record.tenant as Record<string, unknown>)
+      : {};
+  const capabilities = readStringList(
+    record.capabilities ?? assertion.capabilities,
+  );
+  return {
+    audience: readString(assertion.audience, assertion.aud) || EMBED_AUDIENCE,
+    sdk: readString(assertion.sdk, record.sdk) || EMBED_SDK,
+    tenantId: readString(
+      workspace.tenant_id,
+      tenant.id,
+      assertion.tenantId,
+      assertion.tenant_id,
+    ),
+    tenantSlug: readString(tenant.slug),
+    workbenchKey: readString(
+      workspace.workbench_key,
+      assertion.workbenchKey,
+      assertion.workbench_key,
+    ),
+    workspaceId: readString(workspace.id, assertion.workspaceId),
+    workspaceName: readString(workspace.name),
+    capabilities,
+    tokenId: readString(assertion.tokenId, assertion.jti),
+    expiresAt: optionalString(assertion.expiresAt, assertion.expires_at),
+  };
+}
+
+export function parseEmbedExchangePayload(
+  payload: unknown,
+): EmbedExchangeResult {
+  const sanitized = sanitizeEmbedExchangePayload(payload);
+  return {
+    context: parseEmbedVerifiedContext(sanitized.record),
+    leaked: sanitized.leaked,
+    strippedKeys: sanitized.strippedKeys,
+  };
+}
+
+export function embedAuthFailureMessage(
+  problem: { status?: number; code?: string } | null | undefined,
+): string {
+  if (!problem) {
+    return "";
+  }
+  if (
+    problem.code === "csrf-required" ||
+    problem.code === "csrf-invalid"
+  ) {
+    return "Mint and later mutations send X-CSRF-Token when ff_session is present. Exchange itself is CSRF-exempt.";
+  }
+  if (
+    problem.status === 401 ||
+    problem.code === EMBED_PROBLEM_CODES.unauthenticated
+  ) {
+    return EMBED_UNAUTHENTICATED_MESSAGE;
+  }
+  if (
+    problem.status === 409 ||
+    problem.code === EMBED_PROBLEM_CODES.conflict ||
+    problem.code === EMBED_PROBLEM_CODES.replay
+  ) {
+    return EMBED_REPLAY_MESSAGE;
+  }
+  if (
+    problem.status === 403 ||
+    problem.code === EMBED_PROBLEM_CODES.forbidden
+  ) {
+    return EMBED_FORBIDDEN_MESSAGE;
+  }
+  return "";
+}
+
+function readString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function optionalString(...values: unknown[]): string | undefined {
+  const text = readString(...values);
+  return text || undefined;
+}
+
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
