@@ -217,13 +217,18 @@ export function sanitizeSpec(raw: unknown): OpsConfigSpec {
   return stripSecrets(raw as Record<string, unknown>) as OpsConfigSpec;
 }
 
+/**
+ * Drop secret-bearing leaves (token/password/kubeconfig strings).
+ * Keep schema/policy *keys* named token when the value is a nested object
+ * (JSON Schema properties.token, policy path maps).
+ */
 export function stripSecrets(
   value: Record<string, unknown>,
   stripped: string[] = [],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (isSecretKey(key)) {
+    if (isSecretKey(key) && isSecretLeaf(item)) {
       stripped.push(key);
       continue;
     }
@@ -231,9 +236,33 @@ export function stripSecrets(
       out[key] = stripSecrets(item as Record<string, unknown>, stripped);
       continue;
     }
+    if (Array.isArray(item)) {
+      out[key] = item.map((entry) =>
+        entry && typeof entry === "object" && !Array.isArray(entry)
+          ? stripSecrets(entry as Record<string, unknown>, stripped)
+          : entry,
+      );
+      continue;
+    }
     out[key] = item;
   }
   return out;
+}
+
+function isSecretLeaf(value: unknown): boolean {
+  return value == null || typeof value === "string" || typeof value === "number";
+}
+
+export function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 export function isSecretKey(key: string): boolean {
@@ -381,15 +410,8 @@ export function specJson(spec: OpsConfigSpec): string {
 }
 
 export function parseSpecJson(text: string): OpsConfigSpec | null {
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    return sanitizeSpec(parsed);
-  } catch {
-    return null;
-  }
+  const parsed = parseJsonObject(text);
+  return parsed ? sanitizeSpec(parsed) : null;
 }
 
 export function clientCompareSpecs(
