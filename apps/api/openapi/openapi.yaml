@@ -393,8 +393,10 @@ paths:
         Host backends exchange an authenticated FlowForge principal for a
         short-lived, asymmetric-signed, audience-bound, single-use assertion.
         Workspace identity is resolved from tenant + workbench headers.
-        `capabilities` must be a known permission subset of the caller.
-        The assertion `iss` must be on a non-empty `EMBED_ISSUER` /
+        `subject` and `issuer` bind to the authenticated caller. A different
+        subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different
+        issuer is 403. `capabilities` must be a known permission subset of
+        the caller. The assertion `iss` must be on a non-empty `EMBED_ISSUER` /
         `EMBED_ISSUER_ALLOWLIST` (empty fails closed with 403).
         The compact JWS is returned once. Private keys are never returned.
         Cookie callers need CSRF; header-only host backends skip CSRF.
@@ -569,11 +571,13 @@ paths:
         Portal backend, after its own RBAC, maps `portalRoles` to
         FlowForge capabilities and mints via E11.1 `embed.Mint`
         (`aud=flowforge`, portal issuer, tenant, workbench). Not a
-        parallel auth path. `capabilities` must remain a subset of the
-        minting caller. The portal `iss` must be on a non-empty
-        `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` (empty fails closed
-        with 403). Compact JWS is returned once. Cookie callers
-        need CSRF; header-only Portal backends skip CSRF.
+        parallel auth path. `subject` binds to the caller unless
+        `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is
+        403. `capabilities` must remain a subset of the minting caller.
+        The portal `iss` must be on a non-empty `PORTAL_ISSUER` /
+        `PORTAL_ISSUER_ALLOWLIST` (empty fails closed with 403). Compact
+        JWS is returned once. Cookie callers need CSRF; header-only
+        Portal backends skip CSRF.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -6658,12 +6662,12 @@ components:
       properties:
         subject:
           type: string
-          description: End-user subject. Defaults to the minting caller.
+          description: End-user subject. Defaults to the minting caller. A different value requires embed.impersonate (PLATFORM_ADMINS); otherwise 403.
         displayName:
           type: string
         issuer:
           type: string
-          description: Assertion iss. Must be on a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed).
+          description: Assertion iss. Must match the authenticated caller and be on a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed). A mismatched issuer is 403.
         tenantId:
           type: string
           format: uuid
@@ -6711,12 +6715,12 @@ components:
       properties:
         subject:
           type: string
-          description: End-user subject. Defaults to the minting caller.
+          description: End-user subject. Defaults to the minting caller. A different value requires embed.impersonate (PLATFORM_ADMINS); otherwise 403.
         displayName:
           type: string
         issuer:
           type: string
-          description: Assertion iss. Defaults to the minting caller issuer.
+          description: Assertion iss. Must match the authenticated caller (defaults to the caller). A mismatched issuer is 403.
         tenantId:
           type: string
           format: uuid

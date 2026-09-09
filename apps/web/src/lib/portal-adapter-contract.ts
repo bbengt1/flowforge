@@ -9,6 +9,10 @@
  *
  * ADV-005: empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed
  * (HTTP 403) the same as an unknown issuer. No UI rewrite.
+ *
+ * ADV-004: mint subject binds to the Portal service caller unless
+ * embed.impersonate (PLATFORM_ADMINS). A different issuer is 403.
+ * No host chrome change — backend identity + allowlist only.
  */
 
 import {
@@ -284,7 +288,7 @@ export const PORTAL_TENANCY_HELP =
   "Tenant and workbench on this host are display context for the iframe query. After exchange the embed uses FlowForge-verified session.embed headers. Host values are not retried on 403.";
 
 export const PORTAL_ASSERTION_HELP =
-  "Mint through POST /portal/adapter/assertions {portalRoles}, then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange. Never put the JWS in the URL, hash, path, or localStorage.";
+  "Mint through POST /portal/adapter/assertions {portalRoles}. Subject defaults to the caller; a different subject requires embed.impersonate (PLATFORM_ADMINS). Then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange. Never put the JWS in the URL, hash, path, or localStorage.";
 
 export const PORTAL_BOUNDARY_HELP =
   "This host replaces Portal's protected workflow surface by embedding FlowForge. FlowForge keeps its own database, executor, and authorization. Portal RBAC stays on the Portal side of the iframe.";

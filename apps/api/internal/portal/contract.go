@@ -97,7 +97,7 @@ func HostWiring() []HostStep {
 			Actor: "portal-backend",
 			Do:    "After Portal RBAC, mint an embed.v1 assertion with portal issuer, aud=flowforge, tenant_id, workbench_key, and mapped capabilities.",
 			Path:  "/api/v1/portal/adapter/assertions",
-			Note:  "Thin adapter over POST /api/v1/embed/assertions (E11.1). Same Ed25519 key, same claims. Compact JWS once. Never put it in a URL, log, or localStorage.",
+			Note:  "Thin adapter over POST /api/v1/embed/assertions (E11.1). Same Ed25519 key, same claims. Subject binds to the caller unless embed.impersonate (PLATFORM_ADMINS). Compact JWS once. Never put it in a URL, log, or localStorage.",
 		},
 		{
 			ID:    "mount",

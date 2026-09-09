@@ -94,12 +94,31 @@ func (e embedEnv) advance(d time.Duration) {
 
 func (e embedEnv) mint(t *testing.T, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return e.mintAs(t, e.admin, body)
+}
+
+func (e embedEnv) mintAs(t *testing.T, user identity.User, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	req := identifiedJSON(http.MethodPost, "/api/v1/embed/assertions", body, e.admin)
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/assertions", body, user)
 	req.Header.Set(headerTenantSlug, "acme")
 	req.Header.Set(headerWorkbenchKey, "ops")
 	e.h.ServeHTTP(rec, req)
 	return rec
+}
+
+func (e embedEnv) addWorkspaceAdmin(t *testing.T, user identity.User) identity.User {
+	t.Helper()
+	ctx := t.Context()
+	u, err := e.store.UpsertUser(ctx, user.Issuer, user.ExternalSubject, user.DisplayName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, _ := currentWorkspace(t, e.h, e.admin)
+	if err := e.store.SetMemberRoles(ctx, ws.ID, u.ID, []string{authz.RoleAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 func TestEmbedMintHappyPath(t *testing.T) {
@@ -616,6 +635,60 @@ func TestEmbedMintAllowlistedIssuerSucceeds(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("allowlisted mint %d %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestEmbedMintRejectsForeignSubject(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.view"],"subject":"other-user"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	if !strings.Contains(env.logs.String(), "impersonation") {
+		t.Fatalf("expected impersonation deny audit: %s", env.logs.String())
+	}
+}
+
+func TestEmbedMintRejectsSpoofedIssuer(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.view"],"issuer":"https://hostile.example"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedMintImpersonationWithoutPermission(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.view"],"subject":"impersonated-user","issuer":"https://idp.example"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedMintImpersonationWithPermissionIsAudited(t *testing.T) {
+	env := newEmbedEnv(t)
+	ops := env.addWorkspaceAdmin(t, env.ops)
+	rec := env.mintAs(t, ops, `{"capabilities":["workflow.view"],"subject":"impersonated-user"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("impersonate mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	if minted.Subject != "impersonated-user" {
+		t.Fatalf("subject %q", minted.Subject)
+	}
+	if minted.Issuer != env.ops.Issuer {
+		t.Fatalf("issuer must stay the caller, got %q", minted.Issuer)
+	}
+	out := env.logs.String()
+	if !strings.Contains(out, "embed.minted") || !strings.Contains(out, "impersonated") {
+		t.Fatalf("expected impersonation audit: %s", out)
+	}
+	if strings.Contains(out, minted.Assertion) {
+		t.Fatal("assertion leaked into logs")
+	}
+}
+
+func TestEmbedMintImpersonationStillEnforcesCapsSubset(t *testing.T) {
+	env := newEmbedEnv(t)
+	ops := env.addWorkspaceAdmin(t, env.ops)
+	rec := env.mintAs(t, ops, `{"capabilities":["workflow.view","not.a.permission"],"subject":"impersonated-user"}`)
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
 }
 
 func encodeEmbedPub(m embed.Material) string {

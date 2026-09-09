@@ -41,7 +41,7 @@ Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 | --- | --- | --- |
 | 1. Entry | Portal | Portal navigation + Portal RBAC decide whether the user may enter the add-in (`/portal/workflows` or the host’s equivalent). Do not share FlowForge cookies, DB, or the executor. |
 | 2. Map roles | Portal backend | Map Portal roles → FlowForge capabilities from `GET /api/v1/portal/adapter` `capabilityMap`. Unknown roles fail closed. |
-| 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer. |
+| 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer (always the authenticated caller). A `subject` other than the caller requires `embed.impersonate` (`PLATFORM_ADMINS`). |
 | 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame only when the Portal origin is in `WEB_PORTAL_FRAME_ANCESTORS` and/or `WEB_EMBED_FRAME_ANCESTORS`. Host query `tenant` / `workbench` is display-only. |
 | 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Issues `ff_session` bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. |
 | 6. Authorize | FlowForge | Later calls: cookie session + `X-CSRF-Token` + exchanged tenant/workbench headers. Disagreeing host tenant/workbench is `403`. |
@@ -61,15 +61,15 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `portal.publisher` | `publisher` | Editor + publish |
 | `portal.operator` | `operator` | Run / cancel / use credentials and targets. No edit or administer |
 | `portal.approver` | `approver` | View + `approval.decide` |
-| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member. Does **not** include `platform.administer` (rotate / tenant-workspace bootstrap). Cannot bootstrap membership from the embed session. |
+| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member. Does **not** include `platform.administer` or `embed.impersonate` (rotate / tenant-workspace bootstrap / mint-for-another-subject). Cannot bootstrap membership from the embed session. |
 
 ## API
 
 | Method | Path | Auth | CSRF | Notes |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/portal/adapter` | none | no | Contract, capability map, host wiring |
-| `POST` | `/api/v1/portal/adapter/assertions` | session or identity headers + membership | yes if `ff_session` | Maps roles, checks portal issuer, signs with E11.1 mint |
-| `POST` | `/api/v1/embed/assertions` | same | yes if cookie | Same mint without role mapping |
+| `POST` | `/api/v1/portal/adapter/assertions` | session or identity headers + membership | yes if `ff_session` | Maps roles, checks portal issuer, binds subject to the caller unless `embed.impersonate`, signs with E11.1 mint |
+| `POST` | `/api/v1/embed/assertions` | same | yes if cookie | Same mint without role mapping. Subject/issuer bind to the caller |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific. Bound sessions cannot `POST /tenants` or `POST /workspaces`. |
 | `GET` | `/api/v1/embed/catalog` | none | no | Embed SDK |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only |
@@ -78,10 +78,13 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`.
 
 `portalRoles` and/or `capabilities` required. Unknown role or capability is
-`400`. Explicit `platform.administer` is `400`. Issuer not on a
+`400`. Explicit `platform.administer` or `embed.impersonate` is `400`.
+`subject` defaults to the caller; a different subject requires
+`embed.impersonate` (`PLATFORM_ADMINS`) or the mint is `403`. A client
+`issuer` that differs from the caller is `403`. Issuer not on a
 non-empty `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` is `403`. An
 empty/unset Portal allowlist fails closed at mint (`403`); it does not
-accept any issuer.
+accept any issuer. Successful impersonation is audited (`reason=impersonated`).
 Host-supplied `workspaceId` that does not match server resolution is
 forbidden. Success is the same minted assertion as E11.1 (`201`, compact
 JWS once). Problem details never echo the JWS or private keys.
@@ -115,6 +118,9 @@ These fail closed on the FlowForge adapter:
   reads, problem details, and logs
 - Portal entry (mint for a non-member) does not grant FlowForge membership
 - Portal `admin` / elevated capabilities do not include `platform.administer`
+  or `embed.impersonate`
+- Mint for another subject without `embed.impersonate` / `PLATFORM_ADMINS` is `403`
+- Client-supplied issuer that differs from the caller is `403`
 - Embed session `POST /tenants` or `POST /workspaces` is `403` (no sibling
   workbench / membership bootstrap)
 

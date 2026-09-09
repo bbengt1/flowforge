@@ -34,7 +34,20 @@ func newPortalEnv(t *testing.T) portalEnv {
 	return newPortalEnvWithIssuers(t, []string{portalIssuer})
 }
 
+func newPortalEnvWithImpersonation(t *testing.T) portalEnv {
+	t.Helper()
+	return newPortalEnvConfigured(t, []string{portalIssuer}, []authz.PrincipalRef{{
+		Issuer:  portalIssuer,
+		Subject: "portal-svc",
+	}})
+}
+
 func newPortalEnvWithIssuers(t *testing.T, issuers []string) portalEnv {
+	t.Helper()
+	return newPortalEnvConfigured(t, issuers, nil)
+}
+
+func newPortalEnvConfigured(t *testing.T, issuers []string, platformAdmins []authz.PrincipalRef) portalEnv {
 	t.Helper()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
@@ -43,19 +56,20 @@ func newPortalEnvWithIssuers(t *testing.T, issuers []string) portalEnv {
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
-		Store:         store,
-		Scoped:        isolation.NewMemory(),
-		Sessions:      session.NewMemory(),
-		Workflows:     wfstore.NewMemory(),
-		Ops:           opsconfig.NewMemory(),
-		Hooks:         webhook.NewMemory(),
-		Vault:         vault.NewMemory(vault.TestKeys(), nil),
-		Keys:          vault.TestKeys(),
-		EmbedKeys:     keys,
-		EmbedJTI:      embed.NewMemoryJTI(),
-		PortalIssuers: issuers,
-		Now:           func() time.Time { return *clock },
-		Log:           log,
+		Store:          store,
+		Scoped:         isolation.NewMemory(),
+		Sessions:       session.NewMemory(),
+		Workflows:      wfstore.NewMemory(),
+		Ops:            opsconfig.NewMemory(),
+		Hooks:          webhook.NewMemory(),
+		Vault:          vault.NewMemory(vault.TestKeys(), nil),
+		Keys:           vault.TestKeys(),
+		EmbedKeys:      keys,
+		EmbedJTI:       embed.NewMemoryJTI(),
+		PortalIssuers:  issuers,
+		PlatformAdmins: platformAdmins,
+		Now:            func() time.Time { return *clock },
+		Log:            log,
 	}))
 	admin := identity.User{Issuer: portalIssuer, ExternalSubject: "portal-svc", DisplayName: "Portal"}
 	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
@@ -129,7 +143,7 @@ func TestPortalAdapterCatalog(t *testing.T) {
 
 func TestPortalMintMapsRolesAndExchanges(t *testing.T) {
 	env := newPortalEnv(t)
-	rec := env.mintPortal(t, `{"portalRoles":["portal.viewer"],"subject":"portal-user-1"}`)
+	rec := env.mintPortal(t, `{"portalRoles":["portal.viewer"]}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
 	}
@@ -139,6 +153,9 @@ func TestPortalMintMapsRolesAndExchanges(t *testing.T) {
 	}
 	if minted.Audience != embed.DefaultAudience || minted.Issuer != portalIssuer {
 		t.Fatalf("minted %+v", minted)
+	}
+	if minted.Subject != env.admin.ExternalSubject {
+		t.Fatalf("default mint must bind subject to caller, got %q", minted.Subject)
 	}
 	if minted.SDK != embed.SDKVersion {
 		t.Fatalf("sdk %s", minted.SDK)
@@ -268,7 +285,7 @@ func TestPortalCrossTenantWorkbenchFailsClosed(t *testing.T) {
 }
 
 func TestPortalEntryIsNotFlowForgeAuthorization(t *testing.T) {
-	env := newPortalEnv(t)
+	env := newPortalEnvWithImpersonation(t)
 	rec := env.mintPortal(t, `{"portalRoles":["portal.admin"],"subject":"portal-guest"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
@@ -417,5 +434,45 @@ func TestPortalSecretFreeLogs(t *testing.T) {
 	}
 	if !strings.Contains(out, "portal.minted") {
 		t.Fatalf("expected portal audit: %s", out)
+	}
+}
+
+func TestPortalMintRejectsForeignSubjectWithoutImpersonate(t *testing.T) {
+	env := newPortalEnv(t)
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"],"subject":"portal-user-1"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	if !strings.Contains(env.logs.String(), "impersonation") {
+		t.Fatalf("expected impersonation deny audit: %s", env.logs.String())
+	}
+}
+
+func TestPortalMintRejectsSpoofedIssuer(t *testing.T) {
+	env := newPortalEnv(t)
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"],"issuer":"https://hostile.example"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestPortalMintImpersonationWithPermissionIsAudited(t *testing.T) {
+	env := newPortalEnvWithImpersonation(t)
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"],"subject":"portal-user-1"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("impersonate mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	if minted.Subject != "portal-user-1" {
+		t.Fatalf("subject %q", minted.Subject)
+	}
+	if minted.Issuer != portalIssuer {
+		t.Fatalf("issuer must stay the caller, got %q", minted.Issuer)
+	}
+	out := env.logs.String()
+	if !strings.Contains(out, "portal.minted") || !strings.Contains(out, "impersonated") {
+		t.Fatalf("expected portal impersonation audit: %s", out)
+	}
+	if strings.Contains(out, minted.Assertion) {
+		t.Fatal("assertion leaked into logs")
 	}
 }

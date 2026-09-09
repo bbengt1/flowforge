@@ -31,19 +31,19 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 
 | Claim | Required | Notes |
 | --- | --- | --- |
-| `iss` | yes | Host issuer. Must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (merged with Portal issuers on exchange). Empty allowlist fails closed (`403`) |
+| `iss` | yes | Host issuer (always the authenticated minting caller). Client-supplied issuer that differs is `403`. Must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (merged with Portal issuers on exchange). Empty allowlist fails closed (`403`) |
 | `aud` | yes | Must be `flowforge` |
-| `sub` | yes | End-user external subject |
+| `sub` | yes | End-user external subject. Bound to the minting caller unless `embed.impersonate` (`PLATFORM_ADMINS`) |
 | `nbf` | yes | Unix seconds. Not-yet-valid fails closed |
 | `exp` | yes | Unix seconds |
 | `jti` | yes | Unique token id (UUID). Atomic one-time consume with TTL; replay is `409` |
 | `tenant_id` | yes | Context; never authorization by itself. Bound onto the session |
 | `workbench_key` | yes | With `tenant_id` is the workspace identity. Bound onto the session |
 | `workspace_id` | no | Binding only. Must match server resolution. Never the lookup key |
-| `capabilities` | yes | FlowForge workspace permission keys; mint requires a subset of the caller. Caps the embed session. `platform.administer` is never mintable |
+| `capabilities` | yes | FlowForge workspace permission keys; mint requires a subset of the caller. Caps the embed session. `platform.administer` and `embed.impersonate` are never mintable |
 | `sdk` | yes | `embed.v1` |
 | `display_name` | no | Display context until the API verifies the subject |
-| `host` | no | Minting caller issuer when minting for another subject |
+| `host` | no | Minting caller issuer. Set when minting for another subject (`embed.impersonate`) |
 
 ## Host flow
 
@@ -128,17 +128,22 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + overlap) |
-| `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key |
+| `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Validate + atomic `jti` consume + bind tenancy onto `ff_session`. Bound sessions cannot create tenants or workspaces. |
 | `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap, or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
+`subject` and `issuer` default to the authenticated caller. A different
+`subject` requires `embed.impersonate` (same `PLATFORM_ADMINS` allowlist as
+`platform.administer`; workspace `admin` is `403`). A different `issuer` is
+always `403`. Capabilities must still be a subset of the caller.
+`embed.impersonate` is platform-scoped and is never mintable.
 
 Exchange JSON: `{assertion, sdk?}`. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{tenantId,workbenchKey,workspaceId,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
 
 Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil?, kid?}`. `publicJwk` on `register-overlap` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
 
-Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown kid `401`; tenancy mismatch `403`; replayed `jti` `409`; missing signing key or JTI store `503`. Problem details never echo the JWS or private keys.
+Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown kid `401`; tenancy mismatch / foreign subject without `embed.impersonate` / spoofed issuer `403`; replayed `jti` `409`; missing signing key or JTI store `503`. Problem details never echo the JWS or private keys. Successful impersonation is audited (`reason=impersonated`).
 
 ## Key rotation (ops)
 
@@ -162,7 +167,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` or `ephemeral:process` | Active `kid` |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window |
-| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys **and** create tenants/workspaces. Empty is fail-closed (`403`). |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys, create tenants/workspaces, **and** mint for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
 | `EMBED_ISSUER` | empty | Single allowed `iss` for embed mint. Empty (with an empty allowlist) fails closed at mint (`403`) |

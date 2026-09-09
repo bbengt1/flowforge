@@ -10,6 +10,10 @@
  *
  * ADV-005: empty EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST fails closed
  * (HTTP 403) on mint and, when Portal is also empty, exchange. No UI rewrite.
+ *
+ * ADV-004: mint subject/issuer bind to the authenticated caller.
+ * A different subject requires embed.impersonate (PLATFORM_ADMINS).
+ * A different issuer is 403. The embed shell does not mint. No UI rewrite.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -325,7 +329,7 @@ export const EMBED_EXCHANGE_HELP =
   "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy. The compact JWS is body-only — never query, hash, path, or localStorage. Success sets ff_session + ff_csrf. Host identity is display context until this call succeeds.";
 
 export const EMBED_MINT_HELP =
-  "Mint is POST /embed/assertions from the host backend (CSRF if ff_session). This shell does not mint. E11.3 owns the Portal adapter.";
+  "Mint is POST /embed/assertions from the host backend (CSRF if ff_session). Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. This shell does not mint. E11.3 owns the Portal adapter.";
 
 export const EMBED_URL_SECRET_MESSAGE =
   "Assertion tokens must not appear in the URL (query, hash, or path). Remove assertion/token/jws params and POST the compact JWS in the exchange body.";

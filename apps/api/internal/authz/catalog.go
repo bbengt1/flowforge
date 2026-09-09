@@ -33,6 +33,7 @@ const (
 	PermAlertAck            = "alert.ack"
 	PermWorkspaceAdminister = "workspace.administer"
 	PermPlatformAdminister  = "platform.administer"
+	PermEmbedImpersonate    = "embed.impersonate"
 	PermKubernetesApply     = "kubernetes.apply"
 	PermKubernetesRead      = "kubernetes.read"
 	PermSSHRun              = "ssh.run"
@@ -96,6 +97,7 @@ func Permissions() []Permission {
 		{Key: PermAlertAck, Family: FamilyExecute},
 		{Key: PermWorkspaceAdminister, Family: FamilyAdministration},
 		{Key: PermPlatformAdminister, Family: FamilyAdministration},
+		{Key: PermEmbedImpersonate, Family: FamilyAdministration},
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermKubernetesRead, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
@@ -156,13 +158,13 @@ func Roles() []Role {
 		},
 		{
 			Key:         RoleAdmin,
-			Description: "Full workspace administration including membership, credentials, and all workspace actions. Does not grant platform.administer.",
+			Description: "Full workspace administration including membership, credentials, and all workspace actions. Does not grant platform.administer or embed.impersonate.",
 			Permissions: WorkspacePermissionKeys(),
 		},
 		{
 			Key:         RolePlatformAdmin,
-			Description: "Platform-scoped operations (tenant/workspace bootstrap and global embed overlap key rotation). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
-			Permissions: []string{PermPlatformAdminister},
+			Description: "Platform-scoped operations (tenant/workspace bootstrap, global embed overlap key rotation, and embed.impersonate). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
+			Permissions: []string{PermPlatformAdminister, PermEmbedImpersonate},
 		},
 	}
 }
@@ -180,7 +182,7 @@ func PermissionKeys() []string {
 // PlatformScopedPermission reports whether key is granted only by the
 // platform-admin allowlist, never by a workspace role binding.
 func PlatformScopedPermission(key string) bool {
-	return key == PermPlatformAdminister
+	return key == PermPlatformAdminister || key == PermEmbedImpersonate
 }
 
 // WorkspacePermissionKeys is every catalog permission except platform-scoped ones.

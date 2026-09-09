@@ -44,6 +44,9 @@ func TestCapabilityMapCoversPortalRoles(t *testing.T) {
 	if slices.Contains(byRole[RoleAdmin].Capabilities, authz.PermPlatformAdminister) {
 		t.Fatal("portal admin must not receive platform.administer")
 	}
+	if slices.Contains(byRole[RoleAdmin].Capabilities, authz.PermEmbedImpersonate) {
+		t.Fatal("portal admin must not receive embed.impersonate")
+	}
 }
 
 func TestMapRolesAliasesAndUnknownFailClosed(t *testing.T) {
@@ -68,6 +71,9 @@ func TestMapRolesAliasesAndUnknownFailClosed(t *testing.T) {
 	}
 	if _, err := UnionCapabilities(nil, []string{authz.PermPlatformAdminister}); err != ErrPlatformCapability {
 		t.Fatalf("platform.administer only: %v", err)
+	}
+	if _, err := UnionCapabilities(nil, []string{authz.PermEmbedImpersonate}); err != ErrPlatformCapability {
+		t.Fatalf("embed.impersonate only: %v", err)
 	}
 }
 
@@ -105,14 +111,17 @@ func TestParseFrameAncestorsRejectsWildcards(t *testing.T) {
 
 func TestPrepareMintUsesEmbedAudienceAndPortalIssuer(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	in, caps, err := PrepareMint(MintRequest{
+	in, caps, impersonating, err := PrepareMint(MintRequest{
 		PortalRoles: []string{RoleViewer},
 		Issuer:      "https://portal.cp-ops.example",
 		Subject:     "portal-user-1",
 	}, "https://portal.cp-ops.example", "svc-portal", "Portal", "11111111-1111-4111-8111-111111111111", "ops", "22222222-2222-4222-8222-222222222222",
-		[]string{"https://portal.cp-ops.example"}, now)
+		[]string{"https://portal.cp-ops.example"}, now, true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !impersonating {
+		t.Fatal("expected impersonating")
 	}
 	if in.Audience != embed.DefaultAudience {
 		t.Fatalf("audience %q", in.Audience)
@@ -132,24 +141,46 @@ func TestPrepareMintUsesEmbedAudienceAndPortalIssuer(t *testing.T) {
 }
 
 func TestPrepareMintEmptyAllowlistFailsClosed(t *testing.T) {
-	_, _, err := PrepareMint(MintRequest{
+	_, _, _, err := PrepareMint(MintRequest{
 		PortalRoles: []string{RoleViewer},
 		Issuer:      "https://portal.cp-ops.example",
 	}, "https://portal.cp-ops.example", "svc-portal", "Portal", "11111111-1111-4111-8111-111111111111", "ops", "",
-		nil, time.Now().UTC())
+		nil, time.Now().UTC(), false)
 	if err != ErrIssuer {
 		t.Fatalf("empty allowlist: %v", err)
 	}
 }
 
 func TestPrepareMintHostileIssuer(t *testing.T) {
-	_, _, err := PrepareMint(MintRequest{
+	_, _, _, err := PrepareMint(MintRequest{
 		PortalRoles: []string{RoleViewer},
 		Issuer:      "https://hostile.example",
 	}, "https://hostile.example", "bad", "", "11111111-1111-4111-8111-111111111111", "ops", "",
-		[]string{"https://portal.cp-ops.example"}, time.Now().UTC())
+		[]string{"https://portal.cp-ops.example"}, time.Now().UTC(), false)
 	if err != ErrIssuer {
 		t.Fatalf("hostile issuer: %v", err)
+	}
+}
+
+func TestPrepareMintRejectsForeignSubjectWithoutPermission(t *testing.T) {
+	_, _, _, err := PrepareMint(MintRequest{
+		PortalRoles: []string{RoleViewer},
+		Subject:     "portal-user-1",
+	}, "https://portal.cp-ops.example", "svc-portal", "Portal", "11111111-1111-4111-8111-111111111111", "ops", "",
+		[]string{"https://portal.cp-ops.example"}, time.Now().UTC(), false)
+	if err != authz.ErrMintImpersonation {
+		t.Fatalf("foreign subject: %v", err)
+	}
+}
+
+func TestPrepareMintRejectsSpoofedIssuer(t *testing.T) {
+	_, _, _, err := PrepareMint(MintRequest{
+		PortalRoles: []string{RoleViewer},
+		Issuer:      "https://hostile.example",
+	}, "https://portal.cp-ops.example", "svc-portal", "Portal", "11111111-1111-4111-8111-111111111111", "ops", "",
+		[]string{"https://portal.cp-ops.example", "https://hostile.example"}, time.Now().UTC(), true)
+	if err != authz.ErrMintIssuerSpoof {
+		t.Fatalf("spoofed issuer: %v", err)
 	}
 }
 
