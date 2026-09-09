@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 )
 
 func TestListenAddrDefaults(t *testing.T) {
@@ -110,7 +112,7 @@ func TestParseOrigins(t *testing.T) {
 }
 
 func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
-	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
 	t.Setenv("EMBED_AUDIENCE", "")
 	t.Setenv("REQUIRE_TLS", "")
@@ -153,6 +155,7 @@ func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
 }
 
 func TestLoadRejectsWildcardCORS(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("CORS_ALLOWED_ORIGINS", "*")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected wildcard CORS load error")
@@ -171,6 +174,7 @@ func TestBoolEnv(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidEmbedSigningKey(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
 	t.Setenv("EMBED_SIGNING_KEY", "not-an-ed25519-key")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
 	if _, err := Load(); err == nil {
@@ -180,14 +184,61 @@ func TestLoadRejectsInvalidEmbedSigningKey(t *testing.T) {
 
 func TestLoadRejectsNonFlowForgeEmbedAudience(t *testing.T) {
 	t.Setenv("EMBED_AUDIENCE", "someone-else")
-	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected EMBED_AUDIENCE fail-closed")
 	}
 }
 
+func TestLoadProductionMissingSigningKeyFails(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("production missing EMBED_SIGNING_KEY must refuse to start")
+	}
+
+	t.Setenv("APP_ENV", "production")
+	if _, err := Load(); err == nil {
+		t.Fatal("APP_ENV=production missing signing key must refuse to start")
+	}
+
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("REQUIRE_TLS missing signing key must refuse to start")
+	}
+}
+
+func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.EmbedKeys.Ready() || !cfg.EmbedKeys.Ephemeral() {
+		t.Fatalf("dev empty key should be ephemeral, ready=%v ephemeral=%v", cfg.EmbedKeys.Ready(), cfg.EmbedKeys.Ephemeral())
+	}
+}
+
+func testEmbedSigningKey(t *testing.T) string {
+	t.Helper()
+	return embed.EncodeSeedB64(embed.TestMaterial().Private)
+}
+
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
 	t.Setenv("CREDENTIAL_KEK_FILE", "")
 	if _, err := Load(); err == nil {
@@ -196,6 +247,7 @@ func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
 }
 
 func TestLoadTLSFilesMustBePaired(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("TLS_CERT_FILE", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_FILE", "")
 	if _, err := Load(); err == nil {

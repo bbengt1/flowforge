@@ -370,7 +370,9 @@ paths:
       summary: Embed assertion public keys
       description: |
         JWKS for FlowForge-minted embed assertions (Ed25519 / EdDSA).
-        Never includes private keys, PEM, seed, or the `d` parameter.
+        Refreshes overlap from the durable store and omits expired
+        `overlapUntil` keys. Never includes private keys, PEM, seed, or the
+        `d` parameter.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -385,6 +387,8 @@ paths:
                 $ref: "#/components/schemas/EmbedJWKS"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /embed/assertions:
     post:
       operationId: mintEmbedAssertion
@@ -443,9 +447,11 @@ paths:
       operationId: exchangeEmbedAssertion
       summary: Exchange an embed assertion for a browser session
       description: |
-        Validates issuer (required `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST`
-        merged with Portal issuers; empty fails closed with 403), audience (`flowforge`),
-        `nbf`/`exp`, `jti`, signature (active + overlap kids),
+        Refreshes overlap from the durable store and refuses expired
+        `overlapUntil` / retired kids. Validates issuer (required
+        `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` merged with Portal issuers;
+        empty fails closed with 403), audience (`flowforge`),
+        `nbf`/`exp`, `jti`, signature (active + live overlap kids),
         `tenant_id` + `workbench_key`, optional workspace binding, and
         capabilities. Atomically consumes `jti` with TTL (replay is 409).
         Issues `ff_session` / `ff_csrf` bound to that pair. The bound
@@ -493,11 +499,13 @@ paths:
       operationId: rotateEmbedKeys
       summary: Register or retire an embed overlap public key
       description: |
-        Operator rotate API. Mint stays on the active `EMBED_SIGNING_KEY`.
-        `register-overlap` accepts only the current/previous active public JWK
-        (the key being rotated out). Arbitrary Ed25519 keys are `400`.
-        `retire` removes an overlap kid after in-flight assertions expire.
-        Unknown `kid` fails closed. Private keys are never accepted or returned.
+        Operator rotate API. Mint stays on the durable active `EMBED_SIGNING_KEY`
+        (production boot-fails if unset). `register-overlap` accepts only the
+        current/previous active public JWK (the key being rotated out).
+        Arbitrary Ed25519 keys are `400`. `retire` removes an overlap kid after
+        in-flight assertions expire. Exchange and JWKS refresh overlap from the
+        durable store and refuse expired `overlapUntil` keys. Unknown `kid`
+        fails closed. Private keys are never accepted or returned.
         Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
         `workspace.administer` is not enough (`403`). Cookie callers need CSRF.
       parameters:
@@ -6707,6 +6715,10 @@ components:
               use: {type: string, enum: [sig]}
               alg: {type: string, enum: [EdDSA]}
               status: {type: string, enum: [active, overlap]}
+              overlapUntil:
+                type: string
+                format: date-time
+                description: Overlap verification expiry. Omitted when the kid does not expire.
         signingReady:
           type: boolean
     MintEmbedAssertionRequest:
@@ -6786,6 +6798,10 @@ components:
         overlapUntil:
           type: string
           format: date-time
+          description: |
+            RFC3339 expiry for the overlap verification window. After this
+            instant, exchange and JWKS drop the kid even if it is still in
+            an in-memory ring (verify refreshes from the store).
     ExchangeEmbedAssertionRequest:
       type: object
       required: [assertion]

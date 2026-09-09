@@ -54,7 +54,13 @@ func (s *Server) getEmbedCatalog(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, embed.NewCatalog())
 }
 
-func (s *Server) getEmbedJWKS(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) getEmbedJWKS(w http.ResponseWriter, r *http.Request) {
+	if s.embedRing != nil {
+		if err := s.embedRing.Refresh(r.Context(), s.clockNow()); err != nil {
+			writeEmbedError(w, r, err)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, s.embedMaterial().PublicJWKS())
 }
 
@@ -243,14 +249,7 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		WriteForbidden(w, r)
 		return
 	}
-	verified, err := embed.Verify(s.embedMaterial(), req.Assertion, embed.VerifyOptions{
-		Audience:       embed.DefaultAudience,
-		Now:            s.clockNow(),
-		Consumer:       s.embedJTI,
-		ResolvedWS:     ws.ID,
-		Context:        r.Context(),
-		AllowedIssuers: s.embedIssuers,
-	})
+	verified, err := s.verifyEmbedAssertion(r, req.Assertion, ws.ID)
 	if err != nil {
 		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
 		writeEmbedError(w, r, err)
@@ -407,9 +406,24 @@ func embedDenyReason(err error) string {
 	}
 }
 
+func (s *Server) verifyEmbedAssertion(r *http.Request, assertion, resolvedWS string) (embed.Verified, error) {
+	opt := embed.VerifyOptions{
+		Audience:       embed.DefaultAudience,
+		Now:            s.clockNow(),
+		Consumer:       s.embedJTI,
+		ResolvedWS:     resolvedWS,
+		Context:        r.Context(),
+		AllowedIssuers: s.embedIssuers,
+	}
+	if s.embedRing != nil {
+		return s.embedRing.Verify(r.Context(), assertion, opt)
+	}
+	return embed.Verify(s.embedMaterial(), assertion, opt)
+}
+
 func (s *Server) embedMaterial() embed.Material {
 	if s.embedRing != nil {
-		return s.embedRing.Material()
+		return s.embedRing.MaterialAt(s.clockNow())
 	}
 	return s.embedKeys
 }

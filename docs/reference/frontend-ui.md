@@ -746,7 +746,7 @@ Thin chrome + exchange gate on the #125 map. `apps/api` is unchanged. Relates to
 
 - **Mount:** `/embed/v1` (same standalone hrefs under rewrite). `/embed` redirects to `/embed/v1` only — not a parallel product tree.
 - **Exchange:** `POST /embed/exchange` `{assertion, sdk?: "embed.v1"}` body-only. CSRF-exempt. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. Nested `assertion` is metadata (no compact JWS). Forget the JWS after POST.
-- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint. **ADV-004:** no embed-shell UI change. Subject/issuer bind is enforced on the API.
+- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). JWKS refreshes overlap from the store and omits expired `overlapUntil`. Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint. **ADV-004 / ADV-006:** no embed-shell UI change. Subject/issuer bind and durable signing/overlap expiry are enforced on the API.
 - **postMessage:** `{type:"flowforge.embed.assertion",version:1,assertion}`. Cross-origin parents must be in `WEB_EMBED_FRAME_ANCESTORS` / `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS`. Same-origin is accepted.
 - **Secrets:** assertion never in query, hash, path, or `localStorage`. Host query values are display-only until exchange. Workspace lookup after exchange uses API `workspace` / `tenant`, not host query.
 - **CSP:** standalone stays `frame-ancestors 'none'` / `X-Frame-Options: DENY`. `WEB_EMBED_FRAME_ANCESTORS` relaxes framing on `/embed/v1` only.
@@ -763,7 +763,7 @@ After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `
 - **Capabilities:** hide chrome/nav the minted `session.embed.capabilities` set cannot perform.
 - **Fail closed:** no verified pair → no `GET /workspace`. Mismatch vs `GET /workspace` closes the surface. Durable `jti` replay is HTTP `409` (no silent retry).
 - **Deep links:** same standalone hrefs under `/embed/v1`. Chrome nav, session chip, command palette, and search remap hrefs. In-app `<a>` / `Link` clicks stay on the mount.
-- **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `platform.administer` via `PLATFORM_ADMINS`) and is not an embed-shell control. `workspace.administer` is `403`. The body `publicJwk` must be the current active key. Do not send `X-FlowForge-Workspace-ID` as the lookup key. No embed-shell UI change.
+- **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `platform.administer` via `PLATFORM_ADMINS`) and is not an embed-shell control. `workspace.administer` is `403`. The body `publicJwk` must be the current active key. Expired `overlapUntil` is dropped on exchange/JWKS after a store refresh. Do not send `X-FlowForge-Workspace-ID` as the lookup key. **ADV-006:** no embed-shell UI change.
 - **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops. E11.3 adds `/api/v1/portal/adapter` and `/api/v1/portal/adapter/assertions` for the Portal host (Chloe).
 
 ## E11.3 CP Ops Portal embed host (Chloe UI)

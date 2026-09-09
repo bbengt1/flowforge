@@ -337,9 +337,9 @@ func newServer(d Deps) http.Handler {
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
 			s.embedKeys = loaded
-		} else {
-			s.embedKeys = embed.NewEphemeralMaterial()
 		}
+		// Production LoadMaterial fails closed when the key is missing.
+		// Do not mint a boot-only ephemeral key here (ADV-006).
 	}
 	if s.embedRing == nil {
 		var store embed.KeyStore

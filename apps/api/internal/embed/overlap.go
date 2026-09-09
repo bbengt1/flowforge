@@ -70,14 +70,35 @@ func normalizeOverlapJWK(k PublicJWK) (PublicJWK, error) {
 	}
 	// Never accept a private parameter even if an operator pasted a full JWK.
 	return PublicJWK{
-		Kty:    KeyType,
-		Crv:    Curve,
-		X:      k.X,
-		Kid:    k.Kid,
-		Use:    "sig",
-		Alg:    Algorithm,
-		Status: KeyStatusOverlap,
+		Kty:          KeyType,
+		Crv:          Curve,
+		X:            k.X,
+		Kid:          k.Kid,
+		Use:          "sig",
+		Alg:          Algorithm,
+		Status:       KeyStatusOverlap,
+		OverlapUntil: k.OverlapUntil.UTC(),
 	}, nil
+}
+
+func filterLiveOverlap(keys []PublicJWK, now time.Time) []PublicJWK {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	out := make([]PublicJWK, 0, len(keys))
+	seen := map[string]struct{}{}
+	for _, k := range keys {
+		k.Kid = strings.TrimSpace(k.Kid)
+		if k.Kid == "" || !OverlapStillValid(k.OverlapUntil, now) {
+			continue
+		}
+		if _, ok := seen[k.Kid]; ok {
+			continue
+		}
+		seen[k.Kid] = struct{}{}
+		out = append(out, k)
+	}
+	return out
 }
 
 func decodePublicX(x string) (ed25519.PublicKey, error) {

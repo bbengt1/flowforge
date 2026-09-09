@@ -74,7 +74,7 @@ func RotationHook(m Material, kid string) error {
 	if kid == "" || kid == m.KeyID {
 		return nil
 	}
-	if overlapHasKid(m, kid) {
+	if overlapHasKid(m, kid, time.Time{}) {
 		return nil
 	}
 	return ErrUnknownKey

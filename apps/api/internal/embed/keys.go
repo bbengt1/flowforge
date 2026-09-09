@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 )
 
 // KeyStatus values. E11.2 accepts only active and explicitly overlapping
@@ -20,15 +23,17 @@ const (
 )
 
 // PublicJWK is a JWKS OKP/Ed25519 public key. The private parameter `d`
-// is never populated.
+// is never populated. OverlapUntil is the optional verify-path expiry
+// (overlapUntil / retire). Zero means no expiry (until retire or restart).
 type PublicJWK struct {
-	Kty    string `json:"kty"`
-	Crv    string `json:"crv"`
-	X      string `json:"x"`
-	Kid    string `json:"kid"`
-	Use    string `json:"use"`
-	Alg    string `json:"alg"`
-	Status string `json:"status"`
+	Kty          string    `json:"kty"`
+	Crv          string    `json:"crv"`
+	X            string    `json:"x"`
+	Kid          string    `json:"kid"`
+	Use          string    `json:"use"`
+	Alg          string    `json:"alg"`
+	Status       string    `json:"status"`
+	OverlapUntil time.Time `json:"overlapUntil,omitempty"`
 }
 
 // Material is the process signing key. Private bytes stay in memory and
@@ -48,6 +53,12 @@ func (m Material) Ready() bool {
 	return len(m.Private) == ed25519.PrivateKeySize &&
 		len(m.Public) == ed25519.PublicKeySize &&
 		strings.TrimSpace(m.KeyID) != ""
+}
+
+// Ephemeral reports whether this material is a process-local key that
+// will not survive restart. Production must not use this path.
+func (m Material) Ephemeral() bool {
+	return strings.HasPrefix(strings.TrimSpace(m.KeyID), "ephemeral:")
 }
 
 // PublicKeys returns JWKS keys. Never includes private material.
@@ -88,8 +99,11 @@ func (m Material) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m.PublicJWKS())
 }
 
-// LoadMaterial reads EMBED_SIGNING_KEY / FILE. An empty source yields an
-// ephemeral process key so local mint works; production must set a stable key.
+// LoadMaterial reads EMBED_SIGNING_KEY / FILE. Production-locked
+// processes (empty/production APP_ENV or REQUIRE_TLS) fail closed when
+// the source is empty — no boot-only ephemeral key. Non-production
+// APP_ENV (development|dev|local|test) without REQUIRE_TLS may mint an
+// ephemeral process key for local convenience (ADV-016 may remove that).
 func LoadMaterial() (Material, error) {
 	id := strings.TrimSpace(os.Getenv(EnvSigningKeyID))
 	raw := strings.TrimSpace(os.Getenv(EnvSigningKey))
@@ -108,6 +122,10 @@ func LoadMaterial() (Material, error) {
 		return Material{}, err
 	}
 	if raw == "" {
+		if !allowEphemeralSigningKey() {
+			return Material{}, fmt.Errorf("%w: set %s or %s (Ed25519 seed/key); empty APP_ENV/production and REQUIRE_TLS refuse a boot-only key",
+				ErrSigningKeyRequired, EnvSigningKey, EnvSigningKeyFile)
+		}
 		m := NewEphemeralMaterial()
 		m.Overlap = overlap
 		return m, nil
@@ -128,12 +146,29 @@ func LoadMaterial() (Material, error) {
 	}, nil
 }
 
-// NewEphemeralMaterial generates a process-local Ed25519 key.
+func allowEphemeralSigningKey() bool {
+	appEnv := strings.TrimSpace(os.Getenv(authz.EnvAppEnv))
+	if appEnv == "" {
+		appEnv = strings.TrimSpace(os.Getenv(authz.EnvFlowforgeEnv))
+	}
+	if !authz.NonProductionAppEnv(appEnv) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("REQUIRE_TLS"))) {
+	case "1", "true", "yes", "on":
+		return false
+	default:
+		return true
+	}
+}
+
+// NewEphemeralMaterial generates a process-local Ed25519 key for tests
+// and trusted-dev. It is not a production key and is never the
+// production LoadMaterial path. The deterministic seed is a last-resort
+// fallback if crypto/rand fails (ADV-016 may remove it).
 func NewEphemeralMaterial() Material {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		// Deterministic fallback so tests/boot never panic; still not a
-		// production key and never returned from an API.
 		seed := make([]byte, ed25519.SeedSize)
 		copy(seed, []byte("flowforge-embed-ephemeral-seed"))
 		priv = ed25519.NewKeyFromSeed(seed)

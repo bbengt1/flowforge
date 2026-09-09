@@ -14,6 +14,10 @@ var (
 	ErrCapability       = errors.New("embed assertion capabilities are not valid")
 	ErrWorkspaceBinding = errors.New("embed assertion workspace binding does not match server resolution")
 	ErrKeyUnavailable   = errors.New("embed signing key is not available")
+	// ErrSigningKeyRequired is a boot-fail: production-locked processes
+	// (empty/production APP_ENV or REQUIRE_TLS) must set a durable
+	// EMBED_SIGNING_KEY. Local/dev/test may mint an ephemeral key.
+	ErrSigningKeyRequired = errors.New("EMBED_SIGNING_KEY is required in production")
 	ErrIssuer           = errors.New("embed assertion issuer is not valid")
 	ErrIssuerNotAllowed = errors.New("embed assertion issuer is not on the allowlist")
 	ErrSubject          = errors.New("embed assertion subject is not valid")

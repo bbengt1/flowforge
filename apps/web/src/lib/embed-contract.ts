@@ -359,7 +359,7 @@ export const EMBED_TENANCY_HELP =
   "After exchange, persist tenantId + workbenchKey from the API workspace/session.embed — never from host query. Send X-FlowForge-Tenant-ID + X-FlowForge-Workbench-Key on every later call. A disagreeing host tenant/workbench is HTTP 403. Host tenant is never authorization.";
 
 export const EMBED_ROTATE_HELP =
-  "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil?} with platform.administer (PLATFORM_ADMINS). publicJwk must be the previous active signing key. workspace.administer is 403. JWKS publishes active + overlap. Unknown kid fails closed. The embed shell does not rotate keys.";
+  "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil?} with platform.administer (PLATFORM_ADMINS). publicJwk must be the previous active signing key. workspace.administer is 403. Exchange/JWKS refresh overlap from the store and drop expired overlapUntil kids. Production requires a durable EMBED_SIGNING_KEY (boot-fail if missing). The embed shell does not rotate keys.";
 
 export type EmbedExchangeBody = {
   assertion: string;

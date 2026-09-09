@@ -22,6 +22,11 @@ cd "$ROOT"
 : "${BACKUP_SOURCE_API_URL:=http://127.0.0.1:8080}"
 : "${BACKUP_VERIFY_API:=1}"
 : "${BACKUP_API_IMAGE:=flowforge-api:local}"
+# Isolated API boot is production-locked (no APP_ENV). ADV-006 refuses a
+# boot-only ephemeral key. Use the same local-only Ed25519 seed as compose.
+# Override for a unique rehearsal key; do not copy this into production.
+: "${EMBED_SIGNING_KEY:=Zmxvd2ZvcmdlLWVtYmVkLWxvY2FsLWRldi1rZXkhISE=}"
+: "${EMBED_SIGNING_KEY_ID:=local:restore-rehearsal}"
 
 WORKDIR="${BACKUP_WORKDIR:-$(mktemp -d)}"
 ENC="$WORKDIR/flowforge.sql.enc"
@@ -140,6 +145,8 @@ docker run -d --name "$RESTORE_API" --network "$network" \
   -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
   -e POSTGRES_DB="$POSTGRES_DB" \
   -e POSTGRES_SSLMODE="disable" \
+  -e EMBED_SIGNING_KEY="$EMBED_SIGNING_KEY" \
+  -e EMBED_SIGNING_KEY_ID="$EMBED_SIGNING_KEY_ID" \
   "$BACKUP_API_IMAGE" >/dev/null
 
 api_ok=0

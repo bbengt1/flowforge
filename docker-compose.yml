@@ -74,8 +74,11 @@ services:
       ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
-      EMBED_SIGNING_KEY: ${EMBED_SIGNING_KEY:-}
-      EMBED_SIGNING_KEY_ID: ${EMBED_SIGNING_KEY_ID:-}
+      # Local-only stable Ed25519 seed (32 bytes). Production Secret must set
+      # a unique EMBED_SIGNING_KEY — the process boot-fails without one.
+      # Do not copy this compose default into k8s.
+      EMBED_SIGNING_KEY: ${EMBED_SIGNING_KEY:-Zmxvd2ZvcmdlLWVtYmVkLWxvY2FsLWRldi1rZXkhISE=}
+      EMBED_SIGNING_KEY_ID: ${EMBED_SIGNING_KEY_ID:-local:compose}
       # Seeded local allowlists. Empty lists fail closed (403 on mint/exchange).
       # Production ConfigMap must set explicit issuers — do not copy these defaults.
       EMBED_ISSUER: ${EMBED_ISSUER:-https://idp.example}
