@@ -229,11 +229,27 @@ func TestMemoryIdempotentStartAndRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(audits) != 1 || audits[0].Action != "execution.start" {
+	if len(audits) != 2 {
 		t.Fatalf("audit = %+v", audits)
 	}
-	if _, ok := audits[0].Details["token"]; ok {
-		t.Fatalf("audit leaked token: %#v", audits[0].Details)
+	outcomes := map[string]bool{}
+	for _, ev := range audits {
+		if ev.Action != "execution.start" {
+			t.Fatalf("audit = %+v", ev)
+		}
+		if ev.Details["workflowDigest"] != ver.Digest || ev.Details["workflowVersionId"] != ver.ID {
+			t.Fatalf("start audit missing pin: %#v", ev.Details)
+		}
+		if ev.CorrelationID == "" && ev.Details["correlationId"] == "" {
+			t.Fatalf("start audit missing correlation: %#v", ev)
+		}
+		outcomes[ev.Outcome] = true
+		if _, ok := ev.Details["token"]; ok {
+			t.Fatalf("audit leaked token: %#v", ev.Details)
+		}
+	}
+	if !outcomes["created"] || !outcomes["replayed"] {
+		t.Fatalf("outcomes = %#v", outcomes)
 	}
 }
 

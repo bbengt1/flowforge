@@ -508,6 +508,17 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 				return Execution{}, ErrIdempotencyConflict
 			}
 			existing.Replayed = true
+			if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+				Action:        "execution.start",
+				ResourceType:  "execution",
+				ResourceID:    existing.ID,
+				Outcome:       "replayed",
+				CorrelationID: firstNonEmpty(existing.CorrelationID, in.CorrelationID),
+				HostContext:   in.HostContext,
+				Details:       startAuditDetails(workflowID, ver, existing, "replayed"),
+			}); err != nil {
+				return Execution{}, err
+			}
 			if err := tx.Commit(ctx); err != nil {
 				return Execution{}, mapDBErr(err)
 			}
@@ -545,6 +556,17 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 			}
 			if found && existing.fingerprint == prepared.fingerprint {
 				existing.Replayed = true
+				if _, aerr := insertAuditTx(ctx, tx, scope, AuditWrite{
+					Action:        "execution.start",
+					ResourceType:  "execution",
+					ResourceID:    existing.ID,
+					Outcome:       "replayed",
+					CorrelationID: firstNonEmpty(existing.CorrelationID, in.CorrelationID),
+					HostContext:   in.HostContext,
+					Details:       startAuditDetails(workflowID, ver, existing, "replayed"),
+				}); aerr != nil {
+					return Execution{}, aerr
+				}
 				if err := tx.Commit(ctx); err != nil {
 					return Execution{}, mapDBErr(err)
 				}
@@ -565,10 +587,7 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 		Outcome:       "created",
 		CorrelationID: exec.CorrelationID,
 		HostContext:   in.HostContext,
-		Details: map[string]any{
-			"workflowId":        workflowID,
-			"workflowVersionId": ver.ID,
-		},
+		Details:       startAuditDetails(workflowID, ver, exec, "created"),
 	}); err != nil {
 		return Execution{}, err
 	}

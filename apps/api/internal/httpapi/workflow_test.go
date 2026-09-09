@@ -89,6 +89,15 @@ func TestWorkflowCatalogRequiresView(t *testing.T) {
 	if !found {
 		t.Fatal("catalog missing flow.condition")
 	}
+	var manual workflow.TriggerType
+	for _, trig := range cat.Triggers {
+		if trig.Type == "manual" {
+			manual = trig
+		}
+	}
+	if manual.Start == nil || !manual.Start.PublishedVersionRequired || !manual.Start.IdempotencyKeyRequired || !manual.Start.CSRF {
+		t.Fatalf("manual start catalog = %+v", manual)
+	}
 }
 
 func TestWorkflowValidateAndNormalize(t *testing.T) {

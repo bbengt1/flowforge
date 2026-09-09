@@ -682,7 +682,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1/E9.3 add `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, schemas, `retrySafe` / `idempotencyKey` / `verification` / `retryPolicy`, `policy.defaultMaxAttempts=0`, `policy.verification=node-declared-idempotent-hook`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1/E9.3 add `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, schemas, `retrySafe` / `idempotencyKey` / `verification` / `retryPolicy`, `policy.defaultMaxAttempts=0`, `policy.verification=node-declared-idempotent-hook`). E10.1 adds `triggers[type=manual].start` (route, CSRF, `workflow.execute`, published `workflowVersionId`, required idempotency key, 16 KiB typed input, status map) plus `allowedWith` / `bounds` / `redaction` on the manual trigger. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
@@ -706,7 +706,7 @@ Suggested UI flow:
 4. On `409` `conflict`, `GET` the draft and offer reload (stale tab).
 5. Publish: `POST /workflows/{id}/publish` `{revision, note}` (`workflow.publish`).
 6. History: `GET /workflows/{id}/versions`; export `GET .../versions/{versionId}/export`; compare `POST /workflows/{id}/compare`; restore `POST .../versions/{versionId}/restore`.
-7. Run: only `POST /workflows/{id}/executions` `{workflowVersionId}`. Never send `draft: true` / omit the version.
+7. Run: only `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input?}`. Never send `draft: true` / omit the version. E10.1 run-dialog contract is below.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
@@ -721,9 +721,34 @@ Suggested UI flow:
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable export. JSON `{filename,definitionYaml,digest,...}`; `Accept: application/yaml` returns raw YAML. | `200` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/compare` | Diff two refs. `{left:{kind:"draft"}, right:{kind:"version",versionId}}` (or `versionNumber`). | `200` `{equal,digestMatch,left,right,leftDigest,rightDigest,changes[]}` | `400` `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore version as a **new** draft revision. JSON `{expectedRevision?}`. Requires `workflow.edit`. Version is unchanged. | `200` `{workflow,draft}` | `409` stale draft / `401` `403` `404` |
-| `POST /api/v1/workflows/{workflowId}/executions` | Start a durable run. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. Optional `idempotencyKey` / `Idempotency-Key` is unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Inputs redacted before persist. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. Script nodes also require `script.run` + `runtimeProfile.use` and a published, scanned, signed pin (`artifact-mutable` / `artifact-unscanned` / `artifact-unsigned` / `artifact-scan-failed` fail closed before a run is created). | `201` / `200` execution | `400` drafts cannot run / `400` artifact-* / `401` `403` `404` `409` |
+| `POST /api/v1/workflows/{workflowId}/executions` | **E10.1 authenticated manual start** (same route as E5). **Requires** published `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute` (+ engine perms as today). Pins `workflowVersionId` + `workflowDigest`. Run dialog **must** send `idempotencyKey` or `Idempotency-Key` (1–128 `[A-Za-z0-9._~:-]`). Unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Bounded typed `input` (16 KiB; JSON-schema subset when the published manual trigger declares `schema` / `inputSchema` / `with.schema`). Secrets redacted before persist. Policy evaluate before dispatch: deny → `403`; approval-required without a valid bound approval → `409`. Secret-free `execution.start` audit records actor, version/digest, correlation, idempotency key, and outcome (`created` / `replayed` / `denied`). Script nodes also require `script.run` + `runtimeProfile.use` and a published, scanned, signed pin (`artifact-*` fail closed before a run is created). | `201` / `200` execution | `400` drafts cannot run / `400` invalid input / `400` artifact-* / `401` `403` `404` `409` |
 | `GET /api/v1/workflows/{workflowId}/executions` | List runs for one workflow. Requires `execution.view`. Query `status`, `limit`. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Execution detail (redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`). Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
+
+## Authenticated manual starts (E10.1)
+
+First-class E10 trigger. **Do not invent** `POST /executions` or webhook/schedule/wait-resume routes here. Extend the existing E5 start path.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Suggested screen: workflow run dialog (published-version picker, typed input, idempotency field, CSRF). Catalog: `GET /workflows/catalog` `triggers[]` where `type=manual` (`start`, `allowedWith`, `bounds`, `redaction`). Next proxies stay `/api/control-plane/workflows/{id}/executions`. Wait/resume and webhook/schedule UI stay disabled (E10.2 / E10.3).
+
+Suggested run-dialog flow:
+
+1. List published versions only: `GET /workflows/{id}/versions`. Never offer the draft.
+2. Read typed input schema from the selected version YAML (`GET /workflows/{id}/versions/{versionId}`): `triggers[].schema` / `inputSchema` / `with.schema` / `with.inputSchema`. Same fields are documented on `GET /workflows/catalog` `triggers[type=manual].start.schemaFields`.
+3. Collect bounded JSON `input` (16 KiB). Strip secret field names in the UI; the API redacts before persist and rejects undeclared keys when `additionalProperties: false`.
+4. Require an idempotency key (generate a letter-prefixed 1–128 token, or accept `Idempotency-Key`). Same key + same input/actor → `200` `replayed: true`. Same key + different fingerprint → `409` `conflict`. Do not retry 409 with a new key unless the operator intends a new run.
+5. Optional pre-run: `POST /policy/evaluate` `{workflowId, workflowVersionId}`.
+6. Start: `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input?}` + CSRF. `201` new / `200` replay / `400` draft or invalid input / `403` missing `workflow.execute` or policy deny / `409` approval-required or fingerprint mismatch.
+7. Confirmation / audit: render version digest, key, and redacted input. Server audit `execution.start` is secret-free and includes `actorId`, `workflowVersionId`, `workflowDigest`, `correlationId`, `idempotencyKey`, and `outcome`.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `workflowVersionId` | yes | Published version UUID. Missing / `draft: true` / `source: draft` → `400` |
+| `idempotencyKey` | run dialog yes | Or `Idempotency-Key` header. Unique on `(workspace, workflowVersionId, key)` |
+| `input` | no | Object, max 16 KiB. Validated against the published manual trigger schema when declared |
+| `X-CSRF-Token` | browser yes | Cookie session. Header-only callers skip CSRF |
+
+Out of scope: webhook triggers (E10.2), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / notification actions (E10.4), `apps/web` rewrite.
 
 ## Durable executions (E5.1)
 
@@ -733,7 +758,7 @@ PostgreSQL model for executions, steps, jobs, and append-only `audit_events`. E5
 
 Suggested UI flow:
 
-1. Run: `POST /workflows/{workflowId}/executions` `{workflowVersionId, idempotencyKey?, input?}`. Keep `id`. Never send `draft: true`.
+1. Run: `POST /workflows/{workflowId}/executions` `{workflowVersionId, idempotencyKey, input?}`. Keep `id`. Never send `draft: true`. E10.1 run dialog always sends a key (see above).
 2. Same `idempotencyKey` + same input/actor → `200` with the original `id` and `replayed: true`. Do not treat that as a second run.
 3. Same key + different `input` (or actor) → `409` `conflict`. Show a safe message; do not retry with a new key unless the operator intends a new run.
 4. Workspace history: `GET /executions?status=&workflowId=&limit=`. Per-workflow: `GET /workflows/{workflowId}/executions`.

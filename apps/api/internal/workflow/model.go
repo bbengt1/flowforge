@@ -87,11 +87,41 @@ type CatalogRules struct {
 	UnsupportedPhasesRejected bool `json:"unsupportedPhasesRejected"`
 }
 
+// TriggerStart is the authenticated manual-start contract (E10.1).
+type TriggerStart struct {
+	Route                    string   `json:"route"`
+	Method                   string   `json:"method"`
+	Permission               string   `json:"permission"`
+	CSRF                     bool     `json:"csrf"`
+	PublishedVersionRequired bool     `json:"publishedVersionRequired"`
+	VersionField             string   `json:"versionField"`
+	InputField               string   `json:"inputField"`
+	SchemaFields             []string `json:"schemaFields"`
+	IdempotencyKeyField      string   `json:"idempotencyKeyField"`
+	IdempotencyHeader        string   `json:"idempotencyHeader"`
+	IdempotencyKeyRequired   bool     `json:"idempotencyKeyRequired"`
+	IdempotencyKeyPattern    string   `json:"idempotencyKeyPattern"`
+	MaxInputBytes            int      `json:"maxInputBytes"`
+	CreatedStatus            int      `json:"createdStatus"`
+	ReplayStatus             int      `json:"replayStatus"`
+	ConflictStatus           int      `json:"conflictStatus"`
+	PolicyDenyStatus         int      `json:"policyDenyStatus"`
+	ApprovalRequiredStatus   int      `json:"approvalRequiredStatus"`
+	DraftStatus              int      `json:"draftStatus"`
+	Help                     string   `json:"help"`
+}
+
 // TriggerType describes an allowlisted trigger.
 type TriggerType struct {
-	Type    string `json:"type"`
-	Phase   string `json:"phase"`
-	Outputs []Port `json:"outputs"`
+	Type        string           `json:"type"`
+	Phase       string           `json:"phase"`
+	Title       string           `json:"title,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Outputs     []Port           `json:"outputs"`
+	AllowedWith []WithField      `json:"allowedWith,omitempty"`
+	Bounds      *NodeBounds      `json:"bounds,omitempty"`
+	Redaction   *RedactionPolicy `json:"redaction,omitempty"`
+	Start       *TriggerStart    `json:"start,omitempty"`
 }
 
 // NodeType describes an allowlisted action node.

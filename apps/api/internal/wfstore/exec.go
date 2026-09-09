@@ -114,6 +114,22 @@ func cloneExecution(exec Execution, wf Workflow) Execution {
 	return out
 }
 
+func startAuditDetails(workflowID string, ver Version, exec Execution, outcome string) map[string]any {
+	details := map[string]any{
+		"actorId":           exec.RequestedBy,
+		"workflowId":        workflowID,
+		"workflowVersionId": ver.ID,
+		"workflowDigest":    ver.Digest,
+		"triggerType":       "manual",
+		"correlationId":     exec.CorrelationID,
+		"outcome":           outcome,
+	}
+	if exec.IdempotencyKey != "" {
+		details["idempotencyKey"] = exec.IdempotencyKey
+	}
+	return details
+}
+
 func newAudit(scope isolation.Scope, in AuditWrite, now time.Time) AuditEvent {
 	return AuditEvent{
 		ID:             newID(),

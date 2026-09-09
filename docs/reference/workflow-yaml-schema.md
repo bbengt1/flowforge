@@ -66,7 +66,9 @@ spec:
 Each node requires `id`, `type`, and `name`; `with` contains type-specific configuration. An edge has `from` and `to` values in `nodeId.port` form. Node IDs use lower-case letters, numbers, and hyphens, begin with a letter, and remain stable when a node is renamed. Trigger, node, edge, and output IDs/references must be unique and resolvable. Resource references such as `clusterTargetId`, `sshTargetId`, `commandProfileId`, and `runtimeProfileId` are non-secret UUIDs and must resolve inside the workflow workspace; display names and hostnames are never used as authorization references.
 
 Trigger configuration is type-specific and allowlisted. `manual` has no
-user-editable security configuration. `webhook` stores an opaque generated
+user-editable security configuration. It may declare an optional JSON-schema
+subset for authenticated start input (`schema`, `inputSchema`, or
+`with.schema` / `with.inputSchema`). `webhook` stores an opaque generated
 trigger ID and secret reference outside YAML; YAML may declare only the input
 schema and accepted content type. `schedule` requires an IANA timezone, cron or
 interval expression, explicit overlap policy, and bounded misfire/catch-up
