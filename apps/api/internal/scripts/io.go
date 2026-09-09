@@ -35,6 +35,9 @@ func ValidateExecutionInput(input map[string]any, schema map[string]any) error {
 		if err := ValidateDeclaredSchema(schema, "inputSchema"); err != nil {
 			return err
 		}
+		if err := RequireObjectRoot(schema, "inputSchema"); err != nil {
+			return err
+		}
 		if err := validateValueAgainstSchema(input, schema, "input"); err != nil {
 			return err
 		}
@@ -73,6 +76,9 @@ func ValidateExecutionOutput(stdout string, schema map[string]any) (map[string]a
 		if err := ValidateDeclaredSchema(schema, "outputSchema"); err != nil {
 			return nil, safe, err
 		}
+		if err := RequireObjectRoot(schema, "outputSchema"); err != nil {
+			return nil, safe, err
+		}
 		if err := validateValueAgainstSchema(parsed, schema, "output"); err != nil {
 			return nil, safe, err
 		}
@@ -84,9 +90,12 @@ func ValidateExecutionOutput(stdout string, schema map[string]any) (map[string]a
 	if len(encoded) > MaxOutputBytes {
 		return nil, "", engineError(CodeOutputTooLarge, fmt.Sprintf("output exceeds the %d byte limit.", MaxOutputBytes), http.StatusBadRequest)
 	}
-	obj, _ := parsed.(map[string]any)
-	if obj == nil {
-		obj = map[string]any{"value": parsed}
+	obj, ok := parsed.(map[string]any)
+	if !ok {
+		if schema != nil {
+			return nil, safe, engineError(CodeInvalidSchema, "output must be a JSON object matching outputSchema.", http.StatusBadRequest)
+		}
+		return map[string]any{"stdout": safe}, safe, nil
 	}
 	return obj, string(encoded), nil
 }

@@ -12,30 +12,35 @@ import (
 
 // Request is one isolated script.python / script.go execution.
 type Request struct {
-	Artifact           Artifact
-	Source             string
-	Language           string
-	Entrypoint         string
-	SigningKey         []byte
-	RuntimeProfile     map[string]any
-	RuntimeProfileID   string
-	NodeLimits         NodeLimits
-	Permissions        []string
-	PolicyEgress       EgressPolicy
-	Runtime            IsolationRuntime
-	Builder            ControlledBuilder
-	CorrelationID      string
-	ActorID            string
-	Input              map[string]any
-	InputSchema        map[string]any
-	OutputSchema       map[string]any
-	Handles            []Handle
-	ExtraEnv           map[string]string
-	RetryPolicy        RetryPolicy
-	RetrySafe          bool
-	IdempotencyKey     string
-	Verification       *VerificationSpec
-	PriorOutput        map[string]any
+	Artifact         Artifact
+	Source           string
+	Language         string
+	Entrypoint       string
+	SigningKey       []byte
+	RuntimeProfile   map[string]any
+	RuntimeProfileID string
+	NodeLimits       NodeLimits
+	Permissions      []string
+	PolicyEgress     EgressPolicy
+	Runtime          IsolationRuntime
+	Builder          ControlledBuilder
+	CorrelationID    string
+	ActorID          string
+	Input            map[string]any
+	InputSchema      map[string]any
+	OutputSchema     map[string]any
+	Handles          []Handle
+	ExtraEnv         map[string]string
+	RetryPolicy      RetryPolicy
+	RetrySafe        bool
+	IdempotencyKey   string
+	Verification     *VerificationSpec
+	// PriorOutput is the last persisted script output. A non-nil empty
+	// object {} is a real persist (object-root schemas allow it).
+	PriorOutput map[string]any
+	// HasPriorOutput is an explicit persist-presence signal for callers
+	// that normalize missing output to {}. Prefer this or a non-nil map.
+	HasPriorOutput     bool
 	Attempt            int
 	LeaseLost          bool
 	UnknownOutcome     bool

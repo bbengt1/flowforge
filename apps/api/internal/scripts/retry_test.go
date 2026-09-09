@@ -184,12 +184,91 @@ func TestExecuteTypedIOAndRecovery(t *testing.T) {
 			t.Fatalf("indet without prior output: %+v", out)
 		}
 		req.PriorIndeterminate = false
+		req.PriorOutput = nil
+		req.Verification.Expect = nil
+		ran := false
+		req.Runtime = runProbeRuntime{ran: &ran}
+		out = Execute(context.Background(), req)
+		if out.OK || out.Error == nil || out.Error.Code != CodeIndeterminate || ran {
+			t.Fatalf("empty prior output must stay indeterminate: %+v ran=%v", out, ran)
+		}
+		req.Runtime = nil
+		req.Verification.Expect = map[string]any{"status": "ok"}
 		req.PriorOutput = map[string]any{"status": "ok"}
 		out = Execute(context.Background(), req)
 		if !out.OK || out.Error != nil || out.Retry.Verification == nil || out.Retry.Verification.Outcome != VerifyAlreadyApplied {
 			t.Fatalf("already-applied: %+v", out)
 		}
+		req.PriorOutput = map[string]any{}
+		req.HasPriorOutput = true
+		ran = false
+		req.Runtime = runProbeRuntime{ran: &ran}
+		out = Execute(context.Background(), req)
+		if out.Error != nil && out.Error.Code == CodeIndeterminate && !ran {
+			t.Fatalf("persisted empty object must use onMismatch, not forced indeterminate: %+v", out)
+		}
+		if out.Retry.Verification == nil || out.Retry.Verification.Outcome != VerifySafeToRetry || !ran {
+			t.Fatalf("empty-object prior output: %+v ran=%v", out, ran)
+		}
 	})
+}
+
+func TestParseVerificationRequiresExplicitBehavior(t *testing.T) {
+	if _, err := ParseVerification(map[string]any{}); err == nil {
+		t.Fatal("empty verification must fail")
+	}
+	if _, err := ParseVerification(map[string]any{"behavior": true}); err == nil {
+		t.Fatal("non-string behavior must fail")
+	}
+	if _, err := ParseVerification(map[string]any{"behavior": ""}); err == nil {
+		t.Fatal("empty behavior must fail")
+	}
+	spec, err := ParseVerification(map[string]any{"behavior": VerificationBehaviorHook})
+	if err != nil || spec.Behavior != VerificationBehaviorHook {
+		t.Fatalf("explicit hook: %v %+v", err, spec)
+	}
+}
+
+func TestOutputSchemaPreservesObjectShape(t *testing.T) {
+	if err := RequireObjectRoot(map[string]any{"type": "array"}, "outputSchema"); err == nil {
+		t.Fatal("array root must fail")
+	}
+	if err := RequireObjectRoot(map[string]any{"type": "string"}, "outputSchema"); err == nil {
+		t.Fatal("string root must fail")
+	}
+	if err := RequireObjectRoot(map[string]any{}, "outputSchema"); err == nil {
+		t.Fatal("omitted root type must fail")
+	}
+	if err := RequireObjectRoot(map[string]any{"properties": map[string]any{"status": map[string]any{"type": "string"}}}, "outputSchema"); err == nil {
+		t.Fatal("properties without root type must fail")
+	}
+	if err := RequireObjectRoot(nil, "outputSchema"); err != nil {
+		t.Fatalf("nil schema is optional: %v", err)
+	}
+	obj, _, err := ValidateExecutionOutput(`{"status":"ok"}`, map[string]any{"type": "object"})
+	if err != nil || obj["status"] != "ok" || obj["value"] != nil {
+		t.Fatalf("object output: %v %+v", err, obj)
+	}
+	if _, _, err := ValidateExecutionOutput(`["a"]`, map[string]any{"type": "object"}); err == nil {
+		t.Fatal("array output against object schema must fail")
+	}
+	if _, _, err := ValidateExecutionOutput(`["a"]`, map[string]any{"type": "array"}); err == nil {
+		t.Fatal("array root schema must fail closed instead of wrapping as {value:...}")
+	}
+	if _, _, err := ValidateExecutionOutput(`"ok"`, map[string]any{"type": "string"}); err == nil {
+		t.Fatal("string root schema must fail closed instead of wrapping as {value:...}")
+	}
+}
+
+type runProbeRuntime struct{ ran *bool }
+
+func (runProbeRuntime) Name() string { return IsolationModeHarness }
+
+func (r runProbeRuntime) Run(ctx context.Context, spec IsolationSpec, job IsolatedJob) (IsolatedResult, error) {
+	if r.ran != nil {
+		*r.ran = true
+	}
+	return HarnessRuntime{}.Run(ctx, spec, job)
 }
 
 type oversizeRuntime struct{}

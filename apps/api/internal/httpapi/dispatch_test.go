@@ -222,6 +222,23 @@ func TestDispatchClaimFenceCancelAndLeaseLoss(t *testing.T) {
 	})
 }
 
+func TestLatestRetryCandidateIncludesIndeterminate(t *testing.T) {
+	if id := latestRetryCandidate(nil); id != "" {
+		t.Fatalf("empty = %s", id)
+	}
+	steps := []wfstore.ExecutionStep{
+		{ID: "ok", Status: wfstore.ExecutionSucceeded},
+		{ID: "indet", Status: wfstore.ExecutionIndeterminate},
+	}
+	if id := latestRetryCandidate(steps); id != "indet" {
+		t.Fatalf("indet = %s", id)
+	}
+	steps = append(steps, wfstore.ExecutionStep{ID: "later-fail", Status: wfstore.ExecutionFailed})
+	if id := latestRetryCandidate(steps); id != "later-fail" {
+		t.Fatalf("newest = %s", id)
+	}
+}
+
 func TestDispatchHostWorkspaceRejected(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)

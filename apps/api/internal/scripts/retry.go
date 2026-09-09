@@ -256,11 +256,15 @@ func ParseVerification(raw map[string]any) (VerificationSpec, error) {
 			return VerificationSpec{}, engineError(CodeInvalidVerification, "unknown verification field "+k+".", http.StatusBadRequest)
 		}
 	}
-	behavior, _ := raw["behavior"].(string)
-	behavior = strings.TrimSpace(behavior)
-	if behavior == "" {
-		behavior = VerificationBehaviorHook
+	rawBehavior, exists := raw["behavior"]
+	if !exists || rawBehavior == nil {
+		return VerificationSpec{}, engineError(CodeInvalidVerification, "verification.behavior must be declared-hook.", http.StatusBadRequest)
 	}
+	behavior, ok := rawBehavior.(string)
+	if !ok {
+		return VerificationSpec{}, engineError(CodeInvalidVerification, "verification.behavior must be declared-hook.", http.StatusBadRequest)
+	}
+	behavior = strings.TrimSpace(behavior)
 	if behavior != VerificationBehaviorHook {
 		return VerificationSpec{}, engineError(CodeInvalidVerification, "verification.behavior must be declared-hook.", http.StatusBadRequest)
 	}
@@ -393,22 +397,20 @@ func stubRetry(req Request) RetryState {
 	return state
 }
 
+// hasPersistedPriorOutput treats a non-nil map — including {} — as a
+// successful persist. Nil without HasPriorOutput means no prior output.
+func hasPersistedPriorOutput(req Request) bool {
+	return req.HasPriorOutput || req.PriorOutput != nil
+}
+
 func runVerification(req Request, spec VerificationSpec) VerificationResult {
 	out := VerificationResult{Ran: true, Outcome: spec.OnError, Note: "verification hook failed; outcome stays indeterminate"}
 	if spec.OnError == "" {
 		out.Outcome = VerifyIndeterminate
 	}
-	if req.PriorIndeterminate && len(req.PriorOutput) == 0 {
+	if !hasPersistedPriorOutput(req) {
 		out.Outcome = VerifyIndeterminate
-		out.Note = "lease-loss outcome cannot be verified; the script is not re-run"
-		return out
-	}
-	if len(req.PriorOutput) == 0 && len(spec.Expect) == 0 {
-		out.Outcome = spec.OnMismatch
-		out.Note = "verification has no prior output to confirm; mutating script is not assumed applied"
-		if out.Outcome == "" {
-			out.Outcome = VerifySafeToRetry
-		}
+		out.Note = "verification has no prior output to confirm; the script is not re-run"
 		return out
 	}
 	matched := outputMatchesExpect(req.PriorOutput, spec.Expect)

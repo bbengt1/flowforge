@@ -426,12 +426,7 @@ func (s *Server) retryExecution(w http.ResponseWriter, r *http.Request) {
 			writeWorkflowStoreError(w, r, err)
 			return
 		}
-		for i := len(steps) - 1; i >= 0; i-- {
-			if steps[i].Status == wfstore.ExecutionFailed || steps[i].Status == wfstore.ExecutionCanceled {
-				stepID = steps[i].ID
-				break
-			}
-		}
+		stepID = latestRetryCandidate(steps)
 		if stepID == "" {
 			writeWorkflowStoreError(w, r, wfstore.ErrRetryNotAllowed)
 			return
@@ -556,4 +551,16 @@ func secondsDuration(n int) time.Duration {
 		return 0
 	}
 	return time.Duration(n) * time.Second
+}
+
+// latestRetryCandidate picks the newest failed, canceled, or indeterminate step
+// for POST /executions/{id}/retry. Store gates still deny non-retrySafe cases.
+func latestRetryCandidate(steps []wfstore.ExecutionStep) string {
+	for i := len(steps) - 1; i >= 0; i-- {
+		switch steps[i].Status {
+		case wfstore.ExecutionFailed, wfstore.ExecutionCanceled, wfstore.ExecutionIndeterminate:
+			return steps[i].ID
+		}
+	}
+	return ""
 }
