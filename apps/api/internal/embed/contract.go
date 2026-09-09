@@ -47,6 +47,12 @@ const (
 	EnvIssuer         = "EMBED_ISSUER"
 	EnvIssuerAllow    = "EMBED_ISSUER_ALLOWLIST"
 	EnvOverlapKeys    = "EMBED_OVERLAP_KEYS"
+
+	// ADV-012: exchange (required) and mint (optional) rate limits.
+	EnvExchangeRateLimitIP        = "EMBED_EXCHANGE_RATE_LIMIT_IP"
+	EnvExchangeRateLimitPrincipal = "EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL"
+	EnvMintRateLimitPrincipal     = "EMBED_MINT_RATE_LIMIT_PRINCIPAL"
+	EnvRateLimitWindow            = "EMBED_RATE_LIMIT_WINDOW"
 )
 
 // Required JWT/assertion claims. workspace_id is an optional binding and

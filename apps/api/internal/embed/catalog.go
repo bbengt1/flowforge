@@ -68,6 +68,8 @@ type CatalogRules struct {
 	PartitionedEmbedCookies      bool `json:"partitionedEmbedCookies"`
 	VerifyBeforeWorkspaceLookup  bool `json:"verifyBeforeWorkspaceLookup"`
 	JTIRetainPastExpiry          bool `json:"jtiRetainPastExpiry"`
+	AuthzAudited                 bool `json:"authzAudited"`
+	ExchangeRateLimited          bool `json:"exchangeRateLimited"`
 }
 
 // NewCatalog builds the E11.1 + E11.2 contract document.
@@ -88,14 +90,14 @@ func NewCatalog() Catalog {
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403)."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403). Rate-limited by IP (default 120/min) and issuer|subject (default 30/min); burst is 429 rate-limited. Authz decisions emit secret-free audit events."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap (overlapUntil required, max 4h), or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the durable active env key. The active key is not an overlap key and has no overlapUntil. Verify refreshes overlap and refuses missing/expired/far-future overlapUntil. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
 			Algorithm:     Algorithm + " (" + Curve + ")",
 			PublicJWKS:    "/api/v1/embed/jwks",
 			PrivateNever:  []string{"d", "privateKey", "private_key", "seed", "pem", "EMBED_SIGNING_KEY"},
-			Env:           []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer, EnvIssuerAllow, EnvOverlapKeys, authz.EnvPlatformAdmins, authz.EnvPlatformAdmin},
+			Env:           []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer, EnvIssuerAllow, EnvOverlapKeys, EnvExchangeRateLimitIP, EnvExchangeRateLimitPrincipal, EnvMintRateLimitPrincipal, EnvRateLimitWindow, authz.EnvPlatformAdmins, authz.EnvPlatformAdmin},
 			MaxOverlapTTL: MaxOverlapTTL.String(),
 			Rotation:      "Mint with the durable active EMBED_SIGNING_KEY (production boot-fails if unset). The active key is not an overlap key and does not use overlapUntil. JWKS publishes active + overlap after a store refresh. Every overlap verify key requires a short overlapUntil (max 4h). Missing, zero, or far-future is 400 on rotate or boot-fail on EMBED_OVERLAP_KEYS. Verify refreshes overlap and refuses missing/expired/retired/far-future kids. POST /embed/keys/rotate is platform-admin only and registers only the previous/current active public key as overlap. Unknown kid fails closed.",
 		},
@@ -106,6 +108,8 @@ func NewCatalog() Catalog {
 			{ID: "assertion.verify-before-lookup", Status: "ready", Fail: "forged or invalid assertions fail closed without resolving tenant/workbench; same error class whether or not the workspace exists", Note: "POST /embed/exchange completes signature, audience, issuer allowlist, nbf/exp, and jti eligibility before any workspace or membership lookup. Durable jti consume runs only after verify succeeds. Tenancy bind happens after verify."},
 			{ID: "portal.adapter", Status: "ready", Fail: "empty or hostile issuer allowlist, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST is 403. FlowForge never shares its database or executor."},
 			{ID: "chips.embed-cookies", Status: "ready", Fail: "cross-site iframe without the partitioned cookie is 401 (cookie not sent) or 403 (CSRF cookie missing); SameSite=None without Partitioned is not used; top-level cookies stay Lax/Strict", Note: "Embed ff_session/ff_csrf after POST /embed/exchange are SameSite=None; Secure; Partitioned (CHIPS). Secure is never dropped. Standalone POST /session stays SameSite=Lax / Strict. HTTPS / a secure context is required. ADV-013 covers a full cross-origin host check."},
+			{ID: "authz.audit", Status: "ready", Fail: "authz decisions emit secret-free audit; assertion plaintext, signing keys, and session secrets are never logged", Note: "Mint allow/deny (including impersonation), exchange allow/deny with reason codes, rotate allow/deny, capability and tenancy bind failures, and rate-limit denials write structured embed_audit events (jti, kid, issuer, subject, tenant_id, workbench_key, workspace_id, reason)."},
+			{ID: "exchange.rate-limit", Status: "ready", Fail: "burst POST /embed/exchange is 429 rate-limited", Note: "Keyed by client IP (default 120/min) and issuer|subject when claims are peekable (default 30/min). Window default 1m. Configurable via EMBED_EXCHANGE_RATE_LIMIT_IP, EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL, EMBED_RATE_LIMIT_WINDOW. Mint may use EMBED_MINT_RATE_LIMIT_PRINCIPAL (default 60/min). Soft-deny with 429 + problem detail. A nil limiter fails closed."},
 		},
 		Rules: CatalogRules{
 			AssertionNotInURL:            true,
@@ -118,6 +122,8 @@ func NewCatalog() Catalog {
 			PartitionedEmbedCookies:      true,
 			VerifyBeforeWorkspaceLookup:  true,
 			JTIRetainPastExpiry:          true,
+			AuthzAudited:                 true,
+			ExchangeRateLimited:          true,
 		},
 	}
 }

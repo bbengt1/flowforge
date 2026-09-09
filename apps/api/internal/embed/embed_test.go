@@ -295,7 +295,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited {
 		t.Fatal("rules")
 	}
 	if c.JTIRetention != JTIRetention.String() {
@@ -323,6 +323,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 			if !strings.Contains(r.Note, "before any workspace lookup") {
 				t.Fatalf("exchange note must require verify before workspace lookup: %q", r.Note)
 			}
+			if !strings.Contains(r.Note, "429") || !strings.Contains(r.Note, "rate-limited") {
+				t.Fatalf("exchange note must document 429 rate-limit: %q", r.Note)
+			}
 		}
 	}
 	if !foundRotate {
@@ -343,7 +346,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
-	foundCHIPS, foundVerifyFirst, foundJTI := false, false, false
+	foundCHIPS, foundVerifyFirst, foundJTI, foundAudit, foundRate := false, false, false, false, false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
@@ -366,6 +369,18 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("jti.consume hook %q", h.Note)
 			}
 		}
+		if h.ID == "authz.audit" {
+			foundAudit = true
+			if !strings.Contains(h.Note, "secret-free") && !strings.Contains(h.Fail, "secret-free") {
+				t.Fatalf("authz.audit hook %q", h.Note)
+			}
+		}
+		if h.ID == "exchange.rate-limit" {
+			foundRate = true
+			if !strings.Contains(h.Fail, "429") {
+				t.Fatalf("exchange.rate-limit hook %q", h.Fail)
+			}
+		}
 	}
 	if !foundCHIPS {
 		t.Fatal("catalog missing chips.embed-cookies hook")
@@ -375,6 +390,12 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	}
 	if !foundJTI {
 		t.Fatal("catalog missing jti.consume hook")
+	}
+	if !foundAudit {
+		t.Fatal("catalog missing authz.audit hook")
+	}
+	if !foundRate {
+		t.Fatal("catalog missing exchange.rate-limit hook")
 	}
 }
 

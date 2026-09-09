@@ -63,10 +63,10 @@ type Config struct {
 	// EmbedKeys is the Ed25519 material used to mint/verify embed
 	// assertions. Production requires EMBED_SIGNING_KEY (boot-fail).
 	// Non-production APP_ENV may use an ephemeral process key.
-	EmbedKeys            embed.Material
-	EmbedAudience        string
-	EmbedTTL             time.Duration
-	EmbedIssuer          string
+	EmbedKeys     embed.Material
+	EmbedAudience string
+	EmbedTTL      time.Duration
+	EmbedIssuer   string
 	// EmbedIssuers is EMBED_ISSUER + EMBED_ISSUER_ALLOWLIST. Empty is
 	// fail-closed at embed mint and (when Portal is also empty) exchange.
 	EmbedIssuers []string
@@ -75,6 +75,8 @@ type Config struct {
 	PortalIssuers        []string
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef
+	// EmbedLimits rate-limits POST /embed/exchange (required) and mint.
+	EmbedLimits embed.Limits
 	// AppEnv is APP_ENV / FLOWFORGE_ENV. Empty is treated as production.
 	AppEnv string
 	// TrustIdentityHeaders is true only when TRUSTED_DEV_IDENTITY_HEADERS
@@ -130,6 +132,7 @@ func Load() (Config, error) {
 		PortalIssuers:             portal.ParseIssuers(os.Getenv(portal.EnvIssuerAllow), os.Getenv(portal.EnvIssuer)),
 		PortalFrameAncestors:      portal.ParseFrameAncestors(os.Getenv(portal.EnvFrameAllow)),
 		PlatformAdmins:            authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
+		EmbedLimits:               embed.LoadLimits(),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

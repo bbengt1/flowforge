@@ -11,6 +11,9 @@
  * CHIPS Set-Cookie (SameSite=None; Secure; Partitioned) is stored and
  * sent in the iframe. Do not request Storage Access / unpartitioned
  * cookies. Cookie not sent is 401/403.
+ *
+ * ADV-012: HTTP 429 on exchange is backoff (not forbidden). Prefer no
+ * UI change beyond showing the problem detail / Retry-After.
  */
 
 import { persistVerifiedFromExchange } from "./embed-tenancy-client.ts";

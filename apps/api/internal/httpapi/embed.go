@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,8 +85,11 @@ func (s *Server) rotateEmbedKeys(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.requirePlatformAdmin(w, r, user) {
-		return
+	if !authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) {
+		s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonPrivilege, "", "", user.Issuer, user.ExternalSubject)
+		if !s.requirePlatformAdmin(w, r, user) {
+			return
+		}
 	}
 	var req rotateEmbedKeyRequest
 	if !DecodeJSON(w, r, &req) {
@@ -98,35 +103,41 @@ func (s *Server) rotateEmbedKeys(w http.ResponseWriter, r *http.Request) {
 	case "register-overlap":
 		rawUntil := strings.TrimSpace(req.OverlapUntil)
 		if rawUntil == "" {
+			s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonOverlap, "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil is required and must be a short RFC3339 expiry (max 4h).")
 			return
 		}
 		parsed, err := time.Parse(time.RFC3339, rawUntil)
 		if err != nil {
+			s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonOverlap, "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil must be RFC3339.")
 			return
 		}
 		until := parsed.UTC()
 		if err := embed.ValidateOverlapUntil(until, s.clockNow()); err != nil {
+			s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonOverlap, "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
 			writeEmbedError(w, r, err)
 			return
 		}
 		if err := s.embedRing.AddOverlap(r.Context(), req.PublicJWK, until, s.clockNow()); err != nil {
+			s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonOverlap, "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
 			writeEmbedError(w, r, err)
 			return
 		}
-		s.auditEmbed(r, "embed.key.overlap_registered", session.OutcomeAllowed, "overlap", "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
+		s.auditEmbed(r, embed.EventOverlapRegister, session.OutcomeAllowed, embed.ReasonOverlapReg, "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
 	case "retire":
 		kid := strings.TrimSpace(req.Kid)
 		if kid == "" {
 			kid = strings.TrimSpace(req.PublicJWK.Kid)
 		}
 		if err := s.embedRing.RetireOverlap(r.Context(), kid); err != nil {
+			s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonOverlap, "", kid, user.Issuer, user.ExternalSubject)
 			writeEmbedError(w, r, err)
 			return
 		}
-		s.auditEmbed(r, "embed.key.overlap_retired", session.OutcomeAllowed, "retire", "", kid, user.Issuer, user.ExternalSubject)
+		s.auditEmbed(r, embed.EventOverlapRetire, session.OutcomeAllowed, embed.ReasonRetire, "", kid, user.Issuer, user.ExternalSubject)
 	default:
+		s.auditEmbed(r, embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonRejected, "", "", user.Issuer, user.ExternalSubject)
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be register-overlap or retire.")
 		return
 	}
@@ -139,6 +150,11 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 	}
 	user, ok := s.requirePrincipal(w, r)
 	if !ok {
+		return
+	}
+	if !s.allowEmbedMint(r, user.Issuer, user.ExternalSubject) {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+		s.writeEmbedRateLimited(w, r, "Embed mint rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	ws, tenant, _, perms, ok := s.requireAccess(w, r, user, "")
@@ -154,20 +170,24 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := confirmMintBinding(req, tenant, ws); err != nil {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonTenancy, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		writeIdentityError(w, r, err)
 		return
 	}
 	caps := req.Capabilities
 	if len(caps) == 0 {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "capabilities are required and must be a subset of the caller.")
 		return
 	}
 	for _, c := range caps {
 		if !authz.Known(c) {
+			s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "capabilities are required and must be a subset of the caller.")
 			return
 		}
 		if !authz.Allows(perms, c) {
+			s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 			WriteForbidden(w, r)
 			return
 		}
@@ -177,11 +197,11 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		authz.CanEmbedImpersonate(user.Issuer, user.ExternalSubject, s.platformAdmins),
 	)
 	if err != nil {
-		reason := "impersonation"
+		reason := embed.ReasonImpersonation
 		if errors.Is(err, authz.ErrMintIssuerSpoof) {
-			reason = "issuer"
+			reason = embed.ReasonIssuer
 		}
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing embed.impersonate")
 		}
@@ -189,7 +209,7 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !embed.IssuerAllowed(issuer, s.embedMintIssuers) {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "issuer", "", s.embedMaterial().KeyID, issuer, subject)
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonIssuer, "", s.embedMaterial().KeyID, issuer, subject)
 		writeEmbedError(w, r, embed.ErrIssuerNotAllowed)
 		return
 	}
@@ -215,11 +235,11 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		writeEmbedError(w, r, err)
 		return
 	}
-	reason := "issued"
+	reason := embed.ReasonIssued
 	if impersonating {
-		reason = "impersonated"
+		reason = embed.ReasonImpersonated
 	}
-	s.auditEmbed(r, "embed.minted", session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, issuer, subject)
+	s.auditEmbed(r, embed.EventMinted, session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, issuer, subject)
 	writeJSON(w, http.StatusCreated, minted)
 }
 
@@ -239,29 +259,35 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "assertion is required.")
 		return
 	}
+	peek, _ := peekEmbedClaims(req.Assertion)
+	if !s.allowEmbedExchange(r, peek.Issuer, peek.Subject) {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited, peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
+		s.writeEmbedRateLimited(w, r, "Embed exchange rate limit exceeded. Retry after the configured window.")
+		return
+	}
 	// ADV-008: verify signature, audience, issuer allowlist, nbf/exp,
 	// claims, and consume jti before any tenant/workbench lookup so a
 	// forged assertion cannot probe workspace existence.
 	verified, err := s.verifyEmbedAssertion(r, req.Assertion)
 	if err != nil {
-		peek, _ := peekEmbedClaims(req.Assertion)
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
 		writeEmbedError(w, r, err)
 		return
 	}
 	c := verified.Claims
 	ws, tenant, err := s.store.ResolveWorkspace(r.Context(), c.TenantID, "", c.WorkbenchKey)
 	if err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", c.TokenID, verified.KeyID, c.Issuer, c.Subject)
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonWorkspace, c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		writeIdentityError(w, r, err)
 		return
 	}
 	if ws.Status != "active" || tenant.Status != "active" {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonWorkspace, c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		WriteForbidden(w, r)
 		return
 	}
 	if err := embed.BindVerifiedWorkspace(ws.ID, c); err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", c.TokenID, verified.KeyID, c.Issuer, c.Subject)
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonTenancy, c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		writeEmbedError(w, r, err)
 		return
 	}
@@ -271,6 +297,7 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if user.Status != "active" {
+		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonPrincipal, c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		WriteForbidden(w, r)
 		return
 	}
@@ -289,7 +316,7 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	}
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "embed exchange")
-	s.auditEmbedTenancy(r, "embed.exchanged", session.OutcomeAllowed, "issued", c.TokenID, verified.KeyID, c.Issuer, c.Subject, tenant.ID, ws.WorkbenchKey, ws.ID)
+	s.auditEmbedTenancy(r, embed.EventExchanged, session.OutcomeAllowed, embed.ReasonIssued, c.TokenID, verified.KeyID, c.Issuer, c.Subject, tenant.ID, ws.WorkbenchKey, ws.ID)
 	writeJSON(w, http.StatusCreated, embedExchangeResponse{
 		Session:      viewSession(issued.Record),
 		Principal:    user,
@@ -398,23 +425,25 @@ func (s *Server) requirePlatformAdmin(w http.ResponseWriter, r *http.Request, us
 func embedDenyReason(err error) string {
 	switch {
 	case errors.Is(err, embed.ErrAudience):
-		return "audience"
+		return embed.ReasonAudience
 	case errors.Is(err, embed.ErrExpired):
-		return "expired"
+		return embed.ReasonExpired
 	case errors.Is(err, embed.ErrNotYetValid):
-		return "nbf"
+		return embed.ReasonNotYetValid
 	case errors.Is(err, embed.ErrReplay):
-		return "replay"
+		return embed.ReasonReplay
 	case errors.Is(err, embed.ErrSignature), errors.Is(err, embed.ErrUnknownKey):
-		return "signature"
+		return embed.ReasonSignature
 	case errors.Is(err, embed.ErrTenancyMismatch):
-		return "tenancy"
+		return embed.ReasonTenancy
 	case errors.Is(err, embed.ErrIssuerNotAllowed), errors.Is(err, embed.ErrIssuer):
-		return "issuer"
-	case errors.Is(err, embed.ErrMissingClaim):
-		return "claims"
+		return embed.ReasonIssuer
+	case errors.Is(err, embed.ErrCapability):
+		return embed.ReasonCapability
+	case errors.Is(err, embed.ErrMissingClaim), errors.Is(err, embed.ErrSDK):
+		return embed.ReasonClaims
 	default:
-		return "rejected"
+		return embed.ReasonRejected
 	}
 }
 
@@ -444,20 +473,92 @@ func (s *Server) auditEmbed(r *http.Request, eventType, outcome, reason, jti, ki
 }
 
 func (s *Server) auditEmbedTenancy(r *http.Request, eventType, outcome, reason, jti, kid, issuer, subject, tenantID, workbench, workspaceID string) {
+	ev := embed.AuthzEvent{
+		EventType:    eventType,
+		Outcome:      outcome,
+		Reason:       reason,
+		JTI:          jti,
+		Kid:          kid,
+		Issuer:       issuer,
+		Subject:      subject,
+		TenantID:     tenantID,
+		WorkbenchKey: workbench,
+		WorkspaceID:  workspaceID,
+		RequestID:    RequestIDFromContext(r.Context()),
+	}
+	if s.embedAuditor != nil {
+		s.embedAuditor.Record(ev)
+	}
 	if s.log == nil {
 		return
 	}
 	s.log.Info("embed_audit",
-		"event_type", eventType,
-		"outcome", outcome,
-		"reason", reason,
-		"jti", jti,
-		"kid", kid,
-		"issuer", issuer,
-		"subject", subject,
-		"tenant_id", tenantID,
-		"workbench_key", workbench,
-		"workspace_id", workspaceID,
-		"request_id", RequestIDFromContext(r.Context()),
+		"event_type", ev.EventType,
+		"outcome", ev.Outcome,
+		"reason", ev.Reason,
+		"jti", ev.JTI,
+		"kid", ev.Kid,
+		"issuer", ev.Issuer,
+		"subject", ev.Subject,
+		"tenant_id", ev.TenantID,
+		"workbench_key", ev.WorkbenchKey,
+		"workspace_id", ev.WorkspaceID,
+		"request_id", ev.RequestID,
 	)
+}
+
+func (s *Server) allowEmbedExchange(r *http.Request, issuer, subject string) bool {
+	if s.embedLimiter == nil {
+		return false
+	}
+	now := s.clockNow()
+	limits := s.embedLimiter.Limits()
+	if !s.embedLimiter.Allow(embed.IPKey(s.requestClientIP(r)), limits.ExchangeIP, now) {
+		return false
+	}
+	if key := embed.PrincipalKey(issuer, subject); key != "" {
+		if !s.embedLimiter.Allow(key, limits.ExchangePrincipal, now) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) allowEmbedMint(r *http.Request, issuer, subject string) bool {
+	if s.embedLimiter == nil {
+		return false
+	}
+	key := embed.PrincipalKey(issuer, subject)
+	if key == "" {
+		key = embed.IPKey(s.requestClientIP(r))
+	}
+	return s.embedLimiter.Allow("mint:"+key, s.embedLimiter.Limits().MintPrincipal, s.clockNow())
+}
+
+func (s *Server) writeEmbedRateLimited(w http.ResponseWriter, r *http.Request, detail string) {
+	retry := embed.DefaultRateWindow
+	if s.embedLimiter != nil {
+		retry = s.embedLimiter.RetryAfter(s.clockNow())
+	}
+	secs := int(retry.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	WriteProblem(w, r, http.StatusTooManyRequests, CodeRateLimited, "Rate Limited", detail)
+}
+
+func (s *Server) requestClientIP(r *http.Request) string {
+	if s.sec.fromTrustedProxy(r) {
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			part := strings.TrimSpace(strings.Split(xff, ",")[0])
+			if ip := net.ParseIP(part); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	if ip := clientIP(r); ip != nil {
+		return ip.String()
+	}
+	return "unknown"
 }

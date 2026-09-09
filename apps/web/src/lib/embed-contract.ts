@@ -26,6 +26,11 @@
  * ADV-008: POST /embed/exchange verifies the assertion before any
  * workspace lookup. Invalid assertions fail closed the same way
  * whether or not the tenant exists. No UI rewrite.
+ *
+ * ADV-012: POST /embed/exchange is rate-limited (429 rate-limited).
+ * Treat 429 as backoff and retry after Retry-After / the window.
+ * Prefer no UI change beyond that. Authz decisions are audited
+ * server-side; this shell never logs the assertion.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -337,10 +342,11 @@ export const EMBED_PROBLEM_CODES = {
   notFound: "not-found",
   conflict: "conflict",
   replay: "replay",
+  rateLimited: "rate-limited",
 } as const;
 
 export const EMBED_EXCHANGE_HELP =
-  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds.";
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds. HTTP 429 rate-limited means backoff (Retry-After); do not treat it as a forbidden assertion.";
 
 /** Embed session cookies after POST /embed/exchange. Not used for POST /session. */
 export const EMBED_SESSION_COOKIE = {
@@ -423,6 +429,18 @@ export const EMBED_FORBIDDEN_MESSAGE =
 
 export const EMBED_REPLAY_MESSAGE =
   "This assertion was already used or is no longer valid (HTTP 409). Assertions are single-use. Request a new mint from the host backend.";
+
+export const EMBED_RATE_LIMITED_MESSAGE =
+  "Embed exchange was rate-limited (HTTP 429). Back off and retry after Retry-After. Do not treat this as a forbidden or invalid assertion.";
+
+/** ADV-012: exchange is rate-limited. Chloe treats 429 as backoff only. */
+export const EMBED_RATE_LIMIT_RULES = {
+  exchangeRateLimited: true,
+  status: 429,
+  code: "rate-limited",
+  treatAsBackoff: true,
+  noUiChangeBeyondBackoff: true,
+} as const;
 
 export const EMBED_HOST_DISPLAY_HELP =
   "Host session ≠ FlowForge session. tenant, workbench, host, and displayName on the deep link are display context only until exchange succeeds. They never authorize.";
@@ -811,6 +829,12 @@ export function embedAuthFailureMessage(
     problem.code === EMBED_PROBLEM_CODES.replay
   ) {
     return EMBED_REPLAY_MESSAGE;
+  }
+  if (
+    problem.status === 429 ||
+    problem.code === EMBED_PROBLEM_CODES.rateLimited
+  ) {
+    return EMBED_RATE_LIMITED_MESSAGE;
   }
   if (
     problem.status === 403 ||
