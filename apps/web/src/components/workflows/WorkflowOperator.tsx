@@ -19,10 +19,15 @@ import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
+import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
 import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
+import {
+  scriptArtifactStatus,
+  yamlHasScriptNodes,
+} from "@/lib/script-contract";
 import {
   adaptActionLibrary,
   rejectDisabledActionType,
@@ -1187,6 +1192,15 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             </code>
           </p>
         ) : null}
+        {yamlHasScriptNodes(yaml) ? (
+          <ScriptPublishStatus
+            status={scriptArtifactStatus({
+              dirty,
+              hasPublishedVersion: Boolean(publishedVersion || versions[0]),
+              version: publishedVersion ?? versions[0] ?? null,
+            })}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
@@ -1262,6 +1276,8 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             pending={pending !== null}
             identity={identity}
             canCall={canCall}
+            dirty={dirty}
+            hasPublishedVersion={Boolean(publishedVersion || versions[0])}
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
             onPatchNodeWith={patchNodeWith}

@@ -42,6 +42,16 @@ import {
   type SshNodeCatalog,
 } from "@/lib/ssh-node-contract";
 import {
+  SCRIPT_CONTRACT_FALLBACK_HELP,
+  SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
+  SCRIPT_MUTABLE_REJECT_HELP,
+  SCRIPT_NODE_POLICY_NOTES,
+  SCRIPT_PUBLISH_BOUNDARY_HELP,
+  isScriptConfigurableType,
+  runtimeProfileLanguage,
+  scriptNodeErrorShapes,
+} from "@/lib/script-contract";
+import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_INDETERMINATE_HELP,
   SSH_MAX_RETRY_ATTEMPTS,
@@ -199,6 +209,14 @@ export function ActionWizard({
     isSshConfigurableType(draft.type) &&
     commandProfilesLoaded &&
     ((pins.command_profile ?? []).length === 0 || Boolean(pinProblems.command_profile));
+  const runtimeProfilesLoaded = pinStatus.runtime_profile !== undefined;
+  const runtimeProfileSelectorClosed =
+    isScriptConfigurableType(draft.type) &&
+    runtimeProfilesLoaded &&
+    ((pins.runtime_profile ?? []).length === 0 || Boolean(pinProblems.runtime_profile));
+  const selectedRuntimeProfile = (pins.runtime_profile ?? []).find(
+    (pin) => pin.resourceId === draft.with.runtimeProfileId,
+  );
   const wizardContext = {
     allowedNamespaces: namespacesForWizardTarget(selectedClusterTarget),
     targetSelectorClosed,
@@ -209,6 +227,8 @@ export function ActionWizard({
     parameterConstraints,
     profileRetrySafe,
     verificationDeclared,
+    runtimeProfileSelectorClosed,
+    runtimeProfileLanguage: runtimeProfileLanguage(selectedRuntimeProfile?.spec),
   };
   const applyRules = applyRulesFromCatalog(engineCatalog);
   const engineErrors = engineErrorShapes(engineCatalog);
@@ -441,7 +461,8 @@ export function ActionWizard({
               credentialOptions={credentialOptions}
               hideCredentialSelect={
                 isKubernetesConfigurableType(draft.type) ||
-                isSshConfigurableType(draft.type)
+                isSshConfigurableType(draft.type) ||
+                isScriptConfigurableType(draft.type)
               }
               onPin={choosePin}
               onCredential={(id) => {
@@ -716,8 +737,10 @@ function TargetStep({
                 ? "Published kubernetes cluster target"
                 : kind === "ssh_target"
                   ? "Published SSH target"
-                  : kind === "command_profile"
+                    : kind === "command_profile"
                     ? "Published command profile"
+                    : kind === "runtime_profile"
+                      ? "Published runtime profile"
                     : kind.replaceAll("_", " ")
             }
             value={selected?.versionId ?? ""}
@@ -741,6 +764,13 @@ function TargetStep({
           <code className="font-mono">type=ssh_private_key</code> vault credential.
           Command profiles are administrator-owned templates. The UI never lists
           privateKey, passphrase, host fingerprints as secrets, or raw logs.
+        </p>
+      ) : null}
+      {isScriptConfigurableType(draft.type) ? (
+        <p className="text-xs text-zinc-500">
+          Display name + id only. Choose a published approved runtime/dependency
+          profile — not an arbitrary image. Secrets are never listed.{" "}
+          {SCRIPT_PUBLISH_BOUNDARY_HELP}
         </p>
       ) : null}
       {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
@@ -812,6 +842,7 @@ function ConfigureStep({
   const inferred = fields.some((field) => field.inferred);
   const kubernetes = isKubernetesConfigurableType(draft.type);
   const ssh = isSshConfigurableType(draft.type);
+  const script = isScriptConfigurableType(draft.type);
   const visible = fields.filter(
     (field) =>
       !field.selectorKind &&
@@ -836,7 +867,7 @@ function ConfigureStep({
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
       </label>
-      {inferred && !kubernetes ? (
+      {inferred && !kubernetes && !ssh && !script ? (
         <p className="text-xs text-zinc-500">
           Configure fields are inferred from phase/ports and the YAML schema
           until catalog <code className="font-mono">allowedWith</code> is
@@ -863,10 +894,46 @@ function ConfigureStep({
           jonny&apos;s map when the catalog is listed.
         </p>
       ) : null}
+      {inferred && script ? (
+        <p className="text-xs text-zinc-500">
+          Script <code className="font-mono">with</code> fields use the marked{" "}
+          <code className="font-mono">e91-contract-fallback</code> until jonny
+          posts the #92 scan/sign/pin map. Overlay{" "}
+          <code className="font-mono">GET /workflows/catalog</code>{" "}
+          <code className="font-mono">allowedWith</code> when listed.{" "}
+          {SCRIPT_CONTRACT_FALLBACK_HELP}
+        </p>
+      ) : null}
       {isKubernetesRolloutType(draft.type) ? (
         <p className="rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-sm text-teal-950">
           {rolloutNodeDescription(engineCatalog)} {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
         </p>
+      ) : null}
+      {script ? (
+        <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-teal-950">
+            Script publish boundary (server-enforced)
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
+            {SCRIPT_NODE_POLICY_NOTES.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-teal-950">
+            {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
+            {SCRIPT_MUTABLE_REJECT_HELP}
+          </p>
+          {scriptNodeErrorShapes().length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
+              {scriptNodeErrorShapes().slice(0, 8).map((item) => (
+                <li key={item.code}>
+                  <code className="font-mono">{item.code}</code> ({item.status}):{" "}
+                  {item.meaning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
       ) : null}
       {ssh ? (
         <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
@@ -1095,7 +1162,7 @@ function ConfigField({
             }
             onChange(event.target.value);
           }}
-          rows={field.name === "manifests" ? 12 : 6}
+          rows={field.name === "manifests" || field.name === "source" ? 12 : 6}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
         />
         {field.description ? (
@@ -1290,6 +1357,14 @@ function ReviewStep({
             })}{" "}
             {SSH_INDETERMINATE_HELP} YAML holds target/profile UUIDs and typed
             values only.
+          </p>
+        ) : null}
+        {isScriptConfigurableType(draft.type) ? (
+          <p className="mt-2 text-xs text-zinc-600">
+            {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
+            {SCRIPT_MUTABLE_REJECT_HELP} YAML stores source, entrypoint,
+            runtimeProfileId, limits, and optional I/O schema — never secrets
+            or arbitrary images.
           </p>
         ) : null}
       </section>

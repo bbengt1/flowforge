@@ -38,6 +38,18 @@ import {
   type SshNodeConfigContext,
   type SshNodeWithField,
 } from "./ssh-node-contract.ts";
+import {
+  defaultScriptWith,
+  isExposedScriptWithField,
+  isScriptConfigurableType,
+  overlayScriptFields,
+  scriptNodeWithFields,
+  stripScriptForbiddenWith,
+  validateScriptNodeConfig,
+  type ScriptNodeCatalog,
+  type ScriptNodeConfigContext,
+  type ScriptNodeWithField,
+} from "./script-contract.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
 import { parseSshEvaluateRetry } from "./ssh-retry-contract.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
@@ -134,6 +146,9 @@ export type WizardValidationContext = {
   parameterConstraints?: SshNodeConfigContext["parameterConstraints"];
   profileRetrySafe?: boolean;
   verificationDeclared?: boolean;
+  scriptCatalog?: ScriptNodeCatalog | null;
+  runtimeProfileSelectorClosed?: boolean;
+  runtimeProfileLanguage?: ScriptNodeConfigContext["profileLanguage"];
 };
 
 export type WizardRecommendation = {
@@ -273,11 +288,10 @@ export function defaultWithForType(type: string): Record<string, unknown> {
   if (isSshConfigurableType(type)) {
     return defaultSshWith(type);
   }
+  if (isScriptConfigurableType(type)) {
+    return defaultScriptWith(type);
+  }
   switch (type) {
-    case "script.python":
-      return { entrypoint: "main.py", timeoutSeconds: 30, memoryMiB: 128 };
-    case "script.go":
-      return { entrypoint: "main.go", timeoutSeconds: 30, memoryMiB: 128 };
     case "http.request":
       return { method: "GET", path: "/v1/status", timeoutSeconds: 15 };
     case "notification.webhook":
@@ -300,7 +314,26 @@ export function wizardConfigFields(
   type = entry?.type ?? "",
   engineCatalog?: KubernetesEngineCatalog | null,
   sshCatalog?: SshNodeCatalog | null,
+  scriptCatalog?: ScriptNodeCatalog | null,
 ): WizardConfigField[] {
+  if (isScriptConfigurableType(type)) {
+    const engineFields = scriptCatalog?.nodes.find((item) => item.type === type)
+      ?.allowedWith;
+    const catalogOwnsFields =
+      (engineFields && engineFields.length > 0) ||
+      (entry?.source === "catalog" && (entry.allowedWith?.length ?? 0) > 0);
+    if (catalogOwnsFields) {
+      return overlayScriptFields(
+        engineFields?.length ? engineFields : (entry?.allowedWith ?? []),
+        type,
+      )
+        .filter((field) => isExposedScriptWithField(field.name))
+        .map((field) => fromScriptWithField(field, false));
+    }
+    return scriptNodeWithFields(type, scriptCatalog).map((field) =>
+      fromScriptWithField(field, entry?.source !== "catalog"),
+    );
+  }
   if (isSshConfigurableType(type)) {
     const engineFields = sshCatalog?.nodes.find((item) => item.type === type)
       ?.allowedWith;
@@ -556,6 +589,7 @@ export function validateWizardDraft(
     draft.type,
     context.engineCatalog,
     context.sshCatalog,
+    context.scriptCatalog,
   );
   for (const field of fields) {
     const value = draft.with[field.name];
@@ -563,7 +597,8 @@ export function validateWizardDraft(
       field.required &&
       isEmptyWithValue(value) &&
       !isKubernetesConfigurableType(draft.type) &&
-      !isSshConfigurableType(draft.type)
+      !isSshConfigurableType(draft.type) &&
+      !isScriptConfigurableType(draft.type)
     ) {
       errors.push(`${field.name} is required.`);
     }
@@ -599,6 +634,15 @@ export function validateWizardDraft(
         profileRetrySafe: context.profileRetrySafe,
         verificationDeclared: context.verificationDeclared,
         sshCatalog: context.sshCatalog,
+      }),
+    );
+  }
+  if (isScriptConfigurableType(draft.type)) {
+    errors.push(
+      ...validateScriptNodeConfig(draft.type, draft.with, {
+        profileSelectorClosed: context.runtimeProfileSelectorClosed,
+        profileLanguage: context.runtimeProfileLanguage,
+        scriptCatalog: context.scriptCatalog,
       }),
     );
   }
@@ -674,7 +718,9 @@ export function sanitizeWizardWith(
     ? stripKubernetesForbiddenWith(value)
     : isSshConfigurableType(type)
       ? stripSshForbiddenWith(value)
-      : value;
+      : isScriptConfigurableType(type)
+        ? stripScriptForbiddenWith(value)
+        : value;
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(source)) {
     if (!key.trim() || isForbiddenYamlKey(key) || isSecretFieldName(key)) {
@@ -782,6 +828,26 @@ function isExposedKubernetesField(name: string): boolean {
 
 function fromSshWithField(
   field: SshNodeWithField,
+  inferred: boolean,
+): WizardConfigField {
+  return {
+    name: field.name,
+    kind: field.kind,
+    required: field.required === true,
+    control: field.controlHint,
+    enumValues: field.enum,
+    description: field.description ?? "",
+    defaultValue: field.defaultValue ?? "",
+    selectorKind: selectorKindForField(field.name),
+    inferred,
+    label: field.label,
+    advanced: field.advanced,
+    readOnly: field.readOnly,
+  };
+}
+
+function fromScriptWithField(
+  field: ScriptNodeWithField,
   inferred: boolean,
 ): WizardConfigField {
   return {

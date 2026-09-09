@@ -224,6 +224,15 @@ E8.3 (Chloe) wires jonny's **#90** map on `main` (`e83-#90`). `apps/api` is unch
 - **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive probe — never imply the command did not run. Show **Retry** only when `result.retry.allowed` is true (same rule on `POST …/retry`; `409 retry-denied` when closed). Hide Retry for non-retrySafe indeterminate.
 - **Unchanged:** E8.1 `/config` collections; E8.2 node fields; no invented routes; `apps/api` untouched.
 
+## E9.1 script source authoring and publish UI
+
+E9.1 (Chloe UI) adds authoring for `script.python` / `script.go` on the E6.3 wizard and inspector. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-contract.ts`. Prefer existing `GET /workflows/catalog` plus published `GET /runtime-profiles` + `POST …/select`, draft save, and `POST /workflows/{id}/publish`. Until jonny posts the #92 scan/sign/pin map, overlay and artifact-status fields use marked `e91-contract-fallback`. Relates to #92 / Part of #91 — **Keep #92 open** (jonny owns publish/scan/sign/pin). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Library / wizard:** `script.python` and `script.go` are always placeable. Configure visible source, entrypoint (`main.py` / `main.go`), published approved runtime profile, bounded `timeoutSeconds` / `memoryMiB`, and optional I/O schema stubs. No arbitrary image or package-install fields.
+- **Publish boundary:** Draft save writes YAML only. Publish packages, scans, signs, and pins an immutable artifact on the workflow version. Execution uses the pinned digest, not mutable draft source. The publish panel and inspector show draft vs signed/pinned/scan status when those fields exist on the version; otherwise fallback copy.
+- **Fail closed:** Never show secrets. HTTP 403 empties the runtime-profile selector. Host-supplied `id` / `workspaceId` is 400 UX. Reject `pip install` / `go get` / `FROM` in source and forbidden `with` keys.
+- **Unchanged:** No invented `/scripts/*` routes; `apps/api` untouched.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

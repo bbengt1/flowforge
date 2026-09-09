@@ -16,6 +16,15 @@ import {
   SSH_TARGET_FAIL_CLOSED_MESSAGE,
   SSH_TARGET_REQUIRED_MESSAGE,
 } from "./ssh-node-contract.ts";
+import {
+  SCRIPT_DEFAULT_TIMEOUT_SECONDS,
+  SCRIPT_PACKAGE_INSTALL_MESSAGE,
+  SCRIPT_PROFILE_FAIL_CLOSED_MESSAGE,
+  SCRIPT_PROFILE_REQUIRED_MESSAGE,
+  SCRIPT_PUBLISH_BOUNDARY_HELP,
+  SCRIPT_SECRET_WITH_MESSAGE,
+  SCRIPT_SOURCE_REQUIRED_MESSAGE,
+} from "./script-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   applyTargetPin,
@@ -233,6 +242,30 @@ describe("action wizard catalog inference and recommendations", () => {
     assert.equal(sshFields.some((field) => field.name === "policyId"), true);
     assert.equal(sshFields.some((field) => field.name === "command"), false);
     assert.equal(sshFields.some((field) => field.name === "privateKey"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "script.python"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "script.go"), true);
+    assert.equal(
+      fallbackLibrary.find((item) => item.type === "script.python")?.source,
+      "contract-fallback",
+    );
+    assert.equal(wizardNeedsTargetStep("script.python"), true);
+    assert.deepEqual(opsConfigKindsForAction("script.python"), ["runtime_profile"]);
+    assert.equal(defaultWithForType("script.python").timeoutSeconds, SCRIPT_DEFAULT_TIMEOUT_SECONDS);
+    assert.equal(defaultWithForType("script.python").entrypoint, "main.py");
+    assert.equal(defaultWithForType("script.go").entrypoint, "main.go");
+    const scriptFields = wizardConfigFields(
+      fallbackLibrary.find((item) => item.type === "script.python"),
+      "script.python",
+    );
+    assert.equal(scriptFields.some((field) => field.name === "source" && field.required), true);
+    assert.equal(
+      scriptFields.some((field) => field.name === "runtimeProfileId" && field.required),
+      true,
+    );
+    assert.equal(scriptFields.some((field) => field.name === "entrypoint"), true);
+    assert.equal(scriptFields.some((field) => field.name === "inputSchema"), true);
+    assert.equal(scriptFields.some((field) => field.name === "image"), false);
+    assert.equal(scriptFields.some((field) => field.name === "secret"), false);
   });
 
   it("recommends compatible enabled actions from upstream port and targets", () => {
@@ -401,6 +434,74 @@ describe("action wizard insert + redaction", () => {
     assert.equal("privateKey" in (added?.with ?? {}), false);
     assert.equal("command" in (added?.with ?? {}), false);
     assert.match(result.yaml, /type: ssh\.run/);
+  });
+
+  it("inserts script.python with source, entrypoint, and runtime profile", () => {
+    const entry = palette.find((item) => item.type === "script.python")
+      ?? adaptActionLibrary(null).find((item) => item.type === "script.python");
+    const draft = emptyActionWizardDraft("script.python", "Summarize");
+    draft.with = {
+      ...draft.with,
+      runtimeProfileId: "66666666-6666-4666-8666-666666666666",
+      source: "print('ok')\n",
+      entrypoint: "main.py",
+      timeoutSeconds: 30,
+      memoryMiB: 128,
+      secret: "must-not-persist",
+      image: "python:latest",
+    };
+    const missing = validateWizardDraft(
+      { ...draft, with: { timeoutSeconds: 30 } },
+      catalog,
+      entry,
+    );
+    assert.equal(missing.ok, false);
+    assert.ok(missing.errors.includes(SCRIPT_SOURCE_REQUIRED_MESSAGE));
+    assert.ok(missing.errors.includes(SCRIPT_PROFILE_REQUIRED_MESSAGE));
+
+    const closed = validateWizardDraft(draft, catalog, entry, {
+      runtimeProfileSelectorClosed: true,
+    });
+    assert.equal(closed.ok, false);
+    assert.ok(closed.errors.includes(SCRIPT_PROFILE_FAIL_CLOSED_MESSAGE));
+
+    const leaked = validateWizardDraft(
+      {
+        ...draft,
+        with: {
+          ...draft.with,
+          source: "pip install requests\nprint('ok')\n",
+        },
+      },
+      catalog,
+      entry,
+    );
+    assert.equal(leaked.ok, false);
+    assert.ok(leaked.errors.includes(SCRIPT_PACKAGE_INSTALL_MESSAGE));
+    assert.ok(leaked.errors.includes(SCRIPT_SECRET_WITH_MESSAGE));
+
+    const sanitized = sanitizeWizardWith(draft.with, "script.python");
+    assert.equal("secret" in sanitized, false);
+    assert.equal("image" in sanitized, false);
+
+    const clean = emptyActionWizardDraft("script.python", "Summarize");
+    clean.with = {
+      ...clean.with,
+      runtimeProfileId: "66666666-6666-4666-8666-666666666666",
+      source: "print('ok')\n",
+      entrypoint: "main.py",
+    };
+    const result = applyWizardToYaml(STARTER_WORKFLOW_YAML, clean, catalog, entry);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.node.type, "script.python");
+    const added = listYamlNodes(result.yaml).find((node) => node.id === result.node.id);
+    assert.equal(added?.with.runtimeProfileId, "66666666-6666-4666-8666-666666666666");
+    assert.equal(added?.with.entrypoint, "main.py");
+    assert.match(String(added?.with.source ?? ""), /print\('ok'\)/);
+    assert.equal("secret" in (added?.with ?? {}), false);
+    assert.equal("image" in (added?.with ?? {}), false);
+    assert.match(result.yaml, /type: script\.python/);
+    assert.match(SCRIPT_PUBLISH_BOUNDARY_HELP, /does not create an executable artifact/i);
   });
 
   it("rejects unauthorized types and secret-shaped with values before insert", () => {

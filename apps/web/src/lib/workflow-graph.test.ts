@@ -148,8 +148,16 @@ describe("action library catalog filter", () => {
       fallback.find((item) => item.type === "ssh.run")?.source,
       "contract-fallback",
     );
+    assert.equal(fallback.some((item) => item.type === "script.python"), true);
+    assert.equal(fallback.some((item) => item.type === "script.go"), true);
+    assert.equal(
+      fallback.find((item) => item.type === "script.python")?.source,
+      "contract-fallback",
+    );
     assert.equal(rejectDisabledActionType("kubernetes.apply", null).ok, true);
     assert.equal(rejectDisabledActionType("ssh.run", null).ok, true);
+    assert.equal(rejectDisabledActionType("script.python", null).ok, true);
+    assert.equal(rejectDisabledActionType("script.go", null).ok, true);
   });
 });
 
