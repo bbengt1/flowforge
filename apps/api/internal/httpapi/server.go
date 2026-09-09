@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -60,6 +61,7 @@ type Server struct {
 	embedIssuers     []string
 	portalIssuers    []string
 	portalFrames     []string
+	platformAdmins   []authz.PrincipalRef
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -93,6 +95,7 @@ type Deps struct {
 	EmbedIssuers         []string
 	PortalIssuers        []string
 	PortalFrameAncestors []string
+	PlatformAdmins       []authz.PrincipalRef
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -302,6 +305,11 @@ func newServer(d Deps) http.Handler {
 		embedIssuers:     mergeIssuers(d.EmbedIssuers, d.PortalIssuers),
 		portalIssuers:    append([]string(nil), d.PortalIssuers...),
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
+	}
+	if d.PlatformAdmins != nil {
+		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
+	} else {
+		s.platformAdmins = authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
 	}
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {

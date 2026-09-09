@@ -482,10 +482,12 @@ paths:
       summary: Register or retire an embed overlap public key
       description: |
         Operator rotate API. Mint stays on the active `EMBED_SIGNING_KEY`.
-        `register-overlap` adds a verification-only public JWK for the
-        overlap window. `retire` removes it after in-flight assertions expire.
+        `register-overlap` accepts only the current/previous active public JWK
+        (the key being rotated out). Arbitrary Ed25519 keys are `400`.
+        `retire` removes an overlap kid after in-flight assertions expire.
         Unknown `kid` fails closed. Private keys are never accepted or returned.
-        Requires `workspace.administer`. Cookie callers need CSRF.
+        Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
+        `workspace.administer` is not enough (`403`). Cookie callers need CSRF.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"

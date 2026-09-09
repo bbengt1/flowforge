@@ -126,13 +126,13 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + overlap) |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Validate + atomic `jti` consume + bind tenancy onto `ff_session` |
-| `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `workspace.administer` | yes if `ff_session` | Register or retire an overlap public JWK |
+| `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap, or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
 
 Exchange JSON: `{assertion, sdk?}`. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{tenantId,workbenchKey,workspaceId,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
 
-Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil?, kid?}`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
+Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil?, kid?}`. `publicJwk` on `register-overlap` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
 
 Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown kid `401`; tenancy mismatch `403`; replayed `jti` `409`; missing signing key or JTI store `503`. Problem details never echo the JWS or private keys.
 
@@ -143,7 +143,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 ### Recommended rotate procedure
 
 1. Generate a new Ed25519 seed. Keep the current public JWK (`GET /embed/jwks` active key).
-2. `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK>, overlapUntil:<now+max TTL>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key before restart.
+2. As a **platform-admin** (`PLATFORM_ADMINS=issuer|subject`), `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK from GET /embed/jwks>, overlapUntil:<now+max TTL>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key before restart. Workspace admins cannot call this route.
 3. Deploy `EMBED_SIGNING_KEY` + `EMBED_SIGNING_KEY_ID` for the new key. Restart API pods.
 4. JWKS now lists `status=active` (new) and `status=overlap` (old). In-flight assertions (≤5m) still verify.
 5. After the overlap window, `POST /embed/keys/rotate` `{action:"retire", kid:<old>}` and/or remove the old key from `EMBED_OVERLAP_KEYS`.
@@ -158,6 +158,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` or `ephemeral:process` | Active `kid` |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys. Empty is fail-closed (`403`). |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
 | `EMBED_ISSUER` | empty | Optional single allowed `iss` |
@@ -177,6 +178,6 @@ and `workspace_id` only.
 | Hook | Status | Fail closed |
 | --- | --- | --- |
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
-| `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. |
+| `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. Rotate API is platform-admin only and accepts only the previous active public key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |

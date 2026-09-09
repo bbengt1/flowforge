@@ -57,7 +57,7 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `portal.publisher` | `publisher` | Editor + publish |
 | `portal.operator` | `operator` | Run / cancel / use credentials and targets. No edit or administer |
 | `portal.approver` | `approver` | View + `approval.decide` |
-| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member |
+| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member. Does **not** include `platform.administer` (embed overlap rotate). |
 
 ## API
 
@@ -69,6 +69,7 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific |
 | `GET` | `/api/v1/embed/catalog` | none | no | Embed SDK |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only |
+| `POST` | `/api/v1/embed/keys/rotate` | `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Not a Portal host control. `portal.admin` / `workspace.administer` cannot register overlap keys. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`.
 

@@ -100,7 +100,7 @@ export const EMBED_TENANCY_RETARGET = {
   jtiConsume:
     "Durable atomic jti consume is #127. UI maps HTTP 409 / code=replay and never resends or silently retries the compact JWS.",
   keyRotation:
-    "POST /embed/keys/rotate is ops-only (workspace.administer). Proxied via EMBED_PROXY_ROUTES. Embed chrome does not rotate keys.",
+    "POST /embed/keys/rotate is ops-only (platform.administer / PLATFORM_ADMINS). workspace.administer is 403. publicJwk must be the previous active key. Proxied via EMBED_PROXY_ROUTES. Embed chrome does not rotate keys.",
   tenancyApis:
     "session.embed is the bind. Hop GET /session + GET /workspace. Send embedWorkspaceHeaders on every later /api/v1 call.",
   exchangeShape:

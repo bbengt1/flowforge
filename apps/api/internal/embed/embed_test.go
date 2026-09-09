@@ -226,6 +226,18 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound {
 		t.Fatal("rules")
 	}
+	foundRotate := false
+	for _, r := range c.API {
+		if r.Path == "/api/v1/embed/keys/rotate" {
+			foundRotate = true
+			if !strings.Contains(r.Auth, "platform.administer") || strings.Contains(r.Auth, "workspace.administer") {
+				t.Fatalf("rotate auth %q", r.Auth)
+			}
+		}
+	}
+	if !foundRotate {
+		t.Fatal("catalog missing rotate route")
+	}
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
@@ -292,6 +304,57 @@ func TestTenancyAndRotationHooksFailClosed(t *testing.T) {
 	overlap := overlapMaterial(t)
 	if err := RotationHook(overlap, overlap.Overlap[0].Kid); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAddOverlapLockedToActiveKey(t *testing.T) {
+	ctx := context.Background()
+	old := TestMaterial()
+	ring := NewRing(old, NewMemoryKeys())
+	foreign := NewEphemeralMaterial()
+	foreign.KeyID = "attacker-kid"
+	err := ring.AddOverlap(ctx, PublicJWK{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(foreign.Public), Kid: foreign.KeyID,
+		Use: "sig", Alg: Algorithm,
+	}, time.Time{})
+	if err != ErrOverlapNotPrior {
+		t.Fatalf("foreign key: %v", err)
+	}
+
+	active := old.PublicJWKS().Keys[0]
+	if err := ring.AddOverlap(ctx, active, time.Time{}); err != nil {
+		t.Fatalf("prior active: %v", err)
+	}
+	next := NewEphemeralMaterial()
+	next.KeyID = "next-active"
+	if err := ring.InstallActive(next); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Verify(ring.Material(), minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.KeyID != old.KeyID {
+		t.Fatalf("kid %s", got.KeyID)
+	}
+
+	wrongX := active
+	wrongX.X = encodePublicX(foreign.Public)
+	if err := ring.AddOverlap(ctx, wrongX, time.Time{}); err != ErrOverlapNotPrior {
+		t.Fatalf("kid reuse with foreign x: %v", err)
+	}
+	if err := ring.AddOverlap(ctx, PublicJWK{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(foreign.Public), Kid: old.KeyID,
+		Use: "sig", Alg: Algorithm,
+	}, time.Time{}); err != ErrOverlapNotPrior {
+		t.Fatalf("old kid with foreign x after handoff: %v", err)
 	}
 }
 

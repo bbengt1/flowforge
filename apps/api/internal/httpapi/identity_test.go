@@ -102,6 +102,7 @@ func TestMembershipAuthorizationDenyByDefault(t *testing.T) {
 	for _, action := range []string{
 		authz.PermWorkflowEdit, authz.PermWorkflowPublish, authz.PermWorkflowExecute,
 		authz.PermCredentialManage, authz.PermApprovalDecide, authz.PermWorkspaceAdminister,
+		authz.PermPlatformAdminister,
 	} {
 		if contains(viewer.Permissions, action) {
 			t.Fatalf("viewer unexpectedly granted %s", action)
@@ -119,6 +120,12 @@ func TestMembershipAuthorizationDenyByDefault(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("viewer should read current workspace: %d %s", rec.Code, rec.Body.String())
 	}
+
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodPut, "/api/v1/workspace/members", strings.NewReader(`{"issuer":"https://idp.example","external_subject":"platform-via-ws","role_keys":["platform-admin"]}`), admin, tenant, ws)
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
 }
 
 func TestCrossWorkspaceHostIdentityIsRejected(t *testing.T) {

@@ -227,7 +227,7 @@ func (p *Postgres) ListWorkspacesForUser(ctx context.Context, userID string) ([]
 		); err != nil {
 			return nil, mapDBErr(err)
 		}
-		m.Permissions = authz.ExpandRoles(m.Roles)
+		m.Permissions = authz.ExpandWorkspaceRoles(m.Roles)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -309,7 +309,7 @@ func (p *Postgres) EffectiveAccess(ctx context.Context, workspaceID, userID stri
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	return roles, authz.ExpandRoles(roles), nil
+	return roles, authz.ExpandWorkspaceRoles(roles), nil
 }
 
 func (p *Postgres) ListMembers(ctx context.Context, workspaceID string) ([]Member, error) {
@@ -342,7 +342,7 @@ func (p *Postgres) ListMembers(ctx context.Context, workspaceID string) ([]Membe
 		); err != nil {
 			return nil, mapDBErr(err)
 		}
-		m.Permissions = authz.ExpandRoles(m.Roles)
+		m.Permissions = authz.ExpandWorkspaceRoles(m.Roles)
 		out = append(out, m)
 	}
 	return out, rows.Err()

@@ -2,6 +2,7 @@ package embed
 
 import (
 	"context"
+	"crypto/subtle"
 	"strings"
 	"sync"
 	"time"
@@ -107,7 +108,9 @@ func (r *Ring) Refresh(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// AddOverlap registers a verification-only public key for the overlap window.
+// AddOverlap registers the current active public key as overlap so a
+// later active-key deploy can verify in-flight assertions. Arbitrary
+// caller-supplied Ed25519 keys are rejected fail-closed.
 func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt time.Time) error {
 	if r == nil {
 		return ErrKeyUnavailable
@@ -117,10 +120,10 @@ func (r *Ring) AddOverlap(ctx context.Context, key PublicJWK, expiresAt time.Tim
 		return err
 	}
 	r.mu.RLock()
-	activeID := r.active.KeyID
+	match := r.matchesActiveLocked(norm)
 	r.mu.RUnlock()
-	if norm.Kid == activeID {
-		return ErrUnknownKey
+	if !match {
+		return ErrOverlapNotPrior
 	}
 	if r.store != nil {
 		if err := r.store.RegisterOverlap(ctx, norm, expiresAt); err != nil {
@@ -182,6 +185,37 @@ func (r *Ring) RetireOverlap(ctx context.Context, kid string) error {
 		return ErrUnknownKey
 	}
 	return nil
+}
+
+// InstallActive replaces the process signing key after the prior active
+// public key has been registered as overlap. Production does this by
+// restarting with a new EMBED_SIGNING_KEY; tests use this handoff.
+func (r *Ring) InstallActive(next Material) error {
+	if r == nil || !next.Ready() {
+		return ErrKeyUnavailable
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	env := r.active.Overlap
+	r.active = next
+	if r.active.Overlap == nil {
+		r.active.Overlap = env
+	}
+	return nil
+}
+
+func (r *Ring) matchesActiveLocked(key PublicJWK) bool {
+	if !r.active.Ready() {
+		return false
+	}
+	if strings.TrimSpace(key.Kid) != r.active.KeyID {
+		return false
+	}
+	got, err := decodePublicX(key.X)
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(got, r.active.Public) == 1
 }
 
 // MemoryKeys is an in-process KeyStore for tests.
