@@ -25,11 +25,19 @@ type createSessionRequest struct {
 }
 
 type sessionView struct {
-	ID                string    `json:"id"`
-	CreatedAt         time.Time `json:"created_at"`
-	LastSeenAt        time.Time `json:"last_seen_at"`
-	IdleExpiresAt     time.Time `json:"idle_expires_at"`
-	AbsoluteExpiresAt time.Time `json:"absolute_expires_at"`
+	ID                string            `json:"id"`
+	CreatedAt         time.Time         `json:"created_at"`
+	LastSeenAt        time.Time         `json:"last_seen_at"`
+	IdleExpiresAt     time.Time         `json:"idle_expires_at"`
+	AbsoluteExpiresAt time.Time         `json:"absolute_expires_at"`
+	Embed             *sessionEmbedView `json:"embed,omitempty"`
+}
+
+type sessionEmbedView struct {
+	TenantID     string   `json:"tenantId"`
+	WorkbenchKey string   `json:"workbenchKey"`
+	WorkspaceID  string   `json:"workspaceId"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type sessionResponse struct {
@@ -319,13 +327,22 @@ func (s *Server) listSessionAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func viewSession(rec session.Record) sessionView {
-	return sessionView{
+	view := sessionView{
 		ID:                rec.ID,
 		CreatedAt:         rec.CreatedAt,
 		LastSeenAt:        rec.LastSeenAt,
 		IdleExpiresAt:     rec.IdleExpiresAt,
 		AbsoluteExpiresAt: rec.AbsoluteExpiresAt,
 	}
+	if rec.Binding.Bound() {
+		view.Embed = &sessionEmbedView{
+			TenantID:     rec.Binding.TenantID,
+			WorkbenchKey: rec.Binding.WorkbenchKey,
+			WorkspaceID:  rec.Binding.WorkspaceID,
+			Capabilities: append([]string(nil), rec.Binding.Capabilities...),
+		}
+	}
+	return view
 }
 
 func (s *Server) issueSessionCookies(w http.ResponseWriter, r *http.Request, issued session.Issued) {

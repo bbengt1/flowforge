@@ -43,7 +43,7 @@ type embedExchangeResponse struct {
 }
 
 func (s *Server) requireEmbedKeys(w http.ResponseWriter, r *http.Request) bool {
-	if s.embedKeys.Ready() {
+	if s.embedMaterial().Ready() {
 		return true
 	}
 	WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Embed signing key is not available.")
@@ -55,7 +55,70 @@ func (s *Server) getEmbedCatalog(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) getEmbedJWKS(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.embedKeys.PublicJWKS())
+	writeJSON(w, http.StatusOK, s.embedMaterial().PublicJWKS())
+}
+
+type rotateEmbedKeyRequest struct {
+	Action       string          `json:"action"`
+	Kid          string          `json:"kid"`
+	PublicJWK    embed.PublicJWK `json:"publicJwk"`
+	OverlapUntil string          `json:"overlapUntil"`
+}
+
+func (s *Server) rotateEmbedKeys(w http.ResponseWriter, r *http.Request) {
+	if !s.requireEmbedKeys(w, r) {
+		return
+	}
+	if s.embedRing == nil {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Embed signing is not available.")
+		return
+	}
+	user, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	if _, _, _, _, ok := s.requireAccess(w, r, user, authz.PermWorkspaceAdminister); !ok {
+		return
+	}
+	var req rotateEmbedKeyRequest
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
+	action := strings.TrimSpace(req.Action)
+	if action == "" {
+		action = "register-overlap"
+	}
+	switch action {
+	case "register-overlap":
+		var until time.Time
+		if strings.TrimSpace(req.OverlapUntil) != "" {
+			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(req.OverlapUntil))
+			if err != nil {
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "overlapUntil must be RFC3339.")
+				return
+			}
+			until = parsed.UTC()
+		}
+		if err := s.embedRing.AddOverlap(r.Context(), req.PublicJWK, until); err != nil {
+			writeEmbedError(w, r, err)
+			return
+		}
+		s.auditEmbed(r, "embed.key.overlap_registered", session.OutcomeAllowed, "overlap", "", req.PublicJWK.Kid, user.Issuer, user.ExternalSubject)
+	case "retire":
+		kid := strings.TrimSpace(req.Kid)
+		if kid == "" {
+			kid = strings.TrimSpace(req.PublicJWK.Kid)
+		}
+		if err := s.embedRing.RetireOverlap(r.Context(), kid); err != nil {
+			writeEmbedError(w, r, err)
+			return
+		}
+		s.auditEmbed(r, "embed.key.overlap_retired", session.OutcomeAllowed, "retire", "", kid, user.Issuer, user.ExternalSubject)
+	default:
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be register-overlap or retire.")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.embedMaterial().PublicJWKS())
 }
 
 func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +173,7 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		display = user.DisplayName
 	}
 	ttl := time.Duration(req.TTLSeconds) * time.Second
-	minted, _, err := embed.Mint(s.embedKeys, embed.MintInput{
+	minted, _, err := embed.Mint(s.embedMaterial(), embed.MintInput{
 		Issuer:       issuer,
 		Subject:      subject,
 		DisplayName:  display,
@@ -149,13 +212,13 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	}
 	peek, peekErr := peekEmbedClaims(req.Assertion)
 	if peekErr != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "malformed", "", s.embedKeys.KeyID, "", "")
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "malformed", "", s.embedMaterial().KeyID, "", "")
 		writeEmbedError(w, r, peekErr)
 		return
 	}
 	ws, tenant, err := s.store.ResolveWorkspace(r.Context(), peek.TenantID, "", peek.WorkbenchKey)
 	if err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", peek.TokenID, s.embedKeys.KeyID, peek.Issuer, peek.Subject)
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
 		writeIdentityError(w, r, err)
 		return
 	}
@@ -163,14 +226,16 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		WriteForbidden(w, r)
 		return
 	}
-	verified, err := embed.Verify(s.embedKeys, req.Assertion, embed.VerifyOptions{
-		Audience:   embed.DefaultAudience,
-		Now:        s.clockNow(),
-		Consumer:   s.embedJTI,
-		ResolvedWS: ws.ID,
+	verified, err := embed.Verify(s.embedMaterial(), req.Assertion, embed.VerifyOptions{
+		Audience:       embed.DefaultAudience,
+		Now:            s.clockNow(),
+		Consumer:       s.embedJTI,
+		ResolvedWS:     ws.ID,
+		Context:        r.Context(),
+		AllowedIssuers: s.embedIssuers,
 	})
 	if err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedKeys.KeyID, peek.Issuer, peek.Subject)
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
 		writeEmbedError(w, r, err)
 		return
 	}
@@ -185,14 +250,21 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	policy := s.sec.sessionPolicy()
-	issued, err := s.sessions.Create(r.Context(), user.ID, s.clockNow(), policy.IdleTimeout, policy.AbsoluteTimeout)
+	issued, err := s.sessions.Create(r.Context(), user.ID, s.clockNow(), policy.IdleTimeout, policy.AbsoluteTimeout, session.CreateOpts{
+		Binding: session.Binding{
+			TenantID:     tenant.ID,
+			WorkbenchKey: ws.WorkbenchKey,
+			WorkspaceID:  ws.ID,
+			Capabilities: append([]string(nil), c.Capabilities...),
+		},
+	})
 	if err != nil {
 		writeSessionError(w, r, err)
 		return
 	}
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "embed exchange")
-	s.auditEmbed(r, "embed.exchanged", session.OutcomeAllowed, "issued", c.TokenID, verified.KeyID, c.Issuer, c.Subject)
+	s.auditEmbedTenancy(r, "embed.exchanged", session.OutcomeAllowed, "issued", c.TokenID, verified.KeyID, c.Issuer, c.Subject, tenant.ID, ws.WorkbenchKey, ws.ID)
 	writeJSON(w, http.StatusCreated, embedExchangeResponse{
 		Session:      viewSession(issued.Record),
 		Principal:    user,
@@ -245,10 +317,12 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion audience is not bound to FlowForge.")
 	case errors.Is(err, embed.ErrExpired), errors.Is(err, embed.ErrNotYetValid):
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion is expired or not yet valid.")
-	case errors.Is(err, embed.ErrSignature):
+	case errors.Is(err, embed.ErrSignature), errors.Is(err, embed.ErrUnknownKey):
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion is not valid.")
 	case errors.Is(err, embed.ErrReplay):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The embed assertion has already been used.")
+	case errors.Is(err, embed.ErrTenancyMismatch):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Host-supplied tenant or workbench does not match the embed session.")
 	case errors.Is(err, embed.ErrKeyUnavailable), errors.Is(err, embed.ErrStoreUnavailable):
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Embed signing is not available.")
 	default:
@@ -266,8 +340,10 @@ func embedDenyReason(err error) string {
 		return "nbf"
 	case errors.Is(err, embed.ErrReplay):
 		return "replay"
-	case errors.Is(err, embed.ErrSignature):
+	case errors.Is(err, embed.ErrSignature), errors.Is(err, embed.ErrUnknownKey):
 		return "signature"
+	case errors.Is(err, embed.ErrTenancyMismatch):
+		return "tenancy"
 	case errors.Is(err, embed.ErrMissingClaim):
 		return "claims"
 	default:
@@ -275,7 +351,18 @@ func embedDenyReason(err error) string {
 	}
 }
 
+func (s *Server) embedMaterial() embed.Material {
+	if s.embedRing != nil {
+		return s.embedRing.Material()
+	}
+	return s.embedKeys
+}
+
 func (s *Server) auditEmbed(r *http.Request, eventType, outcome, reason, jti, kid, issuer, subject string) {
+	s.auditEmbedTenancy(r, eventType, outcome, reason, jti, kid, issuer, subject, "", "", "")
+}
+
+func (s *Server) auditEmbedTenancy(r *http.Request, eventType, outcome, reason, jti, kid, issuer, subject, tenantID, workbench, workspaceID string) {
 	if s.log == nil {
 		return
 	}
@@ -287,6 +374,9 @@ func (s *Server) auditEmbed(r *http.Request, eventType, outcome, reason, jti, ki
 		"kid", kid,
 		"issuer", issuer,
 		"subject", subject,
+		"tenant_id", tenantID,
+		"workbench_key", workbench,
+		"workspace_id", workspaceID,
 		"request_id", RequestIDFromContext(r.Context()),
 	)
 }

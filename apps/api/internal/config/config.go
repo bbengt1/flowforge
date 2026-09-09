@@ -64,6 +64,7 @@ type Config struct {
 	EmbedAudience string
 	EmbedTTL      time.Duration
 	EmbedIssuer   string
+	EmbedIssuers  []string
 }
 
 // Load reads configuration from the process environment.
@@ -110,6 +111,7 @@ func Load() (Config, error) {
 		EmbedAudience:             firstNonEmpty(os.Getenv("EMBED_AUDIENCE"), embed.DefaultAudience),
 		EmbedTTL:                  durationEnv("EMBED_ASSERTION_TTL", embed.DefaultTTL),
 		EmbedIssuer:               strings.TrimSpace(os.Getenv("EMBED_ISSUER")),
+		EmbedIssuers:              embed.ParseIssuerAllowlist(os.Getenv(embed.EnvIssuerAllow), os.Getenv(embed.EnvIssuer)),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

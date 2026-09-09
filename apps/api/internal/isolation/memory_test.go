@@ -78,3 +78,22 @@ func TestMemorySameWorkspaceLinkSucceeds(t *testing.T) {
 		t.Fatalf("link = %+v", link)
 	}
 }
+
+func TestMemoryStampsTenantWorkbenchOnRecords(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := AuthorizeTenancy("11111111-1111-1111-1111-111111111111", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := store.Create(ctx, scope, Record{Kind: KindJob, Name: "dispatch", Metadata: map[string]any{"tenant_id": "host-supplied"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Metadata["tenant_id"] != "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" {
+		t.Fatalf("host tenant must not win: %+v", rec.Metadata)
+	}
+	if rec.Metadata["workbench_key"] != "ops" {
+		t.Fatalf("missing workbench: %+v", rec.Metadata)
+	}
+}

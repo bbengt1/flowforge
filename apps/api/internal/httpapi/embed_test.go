@@ -143,6 +143,12 @@ func TestEmbedMintHappyPath(t *testing.T) {
 	if exchanged.Workspace.WorkbenchKey != "ops" {
 		t.Fatalf("workspace %+v", exchanged.Workspace)
 	}
+	if exchanged.Session.Embed == nil || exchanged.Session.Embed.WorkbenchKey != "ops" {
+		t.Fatalf("session embed binding %+v", exchanged.Session.Embed)
+	}
+	if exchanged.Session.Embed.TenantID != exchanged.Tenant.ID {
+		t.Fatalf("session tenant %s", exchanged.Session.Embed.TenantID)
+	}
 	foundSession := false
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == session.CookieName && c.Value != "" {
@@ -297,6 +303,160 @@ func TestEmbedExchangeReplayConflict(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	env.h.ServeHTTP(second, req)
 	assertProblem(t, second, http.StatusConflict, CodeConflict, "")
+}
+
+func TestEmbedExchangeNBF(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Add(time.Minute).Unix(),
+		ExpiresAt:    now.Add(2 * time.Minute).Unix(),
+		TokenID:      "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "")
+}
+
+func TestEmbedExchangeCrossTenantWorkbenchRejected(t *testing.T) {
+	env := newEmbedEnv(t)
+	other := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"other","name":"Other"}`, env.admin)
+	otherRec := httptest.NewRecorder()
+	env.h.ServeHTTP(otherRec, other)
+	if otherRec.Code != http.StatusCreated {
+		t.Fatalf("other workspace %d %s", otherRec.Code, otherRec.Body.String())
+	}
+
+	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	var minted embed.Minted
+	if err := json.Unmarshal(mintedRec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	ex := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(ex, req)
+	if ex.Code != http.StatusCreated {
+		t.Fatalf("exchange %d %s", ex.Code, ex.Body.String())
+	}
+	var token, csrf string
+	for _, c := range ex.Result().Cookies() {
+		switch c.Name {
+		case session.CookieName:
+			token = c.Value
+		case session.CSRFCookieName:
+			csrf = c.Value
+		}
+	}
+	if token == "" {
+		t.Fatal("missing session")
+	}
+
+	wrong := httptest.NewRecorder()
+	req = identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
+	req.AddCookie(&http.Cookie{Name: session.CookieName, Value: token})
+	req.AddCookie(&http.Cookie{Name: session.CSRFCookieName, Value: csrf})
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "other")
+	env.h.ServeHTTP(wrong, req)
+	if wrong.Code != http.StatusForbidden && wrong.Code != http.StatusBadRequest {
+		t.Fatalf("cross-workbench status %d %s", wrong.Code, wrong.Body.String())
+	}
+
+	okRec := httptest.NewRecorder()
+	req = identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
+	req.AddCookie(&http.Cookie{Name: session.CookieName, Value: token})
+	req.AddCookie(&http.Cookie{Name: session.CSRFCookieName, Value: csrf})
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "ops")
+	env.h.ServeHTTP(okRec, req)
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("matching headers %d %s", okRec.Code, okRec.Body.String())
+	}
+}
+
+func TestEmbedKeyRotationOverlapAndUnknownKid(t *testing.T) {
+	env := newEmbedEnv(t)
+	old := embed.NewEphemeralMaterial()
+	old.KeyID = "retired-kid"
+	jwk := embed.PublicJWK{
+		Kty: embed.KeyType, Crv: embed.Curve, Kid: old.KeyID,
+		X: encodeEmbedPub(old), Use: "sig", Alg: embed.Algorithm, Status: embed.KeyStatusOverlap,
+	}
+	body, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": jwk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(body), env.admin)
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "ops")
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), old.KeyID) {
+		t.Fatal("jwks should publish overlap kid")
+	}
+	if strings.Contains(rec.Body.String(), `"d"`) || strings.Contains(rec.Body.String(), embed.EncodeSeedB64(old.Private)) {
+		t.Fatal("private key leaked from rotate")
+	}
+
+	now := *env.now
+	token, _, err := embed.Mint(old, embed.MintInput{
+		Issuer:       "https://idp.example",
+		Subject:      "admin-1",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		TTL:          embed.DefaultTTL,
+		Audience:     embed.DefaultAudience,
+		Now:          now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(ex, req)
+	if ex.Code != http.StatusCreated {
+		t.Fatalf("overlap exchange %d %s", ex.Code, ex.Body.String())
+	}
+
+	foreign := embed.NewEphemeralMaterial()
+	foreign.KeyID = "unknown-kid"
+	bad, _, err := embed.Mint(foreign, embed.MintInput{
+		Issuer:       "https://idp.example",
+		Subject:      "admin-1",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		TTL:          embed.DefaultTTL,
+		Audience:     embed.DefaultAudience,
+		Now:          now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rej := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, bad.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rej, req)
+	assertProblem(t, rej, http.StatusUnauthorized, CodeUnauthenticated, "")
+}
+
+func encodeEmbedPub(m embed.Material) string {
+	return m.PublicJWKS().Keys[0].X
 }
 
 func tenantID(t *testing.T, env embedEnv) string {

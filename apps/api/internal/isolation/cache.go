@@ -14,8 +14,8 @@ func NewCache() *Cache {
 	return &Cache{data: map[string]string{}}
 }
 
-func cacheKey(workspaceID, key string) string {
-	return workspaceID + "\x00" + key
+func cacheKey(scope Scope, key string) string {
+	return scope.TenantID() + "\x00" + scope.WorkbenchKey() + "\x00" + scope.WorkspaceID() + "\x00" + key
 }
 
 // Get returns the value for key inside scope, or false on a miss.
@@ -25,7 +25,7 @@ func (c *Cache) Get(scope Scope, key string) (string, bool) {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	v, ok := c.data[cacheKey(scope.WorkspaceID(), key)]
+	v, ok := c.data[cacheKey(scope, key)]
 	return v, ok
 }
 
@@ -39,6 +39,6 @@ func (c *Cache) Set(scope Scope, key, value string) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data[cacheKey(scope.WorkspaceID(), key)] = value
+	c.data[cacheKey(scope, key)] = value
 	return nil
 }

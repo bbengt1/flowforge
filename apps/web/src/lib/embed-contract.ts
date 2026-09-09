@@ -1,11 +1,12 @@
 /**
- * E11.1 versioned embed SDK/contract adapter (Chloe embed shell).
+ * E11.1 + E11.2 embed SDK/contract adapter (Chloe embed shell).
  *
- * Aligned to jonny's API on this PR. Paths, claim names, mount prefix,
- * and mint/exchange live here so the embed shell stays in one place.
+ * Paths, claims, mint/exchange, rotate, and tenancy rules live here so
+ * the embed shell stays in one place. E11.2 adds durable jti, overlap
+ * rotation, and (tenant_id, workbench_key) session binding.
  *
- * Relates to #121 / Part of #120. Do not close #121 — this is the
- * contract + mint map; Chloe owns the embed shell UI.
+ * Relates to #122 / #121 / Part of #120. Keep #122 open — Chloe still
+ * has UI pending to honor session.embed / tenant+workbench headers.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -23,6 +24,7 @@ export const EMBED_CATALOG_PATH = "/embed/catalog";
 export const EMBED_JWKS_PATH = "/embed/jwks";
 export const EMBED_MINT_PATH = "/embed/assertions";
 export const EMBED_EXCHANGE_PATH = "/embed/exchange";
+export const EMBED_ROTATE_PATH = "/embed/keys/rotate";
 
 export const EMBED_DEFAULT_TTL_SECONDS = 60;
 export const EMBED_MIN_TTL_SECONDS = 15;
@@ -242,6 +244,7 @@ export const EMBED_PROXY_ROUTES: readonly EmbedProxyRoute[] = [
   { methods: ["GET"], match: (s) => eqSegments(s, ["embed", "jwks"]) },
   { methods: ["POST"], match: (s) => eqSegments(s, ["embed", "assertions"]) },
   { methods: ["POST"], match: (s) => eqSegments(s, ["embed", "exchange"]) },
+  { methods: ["POST"], match: (s) => eqSegments(s, ["embed", "keys", "rotate"]) },
 ];
 
 export function frameAncestorsForPath(
@@ -263,6 +266,7 @@ export function frameAncestorsForPath(
  * Relates to #121 / Part of #120. Keep #121 open.
  */
 export const EMBED_STORY = 121;
+export const EMBED_VALIDATION_STORY = 122;
 export const EMBED_EPIC = 120;
 export const EMBED_API_PR = 125;
 export const EMBED_ROUTE_MAP_SOURCE = "e111-#125" as const;
@@ -330,6 +334,12 @@ export const EMBED_REPLAY_MESSAGE =
 export const EMBED_HOST_DISPLAY_HELP =
   "Host session ≠ FlowForge session. tenant, workbench, host, and displayName on the deep link are display context only until exchange succeeds. They never authorize.";
 
+export const EMBED_TENANCY_HELP =
+  "After exchange, persist tenantId + workbenchKey from the API workspace/session.embed — never from host query. Send X-FlowForge-Tenant-ID + X-FlowForge-Workbench-Key on every later call. A disagreeing host tenant/workbench is HTTP 403. Host tenant is never authorization.";
+
+export const EMBED_ROTATE_HELP =
+  "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil?} with workspace.administer. JWKS publishes active + overlap. Unknown kid fails closed. The embed shell does not rotate keys.";
+
 export type EmbedExchangeBody = {
   assertion: string;
   sdk?: typeof EMBED_SDK;
@@ -356,6 +366,23 @@ export type EmbedVerifiedContext = {
   tokenId: string;
   expiresAt?: string;
 };
+
+export type EmbedSessionBinding = {
+  tenantId: string;
+  workbenchKey: string;
+  workspaceId: string;
+  capabilities: string[];
+};
+
+/** How the embed shell must honor workbench/tenant after E11.2 exchange. */
+export const EMBED_TENANCY_RULES = {
+  persistFromExchangeNotHost: true,
+  sendTenantAndWorkbenchHeaders: true,
+  hostTenantIsNotAuthorization: true,
+  headerMismatchFailsClosed: true,
+  capabilitiesCapSession: true,
+  sessionEmbedIsSourceOfTruth: true,
+} as const;
 
 export type EmbedExchangeResult = {
   context: EmbedVerifiedContext;
@@ -573,8 +600,20 @@ export function parseEmbedVerifiedContext(
     !Array.isArray(record.tenant)
       ? (record.tenant as Record<string, unknown>)
       : {};
+  const session =
+    record.session &&
+    typeof record.session === "object" &&
+    !Array.isArray(record.session)
+      ? (record.session as Record<string, unknown>)
+      : {};
+  const sessionEmbed =
+    session.embed &&
+    typeof session.embed === "object" &&
+    !Array.isArray(session.embed)
+      ? (session.embed as Record<string, unknown>)
+      : {};
   const capabilities = readStringList(
-    record.capabilities ?? assertion.capabilities,
+    record.capabilities ?? sessionEmbed.capabilities ?? assertion.capabilities,
   );
   return {
     audience: readString(assertion.audience, assertion.aud) || EMBED_AUDIENCE,
@@ -582,16 +621,25 @@ export function parseEmbedVerifiedContext(
     tenantId: readString(
       workspace.tenant_id,
       tenant.id,
+      sessionEmbed.tenantId,
+      sessionEmbed.tenant_id,
       assertion.tenantId,
       assertion.tenant_id,
     ),
     tenantSlug: readString(tenant.slug),
     workbenchKey: readString(
       workspace.workbench_key,
+      sessionEmbed.workbenchKey,
+      sessionEmbed.workbench_key,
       assertion.workbenchKey,
       assertion.workbench_key,
     ),
-    workspaceId: readString(workspace.id, assertion.workspaceId),
+    workspaceId: readString(
+      workspace.id,
+      sessionEmbed.workspaceId,
+      sessionEmbed.workspace_id,
+      assertion.workspaceId,
+    ),
     workspaceName: readString(workspace.name),
     capabilities,
     tokenId: readString(assertion.tokenId, assertion.jti),
@@ -656,6 +704,58 @@ function readString(...values: unknown[]): string {
 function optionalString(...values: unknown[]): string | undefined {
   const text = readString(...values);
   return text || undefined;
+}
+
+/** Headers the embed shell must send after exchange. Host query is ignored. */
+export function embedWorkspaceHeaders(ctx: EmbedVerifiedContext): {
+  tenantId: string;
+  workbenchKey: string;
+} {
+  return { tenantId: ctx.tenantId.trim(), workbenchKey: ctx.workbenchKey.trim() };
+}
+
+export function parseSessionEmbedBinding(
+  session: unknown,
+): EmbedSessionBinding | null {
+  if (!session || typeof session !== "object" || Array.isArray(session)) {
+    return null;
+  }
+  const raw = session as Record<string, unknown>;
+  const embed =
+    raw.embed && typeof raw.embed === "object" && !Array.isArray(raw.embed)
+      ? (raw.embed as Record<string, unknown>)
+      : raw;
+  const binding: EmbedSessionBinding = {
+    tenantId: readString(embed.tenantId, embed.tenant_id),
+    workbenchKey: readString(embed.workbenchKey, embed.workbench_key),
+    workspaceId: readString(embed.workspaceId, embed.workspace_id),
+    capabilities: readStringList(embed.capabilities),
+  };
+  if (!binding.tenantId || !binding.workbenchKey) {
+    return null;
+  }
+  return binding;
+}
+
+/** Host-supplied tenant is never authorization. Always false. */
+export function hostTenantIsAuthorization(_value: unknown): false {
+  void _value;
+  return false;
+}
+
+export function embedHeadersMatchSession(
+  headers: { tenantId?: string; workbenchKey?: string },
+  bound: EmbedSessionBinding,
+): boolean {
+  const tenant = headers.tenantId?.trim() ?? "";
+  const bench = headers.workbenchKey?.trim() ?? "";
+  if (tenant && tenant.toLowerCase() !== bound.tenantId.toLowerCase()) {
+    return false;
+  }
+  if (bench && bench !== bound.workbenchKey) {
+    return false;
+  }
+  return true;
 }
 
 function readStringList(value: unknown): string[] {

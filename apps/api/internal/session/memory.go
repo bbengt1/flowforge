@@ -25,7 +25,7 @@ func NewMemory() *Memory {
 }
 
 // Create issues a new session bound to userID.
-func (m *Memory) Create(_ context.Context, userID string, now time.Time, idle, absolute time.Duration) (Issued, error) {
+func (m *Memory) Create(_ context.Context, userID string, now time.Time, idle, absolute time.Duration, opts ...CreateOpts) (Issued, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return Issued{}, ErrInvalid
@@ -47,6 +47,7 @@ func (m *Memory) Create(_ context.Context, userID string, now time.Time, idle, a
 		LastSeenAt:        now,
 		IdleExpiresAt:     now.Add(idle),
 		AbsoluteExpiresAt: now.Add(absolute),
+		Binding:           mergeCreateBinding(opts),
 	}
 	rec.setCSRFHash(hashToken(csrf))
 	m.mu.Lock()

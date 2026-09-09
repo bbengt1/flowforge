@@ -30,6 +30,8 @@ const (
 	EnvAudience       = "EMBED_AUDIENCE"
 	EnvAssertionTTL   = "EMBED_ASSERTION_TTL"
 	EnvIssuer         = "EMBED_ISSUER"
+	EnvIssuerAllow    = "EMBED_ISSUER_ALLOWLIST"
+	EnvOverlapKeys    = "EMBED_OVERLAP_KEYS"
 )
 
 // Required JWT/assertion claims. workspace_id is an optional binding and

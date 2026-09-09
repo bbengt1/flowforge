@@ -15,7 +15,7 @@
 - [SSH engine](reference/ssh-engine.md): controlled remote-server operations.
 - [Script engine](reference/script-engine.md): isolated Python and Go automation.
 - [Technical reference](reference/index.md): authoritative implementation map.
-- [Embed SDK / contract](reference/embed-sdk.md): versioned host assertion and `/embed/v1` deep links.
+- [Embed SDK / contract](reference/embed-sdk.md): versioned host assertion, durable `jti`, key rotation, and `/embed/v1` deep links.
 - [Deployment and local development](deployment.md): startup, safety controls, and recovery rehearsal.
 
 ## Intended audiences

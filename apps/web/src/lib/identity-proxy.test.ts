@@ -92,6 +92,7 @@ describe("resolveIdentityProxyTarget", () => {
       ["GET", ["embed", "jwks"], "/api/v1/embed/jwks"],
       ["POST", ["embed", "assertions"], "/api/v1/embed/assertions"],
       ["POST", ["embed", "exchange"], "/api/v1/embed/exchange"],
+      ["POST", ["embed", "keys", "rotate"], "/api/v1/embed/keys/rotate"],
       ["GET", ["workflows", "catalog"], "/api/v1/workflows/catalog"],
       ["POST", ["workflows", "validate"], "/api/v1/workflows/validate"],
       ["POST", ["workflows", "normalize"], "/api/v1/workflows/normalize"],

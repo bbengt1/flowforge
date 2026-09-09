@@ -55,7 +55,9 @@ type Server struct {
 	sec              Security
 	clock            func() time.Time
 	embedKeys        embed.Material
+	embedRing        *embed.Ring
 	embedJTI         embed.JTIConsumer
+	embedIssuers     []string
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -84,7 +86,9 @@ type Deps struct {
 	Security         Security
 	Now              func() time.Time
 	EmbedKeys        embed.Material
+	EmbedRing        *embed.Ring
 	EmbedJTI         embed.JTIConsumer
+	EmbedIssuers     []string
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -289,7 +293,9 @@ func newServer(d Deps) http.Handler {
 		sec:              d.Security,
 		clock:            clock,
 		embedKeys:        d.EmbedKeys,
+		embedRing:        d.EmbedRing,
 		embedJTI:         d.EmbedJTI,
+		embedIssuers:     append([]string(nil), d.EmbedIssuers...),
 	}
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
@@ -298,8 +304,20 @@ func newServer(d Deps) http.Handler {
 			s.embedKeys = embed.NewEphemeralMaterial()
 		}
 	}
+	if s.embedRing == nil {
+		var store embed.KeyStore
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			store = embed.NewPostgresKeys(p)
+		}
+		s.embedRing = embed.NewRing(s.embedKeys, store)
+		_ = s.embedRing.Refresh(context.Background(), time.Now().UTC())
+	}
 	if s.embedJTI == nil {
-		s.embedJTI = embed.NewMemoryJTI()
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			s.embedJTI = embed.NewPostgresJTI(p)
+		} else {
+			s.embedJTI = embed.NewMemoryJTI()
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -340,6 +358,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/embed/jwks", s.getEmbedJWKS)
 	mux.HandleFunc("POST /api/v1/embed/assertions", s.mintEmbedAssertion)
 	mux.HandleFunc("POST /api/v1/embed/exchange", s.exchangeEmbedAssertion)
+	mux.HandleFunc("POST /api/v1/embed/keys/rotate", s.rotateEmbedKeys)
 	mux.HandleFunc("GET /api/v1/workflows/catalog", s.getWorkflowCatalog)
 	mux.HandleFunc("POST /api/v1/workflows/validate", s.validateWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/normalize", s.normalizeWorkflow)

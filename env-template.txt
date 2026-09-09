@@ -83,3 +83,7 @@ API_INTERNAL_URL=http://api:8080
 # EMBED_SIGNING_KEY_ID=env:EMBED_SIGNING_KEY
 # EMBED_AUDIENCE=flowforge
 # EMBED_ASSERTION_TTL=60s
+# EMBED_ISSUER=
+# EMBED_ISSUER_ALLOWLIST=
+# Previous public JWKS for the overlap window after a signing-key rotate:
+# EMBED_OVERLAP_KEYS=

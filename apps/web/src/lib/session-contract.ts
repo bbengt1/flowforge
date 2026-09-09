@@ -58,6 +58,13 @@ export type SessionView = {
   last_seen_at?: string;
   idle_expires_at?: string;
   absolute_expires_at?: string;
+  /** Present on embed-exchanged sessions. Source of truth for workbench/tenant. */
+  embed?: {
+    tenantId: string;
+    workbenchKey: string;
+    workspaceId: string;
+    capabilities: string[];
+  };
 };
 
 export type SessionPrincipal = {

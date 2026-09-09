@@ -137,7 +137,7 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		Execution: exec,
 		Step:      step,
 		Job:       job,
-		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(ttl), leaseExp),
+		Binding:   buildBinding(scope, exec, step, job, now.Add(ttl), leaseExp),
 		Recovered: recovered,
 	}, nil
 }
@@ -610,7 +610,7 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		Execution: exec,
 		Step:      step,
 		Job:       job,
-		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+		Binding:   buildBinding(scope, exec, step, job, now.Add(DefaultJobBindingTTL), now),
 	}, nil
 }
 
@@ -684,7 +684,7 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 		Execution: exec,
 		Step:      step,
 		Job:       job,
-		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+		Binding:   buildBinding(scope, exec, step, job, now.Add(DefaultJobBindingTTL), now),
 	}, nil
 }
 
@@ -704,7 +704,7 @@ func (p *Postgres) dispatchSnapshotTx(ctx context.Context, tx pgx.Tx, scope isol
 		Execution: exec,
 		Step:      step,
 		Job:       job,
-		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+		Binding:   buildBinding(scope, exec, step, job, now.Add(DefaultJobBindingTTL), now),
 	}, nil
 }
 
@@ -883,7 +883,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		Execution: exec,
 		Step:      step,
 		Job:       job,
-		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, exp, leaseAt),
+		Binding:   buildBinding(scope, exec, step, job, exp, leaseAt),
 	}, nil
 }
 

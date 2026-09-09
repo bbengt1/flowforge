@@ -153,11 +153,11 @@ func (s *Server) getRecordOfKind(w http.ResponseWriter, r *http.Request, id, wan
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "id is required.")
 		return
 	}
-	ws, _, _, perms, ok := s.requireAccess(w, r, user, "")
+	ws, tenant, _, perms, ok := s.requireAccess(w, r, user, "")
 	if !ok {
 		return
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
 	if err != nil {
 		writeIsolationError(w, r, err)
 		return

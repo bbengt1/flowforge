@@ -36,22 +36,25 @@ CORS is an exact allowlist (`CORS_ALLOWED_ORIGINS`). Empty allowlist + foreign `
 
 Session audit event types: `session.created`, `session.refreshed`, `session.revoked`, `session.expired`, `session.csrf_rejected`, `session.origin_rejected`, `session.privilege_denied`, `session.auth_rejected`. Logs and audit rows never include cookie or token values.
 
-## Embed SDK/contract (E11.1)
+## Embed SDK/contract (E11.1 + E11.2)
 
-Host backends mint a short-lived Ed25519 (EdDSA) assertion; the embed shell exchanges it for a normal `ff_session`. Assertions are audience-bound to `flowforge`, single-use (`jti`), and never accepted from a URL. Full claim/route map: [embed SDK](embed-sdk.md). UI adapter: `apps/web/src/lib/embed-contract.ts`. Relates to #121 / Part of #120 — **Keep #121 open** (Chloe owns the embed shell).
+Host backends mint a short-lived Ed25519 (EdDSA) assertion; the embed shell exchanges it for a normal `ff_session` **bound** to `(tenant_id, workbench_key)`. Assertions are audience-bound to `flowforge`, single-use (`jti`, durable atomic consume), and never accepted from a URL. Full claim/route map: [embed SDK](embed-sdk.md). UI adapter: `apps/web/src/lib/embed-contract.ts`. Relates to #122 / Part of #120 — **Keep #122 open** (Chloe still has UI pending).
 
-**UI route map (Chloe):** standalone deep links stay valid. Prefix the same href with `/embed/v1` when mounted. Cookie session after exchange + `credentials: "include"`; `X-CSRF-Token` on later mutations. JSON camelCase on embed bodies (`capabilities`, `tenantId`, `workbenchKey`, `workspaceId`). Host `id` / `workspace_id` on mint is `400`. Do not put `assertion` in the query, hash, or path. Do not rewrite the product shell in this API story.
+**UI map (Chloe):** after exchange, persist tenant + workbench from `workspace` / `session.embed`, not from host query. Send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key` on every later call. Header mismatch is `403`. Host tenant is never authorization. `session.embed.capabilities` caps the session. Cookie session + `X-CSRF-Token` on later mutations. Do not put `assertion` in the query, hash, or path. Do not rewrite the product shell in this API story.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/embed/catalog` | SDK `embed.v1`, claims, standalone/embed routes, key management, E11.2 hooks. No auth. | `200` catalog | — |
-| `GET /api/v1/embed/jwks` | Public Ed25519 keys only. Never `d` / PEM / seed. | `200` `{keys,signingReady}` | — |
-| `POST /api/v1/embed/assertions` | Host mint. Identity headers or session. Workspace from tenant + workbench. `capabilities` ⊂ caller perms. | `201` minted assertion (JWS once) | `400` `401` `403` `503` |
-| `POST /api/v1/embed/exchange` | Validate + consume `jti` (in-process stub) and issue `ff_session`. Body `{assertion,sdk?}`. No CSRF. | `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}` | `400` missing claims `401` audience/expired/signature `409` replay `503` |
+| `GET /api/v1/embed/catalog` | SDK `embed.v1`, claims, standalone/embed routes, key management, completed E11.2 hooks. No auth. | `200` catalog | — |
+| `GET /api/v1/embed/jwks` | Public Ed25519 keys (active + overlap). Never `d` / PEM / seed. | `200` `{keys,signingReady}` | — |
+| `POST /api/v1/embed/assertions` | Host mint with the **active** key. Identity headers or session. Workspace from tenant + workbench. `capabilities` ⊂ caller perms. | `201` minted assertion (JWS once) | `400` `401` `403` `503` |
+| `POST /api/v1/embed/exchange` | Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume `jti`, bind tenancy onto `ff_session`. Body `{assertion,sdk?}`. No CSRF. | `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}` (`session.embed` present) | `400` missing claims `401` audience/expired/nbf/signature/unknown kid `403` tenancy `409` replay `503` |
+| `POST /api/v1/embed/keys/rotate` | Register or retire an overlap public JWK (`workspace.administer`). Mint stays on the active env key. | `200` JWKS | `400` `401` `403` `503` |
 
 Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`. Defaults: subject/issuer = caller; TTL 60s (15s–5m). Assertion claims: `iss`, `aud=flowforge`, `sub`, `nbf`, `exp`, `jti`, `tenant_id`, `workbench_key`, `workspace_id?`, `capabilities`, `sdk=embed.v1`.
 
-E11.2 hooks (fail closed, not fully implemented): durable atomic `jti` consume, active/overlap key rotation, tenancy propagation through jobs/workers/caches/realtime/audit. E11.3 is the CP Ops Portal adapter.
+Rotate body: `{action:"register-overlap"|"retire", publicJwk, overlapUntil?, kid?}`. Ops: register current public JWK as overlap, deploy new `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`, retire after max assertion TTL. `EMBED_OVERLAP_KEYS` is the env form of the same public set.
+
+Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. E11.3 is the CP Ops Portal adapter.
 
 ## Workspace identity and RBAC (E2.1)
 

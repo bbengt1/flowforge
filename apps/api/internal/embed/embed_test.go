@@ -2,6 +2,7 @@ package embed
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 )
 
@@ -227,6 +229,11 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
+	for _, h := range c.Hooks {
+		if h.Status != "ready" {
+			t.Fatalf("hook %s status %s", h.ID, h.Status)
+		}
+	}
 }
 
 func TestLogsNeverIncludeAssertionOrPrivateKey(t *testing.T) {
@@ -272,16 +279,147 @@ func TestBadSignatureRejected(t *testing.T) {
 }
 
 func TestTenancyAndRotationHooksFailClosed(t *testing.T) {
-	if err := TenancyPropagationHook(); err != ErrTenancyUnready {
-		t.Fatalf("tenancy: %v", err)
+	if err := TenancyPropagationHook(); err != nil {
+		t.Fatalf("tenancy hook should be enabled: %v", err)
 	}
 	m := TestMaterial()
-	if err := RotationHook(m, "unknown-kid"); err != ErrRotationUnready {
+	if err := RotationHook(m, "unknown-kid"); err != ErrUnknownKey {
 		t.Fatalf("rotation: %v", err)
 	}
 	if err := RotationHook(m, m.KeyID); err != nil {
 		t.Fatal(err)
 	}
+	overlap := overlapMaterial(t)
+	if err := RotationHook(overlap, overlap.Overlap[0].Kid); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyOverlapKeyAcceptedUnknownKidRejected(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	old := TestMaterial()
+	old.KeyID = "old-kid"
+	active := NewEphemeralMaterial()
+	active.KeyID = "active-kid"
+	active.Overlap = []PublicJWK{{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
+		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap,
+	}}
+	minted, _, err := Mint(old, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Verify(active, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.KeyID != old.KeyID {
+		t.Fatalf("kid %s", got.KeyID)
+	}
+
+	foreign := NewEphemeralMaterial()
+	foreign.KeyID = "foreign"
+	other, _, err := Mint(foreign, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(active, other.Assertion, VerifyOptions{Now: now.Add(time.Second), SkipJTI: true}); err != ErrSignature && err != ErrUnknownKey {
+		t.Fatalf("unknown kid: %v", err)
+	}
+}
+
+func TestIssuerAllowlistFailsClosed(t *testing.T) {
+	m := TestMaterial()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	minted, _, err := Mint(m, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://other.example"},
+	}); err != ErrIssuer {
+		t.Fatalf("allowlist: %v", err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPropagateTenancyRejectsHostTenantAlone(t *testing.T) {
+	bound := SessionTenancy{
+		TenantID:     "11111111-1111-1111-1111-111111111111",
+		WorkbenchKey: "ops",
+		WorkspaceID:  "22222222-2222-2222-2222-222222222222",
+		Capabilities: []string{"workflow.view"},
+	}
+	if _, err := PropagateTenancy(bound, authz.WorkspaceClaim{TenantID: bound.TenantID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PropagateTenancy(bound, authz.WorkspaceClaim{
+		TenantID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", WorkbenchKey: "ops",
+	}); err != ErrTenancyMismatch {
+		t.Fatalf("cross-tenant: %v", err)
+	}
+	if _, err := PropagateTenancy(bound, authz.WorkspaceClaim{
+		TenantID: bound.TenantID, WorkbenchKey: "other",
+	}); err != ErrTenancyMismatch {
+		t.Fatalf("cross-workbench: %v", err)
+	}
+	if _, err := PropagateTenancy(bound, authz.WorkspaceClaim{TenantSlug: "acme"}); err != ErrTenancyMismatch {
+		t.Fatalf("tenant slug alone: %v", err)
+	}
+	if _, err := PropagateTenancy(SessionTenancy{}, authz.WorkspaceClaim{TenantID: bound.TenantID, WorkbenchKey: "ops"}); err != ErrTenancyUnready {
+		t.Fatalf("unbound: %v", err)
+	}
+}
+
+func TestJTIConsumeRace(t *testing.T) {
+	jti := NewMemoryJTI()
+	id := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	exp := time.Now().UTC().Add(time.Minute)
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			errs <- jti.Consume(context.Background(), id, exp)
+		}()
+	}
+	var ok, replay int
+	for i := 0; i < 2; i++ {
+		err := <-errs
+		switch err {
+		case nil:
+			ok++
+		case ErrReplay:
+			replay++
+		default:
+			t.Fatalf("unexpected %v", err)
+		}
+	}
+	if ok != 1 || replay != 1 {
+		t.Fatalf("ok=%d replay=%d", ok, replay)
+	}
+}
+
+func overlapMaterial(t *testing.T) Material {
+	t.Helper()
+	old := NewEphemeralMaterial()
+	old.KeyID = "overlap-kid"
+	m := TestMaterial()
+	m.Overlap = []PublicJWK{{
+		Kty: KeyType, Crv: Curve, X: encodePublicX(old.Public), Kid: old.KeyID,
+		Use: "sig", Alg: Algorithm, Status: KeyStatusOverlap,
+	}}
+	return m
+}
+
+func encodePublicX(pub ed25519.PublicKey) string {
+	return base64.RawURLEncoding.EncodeToString(pub)
 }
 
 func mustSignRaw(t *testing.T, m Material, c Claims) string {

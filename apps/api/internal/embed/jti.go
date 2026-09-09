@@ -1,22 +1,22 @@
 package embed
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
-// JTIConsumer is the E11.2 atomic one-time token-id hook.
+// JTIConsumer is the atomic one-time token-id hook.
 //
-// E11.1 ships an in-process MemoryJTI that rejects replay in the same
-// process. It is not durable across pods or restarts. A production
-// Postgres consume (INSERT … ON CONFLICT / compare-and-set with TTL)
-// belongs to E11.2 and must fail closed if the store is unavailable.
+// Production uses PostgresJTI (INSERT … ON CONFLICT DO NOTHING with TTL).
+// MemoryJTI remains for process-local tests. Consume must fail closed if
+// the store is unavailable.
 type JTIConsumer interface {
-	Consume(jti string, expiresAt time.Time) error
+	Consume(ctx context.Context, jti string, expiresAt time.Time) error
 }
 
-// MemoryJTI is the E11.1 fail-closed stub: first use succeeds, replay
-// returns ErrReplay. Entries expire after the assertion TTL.
+// MemoryJTI is the fail-closed in-process consumer: first use succeeds,
+// replay returns ErrReplay. Entries expire after the assertion TTL.
 type MemoryJTI struct {
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -28,7 +28,10 @@ func NewMemoryJTI() *MemoryJTI {
 }
 
 // Consume marks jti used until expiresAt. Replay fails closed.
-func (s *MemoryJTI) Consume(jti string, expiresAt time.Time) error {
+func (s *MemoryJTI) Consume(ctx context.Context, jti string, expiresAt time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return ErrStoreUnavailable
+	}
 	if s == nil {
 		return ErrStoreUnavailable
 	}
@@ -41,12 +44,15 @@ func (s *MemoryJTI) Consume(jti string, expiresAt time.Time) error {
 	if s.seen == nil {
 		s.seen = map[string]time.Time{}
 	}
+	// Presence is replay regardless of wall-clock TTL. Verify already
+	// enforces nbf/exp against the request clock; GC must not drop a
+	// consumed jti that is still valid under a mocked test clock.
 	if _, ok := s.seen[jti]; ok {
 		return ErrReplay
 	}
-	// Time bounds are enforced by Verify. E11.2 durable consume adds TTL GC.
+	now := time.Now().UTC()
 	if expiresAt.IsZero() {
-		expiresAt = time.Now().UTC().Add(DefaultTTL)
+		expiresAt = now.Add(DefaultTTL)
 	}
 	s.seen[jti] = expiresAt.UTC()
 	return nil
@@ -62,8 +68,8 @@ func trimJTI(jti string) string {
 	return jti
 }
 
-// RotationHook documents E11.2 active/overlap rotation. E11.1 verifies
-// the active key only and returns ErrRotationUnready for overlap-only kids.
+// RotationHook reports whether kid is the active key or an explicit
+// overlap verification key. Unknown kids fail closed.
 func RotationHook(m Material, kid string) error {
 	if kid == "" || kid == m.KeyID {
 		return nil
@@ -71,12 +77,5 @@ func RotationHook(m Material, kid string) error {
 	if overlapHasKid(m, kid) {
 		return nil
 	}
-	return ErrRotationUnready
-}
-
-// TenancyPropagationHook is the E11.2 fail-closed stub. E11.1 validates
-// (tenant_id, workbench_key) and optional workspace binding, then leaves
-// session workspace attachment to existing request headers.
-func TenancyPropagationHook() error {
-	return ErrTenancyUnready
+	return ErrUnknownKey
 }

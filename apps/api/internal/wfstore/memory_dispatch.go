@@ -110,7 +110,7 @@ func (m *Memory) ClaimJob(_ context.Context, scope isolation.Scope, now time.Tim
 	}, now)
 
 	wf := m.workflows[chosen.record.WorkflowID]
-	binding := buildBinding(scope.WorkspaceID(), chosen.record, step, job, now.Add(ttl), leaseExp)
+	binding := buildBinding(scope, chosen.record, step, job, now.Add(ttl), leaseExp)
 	return DispatchResult{
 		Execution: cloneExecution(chosen.record, wf.record),
 		Step:      cloneStep(step),
@@ -560,7 +560,7 @@ func (m *Memory) mutateWait(scope isolation.Scope, now time.Time, jobID string, 
 		Execution: cloneExecution(exec.record, wf.record),
 		Step:      cloneStep(step),
 		Job:       cloneJob(job),
-		Binding:   buildBinding(scope.WorkspaceID(), exec.record, step, job, now.Add(DefaultJobBindingTTL), leaseExp),
+		Binding:   buildBinding(scope, exec.record, step, job, now.Add(DefaultJobBindingTTL), leaseExp),
 	}, nil
 }
 
@@ -614,7 +614,7 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 		Execution: cloneExecution(exec.record, wf.record),
 		Step:      cloneStep(step),
 		Job:       cloneJob(job),
-		Binding:   buildBinding(scope.WorkspaceID(), exec.record, step, job, now.Add(DefaultJobBindingTTL), leaseExp),
+		Binding:   buildBinding(scope, exec.record, step, job, now.Add(DefaultJobBindingTTL), leaseExp),
 	}, nil
 }
 

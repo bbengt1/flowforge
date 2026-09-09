@@ -192,7 +192,7 @@ func (s *Server) decideApproval(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, ws.TenantID, ws.WorkbenchKey)
 	if err != nil {
 		writeIdentityError(w, r, err)
 		return

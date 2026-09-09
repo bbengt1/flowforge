@@ -1,12 +1,14 @@
-# Embed SDK / contract (E11.1)
+# Embed SDK / contract (E11.1 + E11.2)
 
 Versioned contract for mounting the canonical FlowForge UI in a host
 application and exchanging a short-lived, asymmetric-signed, audience-bound,
-single-use assertion.
+single-use assertion. E11.2 completes independent validation, durable one-time
+`jti` consumption, active/overlap key rotation, and `(tenant_id, workbench_key)`
+propagation.
 
 Chloe owns the embed shell UI. This document is the route and field map.
-Adapter: `apps/web/src/lib/embed-contract.ts`. Relates to #121 / Part of #120 —
-**Keep #121 open**.
+Adapter: `apps/web/src/lib/embed-contract.ts`. Relates to #122 / Part of #120 —
+**Keep #122 open** (Chloe still has UI pending). Relates to #121 for the shell.
 
 ## SDK
 
@@ -24,16 +26,16 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 
 | Claim | Required | Notes |
 | --- | --- | --- |
-| `iss` | yes | Host issuer (minting caller issuer by default) |
+| `iss` | yes | Host issuer. Optional `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` fail closed |
 | `aud` | yes | Must be `flowforge` |
 | `sub` | yes | End-user external subject |
-| `nbf` | yes | Unix seconds |
+| `nbf` | yes | Unix seconds. Not-yet-valid fails closed |
 | `exp` | yes | Unix seconds |
-| `jti` | yes | Unique token id (UUID) |
-| `tenant_id` | yes | Context; never authorization by itself |
-| `workbench_key` | yes | With `tenant_id` is the workspace identity |
+| `jti` | yes | Unique token id (UUID). Atomic one-time consume with TTL; replay is `409` |
+| `tenant_id` | yes | Context; never authorization by itself. Bound onto the session |
+| `workbench_key` | yes | With `tenant_id` is the workspace identity. Bound onto the session |
 | `workspace_id` | no | Binding only. Must match server resolution. Never the lookup key |
-| `capabilities` | yes | FlowForge permission keys; mint requires a subset of the caller |
+| `capabilities` | yes | FlowForge permission keys; mint requires a subset of the caller. Caps the embed session |
 | `sdk` | yes | `embed.v1` |
 | `display_name` | no | Display context until the API verifies the subject |
 | `host` | no | Minting caller issuer when minting for another subject |
@@ -48,8 +50,25 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    (same-origin `/api/v1/embed/exchange` or `/api/control-plane/embed/exchange`).
    **Never** put the assertion in a URL, `localStorage`, or logs.
 4. Response sets `ff_session` / `ff_csrf` and returns workspace + capabilities.
-   Navigate to the embed mount (`/embed/v1/…`).
+   The session record stores `(tenant_id, workbench_key, workspace_id, capabilities)`
+   as `session.embed`. Navigate to the embed mount (`/embed/v1/…`).
 5. Subsequent API calls use the cookie session + `X-CSRF-Token` like standalone.
+   The UI **must** send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`
+   from the **exchanged** workspace / `session.embed`, never from host query.
+   A disagreeing host tenant/workbench is `403`. Host tenant is never
+   authorization.
+
+## How the UI must honor workbench/tenant (Chloe)
+
+| Rule | Behavior |
+| --- | --- |
+| Persist from exchange | After `201`, keep `workspace.tenant_id` + `workspace.workbench_key` (or `session.embed`) in tab `sessionStorage`. Drop host query `tenant` / `workbench` as authority. |
+| Send both headers | Every later `/api/v1` / `/api/control-plane` call sends tenant id (or slug) **and** workbench key matching the bound session. |
+| Host is display only | Deep-link `tenant`, `workbench`, `host`, `displayName` stay unverified chrome until exchange. They never authorize. |
+| Mismatch fails closed | If the host later supplies a different tenant or workbench, the API returns `403`. Do not retry with the host value. |
+| Capabilities cap | `session.embed.capabilities` is the minted set. Membership cannot escalate past it. Hide UI actions the session cannot perform. |
+| GET `/session` | When `session.embed` is present, treat it as the source of truth over host route state. |
+| Configuration / jobs / history | Lookups, job tickets, caches, realtime, history, and audit are scoped by the server-derived workspace that matches that pair. Do not send `X-FlowForge-Workspace-ID` as the lookup key. |
 
 ## Stable routes / deep links
 
@@ -91,15 +110,32 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | Method | Path | Auth | CSRF | Notes |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
-| `GET` | `/api/v1/embed/jwks` | none | no | Public keys only |
-| `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | Session issue |
+| `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + overlap) |
+| `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | Validate + atomic `jti` consume + bind tenancy onto `ff_session` |
+| `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `workspace.administer` | yes if `ff_session` | Register or retire an overlap public JWK |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
 
-Exchange JSON: `{assertion, sdk?}`. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
+Exchange JSON: `{assertion, sdk?}`. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{tenantId,workbenchKey,workspaceId,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
 
-Failures: missing claims `400`; wrong audience / expired / bad signature `401`; replayed `jti` `409`; missing signing key `503`. Problem details never echo the JWS or private keys.
+Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil?, kid?}`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
+
+Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown kid `401`; tenancy mismatch `403`; replayed `jti` `409`; missing signing key or JTI store `503`. Problem details never echo the JWS or private keys.
+
+## Key rotation (ops)
+
+Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`). Verify accepts the active key and any **explicit overlap** public key. Unknown `kid` fails closed.
+
+### Recommended rotate procedure
+
+1. Generate a new Ed25519 seed. Keep the current public JWK (`GET /embed/jwks` active key).
+2. `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK>, overlapUntil:<now+max TTL>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key before restart.
+3. Deploy `EMBED_SIGNING_KEY` + `EMBED_SIGNING_KEY_ID` for the new key. Restart API pods.
+4. JWKS now lists `status=active` (new) and `status=overlap` (old). In-flight assertions (≤5m) still verify.
+5. After the overlap window, `POST /embed/keys/rotate` `{action:"retire", kid:<old>}` and/or remove the old key from `EMBED_OVERLAP_KEYS`.
+
+`EMBED_OVERLAP_KEYS` accepts `{"keys":[…]}` or a bare JWK array. Only public OKP/Ed25519/EdDSA keys. Private `d` is ignored and never stored.
 
 ## Key management
 
@@ -107,20 +143,24 @@ Failures: missing claims `400`; wrong audience / expired / bad signature `401`; 
 | --- | --- | --- |
 | `EMBED_SIGNING_KEY` | ephemeral process key | Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
-| `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` or `ephemeral:process` | `kid` |
+| `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` or `ephemeral:process` | Active `kid` |
+| `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
-| `EMBED_ISSUER` | empty | Reserved for operators; mint `iss` defaults to the caller issuer |
+| `EMBED_ISSUER` | empty | Optional single allowed `iss` |
+| `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty accepts any `ValidIssuer` |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Space/comma exact origins allowed to frame `/embed/v1` only. `*` / `null` ignored. Standalone stays `frame-ancestors 'none'` |
 
 Production must set a stable `EMBED_SIGNING_KEY`. Public JWKS never includes
-`d`, PEM, or seed. Logs redact `assertion`, `token`, and `private_key`.
+`d`, PEM, or seed. Logs redact `assertion`, `token`, and `private_key`. Audit
+events record `jti`, `kid`, `issuer`, `subject`, `tenant_id`, `workbench_key`,
+and `workspace_id` only.
 
-## E11.2 / E11.3 hooks (fail closed)
+## Completed E11.2 hooks
 
-| Hook | E11.1 status | E11.2/E11.3 |
+| Hook | Status | Fail closed |
 | --- | --- | --- |
-| `jti.consume` | In-process `MemoryJTI` rejects replay in the same process | Atomic durable consume with TTL |
-| `key.rotation` | Active key only; unknown `kid` fails closed | Active + explicit overlap verification keys |
-| `tenancy.propagation` | Validates `(tenant_id, workbench_key)` and optional binding; session stays identity-only | Propagate through UI, API, jobs, workers, caches, realtime, history, audit |
-| Portal adapter | Out of scope | E11.3 CP Ops Portal add-in |
+| `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
+| `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. |
+| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. |
+| Portal adapter | out of scope | E11.3 CP Ops Portal add-in |

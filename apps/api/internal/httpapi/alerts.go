@@ -131,7 +131,7 @@ func (s *Server) emitAlert(r *http.Request, scope isolation.Scope, in opsalert.S
 }
 
 func (s *Server) emitAuthorizationDenied(r *http.Request, user identity.User, ws identity.Workspace, action string) {
-	scope, err := isolation.Authorize(ws.ID, user.ID)
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, ws.TenantID, ws.WorkbenchKey)
 	if err != nil {
 		return
 	}

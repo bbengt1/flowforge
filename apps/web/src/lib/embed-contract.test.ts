@@ -18,7 +18,14 @@ import {
   EMBED_REJECTED_ASSERTION_HEADER,
   EMBED_ROUTE_MAP_SOURCE,
   EMBED_STORY,
+  EMBED_VALIDATION_STORY,
+  EMBED_ROTATE_PATH,
+  EMBED_TENANCY_RULES,
   assertionFromURL,
+  embedHeadersMatchSession,
+  embedWorkspaceHeaders,
+  hostTenantIsAuthorization,
+  parseSessionEmbedBinding,
   buildEmbedExchangeBody,
   embedApiPath,
   embedAuthFailureMessage,
@@ -49,6 +56,7 @@ describe("embed-contract", () => {
     assert.equal(EMBED_ALGORITHM, "EdDSA");
     assert.equal(embedApiPath(EMBED_MINT_PATH), "/api/v1/embed/assertions");
     assert.equal(embedApiPath(EMBED_EXCHANGE_PATH), "/api/v1/embed/exchange");
+    assert.equal(embedApiPath(EMBED_ROTATE_PATH), "/api/v1/embed/keys/rotate");
     assert.equal(EMBED_API_PREFIX, "/api/v1");
     assert.equal(EMBED_DEFAULT_TTL_SECONDS, 60);
     assert.ok(EMBED_REQUIRED_CLAIMS.includes("jti"));
@@ -78,6 +86,7 @@ describe("embed-contract", () => {
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/exchange"), false);
     assert.equal(csrfRequiredFor("POST", "/api/control-plane/embed/exchange"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/assertions"), true);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/embed/keys/rotate"), true);
   });
 
   it("keeps standalone frame-ancestors none and allowlists only embed mounts", () => {
@@ -206,5 +215,34 @@ describe("embed-contract", () => {
     assert.equal(display.tenant, "acme");
     assert.equal(display.unverified, true);
     assert.match(embedAuthFailureMessage({ status: 409, code: "replay" }), /single-use/);
+  });
+
+  it("honors E11.2 session embed tenancy and never trusts host tenant", () => {
+    assert.equal(EMBED_VALIDATION_STORY, 122);
+    assert.equal(EMBED_TENANCY_RULES.hostTenantIsNotAuthorization, true);
+    assert.equal(hostTenantIsAuthorization("acme"), false);
+    const bound = parseSessionEmbedBinding({
+      embed: {
+        tenantId: "ten-1",
+        workbenchKey: "ops",
+        workspaceId: "ws-1",
+        capabilities: ["workflow.view"],
+      },
+    });
+    assert.equal(bound?.workbenchKey, "ops");
+    assert.equal(embedHeadersMatchSession({ tenantId: "ten-1", workbenchKey: "ops" }, bound!), true);
+    assert.equal(embedHeadersMatchSession({ tenantId: "ten-1", workbenchKey: "other" }, bound!), false);
+    const headers = embedWorkspaceHeaders({
+      audience: "flowforge",
+      sdk: "embed.v1",
+      tenantId: "ten-1",
+      tenantSlug: "acme",
+      workbenchKey: "ops",
+      workspaceId: "ws-1",
+      workspaceName: "Ops",
+      capabilities: ["workflow.view"],
+      tokenId: "jti-1",
+    });
+    assert.deepEqual(headers, { tenantId: "ten-1", workbenchKey: "ops" });
   });
 });

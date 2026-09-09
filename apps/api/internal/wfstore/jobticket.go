@@ -18,6 +18,7 @@ const (
 	// Value is standard/raw-URL base64 or 64 hex characters (32 bytes).
 	EnvJobBindingSecret = "JOB_BINDING_SECRET"
 	jobTicketVersion    = "v1"
+	jobTicketVersionV2  = "v2"
 )
 
 // NewJobBindingKey returns a random 32-byte HMAC key. Used when the
@@ -104,6 +105,25 @@ func ParseJobTicket(key []byte, token string) (JobBinding, error) {
 }
 
 func encodeTicketPayload(b JobBinding) string {
+	if strings.TrimSpace(b.TenantID) != "" || strings.TrimSpace(b.WorkbenchKey) != "" {
+		return strings.Join([]string{
+			jobTicketVersionV2,
+			b.WorkspaceID,
+			b.TenantID,
+			b.WorkbenchKey,
+			b.ExecutionID,
+			b.JobID,
+			b.StepID,
+			b.WorkflowID,
+			b.WorkflowVersionID,
+			b.WorkflowDigest,
+			b.PolicyDigest,
+			strconv.FormatInt(b.FencingToken, 10),
+			b.ExpiresAt.UTC().Format(time.RFC3339Nano),
+			b.LeaseExpiresAt.UTC().Format(time.RFC3339Nano),
+			b.CorrelationID,
+		}, "\n")
+	}
 	return strings.Join([]string{
 		jobTicketVersion,
 		b.WorkspaceID,
@@ -123,33 +143,64 @@ func encodeTicketPayload(b JobBinding) string {
 
 func decodeTicketPayload(payload string) (JobBinding, error) {
 	parts := strings.Split(payload, "\n")
-	if len(parts) != 13 || parts[0] != jobTicketVersion {
+	switch {
+	case len(parts) == 15 && parts[0] == jobTicketVersionV2:
+		token, err := strconv.ParseInt(parts[11], 10, 64)
+		if err != nil || token < 1 {
+			return JobBinding{}, ErrJobBinding
+		}
+		expires, err := time.Parse(time.RFC3339Nano, parts[12])
+		if err != nil {
+			return JobBinding{}, ErrJobBinding
+		}
+		lease, err := time.Parse(time.RFC3339Nano, parts[13])
+		if err != nil {
+			return JobBinding{}, ErrJobBinding
+		}
+		return JobBinding{
+			WorkspaceID:       parts[1],
+			TenantID:          parts[2],
+			WorkbenchKey:      parts[3],
+			ExecutionID:       parts[4],
+			JobID:             parts[5],
+			StepID:            parts[6],
+			WorkflowID:        parts[7],
+			WorkflowVersionID: parts[8],
+			WorkflowDigest:    parts[9],
+			PolicyDigest:      parts[10],
+			FencingToken:      token,
+			ExpiresAt:         expires,
+			LeaseExpiresAt:    lease,
+			CorrelationID:     parts[14],
+		}, nil
+	case len(parts) == 13 && parts[0] == jobTicketVersion:
+		token, err := strconv.ParseInt(parts[9], 10, 64)
+		if err != nil || token < 1 {
+			return JobBinding{}, ErrJobBinding
+		}
+		expires, err := time.Parse(time.RFC3339Nano, parts[10])
+		if err != nil {
+			return JobBinding{}, ErrJobBinding
+		}
+		lease, err := time.Parse(time.RFC3339Nano, parts[11])
+		if err != nil {
+			return JobBinding{}, ErrJobBinding
+		}
+		return JobBinding{
+			WorkspaceID:       parts[1],
+			ExecutionID:       parts[2],
+			JobID:             parts[3],
+			StepID:            parts[4],
+			WorkflowID:        parts[5],
+			WorkflowVersionID: parts[6],
+			WorkflowDigest:    parts[7],
+			PolicyDigest:      parts[8],
+			FencingToken:      token,
+			ExpiresAt:         expires,
+			LeaseExpiresAt:    lease,
+			CorrelationID:     parts[12],
+		}, nil
+	default:
 		return JobBinding{}, ErrJobBinding
 	}
-	token, err := strconv.ParseInt(parts[9], 10, 64)
-	if err != nil || token < 1 {
-		return JobBinding{}, ErrJobBinding
-	}
-	expires, err := time.Parse(time.RFC3339Nano, parts[10])
-	if err != nil {
-		return JobBinding{}, ErrJobBinding
-	}
-	lease, err := time.Parse(time.RFC3339Nano, parts[11])
-	if err != nil {
-		return JobBinding{}, ErrJobBinding
-	}
-	return JobBinding{
-		WorkspaceID:       parts[1],
-		ExecutionID:       parts[2],
-		JobID:             parts[3],
-		StepID:            parts[4],
-		WorkflowID:        parts[5],
-		WorkflowVersionID: parts[6],
-		WorkflowDigest:    parts[7],
-		PolicyDigest:      parts[8],
-		FencingToken:      token,
-		ExpiresAt:         expires,
-		LeaseExpiresAt:    lease,
-		CorrelationID:     parts[12],
-	}, nil
 }
