@@ -128,6 +128,19 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 	if _, leaked := def["kubeconfig"]; leaked {
 		t.Fatal("nested kubeconfig value must be stripped")
 	}
+	arrLeak := RedactSpec(map[string]any{
+		"schema": map[string]any{"default": map[string]any{"password": []any{"hunter2"}}},
+	})
+	if def2, _ := arrLeak["schema"].(map[string]any)["default"].(map[string]any); def2["password"] != nil {
+		t.Fatal("non-string secret values must be stripped outside properties")
+	}
+	origNS := []string{"prod"}
+	cloned := RedactSpec(map[string]any{"allowedNamespaces": origNS})
+	gotNS := cloned["allowedNamespaces"].([]string)
+	gotNS[0] = "mutated"
+	if origNS[0] != "prod" {
+		t.Fatal("typed slices must be cloned")
+	}
 	prop, _ := nested["schema"].(map[string]any)["properties"].(map[string]any)
 	if prop["kubeconfig"] == nil {
 		t.Fatal("schema property named kubeconfig must be kept")

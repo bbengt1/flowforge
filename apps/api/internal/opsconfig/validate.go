@@ -973,9 +973,9 @@ func containsFold(items []string, want string) bool {
 	return false
 }
 
-// Secret-bearing field names. Nested JSON Schema *property names* (objects
-// under properties.password, etc.) are kept; string values at those keys
-// (schema.default.kubeconfig, leaked tokens) are stripped.
+// Secret-bearing field names. Keys under JSON Schema `properties` /
+// `$defs` / `definitions` are property names and are kept. Anywhere else,
+// those keys are stripped regardless of value type.
 var secretSpecKeys = map[string]struct{}{
 	"kubeconfig": {}, "privatekey": {}, "private_key": {}, "passphrase": {},
 	"token": {}, "secret": {}, "password": {}, "authorization": {},
@@ -987,7 +987,11 @@ func redactMap(in map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret && isSecretValue(v) {
+		if isSchemaNameMap(k) {
+			out[k] = cloneSchemaNameMap(v)
+			continue
+		}
+		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret {
 			continue
 		}
 		out[k] = cloneJSONValue(v)
@@ -995,9 +999,25 @@ func redactMap(in map[string]any) map[string]any {
 	return out
 }
 
-func isSecretValue(v any) bool {
-	s, ok := v.(string)
-	return ok && strings.TrimSpace(s) != ""
+func isSchemaNameMap(key string) bool {
+	switch strings.ToLower(key) {
+	case "properties", "$defs", "definitions":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneSchemaNameMap(v any) any {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return cloneJSONValue(v)
+	}
+	out := make(map[string]any, len(obj))
+	for name, schema := range obj {
+		out[name] = cloneJSONValue(schema)
+	}
+	return out
 }
 
 func cloneJSONValue(v any) any {
@@ -1010,6 +1030,10 @@ func cloneJSONValue(v any) any {
 			out[i] = cloneJSONValue(item)
 		}
 		return out
+	case []string:
+		return append([]string(nil), t...)
+	case []int:
+		return append([]int(nil), t...)
 	default:
 		return t
 	}

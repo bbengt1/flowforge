@@ -199,4 +199,7 @@ func TestISODurationSeconds(t *testing.T) {
 	if _, err := isoDurationSeconds("P999999999999999999D"); err == nil {
 		t.Fatal("expected overflow rejection")
 	}
+	if _, err := ParseISODuration("P213504D"); err == nil {
+		t.Fatal("expected time.Duration overflow rejection")
+	}
 }

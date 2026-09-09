@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -688,6 +689,9 @@ func ParseISODuration(s string) (time.Duration, error) {
 	sec, err := isoDurationSeconds(s)
 	if err != nil {
 		return 0, err
+	}
+	if sec > math.MaxInt64/int64(time.Second) {
+		return 0, fmt.Errorf("duration is out of range")
 	}
 	return time.Duration(sec) * time.Second, nil
 }
