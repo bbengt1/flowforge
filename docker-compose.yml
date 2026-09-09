@@ -71,6 +71,9 @@ services:
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
       CREDENTIAL_KEK: ${CREDENTIAL_KEK:-}
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-}
+      ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
+      ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
+      ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.11.0
+  version: 0.12.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -1334,6 +1334,452 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /executions/{executionId}/artifacts:
+    get:
+      operationId: listExecutionArtifacts
+      summary: List artifact metadata for an execution
+      description: |
+        Returns encrypted-at-rest artifact **metadata** only (`{items}`).
+        Never includes `storageRef`, envelope keys, bucket names, or
+        download URLs. Query `stepId`, `kind`. Requires `execution.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: kind
+          in: query
+          schema: {type: string, enum: [log, output, file]}
+      responses:
+        "200":
+          description: Artifact metadata list
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifactList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: uploadExecutionArtifact
+      summary: Upload an execution artifact
+      description: |
+        Scans bytes **before** persist. Rejects PEM keys, kubeconfig, Secret
+        manifests, AWS secret-key material, `secret`/`restricted`
+        classification, and host-supplied locators (`id`, `workspaceId`,
+        `storageRef`, `url`, `bucket`, `key`). Cookie callers require
+        `X-CSRF-Token`. Requires `workflow.execute`. Missing KEK is `503`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadArtifactRequest"
+      responses:
+        "201":
+          description: Artifact metadata created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /executions/{executionId}/steps/{stepId}/artifacts:
+    post:
+      operationId: uploadStepArtifact
+      summary: Upload an artifact bound to a step
+      description: Same scan/encryption rules as `POST /executions/{executionId}/artifacts`. Requires `workflow.execute` and CSRF for cookie callers.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadArtifactRequest"
+      responses:
+        "201":
+          description: Artifact metadata created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /executions/{executionId}/steps/{stepId}/logs:
+    get:
+      operationId: getStepLogs
+      summary: Read bounded step logs
+      description: |
+        Returns a window of log lines from stored log artifacts. Query
+        `limit` (default 200, max 200), `offset`, `maxBytes` (default 16KiB,
+        max 256KiB). Tokens in stored logs are already redacted. Requires
+        `execution.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200}
+        - name: offset
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: maxBytes
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Bounded log window
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StepLogs"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: uploadStepLogs
+      summary: Upload bounded step logs as an artifact
+      description: |
+        Same scan/encryption as artifact upload. Default `kind` is `log`.
+        Requires `workflow.execute` and CSRF for cookie callers.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadArtifactRequest"
+      responses:
+        "201":
+          description: Log artifact created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /artifacts/{artifactId}:
+    get:
+      operationId: getProductArtifact
+      summary: Get artifact metadata
+      description: |
+        Metadata only. No storage locators or credentials. Distinct from
+        the E2.2 isolation hook `GET /workspace/artifacts/{id}`. Requires
+        `execution.view`. Expired artifacts without a legal hold are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: artifactId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Artifact metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifact"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /artifacts/{artifactId}/downloads:
+    post:
+      operationId: createArtifactDownload
+      summary: Mint a short-lived download grant
+      description: |
+        Re-evaluates `execution.view` and retention on every call. Returns
+        a same-origin `href` (`/api/v1/artifact-downloads/{grantId}`) —
+        never a durable public URL or bucket credential. Default TTL 60s
+        (`ARTIFACT_DOWNLOAD_TTL`), max 5m. CSRF required for cookie callers.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: artifactId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyDispatchRequest"
+      responses:
+        "201":
+          description: Grant minted
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDownloadEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /artifact-downloads/{grantId}:
+    get:
+      operationId: downloadArtifactGrant
+      summary: Stream artifact bytes through a grant
+      description: |
+        Authorization is re-evaluated on every request (workspace
+        membership, `execution.view`, artifact retention, grant expiry).
+        Session cookie or identity headers required. `Cache-Control:
+        no-store`. Expired grants and expired artifacts are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: grantId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Artifact bytes
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Cache-Control:
+              schema: {type: string}
+              description: Always `no-store`
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /artifacts/{artifactId}/legal-hold:
+    post:
+      operationId: setArtifactLegalHold
+      summary: Place or release a legal hold
+      description: |
+        Requires `workspace.administer` and CSRF for cookie callers.
+        Placement requires a non-empty `reason` and writes
+        `artifact.legal_hold.placed` to the audit log. Release writes
+        `artifact.legal_hold.released`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: artifactId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalHoldRequest"
+      responses:
+        "200":
+          description: Updated artifact metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionArtifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /retention/purge:
+    post:
+      operationId: purgeRetention
+      summary: Purge expired executions and artifacts
+      description: |
+        Requires `workspace.administer` and CSRF for cookie callers.
+        Deletes artifact metadata and object payloads. Artifacts (and
+        their parent executions) under legal hold are skipped. Writes
+        `artifact.retention.purged` / `artifact.retention.held`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyDispatchRequest"
+      responses:
+        "200":
+          description: Purge summary
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPurgeResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /jobs/claim:
     post:
       operationId: claimJob
@@ -4794,6 +5240,10 @@ components:
         steps:
           type: array
           items: {$ref: "#/components/schemas/ExecutionStep"}
+        artifacts:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionArtifact"}
+          description: Artifact metadata only (E5.3). Never includes storage locators or credentials.
         jobs:
           type: array
           items: {$ref: "#/components/schemas/ExecutionJob"}
@@ -4825,8 +5275,9 @@ components:
         policySnapshot: {type: object, additionalProperties: true}
         targetSnapshot: {type: object, additionalProperties: true}
         input: {type: object, additionalProperties: true}
-        output: {type: object, additionalProperties: true}
+        output: {type: object, additionalProperties: true, description: "Redacted, size-bounded step output (E5.3)."}
         error: {type: object, additionalProperties: true}
+        outputTruncated: {type: boolean, description: "True when output or error maps were truncated for the response."}
         createdAt: {type: string, format: date-time}
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
@@ -4922,6 +5373,95 @@ components:
       required: [recovered]
       properties:
         recovered: {type: integer}
+    ExecutionArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, executionId, kind, filename, contentType, digest, sizeBytes, contentClassification, redacted, expiresAt, createdAt, updatedAt, legalHold]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        executionStepId: {type: string, format: uuid}
+        kind: {type: string, enum: [log, output, file]}
+        filename: {type: string}
+        contentType: {type: string}
+        digest: {type: string, description: "sha256:<hex> of the scanned payload"}
+        sizeBytes: {type: integer, format: int64}
+        contentClassification: {type: string, enum: [public, internal, confidential]}
+        redacted: {type: boolean}
+        expiresAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        legalHold: {type: boolean}
+        legalHoldReason: {type: string}
+        legalHoldBy: {type: string, format: uuid}
+        legalHoldAt: {type: string, format: date-time}
+      description: |
+        Artifact metadata. The API never returns `storageRef`, envelope
+        ciphertext, DEK material, bucket names, or durable public URLs.
+    ExecutionArtifactList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionArtifact"}
+    UploadArtifactRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [log, output, file]}
+        filename: {type: string}
+        contentType: {type: string, enum: [text/plain, application/json, application/octet-stream]}
+        contentClassification: {type: string, enum: [public, internal, confidential]}
+        content: {type: string, description: "UTF-8 artifact body. Scanned before persist."}
+        contentBase64: {type: string, description: "Optional base64 body when content is binary."}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+        storageRef: {type: string, description: "Rejected if present"}
+        url: {type: string, description: "Rejected if present"}
+        bucket: {type: string, description: "Rejected if present"}
+        key: {type: string, description: "Rejected if present"}
+    ArtifactDownload:
+      type: object
+      additionalProperties: false
+      required: [id, artifactId, expiresAt, href, method]
+      properties:
+        id: {type: string, format: uuid}
+        artifactId: {type: string, format: uuid}
+        expiresAt: {type: string, format: date-time}
+        href: {type: string, description: "Same-origin path `/api/v1/artifact-downloads/{id}`."}
+        method: {type: string, enum: [GET]}
+    ArtifactDownloadEnvelope:
+      type: object
+      required: [download]
+      properties:
+        download: {$ref: "#/components/schemas/ArtifactDownload"}
+    StepLogs:
+      type: object
+      required: [lines, offset, nextOffset, truncated, maxBytes]
+      properties:
+        lines: {type: array, items: {type: string}}
+        offset: {type: integer}
+        nextOffset: {type: integer}
+        truncated: {type: boolean}
+        maxBytes: {type: integer}
+    LegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [hold]
+      properties:
+        hold: {type: boolean}
+        reason: {type: string, description: "Required when placing a hold."}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetentionPurgeResult:
+      type: object
+      required: [purged, held, executions, audits]
+      properties:
+        purged: {type: integer, description: "Artifact metadata+payload rows deleted"}
+        held: {type: integer, description: "Expired artifacts skipped because of legal hold"}
+        executions: {type: integer, description: "Expired executions purged"}
+        audits: {type: integer, description: "Expired audit rows purged"}
     EmptyDispatchRequest:
       type: object
       properties:

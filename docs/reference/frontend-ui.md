@@ -331,11 +331,11 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E5.1 execution history (Chloe UI)
 
-`/executions` is Chloe's minimal workspace-scoped history operator for #46, wired to jonny's #51 map. This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay and artifacts stay out (E5.3 / E6). Cancel/retry UX is E5.2 below.
+`/executions` is Chloe's minimal workspace-scoped history operator for #46, wired to jonny's #51 map. This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay stays out (E6). Artifact list/download is E5.3 below (API on `main` via this map; do not invent nested `/artifacts/{id}/download` under the execution). Cancel/retry UX is E5.2 below.
 
 - **Contract adapter:** paths live in `apps/web/src/lib/execution-contract.ts`. Exact #51 routes only — do not invent collections or query params.
 - **List:** workspace `GET /executions` (`workflowId`, `status`, `limit`) and per-workflow `GET /workflows/{id}/executions` (`status`, `limit`). Cards show id, workflow, version pin, status, started/finished, correlation id, and idempotency key.
-- **Detail:** `GET /executions/{id}` (or `GET /workflows/{id}/executions/{id}`) includes redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`. Optional extras: `…/steps`, `…/jobs`, `…/audit-events`. Workspace audit is `GET /audit-events` (`resourceType`, `resourceId`, `action`) — not E2.2 `GET /workspace/audit-events`. Nested 403 fails closed.
+- **Detail:** `GET /executions/{id}` (or `GET /workflows/{id}/executions/{id}`) includes redacted `input`, bounded `steps` (`outputTruncated`), `jobs`, `pins`, `auditEvents`, and `artifacts` metadata. Optional extras: `…/steps`, `…/jobs`, `…/audit-events`, `…/artifacts`. Workspace audit is `GET /audit-events` (`resourceType`, `resourceId`, `action`) — not E2.2 `GET /workspace/audit-events`. Nested 403 fails closed.
 - **Redaction:** API secrets appear as `[redacted]`. Unexpected secret field names are stripped and treated as a contract bug.
 - **Indeterminate:** status badge + border + text — color is never the only signal. Do not imply an unverified remote action did not occur.
 - **Idempotency:** `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey?, input?}` with CSRF. `201` new run; `200` + `replayed: true` reuses the original; same key + different input is `409` `conflict`. Do not retry 409 with a new key unless the operator intends a new run.
@@ -346,7 +346,7 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E5.2 cancel / status UX (Chloe)
 
-Jonny's dispatch APIs are on `main` via **#53** (Relates to #47 / Part of #45 — do not close #47 alone). Do **not** stack the UI on an API feature branch. Do not rewrite worker `/jobs/*` into the browser. Artifact downloads stay E5.3. This UI does **not** change `apps/api`.
+Jonny's dispatch APIs are on `main` via **#53** (Relates to #47 / Part of #45 — do not close #47 alone). Do **not** stack the UI on an API feature branch. Do not rewrite worker `/jobs/*` into the browser. Artifact downloads are E5.3 below. This UI does **not** change `apps/api`.
 
 **UI route map** — cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`.
 
@@ -368,6 +368,30 @@ Suggested UI flow:
 **Implemented (#52):** paths live in `apps/web/src/lib/execution-contract.ts`. Status polls `GET /executions/{id}` only — never `/jobs/*`. Cancel is CSRF + fail-closed 403. Retry is hidden for `indeterminate` and provider nodes. E5.1 list/detail, `[redacted]`, and idempotent start stay intact.
 
 **Proxies:** `/api/control-plane/executions/{id}/cancel`, `.../retry`, `.../steps/{stepId}/retry`. CSRF on POST; preserve `application/problem+json`.
+
+## E5.3 artifacts (Chloe UI)
+
+Jonny's artifact APIs land on `main` (Relates to #48 / Part of #45 — do not close #48 alone). Do **not** stack the UI on an API feature branch. This UI does **not** change `apps/api`. Cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` / `storageRef` / `url` / `bucket` / `key` on write bodies is `400`. Cross-workspace UUIDs are `404`. Never persist a download `href`. Isolation hook `GET /workspace/artifacts/{id}` is not the product API.
+
+**Canonical routes** (retarget any placeholder `/executions/{id}/artifacts/{id}/download` to these):
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/executions/{id}` | `execution.view` | no | Poll `steps[]` (`outputTruncated`) + `artifacts[]` metadata |
+| `GET` | `/api/v1/executions/{id}/artifacts` | `execution.view` | no | `{items}` · query `stepId`, `kind` |
+| `GET` | `/api/v1/executions/{id}/steps/{stepId}/logs` | `execution.view` | no | `{lines,offset,nextOffset,truncated,maxBytes}` |
+| `GET` | `/api/v1/artifacts/{id}` | `execution.view` | no | One metadata row |
+| `POST` | `/api/v1/artifacts/{id}/downloads` | `execution.view` | yes | `{}` → `{download:{href,method,expiresAt}}` · TTL 60s |
+| `GET` | `/api/v1/artifact-downloads/{grantId}` | `execution.view` | no | Stream bytes · re-auth every request · `Cache-Control: no-store` |
+
+Suggested UI flow:
+
+1. Detail already from E5.1. Render `artifacts[]` as name / digest / size / classification / retention. Strip any unexpected `storageRef`, envelope, or URL fields.
+2. Logs: `GET …/steps/{stepId}/logs`. Paginate with `nextOffset` while `truncated` is true.
+3. Download: mint a grant with CSRF, `GET` the returned `href` with cookies, then discard the `href`. On `404`, mint again. On `403`, fail closed.
+4. Legal hold / purge stay admin-only (`POST /artifacts/{id}/legal-hold`, `POST /retention/purge`) — not required for the viewer.
+
+**Proxies:** `/api/control-plane/executions/{id}/artifacts`, `.../steps/{stepId}/logs`, `/artifacts/{id}`, `.../downloads`, `/artifact-downloads/{grantId}`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Grant hrefs and artifact bytes are never stored in `localStorage`.
 
 ## Initial implementation components
 

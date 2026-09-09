@@ -241,6 +241,45 @@ func isActiveExecution(status string) bool {
 	}
 }
 
+// BoundStep truncates redacted output/error maps for API responses.
+func BoundStep(step ExecutionStep) ExecutionStep {
+	out, truncated := boundObject(step.Output, MaxStepOutputBytes)
+	step.Output = out
+	errObj, errTrunc := boundObject(step.Error, MaxStepOutputBytes)
+	step.Error = errObj
+	step.OutputTruncated = truncated || errTrunc
+	return step
+}
+
+func BoundSteps(steps []ExecutionStep) []ExecutionStep {
+	if steps == nil {
+		return []ExecutionStep{}
+	}
+	out := make([]ExecutionStep, len(steps))
+	for i, step := range steps {
+		out[i] = BoundStep(step)
+	}
+	return out
+}
+
+func boundObject(v map[string]any, maxBytes int) (map[string]any, bool) {
+	if v == nil {
+		return map[string]any{}, false
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return map[string]any{}, false
+	}
+	if len(raw) <= maxBytes {
+		return cloneObject(v), false
+	}
+	return map[string]any{
+		"truncated": true,
+		"summary":   "output exceeded the API bound and was omitted",
+		"bytes":     len(raw),
+	}, true
+}
+
 func isTerminalExecution(status string) bool {
 	switch status {
 	case ExecutionSucceeded, ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate, ExecutionPinned:

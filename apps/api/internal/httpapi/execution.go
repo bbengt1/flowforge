@@ -66,7 +66,7 @@ func (s *Server) listExecutionSteps(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.ExecutionStep]{Items: items})
+	writeJSON(w, http.StatusOK, listResponse[wfstore.ExecutionStep]{Items: wfstore.BoundSteps(items)})
 }
 
 func (s *Server) getExecutionStep(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +79,7 @@ func (s *Server) getExecutionStep(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, step)
+	writeJSON(w, http.StatusOK, wfstore.BoundStep(step))
 }
 
 func (s *Server) listExecutionJobs(w http.ResponseWriter, r *http.Request) {
@@ -173,12 +173,18 @@ func (s *Server) writeExecutionDetail(w http.ResponseWriter, r *http.Request, sc
 	if audits == nil {
 		audits = []wfstore.AuditEvent{}
 	}
+	arts, err := s.workflows.ListArtifacts(r.Context(), scope, wfstore.ArtifactListFilter{ExecutionID: exec.ID})
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
 	writeJSON(w, status, executionResponse{
 		Execution:   exec,
 		Pins:        pins,
-		Steps:       steps,
+		Steps:       wfstore.BoundSteps(steps),
 		Jobs:        jobs,
 		AuditEvents: audits,
+		Artifacts:   publicArtifacts(arts),
 	})
 }
 

@@ -334,9 +334,15 @@ func (p *Postgres) PurgeExpired(ctx context.Context, scope isolation.Scope, now 
 	}
 	defer tx.Rollback(ctx)
 	tag, err := tx.Exec(ctx, `
-		DELETE FROM executions
-		WHERE retention_until <= $1
-		  AND status IN ('queued', 'pinned', 'succeeded', 'failed', 'canceled', 'indeterminate')
+		DELETE FROM executions e
+		WHERE e.retention_until <= $1
+		  AND e.status IN ('queued', 'pinned', 'succeeded', 'failed', 'canceled', 'indeterminate')
+		  AND NOT EXISTS (
+			SELECT 1 FROM execution_artifacts a
+			WHERE a.workspace_id = e.workspace_id
+			  AND a.execution_id = e.id
+			  AND a.legal_hold = true
+		  )
 	`, now)
 	if err != nil {
 		return 0, 0, mapDBErr(err)

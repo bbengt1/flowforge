@@ -7,10 +7,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -86,6 +88,7 @@ type executionResponse struct {
 	Steps       []wfstore.ExecutionStep `json:"steps"`
 	Jobs        []wfstore.ExecutionJob  `json:"jobs"`
 	AuditEvents []wfstore.AuditEvent    `json:"auditEvents"`
+	Artifacts   []wfstore.Artifact      `json:"artifacts"`
 }
 
 type exportResponse struct {
@@ -658,6 +661,16 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The authenticated job binding was rejected.")
 	case errors.Is(err, wfstore.ErrNotClaimable), errors.Is(err, wfstore.ErrAlreadyTerminal), errors.Is(err, wfstore.ErrRetryNotAllowed), errors.Is(err, wfstore.ErrCanceled):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The job or execution cannot be updated in its current state.")
+	case errors.Is(err, wfstore.ErrUnsafeArtifact):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Unsafe artifact content was rejected before upload.")
+	case errors.Is(err, wfstore.ErrArtifactExpired), errors.Is(err, wfstore.ErrGrantExpired):
+		WriteProblem(w, r, http.StatusNotFound, CodeNotFound, "Not Found", "The requested resource was not found.")
+	case errors.Is(err, wfstore.ErrLegalHold):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Artifact is under legal hold.")
+	case errors.Is(err, artifact.ErrNotFound):
+		WriteProblem(w, r, http.StatusNotFound, CodeNotFound, "Not Found", "The requested resource was not found.")
+	case errors.Is(err, vault.ErrKeyUnavailable):
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Artifact encryption key is not configured.")
 	case errors.Is(err, wfstore.ErrInvalid), errors.Is(err, wfstore.ErrNoScope):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The request is not valid.")
 	case errors.Is(err, wfstore.ErrStoreUnavailable):

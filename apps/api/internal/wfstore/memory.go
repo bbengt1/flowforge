@@ -33,12 +33,24 @@ type memAudit struct {
 	record      AuditEvent
 }
 
+type memArtifact struct {
+	workspaceID string
+	record      Artifact
+}
+
+type memGrant struct {
+	workspaceID string
+	record      DownloadGrant
+}
+
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
 	mu         sync.Mutex
 	workflows  map[string]memWorkflow  // id -> row
 	versions   map[string][]Version    // workflow id -> versions
 	executions map[string]memExecution // execution id -> row
+	artifacts  map[string]memArtifact
+	grants     map[string]memGrant
 	audits     []memAudit
 }
 
@@ -48,6 +60,8 @@ func NewMemory() *Memory {
 		workflows:  map[string]memWorkflow{},
 		versions:   map[string][]Version{},
 		executions: map[string]memExecution{},
+		artifacts:  map[string]memArtifact{},
+		grants:     map[string]memGrant{},
 	}
 }
 
@@ -670,7 +684,15 @@ func (m *Memory) PurgeExpired(_ context.Context, scope isolation.Scope, now time
 		if !isTerminalExecution(exec.record.Status) && exec.record.Status != ExecutionQueued {
 			continue
 		}
+		if m.executionHasLegalHoldLocked(id) {
+			continue
+		}
 		delete(m.executions, id)
+		for artID, art := range m.artifacts {
+			if art.workspaceID == scope.WorkspaceID() && art.record.ExecutionID == id {
+				delete(m.artifacts, artID)
+			}
+		}
 		execs++
 	}
 	kept := m.audits[:0]

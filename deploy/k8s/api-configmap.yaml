@@ -15,3 +15,7 @@ data:
   # CORS_ALLOWED_ORIGINS: "https://app.example.com"
   SESSION_IDLE_TIMEOUT: "30m"
   SESSION_ABSOLUTE_TIMEOUT: "12h"
+  # Encrypted artifact objects on the container /tmp emptyDir (read-only root).
+  ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"
+  ARTIFACT_DOWNLOAD_TTL: "60s"
+  ARTIFACT_MAX_BYTES: "1048576"
