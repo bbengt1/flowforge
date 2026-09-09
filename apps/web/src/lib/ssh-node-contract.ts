@@ -1,9 +1,8 @@
 /**
  * Single retarget adapter for Chloe's E8.2 ssh.run node config
- * (library + wizard). Prefer GET /workflows/catalog + GET /ssh/catalog
- * `nodes[]` / `retry` / `errors[]` / `permissions[]` when present.
- * Fallback entries stay marked `contract-fallback` until jonny posts
- * the isolated ssh.run node map.
+ * (library + wizard). Wired to jonny's **#88** map on `main`:
+ * GET /workflows/catalog (`allowedWith` / `policy` / `redaction`)
+ * + GET /ssh/catalog (`nodes[]` / `retry` / `errors[]` / `isolation`).
  *
  * Consume existing SSH-target + command-profile list + POST …/select
  * (E8.1). Do not invent routes. Do not change `apps/api`.
@@ -35,9 +34,9 @@ import { isCatalogImplementationEnabled } from "./workflow.ts";
 
 export const SSH_NODE_STORY = 83;
 export const SSH_NODE_EPIC = 81;
-/** Jonny's isolated ssh.run node map is not on main yet. */
-export const SSH_NODE_API_PR = 0;
-export const SSH_NODE_ROUTE_MAP_SOURCE = "e82-contract-fallback" as const;
+/** Jonny's isolated ssh.run map on main. */
+export const SSH_NODE_API_PR = 88;
+export const SSH_NODE_ROUTE_MAP_SOURCE = "e82-#88" as const;
 
 export const SSH_RUN_NODE_TYPE = "ssh.run" as const;
 
@@ -45,6 +44,8 @@ export const SSH_DEFAULT_TIMEOUT_SECONDS = 60;
 export const SSH_MIN_TIMEOUT_SECONDS = 1;
 export const SSH_MAX_TIMEOUT_SECONDS = 3600;
 export const SSH_DEFAULT_RETRY_MAX_ATTEMPTS = 0;
+export const SSH_MAX_RETRY_ATTEMPTS = 5;
+export const SSH_DEFAULT_USERNAME = "flowforge";
 
 /** Never user-controlled. Stripped from wizard `with` before YAML insert. */
 export const SSH_FORBIDDEN_WITH_KEYS = [
@@ -64,11 +65,15 @@ export const SSH_FORBIDDEN_WITH_KEYS = [
 ] as const;
 
 export const SSH_NODE_POLICY_NOTES = [
-  "Execution uses ephemeral keys, verified known-host fingerprints, and host/address allowlists. Those gates are server-enforced.",
+  "Ephemeral credential handle only. Vault privateKey is parsed into an in-memory signer. Handle JSON is {id, sshTargetId, credentialId?, username?, expiresAt} — never on the API, UI, or logs.",
+  "Known-host fingerprint must match the pinned hostKeyFingerprint. Mismatch fails closed. Host-key auto-accept is disabled and is not a toggle.",
+  "Every resolved address must be in the target allowedAddresses (and policy allowlist when present). A DNS name without an allowlist is denied.",
+  "The worker dials only the verified ip:port. Dialing the original hostname is denied (anti DNS-rebinding / SSRF).",
+  "Key-only authentication. Password, keyboard-interactive, agent forwarding, port forwarding, proxy commands, and interactive shells are hard-denied. The UI does not offer those toggles.",
+  "Non-root remote account (default flowforge). root / toor / administrator are denied.",
   "This is not an interactive terminal. Choose a published command profile with typed parameters — no arbitrary user shell.",
-  "YAML stores sshTargetId, commandProfileId, parameter values, timeoutSeconds, and retryPolicy only. Never keys, passwords, host fingerprints, connection settings, or raw logs.",
-  "Password authentication, agent forwarding, port forwarding, proxy commands, and host-key auto-acceptance are denied. The UI does not offer those toggles.",
-  "Automatic retries default to zero. retrySafe is a read-only profile flag; bounded retry is E8.3.",
+  "YAML stores sshTargetId, commandProfileId, parameter values, timeoutSeconds, retryPolicy, and optional policyId only. Never keys, passwords, host fingerprints, connection settings, or raw logs.",
+  "Retries default to zero. maxAttempts>0 requires a retrySafe profile and is still not auto-retried in E8.2. Lease loss is indeterminate (E8.3 stub) — never a blind retry.",
   "Selectors fail closed on HTTP 403. Only published workspace SSH targets and command profiles are listed.",
 ] as const;
 
@@ -91,10 +96,16 @@ export const SSH_FREEFORM_SHELL_MESSAGE =
   "ssh.run is not a free-form shell. Use a published command profile with typed parameters.";
 
 export const SSH_RETRY_ZERO_MESSAGE =
-  "Automatic retries stay at zero until E8.3. retrySafe is a profile flag only.";
+  "Retries default to zero. E8.2 never blindly re-runs a command.";
+
+export const SSH_RETRY_DENIED_MESSAGE =
+  "retryPolicy.maxAttempts>0 requires a retrySafe command profile. E8.2 still does not automatically retry; lease loss is indeterminate.";
+
+export const SSH_INDETERMINATE_HELP =
+  "Lease loss after dispatch is indeterminate (E8.3 stub). The engine never blindly repeats the command.";
 
 export const SSH_CONTRACT_FALLBACK_NODE_HELP =
-  "Using the marked E8.2 contract-fallback ssh.run map because GET /ssh/catalog nodes[] is not available yet. Retarget ssh-node-contract.ts when jonny posts the node map.";
+  "Using the marked e82-#88 ssh.run map because GET /ssh/catalog isolation/nodes[] was unavailable. Collections stay on /ssh-targets and /command-profiles.";
 
 export type SshNodeWithField = CatalogWithField & {
   label: string;
@@ -127,6 +138,24 @@ export type SshNodeRetryRules = {
   defaultMaxAttempts: number;
   retrySafeFlag: boolean;
   semantics: string;
+  note?: string;
+};
+
+export type SshIsolationRules = {
+  authMethods: readonly string[];
+  passwordAuth: boolean;
+  agentForwarding: boolean;
+  portForwarding: boolean;
+  proxyCommand: boolean;
+  hostKeyAutoAccept: boolean;
+  interactiveShell: boolean;
+  knownHostVerification: string;
+  resolveThenAllowlist: boolean;
+  connectVerifiedAddressOnly: boolean;
+  ephemeralCredentialHandle: boolean;
+  nonRootRemoteAccount: boolean;
+  defaultUsername: string;
+  privateKeyNeverExported: boolean;
 };
 
 export type SshNodeCatalogSource =
@@ -140,6 +169,7 @@ export type SshNodeCatalog = {
   errors: SshNodeErrorShape[];
   retry: SshNodeRetryRules;
   permissions: string[];
+  isolation?: SshIsolationRules;
   notes?: string;
 };
 
@@ -155,6 +185,24 @@ export const DEFAULT_SSH_RETRY_RULES: SshNodeRetryRules = {
   defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   retrySafeFlag: true,
   semantics: "E8.3",
+  note: "Retries default to zero. E8.2 never blindly re-runs. A profile may set retrySafe=true and retryPolicy.maxAttempts>0; E8.3 implements verification before any retry. Lease loss is indeterminate.",
+};
+
+export const DEFAULT_SSH_ISOLATION: SshIsolationRules = {
+  authMethods: ["publickey"],
+  passwordAuth: false,
+  agentForwarding: false,
+  portForwarding: false,
+  proxyCommand: false,
+  hostKeyAutoAccept: false,
+  interactiveShell: false,
+  knownHostVerification: "fingerprint-match-fail-closed",
+  resolveThenAllowlist: true,
+  connectVerifiedAddressOnly: true,
+  ephemeralCredentialHandle: true,
+  nonRootRemoteAccount: true,
+  defaultUsername: SSH_DEFAULT_USERNAME,
+  privateKeyNeverExported: true,
 };
 
 export const SSH_NODE_PERMISSIONS = [
@@ -168,7 +216,7 @@ export const DEFAULT_SSH_NODE_ERRORS: SshNodeErrorShape[] = [
   {
     code: "parameter-rejected",
     status: 400,
-    meaning: "Parameter values must match the pinned command-profile schema.",
+    meaning: "A parameter is missing, extra, or outside schema constraints.",
   },
   {
     code: "interpolation-denied",
@@ -176,9 +224,49 @@ export const DEFAULT_SSH_NODE_ERRORS: SshNodeErrorShape[] = [
     meaning: "Raw shell interpolation is denied. The reviewed renderer owns quoting.",
   },
   {
+    code: "retry-denied",
+    status: 400,
+    meaning: "retryPolicy.maxAttempts>0 requires retrySafe. E8.2 still does not retry.",
+  },
+  {
     code: "forbidden",
     status: 403,
-    meaning: "Unauthorized or cross-workspace SSH targets and profiles fail closed.",
+    meaning: "Missing workflow.execute, ssh.run, sshTarget.use, or commandProfile.use.",
+  },
+  {
+    code: "host-key-mismatch",
+    status: 403,
+    meaning: "Presented host key does not match the pinned fingerprint. Auto-accept is disabled.",
+  },
+  {
+    code: "address-denied",
+    status: 403,
+    meaning: "A resolved address was outside allowedAddresses, or a DNS name had no allowlist.",
+  },
+  {
+    code: "auth-denied",
+    status: 403,
+    meaning: "Password or keyboard-interactive authentication was requested. Key-only auth is required.",
+  },
+  {
+    code: "forwarding-denied",
+    status: 403,
+    meaning: "Agent forwarding, port forwarding, proxy commands, or an interactive shell was requested.",
+  },
+  {
+    code: "root-denied",
+    status: 403,
+    meaning: "Remote account is root (or another denied privileged name).",
+  },
+  {
+    code: "handle-forbidden",
+    status: 403,
+    meaning: "Credential handle missing, expired, or unusable. privateKey is never accepted on the node.",
+  },
+  {
+    code: "indeterminate",
+    status: 409,
+    meaning: "Lease was lost after dispatch. E8.2 does not retry; E8.3 adds profile verification.",
   },
 ];
 
@@ -249,6 +337,12 @@ export function sshRetryRules(
   return catalog?.retry ?? DEFAULT_SSH_RETRY_RULES;
 }
 
+export function sshIsolationRules(
+  catalog?: SshNodeCatalog | null,
+): SshIsolationRules {
+  return catalog?.isolation ?? DEFAULT_SSH_ISOLATION;
+}
+
 export function sshNodeWithFields(
   type: string,
   sshCatalog?: SshNodeCatalog | null,
@@ -294,7 +388,7 @@ export function sshNodeWithFields(
       label: "Timeout (seconds)",
       controlHint: "number",
       defaultValue: SSH_DEFAULT_TIMEOUT_SECONDS,
-      description: `Bounded command timeout (${SSH_MIN_TIMEOUT_SECONDS}–${SSH_MAX_TIMEOUT_SECONDS}). Default ${SSH_DEFAULT_TIMEOUT_SECONDS}.`,
+      description: `Bounded connect + command timeout (${SSH_MIN_TIMEOUT_SECONDS}–${SSH_MAX_TIMEOUT_SECONDS}). Default ${SSH_DEFAULT_TIMEOUT_SECONDS}.`,
     },
     {
       name: "retryPolicy",
@@ -302,9 +396,16 @@ export function sshNodeWithFields(
       label: "Retry policy",
       controlHint: "text",
       defaultValue: defaultSshRetryPolicy(),
-      readOnly: true,
       advanced: true,
-      description: `${SSH_RETRY_ZERO_MESSAGE} Catalog retry.defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
+      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe and is still not auto-retried. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
+    },
+    {
+      name: "policyId",
+      kind: "uuid",
+      label: "Policy",
+      controlHint: "uuid",
+      advanced: true,
+      description: "Optional published kind=ssh policy UUID. Revalidated immediately before connect.",
     },
   ];
 }
@@ -338,8 +439,8 @@ export function overlaySshFields(
         enum: field.enum?.length ? field.enum : base?.enum,
         description: field.description || base?.description || "",
         label: base?.label || field.name,
-        advanced: base?.advanced,
-        readOnly: field.name === "retryPolicy" || base?.readOnly,
+        advanced: field.name === "retryPolicy" || field.name === "policyId" || base?.advanced,
+        readOnly: base?.readOnly,
         controlHint,
         defaultValue:
           field.name === "retryPolicy"
@@ -468,8 +569,18 @@ export function validateSshNodeConfig(
   const retryPolicy = retryPolicyFromWith(withValue);
   if (retryPolicy.error) {
     errors.push(retryPolicy.error);
-  } else if (retryPolicy.maxAttempts !== SSH_DEFAULT_RETRY_MAX_ATTEMPTS) {
-    errors.push(SSH_RETRY_ZERO_MESSAGE);
+  } else if (
+    retryPolicy.maxAttempts > SSH_DEFAULT_RETRY_MAX_ATTEMPTS &&
+    !context.profileRetrySafe
+  ) {
+    errors.push(SSH_RETRY_DENIED_MESSAGE);
+  }
+
+  if (withValue.policyId !== undefined && withValue.policyId !== "") {
+    const policyId = String(withValue.policyId).trim();
+    if (!UUID.test(policyId)) {
+      errors.push("policyId must be a workspace UUID.");
+    }
   }
 
   const parameters = asParameterObject(withValue.parameters);
@@ -620,18 +731,27 @@ export function parseSshNodeCatalog(raw: unknown): SshNodeCatalog {
         ? (rec.retry as Record<string, unknown>)
         : {};
   const permissions = stringList(nested.permissions ?? rec.permissions);
+  const isolation = parseIsolation(nested.isolation ?? rec.isolation);
   const hasNodeMap = nodes.length > 0;
   const hasRetry =
     retryRaw.defaultMaxAttempts !== undefined ||
     retryRaw.retrySafeFlag !== undefined ||
-    typeof retryRaw.semantics === "string";
-  if (!hasNodeMap && !hasRetry && errors.length === 0 && permissions.length === 0) {
+    typeof retryRaw.semantics === "string" ||
+    typeof retryRaw.note === "string";
+  const hasIsolation = isolation !== undefined;
+  if (
+    !hasNodeMap &&
+    !hasRetry &&
+    errors.length === 0 &&
+    permissions.length === 0 &&
+    !hasIsolation
+  ) {
     return { ...SSH_NODE_CONTRACT_FALLBACK_CATALOG };
   }
   const source: SshNodeCatalogSource =
     rec.sshEngine && typeof rec.sshEngine === "object"
       ? "ops-config-catalog"
-      : hasNodeMap
+      : hasNodeMap || hasIsolation
         ? "ssh-catalog"
         : "contract-fallback";
   return {
@@ -645,11 +765,13 @@ export function parseSshNodeCatalog(raw: unknown): SshNodeCatalog {
           : SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
       retrySafeFlag: retryRaw.retrySafeFlag !== false,
       semantics: String(retryRaw.semantics ?? "").trim() || "E8.3",
+      note: String(retryRaw.note ?? "").trim() || DEFAULT_SSH_RETRY_RULES.note,
     },
     permissions: permissions.length ? permissions : [...SSH_NODE_PERMISSIONS],
+    isolation: isolation ?? DEFAULT_SSH_ISOLATION,
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (hasNodeMap ? undefined : SSH_CONTRACT_FALLBACK_NODE_HELP),
+      (hasNodeMap || hasIsolation ? undefined : SSH_CONTRACT_FALLBACK_NODE_HELP),
   };
 }
 
@@ -660,7 +782,7 @@ export const SSH_NODE_CONTRACT_FALLBACK_CATALOG: SshNodeCatalog = {
       type: SSH_RUN_NODE_TYPE,
       title: "Run command profile",
       description:
-        "Run a published SSH command profile on a published workspace target. Not an interactive terminal.",
+        "Run an approved command profile on a pinned SSH target. Uses an ephemeral key handle, verified known hosts, DNS/address allowlists, key-only auth, and a bounded non-interactive command.",
       permissions: [...SSH_NODE_PERMISSIONS],
       requiredWith: ["sshTargetId", "commandProfileId"],
       allowedWith: [],
@@ -673,6 +795,7 @@ export const SSH_NODE_CONTRACT_FALLBACK_CATALOG: SshNodeCatalog = {
   errors: DEFAULT_SSH_NODE_ERRORS,
   retry: DEFAULT_SSH_RETRY_RULES,
   permissions: [...SSH_NODE_PERMISSIONS],
+  isolation: DEFAULT_SSH_ISOLATION,
   notes: SSH_CONTRACT_FALLBACK_NODE_HELP,
 };
 
@@ -701,8 +824,8 @@ function sshPolicy(): CatalogNodePolicy {
     retrySafe: false,
     sideEffects: true,
     idempotent: false,
-    cancellation: "stop-wait",
-    verification: "none",
+    cancellation: "abort-command",
+    verification: "e8.3-stub",
     defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   };
 }
@@ -755,14 +878,14 @@ const SSH_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
     phase: CATALOG_PHASE_CORE,
     title: "Run command profile",
     description:
-      "Run a published SSH command profile on a published workspace target using ephemeral keys and known-host verification. Not an interactive terminal.",
+      "Run an approved command profile on a pinned SSH target. Uses an ephemeral key handle, verified known hosts, DNS/address allowlists, key-only auth, and a bounded non-interactive command.",
     inputs: [
-      inherit("parameters", "object", false, "Optional typed profile parameters."),
+      inherit("parameters", "object", false, "Optional typed parameters matching the pinned profile schema."),
     ],
     outputs: [
-      inherit("result", "object", false, "Redacted result object."),
-      inherit("stdout", "string", false, "Redacted command output."),
-      inherit("exitCode", "integer", false, "Process exit code."),
+      inherit("result", "object", false, "Redacted run summary. Never includes privateKey."),
+      inherit("stdout", "string", false, "Bounded, redacted command stdout."),
+      inherit("exitCode", "integer", false, "Remote process exit code."),
     ],
     requiredWith: ["sshTargetId", "commandProfileId"],
     allowedWith: fieldsToAllowed(SSH_RUN_NODE_TYPE),
@@ -772,9 +895,8 @@ const SSH_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
       "sshTargetId",
       "commandProfileId",
       "parameterNames",
-      "timeoutSeconds",
-      "retryPolicy",
       "exitCode",
+      "connectedAddress",
       "correlationId",
     ]),
   },
@@ -864,13 +986,55 @@ function retryPolicyFromWith(withValue: Record<string, unknown>): {
     return { maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS };
   }
   const maxAttempts = Number(rec.maxAttempts);
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 0) {
+  if (
+    !Number.isInteger(maxAttempts) ||
+    maxAttempts < SSH_DEFAULT_RETRY_MAX_ATTEMPTS ||
+    maxAttempts > SSH_MAX_RETRY_ATTEMPTS
+  ) {
     return {
       maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
-      error: "retryPolicy.maxAttempts must be a non-negative integer.",
+      error: `retryPolicy.maxAttempts must be between ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS} and ${SSH_MAX_RETRY_ATTEMPTS}.`,
     };
   }
   return { maxAttempts };
+}
+
+function parseIsolation(raw: unknown): SshIsolationRules | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const rec = raw as Record<string, unknown>;
+  const looksLike =
+    typeof rec.knownHostVerification === "string" ||
+    rec.ephemeralCredentialHandle !== undefined ||
+    rec.connectVerifiedAddressOnly !== undefined ||
+    rec.privateKeyNeverExported !== undefined;
+  if (!looksLike) {
+    return undefined;
+  }
+  return {
+    authMethods: stringList(rec.authMethods).length
+      ? stringList(rec.authMethods)
+      : DEFAULT_SSH_ISOLATION.authMethods,
+    passwordAuth: rec.passwordAuth === true,
+    agentForwarding: rec.agentForwarding === true,
+    portForwarding: rec.portForwarding === true,
+    proxyCommand: rec.proxyCommand === true,
+    hostKeyAutoAccept: rec.hostKeyAutoAccept === true,
+    interactiveShell: rec.interactiveShell === true,
+    knownHostVerification:
+      String(rec.knownHostVerification ?? "").trim() ||
+      DEFAULT_SSH_ISOLATION.knownHostVerification,
+    resolveThenAllowlist: rec.resolveThenAllowlist !== false,
+    connectVerifiedAddressOnly:
+      rec.connectVerifiedAddressOnly !== false &&
+      rec.connectVerifiedAddress !== false,
+    ephemeralCredentialHandle: rec.ephemeralCredentialHandle !== false,
+    nonRootRemoteAccount: rec.nonRootRemoteAccount !== false,
+    defaultUsername:
+      String(rec.defaultUsername ?? "").trim() || SSH_DEFAULT_USERNAME,
+    privateKeyNeverExported: rec.privateKeyNeverExported !== false,
+  };
 }
 
 function asParameterObject(value: unknown): {

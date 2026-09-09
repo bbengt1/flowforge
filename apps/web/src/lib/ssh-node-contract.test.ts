@@ -13,7 +13,7 @@ import {
   SSH_NODE_STORY,
   SSH_PROFILE_FAIL_CLOSED_MESSAGE,
   SSH_PROFILE_REQUIRED_MESSAGE,
-  SSH_RETRY_ZERO_MESSAGE,
+  SSH_RETRY_DENIED_MESSAGE,
   SSH_RUN_NODE_TYPE,
   SSH_SECRET_WITH_MESSAGE,
   SSH_TARGET_FAIL_CLOSED_MESSAGE,
@@ -53,18 +53,18 @@ const catalog: WorkflowCatalog = {
 };
 
 describe("ssh node contract adapter", () => {
-  it("cites E8.2 / E8 and the pending node map", () => {
+  it("cites E8.2 / E8 and jonny's #88 map on main", () => {
     assert.equal(SSH_NODE_STORY, 83);
     assert.equal(SSH_NODE_EPIC, 81);
-    assert.equal(SSH_NODE_API_PR, 0);
-    assert.equal(SSH_NODE_ROUTE_MAP_SOURCE, "e82-contract-fallback");
+    assert.equal(SSH_NODE_API_PR, 88);
+    assert.equal(SSH_NODE_ROUTE_MAP_SOURCE, "e82-#88");
     assert.equal(SSH_RUN_NODE_TYPE, "ssh.run");
     assert.equal(SSH_DEFAULT_TIMEOUT_SECONDS, 60);
     assert.equal(SSH_DEFAULT_RETRY_MAX_ATTEMPTS, 0);
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("privateKey"));
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("command"));
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("password"));
-    assert.match(SSH_CONTRACT_FALLBACK_NODE_HELP, /contract-fallback/);
+    assert.match(SSH_CONTRACT_FALLBACK_NODE_HELP, /e82-#88/);
   });
 
   it("falls back to marked contract entries when catalog is thin or missing", () => {
@@ -76,12 +76,13 @@ describe("ssh node contract adapter", () => {
     const fallback = sshFallbackNode("ssh.run");
     assert.equal(fallback.source, undefined);
     assert.equal(fallback.title, "Run command profile");
-    assert.match(fallback.description ?? "", /not an interactive terminal/i);
+    assert.match(fallback.description ?? "", /ephemeral key handle/i);
     assert.deepEqual(fallback.requiredWith, ["sshTargetId", "commandProfileId"]);
     assert.equal(fallback.policy?.retrySafe, false);
     assert.equal(fallback.policy?.defaultMaxAttempts, 0);
     assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "sshTargetId"));
     assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "retryPolicy"));
+    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "policyId"));
     assert.equal(
       (fallback.allowedWith ?? []).some((field) => field.name === "command"),
       false,
@@ -148,7 +149,7 @@ describe("ssh node contract adapter", () => {
     });
     assert.ok(rejected.includes(SSH_FREEFORM_SHELL_MESSAGE));
     assert.ok(rejected.includes(SSH_SECRET_WITH_MESSAGE));
-    assert.ok(rejected.includes(SSH_RETRY_ZERO_MESSAGE));
+    assert.ok(rejected.includes(SSH_RETRY_DENIED_MESSAGE));
     assert.ok(rejected.some((error) => /timeoutSeconds/.test(error)));
     assert.ok(rejected.some((error) => /interpolation/.test(error)));
   });
@@ -195,6 +196,18 @@ describe("ssh node contract adapter", () => {
       pruneSshParameters({ service: "api", stale: "drop" }, constraints),
       { service: "api" },
     );
+
+    const retrySafe = validateSshNodeConfig(
+      "ssh.run",
+      {
+        sshTargetId: TARGET_ID,
+        commandProfileId: PROFILE_ID,
+        retryPolicy: { maxAttempts: 1 },
+        policyId: TARGET_ID,
+      },
+      { profileRetrySafe: true },
+    );
+    assert.deepEqual(retrySafe, []);
   });
 
   it("overlays GET /ssh/catalog nodes[] when present", () => {
@@ -210,24 +223,47 @@ describe("ssh node contract adapter", () => {
             { name: "sshTargetId", kind: "uuid", required: true },
             { name: "commandProfileId", kind: "uuid", required: true },
             { name: "timeoutSeconds", kind: "integer" },
+            { name: "retryPolicy", kind: "object" },
+            { name: "policyId", kind: "uuid" },
             { name: "privateKey", kind: "string" },
           ],
-          outputs: ["result"],
+          outputs: ["result", "stdout", "exitCode"],
           sideEffects: true,
           retrySafe: false,
           defaultMaxAttempts: 0,
         },
       ],
-      retry: { defaultMaxAttempts: 0, retrySafeFlag: true, semantics: "E8.3" },
+      retry: {
+        defaultMaxAttempts: 0,
+        retrySafeFlag: "retrySafe",
+        semantics: "E8.3",
+        note: "E8.2 never blindly re-runs.",
+      },
+      isolation: {
+        authMethods: ["publickey"],
+        passwordAuth: false,
+        ephemeralCredentialHandle: true,
+        privateKeyNeverExported: true,
+        knownHostVerification: "fingerprint-match-fail-closed",
+        resolveThenAllowlist: true,
+        connectVerifiedAddressOnly: true,
+        nonRootRemoteAccount: true,
+        defaultUsername: "flowforge",
+      },
       permissions: ["workflow.execute", "ssh.run", "sshTarget.use", "commandProfile.use"],
       errors: [
         { code: "parameter-rejected", status: 400, meaning: "Schema mismatch." },
+        { code: "retry-denied", status: 400, meaning: "maxAttempts>0 needs retrySafe." },
+        { code: "indeterminate", status: 409, meaning: "Lease lost. No blind retry." },
       ],
     });
     assert.equal(parsed.source, "ssh-catalog");
     assert.equal(parsed.nodes[0]?.title, "Approved remote command");
+    assert.equal(parsed.isolation?.ephemeralCredentialHandle, true);
+    assert.equal(parsed.isolation?.defaultUsername, "flowforge");
     const fields = sshNodeWithFields("ssh.run", parsed);
     assert.equal(fields.some((field) => field.name === "sshTargetId"), true);
+    assert.equal(fields.some((field) => field.name === "policyId"), true);
     assert.equal(fields.some((field) => field.name === "privateKey"), false);
     assert.equal(fields.find((field) => field.name === "retryPolicy")?.readOnly, undefined);
 

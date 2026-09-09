@@ -12,7 +12,7 @@ import {
   SSH_DEFAULT_TIMEOUT_SECONDS,
   SSH_FREEFORM_SHELL_MESSAGE,
   SSH_PROFILE_REQUIRED_MESSAGE,
-  SSH_RETRY_ZERO_MESSAGE,
+  SSH_RETRY_DENIED_MESSAGE,
   SSH_TARGET_FAIL_CLOSED_MESSAGE,
   SSH_TARGET_REQUIRED_MESSAGE,
 } from "./ssh-node-contract.ts";
@@ -229,7 +229,8 @@ describe("action wizard catalog inference and recommendations", () => {
       true,
     );
     assert.equal(sshFields.some((field) => field.name === "timeoutSeconds"), true);
-    assert.equal(sshFields.find((field) => field.name === "retryPolicy")?.readOnly, true);
+    assert.equal(sshFields.some((field) => field.name === "retryPolicy"), true);
+    assert.equal(sshFields.some((field) => field.name === "policyId"), true);
     assert.equal(sshFields.some((field) => field.name === "command"), false);
     assert.equal(sshFields.some((field) => field.name === "privateKey"), false);
   });
@@ -359,7 +360,7 @@ describe("action wizard insert + redaction", () => {
       entry,
     );
     assert.equal(retries.ok, false);
-    assert.ok(retries.errors.includes(SSH_RETRY_ZERO_MESSAGE));
+    assert.ok(retries.errors.includes(SSH_RETRY_DENIED_MESSAGE));
 
     const sanitized = sanitizeWizardWith(draft.with, "ssh.run");
     assert.equal("privateKey" in sanitized, false);

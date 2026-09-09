@@ -835,9 +835,9 @@ function ConfigureStep({
           <code className="font-mono">GET /ssh/catalog</code>{" "}
           <code className="font-mono">nodes[]</code>, then{" "}
           <code className="font-mono">GET /workflows/catalog</code>, then the
-          marked E8.2 contract fallback. Retarget{" "}
-          <code className="font-mono">ssh-node-contract.ts</code> when jonny
-          posts the node map.
+          marked e82-#88 contract fallback. Overlay titles /{" "}
+          <code className="font-mono">allowedWith</code> / isolation from
+          jonny&apos;s map when the catalog is listed.
         </p>
       ) : null}
       {isKubernetesRolloutType(draft.type) ? (
@@ -857,9 +857,12 @@ function ConfigureStep({
             />
           </div>
           <p className="mt-3 text-sm text-teal-950">
-            retrySafe={String(profileRetrySafe)} (read-only profile flag).{" "}
-            {sshRetryRules(sshCatalog).semantics}: defaultMaxAttempts=
-            {sshRetryRules(sshCatalog).defaultMaxAttempts}.
+            retrySafe={String(profileRetrySafe)} (profile flag).{" "}
+            {sshRetryRules(sshCatalog).note ??
+              "Retries default to zero. E8.2 never blindly re-runs."}{" "}
+            defaultMaxAttempts={sshRetryRules(sshCatalog).defaultMaxAttempts};{" "}
+            semantics={sshRetryRules(sshCatalog).semantics}. Lease loss is
+            indeterminate — never a blind retry.
           </p>
           {sshNodeErrorShapes(sshCatalog).length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
@@ -934,8 +937,8 @@ function ConfigureStep({
       {ssh ? (
         <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
           retrySafe is {profileRetrySafe ? "true" : "false"} on the selected
-          profile (read-only). Automatic retries stay at zero; bounded retry
-          is E8.3.
+          profile. maxAttempts defaults to 0; values above 0 require retrySafe
+          and are still not auto-retried in E8.2. Lease loss is indeterminate.
         </p>
       ) : null}
       {advanced.length > 0 ? (
@@ -1246,11 +1249,14 @@ function ReviewStep({
         ) : null}
         {isSshConfigurableType(draft.type) ? (
           <p className="mt-2 text-xs text-zinc-600">
-            ssh.run uses ephemeral keys, verified known hosts, and host/address
-            allowlists (server-enforced). Not an interactive terminal. retrySafe=
+            ssh.run uses an ephemeral key handle (no privateKey on the wire),
+            known-host fingerprint match, and every resolved IP must be in
+            allowedAddresses — the worker dials only that verified address.
+            Key-only, non-root, no forwarding/proxy/interactive shell. retrySafe=
             {String(profileRetrySafe)}; retries default to{" "}
             {sshRetryRules(sshCatalog).defaultMaxAttempts} ({sshRetryRules(sshCatalog).semantics}).
-            YAML holds target/profile UUIDs and typed values only.
+            Lease loss is indeterminate. YAML holds target/profile UUIDs and
+            typed values only.
           </p>
         ) : null}
       </section>

@@ -205,14 +205,13 @@ E8.1 (Chloe) extends the E4.2 `/config` SSH-target and command-profile surfaces 
 
 ## E8.2 ssh.run node config (Chloe UI)
 
-E8.2 (Chloe) adds a placeable `ssh.run` configuration to the E6.2 library and E6.3 action wizard. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-node-contract.ts`. Prefer `GET /workflows/catalog` plus `GET /ssh/catalog` `nodes[]` / `retry` / `errors[]` / `permissions[]` when listed; otherwise use marked `contract-fallback` entries (same pattern as E7.2). Relates to #83 / Part of #81 — **Keep #83 open** (jonny owns isolation + tests). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+E8.2 (Chloe) adds a placeable `ssh.run` configuration to the E6.2 library and E6.3 action wizard. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-node-contract.ts`, wired to jonny's **#88** map on `main` (`e82-#88`). Prefer `GET /workflows/catalog` (`allowedWith` / `policy` / `redaction`) plus `GET /ssh/catalog` `nodes[]` / `retry` / `errors[]` / `isolation` when listed; otherwise use marked `contract-fallback` entries (same pattern as E7.2). Relates to #83 / Part of #81 — **Keep #83 open** (jonny owns isolation + tests). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
 
-- **Library / wizard:** `ssh.run` is always placeable. Configure workspace-scoped `sshTargetId`, `commandProfileId`, optional typed `parameters` from the selected profile schema, bounded `timeoutSeconds` (1–3600, default 60), and an explicit `retryPolicy` (`maxAttempts` defaults to 0).
+- **Library / wizard:** `ssh.run` is always placeable. Configure workspace-scoped `sshTargetId`, `commandProfileId`, optional typed `parameters` from the pinned profile schema, bounded `timeoutSeconds` (1–3600, default 60), explicit `retryPolicy` (`maxAttempts` 0–5, default 0), and optional `policyId`.
 - **Selectors:** reuse E8.1 published SSH target + command profile selectors (display name + id). `POST …/select` remains the authorize step. HTTP 403 / empty lists fail closed — no leftover rows. Never show `privateKey` / `passphrase`.
-- **Not a terminal:** no free-form command/shell field, password auth, agent forwarding, port forwarding, proxy commands, or host-key auto-accept toggles.
-- **Retry:** retries stay at zero. `retrySafe` is a read-only profile flag (E8.3).
+- **Hard guarantees (copy only — no violating toggles):** ephemeral credential handle; known-host fingerprint match; every resolved IP in `allowedAddresses`; dial verified IP only; key-only / no forwarding / proxy / interactive shell; non-root (default `flowforge`).
+- **Retry:** default `maxAttempts=0`. `maxAttempts>0` requires profile `retrySafe` and is still not auto-retried in E8.2. Lease loss is `indeterminate` (E8.3 stub).
 - **YAML:** references and typed values only — never SSH keys, passwords, host fingerprints as secrets, connection settings as secrets, or raw logs.
-- **Copy:** execution uses ephemeral keys, known-host verification, and allowlists (server-enforced).
 - **Unchanged:** E8.1 `/config` SSH targets and command profiles; no invented routes; `apps/api` untouched.
 
 ## Foundation operator shell
