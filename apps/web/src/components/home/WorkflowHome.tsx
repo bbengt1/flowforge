@@ -42,6 +42,11 @@ import {
   workflowTemplateById,
   type WorkflowTemplate,
 } from "@/lib/workflow-templates";
+import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
+import {
+  MANUAL_START_QUERY,
+  canOfferManualStart,
+} from "@/lib/manual-start-contract";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 
@@ -71,7 +76,9 @@ function WorkflowHomeSession() {
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
+  const canExecute = ready && canOfferManualStart(permissions);
   const denied = ready && permissions != null && !canSeeWorkflowsNav(permissions);
+  const [startWorkflowId, setStartWorkflowId] = useState("");
 
   const items = useMemo(
     () =>
@@ -89,6 +96,21 @@ function WorkflowHomeSession() {
     [items, filters],
   );
   const options = useMemo(() => uniqueFilterValues(items), [items]);
+  const resolvedStartId =
+    startWorkflowId === "1"
+      ? (items.find((item) => item.latestVersionId)?.id ?? "")
+      : startWorkflowId;
+  const startItem = useMemo(() => {
+    if (!resolvedStartId) {
+      return null;
+    }
+    return (
+      items.find((item) => item.id === resolvedStartId) ?? {
+        id: resolvedStartId,
+        name: undefined,
+      }
+    );
+  }, [items, resolvedStartId]);
 
   const refresh = useCallback(async () => {
     const token = refreshGate.current.begin();
@@ -233,7 +255,8 @@ function WorkflowHomeSession() {
     }
     const shouldCreate = searchParams.get("create") === "1";
     const shouldImport = searchParams.get("import") === "1";
-    if (!shouldCreate && !shouldImport) {
+    const startParam = searchParams.get(MANUAL_START_QUERY);
+    if (!shouldCreate && !shouldImport && !startParam) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -254,6 +277,10 @@ function WorkflowHomeSession() {
       if (shouldImport) {
         consumedQuery.current = true;
         importRef.current?.click();
+      }
+      if (startParam) {
+        consumedQuery.current = true;
+        setStartWorkflowId(startParam);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -538,6 +565,16 @@ function WorkflowHomeSession() {
         ) : null}
       </section>
 
+      {startItem ? (
+        <ManualStartPanel
+          identity={identity}
+          workflowId={startItem.id}
+          workflowName={startItem.name}
+          permissions={permissions}
+          onClose={() => setStartWorkflowId("")}
+        />
+      ) : null}
+
       {visible.length === 0 ? (
         <TemplateGrid
           canCreate={canCreate}
@@ -549,6 +586,8 @@ function WorkflowHomeSession() {
           items={visible}
           pending={pending !== null}
           canCreate={canCreate}
+          canExecute={canExecute}
+          onStart={(item) => setStartWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -557,6 +596,8 @@ function WorkflowHomeSession() {
           items={visible}
           pending={pending !== null}
           canCreate={canCreate}
+          canExecute={canExecute}
+          onStart={(item) => setStartWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -643,17 +684,37 @@ function WorkflowActions({
   item,
   pending,
   canCreate,
+  canExecute,
+  onStart,
   onDuplicate,
   onExport,
 }: {
   item: WorkflowHomeItem;
   pending: boolean;
   canCreate: boolean;
+  canExecute: boolean;
+  onStart: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
+      {item.latestVersionId ? (
+        canExecute ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onStart(item)}
+            className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+          >
+            Start
+          </button>
+        ) : (
+          <span className="text-sm text-zinc-500" title="workflow.execute required">
+            Start locked
+          </span>
+        )
+      ) : null}
       <Link
         href={`/workflows/${item.id}`}
         className="text-sm font-medium text-teal-800 underline"
@@ -700,12 +761,16 @@ function WorkflowHomeList({
   items,
   pending,
   canCreate,
+  canExecute,
+  onStart,
   onDuplicate,
   onExport,
 }: {
   items: WorkflowHomeItem[];
   pending: boolean;
   canCreate: boolean;
+  canExecute: boolean;
+  onStart: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -731,6 +796,8 @@ function WorkflowHomeList({
             item={item}
             pending={pending}
             canCreate={canCreate}
+            canExecute={canExecute}
+            onStart={onStart}
             onDuplicate={onDuplicate}
             onExport={onExport}
           />
@@ -744,12 +811,16 @@ function WorkflowHomeCards({
   items,
   pending,
   canCreate,
+  canExecute,
+  onStart,
   onDuplicate,
   onExport,
 }: {
   items: WorkflowHomeItem[];
   pending: boolean;
   canCreate: boolean;
+  canExecute: boolean;
+  onStart: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -775,6 +846,8 @@ function WorkflowHomeCards({
               item={item}
               pending={pending}
               canCreate={canCreate}
+              canExecute={canExecute}
+              onStart={onStart}
               onDuplicate={onDuplicate}
               onExport={onExport}
             />

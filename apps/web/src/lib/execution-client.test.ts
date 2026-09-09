@@ -405,8 +405,13 @@ describe("execution client", () => {
 
   it("POSTs start with CSRF and surfaces 201 vs 200 vs 409", async () => {
     withSession();
-    const seen: { url?: string; body?: string; csrf?: string | null; status: number }[] =
-      [];
+    const seen: {
+      url?: string;
+      body?: string;
+      csrf?: string | null;
+      idempotency?: string | null;
+      status: number;
+    }[] = [];
     let call = 0;
     globalThis.fetch = (async (input, init) => {
       call += 1;
@@ -415,6 +420,7 @@ describe("execution client", () => {
         url: String(input),
         body: typeof init?.body === "string" ? init.body : "",
         csrf: headers.get(CSRF_HEADER),
+        idempotency: headers.get("Idempotency-Key"),
         status: call === 1 ? 201 : call === 2 ? 200 : 409,
       });
       if (call === 3) {
@@ -458,7 +464,9 @@ describe("execution client", () => {
     }
     assert.match(seen[0]?.body ?? "", /workflowVersionId/);
     assert.match(seen[0]?.body ?? "", /idempotencyKey/);
+    assert.match(seen[0]?.body ?? "", /"input":\{\}/);
     assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(seen[0]?.idempotency, "deploy-prod-1");
 
     const replayed = await startWorkflowExecution(
       identity,

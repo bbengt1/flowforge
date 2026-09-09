@@ -700,8 +700,9 @@ function decodeJsonBuffer(body: ArrayBuffer): unknown {
 }
 
 const IF_MATCH_HEADER = "If-Match";
+const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
-/** Forwards If-Match so draft PUT can use revision + header concurrency. */
+/** Forwards If-Match and #111 Idempotency-Key. Never Authorization. */
 export function pickConditionalHeaders(
   source: Headers,
   target = new Headers(),
@@ -709,6 +710,10 @@ export function pickConditionalHeaders(
   const ifMatch = source.get(IF_MATCH_HEADER)?.trim();
   if (ifMatch) {
     target.set(IF_MATCH_HEADER, ifMatch);
+  }
+  const idempotencyKey = source.get(IDEMPOTENCY_KEY_HEADER)?.trim();
+  if (idempotencyKey) {
+    target.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
   }
   return target;
 }

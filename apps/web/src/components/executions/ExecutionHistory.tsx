@@ -27,6 +27,8 @@ import {
   historyKeyAction,
 } from "@/lib/execution-replay";
 import type { ExecutionListQuery, ExecutionRecord } from "@/lib/execution-types";
+import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
+import { canOfferManualStart } from "@/lib/manual-start-contract";
 import { compareWorkflow } from "@/lib/workflow-client";
 import { versionCompareRef } from "@/lib/workflow";
 import type { CompareWorkflowResult } from "@/lib/workflow-types";
@@ -79,6 +81,7 @@ export function ExecutionHistory() {
   > | null>(null);
   const [versionCompare, setVersionCompare] =
     useState<CompareWorkflowResult | null>(null);
+  const [startWorkflowId, setStartWorkflowId] = useState("");
   const router = useRouter();
 
   const ready =
@@ -86,6 +89,8 @@ export function ExecutionHistory() {
     hasWorkspaceLookup(identity);
 
   const denied = ready && permissions != null && !canSeeExecutionsNav(permissions);
+  const canExecute = canOfferManualStart(permissions);
+  const publishedWorkflows = workflows.filter((item) => item.latestVersionId);
   const forbidden = isExecutionForbidden(problem);
   const visible = useMemo(
     () => (forbidden || denied ? [] : executionListDisplay(items)),
@@ -278,6 +283,48 @@ export function ExecutionHistory() {
         </form>
       </section>
 
+      {!forbidden && !denied && publishedWorkflows.length > 0 ? (
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Start a published version</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            Authenticated manual start from history. Drafts never run.
+          </p>
+          <label className="mt-3 block text-sm">
+            <span className="text-zinc-600">Workflow</span>
+            <select
+              value={startWorkflowId}
+              onChange={(event) => setStartWorkflowId(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+            >
+              <option value="">Select a published workflow</option>
+              {publishedWorkflows.map((workflow) => (
+                <option key={workflow.id} value={workflow.id}>
+                  {workflow.name || workflow.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+          {startWorkflowId && canExecute ? (
+            <div className="mt-4">
+              <ManualStartPanel
+                identity={identity}
+                workflowId={startWorkflowId}
+                workflowName={
+                  publishedWorkflows.find((item) => item.id === startWorkflowId)
+                    ?.name
+                }
+                permissions={permissions}
+                onClose={() => setStartWorkflowId("")}
+              />
+            </div>
+          ) : startWorkflowId && !canExecute ? (
+            <p className="mt-3 text-sm font-medium text-rose-950">
+              Start requires workflow.execute. This surface is fail-closed.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {forbidden || denied ? null : visible.length > 1 ? (
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Compare executions</h2>
@@ -377,17 +424,17 @@ export function ExecutionHistory() {
         <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
           <h2 className="text-lg font-semibold">No executions yet</h2>
           <p className="mt-2 text-sm text-zinc-600">
-            Start a published version from the workflow operator. Duplicate
-            idempotency keys replay the existing run (
+            Start a published version from workflow home or the panel above.
+            Duplicate idempotency keys replay the existing run (
             <code className="font-mono text-xs">200</code>). Same key +
             different input is <code className="font-mono text-xs">409</code>.
           </p>
           <p className="mt-4">
             <Link
-              href="/workflows"
+              href="/workflows?start=1"
               className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
             >
-              Open workflow run control
+              Open authenticated manual start
             </Link>
           </p>
         </section>

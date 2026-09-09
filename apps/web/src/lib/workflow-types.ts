@@ -17,13 +17,6 @@ export type CatalogPort = {
   description?: string;
 };
 
-export type CatalogTrigger = {
-  type: string;
-  phase: CatalogPhase;
-  enabled?: boolean;
-  outputs?: CatalogPort[];
-};
-
 /** Allowlisted `with` key from jonny's E3.3 catalog (#32). */
 export type CatalogWithField = {
   name: string;
@@ -56,6 +49,43 @@ export type CatalogRedaction = {
   redactInputs?: boolean;
   redactOutputs?: boolean;
   strategy?: string;
+};
+
+/** Jonny's E10.1 catalog start map (#111) on `triggers[type=manual].start`. */
+export type CatalogTriggerStart = {
+  route?: string;
+  method?: string;
+  permission?: string;
+  csrf?: boolean;
+  publishedVersionRequired?: boolean;
+  versionField?: string;
+  inputField?: string;
+  schemaFields?: string[];
+  idempotencyKeyField?: string;
+  idempotencyHeader?: string;
+  idempotencyKeyRequired?: boolean;
+  idempotencyKeyPattern?: string;
+  maxInputBytes?: number;
+  createdStatus?: number;
+  replayStatus?: number;
+  conflictStatus?: number;
+  policyDenyStatus?: number;
+  approvalRequiredStatus?: number;
+  draftStatus?: number;
+  help?: string;
+};
+
+export type CatalogTrigger = {
+  type: string;
+  phase: CatalogPhase;
+  enabled?: boolean;
+  title?: string;
+  description?: string;
+  outputs?: CatalogPort[];
+  allowedWith?: CatalogWithField[];
+  bounds?: CatalogNodeBounds;
+  redaction?: CatalogRedaction;
+  start?: CatalogTriggerStart;
 };
 
 export type CatalogRules = {

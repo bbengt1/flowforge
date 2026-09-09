@@ -1315,14 +1315,16 @@ describe("fetchIdentityControlPlane", () => {
 });
 
 describe("pickConditionalHeaders", () => {
-  it("forwards If-Match and never Authorization", () => {
+  it("forwards If-Match and Idempotency-Key and never Authorization", () => {
     const forwarded = pickConditionalHeaders(
       new Headers({
         "If-Match": " 3 ",
+        "Idempotency-Key": " deploy-prod-1 ",
         Authorization: "Bearer secret",
       }),
     );
     assert.equal(forwarded.get("If-Match"), "3");
+    assert.equal(forwarded.get("Idempotency-Key"), "deploy-prod-1");
     assert.equal(forwarded.get("Authorization"), null);
   });
 });

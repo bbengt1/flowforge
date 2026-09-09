@@ -131,6 +131,8 @@ export type YamlWorkflowTrigger = {
   id: string;
   type: string;
   with: Record<string, unknown>;
+  schema?: Record<string, unknown>;
+  inputSchema?: Record<string, unknown>;
   startLine: number;
   endLine: number;
 };
@@ -801,16 +803,24 @@ function parseEdgeItem(yaml: string, item: ListItemRange): YamlWorkflowEdge {
   };
 }
 
+function objectField(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
 function parseTriggerItem(yaml: string, item: ListItemRange): YamlWorkflowTrigger {
   const mapping = parseListItemMap(yaml, item);
-  const withValue =
-    mapping.with && typeof mapping.with === "object" && !Array.isArray(mapping.with)
-      ? (mapping.with as Record<string, unknown>)
-      : {};
+  const withValue = objectField(mapping.with) ?? {};
+  const schema = objectField(mapping.schema);
+  const inputSchema = objectField(mapping.inputSchema);
   return {
     id: stringField(mapping.id),
     type: stringField(mapping.type),
     with: withValue,
+    ...(schema ? { schema } : {}),
+    ...(inputSchema ? { inputSchema } : {}),
     startLine: item.startLine,
     endLine: item.endLine,
   };

@@ -21,7 +21,8 @@ export default function ExecutionsPage() {
           redacted runs here.{" "}
           <code className="font-mono text-sm">indeterminate</code> uses icon +
           text. Cancel, retry, replay, and artifacts live on the detail
-          page. Drafts never run — use a published version from the editor.
+          page. Drafts never run — start a published version from this
+          page or workflow home.
         </p>
       </header>
       <ExecutionHistory />
