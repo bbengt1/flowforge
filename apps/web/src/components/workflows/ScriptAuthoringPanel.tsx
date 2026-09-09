@@ -21,6 +21,7 @@ import {
   scriptArtifactStatus,
   scriptNodeWithFields,
   validateScriptNodeConfig,
+  type ScriptArtifact,
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
@@ -44,6 +45,9 @@ type ScriptAuthoringPanelProps = {
   hasPublishedVersion?: boolean;
   scriptCatalog?: ScriptNodeCatalog | null;
   scriptArtifacts?: readonly ScriptVersionPin[] | null;
+  artifacts?: readonly ScriptArtifact[] | null;
+  permissions?: readonly string[] | null;
+  onArtifactChange?: (artifact: ScriptArtifact) => void;
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 };
 
@@ -55,6 +59,9 @@ export function ScriptAuthoringPanel({
   hasPublishedVersion,
   scriptCatalog,
   scriptArtifacts,
+  artifacts,
+  permissions,
+  onArtifactChange,
   onPatchNodeWith,
 }: ScriptAuthoringPanelProps) {
   const [pins, setPins] = useState<OpsConfigPin[]>([]);
@@ -113,6 +120,7 @@ export function ScriptAuthoringPanel({
     dirty,
     hasPublishedVersion,
     scriptArtifacts: nodePins.length ? nodePins : scriptArtifacts,
+    artifacts,
   });
 
   function patch(name: string, value: unknown) {
@@ -268,7 +276,15 @@ export function ScriptAuthoringPanel({
           ))}
         </ul>
       </details>
-      <ScriptPublishStatus status={status} pins={nodePins} />
+      <ScriptPublishStatus
+        status={status}
+        pins={nodePins}
+        artifacts={artifacts}
+        identity={identity}
+        permissions={permissions}
+        scriptCatalog={scriptCatalog}
+        onArtifactChange={onArtifactChange}
+      />
     </section>
   );
 }

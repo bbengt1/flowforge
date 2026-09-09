@@ -40,6 +40,11 @@ import {
   isScriptProxySegments,
   retargetScriptApiPath,
 } from "./script-contract.ts";
+import {
+  SCRIPT_OPS_PROXY_ROUTES,
+  isScriptOpsProxySegments,
+  retargetScriptOpsApiPath,
+} from "./script-ops-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -307,6 +312,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // script-contract.ts. GET /scripts/catalog, POST /scripts,
   // GET /scripts/{id}, GET …/script-artifacts. Never package blobs.
   ...SCRIPT_PROXY_ROUTES,
+  // E9.4 revoke + emergency-stop UI (#95 / #103). Paths live in
+  // script-ops-contract.ts. POST /scripts/{id}/revoke and
+  // POST /executions/{id}/emergency-stop (+ step twin). CSRF POSTs.
+  ...SCRIPT_OPS_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -373,6 +382,8 @@ export function resolveIdentityProxyTarget(
     apiPath = retargetKubernetesApiPath(mapped);
   } else if (isSshProxySegments(segments)) {
     apiPath = retargetSshApiPath(mapped);
+  } else if (isScriptOpsProxySegments(segments)) {
+    apiPath = retargetScriptOpsApiPath(mapped);
   } else if (isScriptProxySegments(segments)) {
     apiPath = retargetScriptApiPath(mapped);
   }

@@ -37,6 +37,7 @@ type RunControlProps = {
   pending: boolean;
   dirty: boolean;
   runBlocked: boolean;
+  runBlockReason?: string;
   evaluation: PolicyEvaluation | null;
   evaluationPending: boolean;
   evaluationProblem: ProblemDetails | null;
@@ -62,6 +63,7 @@ export function RunControl({
   pending,
   dirty,
   runBlocked,
+  runBlockReason,
   evaluation,
   evaluationPending,
   evaluationProblem,
@@ -168,6 +170,11 @@ export function RunControl({
               {pending ? "Starting…" : "Run"}
             </button>
           </div>
+          {runBlocked && runBlockReason ? (
+            <p role="status" className="text-sm font-medium text-rose-950">
+              {runBlockReason}
+            </p>
+          ) : null}
         </div>
       )}
 

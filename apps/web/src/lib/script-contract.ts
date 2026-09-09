@@ -109,7 +109,7 @@ export const SCRIPT_HOST_SUPPLIED_IDENTITY_DETAIL =
   "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers.";
 
 export const SCRIPT_EXECUTE_FAIL_CLOSED_HELP =
-  "Execute fails closed: drafts, mutable, unscanned, unsigned, or scan-failed artifacts return 400. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are server-enforced (E9.2 / #98).";
+  "Execute fails closed: drafts, mutable, unscanned, unsigned, scan-failed, or revoked artifacts cannot start. Revoked pins return 409 artifact-revoked at start, claim, and heartbeat. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are server-enforced (E9.2 / #98).";
 
 export const SCRIPT_RUNTIME_PROFILE_ENGINE = "script" as const;
 
@@ -236,6 +236,7 @@ export type ScriptPublishRules = {
   unscannedRejected: boolean;
   unsignedRejected: boolean;
   failedScanRejected: boolean;
+  revokedRejected: boolean;
   publishedRevisionsPinned: boolean;
   digestPinnedRuntime: boolean;
   maxSourceBytes: number;
@@ -285,6 +286,9 @@ export type ScriptNodeCatalog = {
   /** Additive E9.3 overlay from GET /scripts/catalog. Parsed by script-io-contract. */
   io?: Record<string, unknown>;
   retry?: Record<string, unknown>;
+  /** Additive E9.4 overlay from GET /scripts/catalog. Parsed by script-ops-contract. */
+  revocation?: Record<string, unknown>;
+  emergencyStop?: Record<string, unknown>;
 };
 
 export type ScriptArtifact = {
@@ -303,6 +307,7 @@ export type ScriptArtifact = {
   createdBy?: string;
   createdAt?: string;
   revokedAt?: string;
+  revokedBy?: string;
 };
 
 export type ScriptVersionPin = {
@@ -315,6 +320,8 @@ export type ScriptVersionPin = {
   signature?: string;
   language?: string;
   entrypoint?: string;
+  revokedAt?: string;
+  status?: string;
 };
 
 export type ScriptNodeConfigContext = {
@@ -329,7 +336,8 @@ export type ScriptArtifactKind =
   | "published-unpinned"
   | "scanning"
   | "signed-pinned"
-  | "rejected";
+  | "rejected"
+  | "revoked";
 
 export type ScriptArtifactStatus = {
   kind: ScriptArtifactKind;
@@ -337,6 +345,7 @@ export type ScriptArtifactStatus = {
   help: string;
   digest?: string;
   scanStatus?: string;
+  revokedAt?: string;
   source: "version" | "scripts-catalog" | "contract-fallback";
 };
 
@@ -350,6 +359,7 @@ export const DEFAULT_SCRIPT_PUBLISH_RULES: ScriptPublishRules = {
   unscannedRejected: true,
   unsignedRejected: true,
   failedScanRejected: true,
+  revokedRejected: true,
   publishedRevisionsPinned: true,
   digestPinnedRuntime: true,
   maxSourceBytes: SCRIPT_MAX_SOURCE_BYTES,
@@ -395,7 +405,7 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "artifact-unscanned", status: 400, meaning: "Artifact scanStatus is pending or missing." },
   { code: "artifact-unsigned", status: 400, meaning: "Artifact signature is missing or does not verify." },
   { code: "artifact-scan-failed", status: 400, meaning: "Artifact scanStatus is failed." },
-  { code: "artifact-revoked", status: 409, meaning: "E9.4: revoked artifacts cannot start. Hook only in E9.1." },
+  { code: "artifact-revoked", status: 409, meaning: "Revoked artifacts cannot start. Rechecked at start, claim, heartbeat-before-dispatch, and Execute." },
   { code: "permission-denied", status: 403, meaning: "Missing workflow.execute, script.run, or runtimeProfile.use." },
   { code: "isolation-denied", status: 403, meaning: "Requested runner environment violates isolation (UID, FS, caps, mounts)." },
   { code: "root-denied", status: 403, meaning: "Runner UID/GID must be non-root (65532)." },
@@ -415,9 +425,10 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "env-denied", status: 403, meaning: "Runtime env key is outside the FLOWFORGE_* allowlist, or plaintext credentials were supplied as env." },
   { code: "retry-denied", status: 400, meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied." },
   { code: "invalid-verification", status: 400, meaning: "retrySafe=true without a valid idempotency key or verification.behavior." },
-  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch, unknown outcome, or verification could not confirm state. Never a silent re-run." },
+  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch, unknown provider outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run." },
+  { code: "emergency-stopped", status: 409, meaning: "Emergency stop halted the script before dispatch. The runner was not started." },
+  { code: "emergency-stop-denied", status: 403, meaning: "Missing script.emergencyStop or kind=script policy denies emergency stop." },
   { code: "runner-not-implemented", status: 501, meaning: "Live container runtime requested but only the CI harness is available." },
-  { code: "revocation-not-implemented", status: 501, meaning: "E9.4 revocation API is not enabled." },
 ];
 
 const UUID =
@@ -965,7 +976,28 @@ export function scriptArtifactStatus(input: {
   hasPublishedVersion?: boolean;
   version?: WorkflowVersion | Record<string, unknown> | null;
   scriptArtifacts?: readonly ScriptVersionPin[] | null;
+  artifacts?: readonly ScriptArtifact[] | null;
 }): ScriptArtifactStatus {
+  const revokedPin = (input.scriptArtifacts ?? []).find((item) => {
+    if (item.revokedAt || item.status === "revoked") {
+      return true;
+    }
+    return (input.artifacts ?? []).some(
+      (artifact) => artifact.id === item.artifactId && Boolean(artifact.revokedAt),
+    );
+  });
+  const revokedArtifact = (input.artifacts ?? []).find((item) => item.revokedAt);
+  if (revokedPin || revokedArtifact) {
+    return {
+      kind: "revoked",
+      label: "Revoked — cannot start",
+      help: "This pinned digest is revoked. New starts fail closed with 409 artifact-revoked. Dispatch rechecks signature, scan, and revokedAt. Already-running executions use emergency stop.",
+      digest: revokedPin?.digest ?? revokedArtifact?.digest,
+      scanStatus: revokedPin?.scanStatus ?? revokedArtifact?.scanStatus,
+      revokedAt: revokedPin?.revokedAt ?? revokedArtifact?.revokedAt,
+      source: "version",
+    };
+  }
   if (input.dirty) {
     return {
       kind: "dirty-draft",
@@ -1195,6 +1227,26 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
         : rec.retry && typeof rec.retry === "object" && !Array.isArray(rec.retry)
           ? (rec.retry as Record<string, unknown>)
           : undefined,
+    revocation:
+      nested.revocation &&
+      typeof nested.revocation === "object" &&
+      !Array.isArray(nested.revocation)
+        ? (nested.revocation as Record<string, unknown>)
+        : rec.revocation &&
+            typeof rec.revocation === "object" &&
+            !Array.isArray(rec.revocation)
+          ? (rec.revocation as Record<string, unknown>)
+          : undefined,
+    emergencyStop:
+      nested.emergencyStop &&
+      typeof nested.emergencyStop === "object" &&
+      !Array.isArray(nested.emergencyStop)
+        ? (nested.emergencyStop as Record<string, unknown>)
+        : rec.emergencyStop &&
+            typeof rec.emergencyStop === "object" &&
+            !Array.isArray(rec.emergencyStop)
+          ? (rec.emergencyStop as Record<string, unknown>)
+          : undefined,
   };
 }
 
@@ -1238,7 +1290,7 @@ export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
   hooks: {
     "E9.2": "isolated runner (VerifyForDispatch then Execute)",
     "E9.3": "typed I/O + scoped handles + output redaction + lease-loss recovery",
-    "E9.4": "artifact revocation + emergency stop",
+    "E9.4": "artifact revocation + emergency stop (implemented)",
   },
   notes: SCRIPT_CONTRACT_FALLBACK_HELP,
 };
@@ -1543,6 +1595,7 @@ function parsePublishRules(raw: unknown): ScriptPublishRules {
     unscannedRejected: rec.unscannedRejected !== false,
     unsignedRejected: rec.unsignedRejected !== false,
     failedScanRejected: rec.failedScanRejected !== false,
+    revokedRejected: rec.revokedRejected !== false,
     publishedRevisionsPinned: rec.publishedRevisionsPinned !== false,
     digestPinnedRuntime: rec.digestPinnedRuntime !== false,
     maxSourceBytes: Number.isFinite(Number(rec.maxSourceBytes))
@@ -1660,6 +1713,7 @@ export function parseScriptArtifact(raw: unknown): ScriptArtifact | null {
     createdBy: firstString(rec.createdBy),
     createdAt: firstString(rec.createdAt),
     revokedAt: firstString(rec.revokedAt),
+    revokedBy: firstString(rec.revokedBy),
   };
 }
 
@@ -1684,6 +1738,8 @@ export function parseScriptVersionPin(raw: unknown): ScriptVersionPin | null {
     signature: firstString(rec.signature),
     language: firstString(rec.language),
     entrypoint: firstString(rec.entrypoint),
+    revokedAt: firstString(rec.revokedAt),
+    status: firstString(rec.status),
   };
 }
 

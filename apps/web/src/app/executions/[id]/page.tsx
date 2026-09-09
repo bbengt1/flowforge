@@ -24,13 +24,17 @@ export default async function ExecutionDetailPage({
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Graph replay overlays step status on the E6.2 canvas from the
-          pinned published version YAML. Cancel stays idempotent. Script and
-          SSH retry appear only when{" "}
+          pinned published version YAML. Cancel stays idempotent. Emergency
+          stop of a script is separately authorized (
+          <code className="font-mono text-sm">script.emergencyStop</code>)
+          and is not Cancel — queued stays canceled, running/uncertain stays
+          loud{" "}
+          <code className="font-mono text-sm">indeterminate</code> until
+          verified, with no blind retry. Script and SSH retry appear only
+          when{" "}
           <code className="font-mono text-sm">result.retry.allowed</code> is
-          true — never for unverified{" "}
-          <code className="font-mono text-sm">indeterminate</code>. Approval
-          wait/resume stay disabled until E10. Error links jump to the
-          failed or indeterminate node. Secrets appear as{" "}
+          true. Approval wait/resume stay disabled until E10. Error links
+          jump to the failed or indeterminate node. Secrets appear as{" "}
           <code className="font-mono text-sm">[redacted]</code>.
         </p>
       </header>
