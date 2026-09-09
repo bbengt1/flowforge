@@ -1,8 +1,6 @@
 /**
- * Shapes for Chloe's E5.4 alert/audit operator. Jonny's route map is
- * still in flight — keep field names camelCase and retarget in
- * alert-contract.ts. Do not invent secrets. Host-supplied id /
- * workspaceId are never sent on writes.
+ * Shapes from jonny's E5.4 OpenAPI (#58 on `main`). Identifiers
+ * only — no `details`, tokens, headers, or secret leaves.
  */
 
 export const ALERT_KINDS = [
@@ -14,34 +12,25 @@ export const ALERT_KINDS = [
 
 export type AlertKind = (typeof ALERT_KINDS)[number] | string;
 
-export const ALERT_SEVERITIES = [
-  "critical",
-  "high",
-  "medium",
-  "low",
-  "info",
-] as const;
+export const ALERT_SEVERITIES = ["warning", "critical"] as const;
 
 export type AlertSeverity = (typeof ALERT_SEVERITIES)[number] | string;
 
-export const ALERT_STATUSES = ["open", "acknowledged", "resolved"] as const;
+export const ALERT_STATUSES = ["open", "acked"] as const;
 
 export type AlertStatus = (typeof ALERT_STATUSES)[number] | string;
 
-/** Until jonny publishes alert.view, browse with execution.view. */
 export const ALERT_VIEW_PERMISSION = "alert.view";
-export const ALERT_MANAGE_PERMISSION = "alert.manage";
-export const AUDIT_VIEW_PERMISSION = "audit.view";
-export const ALERT_VIEW_FALLBACK_PERMISSION = "execution.view";
-export const ALERT_MANAGE_FALLBACK_PERMISSION = "execution.cancel";
-export const WORKSPACE_ADMINISTER_PERMISSION = "workspace.administer";
+export const ALERT_ACK_PERMISSION = "alert.ack";
 
 export const REDACTED_MARKER = "[redacted]";
 
+/** Documented list query for GET /alerts. */
 export type AlertListQuery = {
   kind?: string;
-  severity?: string;
   status?: string;
+  resourceType?: string;
+  resourceId?: string;
   limit?: number;
 };
 
@@ -49,21 +38,7 @@ export type WorkspaceAuditQuery = {
   resourceType?: string;
   resourceId?: string;
   action?: string;
-  kind?: string;
   limit?: number;
-};
-
-export type AlertResourceIds = {
-  executionId: string;
-  workflowId: string;
-  workflowVersionId: string;
-  stepId: string;
-  jobId: string;
-  artifactId: string;
-  approvalId: string;
-  policyId: string;
-  credentialId: string;
-  extra: Record<string, string>;
 };
 
 export type OperationalAlert = {
@@ -71,23 +46,17 @@ export type OperationalAlert = {
   kind: AlertKind;
   severity: AlertSeverity;
   status: AlertStatus;
-  message: string;
-  correlationId: string;
+  action: string;
   resourceType: string;
   resourceId: string;
-  resourceIds: AlertResourceIds;
-  occurredAt: string;
-  createdAt: string;
-  updatedAt: string;
+  correlationId: string;
+  requestId: string;
+  actorId: string;
+  outcome: string;
+  code: string;
   acknowledgedAt: string;
-  resolvedAt: string;
-  permittedActions: string[];
-};
-
-export type AlertCatalog = {
-  kinds: string[];
-  severities: string[];
-  statuses: string[];
+  acknowledgedBy: string;
+  occurredAt: string;
 };
 
 export type AlertListRow = {
@@ -96,8 +65,11 @@ export type AlertListRow = {
   kind: AlertKind;
   severity: AlertSeverity;
   status: AlertStatus;
-  message: string;
+  action: string;
+  outcome: string;
+  code: string;
   correlationId: string;
+  requestId: string;
   resourceId: string;
   resourceType: string;
   occurredAt: string;
@@ -108,7 +80,7 @@ export type AlertSeverityPresentation = {
   label: string;
   icon: string;
   description: string;
-  tone: "critical" | "high" | "medium" | "low" | "info" | "other";
+  tone: "critical" | "warning" | "other";
 };
 
 export type WorkspaceAuditEvent = {

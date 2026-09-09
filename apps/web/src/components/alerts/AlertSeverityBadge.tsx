@@ -1,8 +1,9 @@
 import { alertSeverityPresentation } from "@/lib/alert";
-import type { AlertSeverity } from "@/lib/alert-types";
+import type { AlertKind, AlertSeverity } from "@/lib/alert-types";
 
 type AlertSeverityBadgeProps = {
   severity: AlertSeverity | undefined;
+  kind?: AlertKind;
 };
 
 const TONE_CLASS: Record<
@@ -10,15 +11,15 @@ const TONE_CLASS: Record<
   string
 > = {
   critical: "border-rose-800 bg-rose-50 text-rose-950 font-semibold border-2",
-  high: "border-orange-700 bg-orange-50 text-orange-950 font-semibold",
-  medium: "border-amber-700 bg-amber-50 text-amber-950 font-semibold",
-  low: "border-zinc-400 bg-zinc-50 text-zinc-800",
-  info: "border-sky-600 bg-sky-50 text-sky-950",
+  warning: "border-amber-700 bg-amber-50 text-amber-950 font-semibold",
   other: "border-zinc-300 bg-zinc-50 text-zinc-800",
 };
 
-export function AlertSeverityBadge({ severity }: AlertSeverityBadgeProps) {
-  const presentation = alertSeverityPresentation(severity);
+export function AlertSeverityBadge({
+  severity,
+  kind,
+}: AlertSeverityBadgeProps) {
+  const presentation = alertSeverityPresentation(severity, kind);
 
   return (
     <p

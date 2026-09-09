@@ -11,12 +11,11 @@ import {
   canSeeAlertsNav,
   filterAlertList,
 } from "@/lib/alert";
-import { getAlertCatalog, listAlerts } from "@/lib/alert-client";
+import { listAlerts } from "@/lib/alert-client";
+import { executionCorrelateHref } from "@/lib/alert-contract";
 import {
   ALERT_KINDS,
-  ALERT_SEVERITIES,
   ALERT_STATUSES,
-  type AlertCatalog,
   type OperationalAlert,
 } from "@/lib/alert-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -48,14 +47,14 @@ export function AlertList() {
   const [query, setQuery] = useState({
     q: "",
     kind: "",
-    severity: "",
     status: "open",
+    resourceType: "",
+    resourceId: "",
   });
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[] | null>(null);
-  const [catalog, setCatalog] = useState<AlertCatalog | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
 
   const ready =
@@ -70,22 +69,19 @@ export function AlertList() {
   async function refresh() {
     setPending(true);
     setProblem(null);
-    const [list, workspace, types] = await Promise.all([
+    const [list, workspace] = await Promise.all([
       listAlerts(identity, {
         kind: query.kind.trim() || undefined,
-        severity: query.severity.trim() || undefined,
         status: query.status.trim() || undefined,
+        resourceType: query.resourceType.trim() || undefined,
+        resourceId: query.resourceId.trim() || undefined,
       }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
-      getAlertCatalog(identity),
     ]);
     setLastRequestId(list.requestId);
     setPending(false);
     if (workspace.ok) {
       setPermissions(workspace.data.permissions ?? []);
-    }
-    if (types.ok) {
-      setCatalog(types.catalog);
     }
     if (!list.ok) {
       setProblem(list.problem);
@@ -104,9 +100,16 @@ export function AlertList() {
       void refresh();
     }, 0);
     return () => window.clearTimeout(timer);
-    // Reload when session, workspace, or documented filters change.
+    // Reload when session, workspace, or documented #58 filters change.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
-  }, [ready, identity, query.kind, query.severity, query.status]);
+  }, [
+    ready,
+    identity,
+    query.kind,
+    query.status,
+    query.resourceType,
+    query.resourceId,
+  ]);
 
   const denied = ready && permissions != null && !canSeeAlertsNav(permissions);
 
@@ -124,8 +127,7 @@ export function AlertList() {
       {denied ? (
         <p className="text-sm text-zinc-600">
           This role cannot view alerts (
-          <code className="font-mono text-xs">alert.view</code> /{" "}
-          <code className="font-mono text-xs">execution.view</code> missing).
+          <code className="font-mono text-xs">alert.view</code> missing).
         </p>
       ) : null}
 
@@ -139,7 +141,7 @@ export function AlertList() {
               setQuery((current) => ({ ...current, q: event.target.value }))
             }
             className="mt-1 w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
-            placeholder="Kind, correlation, resource id"
+            placeholder="Kind, action, correlation, resource id"
           />
         </label>
         <label className="block text-sm">
@@ -152,32 +154,9 @@ export function AlertList() {
             className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
-            {(catalog?.kinds.length ? catalog.kinds : ALERT_KINDS).map((kind) => (
+            {ALERT_KINDS.map((kind) => (
               <option key={kind} value={kind}>
                 {alertKindLabel(kind)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="text-zinc-600">Severity</span>
-          <select
-            value={query.severity}
-            onChange={(event) =>
-              setQuery((current) => ({
-                ...current,
-                severity: event.target.value,
-              }))
-            }
-            className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
-          >
-            <option value="">All</option>
-            {(catalog?.severities.length
-              ? catalog.severities
-              : ALERT_SEVERITIES
-            ).map((severity) => (
-              <option key={severity} value={severity}>
-                {severity}
               </option>
             ))}
           </select>
@@ -192,14 +171,42 @@ export function AlertList() {
             className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
-            {(catalog?.statuses.length ? catalog.statuses : ALERT_STATUSES).map(
-              (status) => (
-                <option key={status} value={status}>
-                  {alertStatusLabel(status)}
-                </option>
-              ),
-            )}
+            {ALERT_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {alertStatusLabel(status)}
+              </option>
+            ))}
           </select>
+        </label>
+        <label className="block text-sm">
+          <span className="text-zinc-600">Resource type</span>
+          <input
+            type="text"
+            value={query.resourceType}
+            onChange={(event) =>
+              setQuery((current) => ({
+                ...current,
+                resourceType: event.target.value,
+              }))
+            }
+            className="mt-1 w-40 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            placeholder="execution"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-zinc-600">Resource id</span>
+          <input
+            type="text"
+            value={query.resourceId}
+            onChange={(event) =>
+              setQuery((current) => ({
+                ...current,
+                resourceId: event.target.value,
+              }))
+            }
+            className="mt-1 w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-xs"
+            placeholder="UUID"
+          />
         </label>
         <button
           type="button"
@@ -221,8 +228,8 @@ export function AlertList() {
       ) : null}
 
       <p className="text-sm text-zinc-600">
-        {visible.length} alert{visible.length === 1 ? "" : "s"} · IDs only, never
-        secrets
+        {visible.length} alert{visible.length === 1 ? "" : "s"} · identifiers
+        only, never secrets
         {lastRequestId ? (
           <span className="font-mono text-xs"> · {lastRequestId}</span>
         ) : null}
@@ -236,58 +243,84 @@ export function AlertList() {
         </p>
       ) : (
         <ul className="grid gap-3">
-          {visible.map((item) => (
-            <li
-              key={item.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    <Link
-                      href={`/alerts/${item.id}`}
-                      className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
-                    >
-                      {alertKindLabel(item.kind)}
-                    </Link>
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-700">
-                    {item.message || "Safe message unavailable."}
-                  </p>
+          {visible.map((item) => {
+            const executionHref = executionCorrelateHref(
+              item.resourceType,
+              item.resourceId,
+            );
+            return (
+              <li
+                key={item.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold">
+                      <Link
+                        href={`/alerts/${item.id}`}
+                        className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                      >
+                        {alertKindLabel(item.kind)}
+                      </Link>
+                    </h2>
+                    <p className="mt-1 text-sm text-zinc-700">
+                      {[item.action, item.outcome, item.code]
+                        .filter(Boolean)
+                        .join(" · ") || "Identifiers only."}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <AlertSeverityBadge
+                      severity={item.severity}
+                      kind={item.kind}
+                    />
+                    <p className="text-sm font-medium">
+                      {alertStatusLabel(item.status)}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <AlertSeverityBadge severity={item.severity} />
-                  <p className="text-sm font-medium">
-                    {alertStatusLabel(item.status)}
-                  </p>
-                </div>
-              </div>
-              <dl className="mt-3 grid gap-1 font-mono text-xs text-zinc-500 sm:grid-cols-2">
-                <div>
-                  <dt className="inline text-zinc-400">correlation </dt>
-                  <dd className="inline break-all">
-                    {item.correlationId || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="inline text-zinc-400">resource </dt>
-                  <dd className="inline break-all">
-                    {item.resourceType || "id"} {item.resourceId || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="inline text-zinc-400">occurred </dt>
-                  <dd className="inline">
-                    {item.occurredAt || item.createdAt || "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="inline text-zinc-400">id </dt>
-                  <dd className="inline break-all">{item.id}</dd>
-                </div>
-              </dl>
-            </li>
-          ))}
+                <dl className="mt-3 grid gap-1 font-mono text-xs text-zinc-500 sm:grid-cols-2">
+                  <div>
+                    <dt className="inline text-zinc-400">correlation </dt>
+                    <dd className="inline break-all">
+                      {item.correlationId || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-zinc-400">request </dt>
+                    <dd className="inline break-all">
+                      {item.requestId || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-zinc-400">resource </dt>
+                    <dd className="inline break-all">
+                      {executionHref ? (
+                        <Link
+                          href={executionHref}
+                          className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                        >
+                          {item.resourceType} {item.resourceId}
+                        </Link>
+                      ) : (
+                        <>
+                          {item.resourceType || "id"} {item.resourceId || "—"}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-zinc-400">occurred </dt>
+                    <dd className="inline">{item.occurredAt || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-zinc-400">id </dt>
+                    <dd className="inline break-all">{item.id}</dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

@@ -402,7 +402,6 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
       ["GET", ["alerts"], "/api/v1/alerts"],
-      ["GET", ["alerts", "catalog"], "/api/v1/alerts/catalog"],
       [
         "GET",
         ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
@@ -412,16 +411,6 @@ describe("resolveIdentityProxyTarget", () => {
         "POST",
         ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ack"],
         "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/ack",
-      ],
-      [
-        "POST",
-        ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "resolve"],
-        "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/resolve",
-      ],
-      [
-        "GET",
-        ["audit-events", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
-        "/api/v1/audit-events/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       ],
     ];
 
@@ -687,13 +676,36 @@ describe("resolveIdentityProxyTarget", () => {
       ]);
       assert.equal("status" in mutateRow, true, `${method} row`);
       if ("status" in mutateRow) {
-        assert.equal(mutateRow.status, 405);
+        // #58 has no GET /audit-events/{id}; the row is unknown (404).
+        assert.equal(mutateRow.status, 404);
       }
     }
     const inventAlertWrite = resolveIdentityProxyTarget("POST", ["alerts"]);
     assert.equal("status" in inventAlertWrite, true);
     if ("status" in inventAlertWrite) {
       assert.equal(inventAlertWrite.status, 405);
+    }
+    const catalog = resolveIdentityProxyTarget("GET", ["alerts", "catalog"]);
+    assert.equal("status" in catalog, true);
+    if ("status" in catalog) {
+      assert.equal(catalog.status, 404);
+    }
+    const resolve = resolveIdentityProxyTarget("POST", [
+      "alerts",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "resolve",
+    ]);
+    assert.equal("status" in resolve, true);
+    if ("status" in resolve) {
+      assert.equal(resolve.status, 404);
+    }
+    const auditRowGet = resolveIdentityProxyTarget("GET", [
+      "audit-events",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ]);
+    assert.equal("status" in auditRowGet, true);
+    if ("status" in auditRowGet) {
+      assert.equal(auditRowGet.status, 404);
     }
   });
 

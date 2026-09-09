@@ -1,35 +1,25 @@
 /**
- * E5.4 alert/audit presentation. Alerts show IDs and a safe message —
- * never secrets. Unexpected secret field names are a contract bug:
- * strip, never display. Workspace audit is append-only; the UI never
- * offers edit/delete.
+ * E5.4 alert/audit presentation against the #58 map. Alerts show
+ * identifiers only — never secrets. Unexpected secret field names
+ * (including `details`) are a contract bug: strip, never display.
+ * Workspace audit is append-only; the UI never offers edit/delete.
  */
 
 import {
   ALERT_ACK_APPLIED_MESSAGE,
+  ALERT_ACK_IDEMPOTENT_MESSAGE,
   ALERT_ACK_ROUTE_PUBLISHED,
-  ALERT_MUTATION_UNAVAILABLE_MESSAGE,
-  ALERT_RESOLVE_APPLIED_MESSAGE,
-  ALERT_RESOLVE_ROUTE_PUBLISHED,
-  AUDIT_APPEND_ONLY_HELP,
   alertHistoryHref,
+  executionCorrelateHref,
 } from "./alert-contract.ts";
 import {
+  ALERT_ACK_PERMISSION,
   ALERT_KINDS,
-  ALERT_MANAGE_FALLBACK_PERMISSION,
-  ALERT_MANAGE_PERMISSION,
-  ALERT_SEVERITIES,
-  ALERT_STATUSES,
-  ALERT_VIEW_FALLBACK_PERMISSION,
   ALERT_VIEW_PERMISSION,
-  AUDIT_VIEW_PERMISSION,
   REDACTED_MARKER,
-  WORKSPACE_ADMINISTER_PERMISSION,
-  type AlertCatalog,
   type AlertKind,
   type AlertListQuery,
   type AlertListRow,
-  type AlertResourceIds,
   type AlertSeverity,
   type AlertSeverityPresentation,
   type AlertStatus,
@@ -39,53 +29,16 @@ import {
 } from "./alert-types.ts";
 import {
   containsUnredactedSecret,
-  isSecretFieldName,
   redactedJson,
   stripSecretFields,
 } from "./execution.ts";
 import type { ProblemDetails } from "./problem.ts";
-
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const RESOURCE_ID_KEYS = new Set([
-  "executionid",
-  "execution_id",
-  "workflowid",
-  "workflow_id",
-  "workflowversionid",
-  "workflow_version_id",
-  "stepid",
-  "step_id",
-  "executionstepid",
-  "execution_step_id",
-  "jobid",
-  "job_id",
-  "artifactid",
-  "artifact_id",
-  "approvalid",
-  "approval_id",
-  "policyid",
-  "policy_id",
-  "credentialid",
-  "credential_id",
-  "resourceid",
-  "resource_id",
-  "targetid",
-  "target_id",
-  "nodeid",
-  "node_id",
-]);
 
 export const AUDIT_ROW_AFFORDANCES: AuditRowAffordances = {
   canEdit: false,
   canDelete: false,
   canMutate: false,
 };
-
-export function isUuid(value: string | undefined): boolean {
-  return Boolean(value && UUID.test(value));
-}
 
 function readString(...candidates: unknown[]): string {
   for (const value of candidates) {
@@ -94,18 +47,6 @@ function readString(...candidates: unknown[]): string {
     }
   }
   return "";
-}
-
-function readStringList(...candidates: unknown[]): string[] {
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -125,32 +66,10 @@ function hasPermission(
   return permissions.includes(key);
 }
 
-function hasAnyPermission(
-  permissions: readonly string[] | null | undefined,
-  keys: readonly string[],
-): boolean {
-  if (permissions == null) {
-    return true;
-  }
-  return keys.some((key) => permissions.includes(key));
-}
-
-/** Browse when alert.view / audit.view exists, else execution.view. */
 export function canSeeAlertsNav(
   permissions: readonly string[] | null | undefined,
 ): boolean {
-  if (permissions == null) {
-    return true;
-  }
-  if (
-    hasAnyPermission(permissions, [
-      ALERT_VIEW_PERMISSION,
-      ALERT_MANAGE_PERMISSION,
-    ])
-  ) {
-    return true;
-  }
-  return hasPermission(permissions, ALERT_VIEW_FALLBACK_PERMISSION);
+  return hasPermission(permissions, ALERT_VIEW_PERMISSION);
 }
 
 export function canSeeAuditNav(
@@ -159,20 +78,16 @@ export function canSeeAuditNav(
   if (permissions == null) {
     return true;
   }
-  if (hasPermission(permissions, AUDIT_VIEW_PERMISSION)) {
-    return true;
-  }
-  return canSeeAlertsNav(permissions);
+  return (
+    permissions.includes(ALERT_VIEW_PERMISSION) ||
+    permissions.includes("execution.view")
+  );
 }
 
-export function canManageAlerts(
+export function canAckWithPermission(
   permissions: readonly string[] | null | undefined,
 ): boolean {
-  return hasAnyPermission(permissions, [
-    ALERT_MANAGE_PERMISSION,
-    WORKSPACE_ADMINISTER_PERMISSION,
-    ALERT_MANAGE_FALLBACK_PERMISSION,
-  ]);
+  return hasPermission(permissions, ALERT_ACK_PERMISSION);
 }
 
 export function isAlertForbidden(
@@ -181,31 +96,37 @@ export function isAlertForbidden(
   return problem?.status === 403 || problem?.code === "forbidden";
 }
 
-export function isAlertNotFound(
-  problem: ProblemDetails | null | undefined,
-): boolean {
-  return problem?.status === 404 || problem?.code === "not-found";
-}
-
 export function normalizeAlertKind(kind: AlertKind | undefined): string {
   return kind?.trim().toLowerCase() || "unknown";
 }
 
 export function normalizeAlertSeverity(
   severity: AlertSeverity | undefined,
+  kind?: AlertKind,
 ): string {
-  return severity?.trim().toLowerCase() || "info";
+  const folded = severity?.trim().toLowerCase();
+  if (folded === "critical" || folded === "warning") {
+    return folded;
+  }
+  const kindFolded = normalizeAlertKind(kind);
+  if (kindFolded === "policy" || kindFolded === "redaction") {
+    return "critical";
+  }
+  if (kindFolded === "authorization" || kindFolded === "replay") {
+    return "warning";
+  }
+  return folded || "warning";
 }
 
 export function normalizeAlertStatus(status: AlertStatus | undefined): string {
-  const folded = status?.trim().toLowerCase() || "open";
-  if (folded === "acked" || folded === "ack") {
-    return "acknowledged";
+  const folded = status?.trim().toLowerCase() || "";
+  if (folded === "acked" || folded === "acknowledged" || folded === "ack") {
+    return "acked";
   }
-  if (folded === "closed") {
-    return "resolved";
+  if (folded === "open") {
+    return "open";
   }
-  return folded;
+  return folded || "open";
 }
 
 export function alertKindLabel(kind: AlertKind | undefined): string {
@@ -221,56 +142,39 @@ export function alertKindLabel(kind: AlertKind | undefined): string {
 
 export function alertStatusLabel(status: AlertStatus | undefined): string {
   const folded = normalizeAlertStatus(status);
-  const labels: Record<string, string> = {
-    open: "Open",
-    acknowledged: "Acknowledged",
-    resolved: "Resolved",
-  };
-  return labels[folded] ?? folded;
+  if (folded === "acked") {
+    return "Acknowledged";
+  }
+  if (folded === "open") {
+    return "Open";
+  }
+  return folded;
 }
 
 export function alertSeverityPresentation(
   severity: AlertSeverity | undefined,
+  kind?: AlertKind,
 ): AlertSeverityPresentation {
-  const folded = normalizeAlertSeverity(severity);
-  const catalog: Record<
-    string,
-    Omit<AlertSeverityPresentation, "severity">
-  > = {
-    critical: {
+  const folded = normalizeAlertSeverity(severity, kind);
+  if (folded === "critical") {
+    return {
+      severity: "critical",
       label: "Critical",
       icon: "⬤",
-      description: "Fail-closed authorization, replay, policy, or redaction failure that blocked work.",
+      description:
+        "Policy deny or redaction/unsafe-artifact failure. Work was blocked.",
       tone: "critical",
-    },
-    high: {
-      label: "High",
+    };
+  }
+  if (folded === "warning") {
+    return {
+      severity: "warning",
+      label: "Warning",
       icon: "◉",
-      description: "Actionable operational failure. Inspect correlation and resource ids.",
-      tone: "high",
-    },
-    medium: {
-      label: "Medium",
-      icon: "◎",
-      description: "Operator-visible signal that did not necessarily stop the run.",
-      tone: "medium",
-    },
-    low: {
-      label: "Low",
-      icon: "○",
-      description: "Informational operational signal.",
-      tone: "low",
-    },
-    info: {
-      label: "Info",
-      icon: "·",
-      description: "Safe diagnostic notice.",
-      tone: "info",
-    },
-  };
-  const known = catalog[folded];
-  if (known) {
-    return { severity: folded, ...known };
+      description:
+        "Authorization or replay failure. Inspect correlation and resource ids.",
+      tone: "warning",
+    };
   }
   return {
     severity: folded,
@@ -281,7 +185,7 @@ export function alertSeverityPresentation(
   };
 }
 
-export function safeAlertMessage(raw: string): string {
+export function safeAlertText(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) {
     return "";
@@ -292,97 +196,55 @@ export function safeAlertMessage(raw: string): string {
   return trimmed;
 }
 
-function emptyResourceIds(): AlertResourceIds {
-  return {
-    executionId: "",
-    workflowId: "",
-    workflowVersionId: "",
-    stepId: "",
-    jobId: "",
-    artifactId: "",
-    approvalId: "",
-    policyId: "",
-    credentialId: "",
-    extra: {},
-  };
+/** #58 alerts are identifiers only — drop `details` and locator leftovers. */
+const ALERT_FORBIDDEN_KEYS = new Set([
+  "details",
+  "storageref",
+  "storage_ref",
+  "storageRef",
+]);
+
+export function stripAlertForbiddenFields(
+  value: unknown,
+  strippedKeys: string[] = [],
+  path = "",
+): unknown {
+  const cleaned = stripSecretFields(value, strippedKeys, path);
+  return dropAlertForbidden(cleaned, strippedKeys, path);
 }
 
-export function parseAlertResourceIds(raw: unknown): AlertResourceIds {
-  const ids = emptyResourceIds();
-  const row = asRecord(raw);
-  if (!row) {
-    return ids;
+function dropAlertForbidden(
+  value: unknown,
+  strippedKeys: string[],
+  path: string,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) =>
+      dropAlertForbidden(
+        item,
+        strippedKeys,
+        path ? `${path}[${index}]` : `[${index}]`,
+      ),
+    );
   }
-  ids.executionId = readString(row.executionId, row.execution_id);
-  ids.workflowId = readString(row.workflowId, row.workflow_id);
-  ids.workflowVersionId = readString(
-    row.workflowVersionId,
-    row.workflow_version_id,
-  );
-  ids.stepId = readString(row.stepId, row.step_id, row.executionStepId);
-  ids.jobId = readString(row.jobId, row.job_id);
-  ids.artifactId = readString(row.artifactId, row.artifact_id);
-  ids.approvalId = readString(row.approvalId, row.approval_id);
-  ids.policyId = readString(row.policyId, row.policy_id);
-  ids.credentialId = readString(row.credentialId, row.credential_id);
-  for (const [key, value] of Object.entries(row)) {
-    const folded = key.trim().toLowerCase().replace(/-/g, "_");
-    if (isSecretFieldName(key)) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const childPath = path ? `${path}.${key}` : key;
+    if (ALERT_FORBIDDEN_KEYS.has(key)) {
+      strippedKeys.push(childPath);
       continue;
     }
-    if (typeof value !== "string" || !value.trim()) {
-      continue;
-    }
-    if (
-      RESOURCE_ID_KEYS.has(folded) ||
-      RESOURCE_ID_KEYS.has(folded.replace(/_/g, ""))
-    ) {
-      if (!ids.extra[key] && !(key in ids)) {
-        ids.extra[key] = value.trim();
-      }
-    }
+    out[key] = dropAlertForbidden(child, strippedKeys, childPath);
   }
-  return ids;
-}
-
-function resourceIdsFromRow(row: Record<string, unknown>): AlertResourceIds {
-  const nested = parseAlertResourceIds(
-    row.resourceIds ?? row.resource_ids ?? row.resources,
-  );
-  const top = parseAlertResourceIds(row);
-  return {
-    executionId: nested.executionId || top.executionId,
-    workflowId: nested.workflowId || top.workflowId,
-    workflowVersionId: nested.workflowVersionId || top.workflowVersionId,
-    stepId: nested.stepId || top.stepId,
-    jobId: nested.jobId || top.jobId,
-    artifactId: nested.artifactId || top.artifactId,
-    approvalId: nested.approvalId || top.approvalId,
-    policyId: nested.policyId || top.policyId,
-    credentialId: nested.credentialId || top.credentialId,
-    extra: nested.extra,
-  };
-}
-
-export function listedResourceIds(ids: AlertResourceIds): Array<[string, string]> {
-  const pairs: Array<[string, string]> = [
-    ["executionId", ids.executionId],
-    ["workflowId", ids.workflowId],
-    ["workflowVersionId", ids.workflowVersionId],
-    ["stepId", ids.stepId],
-    ["jobId", ids.jobId],
-    ["artifactId", ids.artifactId],
-    ["approvalId", ids.approvalId],
-    ["policyId", ids.policyId],
-    ["credentialId", ids.credentialId],
-    ...Object.entries(ids.extra),
-  ];
-  return pairs.filter(([, value]) => Boolean(value));
+  return out;
 }
 
 export function parseOperationalAlert(raw: unknown): OperationalAlert | null {
   const stripped: string[] = [];
-  const cleaned = stripSecretFields(raw, stripped);
+  const cleaned = stripAlertForbiddenFields(raw, stripped);
   const row = asRecord(cleaned);
   if (!row) {
     return null;
@@ -392,35 +254,35 @@ export function parseOperationalAlert(raw: unknown): OperationalAlert | null {
   if (!id) {
     return null;
   }
-  const kind = readString(nested.kind, nested.type, nested.eventType);
+  const kind = readString(nested.kind, nested.type);
+  const acknowledgedAt = readString(
+    nested.acknowledgedAt,
+    nested.acknowledged_at,
+  );
   return {
     id,
     kind: kind || "unknown",
-    severity: readString(nested.severity) || "info",
-    status: normalizeAlertStatus(readString(nested.status)),
-    message: safeAlertMessage(
-      readString(nested.message, nested.title, nested.detail, nested.summary),
+    severity: normalizeAlertSeverity(readString(nested.severity), kind),
+    status: normalizeAlertStatus(
+      readString(nested.status) || (acknowledgedAt ? "acked" : "open"),
     ),
-    correlationId: readString(nested.correlationId, nested.correlation_id),
+    action: safeAlertText(readString(nested.action)),
     resourceType: readString(nested.resourceType, nested.resource_type),
     resourceId: readString(nested.resourceId, nested.resource_id),
-    resourceIds: resourceIdsFromRow(nested),
+    correlationId: readString(nested.correlationId, nested.correlation_id),
+    requestId: readString(nested.requestId, nested.request_id),
+    actorId: readString(nested.actorId, nested.actor_id),
+    outcome: safeAlertText(readString(nested.outcome)),
+    code: safeAlertText(readString(nested.code)),
+    acknowledgedAt,
+    acknowledgedBy: readString(
+      nested.acknowledgedBy,
+      nested.acknowledged_by,
+    ),
     occurredAt: readString(
       nested.occurredAt,
       nested.occurred_at,
       nested.createdAt,
-      nested.created_at,
-    ),
-    createdAt: readString(nested.createdAt, nested.created_at),
-    updatedAt: readString(nested.updatedAt, nested.updated_at),
-    acknowledgedAt: readString(
-      nested.acknowledgedAt,
-      nested.acknowledged_at,
-    ),
-    resolvedAt: readString(nested.resolvedAt, nested.resolved_at),
-    permittedActions: readStringList(
-      nested.permittedActions,
-      nested.permitted_actions,
     ),
   };
 }
@@ -429,18 +291,8 @@ export function parseAlertList(raw: unknown): OperationalAlert[] {
   return parseItemList(raw, parseOperationalAlert);
 }
 
-export function parseAlertCatalog(raw: unknown): AlertCatalog {
-  const stripped: string[] = [];
-  const cleaned = stripSecretFields(raw, stripped);
-  const row = asRecord(cleaned) ?? {};
-  const kinds = readStringList(row.kinds, row.types);
-  const severities = readStringList(row.severities);
-  const statuses = readStringList(row.statuses);
-  return {
-    kinds: kinds.length ? kinds : [...ALERT_KINDS],
-    severities: severities.length ? severities : [...ALERT_SEVERITIES],
-    statuses: statuses.length ? statuses : [...ALERT_STATUSES],
-  };
+export function documentedAlertKinds(): readonly string[] {
+  return ALERT_KINDS;
 }
 
 export function parseWorkspaceAuditEvent(raw: unknown): WorkspaceAuditEvent | null {
@@ -500,8 +352,9 @@ export function filterAlertList(
   query: AlertListQuery & { q?: string },
 ): OperationalAlert[] {
   const kind = query.kind?.trim().toLowerCase();
-  const severity = query.severity?.trim().toLowerCase();
   const status = query.status?.trim().toLowerCase();
+  const resourceType = query.resourceType?.trim().toLowerCase();
+  const resourceId = query.resourceId?.trim();
   const q = query.q?.trim().toLowerCase();
   const limit =
     typeof query.limit === "number" && Number.isFinite(query.limit)
@@ -512,18 +365,24 @@ export function filterAlertList(
     if (kind && normalizeAlertKind(item.kind) !== kind) {
       return false;
     }
-    if (severity && normalizeAlertSeverity(item.severity) !== severity) {
+    if (status && normalizeAlertStatus(item.status) !== status) {
       return false;
     }
-    if (status && normalizeAlertStatus(item.status) !== status) {
+    if (resourceType && item.resourceType.toLowerCase() !== resourceType) {
+      return false;
+    }
+    if (resourceId && item.resourceId !== resourceId) {
       return false;
     }
     if (q) {
       const haystack = [
         item.id,
         item.kind,
-        item.message,
+        item.action,
+        item.outcome,
+        item.code,
         item.correlationId,
+        item.requestId,
         item.resourceId,
         item.resourceType,
       ]
@@ -538,66 +397,41 @@ export function filterAlertList(
   return limit == null ? filtered : filtered.slice(0, limit);
 }
 
-function permittedIncludes(
-  permitted: readonly string[] | null | undefined,
-  action: string,
-): boolean {
-  if (permitted == null || permitted.length === 0) {
-    return true;
-  }
-  const folded = permitted.map((item) => item.trim().toLowerCase());
-  return folded.includes(action) || folded.includes(`${action}d`);
-}
-
 export function canAckAlert(options: {
   permissions?: readonly string[] | null;
   status?: AlertStatus;
-  permittedActions?: readonly string[] | null;
+  acknowledgedAt?: string;
 }): boolean {
   if (!ALERT_ACK_ROUTE_PUBLISHED) {
     return false;
   }
-  if (!canManageAlerts(options.permissions)) {
+  if (!canAckWithPermission(options.permissions)) {
     return false;
   }
-  const status = normalizeAlertStatus(options.status);
-  if (status !== "open") {
+  if (options.acknowledgedAt?.trim()) {
     return false;
   }
-  return permittedIncludes(options.permittedActions, "ack");
+  return normalizeAlertStatus(options.status) === "open";
 }
 
-export function canResolveAlert(options: {
-  permissions?: readonly string[] | null;
-  status?: AlertStatus;
-  permittedActions?: readonly string[] | null;
+export function isIdempotentAck(record: {
+  previousStatus?: string;
+  status?: string;
+  acknowledgedAt?: string;
 }): boolean {
-  if (!ALERT_RESOLVE_ROUTE_PUBLISHED) {
-    return false;
-  }
-  if (!canManageAlerts(options.permissions)) {
-    return false;
-  }
-  const status = normalizeAlertStatus(options.status);
-  if (status === "resolved") {
-    return false;
-  }
-  return permittedIncludes(options.permittedActions, "resolve");
+  return (
+    normalizeAlertStatus(record.previousStatus) === "acked" &&
+    normalizeAlertStatus(record.status) === "acked"
+  );
 }
 
-export function alertMutationUnavailableMessage(): string {
-  if (!ALERT_ACK_ROUTE_PUBLISHED && !ALERT_RESOLVE_ROUTE_PUBLISHED) {
-    return ALERT_MUTATION_UNAVAILABLE_MESSAGE;
-  }
-  return "";
-}
-
-export function ackOutcomeMessage(): string {
-  return ALERT_ACK_APPLIED_MESSAGE;
-}
-
-export function resolveOutcomeMessage(): string {
-  return ALERT_RESOLVE_APPLIED_MESSAGE;
+export function ackOutcomeMessage(record: {
+  previousStatus?: string;
+  status?: string;
+}): string {
+  return isIdempotentAck(record)
+    ? ALERT_ACK_IDEMPOTENT_MESSAGE
+    : ALERT_ACK_APPLIED_MESSAGE;
 }
 
 export function auditRowAffordances(): AuditRowAffordances {
@@ -624,11 +458,14 @@ export function alertListRow(record: OperationalAlert): AlertListRow {
     kind: record.kind,
     severity: record.severity,
     status: record.status,
-    message: record.message || "—",
+    action: record.action || "—",
+    outcome: record.outcome || "—",
+    code: record.code || "—",
     correlationId: record.correlationId || "—",
+    requestId: record.requestId || "—",
     resourceId: record.resourceId || "—",
     resourceType: record.resourceType || "—",
-    occurredAt: record.occurredAt || record.createdAt || "—",
+    occurredAt: record.occurredAt || "—",
   };
 }
 
@@ -642,30 +479,29 @@ export function alertListText(items: OperationalAlert[]): string {
       [
         row.id,
         alertKindLabel(row.kind),
-        alertSeverityPresentation(row.severity).icon,
-        alertSeverityPresentation(row.severity).label,
+        alertSeverityPresentation(row.severity, row.kind).icon,
+        alertSeverityPresentation(row.severity, row.kind).label,
         alertStatusLabel(row.status),
-        row.message,
+        row.action,
+        row.outcome,
+        row.code,
         row.correlationId,
+        row.requestId,
         row.resourceType,
         row.resourceId,
         row.occurredAt,
+        executionCorrelateHref(String(row.resourceType), String(row.resourceId)),
       ].join(" "),
     )
     .join("\n");
 }
 
 export function alertDetailText(alert: OperationalAlert): string {
-  const ids = listedResourceIds(alert.resourceIds)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(" ");
   return [
     alertListText([alert]),
-    alert.correlationId,
-    alert.resourceId,
-    ids,
+    alert.actorId,
     alert.acknowledgedAt,
-    alert.resolvedAt,
+    alert.acknowledgedBy,
   ].join("\n");
 }
 
@@ -682,7 +518,7 @@ export function auditBrowserText(items: WorkspaceAuditEvent[]): string {
         event.occurredAt,
         event.actorId,
         redactedJson(event.details),
-        AUDIT_APPEND_ONLY_HELP,
+        AUDIT_ROW_AFFORDANCES.canMutate ? "mutable" : "append-only",
       ].join(" "),
     )
     .join("\n");

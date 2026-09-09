@@ -1,8 +1,9 @@
 /**
- * Thin typed E5.4 alert/audit client. Paths come only from
- * alert-contract.ts. Session: credentials:include. CSRF on
- * POST ack/resolve. Host-supplied workspace IDs are never sent.
- * Unexpected secrets are stripped. Never log request bodies.
+ * Thin typed E5.4 client. Paths come only from alert-contract.ts (#58).
+ *
+ * Session: credentials:include. CSRF on POST ack. Host-supplied
+ * workspace IDs are never sent. Unexpected secrets are stripped.
+ * Never log request bodies.
  *
  * Workspace audit is GET /audit-events — not E2.2
  * GET /workspace/audit-events.
@@ -12,29 +13,22 @@ import { callIdentityProxy, type IdentityClientResult } from "./identity-client.
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
-  ALERT_ACK_APPLIED_MESSAGE,
-  ALERT_RESOLVE_APPLIED_MESSAGE,
   alertAckPath,
   alertPath,
-  alertResolvePath,
-  alertsCatalogPath,
   buildAlertAckBody,
-  buildAlertResolveBody,
   listAlertsPath,
   listWorkspaceAuditEventsPath,
-  workspaceAuditEventPath,
 } from "./alert-contract.ts";
 import {
+  ackOutcomeMessage,
   isAlertForbidden,
-  parseAlertCatalog,
   parseAlertList,
   parseOperationalAlert,
-  parseWorkspaceAuditEvent,
   parseWorkspaceAuditList,
+  stripAlertForbiddenFields,
   stripSecretFields,
 } from "./alert.ts";
 import type {
-  AlertCatalog,
   AlertListQuery,
   OperationalAlert,
   WorkspaceAuditEvent,
@@ -66,19 +60,12 @@ export type AlertDetailSuccess = {
   strippedKeys: string[];
 };
 
-export type AlertCatalogSuccess = {
-  ok: true;
-  statusCode: number;
-  requestId: string;
-  catalog: AlertCatalog;
-  strippedKeys: string[];
-};
-
-export type AlertMutationSuccess = {
+export type AlertAckSuccess = {
   ok: true;
   statusCode: number;
   requestId: string;
   alert: OperationalAlert | null;
+  idempotent: boolean;
   message: string;
   strippedKeys: string[];
 };
@@ -91,14 +78,6 @@ export type AuditListSuccess = {
   strippedKeys: string[];
 };
 
-export type AuditDetailSuccess = {
-  ok: true;
-  statusCode: number;
-  requestId: string;
-  event: WorkspaceAuditEvent;
-  strippedKeys: string[];
-};
-
 export async function listAlerts(
   identity: DevIdentity,
   filter: AlertListQuery = {},
@@ -108,30 +87,12 @@ export async function listAlerts(
     return failure(result);
   }
   const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
+  stripAlertForbiddenFields(result.data, strippedKeys);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseAlertList(result.data),
-    strippedKeys,
-  };
-}
-
-export async function getAlertCatalog(
-  identity: DevIdentity,
-): Promise<AlertCatalogSuccess | AlertClientFailure> {
-  const result = await callIdentityProxy<unknown>(alertsCatalogPath(), identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    catalog: parseAlertCatalog(result.data),
     strippedKeys,
   };
 }
@@ -147,34 +108,62 @@ export async function getAlert(
 
 /**
  * POST /alerts/{id}/ack with CSRF. Empty body — never send
- * host-supplied id / workspaceId. 403 is fail-closed.
+ * host-supplied id / workspaceId. A second ack is success
+ * (idempotent). 403 is fail-closed.
  */
 export async function ackAlert(
   identity: DevIdentity,
   alertId: string,
-): Promise<AlertMutationSuccess | AlertClientFailure> {
+  previousStatus?: string,
+): Promise<AlertAckSuccess | AlertClientFailure> {
   const path = alertAckPath(alertId);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
     body: buildAlertAckBody(),
   });
-  return mutationResult(result, path, alertId, ALERT_ACK_APPLIED_MESSAGE);
-}
-
-/**
- * POST /alerts/{id}/resolve with CSRF. Empty body — never send
- * host-supplied id / workspaceId. 403 is fail-closed.
- */
-export async function resolveAlert(
-  identity: DevIdentity,
-  alertId: string,
-): Promise<AlertMutationSuccess | AlertClientFailure> {
-  const path = alertResolvePath(alertId);
-  const result = await callIdentityProxy<unknown>(path, identity, {
-    method: "POST",
-    body: buildAlertResolveBody(),
-  });
-  return mutationResult(result, path, alertId, ALERT_RESOLVE_APPLIED_MESSAGE);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripAlertForbiddenFields(result.data, strippedKeys);
+  if (result.statusCode === 204 || result.data == null) {
+    return {
+      ok: true,
+      statusCode: result.statusCode,
+      requestId: result.requestId,
+      alert: null,
+      idempotent: previousStatus === "acked",
+      message: ackOutcomeMessage({
+        previousStatus,
+        status: "acked",
+      }),
+      strippedKeys,
+    };
+  }
+  const parsed = parseOperationalAlert(result.data);
+  if (parsed && alertId && parsed.id !== alertId) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Alert ack payload id did not match the requested alert.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    alert: parsed,
+    idempotent: ackOutcomeMessage({
+      previousStatus,
+      status: parsed?.status ?? "acked",
+    }).includes("idempotent"),
+    message: ackOutcomeMessage({
+      previousStatus,
+      status: parsed?.status ?? "acked",
+    }),
+    strippedKeys,
+  };
 }
 
 export async function listWorkspaceAuditEvents(
@@ -199,35 +188,6 @@ export async function listWorkspaceAuditEvents(
   };
 }
 
-export async function getWorkspaceAuditEvent(
-  identity: DevIdentity,
-  auditEventId: string,
-): Promise<AuditDetailSuccess | AlertClientFailure> {
-  const path = workspaceAuditEventPath(auditEventId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  const event = parseWorkspaceAuditEvent(result.data);
-  if (!event) {
-    return malformed(
-      result.requestId,
-      result.statusCode,
-      path,
-      "Audit event payload was missing id or action.",
-    );
-  }
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    event,
-    strippedKeys,
-  };
-}
-
 function detailResult(
   result: IdentityClientResult<unknown>,
   instance: string,
@@ -237,7 +197,7 @@ function detailResult(
     return failure(result);
   }
   const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
+  stripAlertForbiddenFields(result.data, strippedKeys);
   const alert = parseOperationalAlert(result.data);
   if (!alert) {
     return malformed(
@@ -260,46 +220,6 @@ function detailResult(
     statusCode: result.statusCode,
     requestId: result.requestId,
     alert,
-    strippedKeys,
-  };
-}
-
-function mutationResult(
-  result: IdentityClientResult<unknown>,
-  instance: string,
-  alertId: string,
-  message: string,
-): AlertMutationSuccess | AlertClientFailure {
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretFields(result.data, strippedKeys);
-  if (result.statusCode === 204 || result.data == null) {
-    return {
-      ok: true,
-      statusCode: result.statusCode,
-      requestId: result.requestId,
-      alert: null,
-      message,
-      strippedKeys,
-    };
-  }
-  const parsed = parseOperationalAlert(result.data);
-  if (parsed && alertId && parsed.id !== alertId) {
-    return malformed(
-      result.requestId,
-      result.statusCode,
-      instance,
-      "Alert mutation payload id did not match the requested alert.",
-    );
-  }
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    alert: parsed,
-    message,
     strippedKeys,
   };
 }

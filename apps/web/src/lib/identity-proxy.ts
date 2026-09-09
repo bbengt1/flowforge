@@ -270,11 +270,12 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // GET /workspace/artifacts/{id} above is the E2.2 isolation hook.
   // GET /artifact-downloads/{grantId} streams bytes (not JSON).
   ...EXECUTION_PROXY_ROUTES,
-  // E5.4 alert/audit UI. Paths live in alert-contract.ts. GET
-  // /audit-events list stays on EXECUTION_PROXY_ROUTES. This block
-  // adds GET /alerts, GET /audit-events/{id}, and CSRF POST
-  // ack/resolve. Do not allowlist audit mutations. Isolation
-  // GET /workspace/audit-events stays above this block.
+  // E5.4 alert/audit UI (#58). Paths live in alert-contract.ts.
+  // GET /audit-events list stays on EXECUTION_PROXY_ROUTES. This
+  // block adds GET /alerts, GET /alerts/{id}, and CSRF POST
+  // /alerts/{id}/ack. No catalog, resolve, or GET
+  // /audit-events/{id}. Do not allowlist audit mutations.
+  // Isolation GET /workspace/audit-events stays above this block.
   ...ALERT_PROXY_ROUTES,
 ];
 

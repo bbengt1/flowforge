@@ -14,11 +14,12 @@ export default function AlertsPage() {
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Workspace signals for authorization, replay, policy, and redaction
-          failures. Cards show kind, severity, timestamps, correlation id,
-          resource ids, and a safe message — never secrets. Unexpected secret
-          fields are stripped. Ack/resolve use CSRF when the API publishes
-          those mutations; otherwise the list is read-only. Relates to #49 /
-          Part of #45.
+          failures (#58). Cards show kind, severity, action, outcome, code,
+          timestamps, and correlation/request/resource ids — never secrets or
+          a details payload. Unexpected secret fields are stripped. Ack is
+          CSRF + empty <code className="font-mono text-xs">{"{}"}</code> and
+          requires <code className="font-mono text-xs">alert.ack</code>.
+          Relates to #49 / Part of #45.
         </p>
       </header>
       <AlertList />

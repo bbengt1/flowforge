@@ -16,9 +16,11 @@ export default async function AlertPage({ params }: AlertPageProps) {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Alert detail</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Correlation and resource ids only. Secret fields are stripped.
-          Acknowledge and resolve post empty JSON with CSRF when the API
-          provides those mutations. HTTP 403 is fail-closed.
+          Identifiers only — no details payload. Secret fields are stripped.
+          Acknowledge posts empty JSON with CSRF (
+          <code className="font-mono text-xs">alert.ack</code>). A second ack
+          is idempotent 200. Viewer ack is HTTP 403 fail-closed. There is no
+          resolve route.
         </p>
       </header>
       <AlertDetail alertId={id} />

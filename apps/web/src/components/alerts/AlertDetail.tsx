@@ -9,10 +9,9 @@ import {
   alertKindLabel,
   alertStatusLabel,
   canAckAlert,
-  canResolveAlert,
-  listedResourceIds,
 } from "@/lib/alert";
-import { ackAlert, getAlert, resolveAlert } from "@/lib/alert-client";
+import { ackAlert, getAlert } from "@/lib/alert-client";
+import { executionCorrelateHref } from "@/lib/alert-contract";
 import type { OperationalAlert } from "@/lib/alert-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -86,14 +85,11 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
   }, [ready, identity, alertId]);
 
-  async function mutate(action: "ack" | "resolve") {
-    setPending(action);
+  async function acknowledge() {
+    setPending("ack");
     setProblem(null);
     setOutcome("");
-    const result =
-      action === "ack"
-        ? await ackAlert(identity, alertId)
-        : await resolveAlert(identity, alertId);
+    const result = await ackAlert(identity, alertId, alert?.status);
     setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
@@ -113,17 +109,15 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
     ? canAckAlert({
         permissions,
         status: alert.status,
-        permittedActions: alert.permittedActions,
+        acknowledgedAt: alert.acknowledgedAt,
       })
     : false;
-  const showResolve = alert
-    ? canResolveAlert({
-        permissions,
-        status: alert.status,
-        permittedActions: alert.permittedActions,
-      })
-    : false;
-  const resourcePairs = alert ? listedResourceIds(alert.resourceIds) : [];
+  const executionHref = alert
+    ? executionCorrelateHref(alert.resourceType, alert.resourceId)
+    : "";
+  const auditHref = alert
+    ? `/audit?action=${encodeURIComponent(`alert.${alert.kind}`)}`
+    : "/audit";
 
   return (
     <div className="space-y-6">
@@ -163,7 +157,10 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
         <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <header className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <AlertSeverityBadge severity={alert.severity} />
+              <AlertSeverityBadge
+                severity={alert.severity}
+                kind={alert.kind}
+              />
               <p className="text-sm font-medium">
                 {alertStatusLabel(alert.status)}
               </p>
@@ -172,7 +169,9 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
               {alertKindLabel(alert.kind)}
             </h2>
             <p className="text-sm text-zinc-700">
-              {alert.message || "Safe message unavailable."}
+              {[alert.action, alert.outcome, alert.code]
+                .filter(Boolean)
+                .join(" · ") || "Identifiers only — no details payload."}
             </p>
             <p className="font-mono text-xs break-all text-zinc-500">
               {alert.id}
@@ -188,9 +187,19 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
               </dd>
             </div>
             <div>
+              <dt className="text-zinc-500">Request id</dt>
+              <dd className="break-all font-mono text-xs">
+                {alert.requestId || "—"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-zinc-500">Occurred</dt>
-              <dd className="font-mono text-xs">
-                {alert.occurredAt || alert.createdAt || "—"}
+              <dd className="font-mono text-xs">{alert.occurredAt || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-zinc-500">Actor</dt>
+              <dd className="break-all font-mono text-xs">
+                {alert.actorId || "—"}
               </dd>
             </div>
             <div>
@@ -200,7 +209,16 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
             <div>
               <dt className="text-zinc-500">Resource id</dt>
               <dd className="break-all font-mono text-xs">
-                {alert.resourceId || "—"}
+                {executionHref ? (
+                  <Link
+                    href={executionHref}
+                    className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  >
+                    {alert.resourceId}
+                  </Link>
+                ) : (
+                  alert.resourceId || "—"
+                )}
               </dd>
             </div>
             {alert.acknowledgedAt ? (
@@ -209,54 +227,43 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
                 <dd className="font-mono text-xs">{alert.acknowledgedAt}</dd>
               </div>
             ) : null}
-            {alert.resolvedAt ? (
+            {alert.acknowledgedBy ? (
               <div>
-                <dt className="text-zinc-500">Resolved</dt>
-                <dd className="font-mono text-xs">{alert.resolvedAt}</dd>
+                <dt className="text-zinc-500">Acknowledged by</dt>
+                <dd className="break-all font-mono text-xs">
+                  {alert.acknowledgedBy}
+                </dd>
               </div>
             ) : null}
           </dl>
 
-          {resourcePairs.length ? (
-            <div>
-              <h3 className="text-sm font-semibold">Resource ids</h3>
-              <ul className="mt-2 grid gap-1 font-mono text-xs text-zinc-600 sm:grid-cols-2">
-                {resourcePairs.map(([key, value]) => (
-                  <li key={key} className="break-all">
-                    {key} {value}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <p className="text-sm">
+            <Link
+              href={auditHref}
+              className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            >
+              Correlate in audit
+            </Link>
+          </p>
 
-          {showAck || showResolve ? (
+          {showAck ? (
             <div className="flex flex-wrap gap-2">
-              {showAck ? (
-                <button
-                  type="button"
-                  onClick={() => void mutate("ack")}
-                  disabled={pending != null}
-                  className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-                >
-                  {pending === "ack" ? "Acknowledging…" : "Acknowledge"}
-                </button>
-              ) : null}
-              {showResolve ? (
-                <button
-                  type="button"
-                  onClick={() => void mutate("resolve")}
-                  disabled={pending != null}
-                  className="rounded-lg border border-zinc-400 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
-                >
-                  {pending === "resolve" ? "Resolving…" : "Resolve"}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void acknowledge()}
+                disabled={pending != null}
+                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              >
+                {pending === "ack" ? "Acknowledging…" : "Acknowledge"}
+              </button>
             </div>
           ) : (
             <p className="text-sm text-zinc-600">
-              This alert is read-only for the current role, or ack/resolve is
-              not published yet. Mutations use CSRF when the API provides them.
+              Acknowledge requires{" "}
+              <code className="font-mono text-xs">alert.ack</code> and an open
+              alert. The POST is CSRF + empty{" "}
+              <code className="font-mono text-xs">{"{}"}</code>. Viewer ack is
+              fail-closed (403). There is no resolve route.
             </p>
           )}
         </section>

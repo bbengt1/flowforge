@@ -3,14 +3,12 @@ import { afterEach, describe, it } from "node:test";
 import {
   ackAlert,
   getAlert,
-  getAlertCatalog,
   listAlerts,
   listWorkspaceAuditEvents,
-  resolveAlert,
 } from "./alert-client.ts";
 import {
   ALERT_ACK_APPLIED_MESSAGE,
-  ALERT_RESOLVE_APPLIED_MESSAGE,
+  ALERT_ACK_IDEMPOTENT_MESSAGE,
 } from "./alert-contract.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { PROBLEM_JSON } from "./problem.ts";
@@ -52,13 +50,16 @@ function alertPayload(overrides: Record<string, unknown> = {}) {
   return {
     id: ALERT_ID,
     kind: "authorization",
-    severity: "high",
+    severity: "warning",
     status: "open",
-    message: "Authorization failed",
+    action: "authorization.denied",
+    outcome: "denied",
+    code: "forbidden",
     correlationId: "corr-e54-authorization",
+    requestId: "req-e54-authorization",
     resourceType: "execution",
     resourceId: EXECUTION_ID,
-    resourceIds: { executionId: EXECUTION_ID },
+    actorId: "user-1",
     occurredAt: "2026-09-09T03:00:00.000Z",
     ...overrides,
   };
@@ -90,7 +91,7 @@ function problemResponse(status: number, code: string, detail: string) {
 }
 
 describe("alert client", () => {
-  it("lists alerts with documented filters and strips secrets", async () => {
+  it("lists alerts with documented #58 filters and strips secrets", async () => {
     withSession();
     const seen: { url?: string; method?: string } = {};
     globalThis.fetch = (async (input, init) => {
@@ -104,42 +105,34 @@ describe("alert client", () => {
     const result = await listAlerts(identity, {
       kind: "authorization",
       status: "open",
+      resourceType: "execution",
+      resourceId: EXECUTION_ID,
       limit: 20,
     });
     assert.equal(result.ok, true);
     if (!result.ok) {
       return;
     }
-    assert.match(String(seen.url), /\/alerts\?kind=authorization&status=open&limit=20/);
+    assert.match(
+      String(seen.url),
+      /\/alerts\?kind=authorization&status=open&resourceType=execution&resourceId=33333333-3333-4333-8333-333333333333&limit=20/,
+    );
     assert.equal(seen.method, "GET");
     assert.equal(result.items[0]?.id, ALERT_ID);
     assert.ok(result.strippedKeys.includes("items[0].secret"));
     assert.ok(!JSON.stringify(result.items).includes("should-not-leak"));
   });
 
-  it("loads catalog and detail without logging secret fields", async () => {
+  it("loads detail without logging secret fields", async () => {
     withSession();
-    globalThis.fetch = (async (input) => {
-      const url = String(input);
-      if (url.includes("/catalog")) {
-        return jsonResponse({
-          kinds: ["authorization", "replay", "policy", "redaction"],
-          severities: ["high"],
-          statuses: ["open"],
-        });
-      }
-      return jsonResponse(alertPayload({ password: "super-secret" }));
-    }) as typeof fetch;
+    globalThis.fetch = (async () =>
+      jsonResponse(alertPayload({ password: "super-secret" }))) as typeof fetch;
 
-    const catalog = await getAlertCatalog(identity);
-    assert.equal(catalog.ok, true);
-    if (catalog.ok) {
-      assert.ok(catalog.catalog.kinds.includes("redaction"));
-    }
     const detail = await getAlert(identity, ALERT_ID);
     assert.equal(detail.ok, true);
     if (detail.ok) {
       assert.equal(detail.alert.correlationId, "corr-e54-authorization");
+      assert.equal(detail.alert.requestId, "req-e54-authorization");
       assert.ok(detail.strippedKeys.includes("password"));
     }
   });
@@ -152,10 +145,15 @@ describe("alert client", () => {
       seen.body = String(init?.body ?? "");
       const headers = new Headers(init?.headers);
       seen.csrf = headers.get(CSRF_HEADER);
-      return jsonResponse(alertPayload({ status: "acknowledged" }));
+      return jsonResponse(
+        alertPayload({
+          status: "acked",
+          acknowledgedAt: "2026-09-09T03:01:00.000Z",
+        }),
+      );
     }) as typeof fetch;
 
-    const result = await ackAlert(identity, ALERT_ID);
+    const result = await ackAlert(identity, ALERT_ID, "open");
     assert.equal(result.ok, true);
     if (!result.ok) {
       return;
@@ -164,30 +162,38 @@ describe("alert client", () => {
     assert.equal(seen.body, "{}");
     assert.equal(seen.csrf, "csrf-ok");
     assert.equal(result.message, ALERT_ACK_APPLIED_MESSAGE);
-    assert.equal(result.alert?.status, "acknowledged");
+    assert.equal(result.alert?.status, "acked");
+    assert.equal(result.idempotent, false);
   });
 
-  it("resolves with CSRF and fails closed on 403", async () => {
+  it("treats a second ack as idempotent 200 and fails closed on 403", async () => {
     withSession();
     const seen: { csrf?: string | null; body?: string } = {};
     globalThis.fetch = (async (_input, init) => {
       const headers = new Headers(init?.headers);
       seen.csrf = headers.get(CSRF_HEADER);
       seen.body = String(init?.body ?? "");
-      return jsonResponse(alertPayload({ status: "resolved" }), 200);
+      return jsonResponse(
+        alertPayload({
+          status: "acked",
+          acknowledgedAt: "2026-09-09T03:01:00.000Z",
+        }),
+        200,
+      );
     }) as typeof fetch;
 
-    const result = await resolveAlert(identity, ALERT_ID);
+    const result = await ackAlert(identity, ALERT_ID, "acked");
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(seen.csrf, "csrf-ok");
       assert.equal(seen.body, "{}");
-      assert.equal(result.message, ALERT_RESOLVE_APPLIED_MESSAGE);
+      assert.equal(result.message, ALERT_ACK_IDEMPOTENT_MESSAGE);
+      assert.equal(result.idempotent, true);
     }
 
     globalThis.fetch = (async () =>
-      problemResponse(403, "forbidden", "viewer cannot resolve")) as typeof fetch;
-    const denied = await resolveAlert(identity, ALERT_ID);
+      problemResponse(403, "forbidden", "viewer cannot ack")) as typeof fetch;
+    const denied = await ackAlert(identity, ALERT_ID);
     assert.equal(denied.ok, false);
     if (!denied.ok) {
       assert.equal(denied.forbidden, true);
@@ -228,7 +234,7 @@ describe("alert client", () => {
         items: [
           {
             id: ALERT_ID,
-            action: "authorization.denied",
+            action: "alert.authorization",
             outcome: "denied",
             resourceType: "execution",
             resourceId: EXECUTION_ID,
@@ -242,14 +248,16 @@ describe("alert client", () => {
     const result = await listWorkspaceAuditEvents(identity, {
       resourceType: "execution",
       resourceId: EXECUTION_ID,
+      action: "alert.authorization",
     });
     assert.equal(result.ok, true);
     if (!result.ok) {
       return;
     }
     assert.match(String(seen.url), /\/audit-events\?resourceType=execution/);
+    assert.ok(String(seen.url).includes("action=alert.authorization"));
     assert.ok(!String(seen.url).includes("/workspace/audit-events"));
     assert.ok(result.strippedKeys.includes("items[0].secret"));
-    assert.equal(result.items[0]?.action, "authorization.denied");
+    assert.equal(result.items[0]?.action, "alert.authorization");
   });
 });

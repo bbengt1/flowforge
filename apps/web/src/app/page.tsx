@@ -245,13 +245,15 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Alerts and audit</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E5.4 operator for authorization, replay, policy, and
-          redaction alerts plus append-only workspace audit. Alerts show
-          correlation and resource ids only — never secrets. Audit is{" "}
+          Chloe&apos;s E5.4 operator on jonny&apos;s #58 map: authorization,
+          replay, policy, and redaction alerts plus append-only workspace
+          audit. Alerts show identifiers only — never secrets. Audit is{" "}
           <code className="font-mono text-xs">GET /audit-events</code>, not
-          the E2.2 isolation stub. No edit/delete on audit rows. Ack/resolve
-          use CSRF when the API publishes them. Relates to #49 / Part of
-          #45. E5.1–E5.3 execution/artifact surfaces stay intact.
+          the E2.2 isolation stub. No edit/delete on audit rows. Ack is CSRF
+          + empty <code className="font-mono text-xs">{"{}"}</code> (
+          <code className="font-mono text-xs">alert.ack</code>). Relates to
+          #49 / Part of #45. E5.1–E5.3 execution/artifact surfaces stay
+          intact.
         </p>
         <p className="mt-4 flex flex-wrap gap-4">
           <Link
