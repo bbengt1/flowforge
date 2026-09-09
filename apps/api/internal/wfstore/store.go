@@ -171,4 +171,25 @@ type Store interface {
 	Restore(ctx context.Context, scope isolation.Scope, workflowID string, in RestoreInput) (Workflow, Draft, error)
 	StartExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error)
 	GetExecution(ctx context.Context, scope isolation.Scope, workflowID, executionID string) (Execution, error)
+	FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error)
+}
+
+// Credential reference kinds returned to the vault for usage/deletion impact.
+const (
+	CredentialRefDraft     = "draft"
+	CredentialRefVersion   = "version"
+	CredentialRefExecution = "execution"
+)
+
+// CredentialRef is a secret-free pointer from a workflow document or pin
+// to a credential UUID found in normalized YAML.
+type CredentialRef struct {
+	Kind            string `json:"kind"`
+	WorkflowID      string `json:"workflowId"`
+	WorkflowSlug    string `json:"workflowSlug"`
+	WorkflowName    string `json:"workflowName"`
+	VersionID       string `json:"versionId,omitempty"`
+	VersionNumber   int    `json:"versionNumber,omitempty"`
+	ExecutionID     string `json:"executionId,omitempty"`
+	ExecutionStatus string `json:"executionStatus,omitempty"`
 }

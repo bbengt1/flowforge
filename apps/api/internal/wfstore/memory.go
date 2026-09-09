@@ -342,6 +342,66 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 	return exec, nil
 }
 
+func (m *Memory) FindCredentialRefs(_ context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	if !authz.ValidUUID(credentialID) {
+		return []CredentialRef{}, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []CredentialRef
+	for _, row := range m.workflows {
+		if row.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if strings.Contains(row.draft.DefinitionYAML, credentialID) {
+			out = append(out, CredentialRef{
+				Kind:         CredentialRefDraft,
+				WorkflowID:   row.record.ID,
+				WorkflowSlug: row.record.Slug,
+				WorkflowName: row.record.Name,
+			})
+		}
+		for _, ver := range m.versions[row.record.ID] {
+			if !strings.Contains(ver.DefinitionYAML, credentialID) {
+				continue
+			}
+			out = append(out, CredentialRef{
+				Kind:          CredentialRefVersion,
+				WorkflowID:    row.record.ID,
+				WorkflowSlug:  row.record.Slug,
+				WorkflowName:  row.record.Name,
+				VersionID:     ver.ID,
+				VersionNumber: ver.VersionNumber,
+			})
+			for _, exec := range m.executions[row.record.ID] {
+				if exec.WorkflowVersionID != ver.ID {
+					continue
+				}
+				if exec.Status != ExecutionQueued && exec.Status != ExecutionPinned {
+					continue
+				}
+				out = append(out, CredentialRef{
+					Kind:            CredentialRefExecution,
+					WorkflowID:      row.record.ID,
+					WorkflowSlug:    row.record.Slug,
+					WorkflowName:    row.record.Name,
+					VersionID:       ver.ID,
+					VersionNumber:   ver.VersionNumber,
+					ExecutionID:     exec.ID,
+					ExecutionStatus: exec.Status,
+				})
+			}
+		}
+	}
+	if out == nil {
+		out = []CredentialRef{}
+	}
+	return out, nil
+}
+
 func (m *Memory) GetExecution(_ context.Context, scope isolation.Scope, workflowID, executionID string) (Execution, error) {
 	if _, err := m.lookup(scope, workflowID); err != nil {
 		return Execution{}, err

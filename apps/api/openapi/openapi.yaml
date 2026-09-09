@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.6.0
+  version: 0.7.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -1411,7 +1411,7 @@ paths:
     post:
       operationId: useWorkspaceCredential
       summary: Use a workspace credential
-      description: Requires `credential.use`. Cross-workspace IDs return `not-found`.
+      description: E2.2 isolation hook. Requires `credential.use`. Product vault use is `POST /credentials/{id}/use`. Cross-workspace IDs return `not-found`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -1680,6 +1680,478 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /credentials/catalog:
+    get:
+      operationId: getCredentialCatalog
+      summary: Typed credential field catalog
+      description: |
+        Safe type/field shapes for the vault wizard. Requires `credential.view`.
+        Never includes secret values. Isolation hook `POST /workspace/records`
+        with `kind=credential` is not the product vault.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Type catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /credentials:
+    get:
+      operationId: listCredentials
+      summary: List credential metadata
+      description: Requires `credential.view`. Responses never include plaintext, ciphertext, or DEK material.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Metadata only
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createCredential
+      summary: Create an encrypted credential
+      description: |
+        Requires `credential.manage`. Plaintext `secret` is accepted only here
+        (and on rotate), encrypted before persistence, and never returned.
+        Body `id` / `workspace_id` / `workspaceId` are rejected.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCredentialRequest"
+      responses:
+        "201":
+          description: Metadata of the stored credential (no secret)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /credentials/{credentialId}:
+    get:
+      operationId: getCredential
+      summary: Get credential metadata
+      description: Requires `credential.view`. Cross-workspace IDs are `not-found`. Never returns secret material.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateCredential
+      summary: Update safe credential metadata
+      description: Requires `credential.manage`. Sending `secret` is rejected; use rotate.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCredentialRequest"
+      responses:
+        "200":
+          description: Updated metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteCredential
+      summary: Delete a credential
+      description: |
+        Requires `credential.manage` and `{confirm:true}`. Blocked with `conflict`
+        while an active execution references the credential. Review
+        `GET .../deletion-impact` first.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm:
+                  type: boolean
+      responses:
+        "204":
+          description: Deleted
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /credentials/{credentialId}/rotate:
+    post:
+      operationId: rotateCredential
+      summary: Replace the encrypted payload
+      description: Requires `credential.manage`. New `secret` is encrypted and never returned.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        "200":
+          description: Rotated metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/disable:
+    post:
+      operationId: disableCredential
+      summary: Disable a credential
+      description: Requires `credential.manage`. Disabled credentials cannot be used.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Disabled metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/enable:
+    post:
+      operationId: enableCredential
+      summary: Re-enable a credential
+      description: Requires `credential.manage`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Enabled metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/test:
+    post:
+      operationId: testCredential
+      summary: Safe credential test
+      description: |
+        Requires `credential.use` or `credential.manage`. Decrypts in-process
+        and checks typed payload shape. Result is redacted; plaintext is never
+        returned. Provider network tests are out of scope for E4.1.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Redacted test result plus metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialTestResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/use:
+    post:
+      operationId: useCredential
+      summary: Record authorized credential use
+      description: |
+        Requires `credential.use`. Records last-used metadata and a redacted
+        audit event. Returns `204` with an empty body — never a secret or
+        worker handle. Isolation hook `POST /workspace/credentials/{id}/use`
+        remains for E2.2 stub records.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "204":
+          description: Use authorized
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /credentials/{credentialId}/usage:
+    get:
+      operationId: getCredentialUsage
+      summary: Credential usage visibility
+      description: Requires `credential.view`. Draft/version/execution refs scanned from YAML; last-used is redacted metadata.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Usage
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialUsage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/deletion-impact:
+    get:
+      operationId: getCredentialDeletionImpact
+      summary: Deletion impact report
+      description: Requires `credential.view`. `canDelete` is false while an active execution references the credential.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Impact
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialDeletionImpact"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /credentials/{credentialId}/events:
+    get:
+      operationId: listCredentialEvents
+      summary: Credential audit events
+      description: Requires `credential.view`. Append-only, secret-free rows.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CredentialID"
+      responses:
+        "200":
+          description: Events
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   parameters:
     RequestID:
@@ -1764,6 +2236,13 @@ components:
         format: uuid
     VersionID:
       name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialID:
+      name: credentialId
       in: path
       required: true
       schema:
@@ -2581,6 +3060,272 @@ components:
                 type: array
                 items:
                   type: string
+    CredentialType:
+      type: string
+      enum: [kubernetes, ssh_private_key, token, webhook_secret, provider]
+    Credential:
+      type: object
+      description: Safe credential metadata. Never includes secret, ciphertext, or DEK fields.
+      required: [id, type, displayName, status, tags, metadata, fingerprint, lastTestStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/CredentialType"
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        fingerprint:
+          type: string
+        encryptionVersion:
+          type: integer
+        keyReference:
+          type: string
+        lastTestStatus:
+          type: string
+          enum: [untested, passed, failed]
+        lastTestedAt:
+          type: string
+          format: date-time
+        lastTestReason:
+          type: string
+        lastUsedAt:
+          type: string
+          format: date-time
+        lastUsedBy:
+          type: string
+        useCount:
+          type: integer
+        rotatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        disabledAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        permittedActions:
+          type: array
+          items:
+            type: string
+    CredentialList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Credential"
+    CreateCredentialRequest:
+      type: object
+      required: [type, displayName, secret]
+      properties:
+        type:
+          $ref: "#/components/schemas/CredentialType"
+        displayName:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        secret:
+          type: object
+          additionalProperties:
+            type: string
+          description: Plaintext accepted only on create/rotate; never returned.
+    UpdateCredentialRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    CredentialCatalog:
+      type: object
+      required: [types]
+      properties:
+        types:
+          type: array
+          items:
+            type: object
+            required: [type, displayName, secretFields]
+            properties:
+              type:
+                $ref: "#/components/schemas/CredentialType"
+              displayName:
+                type: string
+              secretFields:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CredentialField"
+              metadataFields:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CredentialField"
+    CredentialField:
+      type: object
+      required: [name, input]
+      properties:
+        name:
+          type: string
+        input:
+          type: string
+        required:
+          type: boolean
+    CredentialTestResponse:
+      type: object
+      required: [result, credential]
+      properties:
+        result:
+          type: object
+          required: [status, reason, checkedAt]
+          properties:
+            status:
+              type: string
+              enum: [passed, failed]
+            reason:
+              type: string
+            checkedAt:
+              type: string
+              format: date-time
+        credential:
+          $ref: "#/components/schemas/Credential"
+    CredentialRef:
+      type: object
+      required: [kind, workflowId]
+      properties:
+        kind:
+          type: string
+          enum: [draft, version, execution]
+        workflowId:
+          type: string
+        workflowSlug:
+          type: string
+        workflowName:
+          type: string
+        versionId:
+          type: string
+        versionNumber:
+          type: integer
+        executionId:
+          type: string
+        executionStatus:
+          type: string
+    CredentialUsage:
+      type: object
+      required: [credentialId, drafts, versions, executions]
+      properties:
+        credentialId:
+          type: string
+        lastUsedAt:
+          type: string
+          format: date-time
+        lastUsedBy:
+          type: string
+        useCount:
+          type: integer
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        executions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+    CredentialDeletionImpact:
+      type: object
+      required: [credentialId, displayName, status, canDelete, drafts, versions, activeExecutions]
+      properties:
+        credentialId:
+          type: string
+        displayName:
+          type: string
+        status:
+          type: string
+        canDelete:
+          type: boolean
+        blockReason:
+          type: string
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        activeExecutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+    CredentialEvent:
+      type: object
+      required: [id, credentialId, eventType, details, occurredAt]
+      properties:
+        id:
+          type: string
+        credentialId:
+          type: string
+        eventType:
+          type: string
+        actorId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        occurredAt:
+          type: string
+          format: date-time
+    CredentialEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialEvent"
     IsolationKind:
       type: string
       enum: [credential, artifact, job, cache, realtime, audit]
@@ -2815,4 +3560,21 @@ components:
             detail: An unexpected error occurred.
             instance: /api/v1/health
             code: internal-error
+            request_id: 0123456789abcdef0123456789abcdef
+    DependencyUnavailable:
+      description: Required dependency is not configured or reachable
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:dependency-unavailable
+            title: Dependency Unavailable
+            status: 503
+            detail: Credential encryption key is not configured.
+            instance: /api/v1/credentials
+            code: dependency-unavailable
             request_id: 0123456789abcdef0123456789abcdef

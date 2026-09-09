@@ -44,6 +44,7 @@ func main() {
 				IdleTimeout:     cfg.SessionIdleTimeout,
 				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
 			},
+			VaultKeys: cfg.VaultKeys,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

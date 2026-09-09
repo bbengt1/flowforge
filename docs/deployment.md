@@ -47,6 +47,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `CORS_ALLOWED_ORIGINS` | empty | Exact browser origins allowed to make credentialed API calls. Empty fails closed. Wildcard is rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Browser session absolute lifetime. |
+| `CREDENTIAL_KEK` | empty | 32-byte AES-256 credential envelope KEK (base64 or hex). Generate with `openssl rand -base64 32`. Required to create/rotate vault secrets. |
+| `CREDENTIAL_KEK_FILE` | empty | Optional KEK file path (same encoding, or raw 32 bytes). |
+| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Key reference stored with ciphertext (not the key). |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |
 | `WEB_CSP_CONNECT_SRC` | unset | Extra CSP `connect-src` origins (space-separated). `NEXT_PUBLIC_API_URL` is always included. |
 

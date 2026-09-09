@@ -50,6 +50,17 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable YAML export. |
 | `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore as a new draft revision. |
 | `POST` / `GET` | `/api/v1/workflows/{workflowId}/executions` | Stub start pins version/digest; drafts cannot run. |
+| `GET` | `/api/v1/credentials/catalog` | Typed vault field catalog (`credential.view`). |
+| `GET` / `POST` | `/api/v1/credentials` | List metadata / create encrypted credential. |
+| `GET` / `PATCH` / `DELETE` | `/api/v1/credentials/{credentialId}` | Metadata, safe patch, confirmed delete. |
+| `POST` | `/api/v1/credentials/{credentialId}/rotate` | Replace encrypted payload. |
+| `POST` | `/api/v1/credentials/{credentialId}/disable` | Disable. |
+| `POST` | `/api/v1/credentials/{credentialId}/enable` | Re-enable. |
+| `POST` | `/api/v1/credentials/{credentialId}/test` | Redacted shape test. |
+| `POST` | `/api/v1/credentials/{credentialId}/use` | Record use (`204`, no secret). |
+| `GET` | `/api/v1/credentials/{credentialId}/usage` | Usage visibility. |
+| `GET` | `/api/v1/credentials/{credentialId}/deletion-impact` | Deletion impact. |
+| `GET` | `/api/v1/credentials/{credentialId}/events` | Redacted vault audit. |
 
 Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 
@@ -82,6 +93,9 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |
+| `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use. |
+| `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
+| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -119,6 +133,7 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
+      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-}
     depends_on:
       postgres:
         condition: service_healthy

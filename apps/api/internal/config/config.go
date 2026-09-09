@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
 const (
@@ -39,6 +41,9 @@ type Config struct {
 	CORSAllowedOrigins     []string
 	SessionIdleTimeout     time.Duration
 	SessionAbsoluteTimeout time.Duration
+	// VaultKeys is the local envelope KEK loaded from CREDENTIAL_KEK /
+	// CREDENTIAL_KEK_FILE. Empty keys fail closed on vault write/unlock.
+	VaultKeys vault.Keys
 }
 
 // Load reads configuration from the process environment.
@@ -55,6 +60,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS: %w", err)
 	}
+	keys, err := vault.LoadKeys()
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		HTTPAddr:               listenAddr(),
@@ -68,6 +77,7 @@ func Load() (Config, error) {
 		CORSAllowedOrigins:     origins,
 		SessionIdleTimeout:     durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		SessionAbsoluteTimeout: durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
+		VaultKeys:              keys,
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

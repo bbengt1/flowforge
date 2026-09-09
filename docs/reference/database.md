@@ -72,7 +72,7 @@ Host/embed identity assertions are validated before a transaction starts. The da
 | `policies` / `policy_versions` | `id`, `workspace_id`, `kind`, `name`, `version_number`, `policy_json`, `status` | Target/profile policy revisions are immutable once referenced. |
 | `target_policy_bindings` | `target_type`, `target_id`, `policy_version_id` | Binds operational target to an exact active policy version. |
 
-Credentials use envelope encryption: the database stores ciphertext, encrypted data-encryption-key envelope, KMS/key reference, and encryption version. The API sends plaintext only to the backend over TLS at create/rotate time; it is encrypted before database persistence and never returned to the UI, logs, YAML, audit detail, or analytics. Rotating a credential creates/re-encrypts a new encrypted payload and preserves redacted history.
+Credentials use envelope encryption: the database stores ciphertext, encrypted data-encryption-key envelope, KMS/key reference, and encryption version. The API sends plaintext only to the backend over TLS at create/rotate time; it is encrypted before database persistence and never returned to the UI, logs, YAML, audit detail, or analytics. Rotating a credential creates/re-encrypts a new encrypted payload and preserves redacted history. E4.1 installs these tables in `000006_credentials.sql` with FORCE RLS. The local MVP KEK is `CREDENTIAL_KEK` / `CREDENTIAL_KEK_FILE` (32-byte AES-256); `key_reference` records `CREDENTIAL_KEK_ID`. Isolation hook table `workspace_records` (`kind=credential`) is not the vault.
 
 ## Execution, queue, and artifacts
 

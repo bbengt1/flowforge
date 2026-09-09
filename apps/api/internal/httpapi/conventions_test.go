@@ -231,6 +231,12 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/workflows/{workflowId}/versions/{versionId}/restore",
 		"/workflows/{workflowId}/executions",
 		"/workflows/{workflowId}/executions/{executionId}",
+		"/credentials/catalog", "/credentials", "/credentials/{credentialId}",
+		"/credentials/{credentialId}/rotate", "/credentials/{credentialId}/disable",
+		"/credentials/{credentialId}/enable", "/credentials/{credentialId}/test",
+		"/credentials/{credentialId}/use", "/credentials/{credentialId}/usage",
+		"/credentials/{credentialId}/deletion-impact",
+		"/credentials/{credentialId}/events",
 	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)

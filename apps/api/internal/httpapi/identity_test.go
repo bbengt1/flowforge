@@ -10,6 +10,10 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 func TestIdentityRequiresAuthentication(t *testing.T) {
@@ -175,7 +179,16 @@ func TestMethodNotAllowedOnIdentityRoutes(t *testing.T) {
 func seededWorkspace(t *testing.T) (http.Handler, identity.User) {
 	t.Helper()
 	store := identity.NewMemory()
-	h := NewWithStore(nil, store)
+	keys := vault.TestKeys()
+	workflows := wfstore.NewMemory()
+	h := NewWithDeps(Deps{
+		Store:     store,
+		Scoped:    isolation.NewMemory(),
+		Sessions:  session.NewMemory(),
+		Workflows: workflows,
+		Vault:     vault.NewMemory(keys, workflows),
+		Keys:      keys,
+	})
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 
 	rec := httptest.NewRecorder()

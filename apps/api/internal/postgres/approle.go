@@ -39,6 +39,9 @@ BEGIN
     IF to_regclass('public.executions') IS NOT NULL THEN
         REVOKE UPDATE, DELETE ON executions FROM flowforge_app;
     END IF;
+    IF to_regclass('public.credential_events') IS NOT NULL THEN
+        REVOKE UPDATE ON credential_events FROM flowforge_app;
+    END IF;
 END
 $$;
 `
