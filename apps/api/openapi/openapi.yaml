@@ -3449,9 +3449,11 @@ paths:
       description: |
         Requires `opsconfig.view`. Documents SSH-target credential type
         (`ssh_private_key`), reviewed renderer rules (no raw shell
-        interpolation), typed parameter schemas, retry-safe flags (schema
-        only; E8.3 implements semantics), publish/select constraints, and
-        error codes. Does not open an SSH connection.
+        interpolation), typed parameter schemas, retry defaults
+        (`maxAttempts=0`; E8.2 never blindly re-runs), isolation guarantees
+        (ephemeral handle, known-host verification, address allowlists,
+        key-only auth), publish/select constraints, and error codes.
+        Does not open an SSH connection.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4554,7 +4556,7 @@ components:
             neverDeletesOrRollsBack: {type: boolean}
     SSHEngineCatalog:
       type: object
-      required: [credentialType, parameterTypes, render, retry, publishRules]
+      required: [credentialType, parameterTypes, render, retry, publishRules, isolation]
       properties:
         credentialType: {type: string, enum: [ssh_private_key]}
         credentialSecretFields:
@@ -4637,6 +4639,25 @@ components:
         permissions:
           type: array
           items: {type: string}
+        isolation:
+          type: object
+          properties:
+            authMethods:
+              type: array
+              items: {type: string}
+            passwordAuth: {type: boolean}
+            agentForwarding: {type: boolean}
+            portForwarding: {type: boolean}
+            proxyCommand: {type: boolean}
+            hostKeyAutoAccept: {type: boolean}
+            interactiveShell: {type: boolean}
+            knownHostVerification: {type: string}
+            resolveThenAllowlist: {type: boolean}
+            connectVerifiedAddressOnly: {type: boolean}
+            ephemeralCredentialHandle: {type: boolean}
+            nonRootRemoteAccount: {type: boolean}
+            defaultUsername: {type: string}
+            privateKeyNeverExported: {type: boolean}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]

@@ -8,10 +8,17 @@ import (
 	"strings"
 )
 
+var deniedUsernames = map[string]bool{
+	"root":          true,
+	"toor":          true,
+	"administrator": true,
+}
+
 var (
 	hostnameRE     = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$`)
 	hexFingerprint = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	b64Fingerprint = regexp.MustCompile(`^[A-Za-z0-9+/]{43}$`)
+	usernameRE     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,31}$`)
 )
 
 const defaultPort = 22
@@ -144,4 +151,24 @@ func normalizeAddress(raw string) (string, error) {
 func ValidHostname(host string) bool {
 	_, err := NormalizeHostname(host)
 	return err == nil
+}
+
+// NormalizeUsername returns the default non-root account when omitted.
+// root / toor / administrator / admin are rejected.
+func NormalizeUsername(raw string, present bool) (string, error) {
+	if !present || strings.TrimSpace(raw) == "" {
+		return DefaultUsername, nil
+	}
+	user := strings.TrimSpace(raw)
+	if !usernameRE.MatchString(user) {
+		return "", wrapInvalid("username is not a valid remote account")
+	}
+	if isDeniedUsername(user) {
+		return "", wrapInvalid("remote account must not be root")
+	}
+	return user, nil
+}
+
+func isDeniedUsername(user string) bool {
+	return deniedUsernames[strings.ToLower(strings.TrimSpace(user))]
 }

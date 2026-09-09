@@ -259,7 +259,18 @@ func normalizeSSHTarget(spec map[string]any) (map[string]any, error) {
 	if policy != "" {
 		out["policyId"] = policy
 	}
-	if err := rejectUnknown(spec, "credentialId", "hostname", "port", "hostKeyFingerprint", "allowedAddresses", "policyId"); err != nil {
+	if _, userPresent := spec["username"]; userPresent {
+		userRaw, _, err := optionalString(spec, "username", 1, 32)
+		if err != nil {
+			return nil, err
+		}
+		user, err := ssheng.NormalizeUsername(userRaw, true)
+		if err != nil {
+			return nil, mapSSHErr(err)
+		}
+		out["username"] = user
+	}
+	if err := rejectUnknown(spec, "credentialId", "hostname", "port", "hostKeyFingerprint", "allowedAddresses", "policyId", "username"); err != nil {
 		return nil, err
 	}
 	return out, nil

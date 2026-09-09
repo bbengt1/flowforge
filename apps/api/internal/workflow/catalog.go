@@ -73,16 +73,7 @@ func coreNodeTypes() []NodeType {
 		kubernetesGetContract(),
 		kubernetesListContract(),
 		kubernetesRolloutContract(),
-		{
-			Type: "ssh.run", Phase: PhaseCore,
-			Inputs: []Port{{Name: "parameters", Kind: PortObject}},
-			Outputs: []Port{
-				result,
-				{Name: "stdout", Kind: PortString},
-				{Name: "exitCode", Kind: PortInteger},
-			},
-			RequiredWith: []string{"sshTargetId", "commandProfileId"},
-		},
+		sshRunContract(),
 		{
 			Type: "script.python", Phase: PhaseCore,
 			Inputs:       []Port{{Name: "input", Kind: PortObject}},

@@ -2,7 +2,7 @@
 # Control-plane API image. Runtime UID/GID 65532 is the shared FlowForge
 # non-root identity (web image aligns to the same UID).
 
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0

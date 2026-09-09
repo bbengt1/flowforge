@@ -90,6 +90,7 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 		t.Fatalf("apiVersion = %s", cat.APIVersion)
 	}
 	found := false
+	foundSSH := false
 	for _, n := range cat.Nodes {
 		if n.Type == "kubernetes.apply" && n.Phase == PhaseCore {
 			if _, ok := n.outputPort("result"); !ok {
@@ -103,9 +104,18 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 		if n.Type == "kubernetes.rolloutStatus" && (n.Policy == nil || n.Redaction == nil || len(n.AllowedWith) == 0) {
 			t.Fatalf("kubernetes.rolloutStatus contract incomplete: %+v", n)
 		}
+		if n.Type == "ssh.run" {
+			if n.Policy == nil || !n.Policy.SideEffects || n.Policy.DefaultMaxAttempts != 0 || len(n.AllowedWith) == 0 || n.Redaction == nil {
+				t.Fatalf("ssh.run contract incomplete: %+v", n)
+			}
+			foundSSH = true
+		}
 	}
 	if !found {
 		t.Fatal("core catalog missing kubernetes.apply")
+	}
+	if !foundSSH {
+		t.Fatal("core catalog missing ssh.run")
 	}
 	cond, ok := lookupNode("flow.condition")
 	if !ok || cond.Policy == nil || cond.Policy.SideEffects {
