@@ -146,6 +146,9 @@ func (t LiveTransport) Connect(ctx context.Context, cfg ConnectConfig) (Session,
 		if ctx.Err() != nil {
 			return nil, mapContextError(ctx.Err())
 		}
+		if isTimeoutError(dialErr) {
+			return nil, engineError(CodeTimeout, "SSH connection or command exceeded timeoutSeconds", http.StatusRequestTimeout)
+		}
 		return nil, engineError(CodeConnectFailed, "SSH connection failed", http.StatusBadGateway)
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -159,6 +162,9 @@ func (t LiveTransport) Connect(ctx context.Context, cfg ConnectConfig) (Session,
 		}
 		if ctx.Err() != nil {
 			return nil, mapContextError(ctx.Err())
+		}
+		if isTimeoutError(sshErr) {
+			return nil, engineError(CodeTimeout, "SSH connection or command exceeded timeoutSeconds", http.StatusRequestTimeout)
 		}
 		return nil, engineError(CodeConnectFailed, "SSH handshake failed", http.StatusBadGateway)
 	}
@@ -206,6 +212,8 @@ func (s *liveSession) Run(ctx context.Context, command string) (string, string, 
 			var exitErr *cryptossh.ExitError
 			if errors.As(runErr, &exitErr) {
 				code = exitErr.ExitStatus()
+			} else if isTimeoutError(runErr) {
+				return stdout.String(), stderr.String(), -1, engineError(CodeTimeout, "SSH connection or command exceeded timeoutSeconds", http.StatusRequestTimeout)
 			} else {
 				return stdout.String(), stderr.String(), -1, engineError(CodeCommandFailed, "remote command failed", http.StatusBadGateway)
 			}

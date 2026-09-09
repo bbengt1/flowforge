@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"strconv"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	cryptossh "golang.org/x/crypto/ssh"
@@ -279,6 +279,25 @@ func TestTimeout(t *testing.T) {
 	res := Execute(context.Background(), req)
 	if res.OK || res.Error == nil || res.Error.Code != CodeTimeout {
 		t.Fatalf("timeout: %+v", res.Error)
+	}
+}
+
+func TestTimeoutErrorClassification(t *testing.T) {
+	t.Parallel()
+	cases := []error{
+		context.DeadlineExceeded,
+		os.ErrDeadlineExceeded,
+		&net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded},
+	}
+	for _, err := range cases {
+		got := asEngineError(err, CodeCommandFailed)
+		if got == nil || got.Code != CodeTimeout {
+			t.Fatalf("asEngineError(%v) = %+v, want timeout", err, got)
+		}
+	}
+	canceled := asEngineError(context.Canceled, CodeCommandFailed)
+	if canceled == nil || canceled.Code != CodeCanceled {
+		t.Fatalf("canceled: %+v", canceled)
 	}
 }
 

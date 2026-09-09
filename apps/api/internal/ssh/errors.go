@@ -1,9 +1,12 @@
 package ssh
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -37,10 +40,34 @@ func asEngineError(err error, fallback string) *EngineError {
 	if errors.As(err, &ee) {
 		return ee
 	}
+	if errors.Is(err, context.Canceled) {
+		return engineError(CodeCanceled, "SSH operation was canceled", http.StatusRequestTimeout)
+	}
+	if isTimeoutError(err) {
+		return engineError(CodeTimeout, "SSH connection or command exceeded timeoutSeconds", http.StatusRequestTimeout)
+	}
 	if errors.Is(err, ErrInvalid) {
 		return engineError(CodeInvalidTarget, err.Error(), http.StatusBadRequest)
 	}
 	return engineError(fallback, "SSH operation failed.", http.StatusBadGateway)
+}
+
+// isTimeoutError reports whether err is a context, socket, or SSH I/O deadline.
+// sess.Run can lose the race with ctx.Done() and return os.ErrDeadlineExceeded
+// from conn.SetDeadline before the context error is observed.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne != nil && ne.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "i/o timeout") || strings.Contains(msg, "deadline exceeded")
 }
 
 func mapRenderError(err error) *EngineError {
