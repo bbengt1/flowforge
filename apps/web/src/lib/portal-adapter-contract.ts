@@ -24,7 +24,6 @@ import {
   frameAncestorsForPath,
   isCompactJws,
   isEmbedMountPath,
-  parseEmbedHostDisplay,
   stripAssertionParams,
   type EmbedAssertionMessage,
   type EmbedHostDisplay,
