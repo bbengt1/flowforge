@@ -7,6 +7,7 @@
 import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { sshCatalogPath } from "./ssh-contract.ts";
+import { parseSshNodeCatalog, type SshNodeCatalog } from "./ssh-node-contract.ts";
 import { parseSshEngineCatalog } from "./ssh.ts";
 import type { SshEngineCatalog } from "./ssh-types.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -16,6 +17,7 @@ export type SshCatalogSuccess = {
   statusCode: number;
   requestId: string;
   catalog: SshEngineCatalog;
+  nodeCatalog: SshNodeCatalog;
 };
 
 export type SshClientFailure = {
@@ -42,5 +44,6 @@ export async function getSshCatalog(
     statusCode: result.statusCode,
     requestId: result.requestId,
     catalog: parseSshEngineCatalog(result.data),
+    nodeCatalog: parseSshNodeCatalog(result.data),
   };
 }

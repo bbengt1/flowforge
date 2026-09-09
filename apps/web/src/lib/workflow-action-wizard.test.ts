@@ -8,6 +8,14 @@ import {
   KUBERNETES_SECRET_MANIFEST_MESSAGE,
   KUBERNETES_TARGET_FAIL_CLOSED_MESSAGE,
 } from "./kubernetes-node-contract.ts";
+import {
+  SSH_DEFAULT_TIMEOUT_SECONDS,
+  SSH_FREEFORM_SHELL_MESSAGE,
+  SSH_PROFILE_REQUIRED_MESSAGE,
+  SSH_RETRY_DENIED_MESSAGE,
+  SSH_TARGET_FAIL_CLOSED_MESSAGE,
+  SSH_TARGET_REQUIRED_MESSAGE,
+} from "./ssh-node-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   applyTargetPin,
@@ -203,6 +211,28 @@ describe("action wizard catalog inference and recommendations", () => {
       fallbackLibrary.find((item) => item.type === "kubernetes.apply")?.source,
       "contract-fallback",
     );
+    assert.equal(fallbackLibrary.some((item) => item.type === "ssh.run"), true);
+    assert.equal(
+      fallbackLibrary.find((item) => item.type === "ssh.run")?.source,
+      "contract-fallback",
+    );
+    assert.equal(wizardNeedsTargetStep("ssh.run"), true);
+    assert.equal(defaultWithForType("ssh.run").timeoutSeconds, SSH_DEFAULT_TIMEOUT_SECONDS);
+    assert.deepEqual(defaultWithForType("ssh.run").retryPolicy, { maxAttempts: 0 });
+    const sshFields = wizardConfigFields(
+      fallbackLibrary.find((item) => item.type === "ssh.run"),
+      "ssh.run",
+    );
+    assert.equal(sshFields.some((field) => field.name === "sshTargetId" && field.required), true);
+    assert.equal(
+      sshFields.some((field) => field.name === "commandProfileId" && field.required),
+      true,
+    );
+    assert.equal(sshFields.some((field) => field.name === "timeoutSeconds"), true);
+    assert.equal(sshFields.some((field) => field.name === "retryPolicy"), true);
+    assert.equal(sshFields.some((field) => field.name === "policyId"), true);
+    assert.equal(sshFields.some((field) => field.name === "command"), false);
+    assert.equal(sshFields.some((field) => field.name === "privateKey"), false);
   });
 
   it("recommends compatible enabled actions from upstream port and targets", () => {
@@ -282,6 +312,79 @@ describe("action wizard insert + redaction", () => {
     assert.equal(added?.with.kind, "Deployment");
     assert.equal(added?.with.name, "api");
     assert.equal("force" in (added?.with ?? {}), false);
+  });
+
+  it("inserts ssh.run with target, profile, typed parameters, and zero retries", () => {
+    const entry = palette.find((item) => item.type === "ssh.run")
+      ?? adaptActionLibrary(null).find((item) => item.type === "ssh.run");
+    const draft = emptyActionWizardDraft("ssh.run", "Clear cache");
+    draft.with = {
+      ...draft.with,
+      sshTargetId: "22222222-2222-4222-8222-222222222222",
+      commandProfileId: "33333333-3333-4333-8333-333333333333",
+      parameters: { service: "api" },
+      timeoutSeconds: 60,
+      retryPolicy: { maxAttempts: 0 },
+      privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----",
+      command: "rm -rf /",
+    };
+    const missing = validateWizardDraft(
+      { ...draft, with: { timeoutSeconds: 60 } },
+      catalog,
+      entry,
+    );
+    assert.equal(missing.ok, false);
+    assert.ok(missing.errors.includes(SSH_TARGET_REQUIRED_MESSAGE));
+    assert.ok(missing.errors.includes(SSH_PROFILE_REQUIRED_MESSAGE));
+
+    const closed = validateWizardDraft(draft, catalog, entry, {
+      sshTargetSelectorClosed: true,
+    });
+    assert.equal(closed.ok, false);
+    assert.ok(closed.errors.includes(SSH_TARGET_FAIL_CLOSED_MESSAGE));
+
+    const leaked = validateWizardDraft(draft, catalog, entry);
+    assert.equal(leaked.ok, false);
+    assert.ok(leaked.errors.includes(SSH_FREEFORM_SHELL_MESSAGE));
+
+    const retries = validateWizardDraft(
+      {
+        ...draft,
+        with: {
+          sshTargetId: draft.with.sshTargetId,
+          commandProfileId: draft.with.commandProfileId,
+          retryPolicy: { maxAttempts: 2 },
+        },
+      },
+      catalog,
+      entry,
+    );
+    assert.equal(retries.ok, false);
+    assert.ok(retries.errors.includes(SSH_RETRY_DENIED_MESSAGE));
+
+    const sanitized = sanitizeWizardWith(draft.with, "ssh.run");
+    assert.equal("privateKey" in sanitized, false);
+    assert.equal("command" in sanitized, false);
+    assert.deepEqual(sanitized.parameters, { service: "api" });
+
+    const clean = emptyActionWizardDraft("ssh.run", "Clear cache");
+    clean.with = {
+      ...clean.with,
+      sshTargetId: "22222222-2222-4222-8222-222222222222",
+      commandProfileId: "33333333-3333-4333-8333-333333333333",
+      parameters: { service: "api" },
+    };
+    const result = applyWizardToYaml(STARTER_WORKFLOW_YAML, clean, catalog, entry);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.node.type, "ssh.run");
+    const added = listYamlNodes(result.yaml).find((node) => node.id === result.node.id);
+    assert.equal(added?.with.sshTargetId, "22222222-2222-4222-8222-222222222222");
+    assert.equal(added?.with.commandProfileId, "33333333-3333-4333-8333-333333333333");
+    assert.deepEqual(added?.with.parameters, { service: "api" });
+    assert.deepEqual(added?.with.retryPolicy, { maxAttempts: 0 });
+    assert.equal("privateKey" in (added?.with ?? {}), false);
+    assert.equal("command" in (added?.with ?? {}), false);
+    assert.match(result.yaml, /type: ssh\.run/);
   });
 
   it("rejects unauthorized types and secret-shaped with values before insert", () => {

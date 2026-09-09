@@ -7,6 +7,7 @@ import { listCredentials } from "@/lib/credential-client";
 import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
+import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { authorizedClusterTargets } from "@/lib/kubernetes";
 import {
@@ -27,7 +28,19 @@ import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
+import { getSshCatalog } from "@/lib/ssh-client";
 import { authorizedCommandProfiles, authorizedSshTargets } from "@/lib/ssh";
+import {
+  SSH_NODE_POLICY_NOTES,
+  commandProfileParameterConstraints,
+  commandProfileRetrySafe,
+  isSshConfigurableType,
+  pruneSshParameters,
+  sshNodeErrorShapes,
+  sshRetryRules,
+  type SshNodeCatalog,
+} from "@/lib/ssh-node-contract";
+import type { SshEngineCatalog, SshParameterConstraint } from "@/lib/ssh-types";
 import type { PolicyEvaluation } from "@/lib/approval-types";
 import {
   ACTION_FAMILY_ORDER,
@@ -122,9 +135,13 @@ export function ActionWizard({
   const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
     null,
   );
+  const [sshCatalog, setSshCatalog] = useState<SshNodeCatalog | null>(null);
+  const [sshEngineCatalog, setSshEngineCatalog] = useState<SshEngineCatalog | null>(
+    null,
+  );
 
   const entry = entries.find((item) => item.type === draft.type);
-  const fields = wizardConfigFields(entry, draft.type, engineCatalog);
+  const fields = wizardConfigFields(entry, draft.type, engineCatalog, sshCatalog);
   const targetKinds = opsConfigKindsForAction(draft.type);
   const enabledTargetKinds = (Object.entries(pins) as [OpsConfigKind, OpsConfigPin[]][])
     .filter(([, items]) => items.length > 0)
@@ -145,15 +162,37 @@ export function ActionWizard({
   const selectedClusterTarget = (pins.cluster_target ?? []).find(
     (pin) => pin.resourceId === draft.with.clusterTargetId,
   );
+  const selectedCommandProfile = (pins.command_profile ?? []).find(
+    (pin) => pin.resourceId === draft.with.commandProfileId,
+  );
+  const parameterConstraints = commandProfileParameterConstraints(
+    selectedCommandProfile?.spec,
+  );
+  const profileRetrySafe = commandProfileRetrySafe(selectedCommandProfile?.spec);
   const clusterTargetsLoaded = pinStatus.cluster_target !== undefined;
+  const sshTargetsLoaded = pinStatus.ssh_target !== undefined;
+  const commandProfilesLoaded = pinStatus.command_profile !== undefined;
   const targetSelectorClosed =
     isKubernetesConfigurableType(draft.type) &&
     clusterTargetsLoaded &&
     ((pins.cluster_target ?? []).length === 0 || Boolean(pinProblems.cluster_target));
+  const sshTargetSelectorClosed =
+    isSshConfigurableType(draft.type) &&
+    sshTargetsLoaded &&
+    ((pins.ssh_target ?? []).length === 0 || Boolean(pinProblems.ssh_target));
+  const commandProfileSelectorClosed =
+    isSshConfigurableType(draft.type) &&
+    commandProfilesLoaded &&
+    ((pins.command_profile ?? []).length === 0 || Boolean(pinProblems.command_profile));
   const wizardContext = {
     allowedNamespaces: namespacesForWizardTarget(selectedClusterTarget),
     targetSelectorClosed,
     engineCatalog,
+    sshCatalog,
+    sshTargetSelectorClosed,
+    commandProfileSelectorClosed,
+    parameterConstraints,
+    profileRetrySafe,
   };
   const applyRules = applyRulesFromCatalog(engineCatalog);
   const engineErrors = engineErrorShapes(engineCatalog);
@@ -174,6 +213,13 @@ export function ActionWizard({
         return;
       }
       setEngineCatalog(result.ok ? result.catalog : null);
+    });
+    void getSshCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setSshCatalog(result.ok ? result.nodeCatalog : null);
+      setSshEngineCatalog(result.ok ? result.catalog : null);
     });
     void listCredentials(identity).then((result) => {
       if (cancelled) {
@@ -260,7 +306,33 @@ export function ActionWizard({
       delete next[kind];
       return next;
     });
-    setDraft((current) => applyTargetPin(current, kind, result.pin));
+    setPins((current) => {
+      const list = current[kind] ?? [];
+      const merged = list.some((item) => item.resourceId === result.pin.resourceId)
+        ? list.map((item) =>
+            item.resourceId === result.pin.resourceId ? { ...item, ...result.pin } : item,
+          )
+        : [...list, result.pin];
+      return { ...current, [kind]: merged };
+    });
+    setDraft((current) => {
+      const next = applyTargetPin(current, kind, result.pin);
+      if (kind !== "command_profile" || !isSshConfigurableType(next.type)) {
+        return next;
+      }
+      const constraints = commandProfileParameterConstraints(result.pin.spec);
+      const currentParams =
+        next.with.parameters && typeof next.with.parameters === "object"
+          ? (next.with.parameters as Record<string, unknown>)
+          : {};
+      return {
+        ...next,
+        with: {
+          ...next.with,
+          parameters: pruneSshParameters(currentParams, constraints),
+        },
+      };
+    });
   }
 
   function submit() {
@@ -351,7 +423,10 @@ export function ActionWizard({
               pinProblems={pinProblems}
               pinStatus={pinStatus}
               credentialOptions={credentialOptions}
-              hideCredentialSelect={isKubernetesConfigurableType(draft.type)}
+              hideCredentialSelect={
+                isKubernetesConfigurableType(draft.type) ||
+                isSshConfigurableType(draft.type)
+              }
               onPin={choosePin}
               onCredential={(id) => {
                 const next = credentialOptions.options.find((item) => item.id === id) ?? null;
@@ -368,6 +443,10 @@ export function ActionWizard({
               engineErrors={engineErrors}
               engineCatalog={engineCatalog}
               waitReadyCopy={waitReadyMessage(engineCatalog)}
+              sshCatalog={sshCatalog}
+              sshEngineCatalog={sshEngineCatalog}
+              parameterConstraints={parameterConstraints}
+              profileRetrySafe={profileRetrySafe}
               onChange={setDraft}
             />
           ) : null}
@@ -391,6 +470,8 @@ export function ActionWizard({
               applyRules={applyRules}
               engineErrors={engineErrors}
               engineCatalog={engineCatalog}
+              sshCatalog={sshCatalog}
+              profileRetrySafe={profileRetrySafe}
               evaluation={evaluation ?? null}
               evaluationPending={Boolean(evaluationPending)}
               evaluationProblem={evaluationProblem ?? null}
@@ -615,7 +696,11 @@ function TargetStep({
             label={
               kind === "cluster_target"
                 ? "Published kubernetes cluster target"
-                : kind.replaceAll("_", " ")
+                : kind === "ssh_target"
+                  ? "Published SSH target"
+                  : kind === "command_profile"
+                    ? "Published command profile"
+                    : kind.replaceAll("_", " ")
             }
             value={selected?.versionId ?? ""}
             pins={pins[kind] ?? []}
@@ -630,6 +715,14 @@ function TargetStep({
           Display name + id only. Workspace <code className="font-mono">type=kubernetes</code>{" "}
           targets; the target binds a vault credential. The UI never receives kubeconfig
           or plaintext.
+        </p>
+      ) : null}
+      {isSshConfigurableType(draft.type) ? (
+        <p className="text-xs text-zinc-500">
+          Display name + id only. Published workspace SSH targets bind a{" "}
+          <code className="font-mono">type=ssh_private_key</code> vault credential.
+          Command profiles are administrator-owned templates. The UI never lists
+          privateKey, passphrase, host fingerprints as secrets, or raw logs.
         </p>
       ) : null}
       {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
@@ -677,6 +770,10 @@ function ConfigureStep({
   engineErrors,
   engineCatalog,
   waitReadyCopy,
+  sshCatalog,
+  sshEngineCatalog,
+  parameterConstraints,
+  profileRetrySafe,
   onChange,
 }: {
   draft: ActionWizardDraft;
@@ -686,11 +783,18 @@ function ConfigureStep({
   engineErrors: ReturnType<typeof engineErrorShapes>;
   engineCatalog: KubernetesEngineCatalog | null;
   waitReadyCopy: string;
+  sshCatalog: SshNodeCatalog | null;
+  sshEngineCatalog: SshEngineCatalog | null;
+  parameterConstraints: readonly SshParameterConstraint[];
+  profileRetrySafe: boolean;
   onChange: (draft: ActionWizardDraft) => void;
 }) {
   const inferred = fields.some((field) => field.inferred);
   const kubernetes = isKubernetesConfigurableType(draft.type);
-  const visible = fields.filter((field) => !field.selectorKind);
+  const ssh = isSshConfigurableType(draft.type);
+  const visible = fields.filter(
+    (field) => !field.selectorKind && !(ssh && field.name === "parameters"),
+  );
   const primary = visible.filter((field) => !field.advanced);
   const advanced = visible.filter((field) => field.advanced);
   function patchWith(name: string, value: unknown) {
@@ -725,10 +829,52 @@ function ConfigureStep({
           marked contract fallback.
         </p>
       ) : null}
+      {inferred && ssh ? (
+        <p className="text-xs text-zinc-500">
+          SSH <code className="font-mono">with</code> fields prefer{" "}
+          <code className="font-mono">GET /ssh/catalog</code>{" "}
+          <code className="font-mono">nodes[]</code>, then{" "}
+          <code className="font-mono">GET /workflows/catalog</code>, then the
+          marked e82-#88 contract fallback. Overlay titles /{" "}
+          <code className="font-mono">allowedWith</code> / isolation from
+          jonny&apos;s map when the catalog is listed.
+        </p>
+      ) : null}
       {isKubernetesRolloutType(draft.type) ? (
         <p className="rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-sm text-teal-950">
           {rolloutNodeDescription(engineCatalog)} {KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE}
         </p>
+      ) : null}
+      {ssh ? (
+        <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-teal-950">
+            SSH execution constraints (server-enforced)
+          </summary>
+          <div className="mt-3">
+            <SshSafetyNotes
+              catalog={sshEngineCatalog}
+              extraNotes={SSH_NODE_POLICY_NOTES}
+            />
+          </div>
+          <p className="mt-3 text-sm text-teal-950">
+            retrySafe={String(profileRetrySafe)} (profile flag).{" "}
+            {sshRetryRules(sshCatalog).note ??
+              "Retries default to zero. E8.2 never blindly re-runs."}{" "}
+            defaultMaxAttempts={sshRetryRules(sshCatalog).defaultMaxAttempts};{" "}
+            semantics={sshRetryRules(sshCatalog).semantics}. Lease loss is
+            indeterminate — never a blind retry.
+          </p>
+          {sshNodeErrorShapes(sshCatalog).length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
+              {sshNodeErrorShapes(sshCatalog).slice(0, 8).map((item) => (
+                <li key={item.code}>
+                  <code className="font-mono">{item.code}</code> ({item.status}):{" "}
+                  {item.meaning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
       ) : null}
       {kubernetes ? (
         <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
@@ -777,6 +923,24 @@ function ConfigureStep({
           onChange={(value) => patchWith(field.name, value)}
         />
       ))}
+      {ssh ? (
+        <SshParameterFields
+          constraints={parameterConstraints}
+          value={
+            draft.with.parameters && typeof draft.with.parameters === "object"
+              ? (draft.with.parameters as Record<string, unknown>)
+              : {}
+          }
+          onChange={(parameters) => patchWith("parameters", parameters)}
+        />
+      ) : null}
+      {ssh ? (
+        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+          retrySafe is {profileRetrySafe ? "true" : "false"} on the selected
+          profile. maxAttempts defaults to 0; values above 0 require retrySafe
+          and are still not auto-retried in E8.2. Lease loss is indeterminate.
+        </p>
+      ) : null}
       {advanced.length > 0 ? (
         <details className="rounded-xl border border-zinc-200 px-4 py-3">
           <summary className="cursor-pointer text-sm font-medium">
@@ -812,9 +976,9 @@ function ConfigField({
   const text =
     value == null || value === ""
       ? field.readOnly
-        ? String(field.defaultValue ?? KUBERNETES_FIELD_MANAGER)
+        ? stringifyWizardValue(field.defaultValue ?? KUBERNETES_FIELD_MANAGER)
         : ""
-      : String(value);
+      : stringifyWizardValue(value);
   const label = field.label || field.name;
   if (field.readOnly) {
     return (
@@ -1025,6 +1189,8 @@ function ReviewStep({
   applyRules,
   engineErrors,
   engineCatalog,
+  sshCatalog,
+  profileRetrySafe,
 }: {
   draft: ActionWizardDraft;
   validation: ReturnType<typeof validateWizardDraft>;
@@ -1037,6 +1203,8 @@ function ReviewStep({
   applyRules: ReturnType<typeof applyRulesFromCatalog>;
   engineErrors: ReturnType<typeof engineErrorShapes>;
   engineCatalog: KubernetesEngineCatalog | null;
+  sshCatalog: SshNodeCatalog | null;
+  profileRetrySafe: boolean;
 }) {
   const errors = [...validation.errors, ...localErrors];
   return (
@@ -1079,6 +1247,18 @@ function ReviewStep({
               : ""}
           </p>
         ) : null}
+        {isSshConfigurableType(draft.type) ? (
+          <p className="mt-2 text-xs text-zinc-600">
+            ssh.run uses an ephemeral key handle (no privateKey on the wire),
+            known-host fingerprint match, and every resolved IP must be in
+            allowedAddresses — the worker dials only that verified address.
+            Key-only, non-root, no forwarding/proxy/interactive shell. retrySafe=
+            {String(profileRetrySafe)}; retries default to{" "}
+            {sshRetryRules(sshCatalog).defaultMaxAttempts} ({sshRetryRules(sshCatalog).semantics}).
+            Lease loss is indeterminate. YAML holds target/profile UUIDs and
+            typed values only.
+          </p>
+        ) : null}
       </section>
       <PreRunPolicyReview
         evaluation={evaluation}
@@ -1100,6 +1280,153 @@ function ReviewStep({
       )}
     </div>
   );
+}
+
+function SshParameterFields({
+  constraints,
+  value,
+  onChange,
+}: {
+  constraints: readonly SshParameterConstraint[];
+  value: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+}) {
+  function patch(name: string, next: unknown) {
+    const copy = { ...value };
+    if (next === "" || next === undefined) {
+      delete copy[name];
+    } else {
+      copy[name] = next;
+    }
+    onChange(copy);
+  }
+  if (constraints.length === 0) {
+    return (
+      <label className="block text-sm">
+        <span className="font-medium">Parameters</span>
+        <textarea
+          value={Object.entries(value)
+            .map(([key, nested]) => `${key}=${String(nested)}`)
+            .join("\n")}
+          onChange={(event) => {
+            const next: Record<string, string> = {};
+            for (const line of event.target.value.split("\n")) {
+              const cut = line.indexOf("=");
+              if (cut <= 0) {
+                continue;
+              }
+              next[line.slice(0, cut).trim()] = line.slice(cut + 1).trim();
+            }
+            onChange(next);
+          }}
+          rows={6}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
+        />
+        <span className="mt-1 block text-xs text-zinc-500">
+          Typed profile parameters as key=value lines after a profile is
+          selected. No raw shell, interpolation tokens, keys, or passwords.
+        </span>
+      </label>
+    );
+  }
+  return (
+    <fieldset className="space-y-3 rounded-xl border border-zinc-200 px-4 py-3">
+      <legend className="px-1 text-sm font-medium">Typed profile parameters</legend>
+      <p className="text-xs text-zinc-500">
+        Values are constrained by the selected command profile. The reviewed
+        renderer owns quoting. This is not a free-form shell.
+      </p>
+      {constraints.map((constraint) => {
+        const current = value[constraint.name];
+        const text = current == null ? "" : String(current);
+        if (constraint.enum?.length) {
+          return (
+            <label key={constraint.name} className="block text-sm">
+              <span className="font-medium">
+                {constraint.name}
+                {constraint.required ? " *" : ""}
+              </span>
+              <select
+                value={text}
+                onChange={(event) => patch(constraint.name, event.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value="">Select {constraint.name}</option>
+                {constraint.enum.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+              {constraint.description ? (
+                <span className="mt-1 block text-xs text-zinc-500">
+                  {constraint.description}
+                </span>
+              ) : null}
+            </label>
+          );
+        }
+        if (constraint.type === "boolean") {
+          return (
+            <label key={constraint.name} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={current === true || current === "true"}
+                onChange={(event) => patch(constraint.name, event.target.checked)}
+              />
+              <span className="font-medium">
+                {constraint.name}
+                {constraint.required ? " *" : ""}
+              </span>
+              {constraint.description ? (
+                <span className="text-xs text-zinc-500">{constraint.description}</span>
+              ) : null}
+            </label>
+          );
+        }
+        return (
+          <label key={constraint.name} className="block text-sm">
+            <span className="font-medium">
+              {constraint.name}
+              {constraint.required ? " *" : ""}
+            </span>
+            <input
+              type={constraint.type === "integer" ? "number" : "text"}
+              value={text}
+              onChange={(event) =>
+                patch(
+                  constraint.name,
+                  constraint.type === "integer"
+                    ? event.target.value === ""
+                      ? ""
+                      : Number(event.target.value)
+                    : event.target.value,
+                )
+              }
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+            <span className="mt-1 block text-xs text-zinc-500">
+              {constraint.description ||
+                `${constraint.type} parameter. No shell interpolation.`}
+              {constraint.sensitive
+                ? " Marked sensitive on the profile — redacted in audit, still a typed YAML value (not a vault secret)."
+                : ""}
+            </span>
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+}
+
+function stringifyWizardValue(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 function entryName(entries: ActionLibraryEntry[], type?: string): string {
