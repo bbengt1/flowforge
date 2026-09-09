@@ -115,12 +115,35 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 	if props["password"] == nil || props["token"] == nil {
 		t.Fatalf("schema property names must be preserved: %+v", kept)
 	}
-	_, _, err = NormalizeSpec(KindPolicy, map[string]any{
-		"kind":   "kubernetes",
-		"policy": map[string]any{"allowedNamespaces": []any{"prod"}, "expiresIn": "tomorrow"},
+	nested := RedactSpec(map[string]any{
+		"schema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"kubeconfig": map[string]any{"type": "string"},
+			},
+			"default": map[string]any{"kubeconfig": "apiVersion: v1\nkind: Config\n"},
+		},
 	})
-	if err == nil {
-		t.Fatal("invalid expiresIn must be rejected")
+	def, _ := nested["schema"].(map[string]any)["default"].(map[string]any)
+	if _, leaked := def["kubeconfig"]; leaked {
+		t.Fatal("nested kubeconfig value must be stripped")
+	}
+	prop, _ := nested["schema"].(map[string]any)["properties"].(map[string]any)
+	if prop["kubeconfig"] == nil {
+		t.Fatal("schema property named kubeconfig must be kept")
+	}
+	props["password"] = "mutated"
+	if schema["parameterSchema"].(map[string]any)["properties"].(map[string]any)["password"].(map[string]any)["type"] != "string" {
+		t.Fatal("redacted spec must be a deep copy")
+	}
+	for _, bad := range []string{"tomorrow", "PT1H1H", "P1DT"} {
+		_, _, err = NormalizeSpec(KindPolicy, map[string]any{
+			"kind":   "kubernetes",
+			"policy": map[string]any{"allowedNamespaces": []any{"prod"}, "expiresIn": bad},
+		})
+		if err == nil {
+			t.Fatalf("invalid expiresIn %q must be rejected", bad)
+		}
 	}
 }
 

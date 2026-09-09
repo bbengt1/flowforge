@@ -973,10 +973,12 @@ func containsFold(items []string, want string) bool {
 	return false
 }
 
-// Top-level vault secret field names only. Nested JSON Schema properties such
-// as password/token/authorization must be preserved so drafts match their digest.
+// Secret-bearing field names. Nested JSON Schema *property names* (objects
+// under properties.password, etc.) are kept; string values at those keys
+// (schema.default.kubeconfig, leaked tokens) are stripped.
 var secretSpecKeys = map[string]struct{}{
 	"kubeconfig": {}, "privatekey": {}, "private_key": {}, "passphrase": {},
+	"token": {}, "secret": {}, "password": {}, "authorization": {},
 }
 
 func redactMap(in map[string]any) map[string]any {
@@ -985,10 +987,30 @@ func redactMap(in map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret {
+		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret && isSecretValue(v) {
 			continue
 		}
-		out[k] = v
+		out[k] = cloneJSONValue(v)
 	}
 	return out
+}
+
+func isSecretValue(v any) bool {
+	s, ok := v.(string)
+	return ok && strings.TrimSpace(s) != ""
+}
+
+func cloneJSONValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		return redactMap(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = cloneJSONValue(item)
+		}
+		return out
+	default:
+		return t
+	}
 }

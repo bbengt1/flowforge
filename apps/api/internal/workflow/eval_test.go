@@ -191,4 +191,12 @@ func TestISODurationSeconds(t *testing.T) {
 	if _, err := isoDurationSeconds("P1Y"); err == nil {
 		t.Fatal("expected year rejection")
 	}
+	for _, bad := range []string{"PT1H1H", "P1DT", "PT", "P", "P1W1D", "P1WT1H", "tomorrow"} {
+		if _, err := isoDurationSeconds(bad); err == nil {
+			t.Fatalf("expected rejection of %q", bad)
+		}
+	}
+	if _, err := isoDurationSeconds("P999999999999999999D"); err == nil {
+		t.Fatal("expected overflow rejection")
+	}
 }
