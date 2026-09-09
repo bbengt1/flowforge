@@ -5,12 +5,14 @@ import { clearSession, setActiveSession } from "./session-store.ts";
 import { PROBLEM_JSON } from "./problem.ts";
 import { REQUEST_ID_HEADER } from "./request-id.ts";
 import type { DevIdentity } from "./identity-headers.ts";
-import { STARTER_WORKFLOW_YAML } from "./workflow.ts";
+import { INVALID_WORKFLOW_YAML, STARTER_WORKFLOW_YAML } from "./workflow.ts";
 import {
   createWorkflow,
   fetchWorkflowCatalog,
   IF_MATCH_HEADER,
   normalizeWorkflowYaml,
+  importValidatedWorkflow,
+  saveCanonicalWorkflowDraft,
   saveWorkflowDraft,
   startWorkflowExecution,
   validateWorkflowYaml,
@@ -212,6 +214,117 @@ describe("workflow client", () => {
     if (result.ok) {
       assert.equal(result.applied.revision, 1);
       assert.equal(result.applied.yaml, STARTER_WORKFLOW_YAML);
+    }
+  });
+
+  it("saveCanonicalWorkflowDraft normalizes then PUTs draft and prefers normalize yaml", async () => {
+    withSession();
+    const calls: { url?: string; body?: string }[] = [];
+    const normalized = `${STARTER_WORKFLOW_YAML}# canonical\n`;
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      const body = typeof init?.body === "string" ? init.body : "";
+      calls.push({ url, body });
+      if (url.endsWith("/workflows/normalize")) {
+        return new Response(
+          JSON.stringify({
+            definitionYaml: normalized,
+            digest: "sha256:normalized",
+            summary,
+            warnings: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          workflow: {
+            id: "11111111-1111-4111-8111-111111111111",
+            slug: "validate-example",
+            name: "validate-example",
+            status: "draft",
+            draftRevision: 2,
+            draftDigest: "sha256:draft",
+            latestVersionNumber: 0,
+            createdAt: "2026-09-08T21:00:00.000Z",
+            updatedAt: "2026-09-08T21:00:00.000Z",
+          },
+          draft: {
+            workflowId: "11111111-1111-4111-8111-111111111111",
+            revision: 2,
+            definitionYaml: `${normalized}# from-draft\n`,
+            digest: "sha256:draft",
+            summary,
+            warnings: [],
+            validationState: "valid",
+            updatedAt: "2026-09-08T21:00:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await saveCanonicalWorkflowDraft(
+      identity,
+      "11111111-1111-4111-8111-111111111111",
+      STARTER_WORKFLOW_YAML,
+      1,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(calls[0]?.url, "/api/v1/workflows/normalize");
+    assert.equal(
+      calls[1]?.url,
+      "/api/v1/workflows/11111111-1111-4111-8111-111111111111/draft",
+    );
+    assert.match(calls[1]?.body ?? "", /# canonical/);
+    if (result.ok) {
+      assert.equal(result.normalized, true);
+      assert.equal(result.applied.yaml, normalized);
+      assert.equal(result.applied.digest, "sha256:normalized");
+      assert.equal(result.applied.revision, 2);
+      assert.equal(result.normalizeDigest, "sha256:normalized");
+    }
+  });
+
+  it("importValidatedWorkflow validates before POST /workflows", async () => {
+    withSession();
+    const calls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      calls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:invalid-workflow",
+          title: "Invalid Workflow",
+          status: 400,
+          detail: "The workflow definition is not valid.",
+          instance: "/api/v1/workflows/validate",
+          code: "invalid-workflow",
+          request_id: "wf-import-invalid16",
+          errors: [
+            {
+              path: "spec.nodes[0].type",
+              line: 10,
+              column: 7,
+              code: "unsupported-node",
+              message: "workflow.call is not enabled.",
+            },
+          ],
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            [REQUEST_ID_HEADER]: "wf-import-invalid16",
+          },
+        },
+      );
+    }) as typeof fetch;
+
+    const result = await importValidatedWorkflow(identity, INVALID_WORKFLOW_YAML);
+    assert.equal(result.ok, false);
+    assert.deepEqual(calls, ["/api/v1/workflows/validate"]);
+    if (!result.ok) {
+      assert.equal(result.errors[0]?.code, "unsupported-node");
     }
   });
 

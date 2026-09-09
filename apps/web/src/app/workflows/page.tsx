@@ -16,7 +16,7 @@ export default function WorkflowsPage() {
           views show status, version, validation health, and required
           approvals without opening the editor. Create and import use{" "}
           <code className="font-mono text-sm">POST /workflows</code>. The
-          YAML editor is at{" "}
+          canvas + YAML editor is at{" "}
           <code className="font-mono text-sm">/workflows/{"{id}"}</code>.
         </p>
       </header>

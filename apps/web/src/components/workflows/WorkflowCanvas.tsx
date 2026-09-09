@@ -1,0 +1,475 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import { ACTION_DRAG_MIME } from "@/components/workflows/ActionLibrary";
+import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
+import {
+  canConnectPorts,
+  canvasNodeStateIcon,
+  canvasNodeStateLabel,
+  formatPortRef,
+  layoutGraphNodes,
+  type GraphEdge,
+  type GraphNode,
+  type WorkflowGraph,
+} from "@/lib/workflow-graph";
+import type { CatalogPort } from "@/lib/workflow-types";
+
+export type EditorSelection =
+  | { kind: "workflow" }
+  | { kind: "node"; id: string }
+  | { kind: "edge"; from: string; to: string };
+
+type WorkflowCanvasProps = {
+  graph: WorkflowGraph | null;
+  invalid: boolean;
+  pending: boolean;
+  selection: EditorSelection;
+  entries: ActionLibraryEntry[];
+  onSelect: (selection: EditorSelection) => void;
+  onInsertType: (type: string) => void;
+  onConnect: (from: string, to: string) => string[];
+};
+
+const NODE_W = 188;
+const NODE_H = 96;
+
+export function WorkflowCanvas({
+  graph,
+  invalid,
+  pending,
+  selection,
+  entries,
+  onSelect,
+  onInsertType,
+  onConnect,
+}: WorkflowCanvasProps) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0, scale: 1 });
+  const [dragging, setDragging] = useState<{ x: number; y: number } | null>(null);
+  const [linkFrom, setLinkFrom] = useState<{ nodeId: string; port: string } | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const positions = useMemo(
+    () => (graph ? layoutGraphNodes(graph.nodes, graph.edges) : new Map()),
+    [graph],
+  );
+
+  function startPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("[data-canvas-node],[data-port]")) {
+      return;
+    }
+    setDragging({ x: event.clientX - pan.x, y: event.clientY - pan.y });
+    onSelect({ kind: "workflow" });
+  }
+
+  function movePan(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragging) {
+      return;
+    }
+    setPan((current) => ({ ...current, x: event.clientX - dragging.x, y: event.clientY - dragging.y }));
+  }
+
+  function wheelZoom(event: React.WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? 0.9 : 1.1;
+    setPan((current) => ({
+      ...current,
+      scale: Math.min(2.2, Math.max(0.4, current.scale * delta)),
+    }));
+  }
+
+  function portCenter(nodeId: string, port: string, direction: "in" | "out") {
+    const pos = positions.get(nodeId) ?? { x: 0, y: 0 };
+    const node = graph?.nodes.find((item) => item.id === nodeId);
+    const list = direction === "in" ? node?.inputs ?? [] : node?.outputs ?? [];
+    const index = Math.max(0, list.findIndex((item) => item.name === port));
+    return {
+      x: pos.x + (direction === "in" ? 0 : NODE_W),
+      y: pos.y + 36 + index * 16,
+    };
+  }
+
+  function tryConnect(toNode: string, toPort: string) {
+    if (!linkFrom) {
+      return;
+    }
+    const from = formatPortRef({ nodeId: linkFrom.nodeId, port: linkFrom.port });
+    const to = formatPortRef({ nodeId: toNode, port: toPort });
+    const errors = onConnect(from, to);
+    setConnectError(errors[0] ?? null);
+    setLinkFrom(null);
+  }
+
+  if (invalid) {
+    return (
+      <section
+        aria-labelledby="canvas-heading"
+        className="flex min-h-[28rem] flex-col rounded-2xl border border-amber-200 bg-amber-50 p-5"
+      >
+        <h2 id="canvas-heading" className="text-base font-semibold text-amber-950">
+          Canvas
+        </h2>
+        <p className="mt-2 text-sm text-amber-950">
+          Invalid YAML is not projected onto the canvas. Fix the errors in
+          the validation panel — the editor will not guess a graph.
+        </p>
+      </section>
+    );
+  }
+  if (!graph) {
+    return (
+      <section
+        aria-labelledby="canvas-heading"
+        className="flex min-h-[28rem] flex-col rounded-2xl border border-zinc-200 bg-white p-5"
+      >
+        <h2 id="canvas-heading" className="text-base font-semibold">
+          Canvas
+        </h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          {pending
+            ? "Validating YAML before drawing the graph…"
+            : "The canvas appears after a successful validate. Invalid YAML never becomes a guessed graph."}
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      aria-labelledby="canvas-heading"
+      className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+    >
+      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+        <div>
+          <h2 id="canvas-heading" className="text-base font-semibold">
+            Canvas
+          </h2>
+          <p className="text-xs text-zinc-500">
+            Pan, zoom (Ctrl+wheel), select. Connect output → compatible input.
+            {pending ? " Validating…" : ""}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPan((current) => ({ ...current, scale: Math.min(2.2, current.scale * 1.1) }))}
+            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+          >
+            Zoom in
+          </button>
+          <button
+            type="button"
+            onClick={() => setPan((current) => ({ ...current, scale: Math.max(0.4, current.scale * 0.9) }))}
+            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+          >
+            Zoom out
+          </button>
+          <button
+            type="button"
+            onClick={() => setPan({ x: 0, y: 0, scale: 1 })}
+            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+      {connectError ? (
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950">
+          {connectError}
+        </p>
+      ) : null}
+      <div
+        ref={surfaceRef}
+        role="application"
+        aria-label="Workflow canvas"
+        tabIndex={0}
+        onPointerDown={startPan}
+        onPointerMove={movePan}
+        onPointerUp={() => setDragging(null)}
+        onPointerLeave={() => setDragging(null)}
+        onWheel={wheelZoom}
+        onDragOver={(event) => {
+          if ([...event.dataTransfer.types].includes(ACTION_DRAG_MIME)) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={(event) => {
+          const type = event.dataTransfer.getData(ACTION_DRAG_MIME);
+          if (type) {
+            event.preventDefault();
+            onInsertType(type);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setLinkFrom(null);
+            onSelect({ kind: "workflow" });
+          }
+          if (event.key === "+" || event.key === "=") {
+            setPan((current) => ({ ...current, scale: Math.min(2.2, current.scale * 1.1) }));
+          }
+          if (event.key === "-" || event.key === "_") {
+            setPan((current) => ({ ...current, scale: Math.max(0.4, current.scale * 0.9) }));
+          }
+          if (event.key === "ArrowLeft") {
+            setPan((current) => ({ ...current, x: current.x + 24 }));
+          }
+          if (event.key === "ArrowRight") {
+            setPan((current) => ({ ...current, x: current.x - 24 }));
+          }
+          if (event.key === "ArrowUp") {
+            setPan((current) => ({ ...current, y: current.y + 24 }));
+          }
+          if (event.key === "ArrowDown") {
+            setPan((current) => ({ ...current, y: current.y - 24 }));
+          }
+        }}
+        className="relative h-[28rem] cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+      >
+        <div
+          className="absolute inset-0 origin-top-left"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.scale})` }}
+        >
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute inset-0 overflow-visible"
+            width={1200}
+            height={800}
+          >
+            {graph.edges.map((edge) => {
+              const start = portCenter(edge.fromRef.nodeId, edge.fromRef.port, "out");
+              const end = portCenter(edge.toRef.nodeId, edge.toRef.port, "in");
+              const selected =
+                selection.kind === "edge" &&
+                selection.from === edge.from &&
+                selection.to === edge.to;
+              return (
+                <path
+                  key={edge.id}
+                  d={`M ${start.x} ${start.y} C ${start.x + 48} ${start.y}, ${end.x - 48} ${end.y}, ${end.x} ${end.y}`}
+                  fill="none"
+                  stroke={selected ? "#115e59" : "#71717a"}
+                  strokeWidth={selected ? 2.5 : 1.5}
+                />
+              );
+            })}
+          </svg>
+          {graph.nodes.map((node) => (
+            <CanvasNode
+              key={node.id}
+              node={node}
+              nodes={graph.nodes}
+              x={positions.get(node.id)?.x ?? 0}
+              y={positions.get(node.id)?.y ?? 0}
+              selected={selection.kind === "node" && selection.id === node.id}
+              linkFrom={linkFrom}
+              entries={entries}
+              onSelect={() => onSelect({ kind: "node", id: node.id })}
+              onOutput={(port) => {
+                setConnectError(null);
+                setLinkFrom({ nodeId: node.id, port });
+              }}
+              onInput={(port) => tryConnect(node.id, port)}
+            />
+          ))}
+          {graph.edges.map((edge) => (
+            <button
+              key={`${edge.id}-hit`}
+              type="button"
+              aria-label={`Edge ${edge.from} to ${edge.to}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect({ kind: "edge", from: edge.from, to: edge.to });
+              }}
+              className="sr-only"
+            >
+              {edge.from} → {edge.to}
+            </button>
+          ))}
+        </div>
+      </div>
+      <EdgeList edges={graph.edges} selection={selection} onSelect={onSelect} />
+    </section>
+  );
+}
+
+function CanvasNode({
+  node,
+  nodes,
+  x,
+  y,
+  selected,
+  linkFrom,
+  entries,
+  onSelect,
+  onOutput,
+  onInput,
+}: {
+  node: GraphNode;
+  nodes: GraphNode[];
+  x: number;
+  y: number;
+  selected: boolean;
+  linkFrom: { nodeId: string; port: string } | null;
+  entries: ActionLibraryEntry[];
+  onSelect: () => void;
+  onOutput: (port: string) => void;
+  onInput: (port: string) => void;
+}) {
+  return (
+    <div
+      data-canvas-node={node.id}
+      role="group"
+      aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}`}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+      className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm ${
+        selected ? "border-teal-800 ring-2 ring-teal-700/30" : "border-zinc-300"
+      }`}
+      style={{ left: x, top: y, width: NODE_W, minHeight: NODE_H }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium text-zinc-900">{node.name || node.id}</p>
+          <p className="font-mono text-[11px] text-zinc-500">{node.type}</p>
+        </div>
+        <p
+          className="flex items-center gap-1 text-[11px] font-medium text-zinc-800"
+          aria-label={`State ${canvasNodeStateLabel(node.state)}`}
+        >
+          <span aria-hidden>{canvasNodeStateIcon(node.state)}</span>
+          <span>{canvasNodeStateLabel(node.state)}</span>
+        </p>
+      </div>
+      <div className="mt-2 flex justify-between gap-2">
+        <div className="space-y-1">
+          {node.inputs.map((port) => (
+            <PortButton
+              key={`in-${port.name}`}
+              port={port}
+              direction="in"
+              available={inputAvailable(node, nodes, port, linkFrom, entries)}
+              onClick={() => onInput(port.name)}
+            />
+          ))}
+        </div>
+        <div className="space-y-1 text-right">
+          {node.outputs.map((port) => (
+            <PortButton
+              key={`out-${port.name}`}
+              port={port}
+              direction="out"
+              available
+              onClick={() => onOutput(port.name)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function inputAvailable(
+  node: GraphNode,
+  nodes: GraphNode[],
+  port: CatalogPort,
+  linkFrom: { nodeId: string; port: string } | null,
+  entries: ActionLibraryEntry[],
+): boolean {
+  if (!linkFrom) {
+    return true;
+  }
+  if (linkFrom.nodeId === node.id) {
+    return false;
+  }
+  const source = nodes.find((item) => item.id === linkFrom.nodeId);
+  if (!source) {
+    return false;
+  }
+  return canConnectPorts(
+    null,
+    source.type,
+    linkFrom.port,
+    node.type,
+    port.name,
+    entries,
+  ).ok;
+}
+
+function PortButton({
+  port,
+  direction,
+  available,
+  onClick,
+}: {
+  port: CatalogPort;
+  direction: "in" | "out";
+  available: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-port={`${direction}:${port.name}`}
+      disabled={!available}
+      title={
+        available
+          ? `${direction} ${port.name} (${port.kind})`
+          : `${port.name} unavailable: incompatible type or same node`
+      }
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={`block font-mono text-[10px] ${
+        available ? "text-zinc-700 hover:text-teal-800" : "cursor-not-allowed text-zinc-400 line-through"
+      }`}
+    >
+      {direction === "in" ? `● ${port.name}` : `${port.name} ●`}
+      <span className="sr-only">
+        {available ? "" : " unavailable"} {port.kind}
+      </span>
+    </button>
+  );
+}
+
+function EdgeList({
+  edges,
+  selection,
+  onSelect,
+}: {
+  edges: GraphEdge[];
+  selection: EditorSelection;
+  onSelect: (selection: EditorSelection) => void;
+}) {
+  if (edges.length === 0) {
+    return null;
+  }
+  return (
+    <ul className="flex flex-wrap gap-2 border-t border-zinc-200 px-4 py-2 text-xs">
+      {edges.map((edge) => {
+        const selected =
+          selection.kind === "edge" && selection.from === edge.from && selection.to === edge.to;
+        return (
+          <li key={edge.id}>
+            <button
+              type="button"
+              onClick={() => onSelect({ kind: "edge", from: edge.from, to: edge.to })}
+              className={`rounded-md px-2 py-1 font-mono ${
+                selected ? "bg-teal-50 text-teal-950" : "bg-zinc-50 text-zinc-700"
+              }`}
+            >
+              {edge.from} → {edge.to}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

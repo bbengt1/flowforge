@@ -20,6 +20,7 @@ export type CatalogPort = {
 export type CatalogTrigger = {
   type: string;
   phase: CatalogPhase;
+  enabled?: boolean;
   outputs?: CatalogPort[];
 };
 
@@ -66,6 +67,7 @@ export type CatalogRules = {
 export type CatalogNode = {
   type: string;
   phase: CatalogPhase;
+  enabled?: boolean;
   title?: string;
   description?: string;
   inputs?: CatalogPort[];

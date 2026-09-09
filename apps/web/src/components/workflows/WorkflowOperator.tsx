@@ -9,21 +9,29 @@ import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-cli
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
 import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
-import { CatalogPanel } from "@/components/workflows/CatalogPanel";
+import { ActionLibrary } from "@/components/workflows/ActionLibrary";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
-import { NodeInspector } from "@/components/workflows/NodeInspector";
+import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { RunControl } from "@/components/workflows/RunControl";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
+import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import {
-  adaptCoreNeutralPalette,
-  type CoreNeutralPaletteEntry,
-} from "@/lib/workflow-core-nodes";
+  adaptActionLibrary,
+  rejectDisabledActionType,
+  type ActionLibraryEntry,
+} from "@/lib/workflow-action-library";
+import {
+  canSaveWorkflowEditor,
+  connectGraphEdge,
+  editorHasLocalInvalidations,
+  projectCanvasGraph,
+} from "@/lib/workflow-graph";
 import {
   applyCoreNodeConfig,
-  insertCoreNode,
+  insertCatalogNode,
   listYamlNodes,
   type CoreNodeWith,
 } from "@/lib/workflow-yaml-nodes";
@@ -52,10 +60,11 @@ import {
   getWorkflowExecution,
   listWorkflows,
   listWorkflowVersions,
+  importValidatedWorkflow,
   normalizeWorkflowYaml,
   publishWorkflow,
   restoreWorkflowVersion,
-  saveWorkflowDraft,
+  saveCanonicalWorkflowDraft,
   startWorkflowExecution,
   validateWorkflowYaml,
 } from "@/lib/workflow-client";
@@ -142,7 +151,8 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     {},
   );
   const [paletteQuery, setPaletteQuery] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<EditorSelection>({ kind: "workflow" });
+  const [focusColumn, setFocusColumn] = useState<number | null>(null);
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
@@ -150,7 +160,17 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   yamlRef.current = yaml;
 
   const yamlNodes = listYamlNodes(yaml);
-  const palette = adaptCoreNeutralPalette(catalog);
+  const library = adaptActionLibrary(catalog);
+  const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
+  const graph = projectCanvasGraph({
+    errors,
+    summary,
+    yaml,
+    catalog,
+    palette: library,
+    warnings,
+  });
+  const canSave = canSaveWorkflowEditor({ status, errors, localErrors });
 
   const canCall = hasOperatorCaller(
     session.active,
@@ -234,6 +254,15 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     }, VALIDATE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [canCall, runValidate, yaml]);
+
+  useEffect(() => {
+    if (!canCall || catalog) {
+      return;
+    }
+    void loadCatalog();
+    // loadCatalog is recreated each render; catalog presence is the latch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCall]);
 
   async function loadCatalog() {
     setPending("catalog");
@@ -437,7 +466,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     setProblem(null);
     setConflictDraft(null);
     setConflictProblem(null);
-    const result = await saveWorkflowDraft(identity, workflow.id, yaml, revision);
+    const result = await saveCanonicalWorkflowDraft(identity, workflow.id, yaml, revision);
     setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
@@ -734,11 +763,33 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     await loadExecutionApprovals(workflow.id, result.execution);
   }
 
-  function insertPaletteNode(entry: CoreNeutralPaletteEntry) {
-    const inserted = insertCoreNode(yaml, entry.type);
+  function insertLibraryNode(entry: ActionLibraryEntry) {
+    const rejected = rejectDisabledActionType(entry.type, catalog);
+    if (!rejected.ok) {
+      setStatus("invalid");
+      setErrors([
+        {
+          path: "spec.nodes",
+          code: "unsupported-node",
+          message: rejected.reason,
+        },
+      ]);
+      clearGraph();
+      return;
+    }
+    const inserted = insertCatalogNode(yaml, entry.type, { name: entry.name });
     setDigest(null);
     setYaml(inserted.yaml);
-    setSelectedNodeId(inserted.node.id);
+    setSelection({ kind: "node", id: inserted.node.id });
+  }
+
+  function connectPorts(from: string, to: string): string[] {
+    const result = connectGraphEdge(yaml, from, to, catalog, library);
+    if (result.errors.length === 0) {
+      setDigest(null);
+      setYaml(result.yaml);
+    }
+    return result.errors;
   }
 
   function applyNodeConfig(id: string, name: string, config: CoreNodeWith) {
@@ -754,11 +805,46 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     const reader = new FileReader();
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
-      skipDebounce.current = false;
-      setDigest(null);
-      setYaml(text);
+      void (async () => {
+        setPending("import");
+        setProblem(null);
+        const result = await importValidatedWorkflow(identity, text, {
+          ...optionalCreateFields(createSlug, createName || file.name.replace(/\.ya?ml$/i, "")),
+        });
+        setLastRequestId(result.requestId);
+        setPending(null);
+        if (!result.ok) {
+          setStatus("invalid");
+          setErrors(result.errors);
+          clearGraph();
+          setProblem(result.problem);
+          skipDebounce.current = false;
+          setDigest(null);
+          setYaml(text);
+          return;
+        }
+        resetWorkflowScopedState();
+        const created = result.workflow;
+        if (created) {
+          setWorkflow(created);
+          setItems((current) => [
+            created,
+            ...current.filter((item) => item.id !== created.id),
+          ]);
+          router.replace(`/workflows/${created.id}`);
+        }
+        applyEditor({ ...result.applied, revision: result.applied.revision });
+      })();
     };
     reader.readAsText(file);
+  }
+
+  async function exportPublished() {
+    const version = publishedVersion ?? versions[0];
+    if (!workflow || !version) {
+      return;
+    }
+    await exportVersion(version);
   }
 
   const errorLines = errors
@@ -868,12 +954,32 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         <button
           type="button"
           onClick={() => void saveDraft()}
-          disabled={!canCall || pending !== null || !workflow || revision === null}
+          disabled={
+            !canCall ||
+            pending !== null ||
+            !workflow ||
+            revision === null ||
+            !canSave
+          }
           className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
         >
           {pending === "save" ? "Saving…" : "Save draft"}
         </button>
+        <button
+          type="button"
+          onClick={() => void exportPublished()}
+          disabled={!canCall || pending !== null || !workflow || versions.length === 0}
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+        >
+          {pending === "export" ? "Exporting…" : "Export published"}
+        </button>
       </div>
+      {!canSave ? (
+        <p className="text-sm text-zinc-600">
+          Save is disabled until YAML, graph ports, policy, and required
+          configuration are valid.
+        </p>
+      ) : null}
 
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
@@ -931,49 +1037,73 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         ) : null}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)_20rem]">
-        <div className="space-y-6">
-          <CatalogPanel
-            catalog={catalog}
-            entries={palette}
-            query={paletteQuery}
-            pending={pending === "catalog"}
-            onQuery={setPaletteQuery}
-            onRefresh={() => void loadCatalog()}
-            onInsert={insertPaletteNode}
+      <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
+        <ActionLibrary
+          catalog={catalog}
+          entries={library}
+          query={paletteQuery}
+          pending={pending === "catalog"}
+          onQuery={setPaletteQuery}
+          onRefresh={() => void loadCatalog()}
+          onInsert={insertLibraryNode}
+        />
+        <div className="space-y-4">
+          <WorkflowCanvas
+            graph={graph}
+            invalid={status === "invalid" || errors.length > 0}
+            pending={status === "pending"}
+            selection={selection}
+            entries={library}
+            onSelect={setSelection}
+            onInsertType={(type) => {
+              const entry = library.find((item) => item.type === type);
+              if (entry) {
+                insertLibraryNode(entry);
+              }
+            }}
+            onConnect={connectPorts}
           />
-          <NodeInspector
-            nodes={yamlNodes}
-            selectedId={selectedNodeId}
-            entries={palette}
-            pending={pending !== null}
-            onSelect={setSelectedNodeId}
-            onApply={applyNodeConfig}
+          <YamlEditor
+            value={yaml}
+            onChange={(next) => {
+              setDigest(null);
+              setYaml(next);
+            }}
+            focusLine={focusLine}
+            focusColumn={focusColumn}
+            focusToken={focusToken}
+            errorLines={errorLines}
           />
         </div>
-        <YamlEditor
-          value={yaml}
-          onChange={(next) => {
-            setDigest(null);
-            setYaml(next);
-          }}
-          focusLine={focusLine}
-          focusToken={focusToken}
-          errorLines={errorLines}
-        />
-        <ValidationPanel
-          status={status}
-          errors={errors}
-          warnings={warnings}
-          summary={summary}
-          digest={digest}
-          problem={problem}
-          onJump={(line) => {
-            setFocusLine(line);
-            setFocusToken((token) => token + 1);
-          }}
-          onSelectNode={setSelectedNodeId}
-        />
+        <div className="space-y-6">
+          <EditorInspector
+            yaml={yaml}
+            graph={graph}
+            nodes={yamlNodes}
+            entries={library}
+            selection={selection}
+            pending={pending !== null}
+            identity={identity}
+            canCall={canCall}
+            onSelectNode={(id) => setSelection({ kind: "node", id })}
+            onApply={applyNodeConfig}
+          />
+          <ValidationPanel
+            status={status}
+            errors={errors}
+            warnings={warnings}
+            summary={summary}
+            digest={digest}
+            problem={problem}
+            onJump={(line, column) => {
+              setFocusLine(line);
+              setFocusColumn(column ?? null);
+              setFocusToken((token) => token + 1);
+            }}
+            onSelectNode={(id) => setSelection({ kind: "node", id })}
+            onSelectEdge={(from, to) => setSelection({ kind: "edge", from, to })}
+          />
+        </div>
       </div>
 
       {workflow ? (
