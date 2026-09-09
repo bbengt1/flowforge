@@ -452,11 +452,11 @@ export function canRetryExecution(options: {
     return false;
   }
   const steps = options.steps ?? [];
-  if (steps.some((step) => isIndeterminateStatus(step.status))) {
+  if (steps.length === 0) {
     return false;
   }
-  if (steps.length === 0) {
-    return true;
+  if (steps.some((step) => isIndeterminateStatus(step.status))) {
+    return false;
   }
   return steps.some(
     (step) =>

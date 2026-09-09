@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
@@ -46,6 +46,7 @@ import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { CurrentWorkspace } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
+import { createGenerationGate } from "@/lib/request-generation";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 type ExecutionDetailProps = {
@@ -83,6 +84,7 @@ export function ExecutionDetail({
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const requestGate = useRef(createGenerationGate());
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -109,12 +111,16 @@ export function ExecutionDetail({
     normalizeExecutionStatus(view?.header.status) === "running";
 
   async function refresh() {
+    const token = requestGate.current.begin();
     setPending(true);
     setProblem(null);
     const [result, workspace] = await Promise.all([
       loadExecutionHistory(identity, executionId, workflowId),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
     ]);
+    if (!requestGate.current.isCurrent(token)) {
+      return;
+    }
     setLastRequestId(result.requestId);
     setPending(false);
     if (workspace.ok) {
@@ -219,12 +225,17 @@ export function ExecutionDetail({
   }, [ready, identity, executionId, workflowId]);
 
   useEffect(() => {
+    const gate = requestGate.current;
     if (!ready || denied || !live) {
       return;
     }
     const timer = window.setInterval(() => {
+      const token = gate.begin();
       void pollExecutionStatus(identity, executionId, workflowId).then(
         (result) => {
+          if (!gate.isCurrent(token)) {
+            return;
+          }
           setLastRequestId(result.requestId);
           if (!result.ok) {
             if (result.forbidden) {
@@ -249,7 +260,10 @@ export function ExecutionDetail({
         },
       );
     }, EXECUTION_STATUS_POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      gate.begin();
+      window.clearInterval(timer);
+    };
   }, [ready, denied, live, identity, executionId, workflowId]);
 
   return (
