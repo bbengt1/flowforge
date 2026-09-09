@@ -262,7 +262,7 @@ Suggested UI flow:
 
 ## Durable executions (E5.1)
 
-PostgreSQL model for executions, steps, jobs, and append-only `audit_events`. Lease/fencing columns exist on steps/jobs for E5.2 but are unused. Artifact downloads are E5.3.
+PostgreSQL model for executions, steps, jobs, and append-only `audit_events`. E5.2 uses the reserved lease/fencing columns for claim/heartbeat/recovery. Artifact downloads are E5.3.
 
 **UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable against `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: `/executions` (workspace history) and `/executions/{id}` (detail with redacted steps). Next proxies can rewrite `/api/control-plane/executions` and `/api/control-plane/workflows/{id}/executions`.
 
@@ -276,7 +276,7 @@ Suggested UI flow:
 6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
-Statuses: `queued`, `pinned` (legacy stub), `running`, `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). `fencingToken` / `leaseExpiresAt` / `workerId` are reserved; do not claim jobs from the UI.
+Statuses: `queued`, `pinned` (legacy stub), `running`, `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). Workers claim jobs via `/jobs/*`; the UI cancels/retries via `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser.
 
 Retention: executions `retentionUntil` default 90 days; audit events 365 days. Monthly partitions apply to `audit_events` only.
 
@@ -289,6 +289,42 @@ Retention: executions `retentionUntil` default 90 days; audit events 365 days. M
 | `GET /api/v1/executions/{executionId}/jobs` | Dispatch records. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/executions/{executionId}/audit-events` | Redacted start/replay audit for that run. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/audit-events` | Workspace audit log (`resourceType`, `resourceId`, `action`, `limit`). Distinct from E2.2 `GET /workspace/audit-events`. | `200` `{items}` | `401` `403` |
+
+## Durable dispatch (E5.2)
+
+Authenticated jobs, single active claim, heartbeat, fencing tokens, lease expiry, cancel, and retry. Workers must re-validate the claim `binding` (workspace, workflow version/digest, policy digest, expiry) before any provider call. Altered HMAC `jobToken`s are `403`. Expired tickets/leases are `409`. Cross-workspace job IDs are `404`. Lease loss after claim/heartbeat is `indeterminate` — never a silent provider retry.
+
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable against `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: execution detail cancel + retry buttons, unmistakable `indeterminate` badge. Next proxies can rewrite `/api/control-plane/executions/{id}/cancel`, `.../retry`, `.../steps/{stepId}/retry`. Worker routes stay off the browser.
+
+Suggested UI flow:
+
+1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only.
+2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
+3. Retry: only for `failed` or `canceled` **core** `data.*` / `flow.*` steps. `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Provider nodes and `indeterminate` → `409`.
+4. Do **not** call `/jobs/claim` from the UI. That is the worker client.
+
+Worker client (not the UI):
+
+1. `POST /jobs/claim` `{workerId, leaseSeconds?}` → `200` `{claimed, jobToken, binding, job, step, execution}` or `204`.
+2. Reject the job if `binding.workspaceId` is not this worker's workspace, `binding.expiresAt` is past, or `workflowVersionId` / `workflowDigest` do not match the pinned execution.
+3. `POST /jobs/{jobId}/heartbeat` `{jobToken, workerId, fencingToken, leaseSeconds?}` — first heartbeat marks `running` (the provider fence). Then call the provider at most once.
+4. `POST /jobs/{jobId}/complete` `{jobToken, workerId, fencingToken, output?}` or `.../fail` `{..., error?}`.
+5. Graceful idle release (no heartbeat yet): `POST /jobs/{jobId}/release`. After heartbeat, release becomes `indeterminate`.
+6. Crash/lease loss: `POST /jobs/recover` (also runs on the next claim). Expired `claimed`/`running` jobs become `indeterminate`. A stale `jobToken` cannot complete.
+
+Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex) HMACs tickets; an unset secret is an ephemeral process key.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `POST /api/v1/jobs/claim` | Claim next queued job. Recovers expired leases first. Requires `workflow.execute`. | `200` ticket or `204` empty | `400` `401` `403` |
+| `POST /api/v1/jobs/recover` | Sweep expired leases to `indeterminate`. | `200` `{recovered}` | `401` `403` |
+| `POST /api/v1/jobs/{jobId}/heartbeat` | Extend lease; mark `running`. Requires matching `jobToken` + fence. | `200` | `400` `401` `403` `404` `409` |
+| `POST /api/v1/jobs/{jobId}/release` | Requeue if not yet running; otherwise `indeterminate`. | `200` | `400` `401` `403` `404` `409` |
+| `POST /api/v1/jobs/{jobId}/complete` | Succeed with redacted `output`. | `200` | `400` `401` `403` `404` `409` |
+| `POST /api/v1/jobs/{jobId}/fail` | Fail with redacted `error`. | `200` | `400` `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` |
 
 RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
 
@@ -303,7 +339,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `unauthenticated` | 401 | Missing or invalid credentials |
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
-| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, or idempotency key reused with a different fingerprint |
+| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, or a retry/cancel that is not allowed |
 | `method-not-allowed` | 405 | Known path, unsupported method |
 | `request-too-large` | 413 | Body exceeds 1048576 bytes |
 | `internal-error` | 500 | Unexpected failure |

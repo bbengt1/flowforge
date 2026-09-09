@@ -38,6 +38,9 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # CREDENTIAL_KEK=
 # CREDENTIAL_KEK_FILE=
 # CREDENTIAL_KEK_ID=env:CREDENTIAL_KEK
+# HMAC key for authenticated worker job tickets (E5.2). 32-byte AES-sized
+# secret as base64 or 64 hex. Unset uses an ephemeral process key.
+# JOB_BINDING_SECRET=
 
 # --- Web (Next.js) ---
 # Host port published as http://localhost:3000

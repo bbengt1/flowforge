@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 func main() {
@@ -44,7 +45,8 @@ func main() {
 				IdleTimeout:     cfg.SessionIdleTimeout,
 				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
 			},
-			VaultKeys: cfg.VaultKeys,
+			VaultKeys:     cfg.VaultKeys,
+			JobBindingKey: wfstore.LoadJobBindingKey(),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

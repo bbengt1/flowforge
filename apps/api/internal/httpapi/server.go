@@ -33,6 +33,7 @@ type Server struct {
 	ops       opsconfig.Store
 	approvals approval.Store
 	keys      vault.Keys
+	jobKey    []byte
 	log       *slog.Logger
 	registry  *observability.Registry
 	sec       Security
@@ -41,20 +42,21 @@ type Server struct {
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
-	DB        postgres.Checker
-	Store     identity.Store
-	Scoped    isolation.Store
-	Sessions  session.Store
-	Workflows wfstore.Store
-	Vault     vault.Store
-	Ops       opsconfig.Store
-	Approvals approval.Store
-	Keys      vault.Keys
-	Cache     *isolation.Cache
-	Log       *slog.Logger
-	Registry  *observability.Registry
-	Security  Security
-	Now       func() time.Time
+	DB            postgres.Checker
+	Store         identity.Store
+	Scoped        isolation.Store
+	Sessions      session.Store
+	Workflows     wfstore.Store
+	Vault         vault.Store
+	Ops           opsconfig.Store
+	Approvals     approval.Store
+	Keys          vault.Keys
+	JobBindingKey []byte
+	Cache         *isolation.Cache
+	Log           *slog.Logger
+	Registry      *observability.Registry
+	Security      Security
+	Now           func() time.Time
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -161,6 +163,13 @@ func newServer(d Deps) http.Handler {
 	if clock == nil {
 		clock = time.Now
 	}
+	jobKey := d.JobBindingKey
+	if len(jobKey) == 0 {
+		jobKey = d.Security.JobBindingKey
+	}
+	if len(jobKey) == 0 {
+		jobKey = wfstore.LoadJobBindingKey()
+	}
 	s := &Server{
 		db:        d.DB,
 		store:     d.Store,
@@ -172,6 +181,7 @@ func newServer(d Deps) http.Handler {
 		ops:       opsStore,
 		approvals: approvalStore,
 		keys:      keys,
+		jobKey:    jobKey,
 		log:       log,
 		registry:  registry,
 		sec:       d.Security,
@@ -235,6 +245,15 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/steps/{stepId}", s.getExecutionStep)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/jobs", s.listExecutionJobs)
 	mux.HandleFunc("GET /api/v1/executions/{executionId}/audit-events", s.listExecutionAuditEvents)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/cancel", s.cancelExecution)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/retry", s.retryExecution)
+	mux.HandleFunc("POST /api/v1/executions/{executionId}/steps/{stepId}/retry", s.retryExecution)
+	mux.HandleFunc("POST /api/v1/jobs/claim", s.claimJob)
+	mux.HandleFunc("POST /api/v1/jobs/recover", s.recoverJobs)
+	mux.HandleFunc("POST /api/v1/jobs/{jobId}/heartbeat", s.heartbeatJob)
+	mux.HandleFunc("POST /api/v1/jobs/{jobId}/release", s.releaseJob)
+	mux.HandleFunc("POST /api/v1/jobs/{jobId}/complete", s.completeJob)
+	mux.HandleFunc("POST /api/v1/jobs/{jobId}/fail", s.failJob)
 	mux.HandleFunc("GET /api/v1/audit-events", s.listProductAuditEvents)
 	mux.HandleFunc("GET /api/v1/credentials/catalog", s.getCredentialCatalog)
 	mux.HandleFunc("GET /api/v1/credentials", s.listCredentials)

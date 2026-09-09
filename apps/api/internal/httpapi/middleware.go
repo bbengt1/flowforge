@@ -26,6 +26,7 @@ type Security struct {
 	AllowedOrigins []string
 	Session        SessionPolicy
 	VaultKeys      vault.Keys
+	JobBindingKey  []byte
 }
 
 // SessionPolicy is idle/absolute lifetime for browser sessions.
