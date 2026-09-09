@@ -86,7 +86,10 @@ describe("script ops client", () => {
           type: "urn:flowforge:problem:forbidden",
           title: "Forbidden",
           status: 403,
+          detail: "script.revoke required",
+          instance: "/scripts/revoke",
           code: "forbidden",
+          request_id: "r-403",
         }),
         { status: 403, headers: { "Content-Type": PROBLEM_JSON } },
       )) as typeof fetch;
@@ -167,7 +170,10 @@ describe("script ops client", () => {
           type: "urn:flowforge:problem:emergency-stop-denied",
           title: "Forbidden",
           status: 403,
+          detail: "emergency-stop-denied: allowEmergencyStop=false",
+          instance: "/emergency-stop",
           code: "emergency-stop-denied",
+          request_id: "r-403",
         }),
         { status: 403, headers: { "Content-Type": PROBLEM_JSON } },
       )) as typeof fetch;

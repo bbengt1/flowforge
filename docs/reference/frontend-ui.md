@@ -632,26 +632,26 @@ Run dialog fields:
 
 `201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Schedule and wait/resume stay E10.3. Webhook admin/ingress is E10.2 below.
 
-## E10.2 replay-safe webhooks (Chloe UI)
+## E10.2 replay-safe webhook trigger config (Chloe UI)
 
-The E10.2 ingress and admin APIs stay on `POST /hooks/{publicId}` and `/workflows/{id}/triggers` / `/triggers/{id}`. Relates to #107 / Part of #105 — **Keep #107 open**. Do **not** rewrite `apps/web` in the API story; this section is the UI contract.
+Jonny's ingress + admin APIs from **#113** (`e102-#113`) stay on `POST /hooks/{publicId}` and `/workflows/{id}/triggers` / `/triggers/{id}`. Relates to #107 / Part of #105 — **Keep #107 open**. `apps/api` is unchanged. Adapter: `apps/web/src/lib/webhook-trigger-contract.ts`. Cookie session + `X-CSRF-Token` on admin POST/PATCH/DELETE. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Marked **catalog-fallback** only if those objects are missing (still #113 defaults). Host-supplied `id` / `workspaceId` is `400`.
 
-Cookie session + `X-CSRF-Token` on admin writes. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Never render or persist the HMAC secret. Host-supplied `id` / `workspaceId` is `400`.
+**Public ingress (operators, not a session UI path):** `POST /hooks/{publicId}` → `POST /api/v1/hooks/{publicId}`. HMAC over `v1.{timestamp}.{rawBody}` **before parse**. Headers: `X-FlowForge-Timestamp` (unix seconds), `X-FlowForge-Signature: v1=<hex>`. Optional `Idempotency-Key`. No cookie / no CSRF. Fail-closed: `201` / `200` / `401` bad sig or skew / `404` unknown or disabled / `409` replay / `413` oversize / `429` rate.
+
+**Admin:** `GET|POST /workflows/{id}/triggers`; `GET|PATCH|DELETE /triggers/{id}`; `POST /triggers/{id}/rotate|disable|enable`. Opaque `publicId` (`wh_` + 64 hex). Vault `webhook_secret` only — **never return `secret`**.
 
 Admin fields:
 
 | Control | Source | Notes |
 | --- | --- | --- |
 | Published version picker | `GET /workflows/{id}/versions` | Drafts never listed or sent |
-| Secret | existing `webhook_secret` picker or create `{secret:{secret}}` | Shown once at create/rotate; then only `secretCredentialId` + fingerprint |
-| Ingress URL | response `ingressPath` | `/api/v1/hooks/{publicId}`. Copyable. Secret is never in the URL |
-| Field mapping | `fieldMapping` | Destination identifier → dotted source path |
-| Limits | body/skew/replay/rate/concurrency | Defaults from catalog `ingress` |
+| Secret | vault `webhook_secret` picker **or** `{secret:{secret}}` on create/rotate | Never shown after submit. PATCH rejects `secret` |
+| Ingress URL | response `ingressPath` + `publicId` | `/api/v1/hooks/{publicId}`. Copyable. Secret is never in the URL |
+| Field mapping | `fieldMapping` map | Destination identifier → dotted source path. Empty copies root |
+| Limits | `maxBodyBytes` / `clockSkewSeconds` / `replayRetentionSeconds` / rate / concurrency | Defaults from catalog `ingress` (64 KiB, 300s, 600s, 60/min, 5) |
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
-Public delivery is server-to-server: `X-FlowForge-Timestamp` + `X-FlowForge-Signature: v1=<hex>` over `v1.{timestamp}.{raw}`. UI should document those headers and fail-closed statuses: `201` / `200` / `401` bad sig or skew / `404` unknown or disabled / `409` replay / `413` oversize / `429` rate. Do not call ingress from the browser session.
-
-Schedule + durable `flow.approval` wait/resume stay E10.3. HTTP/notification actions stay E10.4.
+Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. Schedule + durable `flow.approval` wait/resume stay E10.3. HTTP/notification actions stay E10.4.
 
 ## Required validation
 

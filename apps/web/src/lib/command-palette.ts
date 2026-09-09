@@ -7,6 +7,7 @@ import { canSeeAlertsNav } from "./alert.ts";
 import { canSeeApprovalsNav } from "./approval.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
 import { canSeeOpsConfigNav } from "./ops-config.ts";
+import { webhookTriggersHref } from "./webhook-trigger-contract.ts";
 import {
   canCreateWorkflows,
   canExecuteWorkflows,
@@ -130,6 +131,22 @@ export function paletteCommands(
       hint: "Authenticated manual start from workflow home",
       keywords: ["start", "run", "execute", "manual"],
       action: { type: "navigate", href: "/workflows?start=1" },
+    });
+  }
+  if (allowed(permissions, canSeeWorkflowsNav)) {
+    commands.push({
+      id: "webhook-triggers",
+      label: "Configure webhook triggers",
+      hint: context.workflowId
+        ? "Replay-safe webhook config for this workflow (#113)"
+        : "Replay-safe webhook trigger config (#113)",
+      keywords: ["webhook", "trigger", "secret", "replay", "signature", "hmac"],
+      action: {
+        type: "navigate",
+        href: context.workflowId
+          ? `/workflows/${context.workflowId}#webhook-triggers`
+          : webhookTriggersHref(),
+      },
     });
   }
   if (allowed(permissions, (perms) => canSeeExecutionsNav(perms ?? []))) {

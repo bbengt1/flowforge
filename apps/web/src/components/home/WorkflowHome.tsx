@@ -43,10 +43,15 @@ import {
   type WorkflowTemplate,
 } from "@/lib/workflow-templates";
 import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
+import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
 import {
   MANUAL_START_QUERY,
   canOfferManualStart,
 } from "@/lib/manual-start-contract";
+import {
+  WEBHOOK_TRIGGER_QUERY,
+  canViewWebhookTriggers,
+} from "@/lib/webhook-trigger-contract";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 
@@ -77,8 +82,10 @@ function WorkflowHomeSession() {
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
   const canExecute = ready && canOfferManualStart(permissions);
+  const canViewWebhooks = ready && canViewWebhookTriggers(permissions);
   const denied = ready && permissions != null && !canSeeWorkflowsNav(permissions);
   const [startWorkflowId, setStartWorkflowId] = useState("");
+  const [webhookWorkflowId, setWebhookWorkflowId] = useState("");
 
   const items = useMemo(
     () =>
@@ -111,6 +118,21 @@ function WorkflowHomeSession() {
       }
     );
   }, [items, resolvedStartId]);
+  const resolvedWebhookId =
+    webhookWorkflowId === "1"
+      ? (items[0]?.id ?? "")
+      : webhookWorkflowId;
+  const webhookItem = useMemo(() => {
+    if (!resolvedWebhookId) {
+      return null;
+    }
+    return (
+      items.find((item) => item.id === resolvedWebhookId) ?? {
+        id: resolvedWebhookId,
+        name: undefined,
+      }
+    );
+  }, [items, resolvedWebhookId]);
 
   const refresh = useCallback(async () => {
     const token = refreshGate.current.begin();
@@ -256,7 +278,8 @@ function WorkflowHomeSession() {
     const shouldCreate = searchParams.get("create") === "1";
     const shouldImport = searchParams.get("import") === "1";
     const startParam = searchParams.get(MANUAL_START_QUERY);
-    if (!shouldCreate && !shouldImport && !startParam) {
+    const webhookParam = searchParams.get(WEBHOOK_TRIGGER_QUERY);
+    if (!shouldCreate && !shouldImport && !startParam && !webhookParam) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -281,6 +304,10 @@ function WorkflowHomeSession() {
       if (startParam) {
         consumedQuery.current = true;
         setStartWorkflowId(startParam);
+      }
+      if (webhookParam) {
+        consumedQuery.current = true;
+        setWebhookWorkflowId(webhookParam);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -575,6 +602,16 @@ function WorkflowHomeSession() {
         />
       ) : null}
 
+      {webhookItem && canViewWebhooks ? (
+        <WebhookTriggerPanel
+          identity={identity}
+          workflowId={webhookItem.id}
+          workflowName={webhookItem.name}
+          permissions={permissions}
+          onClose={() => setWebhookWorkflowId("")}
+        />
+      ) : null}
+
       {visible.length === 0 ? (
         <TemplateGrid
           canCreate={canCreate}
@@ -588,6 +625,7 @@ function WorkflowHomeSession() {
           canCreate={canCreate}
           canExecute={canExecute}
           onStart={(item) => setStartWorkflowId(item.id)}
+          onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -598,6 +636,7 @@ function WorkflowHomeSession() {
           canCreate={canCreate}
           canExecute={canExecute}
           onStart={(item) => setStartWorkflowId(item.id)}
+          onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -686,6 +725,7 @@ function WorkflowActions({
   canCreate,
   canExecute,
   onStart,
+  onWebhooks,
   onDuplicate,
   onExport,
 }: {
@@ -694,6 +734,7 @@ function WorkflowActions({
   canCreate: boolean;
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onWebhooks: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -715,6 +756,14 @@ function WorkflowActions({
           </span>
         )
       ) : null}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onWebhooks(item)}
+        className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+      >
+        Webhooks
+      </button>
       <Link
         href={`/workflows/${item.id}`}
         className="text-sm font-medium text-teal-800 underline"
@@ -763,6 +812,7 @@ function WorkflowHomeList({
   canCreate,
   canExecute,
   onStart,
+  onWebhooks,
   onDuplicate,
   onExport,
 }: {
@@ -771,6 +821,7 @@ function WorkflowHomeList({
   canCreate: boolean;
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onWebhooks: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -798,6 +849,7 @@ function WorkflowHomeList({
             canCreate={canCreate}
             canExecute={canExecute}
             onStart={onStart}
+            onWebhooks={onWebhooks}
             onDuplicate={onDuplicate}
             onExport={onExport}
           />
@@ -813,6 +865,7 @@ function WorkflowHomeCards({
   canCreate,
   canExecute,
   onStart,
+  onWebhooks,
   onDuplicate,
   onExport,
 }: {
@@ -821,6 +874,7 @@ function WorkflowHomeCards({
   canCreate: boolean;
   canExecute: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onWebhooks: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
@@ -848,6 +902,7 @@ function WorkflowHomeCards({
               canCreate={canCreate}
               canExecute={canExecute}
               onStart={onStart}
+              onWebhooks={onWebhooks}
               onDuplicate={onDuplicate}
               onExport={onExport}
             />

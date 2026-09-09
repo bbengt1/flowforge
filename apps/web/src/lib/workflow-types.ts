@@ -75,6 +75,52 @@ export type CatalogTriggerStart = {
   help?: string;
 };
 
+/** Jonny's E10.2 catalog ingress map (#113) on `triggers[type=webhook].ingress`. */
+export type CatalogTriggerIngress = {
+  route?: string;
+  method?: string;
+  public?: boolean;
+  csrf?: boolean;
+  session?: boolean;
+  signatureHeader?: string;
+  timestampHeader?: string;
+  signatureVersion?: string;
+  idempotencyHeader?: string;
+  maxBodyBytes?: number;
+  maxInputBytes?: number;
+  clockSkewSeconds?: number;
+  replayRetentionSeconds?: number;
+  defaultRatePerMinute?: number;
+  defaultWorkspaceRatePerMinute?: number;
+  defaultMaxConcurrency?: number;
+  defaultWorkspaceMaxConcurrency?: number;
+  contentTypes?: string[];
+  createdStatus?: number;
+  replayStatus?: number;
+  conflictStatus?: number;
+  unauthorizedStatus?: number;
+  rateLimitedStatus?: number;
+  tooLargeStatus?: number;
+  disabledStatus?: number;
+  help?: string;
+};
+
+/** Jonny's E10.2 catalog admin map (#113) on `triggers[type=webhook].admin`. */
+export type CatalogTriggerAdmin = {
+  listRoute?: string;
+  createRoute?: string;
+  itemRoute?: string;
+  rotateRoute?: string;
+  disableRoute?: string;
+  enableRoute?: string;
+  deleteRoute?: string;
+  permission?: string;
+  viewPermission?: string;
+  csrf?: boolean;
+  secretNeverReturned?: boolean;
+  help?: string;
+};
+
 export type CatalogTrigger = {
   type: string;
   phase: CatalogPhase;
@@ -86,6 +132,8 @@ export type CatalogTrigger = {
   bounds?: CatalogNodeBounds;
   redaction?: CatalogRedaction;
   start?: CatalogTriggerStart;
+  ingress?: CatalogTriggerIngress;
+  admin?: CatalogTriggerAdmin;
 };
 
 export type CatalogRules = {

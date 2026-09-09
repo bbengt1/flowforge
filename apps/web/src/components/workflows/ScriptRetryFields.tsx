@@ -223,7 +223,7 @@ export function ScriptRetryFields({
       ) : (
         <p className="text-sm text-zinc-700">
           retrySafe={String(safe)}; idempotencyKey{" "}
-          {validation.idempotencyKeyDeclared ? "declared" : "omitted"};
+          {validation.idempotencyKey ? "declared" : "omitted"};
           verification {validation.verificationDeclared ? "declared-hook" : "omitted"}.
         </p>
       )}
