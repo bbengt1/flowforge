@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AuthorizedResourceSelect } from "@/components/config/AuthorizedResourceSelect";
 import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
 import { ScriptIoFields } from "@/components/workflows/ScriptIoFields";
+import { ScriptRetryFields } from "@/components/workflows/ScriptRetryFields";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { selectOpsConfig } from "@/lib/ops-config-client";
@@ -23,7 +24,10 @@ import {
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
-import { parseScriptIoCatalog } from "@/lib/script-io-contract";
+import {
+  isDedicatedScriptIoWithField,
+  parseScriptIoCatalog,
+} from "@/lib/script-io-contract";
 import { loadPublishedScriptRuntimeProfiles } from "@/lib/script-runtime-client";
 import {
   SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
@@ -99,8 +103,7 @@ export function ScriptAuthoringPanel({
   const fields = scriptNodeWithFields(node.type, scriptCatalog).filter(
     (field) =>
       field.name !== "runtimeProfileId" &&
-      field.name !== "inputSchema" &&
-      field.name !== "outputSchema",
+      !isDedicatedScriptIoWithField(field.name),
   );
   const ioCatalog = parseScriptIoCatalog(scriptCatalog);
   const nodePins = (scriptArtifacts ?? []).filter(
@@ -227,6 +230,24 @@ export function ScriptAuthoringPanel({
           disabled={!onPatchNodeWith}
           onChange={(patchValue) => {
             onPatchNodeWith?.(node.id, patchValue);
+          }}
+        />
+      </div>
+      <div className="mt-4">
+        <ScriptRetryFields
+          retrySafe={node.with.retrySafe}
+          idempotencyKey={node.with.idempotencyKey}
+          verification={node.with.verification}
+          retryPolicy={node.with.retryPolicy}
+          catalog={ioCatalog}
+          disabled={!onPatchNodeWith}
+          onChange={(patchValue) => {
+            onPatchNodeWith?.(node.id, {
+              retrySafe: patchValue.retrySafe === true ? true : undefined,
+              idempotencyKey: patchValue.idempotencyKey || undefined,
+              verification: patchValue.verification,
+              retryPolicy: patchValue.retryPolicy ?? { maxAttempts: 0 },
+            });
           }}
         />
       </div>

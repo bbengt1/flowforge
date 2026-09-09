@@ -3,10 +3,8 @@
 import { useState } from "react";
 import {
   SCRIPT_IO_CONTRACT_FALLBACK_HELP,
+  SCRIPT_IO_ENV_HELP,
   SCRIPT_IO_HANDLE_HELP,
-  SCRIPT_IO_INDETERMINATE_HELP,
-  SCRIPT_IO_NO_BLIND_RETRY_HELP,
-  SCRIPT_IO_RETRY_ZERO_MESSAGE,
   SCRIPT_IO_ROUTE_MAP_SOURCE,
   SCRIPT_IO_SCHEMA_HELP,
   SCRIPT_IO_SIZE_HELP,
@@ -14,6 +12,7 @@ import {
   parseScriptIoSchemaText,
   patchScriptIoSchemaBounds,
   scriptIoBounds,
+  scriptIoCatalog,
   scriptIoSizeBoundsFromSchema,
   stringifyScriptIoSchema,
   validateScriptIoSchema,
@@ -40,8 +39,10 @@ export function ScriptIoFields({
     <fieldset className="space-y-4 rounded-xl border border-zinc-200 px-4 py-3">
       <legend className="px-1 text-sm font-medium">Typed I/O schema</legend>
       <p className="text-xs text-zinc-500">
-        {SCRIPT_IO_SCHEMA_HELP} {SCRIPT_IO_SIZE_HELP} {SCRIPT_IO_HANDLE_HELP} Map
-        source{" "}
+        {SCRIPT_IO_SCHEMA_HELP} {SCRIPT_IO_SIZE_HELP} Inputs are validated
+        against the schema and the catalog 16 KiB bound before inject. Outputs
+        are schema/size checked and redacted before persist.{" "}
+        {SCRIPT_IO_HANDLE_HELP} {SCRIPT_IO_ENV_HELP} Map source{" "}
         <code className="font-mono">{SCRIPT_IO_ROUTE_MAP_SOURCE}</code>
         {catalog?.source ? ` · ${catalog.source}` : ""}.
       </p>
@@ -78,8 +79,9 @@ export function ScriptIoFields({
       />
       <p className="text-xs text-zinc-600">
         Catalog cap is {bounds.maxInputBytes} input bytes and{" "}
-        {bounds.maxOutputBytes} output bytes. {SCRIPT_IO_RETRY_ZERO_MESSAGE}{" "}
-        {SCRIPT_IO_NO_BLIND_RETRY_HELP} {SCRIPT_IO_INDETERMINATE_HELP}
+        {bounds.maxOutputBytes} output bytes. Secrets fail closed. Handles TTL{" "}
+        {scriptIoCatalog(catalog).io.handleTTLSeconds}s (max{" "}
+        {scriptIoCatalog(catalog).io.handleMaxTTLSeconds}s).
       </p>
     </fieldset>
   );

@@ -1,18 +1,20 @@
 /**
  * Single retarget adapter for Chloe's E9.3 typed script I/O + recovery UI.
- * Until jonny posts the contract map, this uses the marked
- * `e93-contract-fallback` overlay on existing E9.1/E9.2 catalogs.
+ * Wired to jonny's **#101** map on `main` (`e93-#101`).
  *
- * Prefer:
- *   GET /scripts/catalog            additive `io` / `retry` / `errors[]`
+ * Prefer existing routes — do not invent any:
+ *   GET /scripts/catalog            `io` / `retry.ui` / `retry.probe` / `errors[]`
+ *   GET /workflows/catalog          script.python / script.go `allowedWith`
+ *                                   / `policy.defaultMaxAttempts=0`
+ *   POST /policy/evaluate           `retrySafe` / `retryAllowed` /
+ *                                   `verificationDeclared` for script nodes
  *   GET /ops-config/catalog         scriptEngine fallback
- *   GET /workflows/catalog          script.python / script.go bounds
  *   GET /executions/{id}            redacted result + `result.retry.allowed`
- *   POST /executions/{id}/retry     only when the contract allows
+ *   POST /executions/{id}/retry     409 `retry-denied` when closed
  *
  * Cookie session + `X-CSRF-Token`. JSON camelCase. RFC 9457.
  * Relates to #94 / Part of #91. Keep #94 open (jonny owns typed I/O
- * + recovery). Do not invent routes. Do not change `apps/api`.
+ * + recovery). Do not change `apps/api`.
  */
 
 import { isSecretFieldName } from "./credential.ts";
@@ -21,9 +23,9 @@ import { isForbiddenYamlKey, looksLikeSecretValue } from "./workflow-yaml-nodes.
 
 export const SCRIPT_IO_STORY = 94;
 export const SCRIPT_IO_EPIC = 91;
-/** Jonny's E9.3 map is not on main yet. */
-export const SCRIPT_IO_API_PR = 0;
-export const SCRIPT_IO_ROUTE_MAP_SOURCE = "e93-contract-fallback" as const;
+/** Jonny's E9.3 typed I/O + recovery map on main. */
+export const SCRIPT_IO_API_PR = 101;
+export const SCRIPT_IO_ROUTE_MAP_SOURCE = "e93-#101" as const;
 
 export const SCRIPT_PYTHON_IO_TYPE = "script.python" as const;
 export const SCRIPT_GO_IO_TYPE = "script.go" as const;
@@ -38,6 +40,58 @@ export const SCRIPT_IO_MAX_SCHEMA_PROPERTIES = 32;
 export const SCRIPT_IO_MAX_SCHEMA_DEPTH = 8;
 export const SCRIPT_IO_MAX_AGGREGATION_ITEMS = 32;
 export const SCRIPT_IO_MAX_OBJECT_FIELDS = 32;
+export const SCRIPT_IO_HANDLE_TTL_SECONDS = 60;
+export const SCRIPT_IO_HANDLE_MAX_TTL_SECONDS = 300;
+export const SCRIPT_IO_MAX_IDEMPOTENCY_KEY = 128;
+export const SCRIPT_IO_RETRY_SAFE_FLAG = "retrySafe" as const;
+export const SCRIPT_IO_SEMANTICS = "E9.3" as const;
+export const SCRIPT_IO_VERIFICATION_FIELD = "verification" as const;
+export const SCRIPT_IO_VERIFICATION_CONTRACT = "node-declared-idempotent-hook" as const;
+export const SCRIPT_IO_VERIFICATION_BEHAVIOR = "declared-hook" as const;
+export const SCRIPT_IO_VERIFY_ALREADY_APPLIED = "already-applied" as const;
+export const SCRIPT_IO_VERIFY_SAFE_TO_RETRY = "safe-to-retry" as const;
+export const SCRIPT_IO_VERIFY_INDETERMINATE = "indeterminate" as const;
+export const SCRIPT_IO_VERIFY_OUTCOMES = [
+  SCRIPT_IO_VERIFY_ALREADY_APPLIED,
+  SCRIPT_IO_VERIFY_SAFE_TO_RETRY,
+  SCRIPT_IO_VERIFY_INDETERMINATE,
+] as const;
+export const SCRIPT_IO_HANDLE_INJECTION = "scoped-short-lived" as const;
+export const SCRIPT_IO_HANDLE_PUBLIC_KEYS = [
+  "id",
+  "credentialId",
+  "workspaceId",
+  "scopes",
+  "expiresAt",
+] as const;
+export const SCRIPT_IO_ALLOWLISTED_ENV = [
+  "FLOWFORGE_CORRELATION_ID",
+  "FLOWFORGE_LANGUAGE",
+  "FLOWFORGE_ENTRYPOINT",
+  "FLOWFORGE_ARTIFACT_DIGEST",
+  "FLOWFORGE_RUNTIME_PROFILE_ID",
+  "FLOWFORGE_HANDLE_IDS",
+  "FLOWFORGE_IDEMPOTENCY_KEY",
+] as const;
+export const SCRIPT_IO_FORBIDDEN_ENV = [
+  "AWS_*",
+  "KUBECONFIG",
+  "DOCKER_*",
+  "SECRET",
+  "TOKEN",
+  "PASSWORD",
+  "CREDENTIAL",
+  "PRIVATE_KEY",
+] as const;
+export const SCRIPT_IO_DEDICATED_WITH_FIELDS = [
+  "inputSchema",
+  "outputSchema",
+  "retrySafe",
+  "idempotencyKey",
+  "verification",
+  "retryPolicy",
+] as const;
+const SCRIPT_IO_IDEMPOTENCY_KEY_RE = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
 
 export const SCRIPT_IO_SCHEMA_KEYWORDS = [
   "type",
@@ -76,7 +130,7 @@ export const SCRIPT_IO_HANDLE_KEYS = [
 ] as const;
 
 export const SCRIPT_IO_CONTRACT_FALLBACK_HELP =
-  "Using marked e93-contract-fallback typed I/O defaults because GET /scripts/catalog io / retry was unavailable. Inputs and outputs are the documented JSON Schema subset (16 KiB). Retries default to 0. Retry stays gated on result.retry.allowed. Secrets are scoped handles only — never YAML, schema, or logs.";
+  "Using marked e93-#101 typed I/O defaults because GET /scripts/catalog io / retry.ui / retry.probe was unavailable. Inputs and outputs are the documented JSON Schema subset (16 KiB, validated before inject). Retries default to 0. retrySafe requires idempotencyKey plus verification.behavior=declared-hook. Retry stays gated on result.retry.allowed. POST …/retry is 409 retry-denied when closed. Secrets are scoped handles only (TTL 60s, max 5m) — never YAML, env, schema, logs, or audit.";
 
 export const SCRIPT_IO_SCHEMA_HELP =
   "Declare inputSchema and outputSchema as the documented JSON Schema subset: type, properties, required, additionalProperties, items, enum, maxLength, maxItems, maxProperties, minimum, maximum, classification. Depth ≤ 8, ≤ 32 properties. No secrets or credential handles.";
@@ -88,19 +142,31 @@ export const SCRIPT_IO_SECRET_SCHEMA_MESSAGE =
   "Secrets, tokens, keys, and credential handles cannot be embedded in inputSchema, outputSchema, or with. Runtime injects scoped handles only; they are never shown in YAML or logs.";
 
 export const SCRIPT_IO_HANDLE_HELP =
-  "Scoped credential handles are injected at runtime and redacted before persistence. This UI never displays handle values.";
+  "Scoped credential handles are {id, credentialId?, workspaceId?, scopes, expiresAt} only (TTL 60s, max 5m). Plaintext never enters env, logs, job JSON, or audit. This UI never collects or displays handle secrets.";
+
+export const SCRIPT_IO_ENV_HELP =
+  "Runtime env is the catalog FLOWFORGE_* allowlist only: FLOWFORGE_CORRELATION_ID, FLOWFORGE_LANGUAGE, FLOWFORGE_ENTRYPOINT, FLOWFORGE_ARTIFACT_DIGEST, FLOWFORGE_RUNTIME_PROFILE_ID, FLOWFORGE_HANDLE_IDS, FLOWFORGE_IDEMPOTENCY_KEY. AWS_*, KUBECONFIG, DOCKER_*, and secret-named keys are env-denied.";
 
 export const SCRIPT_IO_RETRY_ZERO_MESSAGE =
-  "Retries default to zero (first attempt only). A script is retry-safe only when it declares an idempotency key and verification behavior.";
+  "Retries default to zero (first attempt only). A script is retry-safe only when it declares retrySafe, an idempotencyKey, and verification.behavior=declared-hook.";
 
 export const SCRIPT_IO_RETRY_DENIED_MESSAGE =
-  "retryPolicy.maxAttempts>0 requires retrySafe plus an idempotency key and verification. Otherwise POST …/retry returns retry-denied.";
+  "retryPolicy.maxAttempts>0 requires retrySafe plus an idempotency key and verification. Otherwise POST …/retry returns 409 retry-denied.";
+
+export const SCRIPT_IO_INVALID_VERIFICATION_MESSAGE =
+  "retrySafe=true requires idempotencyKey (1–128, letter-prefixed) and verification.behavior=declared-hook. Missing or invalid declaration is invalid-verification at validate/publish.";
 
 export const SCRIPT_IO_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (idempotency key + verification + remaining attempts). Lease loss stays indeterminate until safe verification.";
+  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Lease loss stays indeterminate until the verification hook runs first. POST …/retry is 409 retry-denied when closed.";
 
 export const SCRIPT_IO_INDETERMINATE_HELP =
-  "Indeterminate script outcome — lease lost after dispatch or verification could not confirm state. A side effect may have occurred. Do not assume the script did not run. Do not blindly re-run.";
+  "Indeterminate script outcome — lease lost after dispatch or verification could not confirm state. A side effect may have occurred. Do not assume the script did not run. Verify first — never blindly re-run.";
+
+export const SCRIPT_IO_IDEMPOTENCY_KEY_HELP =
+  "Required when retrySafe. 1–128 identifier starting with a letter; letters, digits, and ._: - only.";
+
+export const SCRIPT_IO_VERIFICATION_HELP =
+  "declared-hook is an idempotent check of prior output / expect. onMatch defaults to already-applied (do not re-run). onMismatch defaults to safe-to-retry. onError stays indeterminate.";
 
 export const SCRIPT_IO_VALIDATION_HELP =
   "Typed outputs must match the declared schema and size limit. Schema failures name field paths only and never echo secret content.";
@@ -125,8 +191,24 @@ export type ScriptIoBounds = {
   maxAggregationItems: number;
 };
 
+export type ScriptIoRules = {
+  maxInputBytes: number;
+  maxOutputBytes: number;
+  secretsForbidden: boolean;
+  plaintextCredentials: false;
+  handleInjection: string;
+  handleTTLSeconds: number;
+  handleMaxTTLSeconds: number;
+  allowlistedEnv: readonly string[];
+  forbiddenEnv: readonly string[];
+  validateBeforeInject: boolean;
+  redactBeforePersist: boolean;
+  note: string;
+};
+
 export type ScriptIoUI = {
   indeterminateBadge: string;
+  retrySafeFlag: string;
   retryEnabledWhen: string;
   hideRetryWhen: string;
   neverAssumeAbsent: boolean;
@@ -134,21 +216,37 @@ export type ScriptIoUI = {
   handlesNeverShown: boolean;
 };
 
+export type ScriptIoProbe = {
+  requiredWhenRetrySafe: boolean;
+  field: string;
+  behavior: string;
+  onMatchDefault: string;
+  onMismatchDefault: string;
+  onError: string;
+  outcomes: readonly string[];
+  note: string;
+};
+
 export type ScriptIoRetry = {
   defaultMaxAttempts: number;
   maxAttempts: number;
+  retrySafeFlag: string;
   retrySafeDefault: false;
+  idempotencyKey: string;
+  semantics: string;
   blindRetry: false;
   leaseLossOutcome: string;
   unknownOutcome: string;
   requiresIdempotencyKey: boolean;
-  requiresVerification: boolean;
+  requiresVerificationWhenRetrySafe: boolean;
+  verification: string;
   whenRetryAllowed: string;
   note: string;
 };
 
 export type ScriptIoCatalog = {
   source: ScriptIoCatalogSource;
+  io: ScriptIoRules;
   bounds: ScriptIoBounds;
   schemaKeywords: readonly string[];
   schemaTypes: readonly string[];
@@ -156,8 +254,40 @@ export type ScriptIoCatalog = {
   handles: "scoped-only";
   retry: ScriptIoRetry;
   ui: ScriptIoUI;
+  probe: ScriptIoProbe;
   errors: ScriptIoErrorShape[];
   notes?: string;
+};
+
+export type ScriptIoRetryPolicy = {
+  maxAttempts: number;
+};
+
+export type ScriptIoVerificationSpec = {
+  behavior: string;
+  expect?: Record<string, unknown>;
+  onMatch: string;
+  onMismatch: string;
+  onError: string;
+};
+
+export type ScriptIoEvaluateRetry = {
+  nodeId: string;
+  operation: string;
+  retrySafe: boolean;
+  retryMaxAttempts: number;
+  retryAllowed: boolean;
+  verificationDeclared: boolean;
+};
+
+export type ScriptIoRetryValidation = {
+  ok: boolean;
+  maxAttempts: number;
+  retrySafe: boolean;
+  idempotencyKey: string;
+  verificationDeclared: boolean;
+  errors: string[];
+  warnings: string[];
 };
 
 export type ScriptIoRetryResult = {
@@ -203,27 +333,58 @@ export const DEFAULT_SCRIPT_IO_BOUNDS: ScriptIoBounds = {
   maxAggregationItems: SCRIPT_IO_MAX_AGGREGATION_ITEMS,
 };
 
+export const DEFAULT_SCRIPT_IO_RULES: ScriptIoRules = {
+  maxInputBytes: SCRIPT_IO_MAX_INPUT_BYTES,
+  maxOutputBytes: SCRIPT_IO_MAX_OUTPUT_BYTES,
+  secretsForbidden: true,
+  plaintextCredentials: false,
+  handleInjection: SCRIPT_IO_HANDLE_INJECTION,
+  handleTTLSeconds: SCRIPT_IO_HANDLE_TTL_SECONDS,
+  handleMaxTTLSeconds: SCRIPT_IO_HANDLE_MAX_TTL_SECONDS,
+  allowlistedEnv: SCRIPT_IO_ALLOWLISTED_ENV,
+  forbiddenEnv: SCRIPT_IO_FORBIDDEN_ENV,
+  validateBeforeInject: true,
+  redactBeforePersist: true,
+  note: "Inputs are validated against inputSchema and size limits before inject. Only scoped handle ids are injected. Outputs are schema/size checked and redacted before persist/audit.",
+};
+
 export const DEFAULT_SCRIPT_IO_UI: ScriptIoUI = {
   indeterminateBadge: "indeterminate",
+  retrySafeFlag: SCRIPT_IO_RETRY_SAFE_FLAG,
   retryEnabledWhen:
-    "Show Retry when result.retry.allowed is true (idempotency key + verification + remaining attempts). Hide Retry for non-retrySafe indeterminate.",
+    "Show Retry when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Disable/hide Retry for non-retrySafe indeterminate.",
   hideRetryWhen: "indeterminate without retry.allowed, retry-denied, or maxAttempts=0",
   neverAssumeAbsent: true,
   redactOutputs: true,
   handlesNeverShown: true,
 };
 
+export const DEFAULT_SCRIPT_IO_PROBE: ScriptIoProbe = {
+  requiredWhenRetrySafe: true,
+  field: SCRIPT_IO_VERIFICATION_FIELD,
+  behavior: SCRIPT_IO_VERIFICATION_BEHAVIOR,
+  onMatchDefault: SCRIPT_IO_VERIFY_ALREADY_APPLIED,
+  onMismatchDefault: SCRIPT_IO_VERIFY_SAFE_TO_RETRY,
+  onError: SCRIPT_IO_VERIFY_INDETERMINATE,
+  outcomes: SCRIPT_IO_VERIFY_OUTCOMES,
+  note: SCRIPT_IO_VERIFICATION_HELP,
+};
+
 export const DEFAULT_SCRIPT_IO_RETRY: ScriptIoRetry = {
   defaultMaxAttempts: SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS,
   maxAttempts: SCRIPT_IO_MAX_RETRY_ATTEMPTS,
+  retrySafeFlag: SCRIPT_IO_RETRY_SAFE_FLAG,
   retrySafeDefault: false,
+  idempotencyKey: "idempotencyKey",
+  semantics: SCRIPT_IO_SEMANTICS,
   blindRetry: false,
   leaseLossOutcome: "indeterminate",
   unknownOutcome: "indeterminate",
   requiresIdempotencyKey: true,
-  requiresVerification: true,
+  requiresVerificationWhenRetrySafe: true,
+  verification: SCRIPT_IO_VERIFICATION_CONTRACT,
   whenRetryAllowed:
-    "result.retry.allowed is true AND retrySafe AND idempotency key declared AND verification declared AND attempts remain AND prior status is failed, canceled, or indeterminate after verification",
+    "node retrySafe=true AND idempotencyKey is present AND verification.behavior is declared-hook AND retryPolicy.maxAttempts>0 AND attempts remain AND prior status is failed, canceled, or indeterminate after verification",
   note: SCRIPT_IO_RETRY_ZERO_MESSAGE,
 };
 
@@ -234,24 +395,34 @@ export const DEFAULT_SCRIPT_IO_ERRORS: ScriptIoErrorShape[] = [
     meaning: "inputSchema or outputSchema is not the documented JSON Schema subset, or a runtime value failed the declared schema.",
   },
   {
-    code: "size-limit",
-    status: 400,
-    meaning: "Input, output, or declared schema exceeded the catalog size bound.",
-  },
-  {
-    code: "output-too-large",
-    status: 400,
-    meaning: "Redacted output exceeded maxOutputBytes.",
-  },
-  {
     code: "secret-forbidden",
     status: 400,
     meaning: SCRIPT_IO_SECRET_SCHEMA_MESSAGE,
   },
   {
-    code: "classification-denied",
+    code: "size-limit",
     status: 400,
-    meaning: "Secret classification and secret field names are denied on script I/O schemas and payloads.",
+    meaning: "Input, output, or declared schema exceeded the catalog 16 KiB size bound.",
+  },
+  {
+    code: "input-rejected",
+    status: 400,
+    meaning: "Execution input failed schema, size, or secret checks before inject.",
+  },
+  {
+    code: "output-too-large",
+    status: 400,
+    meaning: "Runner output exceeded the 16 KiB persist cap.",
+  },
+  {
+    code: "handle-forbidden",
+    status: 403,
+    meaning: "Credential handle missing, expired, unscoped, or contained plaintext secrets. Handles only.",
+  },
+  {
+    code: "env-denied",
+    status: 403,
+    meaning: "Runtime environment key is outside the FLOWFORGE_* allowlist, or plaintext credentials were supplied as env.",
   },
   {
     code: "retry-denied",
@@ -259,19 +430,20 @@ export const DEFAULT_SCRIPT_IO_ERRORS: ScriptIoErrorShape[] = [
     meaning: SCRIPT_IO_RETRY_DENIED_MESSAGE,
   },
   {
+    code: "invalid-verification",
+    status: 400,
+    meaning: SCRIPT_IO_INVALID_VERIFICATION_MESSAGE,
+  },
+  {
     code: "indeterminate",
     status: 409,
     meaning: SCRIPT_IO_INDETERMINATE_HELP,
-  },
-  {
-    code: "typed-io-not-implemented",
-    status: 501,
-    meaning: "E9.3 typed I/O execution is not enabled on this control plane. The UI still authors schemas and gates retry.",
   },
 ];
 
 export const SCRIPT_IO_CONTRACT_FALLBACK_CATALOG: ScriptIoCatalog = {
   source: "contract-fallback",
+  io: DEFAULT_SCRIPT_IO_RULES,
   bounds: DEFAULT_SCRIPT_IO_BOUNDS,
   schemaKeywords: SCRIPT_IO_SCHEMA_KEYWORDS,
   schemaTypes: SCRIPT_IO_SCHEMA_TYPES,
@@ -279,6 +451,7 @@ export const SCRIPT_IO_CONTRACT_FALLBACK_CATALOG: ScriptIoCatalog = {
   handles: "scoped-only",
   retry: DEFAULT_SCRIPT_IO_RETRY,
   ui: DEFAULT_SCRIPT_IO_UI,
+  probe: DEFAULT_SCRIPT_IO_PROBE,
   errors: DEFAULT_SCRIPT_IO_ERRORS,
   notes: SCRIPT_IO_CONTRACT_FALLBACK_HELP,
 };
@@ -453,7 +626,211 @@ export function validateScriptIoNodeExtras(
   if (encodedOutput > bounds.maxOutputBytes) {
     errors.push(`outputSchema exceeds the ${bounds.maxOutputBytes} byte size bound.`);
   }
+  errors.push(...validateScriptIoRetryDeclaration(withValue).errors);
+  if (withValue.env !== undefined || withValue.environment !== undefined) {
+    errors.push(SCRIPT_IO_ENV_HELP);
+  }
   return unique(errors);
+}
+
+export function defaultScriptIoRetryPolicy(): ScriptIoRetryPolicy {
+  return { maxAttempts: SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS };
+}
+
+export function defaultScriptIoVerification(): ScriptIoVerificationSpec {
+  return {
+    behavior: SCRIPT_IO_VERIFICATION_BEHAVIOR,
+    onMatch: SCRIPT_IO_VERIFY_ALREADY_APPLIED,
+    onMismatch: SCRIPT_IO_VERIFY_SAFE_TO_RETRY,
+    onError: SCRIPT_IO_VERIFY_INDETERMINATE,
+  };
+}
+
+export function isDedicatedScriptIoWithField(name: string): boolean {
+  return (SCRIPT_IO_DEDICATED_WITH_FIELDS as readonly string[]).includes(name);
+}
+
+export function isAllowlistedScriptEnv(key: string): boolean {
+  return (SCRIPT_IO_ALLOWLISTED_ENV as readonly string[]).includes(key.trim());
+}
+
+export function publicScriptHandle(value: unknown): Record<string, unknown> | null {
+  const rec = asRecord(value);
+  if (!rec) {
+    return null;
+  }
+  const id = String(rec.id ?? "").trim();
+  if (!id) {
+    return null;
+  }
+  const out: Record<string, unknown> = { id };
+  if (typeof rec.credentialId === "string" && rec.credentialId.trim()) {
+    out.credentialId = rec.credentialId.trim();
+  }
+  if (typeof rec.workspaceId === "string" && rec.workspaceId.trim()) {
+    out.workspaceId = rec.workspaceId.trim();
+  }
+  if (Array.isArray(rec.scopes)) {
+    out.scopes = rec.scopes
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (typeof rec.expiresAt === "string" && rec.expiresAt.trim()) {
+    out.expiresAt = rec.expiresAt.trim();
+  }
+  return out;
+}
+
+export function validateScriptIoRetryDeclaration(
+  withValue: Record<string, unknown>,
+): ScriptIoRetryValidation {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  let retrySafe = false;
+  if (withValue.retrySafe !== undefined) {
+    if (typeof withValue.retrySafe !== "boolean") {
+      errors.push("retrySafe must be a boolean.");
+    } else {
+      retrySafe = withValue.retrySafe;
+    }
+  }
+  let idempotencyKey = "";
+  if (withValue.idempotencyKey !== undefined && withValue.idempotencyKey !== null) {
+    if (typeof withValue.idempotencyKey !== "string") {
+      errors.push("idempotencyKey must be a string.");
+    } else {
+      idempotencyKey = withValue.idempotencyKey.trim();
+      if (idempotencyKey && !SCRIPT_IO_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+        errors.push(
+          "idempotencyKey must be 1–128 letters, digits, or ._: - and start with a letter.",
+        );
+      }
+    }
+  }
+  let verification: ScriptIoVerificationSpec | null = null;
+  if (withValue.verification !== undefined && withValue.verification !== null) {
+    const parsed = parseScriptIoVerification(withValue.verification);
+    errors.push(...parsed.errors);
+    verification = parsed.spec;
+  }
+  let maxAttempts = SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS;
+  if (withValue.retryPolicy !== undefined && withValue.retryPolicy !== null) {
+    if (!withValue.retryPolicy || typeof withValue.retryPolicy !== "object" || Array.isArray(withValue.retryPolicy)) {
+      errors.push("retryPolicy must be an object.");
+    } else {
+      const policy = withValue.retryPolicy as Record<string, unknown>;
+      if (policy.maxAttempts !== undefined) {
+        const n = Number(policy.maxAttempts);
+        if (!Number.isInteger(n) || n < 0 || n > SCRIPT_IO_MAX_RETRY_ATTEMPTS) {
+          errors.push("retryPolicy.maxAttempts must be between 0 and 5.");
+        } else {
+          maxAttempts = n;
+        }
+      }
+    }
+  }
+  if (retrySafe) {
+    if (!idempotencyKey) {
+      errors.push(SCRIPT_IO_INVALID_VERIFICATION_MESSAGE);
+    }
+    if (!verification) {
+      errors.push(SCRIPT_IO_INVALID_VERIFICATION_MESSAGE);
+    }
+  } else if (verification || idempotencyKey) {
+    errors.push("idempotencyKey and verification are only valid when retrySafe is true.");
+  }
+  if (maxAttempts > 0 && (!retrySafe || !idempotencyKey || !verification)) {
+    errors.push(SCRIPT_IO_RETRY_DENIED_MESSAGE);
+  }
+  if (retrySafe && maxAttempts === 0) {
+    warnings.push(SCRIPT_IO_RETRY_ZERO_MESSAGE);
+  }
+  return {
+    ok: errors.length === 0,
+    maxAttempts,
+    retrySafe,
+    idempotencyKey,
+    verificationDeclared: verification !== null,
+    errors: unique(errors),
+    warnings,
+  };
+}
+
+export function parseScriptIoVerification(raw: unknown): {
+  spec: ScriptIoVerificationSpec | null;
+  errors: string[];
+} {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return { spec: null, errors: ["verification must be an object."] };
+  }
+  const errors: string[] = [];
+  for (const key of Object.keys(rec)) {
+    if (key !== "behavior" && key !== "expect" && key !== "onMatch" && key !== "onMismatch" && key !== "onError") {
+      errors.push(`unknown verification field ${key}.`);
+    }
+  }
+  let behavior = String(rec.behavior ?? "").trim() || SCRIPT_IO_VERIFICATION_BEHAVIOR;
+  if (behavior !== SCRIPT_IO_VERIFICATION_BEHAVIOR) {
+    errors.push("verification.behavior must be declared-hook.");
+    behavior = SCRIPT_IO_VERIFICATION_BEHAVIOR;
+  }
+  let expect: Record<string, unknown> | undefined;
+  if (rec.expect !== undefined && rec.expect !== null) {
+    if (!rec.expect || typeof rec.expect !== "object" || Array.isArray(rec.expect)) {
+      errors.push("verification.expect must be an object.");
+    } else {
+      expect = rec.expect as Record<string, unknown>;
+      for (const key of Object.keys(expect)) {
+        if (isSecretFieldName(key) || isScriptIoHandleKey(key) || isForbiddenYamlKey(key)) {
+          errors.push(SCRIPT_IO_SECRET_SCHEMA_MESSAGE);
+        }
+      }
+    }
+  }
+  const onMatch = String(rec.onMatch ?? "").trim() || SCRIPT_IO_VERIFY_ALREADY_APPLIED;
+  if (onMatch !== SCRIPT_IO_VERIFY_ALREADY_APPLIED && onMatch !== SCRIPT_IO_VERIFY_SAFE_TO_RETRY) {
+    errors.push("verification.onMatch must be already-applied or safe-to-retry.");
+  }
+  const onMismatch = String(rec.onMismatch ?? "").trim() || SCRIPT_IO_VERIFY_SAFE_TO_RETRY;
+  if (
+    onMismatch !== SCRIPT_IO_VERIFY_ALREADY_APPLIED &&
+    onMismatch !== SCRIPT_IO_VERIFY_SAFE_TO_RETRY &&
+    onMismatch !== SCRIPT_IO_VERIFY_INDETERMINATE
+  ) {
+    errors.push("verification.onMismatch must be already-applied, safe-to-retry, or indeterminate.");
+  }
+  const onError = String(rec.onError ?? "").trim() || SCRIPT_IO_VERIFY_INDETERMINATE;
+  if (onError !== SCRIPT_IO_VERIFY_INDETERMINATE) {
+    errors.push("verification.onError must be indeterminate.");
+  }
+  return {
+    spec: {
+      behavior,
+      expect,
+      onMatch,
+      onMismatch,
+      onError,
+    },
+    errors,
+  };
+}
+
+export function scriptIoRetryPolicyHint(input: {
+  retrySafe: boolean;
+  idempotencyKeyDeclared: boolean;
+  verificationDeclared: boolean;
+  maxAttempts?: number;
+}): string {
+  const attempts = input.maxAttempts ?? SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS;
+  if (!input.retrySafe || !input.idempotencyKeyDeclared || !input.verificationDeclared) {
+    return `${SCRIPT_IO_RETRY_ZERO_MESSAGE} ${SCRIPT_IO_RETRY_DENIED_MESSAGE}`;
+  }
+  if (attempts <= 0) {
+    return SCRIPT_IO_RETRY_ZERO_MESSAGE;
+  }
+  return `retrySafe + idempotencyKey + declared-hook are set. maxAttempts=${attempts}. Retry still verifies first — never a blind re-run.`;
 }
 
 /** Always false. Lease loss / unsafe script never invites a silent re-run. */
@@ -524,6 +901,35 @@ export function canOfferScriptRetry(input: {
     return false;
   }
   return scriptRetryAllowed(input);
+}
+
+export function parseScriptEvaluateRetry(raw: unknown): ScriptIoEvaluateRetry[] {
+  const rec = asRecord(raw);
+  const operations = Array.isArray(rec?.operations)
+    ? rec.operations
+    : Array.isArray(raw)
+      ? raw
+      : [];
+  const out: ScriptIoEvaluateRetry[] = [];
+  for (const item of operations) {
+    const row = asRecord(item);
+    if (!row) {
+      continue;
+    }
+    const operation = String(row.operation ?? "").trim();
+    if (operation && !isScriptIoActionType(operation) && !operation.startsWith("script.")) {
+      continue;
+    }
+    out.push({
+      nodeId: String(row.nodeId ?? "").trim(),
+      operation: operation || SCRIPT_PYTHON_IO_TYPE,
+      retrySafe: row.retrySafe === true,
+      retryMaxAttempts: finiteInteger(row.retryMaxAttempts, SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS),
+      retryAllowed: row.retryAllowed === true,
+      verificationDeclared: row.verificationDeclared === true,
+    });
+  }
+  return out;
 }
 
 export function isScriptIoStep(step: {
@@ -678,6 +1084,11 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
   const hasIoSignal =
     ioRaw.maxInputBytes !== undefined ||
     ioRaw.maxOutputBytes !== undefined ||
+    ioRaw.handleTTLSeconds !== undefined ||
+    ioRaw.handleInjection !== undefined ||
+    Array.isArray(ioRaw.allowlistedEnv) ||
+    ioRaw.validateBeforeInject !== undefined ||
+    ioRaw.redactBeforePersist !== undefined ||
     boundsRaw.maxInputBytes !== undefined ||
     Array.isArray(ioRaw.schemaKeywords) ||
     retryRaw !== null;
@@ -698,17 +1109,15 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
       : rec.io || rec.retry
         ? "scripts-catalog"
         : "contract-fallback";
+  const io = parseIoRules(ioRaw, boundsRaw);
+  const retry = parseRetry(retryRaw);
+  const probe = parseProbe(retryRaw?.probe ?? nested.probe ?? rec.probe);
   return {
     source,
+    io,
     bounds: {
-      maxInputBytes: finiteInteger(
-        boundsRaw.maxInputBytes ?? ioRaw.maxInputBytes,
-        SCRIPT_IO_MAX_INPUT_BYTES,
-      ),
-      maxOutputBytes: finiteInteger(
-        boundsRaw.maxOutputBytes ?? ioRaw.maxOutputBytes,
-        SCRIPT_IO_MAX_OUTPUT_BYTES,
-      ),
+      maxInputBytes: io.maxInputBytes,
+      maxOutputBytes: io.maxOutputBytes,
       maxSchemaProperties: finiteInteger(
         boundsRaw.maxSchemaProperties ?? ioRaw.maxSchemaProperties,
         SCRIPT_IO_MAX_SCHEMA_PROPERTIES,
@@ -728,13 +1137,15 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
     schemaTypes: stringList(ioRaw.schemaTypes).length
       ? stringList(ioRaw.schemaTypes)
       : SCRIPT_IO_SCHEMA_TYPES,
-    secretClassificationDenied: ioRaw.secretClassificationDenied !== false,
+    secretClassificationDenied:
+      ioRaw.secretClassificationDenied !== false && io.secretsForbidden,
     handles: "scoped-only",
-    retry: parseRetry(retryRaw),
+    retry,
     ui: parseUi(nested.ui ?? rec.ui ?? retryRaw?.ui),
+    probe,
     errors: errors.length ? errors : DEFAULT_SCRIPT_IO_ERRORS,
     notes:
-      String(nested.notes ?? rec.notes ?? ioRaw.notes ?? "").trim() ||
+      String(nested.notes ?? rec.notes ?? ioRaw.note ?? ioRaw.notes ?? "").trim() ||
       (source === "contract-fallback" ? SCRIPT_IO_CONTRACT_FALLBACK_HELP : undefined),
   };
 }
@@ -960,7 +1371,12 @@ function collectValidationIssues(
       code === "size-limit" ||
       code === "output-too-large" ||
       code === "classification-denied" ||
-      code === "secret-forbidden"
+      code === "secret-forbidden" ||
+      code === "input-rejected" ||
+      code === "handle-forbidden" ||
+      code === "env-denied" ||
+      code === "invalid-verification" ||
+      code === "retry-denied"
     ) {
       out.push({
         path: firstString(bag.path) ?? "",
@@ -1003,9 +1419,31 @@ function stripHandles(
   if (!value || typeof value !== "object") {
     return value;
   }
+  const rec = value as Record<string, unknown>;
+  if (looksLikePublicHandle(rec)) {
+    const projected = publicScriptHandle(rec);
+    if (projected) {
+      return projected;
+    }
+  }
   const out: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, child] of Object.entries(rec)) {
     const childPath = path ? `${path}.${key}` : key;
+    if (key === "env" || key === "environment") {
+      out[key] = redactScriptEnv(child, strippedHandleKeys, childPath);
+      continue;
+    }
+    if (key === "handles" && Array.isArray(child)) {
+      out[key] = child.map((item, index) => {
+        const projected = publicScriptHandle(item);
+        if (projected) {
+          return projected;
+        }
+        strippedHandleKeys.push(`${childPath}[${index}]`);
+        return null;
+      }).filter(Boolean);
+      continue;
+    }
     if (isScriptIoHandleKey(key) || isSecretFieldName(key) || isForbiddenYamlKey(key)) {
       strippedHandleKeys.push(childPath);
       continue;
@@ -1013,6 +1451,74 @@ function stripHandles(
     out[key] = stripHandles(child, strippedHandleKeys, childPath);
   }
   return out;
+}
+
+function looksLikePublicHandle(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    return false;
+  }
+  if (!(typeof value.expiresAt === "string" || Array.isArray(value.scopes))) {
+    return false;
+  }
+  return keys.every((key) =>
+    (SCRIPT_IO_HANDLE_PUBLIC_KEYS as readonly string[]).includes(key),
+  );
+}
+
+function redactScriptEnv(
+  value: unknown,
+  strippedHandleKeys: string[],
+  path: string,
+): Record<string, string> {
+  const rec = asRecord(value);
+  const out: Record<string, string> = {};
+  if (!rec) {
+    return out;
+  }
+  for (const [key, child] of Object.entries(rec)) {
+    if (!isAllowlistedScriptEnv(key) || typeof child !== "string") {
+      strippedHandleKeys.push(path ? `${path}.${key}` : key);
+      continue;
+    }
+    out[key] = child;
+  }
+  return out;
+}
+
+function parseIoRules(
+  ioRaw: Record<string, unknown>,
+  boundsRaw: Record<string, unknown>,
+): ScriptIoRules {
+  return {
+    maxInputBytes: finiteInteger(
+      boundsRaw.maxInputBytes ?? ioRaw.maxInputBytes,
+      SCRIPT_IO_MAX_INPUT_BYTES,
+    ),
+    maxOutputBytes: finiteInteger(
+      boundsRaw.maxOutputBytes ?? ioRaw.maxOutputBytes,
+      SCRIPT_IO_MAX_OUTPUT_BYTES,
+    ),
+    secretsForbidden: ioRaw.secretsForbidden !== false,
+    plaintextCredentials: false,
+    handleInjection:
+      String(ioRaw.handleInjection ?? "").trim() || SCRIPT_IO_HANDLE_INJECTION,
+    handleTTLSeconds: finiteInteger(ioRaw.handleTTLSeconds, SCRIPT_IO_HANDLE_TTL_SECONDS),
+    handleMaxTTLSeconds: finiteInteger(
+      ioRaw.handleMaxTTLSeconds,
+      SCRIPT_IO_HANDLE_MAX_TTL_SECONDS,
+    ),
+    allowlistedEnv: stringList(ioRaw.allowlistedEnv).length
+      ? stringList(ioRaw.allowlistedEnv)
+      : SCRIPT_IO_ALLOWLISTED_ENV,
+    forbiddenEnv: stringList(ioRaw.forbiddenEnv).length
+      ? stringList(ioRaw.forbiddenEnv)
+      : SCRIPT_IO_FORBIDDEN_ENV,
+    validateBeforeInject: ioRaw.validateBeforeInject !== false,
+    redactBeforePersist: ioRaw.redactBeforePersist !== false,
+    note:
+      String(ioRaw.note ?? "").trim() || DEFAULT_SCRIPT_IO_RULES.note,
+  };
 }
 
 function parseRetry(raw: Record<string, unknown> | null): ScriptIoRetry {
@@ -1025,16 +1531,44 @@ function parseRetry(raw: Record<string, unknown> | null): ScriptIoRetry {
       SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS,
     ),
     maxAttempts: finiteInteger(raw.maxAttempts, SCRIPT_IO_MAX_RETRY_ATTEMPTS),
+    retrySafeFlag: String(raw.retrySafeFlag ?? "").trim() || SCRIPT_IO_RETRY_SAFE_FLAG,
     retrySafeDefault: false,
+    idempotencyKey: String(raw.idempotencyKey ?? "").trim() || "idempotencyKey",
+    semantics: String(raw.semantics ?? "").trim() || SCRIPT_IO_SEMANTICS,
     blindRetry: false,
     leaseLossOutcome: String(raw.leaseLossOutcome ?? "").trim() || "indeterminate",
     unknownOutcome: String(raw.unknownOutcome ?? "").trim() || "indeterminate",
     requiresIdempotencyKey: raw.requiresIdempotencyKey !== false,
-    requiresVerification: raw.requiresVerification !== false,
+    requiresVerificationWhenRetrySafe:
+      raw.requiresVerificationWhenRetrySafe !== false &&
+      raw.requiresVerification !== false,
+    verification:
+      String(raw.verification ?? "").trim() || SCRIPT_IO_VERIFICATION_CONTRACT,
     whenRetryAllowed:
       String(raw.whenRetryAllowed ?? "").trim() ||
       DEFAULT_SCRIPT_IO_RETRY.whenRetryAllowed,
     note: String(raw.note ?? "").trim() || SCRIPT_IO_RETRY_ZERO_MESSAGE,
+  };
+}
+
+function parseProbe(raw: unknown): ScriptIoProbe {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return { ...DEFAULT_SCRIPT_IO_PROBE };
+  }
+  return {
+    requiredWhenRetrySafe: rec.requiredWhenRetrySafe !== false,
+    field: String(rec.field ?? "").trim() || SCRIPT_IO_VERIFICATION_FIELD,
+    behavior: String(rec.behavior ?? "").trim() || SCRIPT_IO_VERIFICATION_BEHAVIOR,
+    onMatchDefault:
+      String(rec.onMatchDefault ?? "").trim() || SCRIPT_IO_VERIFY_ALREADY_APPLIED,
+    onMismatchDefault:
+      String(rec.onMismatchDefault ?? "").trim() || SCRIPT_IO_VERIFY_SAFE_TO_RETRY,
+    onError: String(rec.onError ?? "").trim() || SCRIPT_IO_VERIFY_INDETERMINATE,
+    outcomes: stringList(rec.outcomes).length
+      ? stringList(rec.outcomes)
+      : SCRIPT_IO_VERIFY_OUTCOMES,
+    note: String(rec.note ?? "").trim() || SCRIPT_IO_VERIFICATION_HELP,
   };
 }
 
@@ -1046,6 +1580,7 @@ function parseUi(raw: unknown): ScriptIoUI {
   return {
     indeterminateBadge:
       String(rec.indeterminateBadge ?? "").trim() || DEFAULT_SCRIPT_IO_UI.indeterminateBadge,
+    retrySafeFlag: String(rec.retrySafeFlag ?? "").trim() || SCRIPT_IO_RETRY_SAFE_FLAG,
     retryEnabledWhen:
       String(rec.retryEnabledWhen ?? "").trim() || DEFAULT_SCRIPT_IO_UI.retryEnabledWhen,
     hideRetryWhen:

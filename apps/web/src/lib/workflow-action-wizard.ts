@@ -51,6 +51,7 @@ import {
   type ScriptNodeWithField,
 } from "./script-contract.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
+import { parseScriptEvaluateRetry } from "./script-io-contract.ts";
 import { parseSshEvaluateRetry } from "./ssh-retry-contract.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
 import { isSecretFieldName } from "./credential.ts";
@@ -541,15 +542,16 @@ export function wizardPolicyPreview(input: {
   const attempts = policy?.defaultMaxAttempts ?? 1;
   const evaluation = input.evaluation ?? null;
   const sshEval = parseSshEvaluateRetry(evaluation);
-  const sshRetry = sshEval[0];
+  const scriptEval = parseScriptEvaluateRetry(evaluation);
+  const evalRetry = sshEval[0] ?? scriptEval[0];
   const approvalRequired =
     evaluation?.decision === "approval-required" ||
     (evaluation?.requirements.length ?? 0) > 0;
   const catalogRetryHint = retrySafe
     ? `Retry-safe · default max attempts ${attempts}.`
     : "Not retry-safe. Default automatic retries are zero; an uncertain remote outcome is indeterminate.";
-  const evaluateRetryHint = sshRetry
-    ? ` Evaluate retryAllowed=${String(sshRetry.retryAllowed)} retrySafe=${String(sshRetry.retrySafe)} verificationDeclared=${String(sshRetry.verificationDeclared)} retryMaxAttempts=${sshRetry.retryMaxAttempts}.`
+  const evaluateRetryHint = evalRetry
+    ? ` Evaluate retryAllowed=${String(evalRetry.retryAllowed)} retrySafe=${String(evalRetry.retrySafe)} verificationDeclared=${String(evalRetry.verificationDeclared)} retryMaxAttempts=${evalRetry.retryMaxAttempts}.`
     : "";
   return {
     permissions: policy?.permissions ?? ["workflow.execute"],

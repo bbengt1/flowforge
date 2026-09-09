@@ -40,8 +40,9 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
       <p className="mt-1 text-sm text-zinc-600">
         Redacted typed outputs from existing{" "}
         <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
-        steps. {SCRIPT_IO_VALIDATION_HELP} {SCRIPT_IO_HANDLE_HELP}{" "}
-        {SCRIPT_IO_NO_BLIND_RETRY_HELP}
+        steps.         {SCRIPT_IO_VALIDATION_HELP} {SCRIPT_IO_HANDLE_HELP}{" "}
+        {SCRIPT_IO_NO_BLIND_RETRY_HELP} Closed retry is HTTP 409{" "}
+        <code className="font-mono text-xs">retry-denied</code>.
       </p>
       <ul className="mt-4 grid gap-3">
         {results.map(({ step, parsed }) => (

@@ -503,8 +503,40 @@ describe("action wizard insert + redaction", () => {
     assert.equal(added?.with.runtimeProfileId, "66666666-6666-4666-8666-666666666666");
     assert.equal(added?.with.entrypoint, "main.py");
     assert.match(String(added?.with.source ?? ""), /print\('ok'\)/);
+    assert.deepEqual(added?.with.retryPolicy, { maxAttempts: 0 });
     assert.equal("secret" in (added?.with ?? {}), false);
     assert.equal("image" in (added?.with ?? {}), false);
+    assert.deepEqual(defaultWithForType("script.python").retryPolicy, { maxAttempts: 0 });
+
+    const retries = validateWizardDraft(
+      {
+        ...clean,
+        with: {
+          ...clean.with,
+          retryPolicy: { maxAttempts: 2 },
+        },
+      },
+      catalog,
+      entry,
+    );
+    assert.equal(retries.ok, false);
+    assert.ok(retries.errors.some((error) => /retrySafe|retry-denied/i.test(error)));
+
+    const retrySafe = validateWizardDraft(
+      {
+        ...clean,
+        with: {
+          ...clean.with,
+          retrySafe: true,
+          idempotencyKey: "summarize-v1",
+          verification: { behavior: "declared-hook" },
+          retryPolicy: { maxAttempts: 2 },
+        },
+      },
+      catalog,
+      entry,
+    );
+    assert.equal(retrySafe.ok, true);
     assert.match(result.yaml, /type: script\.python/);
     assert.match(SCRIPT_PUBLISH_BOUNDARY_HELP, /does not create an executable artifact/i);
   });

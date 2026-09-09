@@ -141,6 +141,19 @@ describe("script contract adapter", () => {
     assert.ok(
       (fallback.allowedWith ?? []).some((field) => field.name === "inputSchema"),
     );
+    assert.ok(
+      (fallback.allowedWith ?? []).some((field) => field.name === "retrySafe"),
+    );
+    assert.ok(
+      (fallback.allowedWith ?? []).some((field) => field.name === "idempotencyKey"),
+    );
+    assert.ok(
+      (fallback.allowedWith ?? []).some((field) => field.name === "verification"),
+    );
+    assert.ok(
+      (fallback.allowedWith ?? []).some((field) => field.name === "retryPolicy"),
+    );
+    assert.equal(fallback.policy?.verification, "node-declared-idempotent-hook");
     assert.equal(
       (fallback.allowedWith ?? []).some((field) => field.name === "image"),
       false,
@@ -159,11 +172,13 @@ describe("script contract adapter", () => {
       entrypoint: "main.py",
       timeoutSeconds: 30,
       memoryMiB: 128,
+      retryPolicy: { maxAttempts: 0 },
     });
     assert.deepEqual(defaultScriptWith("script.go"), {
       entrypoint: "main.go",
       timeoutSeconds: 30,
       memoryMiB: 128,
+      retryPolicy: { maxAttempts: 0 },
     });
     assert.deepEqual(defaultScriptWith("ssh.run"), {});
   });
@@ -276,6 +291,27 @@ describe("script contract adapter", () => {
       },
     });
     assert.ok(secretSchema.some((error) => /secret|handle/i.test(error)));
+
+    const retryDenied = validateScriptNodeConfig("script.python", {
+      runtimeProfileId: PROFILE_ID,
+      source: "print('ok')\n",
+      entrypoint: "main.py",
+      timeoutSeconds: 30,
+      retryPolicy: { maxAttempts: 2 },
+    });
+    assert.ok(retryDenied.some((error) => /retry-denied|retrySafe/i.test(error)));
+
+    const retryOk = validateScriptNodeConfig("script.python", {
+      runtimeProfileId: PROFILE_ID,
+      source: "print('ok')\n",
+      entrypoint: "main.py",
+      timeoutSeconds: 30,
+      retrySafe: true,
+      idempotencyKey: "summarize-v1",
+      verification: { behavior: "declared-hook" },
+      retryPolicy: { maxAttempts: 2 },
+    });
+    assert.deepEqual(retryOk, []);
   });
 
   it("treats host-supplied id/workspaceId as 400 invalid-request UX", () => {

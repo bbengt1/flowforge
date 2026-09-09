@@ -202,7 +202,7 @@ export type ScriptNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
   readOnly?: boolean;
-  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "object-lines" | "json";
+  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "boolean" | "object-lines" | "json";
   defaultValue?: unknown;
 };
 
@@ -409,9 +409,14 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "docker-socket-denied", status: 403, meaning: "Host Docker socket is denied." },
   { code: "service-account-denied", status: 403, meaning: "Kubernetes service-account mounts are denied (MVP)." },
   { code: "resource-limit", status: 400, meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile." },
-  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch. The script is not retried (E9.3 recovery hook)." },
+  { code: "input-rejected", status: 400, meaning: "Execution input failed schema, size, or secret checks before inject." },
+  { code: "output-too-large", status: 400, meaning: "Runner output exceeded the 16 KiB persist cap." },
+  { code: "handle-forbidden", status: 403, meaning: "Credential handle missing, expired, unscoped, or contained plaintext. Handles only." },
+  { code: "env-denied", status: 403, meaning: "Runtime env key is outside the FLOWFORGE_* allowlist, or plaintext credentials were supplied as env." },
+  { code: "retry-denied", status: 400, meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied." },
+  { code: "invalid-verification", status: 400, meaning: "retrySafe=true without a valid idempotency key or verification.behavior." },
+  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch, unknown outcome, or verification could not confirm state. Never a silent re-run." },
   { code: "runner-not-implemented", status: 501, meaning: "Live container runtime requested but only the CI harness is available." },
-  { code: "typed-io-not-implemented", status: 501, meaning: "E9.3 typed I/O execution is not enabled." },
   { code: "revocation-not-implemented", status: 501, meaning: "E9.4 revocation API is not enabled." },
 ];
 
@@ -472,6 +477,7 @@ export function defaultScriptWith(type: string): Record<string, unknown> {
     entrypoint: defaultScriptEntrypoint(type),
     timeoutSeconds: SCRIPT_DEFAULT_TIMEOUT_SECONDS,
     memoryMiB: SCRIPT_DEFAULT_MEMORY_MIB,
+    retryPolicy: { maxAttempts: 0 },
   };
 }
 
@@ -629,6 +635,40 @@ export function scriptNodeWithFields(
         "Optional declared output JSON Schema subset. Outputs must meet schema and size limits. Redacted.",
     },
     {
+      name: "retrySafe",
+      kind: "boolean",
+      label: "Retry-safe",
+      controlHint: "boolean",
+      defaultValue: false,
+      description:
+        "Default false. When true, idempotencyKey and verification.behavior=declared-hook are required.",
+    },
+    {
+      name: "idempotencyKey",
+      kind: "string",
+      label: "Idempotency key",
+      controlHint: "text",
+      description:
+        "Required when retrySafe. 1–128 identifier starting with a letter (letters, digits, ._: -).",
+    },
+    {
+      name: "verification",
+      kind: "object",
+      label: "Verification hook",
+      controlHint: "json",
+      description:
+        "Required when retrySafe. {behavior:declared-hook, expect?, onMatch, onMismatch, onError}. Never a blind re-run.",
+    },
+    {
+      name: "retryPolicy",
+      kind: "object",
+      label: "Retry policy",
+      controlHint: "object-lines",
+      defaultValue: { maxAttempts: 0 },
+      description:
+        "Optional {maxAttempts:0-5}. Default 0. maxAttempts>0 requires retrySafe + idempotencyKey + verification.",
+    },
+    {
       name: "policyId",
       kind: "uuid",
       label: "Policy",
@@ -656,8 +696,12 @@ export function overlayScriptFields(
           ? "uuid"
           : field.kind === "integer"
             ? "number"
-            : field.kind === "object"
-              ? field.name === "inputSchema" || field.name === "outputSchema"
+            : field.kind === "boolean"
+              ? "boolean"
+              : field.kind === "object"
+              ? field.name === "inputSchema" ||
+                field.name === "outputSchema" ||
+                field.name === "verification"
                 ? "json"
                 : "object-lines"
               : field.enum?.length
@@ -1222,7 +1266,7 @@ function scriptPolicy(): CatalogNodePolicy {
     sideEffects: true,
     idempotent: false,
     cancellation: "abort-process",
-    verification: "e9.1-stub",
+    verification: "node-declared-idempotent-hook",
     defaultMaxAttempts: 0,
   };
 }
@@ -1230,7 +1274,7 @@ function scriptPolicy(): CatalogNodePolicy {
 function defaultBounds(): CatalogNodeBounds {
   return {
     maxInputBytes: 16 * 1024,
-    maxOutputBytes: 64 * 1024,
+    maxOutputBytes: 16 * 1024,
     maxWithBytes: 256 * 1024,
     maxAggregationItems: 32,
     maxDurationSeconds: SCRIPT_MAX_TIMEOUT_SECONDS,
