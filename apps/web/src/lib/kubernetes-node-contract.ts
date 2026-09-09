@@ -9,7 +9,7 @@
  * Consume existing cluster-target list + POST …/select.
  * Do not invent routes. Do not change `apps/api`.
  *
- * Relates to #71 / Part of #69. Do not close #71.
+ * Relates to #71 / Part of #69. Keep #71 open — jonny owns the engine.
  */
 
 import { KUBERNETES_ALLOWED_KINDS } from "./kubernetes-types.ts";
