@@ -230,6 +230,7 @@ func TestEmbedExchangeIssuesCHIPSCookies(t *testing.T) {
 		t.Fatalf("refresh: %d %s", refresh.Code, refresh.Body.String())
 	}
 	assertRawCHIPSSetCookie(t, refresh)
+	token, csrf = sessionPair(t, refresh)
 
 	logout := httptest.NewRecorder()
 	req = sessionAPIRequest(http.MethodPost, "/api/v1/session/logout", "", token, csrf)
