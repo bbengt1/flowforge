@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CredentialTestDialog } from "@/components/credentials/CredentialTestDialog";
 import { DeleteImpactDialog } from "@/components/credentials/DeleteImpactDialog";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
@@ -35,6 +35,7 @@ import {
   FALLBACK_CREDENTIAL_CATALOG,
   catalogTypeInfo,
   emptySecretDraft,
+  forgetSecretDraft,
 } from "@/lib/credential-contract";
 import type {
   CredentialCatalog,
@@ -100,6 +101,8 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   const typeInfo = record ? catalogTypeInfo(catalog, record.type) : undefined;
   const secretFields = typeInfo?.secretFields ?? [];
   const metadataFields = typeInfo?.metadataFields ?? [];
+  const secretRef = useRef(secret);
+  secretRef.current = secret;
 
   function applyRecord(next: CredentialRecord, extraKeys: string[] = []) {
     setRecord(next);
@@ -145,6 +148,12 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       }
     });
   }, [ready, credentialId, identity]);
+
+  useEffect(() => {
+    return () => {
+      forgetSecretDraft(secretRef.current);
+    };
+  }, []);
 
   async function saveMetadata() {
     if (!record || !recordHasAction(record, "manage")) {
@@ -214,6 +223,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     setPending("test");
     setProblem(null);
     const result = await testCredential(identity, credentialId);
+    setSecret(clearSecretDraftAfterSubmit(secret));
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);

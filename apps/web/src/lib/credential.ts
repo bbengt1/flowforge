@@ -591,6 +591,14 @@ export function clearSecretDraftAfterSubmit(
   return forgetSecretDraft(draft);
 }
 
+/** True when every known secret slot is empty after create/rotate/test. */
+export function secretDraftIsCleared(draft: CredentialSecretDraft | null | undefined): boolean {
+  if (!draft) {
+    return true;
+  }
+  return Object.values(draft).every((value) => !value);
+}
+
 /** Never write secret-bearing objects to Web Storage. */
 export function assertSecretFreeStorageValue(value: unknown): string[] {
   return stripSecretFields(value).strippedKeys;

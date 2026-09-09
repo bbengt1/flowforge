@@ -26,6 +26,7 @@ type ActionLibraryProps = {
   onQuery: (value: string) => void;
   onRefresh: () => void;
   onInsert?: (entry: ActionLibraryEntry) => void;
+  onOpenWizard?: (entry?: ActionLibraryEntry) => void;
 };
 
 export function ActionLibrary({
@@ -36,6 +37,7 @@ export function ActionLibrary({
   onQuery,
   onRefresh,
   onInsert,
+  onOpenWizard,
 }: ActionLibraryProps) {
   const visible = filterActionLibrary(entries, query);
   const triggersWorkflowLevel = catalogExcludesTriggerNodes(catalog);
@@ -59,14 +61,25 @@ export function ActionLibrary({
             {triggersWorkflowLevel ? " (rules.triggersAreWorkflowLevel)." : "."}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={pending}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-        >
-          {pending ? "Loading…" : catalog ? "Refresh catalog" : "Load catalog"}
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          {onOpenWizard ? (
+            <button
+              type="button"
+              onClick={() => onOpenWizard()}
+              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900"
+            >
+              Add action
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={pending}
+            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+          >
+            {pending ? "Loading…" : catalog ? "Refresh catalog" : "Load catalog"}
+          </button>
+        </div>
       </div>
 
       <label className="mt-4 block text-sm">
@@ -112,13 +125,17 @@ export function ActionLibrary({
                           <p className="text-sm font-medium text-zinc-900">{entry.name}</p>
                           <p className="font-mono text-xs text-zinc-600">{entry.type}</p>
                         </div>
-                        {onInsert ? (
+                        {onOpenWizard || onInsert ? (
                           <button
                             type="button"
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
-                              onInsert(entry);
+                              if (onOpenWizard) {
+                                onOpenWizard(entry);
+                                return;
+                              }
+                              onInsert?.(entry);
                             }}
                             className="rounded-md border border-teal-800 bg-teal-800 px-2 py-1 text-xs font-medium text-white hover:bg-teal-900"
                           >

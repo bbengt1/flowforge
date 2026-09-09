@@ -10,6 +10,7 @@ import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
 import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { ActionLibrary } from "@/components/workflows/ActionLibrary";
+import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { RunControl } from "@/components/workflows/RunControl";
@@ -78,8 +79,10 @@ import type {
   WorkflowSummary,
   WorkflowVersion,
 } from "@/lib/workflow-types";
+import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
 import { pushNotification } from "@/lib/workspace-notifications";
+import type { WizardFeedback } from "@/lib/workflow-action-wizard";
 
 type WorkflowOperatorProps = {
   workflowId?: string;
@@ -153,6 +156,10 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [paletteQuery, setPaletteQuery] = useState("");
   const [selection, setSelection] = useState<EditorSelection>({ kind: "workflow" });
   const [focusColumn, setFocusColumn] = useState<number | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardType, setWizardType] = useState<string | undefined>();
+  const [wizardFeedback, setWizardFeedback] = useState<WizardFeedback>("idle");
+  const { permissions } = useWorkspace();
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
@@ -766,6 +773,31 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     await loadExecutionApprovals(workflow.id, result.execution);
   }
 
+  function openWizard(entry?: ActionLibraryEntry) {
+    setWizardType(entry?.type);
+    setWizardFeedback("idle");
+    setWizardOpen(true);
+  }
+
+  function addFromWizard(nextYaml: string, nodeId: string) {
+    setWizardFeedback("pending");
+    try {
+      setDigest(null);
+      setYaml(nextYaml);
+      setSelection({ kind: "node", id: nodeId });
+      setWizardFeedback("success");
+      setWizardOpen(false);
+      pushNotification({
+        kind: "info",
+        title: "Action added",
+        detail: "The action was written into the draft YAML.",
+        href: workflowId ? `/workflows/${workflowId}` : "/workflows",
+      });
+    } catch {
+      setWizardFeedback("error");
+    }
+  }
+
   function insertLibraryNode(entry: ActionLibraryEntry) {
     const rejected = rejectDisabledActionType(entry.type, catalog);
     if (!rejected.ok) {
@@ -1072,8 +1104,33 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
           onQuery={setPaletteQuery}
           onRefresh={() => void loadCatalog()}
           onInsert={insertLibraryNode}
+          onOpenWizard={openWizard}
         />
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-zinc-600">
+              Add action is the guided path. Drag from the library still inserts defaults.
+            </p>
+            <button
+              type="button"
+              onClick={() => openWizard()}
+              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900"
+            >
+              Add action
+            </button>
+          </div>
+          {wizardFeedback !== "idle" ? (
+            <p
+              role="status"
+              className={`text-sm ${wizardFeedback === "error" ? "text-rose-900" : "text-teal-900"}`}
+            >
+              {wizardFeedback === "pending"
+                ? "Adding action…"
+                : wizardFeedback === "success"
+                  ? "Action added to the canvas and YAML."
+                  : "Action was not added."}
+            </p>
+          ) : null}
           <WorkflowCanvas
             graph={graph}
             invalid={status === "invalid" && errors.length > 0}
@@ -1178,6 +1235,48 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       ) : null}
 
       <WorkflowConfigPins identity={identity} ready={canCall} />
+
+      <ActionWizard
+        open={wizardOpen}
+        identity={identity}
+        ready={canCall}
+        catalog={catalog}
+        entries={library}
+        yaml={yaml}
+        nodes={yamlNodes}
+        initialType={wizardType}
+        upstream={wizardUpstream(selection, yamlNodes, library)}
+        permissions={permissions}
+        evaluation={policyEval}
+        evaluationPending={policyEvalPending}
+        evaluationProblem={policyEvalProblem}
+        feedback={wizardFeedback}
+        onClose={() => {
+          setWizardOpen(false);
+          setWizardFeedback("idle");
+        }}
+        onAdd={addFromWizard}
+      />
     </div>
   );
+}
+
+function wizardUpstream(
+  selection: EditorSelection,
+  nodes: ReturnType<typeof listYamlNodes>,
+  library: ActionLibraryEntry[],
+): { type: string; port: { name: string; kind: string } } | null {
+  if (selection.kind !== "node") {
+    return null;
+  }
+  const node = nodes.find((item) => item.id === selection.id);
+  if (!node) {
+    return null;
+  }
+  const entry = library.find((item) => item.type === node.type);
+  const port = entry?.outputs?.[0];
+  if (!port) {
+    return null;
+  }
+  return { type: node.type, port };
 }

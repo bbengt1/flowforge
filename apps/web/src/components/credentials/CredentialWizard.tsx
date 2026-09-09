@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SecretField } from "@/components/credentials/SecretField";
@@ -16,6 +16,7 @@ import {
   FALLBACK_CREDENTIAL_CATALOG,
   catalogTypeInfo,
   emptySecretDraft,
+  forgetSecretDraft,
 } from "@/lib/credential-contract";
 import {
   WIZARD_STEPS,
@@ -81,6 +82,8 @@ export function CredentialWizard() {
   );
   const secretFields = typeInfo?.secretFields ?? [];
   const metadataFields = typeInfo?.metadataFields ?? [];
+  const secretRef = useRef(secret);
+  secretRef.current = secret;
 
   useEffect(() => {
     if (!ready) {
@@ -93,6 +96,12 @@ export function CredentialWizard() {
       }
     });
   }, [ready, identity]);
+
+  useEffect(() => {
+    return () => {
+      forgetSecretDraft(secretRef.current);
+    };
+  }, []);
 
   function setSecretField(key: string, value: string) {
     setSecret((current) => ({ ...current, [key]: value }));

@@ -39,9 +39,14 @@ export function SecretField({
             event.stopPropagation();
           }}
           required={required}
+          name=""
           autoComplete="off"
           autoCorrect="off"
+          autoCapitalize="off"
           spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-form-type="other"
           rows={6}
           className={`${shared} min-h-32`}
         />
@@ -55,9 +60,14 @@ export function SecretField({
             event.stopPropagation();
           }}
           required={required}
+          name=""
           autoComplete="new-password"
           autoCorrect="off"
+          autoCapitalize="off"
           spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-form-type="other"
           className={shared}
         />
       )}
