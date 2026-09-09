@@ -539,6 +539,12 @@ export function parseApprovalCatalog(raw: unknown): ApprovalCatalog | null {
     statuses,
     decisions,
     defaultExpiresIn: readString(row.defaultExpiresIn, row.default_expires_in),
+    waitResumeEnabled: row.waitResumeEnabled === true,
+    resumeRoute: readString(row.resumeRoute, row.resume_route) || undefined,
+    waitSurvivesWorkerLoss: row.waitSurvivesWorkerLoss === true,
+    selfApprovalDenied: row.selfApprovalDenied === true,
+    freshAuthRequired: row.freshAuthRequired === true,
+    help: readString(row.help) || undefined,
   };
 }
 

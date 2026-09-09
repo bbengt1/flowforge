@@ -31,6 +31,7 @@ import {
   isWebhookCatalogFallback,
   isWebhookPublicId,
   isWebhookTriggerAuthFailure,
+  isWebhookTriggerProxySegments,
   isWebhookTriggerRef,
   parseFieldMappingText,
   parseWebhookTriggerList,
@@ -396,10 +397,17 @@ describe("webhook-trigger contract adapter", () => {
             status: "disabled",
             ingressPath: `/api/v1/hooks/${PUBLIC_ID}`,
           },
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            type: "schedule",
+            timezone: "UTC",
+            cron: "0 0 * * *",
+          },
         ],
       },
       WORKFLOW_ID,
     );
+    assert.equal(items.length, 1);
     assert.equal(items[0]?.status, "disabled");
     assert.equal(items[0]?.workflowId, WORKFLOW_ID);
     assert.equal(items[0]?.publicId, PUBLIC_ID);
@@ -469,5 +477,18 @@ spec:
     );
     assert.equal(isWebhookTriggerAuthFailure(null), false);
     assert.match(WEBHOOK_CSRF_HELP, /X-CSRF-Token/);
+  });
+
+  it("allowlists the E10.2 /triggers collection including rotate", () => {
+    assert.equal(
+      isWebhookTriggerProxySegments(["workflows", WORKFLOW_ID, "triggers"]),
+      true,
+    );
+    assert.equal(isWebhookTriggerProxySegments(["triggers", TRIGGER_ID]), true);
+    assert.equal(
+      isWebhookTriggerProxySegments(["triggers", TRIGGER_ID, "rotate"]),
+      true,
+    );
+    assert.equal(isWebhookTriggerProxySegments(["schedules"]), false);
   });
 });

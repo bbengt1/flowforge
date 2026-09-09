@@ -187,6 +187,12 @@ export type ApprovalCatalog = {
   statuses: string[];
   decisions: string[];
   defaultExpiresIn: string;
+  waitResumeEnabled?: boolean;
+  resumeRoute?: string;
+  waitSurvivesWorkerLoss?: boolean;
+  selfApprovalDenied?: boolean;
+  freshAuthRequired?: boolean;
+  help?: string;
 };
 
 export type ApprovalEvent = {

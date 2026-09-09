@@ -109,6 +109,11 @@ describe("approval client", () => {
           statuses: ["pending", "approved"],
           decisions: ["approved", "rejected"],
           defaultExpiresIn: "PT1H",
+          waitResumeEnabled: true,
+          resumeRoute: "POST /api/v1/approvals/{approvalId}/decide",
+          waitSurvivesWorkerLoss: true,
+          selfApprovalDenied: true,
+          freshAuthRequired: true,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -120,6 +125,11 @@ describe("approval client", () => {
     assert.equal(seen.method, "GET");
     if (result.ok) {
       assert.equal(result.catalog.defaultExpiresIn, "PT1H");
+      assert.equal(result.catalog.waitResumeEnabled, true);
+      assert.equal(
+        result.catalog.resumeRoute,
+        "POST /api/v1/approvals/{approvalId}/decide",
+      );
     }
   });
 

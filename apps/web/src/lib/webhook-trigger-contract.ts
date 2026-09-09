@@ -713,6 +713,46 @@ export function isWebhookTriggerRef(value: string | undefined): boolean {
   return isResourceId(value) || isWebhookPublicId(value);
 }
 
+export type WebhookProxyRoute = {
+  methods: readonly string[];
+  match: (segments: string[]) => boolean;
+};
+
+/**
+ * E10.2 /triggers allowlist (#113). identity-proxy spreads this so a
+ * retarget only edits this adapter. E10.3 /schedules lives in
+ * schedule-trigger-contract.ts.
+ */
+export const WEBHOOK_TRIGGER_PROXY_ROUTES: readonly WebhookProxyRoute[] = [
+  {
+    methods: ["GET", "POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === WEBHOOK_TRIGGER_COLLECTION,
+  },
+  {
+    methods: ["GET", "PATCH", "DELETE"],
+    match: (s) =>
+      s.length === 2 &&
+      s[0] === WEBHOOK_TRIGGER_COLLECTION &&
+      isWebhookTriggerRef(s[1]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === WEBHOOK_TRIGGER_COLLECTION &&
+      isWebhookTriggerRef(s[1]) &&
+      (s[2] === "disable" || s[2] === "enable" || s[2] === "rotate"),
+  },
+];
+
+export function isWebhookTriggerProxySegments(segments: string[]): boolean {
+  return WEBHOOK_TRIGGER_PROXY_ROUTES.some((route) => route.match(segments));
+}
+
 export function hostSuppliedWebhookIdentityKeys(
   body: Record<string, unknown> | null | undefined,
 ): string[] {
@@ -1012,6 +1052,10 @@ export function parseWebhookTriggerRecord(
 ): WebhookTriggerRecord | null {
   const { record } = stripUnexpectedWebhookSecret(payload);
   const source = unwrapTriggerRecord(record);
+  const listedType = readString(source.type);
+  if (listedType && listedType !== WEBHOOK_TRIGGER_TYPE) {
+    return null;
+  }
   const id = readString(source.id);
   const publicId = readString(source.publicId, source.public_id);
   if (!id && !publicId) {

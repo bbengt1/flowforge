@@ -15,6 +15,7 @@ import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner"
 import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { RunControl } from "@/components/workflows/RunControl";
 import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
+import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
@@ -1440,6 +1441,16 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       ) : null}
 
       {workflow ? (
+        <ScheduleTriggerPanel
+          identity={identity}
+          workflowId={workflow.id}
+          workflowName={workflow.name}
+          yaml={yaml}
+          permissions={permissions}
+        />
+      ) : null}
+
+      {workflow ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <VersionHistory
             versions={versions}
@@ -1496,6 +1507,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             fieldValues={runFieldValues}
             onFieldValues={setRunFieldValues}
             permissions={permissions}
+            identity={identity}
             onSelectVersion={(versionId) => {
               setRunVersionId(versionId);
               setRunFieldValues({});

@@ -651,13 +651,27 @@ Admin fields:
 | Limits | `maxBodyBytes` / `clockSkewSeconds` / `replayRetentionSeconds` / rate / concurrency | Defaults from catalog `ingress` (64 KiB, 300s, 600s, 60/min, 5) |
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
-Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. HTTP/notification actions stay E10.4.
+Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. Schedule + durable `flow.approval` wait/resume are E10.3 below. HTTP/notification actions stay E10.4.
 
-## E10.3 schedules + durable flow.approval (API → UI)
+## E10.3 schedules + approval decide UX (Chloe UI)
 
-Enable schedule admin and approval decide UX against `docs/reference/backend-api-map.md` (E10.3). Do **not** rewrite `apps/web` in the API story — Chloe owns the surfaces. Cookie session + CSRF. Catalog: `GET /workflows/catalog` `triggers[type=schedule].admin` and `GET /schedules/catalog` (safe defaults: skip overlap, ignore misfire, `catchUp=0`, required IANA timezone). Approvals: `GET /approvals/catalog` `waitResumeEnabled: true`; resume is decide.
+Jonny's schedule + durable `flow.approval` APIs from **#116** (`e103-#116`) stay on `/schedules` and `POST /approvals/{id}/decide`. Relates to #108 / Part of #105 — **Keep #108 open**. `apps/api` is unchanged. Adapter: `apps/web/src/lib/schedule-trigger-contract.ts` (plus E4.3 `approval-contract.ts` extensions). Cookie session + `X-CSRF-Token` on admin POST/PATCH/DELETE and dispatch. Catalog: `GET /workflows/catalog` `triggers[type=schedule].admin` and `GET /schedules/catalog` (safe defaults: skip overlap, ignore misfire, `catchUp=0`, required IANA timezone). Approvals: `GET /approvals/catalog` `waitResumeEnabled: true`; resume **is** decide. Do **not** invent `/executions/{id}/resume`. Host-supplied `id` / `workspaceId` is `400`.
 
-Suggested operator surfaces: `/workflows/{id}#schedules` (timezone, cron XOR interval, overlap/catch-up, enable/disable) and `/approvals` decide on waiting runs. `POST /schedules/dispatch` is a tick, not a public ingress. Waiting jobs hold no worker lease — do not claim them from the browser.
+**Admin:** `GET /schedules/catalog`; `GET|POST /schedules`; `GET|PATCH|DELETE /schedules/{scheduleId}`; `POST /schedules/{scheduleId}/enable|disable`. Pins published `workflowVersionId` only. `POST /schedules/dispatch` is an operator tick (`workflow.execute`), not public ingress.
+
+Schedule fields:
+
+| Control | Source | Notes |
+| --- | --- | --- |
+| Published version picker | `GET /workflows/{id}/versions` | Drafts never listed or sent |
+| Timezone | IANA | Required. UTC or `Area/Location`. Browser TZ is never assumed |
+| Expression | cron (5-field) **XOR** interval (ISO-8601, max `P7D`) | Exactly one |
+| Overlap | `skip` / `reject` / `queue` | Safe default `skip` |
+| Misfire / catch-up | `ignore` / `fire-once`; catchUp `0–5` | Safe default `ignore` + `0` |
+| Dispatch | `POST /schedules/dispatch` | Operator tick. CSRF + `workflow.execute` |
+| CSRF | `X-CSRF-Token` | Fail closed on admin writes |
+
+Operator surfaces: `/workflows` (Schedules / `?schedules=`) and `/workflows/{id}#schedule-triggers`. Approval decide reuses E4.3 `POST /approvals/{id}/decide`. Mid-run wait parks as `waiting` (survives recover). SoD + fresh auth; expire/invalidate → `expired`. Waiting jobs hold no worker lease — do not claim them from the browser.
 
 ## Required validation
 

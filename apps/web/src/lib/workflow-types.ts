@@ -105,7 +105,7 @@ export type CatalogTriggerIngress = {
   help?: string;
 };
 
-/** Jonny's E10.2 catalog admin map (#113) on `triggers[type=webhook].admin`. */
+/** Jonny's catalog admin map (#113 webhook / #116 schedule). */
 export type CatalogTriggerAdmin = {
   listRoute?: string;
   createRoute?: string;
@@ -114,10 +114,29 @@ export type CatalogTriggerAdmin = {
   disableRoute?: string;
   enableRoute?: string;
   deleteRoute?: string;
+  dispatchRoute?: string;
   permission?: string;
   viewPermission?: string;
+  dispatchPermission?: string;
   csrf?: boolean;
   secretNeverReturned?: boolean;
+  help?: string;
+};
+
+/**
+ * Optional schedule vocabulary. #116 defaults live on GET /schedules/catalog;
+ * `triggers[type=schedule].admin` is the route map on GET /workflows/catalog.
+ */
+export type CatalogTriggerSchedule = {
+  timezoneRequired?: boolean;
+  expressionKinds?: string[];
+  overlapPolicies?: string[];
+  defaultOverlapPolicy?: string;
+  misfirePolicies?: string[];
+  defaultMisfirePolicy?: string;
+  defaultCatchUp?: number | boolean;
+  maxCatchUp?: number;
+  publishedVersionRequired?: boolean;
   help?: string;
 };
 
@@ -134,6 +153,7 @@ export type CatalogTrigger = {
   start?: CatalogTriggerStart;
   ingress?: CatalogTriggerIngress;
   admin?: CatalogTriggerAdmin;
+  schedule?: CatalogTriggerSchedule;
 };
 
 export type CatalogRules = {

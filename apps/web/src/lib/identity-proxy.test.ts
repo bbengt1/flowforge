@@ -697,6 +697,64 @@ describe("resolveIdentityProxyTarget", () => {
     }
   });
 
+  it("allowlists E10.2 /triggers and E10.3 /schedules from #116", () => {
+    const list = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "triggers",
+    ]);
+    assert.equal("apiPath" in list, true);
+    if ("apiPath" in list) {
+      assert.equal(
+        list.apiPath,
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/triggers",
+      );
+    }
+    const create = resolveIdentityProxyTarget("POST", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "triggers",
+    ]);
+    assert.equal("apiPath" in create, true);
+    const item = resolveIdentityProxyTarget("PATCH", [
+      "triggers",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+    assert.equal("apiPath" in item, true);
+    if ("apiPath" in item) {
+      assert.equal(
+        item.apiPath,
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222",
+      );
+    }
+    const disable = resolveIdentityProxyTarget("POST", [
+      "triggers",
+      "22222222-2222-4222-8222-222222222222",
+      "disable",
+    ]);
+    assert.equal("apiPath" in disable, true);
+    const schedules = resolveIdentityProxyTarget("GET", ["schedules"]);
+    assert.equal("apiPath" in schedules, true);
+    if ("apiPath" in schedules) {
+      assert.equal(schedules.apiPath, "/api/v1/schedules");
+    }
+    const catalog = resolveIdentityProxyTarget("GET", ["schedules", "catalog"]);
+    assert.equal("apiPath" in catalog, true);
+    const dispatch = resolveIdentityProxyTarget("POST", ["schedules", "dispatch"]);
+    assert.equal("apiPath" in dispatch, true);
+    const enable = resolveIdentityProxyTarget("POST", [
+      "schedules",
+      "22222222-2222-4222-8222-222222222222",
+      "enable",
+    ]);
+    assert.equal("apiPath" in enable, true);
+    const invented = resolveIdentityProxyTarget("GET", ["cron"]);
+    assert.equal("status" in invented, true);
+    if ("status" in invented) {
+      assert.equal(invented.status, 404);
+    }
+  });
+
   it("allowlists E4.3 approval routes and rejects retired approve/reject paths", () => {
     const getDecide = resolveIdentityProxyTarget("GET", [
       "approvals",

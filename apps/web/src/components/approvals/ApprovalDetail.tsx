@@ -6,19 +6,16 @@ import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingS
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import {
   approvalStatusLabel,
-  canDecideApproval,
   failClosedProblemTitle,
-  isRequesterActor,
-  problemClosesApproval,
 } from "@/lib/approval";
 import {
-  approveApproval,
-  getApproval,
-  getApprovalEvents,
-  rejectApproval,
-} from "@/lib/approval-client";
+  APPROVAL_BINDING_HELP,
+  APPROVAL_WAIT_DURABLE_HELP,
+} from "@/lib/approval-contract";
+import { getApproval, getApprovalEvents } from "@/lib/approval-client";
 import type { ApprovalEvent } from "@/lib/approval-types";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -51,23 +48,17 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
   );
 
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
-  const [note, setNote] = useState("");
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [events, setEvents] = useState<ApprovalEvent[]>([]);
   const [actorUserId, setActorUserId] = useState("");
+  const [permissions, setPermissions] = useState<string[] | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
     hasWorkspaceLookup(identity);
-  const selfRequested = approval
-    ? isRequesterActor(approval.requestedBy, actorUserId)
-    : false;
-  const canDecide = approval
-    ? canDecideApproval(approval, undefined, actorUserId)
-    : false;
 
   async function refresh() {
     setPending("load");
@@ -80,6 +71,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
     setPending(null);
     if (workspace.ok) {
       setActorUserId(workspace.data.principal?.id ?? "");
+      setPermissions(workspace.data.permissions ?? []);
     }
     if (!result.ok) {
       setProblem(result.problem);
@@ -103,36 +95,6 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
   }, [ready, identity, approvalId]);
-
-  async function decide(action: "approve" | "reject") {
-    setPending(action);
-    setProblem(null);
-    const result =
-      action === "approve"
-        ? await approveApproval(identity, approvalId, note)
-        : await rejectApproval(identity, approvalId, note);
-    setLastRequestId(result.requestId);
-    setPending(null);
-    if (!result.ok) {
-      setProblem(result.problem);
-      if (
-        result.expired ||
-        result.invalidated ||
-        result.selfApproval ||
-        problemClosesApproval(result.problem)
-      ) {
-        const recheck = await getApproval(identity, approvalId);
-        if (recheck.ok) {
-          setApproval(recheck.approval);
-          setStrippedKeys(recheck.strippedKeys);
-        }
-      }
-      return;
-    }
-    setApproval(result.approval);
-    setNote("");
-    setStrippedKeys(result.strippedKeys);
-  }
 
   return (
     <div className="space-y-6">
@@ -213,60 +175,25 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             </div>
           </dl>
 
-          {selfRequested ? (
-            <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              You requested this approval. Another operator with{" "}
-              <code className="font-mono text-xs">approval.decide</code> must
-              approve or reject it. Self-approval is forbidden.
-            </p>
-          ) : (
-            <label className="block text-sm">
-              <span className="text-zinc-600">Decision note</span>
-              <textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                rows={3}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-              />
-            </label>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            {selfRequested ? null : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void decide("approve")}
-                  disabled={!canDecide || pending !== null}
-                  className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-                >
-                  {pending === "approve" ? "Approving…" : "Approve"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void decide("reject")}
-                  disabled={!canDecide || pending !== null}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-                >
-                  {pending === "reject" ? "Rejecting…" : "Reject"}
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={pending !== null}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-            >
-              Recheck on server
-            </button>
-          </div>
+          <ApprovalDecideControls
+            identity={identity}
+            approval={approval}
+            actorUserId={actorUserId}
+            permissions={permissions}
+            onUpdated={setApproval}
+          />
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={pending !== null}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Recheck on server
+          </button>
           <p className="text-sm text-zinc-600">
-            Decide sends <code className="font-mono text-xs">POST …/decide</code>{" "}
-            with <code className="font-mono text-xs">X-CSRF-Token</code>. The
-            requester cannot approve their own request (server 403). Expired or
-            invalidated bindings fail closed. The UI never stores an approval
-            token or treats a previous local approve as sufficient.
+            {APPROVAL_BINDING_HELP} {APPROVAL_WAIT_DURABLE_HELP} The UI never
+            stores an approval token or treats a previous local approve as
+            sufficient.
           </p>
           {events.length ? (
             <ol className="space-y-1 text-sm text-zinc-600">
