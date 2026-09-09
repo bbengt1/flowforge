@@ -299,7 +299,7 @@ E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still
 - **Workspace context:** tenant id *or* tenant slug and workbench key live in tab `sessionStorage`. They are not secrets.
 - **Temporary header fallback:** local-only issuer/subject headers, clearly labeled, used only when no cookie session is active. Remove when jonny's session API is the sole subject path.
 - **Workspace identity:** the UI and Next proxy never send `X-FlowForge-Workspace-ID` and do not offer a workspace-UUID lookup field. Current workspace resolution uses tenant + workbench key only.
-- **Actions:** create tenant (`POST /tenants`), create workspace (`POST /workspaces`; caller becomes admin), list caller workspaces (`GET /workspaces`), current workspace roles/permissions (`GET /workspace`), members add/update/remove (`GET|PUT /workspace/members`, `DELETE /workspace/members/{userID}`), read-only permission matrix (`GET /permission-matrix`).
+- **Actions:** create tenant (`POST /tenants`, `platform.administer`), create workspace (`POST /workspaces`, `platform.administer`; caller becomes workspace admin), list caller workspaces (`GET /workspaces`), current workspace roles/permissions (`GET /workspace`), members add/update/remove (`GET|PUT /workspace/members`, `DELETE /workspace/members/{userID}`), read-only permission matrix (`GET /permission-matrix`).
 - **Proxies:** `/api/control-plane/{session,permission-matrix,roles,permissions,tenants,workspaces,workspace,workspace/members,workspace/members/{userID}}` attach workspace headers, session cookies, CSRF, and `X-Request-ID`, call `API_INTERNAL_URL` `/api/v1/...`, preserve `application/problem+json`, and echo the request id. Unauthorized, CSRF, and last-admin conflict problems show `title`, `detail`, `code`, and `request_id`.
 
 ## E2.3 browser session contract (API → UI)
@@ -308,7 +308,7 @@ The Go API now issues cookie sessions. Chloe owns the client UX; this is the con
 
 | Method | Path | Cookies / CSRF | Success |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/session` | Sets `ff_session` + `ff_csrf`. No CSRF required to create. Prefer identity headers. JSON `{issuer,external_subject,display_name?}` is used only when headers are absent; a conflicting body is `403`. | `201` `{session,principal,csrf_token}` |
+| `POST` | `/api/v1/session` | Trusted-dev only (`TRUSTED_DEV_IDENTITY_HEADERS` + non-production `APP_ENV`). Sets `ff_session` + `ff_csrf`. Production is `401` and does not upsert a principal — use `POST /embed/exchange`. | `201` `{session,principal,csrf_token}` |
 | `GET` | `/api/v1/session` | `ff_session` required. Safe method: no CSRF header. | `200` same shape |
 | `POST` | `/api/v1/session/refresh` | Session cookie + `X-CSRF-Token` matching `ff_csrf`. Rotates CSRF. A stale pair after another tab refreshed is `409` — retry with the latest `csrf_token`. | `200` |
 | `POST` | `/api/v1/session/logout` | Session cookie + CSRF. Clears cookies. | `204` |

@@ -58,9 +58,10 @@ func main() {
 			PortalFrameAncestors: cfg.PortalFrameAncestors,
 			PlatformAdmins:       cfg.PlatformAdmins,
 			Security: httpapi.Security{
-				TrustedProxies: cfg.TrustedProxies,
-				RequireTLS:     cfg.RequireTLS,
-				AllowedOrigins: cfg.CORSAllowedOrigins,
+				TrustedProxies:       cfg.TrustedProxies,
+				RequireTLS:           cfg.RequireTLS,
+				AllowedOrigins:       cfg.CORSAllowedOrigins,
+				TrustIdentityHeaders: cfg.TrustIdentityHeaders,
 				Session: httpapi.SessionPolicy{
 					IdleTimeout:     cfg.SessionIdleTimeout,
 					AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
@@ -75,14 +76,18 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	if cfg.TrustIdentityHeaders {
+		log.Warn("trusted_dev_identity_headers enabled; self-asserted X-FlowForge-Issuer/Subject are accepted")
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		if cfg.TLSCertFile != "" {
-			log.Info("api listening", "addr", cfg.HTTPAddr, "tls", true, "require_tls", cfg.RequireTLS)
+			log.Info("api listening", "addr", cfg.HTTPAddr, "tls", true, "require_tls", cfg.RequireTLS, "trust_identity_headers", cfg.TrustIdentityHeaders)
 			errCh <- srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
 			return
 		}
-		log.Info("api listening", "addr", cfg.HTTPAddr, "tls", false, "require_tls", cfg.RequireTLS)
+		log.Info("api listening", "addr", cfg.HTTPAddr, "tls", false, "require_tls", cfg.RequireTLS, "trust_identity_headers", cfg.TrustIdentityHeaders)
 		errCh <- srv.ListenAndServe()
 	}()
 

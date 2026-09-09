@@ -19,6 +19,20 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 - Authentication establishes a subject. Authorization then evaluates the action,
   workspace, resource, workflow version, target, and current policy. A valid
   session alone never authorizes a run, credential use, approval, or export.
+- Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
+  `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
+  authentication and must not upsert principals. Prefer the cookie session
+  issued by `POST /embed/exchange` (or a future OIDC login). Self-asserted
+  header identity is enabled only by the explicit, non-default
+  `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
+  `APP_ENV=development|dev|local|test`. Empty or missing config denies
+  header identity. The process refuses to start if the flag is set in
+  production (`APP_ENV` empty/production) or when `REQUIRE_TLS=true`, so
+  it cannot stay on accidentally. See [deployment](../deployment.md).
+- Tenant and workspace bootstrap (`POST /tenants`, `POST /workspaces`)
+  requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
+  Unauthenticated callers are `401`; any other caller is `403`. Empty
+  `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
 - Authorization is deny-by-default. Every workspace-owned query, cache key,
   queue payload, realtime subscription, artifact URL, and audit event carries the
   server-derived workspace ID. Database RLS is a backstop, not the only check.

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -34,15 +35,20 @@ func TestIdentityAPIAgainstPostgres(t *testing.T) {
 	defer pool.Close()
 
 	store := identity.NewPostgres(pool)
-	h := httpapi.NewWithStore(nil, store)
 	n := time.Now().UnixNano()
 	slug := fmt.Sprintf("org%d", n)
 	workbench := fmt.Sprintf("wb%d", n)
+	subject := fmt.Sprintf("pg-admin-%d", n)
+	h := httpapi.NewWithDeps(httpapi.Deps{
+		Store:          store,
+		Security:       httpapi.Security{TrustIdentityHeaders: true},
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: subject}},
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader([]byte(`{"slug":"`+slug+`","name":"Org"}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-FlowForge-Issuer", "https://idp.example")
-	req.Header.Set("X-FlowForge-Subject", "pg-admin")
+	req.Header.Set("X-FlowForge-Subject", subject)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -52,7 +58,7 @@ func TestIdentityAPIAgainstPostgres(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", bytes.NewReader([]byte(`{"tenant_slug":"`+slug+`","workbench_key":"`+workbench+`","name":"WB"}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-FlowForge-Issuer", "https://idp.example")
-	req.Header.Set("X-FlowForge-Subject", "pg-admin")
+	req.Header.Set("X-FlowForge-Subject", subject)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -62,7 +68,7 @@ func TestIdentityAPIAgainstPostgres(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", bytes.NewReader([]byte(`{"tenant_slug":"`+slug+`","workbench_key":"`+workbench+`","name":"WB2"}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-FlowForge-Issuer", "https://idp.example")
-	req.Header.Set("X-FlowForge-Subject", "pg-admin")
+	req.Header.Set("X-FlowForge-Subject", subject)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {
@@ -78,7 +84,7 @@ func TestIdentityAPIAgainstPostgres(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/workspace", nil)
 	req.Header.Set("X-FlowForge-Issuer", "https://idp.example")
-	req.Header.Set("X-FlowForge-Subject", "pg-admin")
+	req.Header.Set("X-FlowForge-Subject", subject)
 	req.Header.Set("X-FlowForge-Workspace-ID", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

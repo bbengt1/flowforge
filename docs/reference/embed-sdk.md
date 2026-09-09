@@ -158,7 +158,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` or `ephemeral:process` | Active `kid` |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window |
-| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys. Empty is fail-closed (`403`). |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys **and** create tenants/workspaces. Empty is fail-closed (`403`). |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
 | `EMBED_ISSUER` | empty | Optional single allowed `iss` |

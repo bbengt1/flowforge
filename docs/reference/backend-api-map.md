@@ -13,7 +13,7 @@
 
 ## Browser sessions (E2.3)
 
-Browser clients use cookie sessions. Non-browser callers (tests, hooks, Next.js server proxies that still inject headers) may keep `X-FlowForge-Issuer` / `X-FlowForge-Subject`. When `ff_session` is present, identity comes only from the session; conflicting identity headers fail closed (`403`). Header-only callers skip CSRF.
+Browser clients use cookie sessions from `POST /embed/exchange` (or a future OIDC login). Production does **not** treat `X-FlowForge-Issuer` / `X-FlowForge-Subject` as authentication and `POST /session` must not upsert principals from those values. Self-asserted header identity exists only behind `TRUSTED_DEV_IDENTITY_HEADERS` plus an explicit non-production `APP_ENV` (see [security model](security-model.md) and [deployment](../deployment.md)). When `ff_session` is present, identity comes only from the session; conflicting identity headers fail closed (`403`). Header-only callers skip CSRF, and only when trusted-dev is on.
 
 **UI route map (Chloe):** call the API origin with `credentials: "include"`. Do not store the session token or CSRF secret in `localStorage`. Read `csrf_token` from the JSON body (or the `ff_csrf` cookie) and send it as `X-CSRF-Token` on every state-changing request.
 
@@ -28,7 +28,7 @@ CORS is an exact allowlist (`CORS_ALLOWED_ORIGINS`). Empty allowlist + foreign `
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `POST /api/v1/session` | Create session from identity headers and/or JSON `{issuer,external_subject,display_name?}`. Headers win; a conflicting body is `403`. Sets both cookies. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin or identity conflict) |
+| `POST /api/v1/session` | Trusted-dev only: create session from identity headers and/or JSON `{issuer,external_subject,display_name?}`. Headers win; a conflicting body is `403`. Production (fail-closed) returns `401` and does not upsert a principal. Prefer `POST /embed/exchange`. Sets both cookies when allowed. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin, identity conflict, or fail-closed) |
 | `GET /api/v1/session` | Current browser session. Cookie required; header-only is `401`. | `200` `{session,principal,csrf_token}` | `401` `403` |
 | `POST /api/v1/session/refresh` | Extend idle expiry; rotate CSRF. Requires CSRF pair. Concurrent/stale CSRF is `409`. | `200` `{session,principal,csrf_token}` | `401` `403` `409` |
 | `POST /api/v1/session/logout` | Revoke session and clear cookies. Requires CSRF when a session cookie is present. | `204` | `403` |
@@ -73,7 +73,7 @@ Epic #120 negatives (fail closed): hostile host issuer, replayed assertion (`409
 
 ## Workspace identity and RBAC (E2.1)
 
-Identity headers establish the subject for non-browser callers: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). Browser clients should use E2.3 sessions instead. Headers do not authorize a workspace. The UI session adapter is `apps/web/src/lib/session-contract.ts`.
+In trusted-dev only, identity headers establish the subject for non-browser callers: `X-FlowForge-Issuer` and `X-FlowForge-Subject` (optional `X-FlowForge-Display-Name`). Production requires a cookie session (embed exchange today). Headers never authorize a workspace. The UI session adapter is `apps/web/src/lib/session-contract.ts`.
 
 Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge-Tenant-Slug` plus `X-FlowForge-Workbench-Key`. `X-FlowForge-Workspace-ID` is untrusted host context: it is rejected when it is the only identity, and forbidden when it does not match the server-derived workspace.
 
@@ -82,9 +82,9 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 | `GET /api/v1/permission-matrix` | Role/permission catalog covering view, edit, publish, execute, credential, approval, and administration (including platform-scoped `platform.administer`). | `200` `{permissions,roles}` | `401` |
 | `GET /api/v1/roles` | Persisted role vocabulary. | `200` `{items}` | `401` |
 | `GET /api/v1/permissions` | Persisted permission vocabulary. | `200` `{items}` | `401` |
-| `POST /api/v1/tenants` | Create a tenant. Any identified subject may bootstrap a tenant in this slice. | `201` tenant | `400` `401` `409` |
+| `POST /api/v1/tenants` | Create a tenant. Requires `platform.administer` (`PLATFORM_ADMINS`). Unauthenticated is `401`; any other caller is `403`. | `201` tenant | `400` `401` `403` `409` |
 | `GET /api/v1/workspaces` | Workspaces the caller belongs to (server-side bindings). | `200` `{items}` | `401` |
-| `POST /api/v1/workspaces` | Create a workspace unique on `(tenant_id, workbench_key)`; caller is bound as `admin`. Body `id` / `workspace_id` rejected. | `201` workspace | `400` `401` `404` `409` |
+| `POST /api/v1/workspaces` | Create a workspace unique on `(tenant_id, workbench_key)`; caller is bound as `admin`. Requires `platform.administer`. Body `id` / `workspace_id` rejected. | `201` workspace | `400` `401` `403` `404` `409` |
 | `GET /api/v1/workspace` | Current workspace, roles, and permissions after membership check. | `200` | `400` `401` `403` `404` |
 | `GET /api/v1/workspace/members` | List members. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
 | `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. | `200` member | `400` `401` `403` `404` `409` |

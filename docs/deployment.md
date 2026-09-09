@@ -5,7 +5,7 @@
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
 2. Run `docker compose up --build`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19).
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production.
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
@@ -62,7 +62,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. |
-| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /embed/keys/rotate`. Empty is fail-closed. |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, and `POST /embed/keys/rotate`. Empty is fail-closed (`403`). |
+| `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity requires `development`, `dev`, `local`, or `test`. |
+| `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Optional allowed assertion `iss`. Empty accepts any valid issuer. |
 | `WEB_EMBED_FRAME_ANCESTORS` | unset | Exact origins allowed to frame `/embed/v1` only. Empty keeps `frame-ancestors 'none'`. `*` / `null` are ignored. |
 

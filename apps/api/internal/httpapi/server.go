@@ -123,11 +123,32 @@ func NewWithStore(db postgres.Checker, store identity.Store) http.Handler {
 }
 
 // NewWithStores returns a handler with explicit identity and isolation stores.
+// HTTP unit tests use this constructor: it enables trusted-dev identity
+// headers and lists the identifiedRequest caller as a platform-admin so
+// existing suite bootstrap stays usable. Production uses NewWithDeps with
+// config.Load() (fail-closed).
 func NewWithStores(db postgres.Checker, store identity.Store, scoped isolation.Store) http.Handler {
 	if scoped == nil {
 		scoped = isolation.NewMemory()
 	}
-	return NewWithDeps(Deps{DB: db, Store: store, Scoped: scoped, Sessions: session.NewMemory(), Workflows: wfstore.NewMemory()})
+	return NewWithDeps(withHTTPTestIdentity(Deps{DB: db, Store: store, Scoped: scoped, Sessions: session.NewMemory(), Workflows: wfstore.NewMemory()}))
+}
+
+// httpTestIssuer/Subject match identifiedRequest in HTTP unit tests.
+const (
+	httpTestIssuer  = "https://idp.example"
+	httpTestSubject = "admin-1"
+)
+
+// withHTTPTestIdentity enables trusted-dev header identity and, when the
+// caller did not set PlatformAdmins, lists the default HTTP unit-test
+// principal as a platform-admin. Production must not call this.
+func withHTTPTestIdentity(d Deps) Deps {
+	d.Security.TrustIdentityHeaders = true
+	if d.PlatformAdmins == nil {
+		d.PlatformAdmins = []authz.PrincipalRef{{Issuer: httpTestIssuer, Subject: httpTestSubject}}
+	}
+	return d
 }
 
 // NewWithDeps returns a handler with explicit dependencies.

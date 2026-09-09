@@ -20,10 +20,14 @@ info:
       identity collisions, draft revision mismatches, and duplicate
       published digests use `conflict` (409).
     - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
-      `POST /session`. State-changing cookie requests require `X-CSRF-Token`.
-      Non-browser callers may keep using `X-FlowForge-Issuer` /
-      `X-FlowForge-Subject`. A session cookie wins; conflicting identity
-      headers fail closed.
+      `POST /embed/exchange` (or trusted-dev `POST /session`). State-changing
+      cookie requests require `X-CSRF-Token`. Production does not accept
+      self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` as
+      authentication. That path exists only when
+      `TRUSTED_DEV_IDENTITY_HEADERS` is explicitly enabled in a non-production
+      `APP_ENV`. A session cookie wins; conflicting identity headers fail
+      closed. `POST /tenants` and `POST /workspaces` require
+      `platform.administer` (`PLATFORM_ADMINS`).
     - Workspace identity is server-derived from `(tenant_id|tenant_slug,
       workbench_key)`. A host-supplied workspace UUID is never the lookup key
       and is rejected when it is the only identity or does not match resolution.
@@ -202,14 +206,14 @@ paths:
       operationId: createSession
       summary: Create a browser session
       description: |
-        Establishes a server-side session from bootstrap issuer/subject.
-        Identity headers win when present. JSON `issuer` / `external_subject`
-        are used only when those headers are absent; a conflicting body is
-        `403`. Sets `ff_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on
-        HTTPS, `Path=/api/v1`) and `ff_csrf` (readable, `SameSite=Strict`,
-        `Secure` on HTTPS, `Path=/api/v1`). Non-browser callers may keep
-        using identity headers without cookies. Until OIDC, issuer/subject
-        is the same E2.1 bootstrap used by header auth.
+        Trusted-dev only. Establishes a server-side session from bootstrap
+        issuer/subject. Identity headers win when present. JSON `issuer` /
+        `external_subject` are used only when those headers are absent; a
+        conflicting body is `403`. Production (fail-closed) returns `401` and
+        does not upsert a principal — use `POST /embed/exchange`. Sets
+        `ff_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on HTTPS,
+        `Path=/api/v1`) and `ff_csrf` (readable, `SameSite=Strict`,
+        `Secure` on HTTPS, `Path=/api/v1`) when allowed.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2604,6 +2608,10 @@ paths:
     post:
       operationId: createTenant
       summary: Create a tenant
+      description: |
+        Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
+        Unauthenticated callers receive `401`. Any other caller is `403`.
+        Empty `PLATFORM_ADMINS` is fail-closed.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2634,6 +2642,8 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
   /workspaces:
@@ -2662,7 +2672,8 @@ paths:
       summary: Create a workspace
       description: |
         Creates a workspace unique on `(tenant_id, workbench_key)` and binds the
-        caller as `admin`. `id` and `workspace_id` in the body are rejected.
+        caller as `admin`. Requires `platform.administer` via `PLATFORM_ADMINS`.
+        `id` and `workspace_id` in the body are rejected.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2698,6 +2709,8 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":

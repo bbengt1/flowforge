@@ -70,6 +70,11 @@ type Config struct {
 	PortalIssuers        []string
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef
+	// AppEnv is APP_ENV / FLOWFORGE_ENV. Empty is treated as production.
+	AppEnv string
+	// TrustIdentityHeaders is true only when TRUSTED_DEV_IDENTITY_HEADERS
+	// is explicit and the process is not production-locked.
+	TrustIdentityHeaders bool
 }
 
 // Load reads configuration from the process environment.
@@ -136,6 +141,13 @@ func Load() (Config, error) {
 	if cfg.EmbedAudience != embed.DefaultAudience {
 		return Config{}, fmt.Errorf("EMBED_AUDIENCE must be %q", embed.DefaultAudience)
 	}
+	appEnv := firstNonEmpty(os.Getenv(authz.EnvAppEnv), os.Getenv(authz.EnvFlowforgeEnv))
+	trustHeaders, err := authz.ResolveTrustedDevIdentityHeaders(os.Getenv(authz.EnvTrustedDevIdentityHeaders), appEnv, cfg.RequireTLS)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.AppEnv = appEnv
+	cfg.TrustIdentityHeaders = trustHeaders
 	return cfg, nil
 }
 

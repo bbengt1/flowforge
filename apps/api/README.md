@@ -15,9 +15,9 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/permission-matrix` | Role/permission catalog (view, edit, publish, execute, credential, approval, administration). |
 | `GET` | `/api/v1/roles` | Role vocabulary. |
 | `GET` | `/api/v1/permissions` | Permission vocabulary. |
-| `POST` | `/api/v1/tenants` | Create tenant. |
+| `POST` | `/api/v1/tenants` | Create tenant (`platform.administer` / `PLATFORM_ADMINS`). |
 | `GET` | `/api/v1/workspaces` | Workspaces the caller belongs to. |
-| `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. |
+| `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. Requires `platform.administer`. |
 | `GET` | `/api/v1/workspace` | Server-derived current workspace + roles + permissions. |
 | `GET` | `/api/v1/workspace/members` | List members (`workspace.administer`). |
 | `PUT` | `/api/v1/workspace/members` | Bind member roles (`workspace.administer`). |
@@ -32,7 +32,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
-| `POST` | `/api/v1/session` | Create browser session; sets `ff_session` + `ff_csrf`. |
+| `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /embed/exchange`). |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
@@ -187,6 +187,9 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
+      APP_ENV: ${APP_ENV:-development}
+      TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}
+      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
     depends_on:
       postgres:
         condition: service_healthy

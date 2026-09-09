@@ -67,6 +67,21 @@ func (m *Memory) UpsertUser(_ context.Context, issuer, subject, displayName stri
 	return u, nil
 }
 
+// HasPrincipal reports whether issuer+subject already exists. Used by
+// fail-closed identity tests to prove POST /session did not invent a user.
+func (m *Memory) HasPrincipal(issuer, subject string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	for _, u := range m.users {
+		if u.Issuer == issuer && u.ExternalSubject == subject {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

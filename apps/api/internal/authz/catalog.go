@@ -56,10 +56,10 @@ const (
 
 // Role keys.
 const (
-	RoleViewer    = "viewer"
-	RoleEditor    = "editor"
-	RolePublisher = "publisher"
-	RoleOperator  = "operator"
+	RoleViewer        = "viewer"
+	RoleEditor        = "editor"
+	RolePublisher     = "publisher"
+	RoleOperator      = "operator"
 	RoleApprover      = "approver"
 	RoleAdmin         = "admin"
 	RolePlatformAdmin = "platform-admin"
@@ -161,7 +161,7 @@ func Roles() []Role {
 		},
 		{
 			Key:         RolePlatformAdmin,
-			Description: "Platform-scoped operations (global embed overlap key rotation). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
+			Description: "Platform-scoped operations (tenant/workspace bootstrap and global embed overlap key rotation). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
 			Permissions: []string{PermPlatformAdminister},
 		},
 	}

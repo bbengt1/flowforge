@@ -23,13 +23,14 @@ import (
 )
 
 type embedEnv struct {
-	h      http.Handler
-	keys   embed.Material
-	ring   *embed.Ring
-	now    *time.Time
-	admin  identity.User
-	ops    identity.User
-	logs   *bytes.Buffer
+	h     http.Handler
+	store identity.Store
+	keys  embed.Material
+	ring  *embed.Ring
+	now   *time.Time
+	admin identity.User
+	ops   identity.User
+	logs  *bytes.Buffer
 }
 
 func newEmbedEnv(t *testing.T) embedEnv {
@@ -42,7 +43,7 @@ func newEmbedEnv(t *testing.T) embedEnv {
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	ops := identity.User{Issuer: "https://idp.example", ExternalSubject: "platform-ops-1", DisplayName: "Platform Ops"}
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
 		Sessions:  session.NewMemory(),
@@ -60,22 +61,11 @@ func newEmbedEnv(t *testing.T) embedEnv {
 		}},
 		Now: func() time.Time { return *clock },
 		Log: log,
-	})
+	}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
+	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
 	rec := httptest.NewRecorder()
-	req := identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"acme","name":"Acme"}`, admin)
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create tenant: %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	req = identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"ops","name":"Ops"}`, admin)
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create workspace: %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	req = identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
+	req := identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
 	req.Header.Set(headerIssuer, admin.Issuer)
 	req.Header.Set(headerSubject, admin.ExternalSubject)
 	req.Header.Set(headerTenantSlug, "acme")
@@ -88,7 +78,7 @@ func newEmbedEnv(t *testing.T) embedEnv {
 	if err := json.Unmarshal(rec.Body.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	return embedEnv{h: h, keys: keys, ring: ring, now: clock, admin: current.Principal, ops: ops, logs: &buf}
+	return embedEnv{h: h, store: store, keys: keys, ring: ring, now: clock, admin: current.Principal, ops: ops, logs: &buf}
 }
 
 func (e embedEnv) advance(d time.Duration) {
@@ -339,12 +329,7 @@ func TestEmbedExchangeNBF(t *testing.T) {
 
 func TestEmbedExchangeCrossTenantWorkbenchRejected(t *testing.T) {
 	env := newEmbedEnv(t)
-	other := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"other","name":"Other"}`, env.admin)
-	otherRec := httptest.NewRecorder()
-	env.h.ServeHTTP(otherRec, other)
-	if otherRec.Code != http.StatusCreated {
-		t.Fatalf("other workspace %d %s", otherRec.Code, otherRec.Body.String())
-	}
+	seedWorkspace(t, env.store, env.admin, "acme", "other", "Other")
 
 	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
 	var minted embed.Minted

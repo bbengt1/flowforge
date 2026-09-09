@@ -328,7 +328,7 @@ func seededWorkspaceWithClock(t *testing.T, now func() time.Time) (http.Handler,
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
 	hooks := webhook.NewMemory()
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
 		Sessions:  session.NewMemory(),
@@ -339,7 +339,7 @@ func seededWorkspaceWithClock(t *testing.T, now func() time.Time) (http.Handler,
 		Keys:      keys,
 		Approvals: approval.NewMemory(),
 		Now:       now,
-	})
+	}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 	rec := httptest.NewRecorder()
 	req := identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"acme","name":"Acme"}`, admin)

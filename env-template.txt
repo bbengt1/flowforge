@@ -78,6 +78,17 @@ API_INTERNAL_URL=http://api:8080
 # Exact Portal origins (merged with WEB_EMBED_FRAME_ANCESTORS on /embed/v1).
 # WEB_PORTAL_FRAME_ANCESTORS=
 
+# --- Identity (ADV-002) ---
+# Production is fail-closed: self-asserted X-FlowForge-Issuer/Subject and
+# POST /session upsert are denied. Local compose enables trusted-dev.
+# Do not set TRUSTED_DEV_IDENTITY_HEADERS in production (process refuses
+# to start if APP_ENV is empty/production or REQUIRE_TLS=true).
+APP_ENV=development
+TRUSTED_DEV_IDENTITY_HEADERS=1
+# Platform-admin allowlist (issuer|subject). Empty denies POST /tenants,
+# POST /workspaces, and POST /embed/keys/rotate.
+PLATFORM_ADMINS=https://idp.example|admin-1
+
 # --- Embed assertions (E11.1) ---
 # Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
 # Unset uses an ephemeral process key (assertions die on restart).

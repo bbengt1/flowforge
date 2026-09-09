@@ -37,7 +37,7 @@ func newPortalEnv(t *testing.T) portalEnv {
 	store := identity.NewMemory()
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
-	h := NewWithDeps(Deps{
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:         store,
 		Scoped:        isolation.NewMemory(),
 		Sessions:      session.NewMemory(),
@@ -51,22 +51,11 @@ func newPortalEnv(t *testing.T) portalEnv {
 		PortalIssuers: []string{portalIssuer},
 		Now:           func() time.Time { return *clock },
 		Log:           log,
-	})
+	}))
 	admin := identity.User{Issuer: portalIssuer, ExternalSubject: "portal-svc", DisplayName: "Portal"}
+	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
 	rec := httptest.NewRecorder()
-	req := identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"acme","name":"Acme"}`, admin)
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create tenant: %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	req = identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"ops","name":"Ops"}`, admin)
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create workspace: %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	req = identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
+	req := identifiedRequest(http.MethodGet, "/api/v1/workspace", nil)
 	req.Header.Set(headerIssuer, admin.Issuer)
 	req.Header.Set(headerSubject, admin.ExternalSubject)
 	req.Header.Set(headerTenantSlug, "acme")
@@ -79,7 +68,7 @@ func newPortalEnv(t *testing.T) portalEnv {
 	if err := json.Unmarshal(rec.Body.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	return portalEnv{embedEnv: embedEnv{h: h, keys: keys, now: clock, admin: current.Principal, logs: &buf}}
+	return portalEnv{embedEnv: embedEnv{h: h, store: store, keys: keys, now: clock, admin: current.Principal, logs: &buf}}
 }
 
 func (e portalEnv) mintPortal(t *testing.T, body string) *httptest.ResponseRecorder {
@@ -175,21 +164,10 @@ func TestPortalMintMapsRolesAndExchanges(t *testing.T) {
 func TestPortalHostileIssuerFailsClosed(t *testing.T) {
 	env := newPortalEnv(t)
 	hostile := identity.User{Issuer: "https://hostile.example", ExternalSubject: "attacker", DisplayName: "Hostile"}
-	rec := httptest.NewRecorder()
-	req := identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"evil","name":"Evil"}`, hostile)
-	env.h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("hostile tenant %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	req = identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"evil","workbench_key":"ops","name":"Evil"}`, hostile)
-	env.h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("hostile workspace %d %s", rec.Code, rec.Body.String())
-	}
+	seedWorkspace(t, env.store, hostile, "evil", "ops", "Evil")
 
-	rec = httptest.NewRecorder()
-	req = identifiedJSON(http.MethodPost, "/api/v1/portal/adapter/assertions", `{"portalRoles":["viewer"]}`, hostile)
+	rec := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/portal/adapter/assertions", `{"portalRoles":["viewer"]}`, hostile)
 	req.Header.Set(headerTenantSlug, "evil")
 	req.Header.Set(headerWorkbenchKey, "ops")
 	env.h.ServeHTTP(rec, req)
@@ -222,12 +200,7 @@ func TestPortalReplayFailsClosed(t *testing.T) {
 
 func TestPortalCrossTenantWorkbenchFailsClosed(t *testing.T) {
 	env := newPortalEnv(t)
-	other := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"other","name":"Other"}`, env.admin)
-	otherRec := httptest.NewRecorder()
-	env.h.ServeHTTP(otherRec, other)
-	if otherRec.Code != http.StatusCreated {
-		t.Fatalf("other workspace %d %s", otherRec.Code, otherRec.Body.String())
-	}
+	seedWorkspace(t, env.store, env.admin, "acme", "other", "Other")
 
 	rec := env.mintPortal(t, `{"portalRoles":["viewer"]}`)
 	var minted embed.Minted
