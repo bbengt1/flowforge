@@ -20,6 +20,47 @@ func TestNormalizeSpecRejectsUnknownFieldsAndInterpolation(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuntimeProfileEgress(t *testing.T) {
+	base := map[string]any{
+		"language":             "python",
+		"imageDigest":          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"dependencyLockDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"limits":               map[string]any{"cpuMillis": 250, "memoryMib": 256, "timeoutSeconds": 30, "processes": 32},
+	}
+	_, _, err := NormalizeSpec(KindRuntimeProfile, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withEgress := cloneSpec(base)
+	withEgress["egress"] = map[string]any{
+		"dnsConstrained": true,
+		"destinations":   []any{map[string]any{"host": "api.example.com", "port": 443}},
+	}
+	out, _, err := NormalizeSpec(KindRuntimeProfile, withEgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eg, _ := out["egress"].(map[string]any)
+	if eg["dnsConstrained"] != true {
+		t.Fatalf("egress = %+v", eg)
+	}
+	bad := cloneSpec(base)
+	bad["egress"] = map[string]any{
+		"destinations": []any{map[string]any{"host": "169.254.169.254", "port": 80}},
+	}
+	if _, _, err := NormalizeSpec(KindRuntimeProfile, bad); err == nil {
+		t.Fatal("metadata egress must be rejected")
+	}
+}
+
+func cloneSpec(in map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func TestNormalizeSpecStableDigest(t *testing.T) {
 	spec := map[string]any{
 		"recipientPolicy": map[string]any{"emails": []string{"ops@example.com"}},

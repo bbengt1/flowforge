@@ -20,6 +20,13 @@ var (
 	ErrRevoked          = errors.New("script artifact has been revoked")
 	ErrStoreUnavailable = errors.New("script artifact store is unavailable")
 	ErrSigningKey       = errors.New("script signing key is not available")
+	ErrIsolation        = errors.New("script isolation policy denied the run")
+	ErrEgressDenied     = errors.New("script egress is not allowlisted")
+	ErrMetadataDenied   = errors.New("cloud metadata service access is denied")
+	ErrPackageInstall   = errors.New("runtime package installation is denied")
+	ErrImageDenied      = errors.New("arbitrary or unpinned runtime images are denied")
+	ErrResourceLimit    = errors.New("script exceeded pinned resource limits")
+	ErrLeaseLost        = errors.New("worker lease was lost; script outcome is indeterminate")
 )
 
 // Documented engine / field codes for Chloe.
@@ -38,6 +45,19 @@ const (
 	CodeArtifactRevoked          = "artifact-revoked"
 	CodePermissionDenied         = "permission-denied"
 	CodePolicyDenied             = "policy-denied"
+	CodeIsolationDenied          = "isolation-denied"
+	CodeMetadataDenied           = "metadata-denied"
+	CodeEgressDenied             = "egress-denied"
+	CodePackageInstallDenied     = "package-install-denied"
+	CodeImageDenied              = "image-denied"
+	CodeDockerSocketDenied       = "docker-socket-denied"
+	CodeServiceAccountDenied     = "service-account-denied"
+	CodeRootDenied               = "root-denied"
+	CodeWritableRootFSDenied     = "writable-rootfs-denied"
+	CodeCapabilityDenied         = "capability-denied"
+	CodePrivilegeEscalation      = "privilege-escalation-denied"
+	CodeResourceLimit            = "resource-limit"
+	CodeIndeterminate            = "indeterminate"
 	CodeRunnerNotImplemented     = "runner-not-implemented"
 	CodeIONotImplemented         = "typed-io-not-implemented"
 	CodeRevocationNotImplemented = "revocation-not-implemented"
@@ -84,6 +104,20 @@ func asEngineError(err error) *EngineError {
 		return engineError(CodeArtifactScanFailed, "Script artifacts with a failed scan cannot be executed.", http.StatusBadRequest)
 	case errors.Is(err, ErrRevoked):
 		return engineError(CodeArtifactRevoked, "Revoked script artifacts cannot be executed.", http.StatusConflict)
+	case errors.Is(err, ErrMetadataDenied):
+		return engineError(CodeMetadataDenied, "Cloud instance metadata access is denied.", http.StatusForbidden)
+	case errors.Is(err, ErrEgressDenied):
+		return engineError(CodeEgressDenied, "Destination is outside the script egress allowlist.", http.StatusForbidden)
+	case errors.Is(err, ErrPackageInstall):
+		return engineError(CodePackageInstallDenied, "Runtime package installation is denied.", http.StatusForbidden)
+	case errors.Is(err, ErrImageDenied):
+		return engineError(CodeImageDenied, "Arbitrary or mutable runtime images are denied.", http.StatusBadRequest)
+	case errors.Is(err, ErrResourceLimit):
+		return engineError(CodeResourceLimit, "CPU, memory, process, or time limit was exceeded.", http.StatusBadRequest)
+	case errors.Is(err, ErrLeaseLost):
+		return engineError(CodeIndeterminate, "Worker lease was lost; the script is not retried until a verification hook resolves it.", http.StatusConflict)
+	case errors.Is(err, ErrIsolation):
+		return engineError(CodeIsolationDenied, "The isolated runner denied the requested execution environment.", http.StatusForbidden)
 	case errors.Is(err, ErrNotFound):
 		return engineError(CodeInvalidRuntimeProfile, "Script artifact was not found in this workspace.", http.StatusNotFound)
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrSigningKey):

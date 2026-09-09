@@ -1,7 +1,6 @@
-// Package scripts is the E9.1 control-plane publish pipeline for
-// script.python and script.go: validate source, package a content-addressed
-// artifact, scan, sign, and pin. Isolated runners (E9.2), typed I/O
-// execution (E9.3), and revocation/emergency-stop (E9.4) are not implemented.
+// Package scripts is the E9 script engine: publish/scan/sign/pin (E9.1)
+// and isolated short-lived runners (E9.2). Typed I/O (E9.3) and
+// revocation/emergency-stop (E9.4) remain hooks.
 package scripts
 
 import (
@@ -53,6 +52,15 @@ const (
 	PackageAPIVersion   = "flowforge/v1"
 	PackageKind         = "ScriptPackage"
 	EnvScriptSigningKey = "SCRIPT_SIGNING_KEY"
+
+	// Isolated runner identity. Matches deploy/kubernetes/script-runner-*.yaml.
+	RunnerUID            = 65532
+	RunnerGID            = 65532
+	RunnerWorkspacePath  = "/workspace"
+	CapabilityDropAll    = "ALL"
+	IsolationModeHarness = "harness"
+	IsolationModeLive    = "kubernetes"
+	GoBinaryPrefix       = "hmac-sha256:"
 )
 
 // Artifact is an immutable content-addressed script package. JSON never

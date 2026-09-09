@@ -55,6 +55,21 @@ need "$ROOT/deploy/k8s/api-networkpolicy.yaml" 'port: 5432'
 need "$ROOT/deploy/k8s/ingress.yaml" '^  tls:'
 need "$ROOT/deploy/k8s/api-configmap.yaml" 'REQUIRE_TLS: "true"'
 
+runner="$ROOT/deploy/kubernetes/script-runner-deployment.yaml"
+need "$runner" 'runAsUser: 65532'
+need "$runner" 'runAsNonRoot: true'
+need "$runner" 'readOnlyRootFilesystem: true'
+need "$runner" 'allowPrivilegeEscalation: false'
+need "$runner" 'automountServiceAccountToken: false'
+need "$runner" '[[:space:]]+- ALL'
+need "$runner" 'seccompProfile:'
+need "$runner" '/workspace'
+forbid "$runner" 'docker.sock'
+forbid "$runner" 'image:.*:latest([[:space:]]|$)'
+
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'policyTypes:'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'port: 53'
+
 if [[ "$fail" -eq 0 ]]; then
   echo "deploy defaults ok"
 fi

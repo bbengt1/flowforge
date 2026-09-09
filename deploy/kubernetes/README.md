@@ -2,6 +2,21 @@
 
 These manifests are **operator-applied, namespace-scoped** defaults for a FlowForge cluster target. They are metadata that E7.2 workers consume — FlowForge does not apply them itself in E7.1.
 
+## Isolated script runners (E9.2)
+
+[`script-runner-deployment.yaml`](script-runner-deployment.yaml) is the isolated pod template for `script.python` / `script.go`. [`script-runner-networkpolicy.yaml`](script-runner-networkpolicy.yaml) is default-deny egress plus constrained DNS.
+
+Apply in the FlowForge namespace (not a workspace target namespace):
+
+```bash
+kubectl apply -f deploy/kubernetes/script-runner-deployment.yaml
+kubectl apply -f deploy/kubernetes/script-runner-networkpolicy.yaml
+```
+
+Replace `ghcr.io/bbengt1/flowforge-script-runner:foundation` with the digest-pinned image from the published runtime profile before production. Do not mount `docker.sock`, a service-account token, or hostPath.
+
+CI does **not** start these pods. `go test` uses `scripts.HarnessRuntime`, which enforces the same UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / package-install gates without runc. Go binaries in CI are a documented controlled-builder stub (HMAC of the published source digest) that still runs those gates.
+
 ClusterRoles, ClusterRoleBindings, and cluster-scoped resources are **not MVP**.
 
 ## Apply per allowed namespace

@@ -17,18 +17,40 @@ type PublishRules struct {
 	MaxTimeoutSeconds        int      `json:"maxTimeoutSeconds"`
 }
 
-// IsolationRules documents E9.2 runner guarantees (not implemented here).
+// IsolationRules documents E9.2 runner guarantees for Chloe and workers.
 type IsolationRules struct {
-	NonRoot               bool     `json:"nonRoot"`
-	ReadOnlyRootFS        bool     `json:"readOnlyRootFS"`
-	DroppedCapabilities   bool     `json:"droppedCapabilities"`
-	NoNewPrivs            bool     `json:"noNewPrivs"`
-	NoMetadataService     bool     `json:"noMetadataService"`
-	NoHostDockerSocket    bool     `json:"noHostDockerSocket"`
-	RuntimePackageInstall bool     `json:"runtimePackageInstall"`
-	ApprovedImagesOnly    bool     `json:"approvedImagesOnly"`
-	Note                  string   `json:"note"`
-	Hooks                 []string `json:"hooks"`
+	NonRoot                  bool                   `json:"nonRoot"`
+	ReadOnlyRootFS           bool                   `json:"readOnlyRootFS"`
+	DroppedCapabilities      bool                   `json:"droppedCapabilities"`
+	NoNewPrivs               bool                   `json:"noNewPrivs"`
+	NoMetadataService        bool                   `json:"noMetadataService"`
+	NoHostDockerSocket       bool                   `json:"noHostDockerSocket"`
+	RuntimePackageInstall    bool                   `json:"runtimePackageInstall"`
+	ApprovedImagesOnly       bool                   `json:"approvedImagesOnly"`
+	UID                      int                    `json:"uid"`
+	GID                      int                    `json:"gid"`
+	EphemeralWorkspace       string                 `json:"ephemeralWorkspace"`
+	DropCapabilityNames      []string               `json:"dropCapabilityNames"`
+	AllowPrivilegeEscalation bool                   `json:"allowPrivilegeEscalation"`
+	NoServiceAccountMount    bool                   `json:"noServiceAccountMount"`
+	DefaultDenyEgress        bool                   `json:"defaultDenyEgress"`
+	DNSConstrained           bool                   `json:"dnsConstrained"`
+	MetadataCIDRs            []string               `json:"metadataCIDRs"`
+	RuntimeProfile           RuntimeProfileContract `json:"runtimeProfile"`
+	CIHarness                string                 `json:"ciHarness"`
+	KubernetesManifests      []string               `json:"kubernetesManifests"`
+	Note                     string                 `json:"note"`
+	Hooks                    []string               `json:"hooks"`
+}
+
+// RuntimeProfileContract is the pinned ops-config shape the runner consumes.
+type RuntimeProfileContract struct {
+	Language             string   `json:"language"`
+	ImageDigest          string   `json:"imageDigest"`
+	DependencyLockDigest string   `json:"dependencyLockDigest"`
+	Limits               []string `json:"limits"`
+	Egress               string   `json:"egress"`
+	MutableTagsRejected  bool     `json:"mutableTagsRejected"`
 }
 
 // NodeField is an allowlisted with key for Chloe's library/wizard.
@@ -93,20 +115,42 @@ func Catalog() EngineCatalog {
 			MaxTimeoutSeconds:        MaxTimeoutSeconds,
 		},
 		Isolation: IsolationRules{
-			NonRoot:               true,
-			ReadOnlyRootFS:        true,
-			DroppedCapabilities:   true,
-			NoNewPrivs:            true,
-			NoMetadataService:     true,
-			NoHostDockerSocket:    true,
-			RuntimePackageInstall: false,
-			ApprovedImagesOnly:    true,
-			Note:                  "E9.2 implements the isolated runner. E9.1 only packages, scans, signs, and pins.",
-			Hooks:                 []string{"VerifyForDispatch", "RunnerNotImplemented"},
+			NonRoot:                  true,
+			ReadOnlyRootFS:           true,
+			DroppedCapabilities:      true,
+			NoNewPrivs:               true,
+			NoMetadataService:        true,
+			NoHostDockerSocket:       true,
+			RuntimePackageInstall:    false,
+			ApprovedImagesOnly:       true,
+			UID:                      RunnerUID,
+			GID:                      RunnerGID,
+			EphemeralWorkspace:       RunnerWorkspacePath,
+			DropCapabilityNames:      []string{CapabilityDropAll},
+			AllowPrivilegeEscalation: false,
+			NoServiceAccountMount:    true,
+			DefaultDenyEgress:        true,
+			DNSConstrained:           true,
+			MetadataCIDRs:            MetadataCIDRs(),
+			RuntimeProfile: RuntimeProfileContract{
+				Language:             "python|go",
+				ImageDigest:          "sha256:<64 hex>",
+				DependencyLockDigest: "sha256:<64 hex>",
+				Limits:               []string{"cpuMillis", "memoryMib", "timeoutSeconds", "processes"},
+				Egress:               "optional {destinations:[{host,port,protocol}], dnsConstrained:true}; omitted is default-deny",
+				MutableTagsRejected:  true,
+			},
+			CIHarness: "apps/api/internal/scripts HarnessRuntime — enforces UID/FS/caps/no_new_privs/metadata/egress/limits/package-install without starting a container. Full runc/containerd is not required in CI.",
+			KubernetesManifests: []string{
+				"deploy/kubernetes/script-runner-deployment.yaml",
+				"deploy/kubernetes/script-runner-networkpolicy.yaml",
+			},
+			Note:  "E9.2 isolated runner. Execute calls VerifyForDispatch, then HarnessRuntime (CI) or a live Kubernetes Job. Python uses the pinned image+lock; Go uses a controlled-builder signed binary (CI stub still enforces isolation).",
+			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec"},
 		},
 		Hooks: map[string]string{
-			"E9.2": "isolated runner (VerifyForDispatch before exec)",
-			"E9.3": "typed I/O + scoped handles + output redaction",
+			"E9.2": "isolated runner (VerifyForDispatch then Execute)",
+			"E9.3": "typed I/O + scoped handles + output redaction + lease-loss recovery",
 			"E9.4": "artifact revocation + emergency stop",
 		},
 		Nodes:  NodeContracts(),
@@ -131,7 +175,7 @@ func NodeContracts() []NodeContract {
 	return []NodeContract{
 		{
 			Type: NodePython, Language: LanguagePython, Title: "Run Python script",
-			Description:  "Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.",
+			Description:  "Run published signed Python source in an isolated runner (non-root, read-only rootfs, dropped caps, no_new_privs, default-deny egress). Uses the pinned digest-locked image, not draft source.",
 			Permissions:  RequiredPermissions(),
 			RequiredWith: []string{"source", "entrypoint", "runtimeProfileId", "timeoutSeconds"},
 			AllowedWith:  fields,
@@ -140,7 +184,7 @@ func NodeContracts() []NodeContract {
 		},
 		{
 			Type: NodeGo, Language: LanguageGo, Title: "Run Go script",
-			Description:  "Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.",
+			Description:  "Run a precompiled signed Go binary built from the published source in a controlled builder (CI uses a documented stub that still enforces isolation).",
 			Permissions:  RequiredPermissions(),
 			RequiredWith: []string{"source", "entrypoint", "runtimeProfileId", "timeoutSeconds"},
 			AllowedWith:  fields,
@@ -167,7 +211,20 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeArtifactRevoked, Status: 409, Meaning: "E9.4: revoked artifacts cannot start. Hook only in E9.1."},
 		{Code: CodePermissionDenied, Status: 403, Meaning: "Missing workflow.execute, script.run, or runtimeProfile.use."},
 		{Code: CodePolicyDenied, Status: 403, Meaning: "kind=script policy deny."},
-		{Code: CodeRunnerNotImplemented, Status: 501, Meaning: "E9.2 isolated runner is not enabled."},
+		{Code: CodeIsolationDenied, Status: 403, Meaning: "Requested runner environment violates isolation (UID, FS, caps, mounts)."},
+		{Code: CodeRootDenied, Status: 403, Meaning: "Runner UID/GID must be non-root (65532)."},
+		{Code: CodeWritableRootFSDenied, Status: 403, Meaning: "Root filesystem is read-only; only /workspace is writable."},
+		{Code: CodeCapabilityDenied, Status: 403, Meaning: "All Linux capabilities are dropped."},
+		{Code: CodePrivilegeEscalation, Status: 403, Meaning: "no_new_privs is required; privilege escalation is denied."},
+		{Code: CodeMetadataDenied, Status: 403, Meaning: "Cloud instance metadata (169.254.169.254 and equivalents) is denied."},
+		{Code: CodeEgressDenied, Status: 403, Meaning: "Destination is outside the default-deny egress allowlist, or DNS is unconstrained."},
+		{Code: CodePackageInstallDenied, Status: 403, Meaning: "Runtime package installation (pip, go get, apt, …) is denied."},
+		{Code: CodeImageDenied, Status: 400, Meaning: "Arbitrary or mutable base images are denied. imageDigest must be sha256:<hex>."},
+		{Code: CodeDockerSocketDenied, Status: 403, Meaning: "Host Docker socket is denied."},
+		{Code: CodeServiceAccountDenied, Status: 403, Meaning: "Kubernetes service-account mounts are denied (MVP)."},
+		{Code: CodeResourceLimit, Status: 400, Meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile."},
+		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch. The script is not retried (E9.3 recovery hook)."},
+		{Code: CodeRunnerNotImplemented, Status: 501, Meaning: "Live container runtime requested (RequireLiveRuntime) but only the CI harness is available."},
 		{Code: CodeIONotImplemented, Status: 501, Meaning: "E9.3 typed I/O execution is not enabled."},
 		{Code: CodeRevocationNotImplemented, Status: 501, Meaning: "E9.4 revocation API is not enabled."},
 	}

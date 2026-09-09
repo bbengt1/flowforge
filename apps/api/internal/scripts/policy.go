@@ -3,18 +3,10 @@ package scripts
 import "net/http"
 
 // VerifyForDispatch re-checks signature, scan, and mutability immediately
-// before a runner may start. E9.2 must call this on every claim.
+// before a runner may start. Execute calls this on every run.
 //
-// TODO(E9.2): isolated runner — non-root, read-only rootfs, dropped
-// capabilities, no_new_privs, no metadata/socket, controlled egress,
-// approved runtime image + dependency lock.
-//
-// TODO(E9.3): typed I/O — validate input/output against declared schemas,
-// inject only scoped credential handles, redact outputs before persist.
-//
-// TODO(E9.4): revocation / emergency-stop — re-check revoked_at before
-// every dispatch; policy-gated stop that leaves uncertain outcomes
-// indeterminate.
+// Typed I/O (E9.3) and revocation/emergency-stop (E9.4) remain hooks:
+// revoked_at is already fail-closed here; emergency stop is not implemented.
 func VerifyForDispatch(art Artifact, key []byte) error {
 	if art.Status != StatusPublished {
 		return ErrMutable
@@ -55,8 +47,9 @@ func stringsHasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
-// RunnerNotImplemented is the E9.2 hook so execute paths fail closed
-// rather than pretending a container ran.
+// RunnerNotImplemented remains for callers that explicitly require a live
+// container runtime (RequireLiveRuntime). The default path is Execute +
+// HarnessRuntime, which enforces every isolation gate in CI.
 func RunnerNotImplemented() error {
-	return engineError(CodeRunnerNotImplemented, "Isolated script runners are not enabled (E9.2).", http.StatusNotImplemented)
+	return engineError(CodeRunnerNotImplemented, "Live container runtime is not available in this process (CI harness).", http.StatusNotImplemented)
 }

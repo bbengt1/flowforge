@@ -79,6 +79,12 @@ func TestScriptCatalogPublishPinAndIsolation(t *testing.T) {
 		if len(cat.Nodes) != 2 || len(cat.Errors) == 0 {
 			t.Fatalf("catalog nodes/errors = %+v", cat)
 		}
+		if !cat.Isolation.NonRoot || cat.Isolation.UID != scripts.RunnerUID || !cat.Isolation.DefaultDenyEgress {
+			t.Fatalf("isolation = %+v", cat.Isolation)
+		}
+		if cat.Isolation.RuntimePackageInstall || cat.Isolation.AllowPrivilegeEscalation {
+			t.Fatal("package install and privilege escalation must be denied")
+		}
 	})
 
 	t.Run("dedicated publish scan sign pin", func(t *testing.T) {
