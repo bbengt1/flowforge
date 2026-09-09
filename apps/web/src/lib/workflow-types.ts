@@ -160,6 +160,15 @@ export type CatalogRules = {
   triggersAreWorkflowLevel?: boolean;
   graphNodesExcludeTriggers?: boolean;
   unsupportedPhasesRejected?: boolean;
+  integrationActionsEnabled?: boolean;
+};
+
+export type CatalogIntegrationGate = {
+  name?: string;
+  enabled?: boolean;
+  nodes?: string[];
+  suites?: string[];
+  note?: string;
 };
 
 export type CatalogNode = {
@@ -180,6 +189,7 @@ export type CatalogNode = {
 export type WorkflowCatalog = {
   apiVersion: string;
   rules?: CatalogRules;
+  integrationGate?: CatalogIntegrationGate;
   triggers: CatalogTrigger[];
   nodes: CatalogNode[];
 };

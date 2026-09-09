@@ -47,6 +47,11 @@ import {
   isScriptOpsProxySegments,
   retargetScriptOpsApiPath,
 } from "./script-ops-contract.ts";
+import {
+  HTTP_NOTIFICATION_PROXY_ROUTES,
+  isHttpNotificationProxySegments,
+  retargetHttpNotificationApiPath,
+} from "./core-http-notification-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -322,6 +327,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // script-ops-contract.ts. POST /scripts/{id}/revoke and
   // POST /executions/{id}/emergency-stop (+ step twin). CSRF POSTs.
   ...SCRIPT_OPS_PROXY_ROUTES,
+  // E10.4 HTTP/notification catalog (#118). Paths live in
+  // core-http-notification-contract.ts. GET /http/catalog only.
+  // Connection / recipient / template collections stay on ops-config.
+  ...HTTP_NOTIFICATION_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -392,6 +401,8 @@ export function resolveIdentityProxyTarget(
     apiPath = retargetScriptOpsApiPath(mapped);
   } else if (isScriptProxySegments(segments)) {
     apiPath = retargetScriptApiPath(mapped);
+  } else if (isHttpNotificationProxySegments(segments)) {
+    apiPath = retargetHttpNotificationApiPath(mapped);
   }
   return {
     method,

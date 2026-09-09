@@ -152,11 +152,38 @@ export async function getOpsConfigCatalog(
     !Array.isArray(scriptEngineRaw)
       ? stripSecrets(scriptEngineRaw as Record<string, unknown>)
       : undefined;
+  const httpNotificationEngineRaw = payload.httpNotificationEngine;
+  const httpNotificationEngine =
+    httpNotificationEngineRaw &&
+    typeof httpNotificationEngineRaw === "object" &&
+    !Array.isArray(httpNotificationEngineRaw)
+      ? stripSecrets(httpNotificationEngineRaw as Record<string, unknown>)
+      : undefined;
+  const httpEngineRaw = payload.httpEngine;
+  const httpEngine =
+    httpEngineRaw && typeof httpEngineRaw === "object" && !Array.isArray(httpEngineRaw)
+      ? stripSecrets(httpEngineRaw as Record<string, unknown>)
+      : undefined;
+  const notificationEngineRaw = payload.notificationEngine;
+  const notificationEngine =
+    notificationEngineRaw &&
+    typeof notificationEngineRaw === "object" &&
+    !Array.isArray(notificationEngineRaw)
+      ? stripSecrets(notificationEngineRaw as Record<string, unknown>)
+      : undefined;
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    catalog: { kinds, kubernetesEngine, sshEngine, scriptEngine },
+    catalog: {
+      kinds,
+      kubernetesEngine,
+      sshEngine,
+      scriptEngine,
+      httpNotificationEngine,
+      httpEngine,
+      notificationEngine,
+    },
   };
 }
 

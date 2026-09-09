@@ -13,6 +13,8 @@ import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
 import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
+import { getHttpNotificationCatalog } from "@/lib/core-http-notification-client";
+import type { HttpNotificationCatalog } from "@/lib/core-http-notification-contract";
 import { getScriptCatalog } from "@/lib/script-client";
 import type { ScriptNodeCatalog } from "@/lib/script-contract";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
@@ -44,6 +46,9 @@ export function ActionCatalogPage() {
   const [scriptCatalog, setScriptCatalog] = useState<ScriptNodeCatalog | null>(
     null,
   );
+  const [httpCatalog, setHttpCatalog] = useState<HttpNotificationCatalog | null>(
+    null,
+  );
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -54,16 +59,18 @@ export function ActionCatalogPage() {
   async function loadCatalog() {
     setPending(true);
     setProblem(null);
-    const [result, engine, ssh, script] = await Promise.all([
+    const [result, engine, ssh, script, http] = await Promise.all([
       fetchWorkflowCatalog(identity),
       getKubernetesCatalog(identity).catch(() => null),
       getSshCatalog(identity).catch(() => null),
       getScriptCatalog(identity).catch(() => null),
+      getHttpNotificationCatalog(identity).catch(() => null),
     ]);
     setPending(false);
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
     setScriptCatalog(script && script.ok ? script.catalog : null);
+    setHttpCatalog(http && http.ok ? http.catalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -99,7 +106,13 @@ export function ActionCatalogPage() {
       {problem ? <ProblemBanner problem={problem} /> : null}
       <ActionLibrary
         catalog={catalog}
-        entries={adaptActionLibrary(catalog, engineCatalog, sshCatalog, scriptCatalog)}
+        entries={adaptActionLibrary(
+          catalog,
+          engineCatalog,
+          sshCatalog,
+          scriptCatalog,
+          httpCatalog,
+        )}
         query={query}
         pending={pending}
         onQuery={setQuery}

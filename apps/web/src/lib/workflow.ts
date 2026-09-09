@@ -89,12 +89,26 @@ export function isCatalogImplementationEnabled(item: {
 }
 
 /** Palette / catalog list: enabled implementations only. */
+const HTTP_NOTIFICATION_CATALOG_TYPES = new Set([
+  "http.request",
+  "notification.webhook",
+  "notification.email",
+]);
+
 export function coreCatalog(catalog: WorkflowCatalog): WorkflowCatalog {
+  const gateOff =
+    catalog.rules?.integrationActionsEnabled === false ||
+    catalog.integrationGate?.enabled === false;
   return {
     apiVersion: catalog.apiVersion,
     ...(catalog.rules ? { rules: catalog.rules } : {}),
+    ...(catalog.integrationGate ? { integrationGate: catalog.integrationGate } : {}),
     triggers: (catalog.triggers ?? []).filter(isCatalogImplementationEnabled),
-    nodes: (catalog.nodes ?? []).filter(isCatalogImplementationEnabled),
+    nodes: (catalog.nodes ?? [])
+      .filter(isCatalogImplementationEnabled)
+      .filter(
+        (item) => !gateOff || !HTTP_NOTIFICATION_CATALOG_TYPES.has(item.type),
+      ),
   };
 }
 

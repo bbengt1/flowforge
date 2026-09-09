@@ -3,10 +3,10 @@
  * credential selectors, configure safe defaults, map ports, preview
  * policy + redacted YAML, then insert a canonical graph node.
  *
- * Catalog gap (jonny follow-up): k8s / SSH / HTTP / scripts still
- * ship E3.1 stubs (`ports` + `requiredWith`). When `allowedWith` is
- * empty the wizard infers configure fields from family + YAML schema.
- * No extra API routes are invented.
+ * HTTP / notification `allowedWith` comes from GET /workflows/catalog
+ * + GET /http/catalog / ops-config `httpNotificationEngine` (`e104-#118`).
+ * The wizard never invents free-form URL, header, recipient, or
+ * credential fields and does not offer an integration-gate toggle.
  */
 
 import {
@@ -50,6 +50,18 @@ import {
   type ScriptNodeConfigContext,
   type ScriptNodeWithField,
 } from "./script-contract.ts";
+import {
+  defaultHttpNotificationWith,
+  isExposedHttpNotificationField,
+  isHttpConfigurableType,
+  overlayHttpNotificationFields,
+  httpNotificationNodeWithFields,
+  stripHttpNotificationForbiddenWith,
+  validateHttpNotificationConfig,
+  type HttpNotificationCatalog,
+  type HttpNotificationConfigContext,
+  type HttpNotificationWithField,
+} from "./core-http-notification-contract.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
 import { parseScriptEvaluateRetry } from "./script-io-contract.ts";
 import { parseSshEvaluateRetry } from "./ssh-retry-contract.ts";
@@ -151,6 +163,13 @@ export type WizardValidationContext = {
   scriptCatalog?: ScriptNodeCatalog | null;
   runtimeProfileSelectorClosed?: boolean;
   runtimeProfileLanguage?: ScriptNodeConfigContext["profileLanguage"];
+  httpCatalog?: HttpNotificationCatalog | null;
+  connectionSelectorClosed?: boolean;
+  recipientSelectorClosed?: boolean;
+  templateSelectorClosed?: boolean;
+  schemaSelectorClosed?: boolean;
+  connectionType?: HttpNotificationConfigContext["connectionType"];
+  endpointPolicy?: HttpNotificationConfigContext["endpointPolicy"];
 };
 
 export type WizardRecommendation = {
@@ -293,12 +312,10 @@ export function defaultWithForType(type: string): Record<string, unknown> {
   if (isScriptConfigurableType(type)) {
     return defaultScriptWith(type);
   }
+  if (isHttpConfigurableType(type)) {
+    return defaultHttpNotificationWith(type);
+  }
   switch (type) {
-    case "http.request":
-      return { method: "GET", path: "/v1/status", timeoutSeconds: 15 };
-    case "notification.webhook":
-    case "notification.email":
-      return {};
     case "flow.approval":
       return { expiresIn: "PT30M" };
     default:
@@ -317,7 +334,26 @@ export function wizardConfigFields(
   engineCatalog?: KubernetesEngineCatalog | null,
   sshCatalog?: SshNodeCatalog | null,
   scriptCatalog?: ScriptNodeCatalog | null,
+  httpCatalog?: HttpNotificationCatalog | null,
 ): WizardConfigField[] {
+  if (isHttpConfigurableType(type)) {
+    const engineFields = httpCatalog?.nodes.find((item) => item.type === type)
+      ?.allowedWith;
+    const catalogOwnsFields =
+      (engineFields && engineFields.length > 0) ||
+      (entry?.source === "catalog" && (entry.allowedWith?.length ?? 0) > 0);
+    if (catalogOwnsFields) {
+      return overlayHttpNotificationFields(
+        engineFields?.length ? engineFields : (entry?.allowedWith ?? []),
+        type,
+      )
+        .filter((field) => isExposedHttpNotificationField(field.name))
+        .map((field) => fromHttpNotificationWithField(field, false));
+    }
+    return httpNotificationNodeWithFields(type, httpCatalog).map((field) =>
+      fromHttpNotificationWithField(field, entry?.source !== "catalog"),
+    );
+  }
   if (isScriptConfigurableType(type)) {
     const engineFields = scriptCatalog?.nodes.find((item) => item.type === type)
       ?.allowedWith;
@@ -593,6 +629,7 @@ export function validateWizardDraft(
     context.engineCatalog,
     context.sshCatalog,
     context.scriptCatalog,
+    context.httpCatalog,
   );
   for (const field of fields) {
     const value = draft.with[field.name];
@@ -601,7 +638,8 @@ export function validateWizardDraft(
       isEmptyWithValue(value) &&
       !isKubernetesConfigurableType(draft.type) &&
       !isSshConfigurableType(draft.type) &&
-      !isScriptConfigurableType(draft.type)
+      !isScriptConfigurableType(draft.type) &&
+      !isHttpConfigurableType(draft.type)
     ) {
       errors.push(`${field.name} is required.`);
     }
@@ -646,6 +684,20 @@ export function validateWizardDraft(
         profileSelectorClosed: context.runtimeProfileSelectorClosed,
         profileLanguage: context.runtimeProfileLanguage,
         scriptCatalog: context.scriptCatalog,
+      }),
+    );
+  }
+  if (isHttpConfigurableType(draft.type)) {
+    errors.push(
+      ...validateHttpNotificationConfig(draft.type, draft.with, {
+        connectionSelectorClosed: context.connectionSelectorClosed,
+        recipientSelectorClosed: context.recipientSelectorClosed,
+        templateSelectorClosed: context.templateSelectorClosed,
+        schemaSelectorClosed: context.schemaSelectorClosed,
+        connectionType: context.connectionType,
+        endpointPolicy: context.endpointPolicy,
+        httpCatalog: context.httpCatalog,
+        workflowCatalog: catalog,
       }),
     );
   }
@@ -723,7 +775,9 @@ export function sanitizeWizardWith(
       ? stripSshForbiddenWith(value)
       : isScriptConfigurableType(type)
         ? stripScriptForbiddenWith(value)
-        : value;
+        : isHttpConfigurableType(type)
+          ? stripHttpNotificationForbiddenWith(value)
+          : value;
   const out: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(source)) {
     if (!key.trim() || isForbiddenYamlKey(key) || isSecretFieldName(key)) {
@@ -831,6 +885,26 @@ function isExposedKubernetesField(name: string): boolean {
 
 function fromSshWithField(
   field: SshNodeWithField,
+  inferred: boolean,
+): WizardConfigField {
+  return {
+    name: field.name,
+    kind: field.kind,
+    required: field.required === true,
+    control: field.controlHint,
+    enumValues: field.enum,
+    description: field.description ?? "",
+    defaultValue: field.defaultValue ?? "",
+    selectorKind: selectorKindForField(field.name),
+    inferred,
+    label: field.label,
+    advanced: field.advanced,
+    readOnly: field.readOnly,
+  };
+}
+
+function fromHttpNotificationWithField(
+  field: HttpNotificationWithField,
   inferred: boolean,
 ): WizardConfigField {
   return {
@@ -1005,43 +1079,14 @@ function inferredFieldsForType(type: string, requiredWith: string[]): WizardConf
     ];
   }
   if (type === "http.request") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-      field("method", "string", "enum", {
-        enumValues: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        defaultValue: "GET",
-      }),
-      field("path", "string", "text", { required: true, defaultValue: "/v1/status" }),
-      field("timeoutSeconds", "integer", "number", { defaultValue: 15 }),
-      field("responseSchemaRef", "uuid", "uuid", { selectorKind: "response_schema" }),
-    ];
+    return httpNotificationNodeWithFields(type).map((item) =>
+      fromHttpNotificationWithField(item, true),
+    );
   }
-  if (type === "notification.email") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-      field("recipientListId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "recipient_list",
-      }),
-      field("templateId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "message_template",
-      }),
-    ];
-  }
-  if (type === "notification.webhook") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-    ];
+  if (type === "notification.email" || type === "notification.webhook") {
+    return httpNotificationNodeWithFields(type).map((item) =>
+      fromHttpNotificationWithField(item, true),
+    );
   }
   if (type === "flow.approval") {
     return [
