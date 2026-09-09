@@ -44,6 +44,9 @@ func prepareStart(scope isolation.Scope, workflowID string, in StartInput) (prep
 	if policy == nil {
 		policy = map[string]any{}
 	}
+	if t := strings.TrimSpace(in.TriggerType); t != "" {
+		policy["triggerType"] = t
+	}
 	key := strings.TrimSpace(in.IdempotencyKey)
 	var fp string
 	if key != "" {
@@ -115,14 +118,23 @@ func cloneExecution(exec Execution, wf Workflow) Execution {
 }
 
 func startAuditDetails(workflowID string, ver Version, exec Execution, outcome string) map[string]any {
+	triggerType := "manual"
+	if exec.PolicySnapshot != nil {
+		if t, ok := exec.PolicySnapshot["triggerType"].(string); ok && strings.TrimSpace(t) != "" {
+			triggerType = strings.TrimSpace(t)
+		}
+	}
 	details := map[string]any{
 		"actorId":           exec.RequestedBy,
 		"workflowId":        workflowID,
 		"workflowVersionId": ver.ID,
 		"workflowDigest":    ver.Digest,
-		"triggerType":       "manual",
+		"triggerType":       triggerType,
 		"correlationId":     exec.CorrelationID,
 		"outcome":           outcome,
+	}
+	if exec.TriggerID != "" {
+		details["triggerId"] = exec.TriggerID
 	}
 	if exec.IdempotencyKey != "" {
 		details["idempotencyKey"] = exec.IdempotencyKey

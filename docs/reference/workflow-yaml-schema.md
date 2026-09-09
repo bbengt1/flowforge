@@ -69,8 +69,11 @@ Trigger configuration is type-specific and allowlisted. `manual` has no
 user-editable security configuration. It may declare an optional JSON-schema
 subset for authenticated start input (`schema`, `inputSchema`, or
 `with.schema` / `with.inputSchema`). `webhook` stores an opaque generated
-trigger ID and secret reference outside YAML; YAML may declare only the input
-schema and accepted content type. `schedule` requires an IANA timezone, cron or
+trigger ID (`publicId`) and rotatable vault `webhook_secret` reference outside
+YAML; YAML may declare only the input schema (`schema` / `inputSchema` /
+`with.schema` / `with.inputSchema`) and accepted `contentType`
+(`application/json` in MVP). Field mapping, size/rate/concurrency limits, and
+the HMAC secret are admin/API config, not YAML. `schedule` requires an IANA timezone, cron or
 interval expression, explicit overlap policy, and bounded misfire/catch-up
 behavior. Neither trigger configuration nor inputs can override workspace,
 workflow version, target policy, credentials, approval, or node configuration.

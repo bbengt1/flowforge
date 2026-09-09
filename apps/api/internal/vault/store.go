@@ -67,6 +67,7 @@ type Usage struct {
 	Drafts       []wfstore.CredentialRef `json:"drafts"`
 	Versions     []wfstore.CredentialRef `json:"versions"`
 	Executions   []wfstore.CredentialRef `json:"executions"`
+	Triggers     []wfstore.CredentialRef `json:"triggers"`
 }
 
 // DeletionImpact reports what a delete would affect.
@@ -79,6 +80,7 @@ type DeletionImpact struct {
 	Drafts           []wfstore.CredentialRef `json:"drafts"`
 	Versions         []wfstore.CredentialRef `json:"versions"`
 	ActiveExecutions []wfstore.CredentialRef `json:"activeExecutions"`
+	Triggers         []wfstore.CredentialRef `json:"triggers"`
 }
 
 // CreateInput is accepted only at create time. Secret is encrypted before persist.

@@ -266,7 +266,7 @@ func (m *Memory) Usage(ctx context.Context, scope isolation.Scope, id string) (U
 	if err != nil {
 		return Usage{}, err
 	}
-	drafts, versions, execs := m.splitRefs(ctx, scope, id)
+	drafts, versions, execs, triggers := m.splitRefs(ctx, scope, id)
 	return Usage{
 		CredentialID: meta.ID,
 		LastUsedAt:   meta.LastUsedAt,
@@ -275,6 +275,7 @@ func (m *Memory) Usage(ctx context.Context, scope isolation.Scope, id string) (U
 		Drafts:       drafts,
 		Versions:     versions,
 		Executions:   execs,
+		Triggers:     triggers,
 	}, nil
 }
 
@@ -283,18 +284,21 @@ func (m *Memory) DeletionImpact(ctx context.Context, scope isolation.Scope, id s
 	if err != nil {
 		return DeletionImpact{}, err
 	}
-	drafts, versions, execs := m.splitRefs(ctx, scope, id)
+	drafts, versions, execs, triggers := m.splitRefs(ctx, scope, id)
 	impact := DeletionImpact{
 		CredentialID:     meta.ID,
 		DisplayName:      meta.DisplayName,
 		Status:           meta.Status,
-		CanDelete:        len(execs) == 0,
+		CanDelete:        len(execs) == 0 && len(triggers) == 0,
 		Drafts:           drafts,
 		Versions:         versions,
 		ActiveExecutions: execs,
+		Triggers:         triggers,
 	}
-	if !impact.CanDelete {
+	if len(execs) > 0 {
 		impact.BlockReason = "An active execution references this credential."
+	} else if len(triggers) > 0 {
+		impact.BlockReason = "A webhook trigger references this credential."
 	}
 	return impact, nil
 }
@@ -385,14 +389,14 @@ func (m *Memory) recordTest(scope isolation.Scope, id, status, reason string, at
 	return cloneMeta(row.meta), nil
 }
 
-func (m *Memory) splitRefs(ctx context.Context, scope isolation.Scope, id string) (drafts, versions, execs []wfstore.CredentialRef) {
-	drafts, versions, execs = []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}
+func (m *Memory) splitRefs(ctx context.Context, scope isolation.Scope, id string) (drafts, versions, execs, triggers []wfstore.CredentialRef) {
+	drafts, versions, execs, triggers = []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}
 	if m.refs == nil {
-		return drafts, versions, execs
+		return drafts, versions, execs, triggers
 	}
 	found, err := m.refs.FindCredentialRefs(ctx, scope, id)
 	if err != nil {
-		return drafts, versions, execs
+		return drafts, versions, execs, triggers
 	}
 	for _, ref := range found {
 		switch ref.Kind {
@@ -402,9 +406,11 @@ func (m *Memory) splitRefs(ctx context.Context, scope isolation.Scope, id string
 			versions = append(versions, ref)
 		case wfstore.CredentialRefExecution:
 			execs = append(execs, ref)
+		case wfstore.CredentialRefTrigger:
+			triggers = append(triggers, ref)
 		}
 	}
-	return drafts, versions, execs
+	return drafts, versions, execs, triggers
 }
 
 func (m *Memory) lookup(scope isolation.Scope, id string) (memRow, error) {

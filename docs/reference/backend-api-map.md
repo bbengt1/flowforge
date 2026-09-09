@@ -93,7 +93,7 @@ Suggested UI flow:
 5. Rotate: `POST /credentials/{id}/rotate` `{secret}`.
 6. Test: `POST /credentials/{id}/test` → `{result:{status,reason,checkedAt},credential}` (no plaintext).
 7. Disable/enable: `POST .../disable` / `.../enable`.
-8. Usage: `GET .../usage`. Before delete: `GET .../deletion-impact`. Delete only with `{confirm:true}`; `409` while an active execution references the id.
+8. Usage: `GET .../usage`. Before delete: `GET .../deletion-impact`. Delete only with `{confirm:true}`; `409` while an active execution **or webhook trigger** references the id.
 9. Audit: `GET .../events`.
 
 RBAC: `credential.view` list/get/usage/impact/events/catalog; `credential.use` test+use (operator); `credential.manage` create/rotate/disable/enable/delete/patch (admin). Viewer has no credential permissions. Editor/publisher can view metadata only.
@@ -110,8 +110,8 @@ RBAC: `credential.view` list/get/usage/impact/events/catalog; `credential.use` t
 | `POST /api/v1/credentials/{credentialId}/enable` | Re-enable. | `200` | `401` `403` `404` |
 | `POST /api/v1/credentials/{credentialId}/test` | In-process shape check. Requires `credential.use` or `manage`. | `200` `{result,credential}` | `401` `403` `404` |
 | `POST /api/v1/credentials/{credentialId}/use` | Record use; empty body. Requires `credential.use`. | `204` | `401` `403` `404` `409` (disabled/expired) |
-| `GET /api/v1/credentials/{credentialId}/usage` | Last-used + draft/version/execution refs. | `200` | `401` `403` `404` |
-| `GET /api/v1/credentials/{credentialId}/deletion-impact` | Affected drafts/versions/active executions. | `200` `{canDelete,...}` | `401` `403` `404` |
+| `GET /api/v1/credentials/{credentialId}/usage` | Last-used + draft/version/execution/trigger refs. | `200` | `401` `403` `404` |
+| `GET /api/v1/credentials/{credentialId}/deletion-impact` | Affected drafts/versions/active executions/webhook triggers. | `200` `{canDelete,...}` | `401` `403` `404` |
 | `DELETE /api/v1/credentials/{credentialId}` | Delete after `{confirm:true}`. | `204` | `400` `401` `403` `404` `409` |
 | `GET /api/v1/credentials/{credentialId}/events` | Redacted vault audit. | `200` `{items}` | `401` `403` `404` |
 
@@ -682,7 +682,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1/E9.3 add `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, schemas, `retrySafe` / `idempotencyKey` / `verification` / `retryPolicy`, `policy.defaultMaxAttempts=0`, `policy.verification=node-declared-idempotent-hook`). E10.1 adds `triggers[type=manual].start` (route, CSRF, `workflow.execute`, published `workflowVersionId`, required idempotency key, 16 KiB typed input, status map) plus `allowedWith` / `bounds` / `redaction` on the manual trigger. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1/E9.3 add `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, schemas, `retrySafe` / `idempotencyKey` / `verification` / `retryPolicy`, `policy.defaultMaxAttempts=0`, `policy.verification=node-declared-idempotent-hook`). E10.1 adds `triggers[type=manual].start` (route, CSRF, `workflow.execute`, published `workflowVersionId`, required idempotency key, 16 KiB typed input, status map) plus `allowedWith` / `bounds` / `redaction` on the manual trigger. E10.2 adds `triggers[type=webhook].ingress` (public `POST /hooks/{publicId}`, raw-body HMAC, replay/skew/rate, no session/CSRF) and `.admin` (cookie CRUD/rotate, `workflow.edit` / `workflow.view`, secret never returned) plus `allowedWith` (`schema` / `inputSchema` / `contentType`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
@@ -729,7 +729,7 @@ Suggested UI flow:
 
 First-class E10 trigger. **Do not invent** `POST /executions` or webhook/schedule/wait-resume routes here. Extend the existing E5 start path.
 
-**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Suggested screen: workflow run dialog (published-version picker, typed input, idempotency field, CSRF). Catalog: `GET /workflows/catalog` `triggers[]` where `type=manual` (`start`, `allowedWith`, `bounds`, `redaction`). Next proxies stay `/api/control-plane/workflows/{id}/executions`. Wait/resume and webhook/schedule UI stay disabled (E10.2 / E10.3).
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Suggested screen: workflow run dialog (published-version picker, typed input, idempotency field, CSRF). Catalog: `GET /workflows/catalog` `triggers[]` where `type=manual` (`start`, `allowedWith`, `bounds`, `redaction`). Next proxies stay `/api/control-plane/workflows/{id}/executions`. Webhook admin/ingress is E10.2 below. Schedule and wait/resume UI stay disabled (E10.3).
 
 Suggested run-dialog flow:
 
@@ -748,7 +748,67 @@ Suggested run-dialog flow:
 | `input` | no | Object, max 16 KiB. Validated against the published manual trigger schema when declared |
 | `X-CSRF-Token` | browser yes | Cookie session. Header-only callers skip CSRF |
 
-Out of scope: webhook triggers (E10.2), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / notification actions (E10.4), `apps/web` rewrite.
+Out of scope for E10.1: webhook triggers (E10.2 below), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / notification actions (E10.4), `apps/web` rewrite.
+
+## Replay-safe webhooks (E10.2)
+
+First-class E10 trigger. Opaque `publicId` (`wh_` + 64 hex) is generated server-side and is not guessable. Secrets live in the vault as type `webhook_secret` (`secret` field) and are **never** returned, logged, or placed in the URL. YAML may declare only `schema` / `inputSchema` / `contentType`; trigger IDs and secret refs stay outside YAML.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Relates to #107 / Part of #105 — **Keep #107 open**. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on admin POST/PATCH/DELETE. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Suggested screens: workflow trigger settings (create/rotate/disable, copy ingress path, field mapping, limits). Public ingress is origin-less server-to-server; hostile `Origin` still fails closed. Next proxies can expose `/api/control-plane/workflows/{id}/triggers` and `/api/control-plane/triggers/{id}`. Public `POST /api/v1/hooks/{publicId}` is not a browser session route. Schedule + approval wait/resume stay E10.3.
+
+Suggested admin flow:
+
+1. Publish the workflow. Triggers must pin a published `workflowVersionId` (`GET /workflows/{id}/versions`). Drafts are `400`.
+2. Create or pick a vault `webhook_secret`: `POST /credentials` `{type:"webhook_secret",displayName,secret:{secret}}` **or** inline `{secret:{secret}}` on trigger create.
+3. Create: `POST /workflows/{id}/triggers` `{type:"webhook",workflowVersionId,secretCredentialId?,fieldMapping?,contentType?,maxBodyBytes?,clockSkewSeconds?,replayRetentionSeconds?,rateLimitPerMinute?,workspaceRatePerMinute?,maxConcurrency?,workspaceMaxConcurrency?}`. Response includes `id`, opaque `publicId`, `ingressPath`, `secretCredentialId`, `status`, mapping, and limits — never `secret`.
+4. Copy `ingressPath` (`/api/v1/hooks/{publicId}`) and tell senders to sign `v1.{timestamp}.{rawBody}` with HMAC-SHA256. Headers: `X-FlowForge-Timestamp` (unix seconds) and `X-FlowForge-Signature: v1=<hex>`. Optional `Idempotency-Key`; otherwise the server derives `w` + 32 hex.
+5. Rotate: `POST /triggers/{id}/rotate` `{secret:{secret}}`. Same credential id; plaintext never returned. PATCH rejecting `secret` is intentional — rotate is the only write path.
+6. Disable/enable: `POST /triggers/{id}/disable` / `.../enable`. Disabled or unknown public IDs are `404` on ingress (do not leak existence vs disabled).
+7. List/get: `GET /workflows/{id}/triggers`, `GET /triggers/{id}` (UUID or `publicId`). Viewer (`workflow.view`) can list/get; create/update/rotate/disable/enable/delete require `workflow.edit`.
+8. Credential usage/deletion-impact includes `triggers[]`. Delete of a referenced `webhook_secret` is `409`.
+
+Public ingress (`POST /api/v1/hooks/{publicId}`):
+
+1. Lookup opaque id → workspace (no session). Unknown/disabled/unpublished → `404`.
+2. Read the **raw** body first (per-trigger `maxBodyBytes`, default 64 KiB, hard 256 KiB). Oversize → `413`.
+3. `Content-Type` must be `application/json` (MVP). Else `400`.
+4. Timestamp skew (default 300s) → `401`. Signature (`v1` HMAC over `v1.{timestamp}.{raw}`) is verified **before JSON parse**. Bad sig / missing secret → `401`.
+5. Replay of the same signed payload (sha256 retained ≥ skew, default 600s) → `409`. Rate/concurrency (default 60/min trigger, 300 workspace, 5 / 20 in-flight) → `429` `rate-limited`.
+6. Parse JSON object, map allowlisted dotted identifier paths into bounded typed input (16 KiB; schema when the published webhook trigger declares one). Then start with E10.1 idempotency/fingerprint (`triggerType=webhook`, empty actor). `201` new / `200` same fingerprint / `409` fingerprint mismatch. Policy deny `403`; approval-required `409`.
+7. Audit `execution.start` is secret-free and includes `triggerType`, `triggerId`, version/digest, correlation, idempotency key, and outcome. Raw bodies and secrets are never logged.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `workflowVersionId` | create yes | Published version UUID |
+| `secretCredentialId` | create unless `secret` | Active vault `webhook_secret` |
+| `secret` | create alt / rotate yes | `{secret:"..."}` only. Never returned |
+| `fieldMapping` | no | Destination identifier → dotted source path. Empty copies the root object |
+| `contentType` | no | `application/json` only in MVP |
+| `maxBodyBytes` | no | Default 65536, hard 262144 |
+| `clockSkewSeconds` | no | Default 300, hard 3600 |
+| `replayRetentionSeconds` | no | ≥ skew, default 600, hard 7200 |
+| `rateLimitPerMinute` | no | Default 60, hard 600 |
+| `workspaceRatePerMinute` | no | Default 300, hard 3000 |
+| `maxConcurrency` | no | Default 5, hard 20 |
+| `workspaceMaxConcurrency` | no | Default 20, hard 100 |
+| `X-CSRF-Token` | admin browser yes | Cookie session. Header-only callers skip CSRF |
+| `X-FlowForge-Timestamp` | ingress yes | Unix seconds |
+| `X-FlowForge-Signature` | ingress yes | `v1=<hex>` HMAC-SHA256 |
+| `Idempotency-Key` | ingress no | Else derived from publicId+timestamp+raw |
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workflows/{workflowId}/triggers` | List webhook triggers for one workflow. Requires `workflow.view`. | `200` `{items}` | `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/triggers` | Create. Pins published version + vault secret. Requires `workflow.edit` + CSRF. | `201` trigger | `400` `401` `403` `404` |
+| `GET /api/v1/triggers/{triggerId}` | Metadata (UUID or `publicId`). Requires `workflow.view`. | `200` trigger | `401` `403` `404` |
+| `PATCH /api/v1/triggers/{triggerId}` | Safe config (version, mapping, limits, credential ref). `secret` rejected. | `200` trigger | `400` `401` `403` `404` |
+| `DELETE /api/v1/triggers/{triggerId}` | Delete trigger. Requires `workflow.edit` + CSRF. | `204` | `401` `403` `404` |
+| `POST /api/v1/triggers/{triggerId}/rotate` | Rotate vault `webhook_secret`. Body `{secret:{secret}}`. | `200` trigger | `400` `401` `403` `404` |
+| `POST /api/v1/triggers/{triggerId}/disable` | Disable; ingress becomes `404`. | `200` trigger | `401` `403` `404` |
+| `POST /api/v1/triggers/{triggerId}/enable` | Re-enable. | `200` trigger | `401` `403` `404` |
+| `POST /api/v1/hooks/{publicId}` | Public replay-safe ingress. No session/CSRF. | `201` / `200` execution | `400` `401` `404` `409` `413` `429` |
+
+Out of scope: `apps/web` rewrite (Chloe), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / `notification.webhook` / `notification.email` (E10.4).
 
 ## Durable executions (E5.1)
 

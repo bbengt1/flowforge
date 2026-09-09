@@ -16,6 +16,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -326,13 +327,15 @@ func seededWorkspaceWithClock(t *testing.T, now func() time.Time) (http.Handler,
 	keys := vault.TestKeys()
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
+	hooks := webhook.NewMemory()
 	h := NewWithDeps(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
 		Sessions:  session.NewMemory(),
 		Workflows: workflows,
 		Ops:       ops,
-		Vault:     vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops}),
+		Hooks:     hooks,
+		Vault:     vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops, hooks}),
 		Keys:      keys,
 		Approvals: approval.NewMemory(),
 		Now:       now,

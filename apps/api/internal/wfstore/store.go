@@ -377,6 +377,7 @@ type StartInput struct {
 	Input          map[string]any
 	CorrelationID  string
 	TriggerID      string
+	TriggerType    string
 	PolicySnapshot map[string]any
 	HostContext    map[string]any
 }
@@ -507,6 +508,7 @@ const (
 	CredentialRefDraft     = "draft"
 	CredentialRefVersion   = "version"
 	CredentialRefExecution = "execution"
+	CredentialRefTrigger   = "trigger"
 )
 
 // CredentialRef is a secret-free pointer from a workflow document or pin

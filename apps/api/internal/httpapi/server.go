@@ -20,6 +20,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
 	"gopkg.in/yaml.v3"
@@ -34,6 +35,7 @@ type Server struct {
 	sessions         session.Store
 	workflows        wfstore.Store
 	vault            vault.Store
+	hooks            webhook.Store
 	ops              opsconfig.Store
 	approvals        approval.Store
 	alerts           opsalert.Store
@@ -58,6 +60,7 @@ type Deps struct {
 	Sessions         session.Store
 	Workflows        wfstore.Store
 	Vault            vault.Store
+	Hooks            webhook.Store
 	Ops              opsconfig.Store
 	Approvals        approval.Store
 	Alerts           opsalert.Store
@@ -119,12 +122,19 @@ func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.
 	return nil, isolation.NewMemory(), session.NewMemory(), wfstore.NewMemory()
 }
 
-func inferVault(db postgres.Checker, keys vault.Keys, workflows wfstore.Store, ops opsconfig.Store) vault.Store {
-	refs := vault.CompositeRefFinder{workflows, ops}
+func inferVault(db postgres.Checker, keys vault.Keys, workflows wfstore.Store, ops opsconfig.Store, hooks webhook.Store) vault.Store {
+	refs := vault.CompositeRefFinder{workflows, ops, hooks}
 	if p, ok := db.(*postgres.Pool); ok {
 		return vault.NewPostgres(p, keys, refs)
 	}
 	return vault.NewMemory(keys, refs)
+}
+
+func inferHooks(db postgres.Checker) webhook.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return webhook.NewPostgres(p)
+	}
+	return webhook.NewMemory()
 }
 
 func inferOps(db postgres.Checker) opsconfig.Store {
@@ -189,9 +199,13 @@ func newServer(d Deps) http.Handler {
 	if alertStore == nil {
 		alertStore = inferAlerts(d.DB)
 	}
+	hookStore := d.Hooks
+	if hookStore == nil {
+		hookStore = inferHooks(d.DB)
+	}
 	vaultStore := d.Vault
 	if vaultStore == nil {
-		vaultStore = inferVault(d.DB, keys, workflows, opsStore)
+		vaultStore = inferVault(d.DB, keys, workflows, opsStore, hookStore)
 	}
 	clock := d.Now
 	if clock == nil {
@@ -235,6 +249,7 @@ func newServer(d Deps) http.Handler {
 		sessions:         sessions,
 		workflows:        workflows,
 		vault:            vaultStore,
+		hooks:            hookStore,
 		ops:              opsStore,
 		approvals:        approvalStore,
 		alerts:           alertStore,
@@ -299,6 +314,15 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}", s.getWorkflowVersion)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/export", s.exportWorkflowVersion)
 	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore", s.restoreWorkflowVersion)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/triggers", s.listWorkflowTriggers)
+	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/triggers", s.createWorkflowTrigger)
+	mux.HandleFunc("GET /api/v1/triggers/{triggerId}", s.getTrigger)
+	mux.HandleFunc("PATCH /api/v1/triggers/{triggerId}", s.updateTrigger)
+	mux.HandleFunc("POST /api/v1/triggers/{triggerId}/rotate", s.rotateTrigger)
+	mux.HandleFunc("POST /api/v1/triggers/{triggerId}/disable", s.disableTrigger)
+	mux.HandleFunc("POST /api/v1/triggers/{triggerId}/enable", s.enableTrigger)
+	mux.HandleFunc("DELETE /api/v1/triggers/{triggerId}", s.deleteTrigger)
+	mux.HandleFunc("POST /api/v1/hooks/{publicId}", s.deliverWebhook)
 	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/executions", s.startWorkflowExecution)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions", s.listWorkflowExecutions)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions/{executionId}", s.getWorkflowExecution)

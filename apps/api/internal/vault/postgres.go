@@ -356,7 +356,7 @@ func (p *Postgres) Usage(ctx context.Context, scope isolation.Scope, id string) 
 	if err != nil {
 		return Usage{}, err
 	}
-	drafts, versions, execs := p.splitRefs(ctx, scope, id)
+	drafts, versions, execs, triggers := p.splitRefs(ctx, scope, id)
 	return Usage{
 		CredentialID: meta.ID,
 		LastUsedAt:   meta.LastUsedAt,
@@ -365,6 +365,7 @@ func (p *Postgres) Usage(ctx context.Context, scope isolation.Scope, id string) 
 		Drafts:       drafts,
 		Versions:     versions,
 		Executions:   execs,
+		Triggers:     triggers,
 	}, nil
 }
 
@@ -373,18 +374,21 @@ func (p *Postgres) DeletionImpact(ctx context.Context, scope isolation.Scope, id
 	if err != nil {
 		return DeletionImpact{}, err
 	}
-	drafts, versions, execs := p.splitRefs(ctx, scope, id)
+	drafts, versions, execs, triggers := p.splitRefs(ctx, scope, id)
 	impact := DeletionImpact{
 		CredentialID:     meta.ID,
 		DisplayName:      meta.DisplayName,
 		Status:           meta.Status,
-		CanDelete:        len(execs) == 0,
+		CanDelete:        len(execs) == 0 && len(triggers) == 0,
 		Drafts:           drafts,
 		Versions:         versions,
 		ActiveExecutions: execs,
+		Triggers:         triggers,
 	}
-	if !impact.CanDelete {
+	if len(execs) > 0 {
 		impact.BlockReason = "An active execution references this credential."
+	} else if len(triggers) > 0 {
+		impact.BlockReason = "A webhook trigger references this credential."
 	}
 	return impact, nil
 }
@@ -508,14 +512,14 @@ func (p *Postgres) unlockRow(ctx context.Context, scope isolation.Scope, id stri
 	return plain, meta, nil
 }
 
-func (p *Postgres) splitRefs(ctx context.Context, scope isolation.Scope, id string) (drafts, versions, execs []wfstore.CredentialRef) {
-	drafts, versions, execs = []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}
+func (p *Postgres) splitRefs(ctx context.Context, scope isolation.Scope, id string) (drafts, versions, execs, triggers []wfstore.CredentialRef) {
+	drafts, versions, execs, triggers = []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}, []wfstore.CredentialRef{}
 	if p.refs == nil {
-		return drafts, versions, execs
+		return drafts, versions, execs, triggers
 	}
 	found, err := p.refs.FindCredentialRefs(ctx, scope, id)
 	if err != nil {
-		return drafts, versions, execs
+		return drafts, versions, execs, triggers
 	}
 	for _, ref := range found {
 		switch ref.Kind {
@@ -525,9 +529,11 @@ func (p *Postgres) splitRefs(ctx context.Context, scope isolation.Scope, id stri
 			versions = append(versions, ref)
 		case wfstore.CredentialRefExecution:
 			execs = append(execs, ref)
+		case wfstore.CredentialRefTrigger:
+			triggers = append(triggers, ref)
 		}
 	}
-	return drafts, versions, execs
+	return drafts, versions, execs, triggers
 }
 
 const metaColumns = `
