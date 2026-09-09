@@ -51,9 +51,13 @@ export function ActionCatalogPage() {
   }
 
   useEffect(() => {
-    if (canCall) {
-      void loadCatalog();
+    if (!canCall) {
+      return;
     }
+    const timer = window.setTimeout(() => {
+      void loadCatalog();
+    }, 0);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canCall]);
 

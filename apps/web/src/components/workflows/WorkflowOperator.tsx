@@ -259,7 +259,10 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     if (!canCall || catalog) {
       return;
     }
-    void loadCatalog();
+    const timer = window.setTimeout(() => {
+      void loadCatalog();
+    }, 0);
+    return () => window.clearTimeout(timer);
     // loadCatalog is recreated each render; catalog presence is the latch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canCall]);
