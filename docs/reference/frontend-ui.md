@@ -693,7 +693,7 @@ Operator surfaces: action library (HTTP / Notifications families), Add-action wi
 
 ## E11.1 embed SDK/contract (API → UI)
 
-Jonny's mint/exchange + route map is on this PR (`e111-#121`). Relates to #121 / Part of #120 — **Keep #121 open**. Chloe owns the embed shell. `apps/web` ships only `src/lib/embed-contract.ts` plus `/embed/v1` rewrites so the canonical pages mount. Do not invent a second UI. Cookie session after exchange + `X-CSRF-Token` on later mutations. CamelCase mint JSON. RFC 9457.
+Jonny's mint/exchange + route map is squash-merged as **#125** (`e111-#125`). Relates to #121 / Part of #120 — **Keep #121 open**. Chloe owns the embed shell. Adapter: `apps/web/src/lib/embed-contract.ts`. Next rewrites `/embed/v1` onto the canonical pages — do not invent a second UI. Cookie session after exchange + `X-CSRF-Token` on later mutations. CamelCase mint JSON. RFC 9457. Wire exactly as `docs/reference/embed-sdk.md`.
 
 **Host flow**
 
@@ -725,6 +725,17 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |
 
 Do not implement E11.2 durable `jti` consume / key rotation / tenancy propagation, or E11.3 Portal adapter, in the embed-shell PR.
+
+## E11.1 embed shell (Chloe UI)
+
+Thin chrome + exchange gate on the #125 map. `apps/api` is unchanged. Relates to #121 / Part of #120 — **Keep #121 open**.
+
+- **Mount:** `/embed/v1` (same standalone hrefs under rewrite). `/embed` redirects to `/embed/v1` only — not a parallel product tree.
+- **Exchange:** `POST /embed/exchange` `{assertion, sdk?: "embed.v1"}` body-only. CSRF-exempt. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. Nested `assertion` is metadata (no compact JWS). Forget the JWS after POST.
+- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint.
+- **postMessage:** `{type:"flowforge.embed.assertion",version:1,assertion}`. Cross-origin parents must be in `WEB_EMBED_FRAME_ANCESTORS` / `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS`. Same-origin is accepted.
+- **Secrets:** assertion never in query, hash, path, or `localStorage`. Host query values are display-only until exchange. Workspace lookup after exchange uses API `workspace` / `tenant`, not host query.
+- **CSP:** standalone stays `frame-ancestors 'none'` / `X-Frame-Options: DENY`. `WEB_EMBED_FRAME_ANCESTORS` relaxes framing on `/embed/v1` only.
 
 ## Required validation
 

@@ -12,14 +12,31 @@ import {
   EMBED_REQUIRED_CLAIMS,
   EMBED_ROUTES,
   EMBED_SDK,
+  EMBED_API_PR,
+  EMBED_EPIC,
+  EMBED_ROUTE_MAP_SOURCE,
+  EMBED_STORY,
   assertionFromURL,
+  buildEmbedExchangeBody,
   embedApiPath,
+  embedAuthFailureMessage,
   embedMountPath,
+  embedPostMessageAllowlist,
+  forgetEmbedAssertion,
   frameAncestorsForPath,
+  isAllowedEmbedMessageOrigin,
+  isCompactJws,
   isEmbedMountPath,
+  isEmbedUiPath,
+  parseEmbedAssertionMessage,
+  parseEmbedExchangePayload,
   parseEmbedFrameAncestors,
+  parseEmbedHostDisplay,
+  publicJwksOnly,
   standalonePathFromEmbed,
   stripAssertionParams,
+  urlRejectedAssertion,
+  validateEmbedAssertion,
 } from "./embed-contract.ts";
 import { csrfRequiredFor } from "./session-contract.ts";
 
@@ -73,5 +90,117 @@ describe("embed-contract", () => {
       "https://portal.example",
     );
     assert.equal(frameAncestorsForPath("/embed/v1", {}), "'none'");
+  });
+
+  it("cites #125 / #121 and keeps the published mount map", () => {
+    assert.equal(EMBED_STORY, 121);
+    assert.equal(EMBED_EPIC, 120);
+    assert.equal(EMBED_API_PR, 125);
+    assert.equal(EMBED_ROUTE_MAP_SOURCE, "e111-#125");
+    assert.equal(isEmbedUiPath("/embed/v1/workflows"), true);
+    assert.equal(isEmbedUiPath("/embed"), false);
+    assert.equal(isEmbedUiPath(null), false);
+  });
+
+  it("validates body-only compact JWS and forgets the holder", () => {
+    const sample = "eyJhbGciOiJFZERTQSJ9.eyJhdWQiOiJmbG93Zm9yZ2UifQ.signature";
+    const valid = validateEmbedAssertion(sample);
+    assert.equal(valid.ok, true);
+    if (valid.ok) {
+      assert.deepEqual(valid.body, { assertion: sample, sdk: EMBED_SDK });
+    }
+    assert.equal(validateEmbedAssertion("").ok, false);
+    assert.equal(validateEmbedAssertion("not-a-jws").ok, false);
+    assert.equal(isCompactJws(sample), true);
+    const holder = { assertion: sample };
+    assert.equal(forgetEmbedAssertion(holder), "");
+    assert.equal(holder.assertion, "");
+    assert.deepEqual(buildEmbedExchangeBody(` ${sample} `), {
+      assertion: sample,
+      sdk: "embed.v1",
+    });
+  });
+
+  it("rejects assertion tokens in query or hash and never reads them", () => {
+    assert.equal(urlRejectedAssertion("?tab=run", "#schedules"), false);
+    assert.equal(urlRejectedAssertion("?assertion=eyJ"), true);
+    assert.equal(urlRejectedAssertion("", "#token=eyJ"), true);
+    assert.equal(assertionFromURL("/embed/v1/workflows/abc?assertion=eyJ"), null);
+  });
+
+  it("parses #125 exchange metadata and strips a leaked compact JWS", () => {
+    const sample = "eyJhbGciOiJFZERTQSJ9.eyJhdWQiOiJmbG93Zm9yZ2UifQ.signature";
+    const parsed = parseEmbedExchangePayload({
+      session: { id: "sess-1" },
+      principal: { issuer: "https://host", external_subject: "ada" },
+      csrf_token: "csrf-1",
+      assertion: {
+        sdk: "embed.v1",
+        tokenId: "jti-1",
+        audience: "flowforge",
+        tenantId: "ten-1",
+        workbenchKey: "ops",
+        assertion: sample,
+      },
+      workspace: {
+        id: "ws-1",
+        tenant_id: "ten-1",
+        workbench_key: "ops",
+        name: "Ops",
+      },
+      tenant: { id: "ten-1", slug: "acme", name: "Acme" },
+      capabilities: ["workflow.view"],
+    });
+    assert.equal(parsed.leaked, true);
+    assert.deepEqual(parsed.strippedKeys, ["assertion.assertion"]);
+    assert.equal(parsed.context.audience, "flowforge");
+    assert.equal(parsed.context.sdk, "embed.v1");
+    assert.equal(parsed.context.tenantSlug, "acme");
+    assert.equal(parsed.context.workbenchKey, "ops");
+    assert.equal(parsed.context.workspaceId, "ws-1");
+    assert.deepEqual(parsed.context.capabilities, ["workflow.view"]);
+  });
+
+  it("accepts versioned postMessage and public JWKS only", () => {
+    const sample = "eyJhbGciOiJFZERTQSJ9.eyJhdWQiOiJmbG93Zm9yZ2UifQ.signature";
+    const message = parseEmbedAssertionMessage({
+      type: "flowforge.embed.assertion",
+      version: 1,
+      assertion: sample,
+    });
+    assert.equal(message?.assertion, sample);
+    assert.equal(
+      parseEmbedAssertionMessage({ type: "other", assertion: sample }),
+      null,
+    );
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://portal.example", [
+        "https://portal.example",
+      ]),
+      true,
+    );
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://portal.example", []),
+      false,
+    );
+    assert.deepEqual(
+      embedPostMessageAllowlist({
+        WEB_EMBED_FRAME_ANCESTORS: "https://portal.example",
+      }),
+      ["https://portal.example"],
+    );
+    const jwks = publicJwksOnly({
+      keys: [{ kty: "OKP", crv: "Ed25519", x: "abc", d: "SECRET", seed: "nope" }],
+    });
+    assert.equal(jwks.leaked, true);
+    assert.equal("d" in jwks.keys[0], false);
+    assert.equal("seed" in jwks.keys[0], false);
+    assert.equal(jwks.keys[0]?.x, "abc");
+    const display = parseEmbedHostDisplay(
+      new URLSearchParams({ tenant: "acme", workbench: "ops" }),
+    );
+    assert.equal(display.tenant, "acme");
+    assert.equal(display.unverified, true);
+    assert.match(embedAuthFailureMessage({ status: 409, code: "replay" }), /single-use/);
   });
 });
