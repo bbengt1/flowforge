@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
 
 func normalizeLease(d time.Duration) time.Duration {
@@ -62,10 +63,16 @@ func retryPolicy(nodeType string) (safe bool, maxRetries int) {
 	if strings.HasPrefix(nodeType, "data.") || strings.HasPrefix(nodeType, "flow.") {
 		return true, DefaultRetrySafeMax
 	}
+	if nodeType == ssh.NodeSSHRun {
+		return false, ssh.DefaultMaxAttempts
+	}
 	return false, 0
 }
 
 func canRetryStep(step ExecutionStep) error {
+	if step.NodeType == ssh.NodeSSHRun {
+		return canRetrySSHStep(step)
+	}
 	switch step.Status {
 	case ExecutionFailed, ExecutionCanceled:
 	default:
@@ -79,6 +86,88 @@ func canRetryStep(step ExecutionStep) error {
 		return ErrRetryNotAllowed
 	}
 	return nil
+}
+
+func canRetrySSHStep(step ExecutionStep) error {
+	switch step.Status {
+	case ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate:
+	default:
+		return ErrRetryNotAllowed
+	}
+	eval := sshRetryEval(step)
+	dec := ssh.EvaluateRetry(eval)
+	if dec.Allowed {
+		return nil
+	}
+	if dec.Code == ssh.CodeRetryDenied {
+		return ErrRetryDenied
+	}
+	return ErrRetryNotAllowed
+}
+
+func sshRetryEval(step ExecutionStep) ssh.RetryEval {
+	max := ssh.MaxAttemptsFromWith(step.Input)
+	safe, hasVerify := sshRetryFlags(step)
+	return ssh.RetryEval{
+		Status:             step.Status,
+		Attempt:            step.Attempt,
+		MaxAttempts:        max,
+		RetrySafe:          safe,
+		HasVerification:    hasVerify,
+		PriorIndeterminate: step.Status == ExecutionIndeterminate,
+	}
+}
+
+func sshRetryFlags(step ExecutionStep) (retrySafe bool, hasVerification bool) {
+	retrySafe, hasVerification = boolFrom(step.PolicySnapshot, "retrySafe"), boolFrom(step.PolicySnapshot, "verificationDeclared") || mapFrom(step.PolicySnapshot, "verification") != nil
+	if retry, ok := step.Output["retry"].(map[string]any); ok {
+		if v, exists := retry["retrySafe"]; exists {
+			retrySafe, _ = v.(bool)
+		}
+		if v, exists := retry["verificationDeclared"]; exists {
+			hasVerification, _ = v.(bool)
+		}
+		if v, exists := retry["requiresVerification"]; exists && !hasVerification {
+			hasVerification, _ = v.(bool)
+		}
+	}
+	if retry, ok := step.Error["retry"].(map[string]any); ok {
+		if v, exists := retry["retrySafe"]; exists {
+			retrySafe, _ = v.(bool)
+		}
+		if v, exists := retry["verificationDeclared"]; exists {
+			hasVerification, _ = v.(bool)
+		}
+	}
+	return retrySafe, hasVerification
+}
+
+func applyRetryHint(step *ExecutionStep, hint map[string]any) {
+	if step == nil || hint == nil {
+		return
+	}
+	if step.PolicySnapshot == nil {
+		step.PolicySnapshot = map[string]any{}
+	}
+	for k, v := range hint {
+		step.PolicySnapshot[k] = v
+	}
+}
+
+func boolFrom(m map[string]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	b, _ := m[key].(bool)
+	return b
+}
+
+func mapFrom(m map[string]any, key string) map[string]any {
+	if m == nil {
+		return nil
+	}
+	v, _ := m[key].(map[string]any)
+	return v
 }
 
 func jobIsOpen(status string) bool {

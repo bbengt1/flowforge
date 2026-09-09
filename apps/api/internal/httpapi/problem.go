@@ -24,6 +24,7 @@ const (
 	CodeInternalError         = "internal-error"
 	CodeDependencyUnavailable = "dependency-unavailable"
 	CodeInvalidWorkflow       = "invalid-workflow"
+	CodeRetryDenied           = "retry-denied"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

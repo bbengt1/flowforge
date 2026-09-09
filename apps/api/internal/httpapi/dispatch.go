@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,7 +9,10 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 type claimJobRequest struct {
@@ -252,12 +256,65 @@ func (s *Server) retryExecution(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := s.workflows.RetryStep(r.Context(), scope, s.now(), executionID, stepID)
+	hint := s.sshRetryHint(r.Context(), scope, executionID, stepID)
+	result, err := s.workflows.RetryStep(r.Context(), scope, s.now(), executionID, stepID, hint)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, retryResponse{Execution: result.Execution, Step: result.Step, Job: result.Job})
+}
+
+func (s *Server) sshRetryHint(ctx context.Context, scope isolation.Scope, executionID, stepID string) map[string]any {
+	if s.ops == nil || s.workflows == nil {
+		return nil
+	}
+	step, err := s.workflows.GetStep(ctx, scope, executionID, stepID)
+	if err != nil || step.NodeType != ssheng.NodeSSHRun {
+		return nil
+	}
+	exec, err := s.workflows.GetExecutionByID(ctx, scope, executionID)
+	if err != nil {
+		return nil
+	}
+	ver, err := s.workflows.GetVersion(ctx, scope, exec.WorkflowID, exec.WorkflowVersionID)
+	if err != nil {
+		return nil
+	}
+	pins, err := s.ops.ListPins(ctx, scope, opsconfig.OwnerExecution, executionID)
+	if err != nil || len(pins) == 0 {
+		pins, err = s.ops.ListPins(ctx, scope, opsconfig.OwnerWorkflowVersion, exec.WorkflowVersionID)
+		if err != nil {
+			return nil
+		}
+	}
+	res, errs := workflow.ParseAndNormalize([]byte(ver.DefinitionYAML))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return nil
+	}
+	var profileID string
+	for _, node := range res.Document.Spec.Nodes {
+		if node.ID == step.NodeID && node.Type == ssheng.NodeSSHRun {
+			profileID, _ = node.With["commandProfileId"].(string)
+			break
+		}
+	}
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return nil
+	}
+	for _, pin := range pins {
+		if pin.Kind == opsconfig.KindCommandProfile && pin.ResourceID == profileID {
+			retrySafe, _ := pin.Spec["retrySafe"].(bool)
+			_, hasVerify := pin.Spec["verification"].(map[string]any)
+			return map[string]any{
+				"retrySafe":              retrySafe,
+				"verificationDeclared":   hasVerify,
+				"maxAttempts":            ssheng.MaxAttemptsFromWith(step.Input),
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) now() time.Time {

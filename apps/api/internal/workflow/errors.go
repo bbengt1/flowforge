@@ -53,6 +53,7 @@ const (
 	CodeInvalidSchema        = "invalid-schema"
 	CodeDurationLimit        = "duration-limit"
 	CodeExpressionForbidden  = "expression-forbidden"
+	CodeRetryDenied          = "retry-denied"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {

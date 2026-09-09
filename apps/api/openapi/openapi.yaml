@@ -4587,9 +4587,41 @@ components:
           type: object
           properties:
             defaultMaxAttempts: {type: integer}
+            maxAttempts: {type: integer}
             retrySafeFlag: {type: string}
             semantics: {type: string}
             note: {type: string}
+            blindRetry: {type: boolean}
+            leaseLossOutcome: {type: string}
+            unknownOutcome: {type: string}
+            requiresVerificationWhenRetrySafe: {type: boolean}
+            verification: {type: string}
+            whenRetryAllowed: {type: string}
+            states:
+              type: array
+              items: {type: string}
+            ui:
+              type: object
+              properties:
+                indeterminateBadge: {type: string}
+                retrySafeFlag: {type: string}
+                retryEnabledWhen: {type: string}
+                hideRetryWhen: {type: string}
+                neverAssumeAbsent: {type: boolean}
+            probe:
+              type: object
+              properties:
+                requiredWhenRetrySafe: {type: boolean}
+                field: {type: string}
+                template: {type: string}
+                expectExitCodeDefault: {type: integer}
+                onMatchDefault: {type: string}
+                onMismatchDefault: {type: string}
+                onError: {type: string}
+                outcomes:
+                  type: array
+                  items: {type: string}
+                note: {type: string}
         publishRules:
           type: object
           properties:
@@ -4951,6 +4983,7 @@ components:
             - internal-error
             - dependency-unavailable
             - invalid-workflow
+            - retry-denied
         request_id:
           type: string
         errors:

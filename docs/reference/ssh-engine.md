@@ -20,7 +20,9 @@ The worker never exposes an interactive shell. It uses key authentication, verif
 
 FlowForge requires `workflow.execute`, `ssh.run`, `sshTarget.use`, and `commandProfile.use`; target policy can further restrict profiles, users, environments, and approvals. Each run records workspace, target, profile revision, parameter names (redacted values where sensitive), actor, host-embed context, correlation ID, exit outcome, and artifact references.
 
-Automatic retries default to zero because remote side effects may not be idempotent. A profile may explicitly mark itself retry-safe and define a bounded retry policy. If the worker loses its lease after dispatch, FlowForge reports an indeterminate outcome until an idempotent profile-specific verification confirms state; it never blindly repeats the command.
+Automatic retries default to zero because remote side effects may not be idempotent. A profile may explicitly mark itself retry-safe (`retrySafe=true`) **and** declare an idempotent `verification` probe plus a bounded `retryPolicy.maxAttempts` (1–5). If the worker loses its lease after dispatch, or the provider outcome is unknown, FlowForge reports `indeterminate` until that probe confirms remote state; it never blindly repeats the mutating command.
+
+Verification contract: `verification.template` is a reviewed `{name}` probe using the same `parameterSchema`. `onMatch` defaults to `already-applied` (resolve success, do not re-run). `onMismatch` defaults to `safe-to-retry` (allow one more mutating attempt). `onError` is `indeterminate`. Step/execution retry APIs use the same rules and return `retry-denied` when they are not met.
 
 ## Initial implementation layout
 
@@ -30,13 +32,16 @@ E8.1 (control-plane) lives on the E4.2 ops-config store. Isolated execution is E
 internal/ssh/
   model.go target.go schema.go render.go policy.go catalog.go
   errors.go handle.go resolve.go client.go execute.go redaction.go audit.go
+  retry.go verify.go
 internal/workflow/ssh_contract.go
 internal/opsconfig/          # ssh_target + command_profile kinds, pins
 internal/httpapi/opsconfig.go
 GET /api/v1/ssh/catalog
 ```
 
-E8.2 worker isolation: ephemeral credential handle (privateKey never exported), known-host fingerprint verification (mismatch fails closed), approved resolver + allowlist of every resolved address, connect only to the verified IP, key-only auth, bounded timeouts, non-root remote account (default `flowforge`). Password auth, agent/port forwarding, proxy commands, host-key auto-accept, and interactive shells are hard-denied. `retryPolicy.maxAttempts` defaults to 0; E8.2 never blindly re-runs. Lease loss is `indeterminate` (E8.3 verification stub).
+E8.2 worker isolation: ephemeral credential handle (privateKey never exported), known-host fingerprint verification (mismatch fails closed), approved resolver + allowlist of every resolved address, connect only to the verified IP, key-only auth, bounded timeouts, non-root remote account (default `flowforge`). Password auth, agent/port forwarding, proxy commands, host-key auto-accept, and interactive shells are hard-denied.
+
+E8.3 retry/indeterminate: `retryPolicy.maxAttempts` defaults to 0 everywhere (node, catalog, evaluate, retry APIs). Retries require pinned `retrySafe` + `verification` + remaining attempts. Lease loss / unknown outcome → `indeterminate` (never a silent re-run). A later attempt runs the probe first; `already-applied` succeeds without re-running.
 
 ## Required validation
 

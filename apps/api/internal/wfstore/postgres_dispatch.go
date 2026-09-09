@@ -281,7 +281,7 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	return exec, nil
 }
 
-func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string) (RetryResult, error) {
+func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {
 	if scope.Zero() {
 		return RetryResult{}, ErrNoScope
 	}
@@ -300,14 +300,17 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if err != nil {
 		return RetryResult{}, err
 	}
-	if exec.Status == ExecutionIndeterminate {
-		return RetryResult{}, ErrRetryNotAllowed
-	}
 	src, err := scanStep(tx.QueryRow(ctx, `
 		SELECT `+stepColumns+` FROM execution_steps WHERE execution_id = $1::uuid AND id = $2::uuid
 	`, executionID, stepID))
 	if err != nil {
 		return RetryResult{}, err
+	}
+	if exec.Status == ExecutionIndeterminate && src.NodeType != "ssh.run" {
+		return RetryResult{}, ErrRetryNotAllowed
+	}
+	if len(hint) > 0 {
+		applyRetryHint(&src, hint[0])
 	}
 	if err := canRetryStep(src); err != nil {
 		return RetryResult{}, err

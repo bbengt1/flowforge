@@ -9,6 +9,7 @@ type PublishRules struct {
 	FingerprintFormat        string   `json:"fingerprintFormat"`
 	DraftsNotSelectable      bool     `json:"draftsNotSelectable"`
 	PublishedRevisionsPinned bool     `json:"publishedRevisionsPinned"`
+	RetrySafeRequiresProbe   bool     `json:"retrySafeRequiresProbe"`
 }
 
 // RenderRules documents the reviewed renderer. No raw shell interpolation.
@@ -21,12 +22,44 @@ type RenderRules struct {
 	RejectValuesOutsideSchema bool     `json:"rejectValuesOutsideSchema"`
 }
 
-// RetryRules documents the explicit retry field. E8.2 never blindly re-runs.
+// RetryRules documents default-zero retries and the verification contract.
 type RetryRules struct {
-	DefaultMaxAttempts int    `json:"defaultMaxAttempts"`
-	RetrySafeFlag      string `json:"retrySafeFlag"`
-	Semantics          string `json:"semantics"`
-	Note               string `json:"note"`
+	DefaultMaxAttempts                int      `json:"defaultMaxAttempts"`
+	MaxAttempts                       int      `json:"maxAttempts"`
+	RetrySafeFlag                     string   `json:"retrySafeFlag"`
+	Semantics                         string   `json:"semantics"`
+	Note                              string   `json:"note"`
+	BlindRetry                        bool     `json:"blindRetry"`
+	LeaseLossOutcome                  string   `json:"leaseLossOutcome"`
+	UnknownOutcome                    string   `json:"unknownOutcome"`
+	RequiresVerificationWhenRetrySafe bool     `json:"requiresVerificationWhenRetrySafe"`
+	Verification                      string   `json:"verification"`
+	WhenRetryAllowed                  string   `json:"whenRetryAllowed"`
+	States                            []string `json:"states"`
+	UI                                RetryUI            `json:"ui"`
+	Probe                             VerificationRules  `json:"probe"`
+}
+
+// VerificationRules documents the profile-declared idempotent probe.
+type VerificationRules struct {
+	RequiredWhenRetrySafe bool     `json:"requiredWhenRetrySafe"`
+	Field                 string   `json:"field"`
+	Template              string   `json:"template"`
+	ExpectExitCodeDefault int      `json:"expectExitCodeDefault"`
+	OnMatchDefault        string   `json:"onMatchDefault"`
+	OnMismatchDefault     string   `json:"onMismatchDefault"`
+	OnError               string   `json:"onError"`
+	Outcomes              []string `json:"outcomes"`
+	Note                  string   `json:"note"`
+}
+
+// RetryUI is the Chloe contract for badges and retry controls.
+type RetryUI struct {
+	IndeterminateBadge     string `json:"indeterminateBadge"`
+	RetrySafeFlag          string `json:"retrySafeFlag"`
+	RetryEnabledWhen       string `json:"retryEnabledWhen"`
+	HideRetryWhen          string `json:"hideRetryWhen"`
+	NeverAssumeAbsent      bool   `json:"neverAssumeAbsent"`
 }
 
 // IsolationRules documents hard denies and connect guarantees for Chloe.
@@ -107,10 +140,36 @@ func Catalog() EngineCatalog {
 			RejectValuesOutsideSchema: true,
 		},
 		Retry: RetryRules{
-			DefaultMaxAttempts: DefaultMaxAttempts,
-			RetrySafeFlag:      "retrySafe",
-			Semantics:          "E8.3",
-			Note:               "Retries default to zero. E8.2 never blindly re-runs. A profile may set retrySafe=true and retryPolicy.maxAttempts>0; E8.3 implements verification before any retry. Lease loss is indeterminate.",
+			DefaultMaxAttempts:                DefaultMaxAttempts,
+			MaxAttempts:                       MaxRetryAttempts,
+			RetrySafeFlag:                     "retrySafe",
+			Semantics:                         RetrySemantics,
+			Note:                              "Retries default to zero. Only a pinned retrySafe profile with a declared verification probe and retryPolicy.maxAttempts>0 may retry. Lease loss and unknown provider outcomes are indeterminate — never a blind re-run.",
+			BlindRetry:                        false,
+			LeaseLossOutcome:                  "indeterminate",
+			UnknownOutcome:                    "indeterminate",
+			RequiresVerificationWhenRetrySafe: true,
+			Verification:                      RetryVerificationContract,
+			WhenRetryAllowed:                  "pinned command profile retrySafe=true AND verification.template is present AND retryPolicy.maxAttempts>0 AND attempts remain AND prior status is failed, canceled, or indeterminate after verification",
+			States:                            []string{"queued", "running", "succeeded", "failed", "canceled", "indeterminate"},
+			UI: RetryUI{
+				IndeterminateBadge: "indeterminate",
+				RetrySafeFlag:      "retrySafe",
+				RetryEnabledWhen:   "Show Retry when result.retry.allowed is true (retrySafe + verification + remaining attempts). Disable/hide Retry for non-retrySafe indeterminate.",
+				HideRetryWhen:      "indeterminate without retry.allowed, retry-denied, or maxAttempts=0",
+				NeverAssumeAbsent:  true,
+			},
+			Probe: VerificationRules{
+				RequiredWhenRetrySafe: true,
+				Field:                 "verification",
+				Template:              "Reviewed {name} template using the same parameterSchema. Idempotent read-only probe. Never the mutating command.",
+				ExpectExitCodeDefault: 0,
+				OnMatchDefault:        VerifyAlreadyApplied,
+				OnMismatchDefault:     VerifySafeToRetry,
+				OnError:               VerifyIndeterminate,
+				Outcomes:              []string{VerifyAlreadyApplied, VerifySafeToRetry, VerifyIndeterminate},
+				Note:                  "already-applied resolves success without re-running. safe-to-retry allows one more mutating attempt. indeterminate stays loud and does not re-run.",
+			},
 		},
 		Isolation: IsolationRules{
 			AuthMethods:               []string{"publickey"},
@@ -132,6 +191,7 @@ func Catalog() EngineCatalog {
 			SSHTargetRequired:        []string{"credentialId", "hostname", "hostKeyFingerprint"},
 			CommandProfileRequired:   []string{"parameterSchema", "template"},
 			EmptyAllowlistsRejected:  true,
+			RetrySafeRequiresProbe:   true,
 			CredentialType:           CredentialType,
 			FingerprintFormat:        "sha256:<64 hex> or OpenSSH SHA256:<base64>",
 			DraftsNotSelectable:      true,
@@ -157,7 +217,7 @@ func NodeContracts() []NodeContract {
 				{Name: "commandProfileId", Kind: "uuid", Required: true, Description: "Published command profile UUID. Workflow publish pins the exact revision."},
 				{Name: "parameters", Kind: "object", Description: "Values matching the pinned profile parameterSchema. Rejected when outside the schema."},
 				{Name: "timeoutSeconds", Kind: "integer", Description: "Bounded 1–3600. Default 60."},
-				{Name: "retryPolicy", Kind: "object", Description: "Optional {maxAttempts:0-5}. Default maxAttempts is 0. retrySafe semantics are E8.3."},
+				{Name: "retryPolicy", Kind: "object", Description: "Optional {maxAttempts:0-5}. Default maxAttempts is 0. maxAttempts>0 requires the pinned profile retrySafe=true plus verification."},
 				{Name: "policyId", Kind: "uuid", Description: "Optional published ssh policy UUID."},
 			},
 			Outputs:     []string{"result", "stdout", "exitCode"},
@@ -187,10 +247,11 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeForwardingDenied, Status: 403, Meaning: "Agent forwarding, port forwarding, proxy commands, or an interactive shell was requested."},
 		{Code: CodeRootDenied, Status: 403, Meaning: "Remote account is root (or another denied privileged name)."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, or contained an unusable private key. privateKey is never accepted on the node."},
-		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 requires retrySafe. E8.2 still does not retry."},
+		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied."},
+		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true but verification is missing/invalid, or verification was set on a non-retrySafe profile."},
 		{Code: CodePolicyDenied, Status: 403, Meaning: "SSH policy deny or host/address/operation allowlist failed closed."},
 		{Code: CodeConnectFailed, Status: 502, Meaning: "TCP or SSH handshake to the verified address failed."},
-		{Code: CodeCommandFailed, Status: 502, Meaning: "The remote command could not be started or the session failed."},
-		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease was lost after dispatch. E8.2 does not retry; E8.3 adds profile verification."},
+		{Code: CodeCommandFailed, Status: 502, Meaning: "The remote command exited non-zero after a known dispatch."},
+		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch, unknown provider outcome, or verification could not confirm state. Never a silent re-run. Chloe: unmistakable indeterminate badge."},
 	}
 }

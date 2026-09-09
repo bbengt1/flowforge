@@ -285,6 +285,53 @@ func TestEvaluateMissingPublishedPolicyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestEvaluateSSHRetryDefaultsToZero(t *testing.T) {
+	targetID := "11111111-1111-4111-8111-111111111111"
+	profileID := "22222222-2222-4222-8222-222222222222"
+	yamlDoc := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: ssh-retry
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: ssh.run
+      name: Run
+      with:
+        sshTargetId: ` + targetID + `
+        commandProfileId: ` + profileID + `
+  edges: []
+`
+	out, err := Evaluate(Input{
+		YAML: yamlDoc,
+		Pins: []opsconfig.Pin{
+			{
+				Kind: opsconfig.KindSSHTarget, ResourceID: targetID,
+				VersionID: "33333333-3333-4333-8333-333333333333", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("a", 64),
+				Spec: map[string]any{"hostname": "edge.example", "hostKeyFingerprint": "sha256:" + strings.Repeat("1", 64), "credentialId": "44444444-4444-4444-8444-444444444444"},
+			},
+			{
+				Kind: opsconfig.KindCommandProfile, ResourceID: profileID,
+				VersionID: "55555555-5555-4555-8555-555555555555", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("b", 64),
+				Spec: map[string]any{"retrySafe": false, "template": "true", "parameterSchema": map[string]any{"type": "object"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Operations) != 1 {
+		t.Fatalf("ops = %+v", out.Operations)
+	}
+	op := out.Operations[0]
+	if op.RetryMaxAttempts != 0 || op.RetryAllowed || op.RetrySafe {
+		t.Fatalf("ssh retry evaluate = %+v", op)
+	}
+}
+
 func workflowYAML(targetID, ns string) string {
 	return `apiVersion: flowforge/v1
 kind: Workflow

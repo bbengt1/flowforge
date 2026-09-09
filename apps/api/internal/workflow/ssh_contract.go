@@ -34,7 +34,7 @@ func sshRunContract() NodeType {
 			SideEffects:        true,
 			Idempotent:         false,
 			Cancellation:       "abort-command",
-			Verification:       "e8.3-stub",
+			Verification:       ssh.RetryVerificationContract,
 			DefaultMaxAttempts: ssh.DefaultMaxAttempts,
 		},
 		Bounds: sshBounds(),
@@ -53,7 +53,7 @@ func sshWithFields() []WithField {
 		{Name: "commandProfileId", Kind: "uuid", Required: true, Description: "Published command profile UUID. Workflow publish pins the exact revision."},
 		{Name: "parameters", Kind: "object", Description: "Values matching the pinned profile parameterSchema. Rejected when outside the schema."},
 		{Name: "timeoutSeconds", Kind: "integer", Description: "Bounded 1–3600. Default 60. Applies to connect and command."},
-		{Name: "retryPolicy", Kind: "object", Description: "Required explicit field shape {maxAttempts:0-5}. Default maxAttempts is 0. E8.2 never blindly re-runs; E8.3 adds verification."},
+		{Name: "retryPolicy", Kind: "object", Description: "Explicit {maxAttempts:0-5}. Default maxAttempts is 0. maxAttempts>0 requires the pinned profile retrySafe=true and a verification probe. Lease loss is indeterminate."},
 		{Name: "policyId", Kind: "uuid", Description: "Optional published ssh policy UUID."},
 	}
 }

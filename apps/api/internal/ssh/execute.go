@@ -30,22 +30,19 @@ type Request struct {
 	Resolver         Resolver
 	CorrelationID    string
 	ActorID          string
-	// LeaseLost is the E8.3 stub: after dispatch uncertainty, never re-run.
-	LeaseLost bool
+	// Attempt is the durable (node_id, attempt) counter. 1 is the first run.
+	Attempt int
+	// LeaseLost / UnknownOutcome / PriorIndeterminate mean the previous
+	// provider result is uncertain. Execute reports indeterminate and never
+	// re-runs the mutating command on this call.
+	LeaseLost          bool
+	UnknownOutcome     bool
+	PriorIndeterminate bool
 }
 
 // RetryPolicy is the explicit node field. Default maxAttempts is 0.
 type RetryPolicy struct {
 	MaxAttempts int `json:"maxAttempts"`
-}
-
-// RetryState documents what E8.2 did versus E8.3 verification.
-type RetryState struct {
-	MaxAttempts      int    `json:"maxAttempts"`
-	ExecutedAttempts int    `json:"executedAttempts"`
-	RetrySafe        bool   `json:"retrySafe"`
-	Semantics        string `json:"semantics"`
-	Note             string `json:"note"`
 }
 
 // Result is the redacted engine outcome persisted on the job.
@@ -76,8 +73,10 @@ type Result struct {
 	Error             *EngineError   `json:"error,omitempty"`
 }
 
-// Execute authorizes, revalidates policy, resolves+allowlists, then runs one
-// bounded, key-only, non-interactive command. It never retries on its own.
+// Execute authorizes, revalidates policy, resolves+allowlists, then runs a
+// bounded, key-only, non-interactive command. Retries default to zero. A
+// retrySafe profile may verify remote state before another mutating attempt.
+// Lease loss or an unknown provider outcome is always indeterminate.
 func Execute(ctx context.Context, req Request) Result {
 	out := Result{
 		Operation:        NodeSSHRun,
@@ -96,9 +95,8 @@ func Execute(ctx context.Context, req Request) Result {
 		out.Port = 22
 	}
 
-	if req.LeaseLost {
-		out.Error = engineError(CodeIndeterminate, "lease was lost after dispatch; the command is not retried (E8.3 verification is not implemented)", http.StatusConflict)
-		return finish(req, out)
+	if req.LeaseLost || req.UnknownOutcome {
+		return leaseLossResult(req, out)
 	}
 	if err := authorizeRequest(req); err != nil {
 		out.Error = err
@@ -200,18 +198,98 @@ func Execute(ctx context.Context, req Request) Result {
 	}
 	defer sess.Close()
 
-	stdout, stderr, exit, runErr := sess.Run(ctx, rendered.Command)
-	if runErr != nil {
-		out.Error = asEngineError(runErr, CodeCommandFailed)
-		return finish(req, out)
+	verifySpec, _ := VerificationFromProfile(req.Profile)
+	mustVerifyFirst := req.PriorIndeterminate || requestAttempt(req) > 1
+	if mustVerifyFirst {
+		if verifySpec == nil {
+			out.Error = engineError(CodeIndeterminate, "prior outcome is uncertain and this profile has no verification probe; the mutating command is not re-run", http.StatusConflict)
+			out.Retry.Allowed = false
+			return finish(req, out)
+		}
+		probe := runVerification(ctx, sess, req, *verifySpec)
+		out.Retry.Verification = &probe
+		switch probe.Outcome {
+		case VerifyAlreadyApplied:
+			out.OK = true
+			out.Retry.Note = probe.Note
+			out.Retry.Allowed = false
+			return finish(req, out)
+		case VerifySafeToRetry:
+			out.Retry.Note = probe.Note
+		default:
+			out.Error = engineError(CodeIndeterminate, "verification did not confirm remote state; the mutating command is not re-run", http.StatusConflict)
+			out.Retry.Allowed = false
+			out.Retry.Note = probe.Note
+			return finish(req, out)
+		}
 	}
-	code := exit
-	out.ExitCode = &code
-	out.Stdout, out.StdoutTruncated = boundText(redactText(stdout), MaxStdoutBytes)
-	out.Stderr, _ = boundText(redactText(stderr), MaxStdoutBytes)
-	out.OK = exit == 0
-	out.Retry.ExecutedAttempts = 1
+
+	maxMutations := 1
+	if verifySpec != nil && out.Retry.MaxAttempts > 0 && !mustVerifyFirst {
+		maxMutations = 1 + out.Retry.MaxAttempts
+	}
+	for mutation := 0; mutation < maxMutations; mutation++ {
+		if mutation > 0 {
+			if verifySpec == nil {
+				break
+			}
+			probe := runVerification(ctx, sess, req, *verifySpec)
+			out.Retry.Verification = &probe
+			switch probe.Outcome {
+			case VerifyAlreadyApplied:
+				out.OK = true
+				out.Error = nil
+				out.Retry.Note = probe.Note
+				out.Retry.Allowed = false
+				return finish(req, out)
+			case VerifySafeToRetry:
+				out.Retry.Note = probe.Note
+			default:
+				out.Error = engineError(CodeIndeterminate, "verification did not confirm remote state; the mutating command is not re-run", http.StatusConflict)
+				out.Retry.Allowed = false
+				out.Retry.Note = probe.Note
+				return finish(req, out)
+			}
+		}
+		stdout, stderr, exit, runErr := sess.Run(ctx, rendered.Command)
+		out.Retry.ExecutedAttempts++
+		if runErr != nil {
+			out.Error = dispatchedUncertainty(runErr)
+			out.Retry.Allowed = false
+			if out.Error.Code == CodeIndeterminate {
+				out.Retry.Note = "Provider outcome is unknown after dispatch. The command is not retried on this attempt."
+			}
+			return finish(req, out)
+		}
+		code := exit
+		out.ExitCode = &code
+		out.Stdout, out.StdoutTruncated = boundText(redactText(stdout), MaxStdoutBytes)
+		out.Stderr, _ = boundText(redactText(stderr), MaxStdoutBytes)
+		out.OK = exit == 0
+		if out.OK {
+			out.Error = nil
+			return finish(req, out)
+		}
+		out.Error = engineError(CodeCommandFailed, "remote command exited non-zero", http.StatusBadGateway)
+		if verifySpec == nil || mutation+1 >= maxMutations {
+			out.Retry.Allowed = false
+			return finish(req, out)
+		}
+	}
 	return finish(req, out)
+}
+
+func dispatchedUncertainty(err error) *EngineError {
+	mapped := asEngineError(err, CodeCommandFailed)
+	if mapped == nil {
+		return engineError(CodeIndeterminate, "provider outcome is unknown after dispatch; the command is not retried", http.StatusConflict)
+	}
+	switch mapped.Code {
+	case CodeTimeout, CodeCanceled, CodeConnectFailed, CodeCommandFailed:
+		return engineError(CodeIndeterminate, "provider outcome is unknown after dispatch; the command is not retried", http.StatusConflict)
+	default:
+		return mapped
+	}
 }
 
 func finish(req Request, out Result) Result {
@@ -236,36 +314,6 @@ func authorizeRequest(req Request) *EngineError {
 		}
 	}
 	return nil
-}
-
-func normalizeRetry(req Request) (RetryState, *EngineError) {
-	max := req.RetryPolicy.MaxAttempts
-	if max < 0 {
-		return RetryState{}, engineError(CodeRetryDenied, "retryPolicy.maxAttempts must be between 0 and 5", http.StatusBadRequest)
-	}
-	if max > MaxRetryAttempts {
-		return RetryState{}, engineError(CodeRetryDenied, "retryPolicy.maxAttempts must be between 0 and 5", http.StatusBadRequest)
-	}
-	safe := req.Profile.RetrySafe
-	if max > 0 && !safe {
-		return RetryState{}, engineError(CodeRetryDenied, "retryPolicy.maxAttempts requires a retrySafe profile; E8.3 implements verification and this engine will not blindly re-run", http.StatusBadRequest)
-	}
-	note := "E8.2 executes the command at most once. Default maxAttempts is 0. E8.3 will add profile-declared verification before any retry."
-	if max > 0 {
-		note = "retryPolicy.maxAttempts is recorded but E8.2 does not retry. Lease loss is indeterminate."
-	}
-	return RetryState{
-		MaxAttempts:      max,
-		ExecutedAttempts: 0,
-		RetrySafe:        safe,
-		Semantics:        "E8.3",
-		Note:             note,
-	}, nil
-}
-
-func stubRetry(req Request) RetryState {
-	state, _ := normalizeRetry(req)
-	return state
 }
 
 func resolveUsername(req Request) (string, *EngineError) {

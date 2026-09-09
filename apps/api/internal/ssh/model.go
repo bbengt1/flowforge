@@ -74,6 +74,7 @@ const (
 	CodeRootDenied          = "root-denied"
 	CodeHandleForbidden     = "handle-forbidden"
 	CodeRetryDenied         = "retry-denied"
+	CodeInvalidVerification = "invalid-verification"
 	CodePolicyDenied        = "policy-denied"
 	CodeConnectFailed       = "connect-failed"
 	CodeCommandFailed       = "command-failed"

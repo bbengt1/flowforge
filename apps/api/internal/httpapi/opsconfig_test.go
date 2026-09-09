@@ -737,6 +737,9 @@ func TestSSHTargetAndCommandProfileHardening(t *testing.T) {
 		if cat.CredentialType != ssheng.CredentialType || cat.Render.RawShellInterpolation || cat.Retry.DefaultMaxAttempts != 0 {
 			t.Fatalf("ssh catalog = %+v", cat)
 		}
+		if cat.Retry.BlindRetry || cat.Retry.LeaseLossOutcome != "indeterminate" || !cat.Retry.RequiresVerificationWhenRetrySafe {
+			t.Fatalf("ssh retry contract = %+v", cat.Retry)
+		}
 		if cat.Isolation.PasswordAuth || !cat.Isolation.EphemeralCredentialHandle {
 			t.Fatalf("ssh isolation = %+v", cat.Isolation)
 		}

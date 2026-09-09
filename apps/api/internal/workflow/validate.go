@@ -407,6 +407,8 @@ func validateNodeWith(n Node, path string) ErrorList {
 					errs = append(errs, fieldError(path+".with.retryPolicy.maxAttempts", n.pos.Line, n.pos.Column, CodeInvalidWith, "retryPolicy.maxAttempts must be between 0 and 5."))
 				}
 			}
+			// Omitted maxAttempts defaults to 0 (no retries). Profile retrySafe
+			// + verification are enforced at pin/publish against the catalog.
 		}
 	case "script.python", "script.go":
 		errs = append(errs, validateTimeout(n.With, path)...)
