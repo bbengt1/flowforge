@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CommandProfileForm } from "@/components/config/CommandProfileForm";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { KubernetesPolicyForm } from "@/components/config/KubernetesPolicyForm";
 import { PolicyRefSelect } from "@/components/config/PolicyRefSelect";
+import { SshTargetForm } from "@/components/config/SshTargetForm";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { isKubernetesPolicySpec } from "@/lib/kubernetes";
@@ -14,6 +16,7 @@ import {
   type KubernetesEngineCatalog,
 } from "@/lib/kubernetes-types";
 import { parseJsonObject, specJson } from "@/lib/ops-config";
+import { getOpsConfigCatalog } from "@/lib/ops-config-client";
 import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
   CONNECTION_TYPES,
@@ -22,6 +25,8 @@ import {
   type OpsConfigKind,
   type OpsConfigSpec,
 } from "@/lib/ops-config-types";
+import { parseSshEngineCatalog } from "@/lib/ssh";
+import type { SshEngineCatalog } from "@/lib/ssh-types";
 
 type ConfigSpecFormProps = {
   kind: OpsConfigKind;
@@ -43,6 +48,7 @@ export function ConfigSpecForm({
   const inputClass =
     "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
   const [engine, setEngine] = useState<KubernetesEngineCatalog | null>(null);
+  const [sshEngine, setSshEngine] = useState<SshEngineCatalog | null>(null);
 
   useEffect(() => {
     if (!ready || (kind !== "cluster_target" && kind !== "policy")) {
@@ -54,6 +60,24 @@ export function ConfigSpecForm({
         return;
       }
       setEngine(result.catalog);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity, kind, ready]);
+
+  useEffect(() => {
+    if (!ready || (kind !== "ssh_target" && kind !== "command_profile")) {
+      return;
+    }
+    let cancelled = false;
+    void getOpsConfigCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setSshEngine(
+        result.ok ? parseSshEngineCatalog(result.catalog) : parseSshEngineCatalog(null),
+      );
     });
     return () => {
       cancelled = true;
@@ -79,7 +103,7 @@ export function ConfigSpecForm({
 
   return (
     <div className="grid gap-3">
-      {needsCredential(kind) ? (
+      {needsCredential(kind) && kind !== "ssh_target" ? (
         <CredentialRefSelect
           identity={identity}
           ready={ready}
@@ -180,64 +204,23 @@ export function ConfigSpecForm({
       ) : null}
 
       {kind === "ssh_target" ? (
-        <>
-          <TextField
-            label="Hostname"
-            value={spec.hostname ?? ""}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(hostname) => patch({ hostname })}
-          />
-          <TextField
-            label="Port"
-            value={String(spec.port ?? 22)}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(port) => patch({ port: Number(port) || 22 })}
-          />
-          <TextField
-            label="Host key fingerprint"
-            value={spec.hostKeyFingerprint ?? ""}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(hostKeyFingerprint) => patch({ hostKeyFingerprint })}
-          />
-          <TextField
-            label="Allowed addresses (comma-separated)"
-            value={(spec.allowedAddresses ?? []).join(", ")}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(value) => patch({ allowedAddresses: splitList(value) })}
-          />
-        </>
+        <SshTargetForm
+          spec={spec}
+          readOnly={readOnly}
+          identity={identity}
+          ready={ready}
+          catalog={sshEngine}
+          onChange={onChange}
+        />
       ) : null}
 
       {kind === "command_profile" ? (
-        <>
-          <TextAreaField
-            label="Command template"
-            value={spec.template ?? ""}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(template) => patch({ template })}
-          />
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={Boolean(spec.retrySafe)}
-              disabled={readOnly}
-              onChange={(event) => patch({ retrySafe: event.target.checked })}
-            />
-            Retry-safe (verification required)
-          </label>
-          <JsonField
-            label="Parameter schema"
-            value={spec.parameterSchema ?? {}}
-            disabled={readOnly}
-            className={inputClass}
-            onChange={(parameterSchema) => patch({ parameterSchema })}
-          />
-        </>
+        <CommandProfileForm
+          spec={spec}
+          readOnly={readOnly}
+          catalog={sshEngine}
+          onChange={onChange}
+        />
       ) : null}
 
       {kind === "runtime_profile" ? (
@@ -530,7 +513,10 @@ export function ConfigSpecForm({
         </>
       ) : null}
 
-      {kindAcceptsPolicyId(kind) && kind !== "cluster_target" ? (
+      {kindAcceptsPolicyId(kind) &&
+      kind !== "cluster_target" &&
+      kind !== "ssh_target" &&
+      kind !== "command_profile" ? (
         <TextField
           label="Optional policy pin (UUID)"
           value={spec.policyId ?? ""}

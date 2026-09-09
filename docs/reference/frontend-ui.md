@@ -190,16 +190,18 @@ E7.3 (Chloe) promotes `kubernetes.rolloutStatus` from the E7.2 stub to a placeab
 - **Execution:** poll existing E5 `GET /executions/{id}`. Render `result.observation`, `result.status.progress[]`, and redacted `result.audit` (actor, target, policy revision, manifest digest, resource identities, dry-run/apply/watch outcome, correlation ID). Unexpected secret / kubeconfig fields fail closed.
 - **Unchanged:** E7.1 `/config` targets and policies; E7.2 apply/get/list fields; no invented routes; `apps/api` untouched.
 
-## E8.1 SSH targets and command profiles (API map for Chloe)
+## E8.1 SSH target and command-profile management (Chloe UI)
 
-E8.1 hardens the existing E4.2 `/config` SSH-target and command-profile collections. The API map is `docs/reference/backend-api-map.md` (E8.1 section). `apps/web` is unchanged in the API story — keep #82 open until Chloe's UI surfaces land. Relates to #82 / Part of #81.
+E8.1 (Chloe) extends the E4.2 `/config` SSH-target and command-profile surfaces for epic #81. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-contract.ts`, wired to jonny's **#86** map on `main` (`e81-#86`). Prefer `GET /ssh/catalog` plus `GET /ops-config/catalog` `sshEngine` for parameter types, render rules, retry schema, and errors. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #82 / Part of #81 — **Keep #82 open** (jonny owns engine/APIs).
 
-- **SSH targets:** `spec.credentialId` is a workspace `type=ssh_private_key` vault credential only — never `privateKey` / `passphrase`. Require `hostname` and `hostKeyFingerprint`. Optional `port` (default 22), `allowedAddresses` (IP/CIDR; empty present list is rejected), published `policyId` (`kind=ssh`).
-- **Command profiles:** administrator-owned. `parameterSchema` is a restricted object schema (`string` / `integer` / `boolean`). `template` uses `{name}` placeholders. The reviewed renderer owns POSIX single-quote substitution and rejects interpolation (`$()`, backticks, `${`, `{{`) and values outside the schema. `retrySafe` is a schema flag only (E8.3).
-- **Pins:** workflow publish / execution start pin exact target + profile revisions. Later draft edits do not retarget a pin. Drafts cannot be selected.
-- **Catalog:** `GET /ops-config/catalog` (`sshEngine`) or `GET /ssh/catalog` for parameter types, render rules, retry-safe flags, and error codes.
-- **Session:** cookie session + `X-CSRF-Token` on POST/PUT. Host-supplied `id` / `workspaceId` is error UX (API 400). Unexpected secret fields are stripped.
-- **Operator routes:** existing `/config/ssh-targets` and `/config/command-profiles` — not a duplicate Targets app. Proxy `/api/control-plane/ssh/catalog` when the UI story lands.
+- **SSH targets:** `spec.credentialId` is a workspace `type=ssh_private_key` vault credential only — never `privateKey` / `passphrase`. Require `hostname` and `hostKeyFingerprint` (`sha256:<hex>` or OpenSSH `SHA256:<base64>`). Optional `port` (default 22), `allowedAddresses` (IP/CIDR; present empty list and `0.0.0.0/0` are rejected), published `policyId` (`kind=ssh`). Key-only auth is a read-only expectation.
+- **Command profiles:** admin-owned versioned templates. `parameterSchema` is a restricted object schema (`string` / `integer` / `boolean`, ≤16 properties, `{name}` placeholders). The reviewed renderer owns POSIX single-quote substitution and rejects `$()`, backticks, `${`, and `{{`. A profile cannot be edited in place after a workflow version pins it; publication pins the exact target + profile revisions. `retrySafe` is a schema flag only (E8.3).
+- **Denied MVP:** password authentication, agent forwarding, port forwarding, proxy commands, and host-key auto-acceptance. The UI does not offer toggles that enable them. This is not an interactive terminal.
+- **Selectors:** action wizard lists only authorized published SSH targets (credential-bound when the API reports `credentialId`) and command profiles. `POST …/select` remains the authorize step. HTTP 403 fails closed — no leftover rows.
+- **Session:** cookie session + `X-CSRF-Token` on POST/PUT. Host-supplied `id` / `workspaceId` is error UX (API 400). Unexpected secret fields are stripped and treated as a contract bug.
+- **Proxies:** same-origin `/api/control-plane/{ssh-targets,command-profiles,ssh/catalog,ops-config/{catalog,select}}/…`. `retargetSshApiPath` matches the #86 collections.
+- **Operator routes:** existing `/config/ssh-targets` and `/config/command-profiles` — not a duplicate Targets app.
+- **Helpers:** `apps/web/src/lib/ssh.ts`. Types: `ssh-types.ts`.
 
 ## Foundation operator shell
 

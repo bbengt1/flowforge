@@ -16,12 +16,13 @@ const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
     id: "targets",
     title: "Targets",
     blurb:
-      "Kubernetes clusters and SSH hosts. Cluster targets bind a workspace vault credential and optional E7.1 Kubernetes policy. Endpoint metadata only — kubeconfig stays in the vault.",
+      "Kubernetes clusters and SSH hosts. Cluster targets bind a workspace kubernetes vault credential. SSH targets bind a workspace ssh_private_key credential plus a known-host fingerprint. Keys and kubeconfigs stay in the vault.",
   },
   {
     id: "profiles",
     title: "Profiles",
-    blurb: "Approved command templates and pinned script runtimes. Publish before a workflow can pin them.",
+    blurb:
+      "Approved SSH command templates with typed parameters, plus pinned script runtimes. Profiles are immutable after publish; workflows pin exact revisions.",
   },
   {
     id: "config",

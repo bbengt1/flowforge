@@ -27,7 +27,8 @@ export default async function ConfigCreatePage({ params }: PageProps) {
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Create an editable draft. Publish later to mint the immutable
           revision workflows can pin. Vault credentials are selected by
-          display name only. Cluster targets never accept kubeconfig.
+          display name only. Cluster targets never accept kubeconfig. SSH
+          targets never accept keys or passwords.
         </p>
       </header>
       <ConfigDraftEditor kind={kind} />

@@ -89,7 +89,9 @@ export function CredentialRefSelect({
       <span className="mt-1 block text-xs text-zinc-500">
         {allowedTypes?.includes("kubernetes")
           ? "Workspace type=kubernetes vault credentials only. Kubeconfig is never listed or pasted."
-          : "E4.1 vault metadata only — display name and id. Kubeconfig and plaintext are never listed or stored here."}
+          : allowedTypes?.includes("ssh_private_key")
+            ? "Workspace SSH vault credentials only (type=ssh_private_key). Keys, passwords, and host private material are never listed or pasted."
+            : "E4.1 vault metadata only — display name and id. Kubeconfig and plaintext are never listed or stored here."}
       </span>
       {problem ? (
         <span className="mt-1 block text-sm text-amber-900">

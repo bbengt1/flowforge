@@ -260,6 +260,10 @@ describe("ops-config client", () => {
               allowedKinds: ["ConfigMap"],
               kubeconfig: "should-be-stripped",
             },
+            sshEngine: {
+              credentialType: "ssh_private_key",
+              privateKey: "should-be-stripped",
+            },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -286,6 +290,11 @@ describe("ops-config client", () => {
         "kubernetes",
       );
       assert.equal("kubeconfig" in (catalog.catalog.kubernetesEngine ?? {}), false);
+      assert.equal(
+        catalog.catalog.sshEngine?.credentialType,
+        "ssh_private_key",
+      );
+      assert.equal("privateKey" in (catalog.catalog.sshEngine ?? {}), false);
     }
 
     const pins = await listWorkflowVersionPins(identity, WORKFLOW_ID, VERSION_ID);

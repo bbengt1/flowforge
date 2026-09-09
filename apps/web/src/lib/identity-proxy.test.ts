@@ -488,6 +488,39 @@ describe("resolveIdentityProxyTarget", () => {
     }
   });
 
+  it("retargets E8.1 SSH target and command-profile paths through the adapter", () => {
+    const list = resolveIdentityProxyTarget("GET", ["ssh-targets"]);
+    assert.equal("apiPath" in list, true);
+    if ("apiPath" in list) {
+      assert.equal(list.apiPath, "/api/v1/ssh-targets");
+    }
+    const select = resolveIdentityProxyTarget("POST", [
+      "command-profiles",
+      "11111111-1111-4111-8111-111111111111",
+      "select",
+    ]);
+    assert.equal("apiPath" in select, true);
+    if ("apiPath" in select) {
+      assert.equal(
+        select.apiPath,
+        "/api/v1/command-profiles/11111111-1111-4111-8111-111111111111/select",
+      );
+    }
+    const authorized = resolveIdentityProxyTarget("GET", [
+      "ssh-targets",
+      "authorized",
+    ]);
+    assert.equal("status" in authorized, true);
+    if ("status" in authorized) {
+      assert.equal(authorized.status, 404);
+    }
+    const inventedCatalog = resolveIdentityProxyTarget("GET", ["ssh", "catalog"]);
+    assert.equal("status" in inventedCatalog, true);
+    if ("status" in inventedCatalog) {
+      assert.equal(inventedCatalog.status, 404);
+    }
+  });
+
   it("does not treat reserved ops-config actions as resource ids", () => {
     const unknown = resolveIdentityProxyTarget("GET", [
       "cluster-targets",

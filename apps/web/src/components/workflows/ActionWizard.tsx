@@ -27,6 +27,7 @@ import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
+import { authorizedCommandProfiles, authorizedSshTargets } from "@/lib/ssh";
 import type { PolicyEvaluation } from "@/lib/approval-types";
 import {
   ACTION_FAMILY_ORDER,
@@ -219,7 +220,11 @@ export function ActionWizard({
         nextPins[kind] =
           kind === "cluster_target"
             ? authorizedClusterTargets({ items: result.items }).options
-            : publishedPinsFromList({ items: result.items }).options;
+            : kind === "ssh_target"
+              ? authorizedSshTargets({ items: result.items }).options
+              : kind === "command_profile"
+                ? authorizedCommandProfiles({ items: result.items }).options
+                : publishedPinsFromList({ items: result.items }).options;
       }
       setPins(nextPins);
       setPinProblems(nextProblems);
