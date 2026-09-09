@@ -331,7 +331,7 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E5.1 execution history (Chloe UI)
 
-`/executions` is Chloe's minimal workspace-scoped history operator for #46, wired to jonny's #51 map. This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay, artifacts, and cancel/retry stay out (E5.3 / E6).
+`/executions` is Chloe's minimal workspace-scoped history operator for #46, wired to jonny's #51 map. This UI does **not** change `apps/api` and is **not** stacked on an API feature branch. Relates to #46 / Part of #45 — do not close #46 alone. Graph replay and artifacts stay out (E5.3 / E6). Cancel/retry UX is E5.2 below.
 
 - **Contract adapter:** paths live in `apps/web/src/lib/execution-contract.ts`. Exact #51 routes only — do not invent collections or query params.
 - **List:** workspace `GET /executions` (`workflowId`, `status`, `limit`) and per-workflow `GET /workflows/{id}/executions` (`status`, `limit`). Cards show id, workflow, version pin, status, started/finished, correlation id, and idempotency key.
@@ -343,6 +343,29 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 - **Run control:** published-version selector only. Optional idempotency key. Pin panel links to `/executions/{id}`.
 - **Operator routes:** `/executions`, `/executions/{id}`.
 - **Proxies:** `/api/control-plane/executions`, `/{id}`, `…/steps`, `…/steps/{stepId}`, `…/jobs`, `…/audit-events`, `/audit-events`, and `GET /workflows/{id}/executions`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Authorization and bodies are never logged.
+
+## E5.2 cancel / status UX (Chloe)
+
+Jonny's dispatch APIs are on `main` (Relates to #47 / Part of #45). Do **not** stack the UI on this API branch. Do not rewrite worker `/jobs/*` into the browser. Artifact downloads stay E5.3.
+
+**UI route map** — cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`.
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/executions/{executionId}` | `execution.view` | no | Poll status, `steps[]`, `jobs[]` (`leaseExpiresAt`, `heartbeatAt`, `fencingToken`) |
+| `POST` | `/api/v1/executions/{executionId}/cancel` | `execution.cancel` | yes | `{}` · idempotent `200` · viewer `403` · terminal non-canceled `409` |
+| `POST` | `/api/v1/executions/{executionId}/retry` | `workflow.execute` | yes | `{stepId?}` · `201` new attempt · `indeterminate`/provider `409` |
+| `POST` | `/api/v1/executions/{executionId}/steps/{stepId}/retry` | `workflow.execute` | yes | Prefer this when the clicked step is known |
+
+Suggested UI flow:
+
+1. Detail already from E5.1. Enable **Cancel** when `status` is `queued` or `running` and `GET /workspace` includes `execution.cancel`.
+2. Cancel posts `{}`. On `200`, replace the detail with the response (`status=canceled`). A second click is safe.
+3. Enable **Retry** on a `failed` or `canceled` core `data.*` / `flow.*` step when the caller has `workflow.execute`. Hide/disable retry for `indeterminate` and provider node types — show copy that an unverified side effect must not be assumed absent.
+4. `indeterminate` remains unmistakable (badge + text, not color alone). Do not offer a silent re-run.
+5. Never call `POST /jobs/claim` (or heartbeat/complete/fail) from the UI.
+
+**Proxies:** `/api/control-plane/executions/{id}/cancel`, `.../retry`, `.../steps/{stepId}/retry`. CSRF on POST; preserve `application/problem+json`.
 
 ## Initial implementation components
 

@@ -24,6 +24,15 @@ var (
 	ErrStoreUnavailable      = errors.New("workflow store is unavailable")
 	ErrIdempotencyConflict   = errors.New("idempotency key reused with a different fingerprint")
 	ErrIdempotencyKeyInvalid = errors.New("idempotency key is invalid")
+	ErrEmptyClaim            = errors.New("no eligible job")
+	ErrFenceConflict         = errors.New("fencing token mismatch")
+	ErrLeaseExpired          = errors.New("lease expired")
+	ErrJobBinding            = errors.New("job binding rejected")
+	ErrJobExpired            = errors.New("authenticated job expired")
+	ErrNotClaimable          = errors.New("job is not in a claimable or writable state")
+	ErrAlreadyTerminal       = errors.New("execution is already terminal")
+	ErrRetryNotAllowed       = errors.New("retry is not allowed")
+	ErrCanceled              = errors.New("execution or job was canceled")
 )
 
 // Validation states persisted with a draft.
@@ -68,6 +77,11 @@ const (
 	MaxExecutionInputBytes    = 16 * 1024
 	DefaultListLimit          = 50
 	MaxListLimit              = 100
+	DefaultLease              = 30 * time.Second
+	MinLease                  = time.Second
+	MaxLease                  = 5 * time.Minute
+	DefaultJobBindingTTL      = time.Hour
+	DefaultRetrySafeMax       = 3
 )
 
 // Workflow is the workspace-owned authoring record.
@@ -160,7 +174,6 @@ type ExecutionStep struct {
 }
 
 // ExecutionJob is the durable dispatch record for a step attempt.
-// Lease/fencing columns are present for E5.2 and unused in E5.1.
 type ExecutionJob struct {
 	ID              string     `json:"id"`
 	ExecutionID     string     `json:"executionId"`
@@ -272,6 +285,57 @@ type StartInput struct {
 	HostContext    map[string]any
 }
 
+// ClaimInput claims the next queued job in the workspace.
+type ClaimInput struct {
+	WorkerID   string
+	Lease      time.Duration
+	BindingTTL time.Duration
+}
+
+// JobActionInput is a fenced worker mutation against a claimed job.
+type JobActionInput struct {
+	JobID        string
+	WorkerID     string
+	FencingToken int64
+	Lease        time.Duration
+	Output       map[string]any
+	Error        map[string]any
+}
+
+// JobBinding is the authenticated workspace/version/policy/expiry envelope
+// issued at claim time. Workers must reject altered, expired, or
+// cross-workspace bindings before a provider call.
+type JobBinding struct {
+	WorkspaceID       string    `json:"workspaceId"`
+	ExecutionID       string    `json:"executionId"`
+	JobID             string    `json:"jobId"`
+	StepID            string    `json:"stepId"`
+	WorkflowID        string    `json:"workflowId"`
+	WorkflowVersionID string    `json:"workflowVersionId"`
+	WorkflowDigest    string    `json:"workflowDigest"`
+	PolicyDigest      string    `json:"policyDigest"`
+	CorrelationID     string    `json:"correlationId,omitempty"`
+	FencingToken      int64     `json:"fencingToken"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	LeaseExpiresAt    time.Time `json:"leaseExpiresAt"`
+}
+
+// DispatchResult is a job mutation plus its parent step/execution.
+type DispatchResult struct {
+	Execution Execution
+	Step      ExecutionStep
+	Job       ExecutionJob
+	Binding   JobBinding
+	Recovered int
+}
+
+// RetryResult is a newly queued attempt after an authorized retry.
+type RetryResult struct {
+	Execution Execution
+	Step      ExecutionStep
+	Job       ExecutionJob
+}
+
 // AuditWrite is a redacted append-only audit insert.
 type AuditWrite struct {
 	Action        string
@@ -303,6 +367,15 @@ type Store interface {
 	ListSteps(ctx context.Context, scope isolation.Scope, executionID string) ([]ExecutionStep, error)
 	GetStep(ctx context.Context, scope isolation.Scope, executionID, stepID string) (ExecutionStep, error)
 	ListJobs(ctx context.Context, scope isolation.Scope, executionID string) ([]ExecutionJob, error)
+	GetJob(ctx context.Context, scope isolation.Scope, jobID string) (ExecutionJob, error)
+	ClaimJob(ctx context.Context, scope isolation.Scope, now time.Time, in ClaimInput) (DispatchResult, error)
+	HeartbeatJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
+	ReleaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
+	CompleteJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
+	FailJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
+	CancelExecution(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) (Execution, error)
+	RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string) (RetryResult, error)
+	RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error)
 	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)
 	WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error)
 	PurgeExpired(ctx context.Context, scope isolation.Scope, now time.Time) (executions int, audits int, err error)

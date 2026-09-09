@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.10.0
+  version: 0.11.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -1133,7 +1133,7 @@ paths:
     get:
       operationId: listExecutionJobs
       summary: List durable dispatch jobs
-      description: Requires `execution.view`. Lease/fencing fields are reserved for E5.2.
+      description: Requires `execution.view`. Includes lease, heartbeat, worker, and fencing fields.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -1195,6 +1195,374 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /executions/{executionId}/cancel:
+    post:
+      operationId: cancelExecution
+      summary: Cancel an execution
+      description: |
+        Requires `execution.cancel` (operator/admin). Idempotent: a second
+        cancel of an already-canceled run returns `200`. Terminal
+        succeeded/failed/indeterminate runs are `409`. Viewers receive `403`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyDispatchRequest"
+      responses:
+        "200":
+          description: Canceled execution detail
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /executions/{executionId}/retry:
+    post:
+      operationId: retryExecution
+      summary: Retry the latest failed or canceled step
+      description: |
+        Requires `workflow.execute`. Creates a new attempt + queued job.
+        Core `data.*` / `flow.*` nodes are retry-safe (max 3 retries).
+        Provider nodes and `indeterminate` outcomes are `409`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetryRequest"
+      responses:
+        "201":
+          description: New queued attempt
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /executions/{executionId}/steps/{stepId}/retry:
+    post:
+      operationId: retryExecutionStep
+      summary: Retry one failed or canceled step
+      description: Requires `workflow.execute`. Same retry policy as `POST /executions/{executionId}/retry`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyDispatchRequest"
+      responses:
+        "201":
+          description: New queued attempt
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /jobs/claim:
+    post:
+      operationId: claimJob
+      summary: Claim the next queued job
+      description: |
+        Requires `workflow.execute`. Recovers expired leases to
+        `indeterminate` first, then claims one queued job with
+        `FOR UPDATE SKIP LOCKED`. Returns an HMAC `jobToken` bound to
+        workspace, workflow version/digest, policy digest, fencing token,
+        and expiry. `204` when the queue is empty.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimJobRequest"
+      responses:
+        "200":
+          description: Claimed job and authenticated ticket
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimJobResponse"
+        "204":
+          description: No eligible job
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /jobs/recover:
+    post:
+      operationId: recoverJobs
+      summary: Mark expired leases indeterminate
+      description: Requires `workflow.execute`. Unsafe lease loss never silently retries a provider call.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Recovery count
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoverJobsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /jobs/{jobId}/heartbeat:
+    post:
+      operationId: heartbeatJob
+      summary: Extend a job lease
+      description: Requires `workflow.execute` plus a valid `jobToken`. First heartbeat marks the job `running` (provider fence). Stale fencing tokens are `409`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobActionRequest"
+      responses:
+        "200":
+          description: Updated job
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchJobResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /jobs/{jobId}/release:
+    post:
+      operationId: releaseJob
+      summary: Release a claimed job
+      description: Requires `workflow.execute` plus a valid `jobToken`. Release before heartbeat requeues; release after heartbeat is `indeterminate`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobActionRequest"
+      responses:
+        "200":
+          description: Updated job
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchJobResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /jobs/{jobId}/complete:
+    post:
+      operationId: completeJob
+      summary: Complete a claimed job
+      description: Requires `workflow.execute` plus a matching `jobToken` and fencing token. Output is redacted before persist.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobActionRequest"
+      responses:
+        "200":
+          description: Completed job
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchJobResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /jobs/{jobId}/fail:
+    post:
+      operationId: failJob
+      summary: Fail a claimed job
+      description: Requires `workflow.execute` plus a matching `jobToken` and fencing token. Error is redacted before persist.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobActionRequest"
+      responses:
+        "200":
+          description: Failed job
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchJobResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /audit-events:
     get:
       operationId: listWorkspaceAuditEvents
@@ -3382,6 +3750,11 @@ components:
       schema:
         type: string
         format: uuid
+    JobID:
+      name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     ApprovalID:
       name: approvalId
       in: path
@@ -4490,6 +4863,83 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/ExecutionJob"}
+    JobBinding:
+      type: object
+      required: [workspaceId, executionId, jobId, stepId, workflowId, workflowVersionId, workflowDigest, policyDigest, fencingToken, expiresAt, leaseExpiresAt]
+      properties:
+        workspaceId: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        jobId: {type: string, format: uuid}
+        stepId: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        policyDigest: {type: string}
+        correlationId: {type: string}
+        fencingToken: {type: integer}
+        expiresAt: {type: string, format: date-time}
+        leaseExpiresAt: {type: string, format: date-time}
+    ClaimJobRequest:
+      type: object
+      required: [workerId]
+      properties:
+        workerId: {type: string, minLength: 1, maxLength: 200}
+        leaseSeconds: {type: integer, minimum: 1, maximum: 300}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    ClaimJobResponse:
+      type: object
+      required: [claimed, jobToken, binding, job, step, execution]
+      properties:
+        claimed: {type: boolean}
+        jobToken: {type: string}
+        binding: {$ref: "#/components/schemas/JobBinding"}
+        job: {$ref: "#/components/schemas/ExecutionJob"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+        recovered: {type: integer}
+    JobActionRequest:
+      type: object
+      required: [jobToken, workerId]
+      properties:
+        jobToken: {type: string}
+        workerId: {type: string}
+        fencingToken: {type: integer}
+        leaseSeconds: {type: integer, minimum: 1, maximum: 300}
+        output: {type: object, additionalProperties: true}
+        error: {type: object, additionalProperties: true}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    DispatchJobResponse:
+      type: object
+      required: [job, step, execution]
+      properties:
+        job: {$ref: "#/components/schemas/ExecutionJob"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+    RecoverJobsResponse:
+      type: object
+      required: [recovered]
+      properties:
+        recovered: {type: integer}
+    EmptyDispatchRequest:
+      type: object
+      properties:
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetryRequest:
+      type: object
+      properties:
+        stepId: {type: string, format: uuid}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetryResponse:
+      type: object
+      required: [execution, step, job]
+      properties:
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        job: {$ref: "#/components/schemas/ExecutionJob"}
     AuditEvent:
       type: object
       required: [id, action, resourceType, outcome, occurredAt, details, hostContext]

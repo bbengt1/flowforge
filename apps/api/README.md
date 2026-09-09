@@ -56,6 +56,15 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/executions/{executionId}/steps` | Redacted steps. |
 | `GET` | `/api/v1/executions/{executionId}/jobs` | Dispatch jobs. |
 | `GET` | `/api/v1/executions/{executionId}/audit-events` | Execution audit events. |
+| `POST` | `/api/v1/executions/{executionId}/cancel` | Cancel open work (`execution.cancel`, idempotent). |
+| `POST` | `/api/v1/executions/{executionId}/retry` | Retry latest eligible failed/canceled step. |
+| `POST` | `/api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step (`workflow.execute`). |
+| `POST` | `/api/v1/jobs/claim` | Worker claim + authenticated job ticket. |
+| `POST` | `/api/v1/jobs/recover` | Expired leases → `indeterminate`. |
+| `POST` | `/api/v1/jobs/{jobId}/heartbeat` | Extend lease / mark running. |
+| `POST` | `/api/v1/jobs/{jobId}/release` | Requeue or fail closed. |
+| `POST` | `/api/v1/jobs/{jobId}/complete` | Succeed with fencing. |
+| `POST` | `/api/v1/jobs/{jobId}/fail` | Fail with fencing. |
 | `GET` | `/api/v1/audit-events` | Workspace audit events (redacted). |
 | `GET` | `/api/v1/credentials/catalog` | Typed vault field catalog (`credential.view`). |
 | `GET` / `POST` | `/api/v1/credentials` | List metadata / create encrypted credential. |
@@ -111,6 +120,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use. |
 | `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
+| `JOB_BINDING_SECRET` | ephemeral | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Unset generates a process-local key (tickets die on restart). |
 
 Suggested local URL (compose service hostname `postgres`):
 

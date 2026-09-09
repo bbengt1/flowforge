@@ -648,6 +648,16 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Idempotency key must be 1-128 URL-safe characters.")
 	case errors.Is(err, wfstore.ErrIdempotencyConflict):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Idempotency key was reused with a different request fingerprint.")
+	case errors.Is(err, wfstore.ErrFenceConflict):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Fencing token does not match the active lease.")
+	case errors.Is(err, wfstore.ErrLeaseExpired):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The job lease has expired.")
+	case errors.Is(err, wfstore.ErrJobExpired):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The authenticated job ticket has expired.")
+	case errors.Is(err, wfstore.ErrJobBinding):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The authenticated job binding was rejected.")
+	case errors.Is(err, wfstore.ErrNotClaimable), errors.Is(err, wfstore.ErrAlreadyTerminal), errors.Is(err, wfstore.ErrRetryNotAllowed), errors.Is(err, wfstore.ErrCanceled):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The job or execution cannot be updated in its current state.")
 	case errors.Is(err, wfstore.ErrInvalid), errors.Is(err, wfstore.ErrNoScope):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The request is not valid.")
 	case errors.Is(err, wfstore.ErrStoreUnavailable):
