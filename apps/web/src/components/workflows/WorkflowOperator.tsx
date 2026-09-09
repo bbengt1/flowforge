@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { CatalogPanel } from "@/components/workflows/CatalogPanel";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
 import { NodeInspector } from "@/components/workflows/NodeInspector";
@@ -775,6 +776,8 @@ export function WorkflowOperator() {
           />
         </div>
       ) : null}
+
+      <WorkflowConfigPins identity={identity} ready={canCall} />
     </div>
   );
 }

@@ -25,7 +25,8 @@ export default function WorkflowsPage() {
           <code className="font-mono text-sm">spec.triggers</code>. Draft /
           publish / compare from E3.2 stay on this page. This is not the E6
           canvas. Cookie session + CSRF and tenant/workbench identity are the
-          same as E2.3 / E2.1.
+          same as E2.3 / E2.1. Authorized E4.2 config pins (display name +
+          version only) are available below the editor.
         </p>
       </header>
       <WorkflowOperator />

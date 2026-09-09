@@ -215,6 +215,60 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/credentials/11111111-1111-4111-8111-111111111111/deletion-impact",
       ],
+      ["GET", ["cluster-targets"], "/api/v1/cluster-targets"],
+      ["POST", ["cluster-targets"], "/api/v1/cluster-targets"],
+      ["GET", ["cluster-targets", "authorized"], "/api/v1/cluster-targets/authorized"],
+      [
+        "GET",
+        ["ssh-targets", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/ssh-targets/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["command-profiles", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/command-profiles/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "PUT",
+        ["runtime-profiles", "11111111-1111-4111-8111-111111111111", "draft"],
+        "/api/v1/runtime-profiles/11111111-1111-4111-8111-111111111111/draft",
+      ],
+      [
+        "POST",
+        ["connections", "11111111-1111-4111-8111-111111111111", "publish"],
+        "/api/v1/connections/11111111-1111-4111-8111-111111111111/publish",
+      ],
+      [
+        "POST",
+        ["recipient-lists", "11111111-1111-4111-8111-111111111111", "compare"],
+        "/api/v1/recipient-lists/11111111-1111-4111-8111-111111111111/compare",
+      ],
+      [
+        "GET",
+        ["message-templates", "11111111-1111-4111-8111-111111111111", "versions"],
+        "/api/v1/message-templates/11111111-1111-4111-8111-111111111111/versions",
+      ],
+      [
+        "GET",
+        [
+          "response-schemas",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+        ],
+        "/api/v1/response-schemas/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "POST",
+        [
+          "policies",
+          "11111111-1111-4111-8111-111111111111",
+          "versions",
+          "22222222-2222-4222-8222-222222222222",
+          "restore",
+        ],
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/restore",
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -243,6 +297,30 @@ describe("resolveIdentityProxyTarget", () => {
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
     );
+  });
+
+  it("does not treat reserved ops-config actions as resource ids", () => {
+    const unknown = resolveIdentityProxyTarget("GET", [
+      "cluster-targets",
+      "publish",
+    ]);
+    assert.equal("status" in unknown, true);
+    if ("status" in unknown) {
+      assert.equal(unknown.status, 404);
+    }
+    const authorizedWrite = resolveIdentityProxyTarget("POST", [
+      "ssh-targets",
+      "authorized",
+    ]);
+    assert.equal("status" in authorizedWrite, true);
+    if ("status" in authorizedWrite) {
+      assert.equal(authorizedWrite.status, 405);
+    }
+    const invented = resolveIdentityProxyTarget("GET", ["targets"]);
+    assert.equal("status" in invented, true);
+    if ("status" in invented) {
+      assert.equal(invented.status, 404);
+    }
   });
 
   it("does not treat reserved credential actions as vault ids", () => {

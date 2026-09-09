@@ -13,6 +13,7 @@ import {
   collectSetCookies,
   rewriteUpstreamSetCookies,
 } from "./session-cookies.ts";
+import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 
 const API_PREFIX = "/api/v1";
@@ -188,6 +189,65 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[0] === "credentials" &&
       isResourceId(s[1]) &&
       (s[2] === "usage" || s[2] === "events" || s[2] === "deletion-impact"),
+  },
+  // E4.2 ops config UI (#36). Collection names live in ops-config-contract.ts
+  // so they can be retargeted when jonny's route map lands on main.
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 && isOpsConfigCollection(s[0]) && s[1] === "authorized",
+  },
+  {
+    methods: ["GET", "POST"],
+    match: (s) => s.length === 1 && isOpsConfigCollection(s[0]),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 && isOpsConfigCollection(s[0]) && isResourceId(s[1]),
+  },
+  {
+    methods: ["GET", "PATCH", "PUT"],
+    match: (s) =>
+      s.length === 3 &&
+      isOpsConfigCollection(s[0]) &&
+      isResourceId(s[1]) &&
+      s[2] === "draft",
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      isOpsConfigCollection(s[0]) &&
+      isResourceId(s[1]) &&
+      (s[2] === "publish" || s[2] === "compare"),
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 3 &&
+      isOpsConfigCollection(s[0]) &&
+      isResourceId(s[1]) &&
+      s[2] === "versions",
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 4 &&
+      isOpsConfigCollection(s[0]) &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]),
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      isOpsConfigCollection(s[0]) &&
+      isResourceId(s[1]) &&
+      s[2] === "versions" &&
+      isResourceId(s[3]) &&
+      s[4] === "restore",
   },
 ];
 
