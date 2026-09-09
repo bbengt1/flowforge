@@ -746,7 +746,7 @@ export function ExecutionDetail({
                     </p>
                     {event.details != null ? (
                       <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-                        {redactedJson(event.details)}
+                        {boundRedactedDisplay(event.details).text}
                       </pre>
                     ) : null}
                   </li>
