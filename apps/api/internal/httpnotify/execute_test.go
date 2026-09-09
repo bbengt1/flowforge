@@ -377,6 +377,15 @@ func TestCatalogDocumentsGateAndNodes(t *testing.T) {
 	if len(cat.Isolation.AllowPrivateDestinationsOptIn) == 0 {
 		t.Fatal("catalog must document allowPrivateDestinations opt-in")
 	}
+	off := CatalogWithEnabled(false)
+	if off.Gate.Enabled {
+		t.Fatalf("kill switch gate still enabled: %+v", off.Gate)
+	}
+	for _, n := range off.Nodes {
+		if n.Enabled {
+			t.Fatalf("kill switch left node enabled: %+v", n)
+		}
+	}
 }
 
 func TestPrivateAndLoopbackDeniedByDefault(t *testing.T) {
@@ -574,5 +583,141 @@ func TestRedirectToPrivateDenied(t *testing.T) {
 	}
 	if res.Error != nil && strings.Contains(res.Error.Message, "10.1.2.3") {
 		t.Fatalf("redirect problem leaked address: %s", res.Error.Message)
+	}
+}
+
+func TestSchemaRejectsWrongTypesAndExtraFields(t *testing.T) {
+	schema := map[string]any{
+		"type":                 "object",
+		"required":             []any{"count"},
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"count": map[string]any{"type": "integer", "minimum": 1, "maximum": 10},
+			"env":   map[string]any{"type": "string", "enum": []any{"staging", "prod"}},
+		},
+	}
+	if SchemaAllows(schema, map[string]any{"count": "wrong"}) {
+		t.Fatal("string must not satisfy integer")
+	}
+	if SchemaAllows(schema, map[string]any{"count": 3, "extra": true}) {
+		t.Fatal("additionalProperties false must deny extras")
+	}
+	if SchemaAllows(schema, map[string]any{"count": 3, "env": "dev"}) {
+		t.Fatal("enum must deny unknown values")
+	}
+	if !SchemaAllows(schema, map[string]any{"count": 3.0, "env": "staging"}) {
+		t.Fatal("whole JSON numbers and enum members must pass")
+	}
+
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"count":"wrong"}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, nil, nil)
+	conn.Policy.Ports = []int{port}
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.ResponseSchema = schema
+	req.SchemaPublished = true
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSchemaRejected {
+		t.Fatalf("typed schema: %+v", res.Error)
+	}
+}
+
+func TestSecretValueEchoedUnderInnocentKey(t *testing.T) {
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"echo":"opaque-value-secret"}`))
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"POST"}, []string{"/"})
+	conn.Policy.Ports = []int{port}
+	conn.Policy.SecretFields = []string{"apiKey"}
+	req := baseHTTPReq(conn, http.MethodPost, "/", map[string]any{"apiKey": "opaque-value-secret", "name": "ops"})
+	req.Handle = &Handle{Authorization: "Bearer handle-token-value"}
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("echo: %+v", res.Error)
+	}
+	if res.Body["echo"] != redactedMarker {
+		t.Fatalf("echoed secret not redacted: %+v", res.Body)
+	}
+	raw, _ := jsonish(res)
+	if strings.Contains(raw, "opaque-value-secret") || strings.Contains(raw, "handle-token-value") {
+		t.Fatalf("secret leaked: %s", raw)
+	}
+}
+
+func TestRedirectRebindsTransportToVerifiedHop(t *testing.T) {
+	var destHits int
+	dest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destHits++
+		if r.URL.Path != "/ok" {
+			t.Fatalf("dest path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"via":"dest"}`))
+	}))
+	t.Cleanup(dest.Close)
+	_, destPortStr, err := net.SplitHostPort(strings.TrimPrefix(dest.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	destPort, err := strconv.Atoi(destPortStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, dest.URL+"/ok", http.StatusFound)
+	}))
+	t.Cleanup(src.Close)
+	_, srcPortStr, err := net.SplitHostPort(strings.TrimPrefix(src.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcPort, err := strconv.Atoi(srcPortStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"GET"}, []string{"/"})
+	conn.Policy.Ports = []int{srcPort, destPort}
+	conn.Policy.AllowRedirects = true
+	conn.Policy.MaxRedirects = 2
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"127.0.0.1": []net.IP{net.ParseIP("127.0.0.1")}}
+	res := Execute(context.Background(), req)
+	if !res.OK {
+		t.Fatalf("rebind redirect: %+v", res.Error)
+	}
+	if destHits != 1 {
+		t.Fatalf("dest hits = %d (transport did not follow the verified hop)", destHits)
+	}
+	if res.Body["via"] != "dest" {
+		t.Fatalf("body = %+v", res.Body)
+	}
+}
+
+func TestEmailTemplateSchemaTypes(t *testing.T) {
+	mailer := &CaptureMailer{}
+	req := EmailRequest{
+		ConnectionID: "99999999-9999-4999-8999-999999999999",
+		WorkspaceID:  "ws-1",
+		Payload:      map[string]any{"service": 7},
+		Permissions:  operatorPerms(),
+		Connection:   ConnectionContext{ID: "c1", WorkspaceID: "ws-1", Type: ConnectionSMTP, Published: true},
+		Recipients:   RecipientListContext{ID: "r1", WorkspaceID: "ws-1", Published: true, Emails: []string{"ops@example.com"}},
+		Template: TemplateContext{
+			ID: "t1", WorkspaceID: "ws-1", Published: true, Subject: "Alert", Body: "Service {service} is degraded.",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"required":   []any{"service"},
+				"properties": map[string]any{"service": map[string]any{"type": "string"}},
+			},
+		},
+		Mailer: mailer,
+	}
+	res := ExecuteEmail(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeTemplateDenied {
+		t.Fatalf("typed template: %+v", res.Error)
 	}
 }

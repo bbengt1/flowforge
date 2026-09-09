@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -430,13 +431,13 @@ func checkAllowlists(op string, node workflow.Node, target opsconfig.Pin, kind s
 	if items, present := presentStringList(rules, "allowedAddresses", "addresses"); present {
 		if addrs := connectionAddresses(target.Spec); len(addrs) > 0 {
 			for _, addr := range addrs {
-				if !containsFold(items, addr) {
+				if !httpnotify.AddressOrNetworkCovered(items, addr) {
 					return "address is not allowed by policy"
 				}
 			}
 		} else {
 			host := stringField(target.Spec, "hostname")
-			if host == "" || !containsFold(items, host) {
+			if host == "" || !httpnotify.AddressOrNetworkCovered(items, host) {
 				return "address is not allowed by policy"
 			}
 		}

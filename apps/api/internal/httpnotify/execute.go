@@ -192,8 +192,9 @@ func Execute(ctx context.Context, req Request) Result {
 	}
 
 	rt := req.Transport
+	hop := newHopTransport(ctx, req.Resolver, req.Connection.Policy, req.Policy, out.Operation, allowPrivate)
 	if rt == nil {
-		rt = newPinnedTransport(ctx, req.Resolver, req.Connection.Policy, resolved.DialIP, ep)
+		rt = hop
 	}
 	client := &http.Client{
 		Transport: rt,
@@ -210,7 +211,11 @@ func Execute(ctx context.Context, req Request) Result {
 	defer resp.Body.Close()
 	out.StatusCode = resp.StatusCode
 	out.Redirects = redirectCount(resp)
-	out.ConnectedAddress = DialNetworkAddress(resolved.DialIP, ep.Port)
+	if hop.lastAddr != "" {
+		out.ConnectedAddress = hop.lastAddr
+	} else {
+		out.ConnectedAddress = DialNetworkAddress(resolved.DialIP, ep.Port)
+	}
 
 	maxResp := req.Connection.Policy.MaxResponseBytes
 	if req.ResponseMaxBytes > 0 && req.ResponseMaxBytes < maxResp {
@@ -228,7 +233,7 @@ func Execute(ctx context.Context, req Request) Result {
 		return finishHTTP(req, out)
 	}
 	if decoded, ok := decodeJSONObject(raw); ok {
-		out.Body = RedactValue(decoded).(map[string]any)
+		out.Body = RedactValue(decoded, requestSecrets(req)...).(map[string]any)
 		if len(req.ResponseSchema) > 0 && !schemaAllows(req.ResponseSchema, decoded) {
 			out.Error = engineError(CodeSchemaRejected, "response did not match the pinned response schema", http.StatusBadRequest)
 			return finishHTTP(req, out)
@@ -391,8 +396,17 @@ func redirectCount(resp *http.Response) int {
 	return n
 }
 
+func requestSecrets(req Request) []string {
+	extras := make([]string, 0, 1)
+	if req.Handle != nil {
+		extras = append(extras, req.Handle.Authorization)
+	}
+	return CollectSecretValues(req.Payload, req.Connection.Policy, extras...)
+}
+
 func finishHTTP(req Request, out Result) Result {
-	out.Body, _ = RedactValue(out.Body).(map[string]any)
+	secrets := requestSecrets(req)
+	out.Body, _ = RedactValue(out.Body, secrets...).(map[string]any)
 	out.Audit = redactAudit(map[string]any{
 		"operation":         out.Operation,
 		"connectionId":      out.ConnectionID,
@@ -407,7 +421,7 @@ func finishHTTP(req Request, out Result) Result {
 		"truncated":         out.Truncated,
 		"correlationId":     out.CorrelationID,
 		"outcome":           outcomeOf(out.OK, out.Error),
-	})
+	}, secrets...)
 	if out.Error != nil {
 		out.OK = false
 	}
@@ -428,8 +442,8 @@ func outcomeOf(ok bool, err *EngineError) string {
 	return "failed"
 }
 
-func redactAudit(in map[string]any) map[string]any {
-	out, _ := RedactValue(in).(map[string]any)
+func redactAudit(in map[string]any, secrets ...string) map[string]any {
+	out, _ := RedactValue(in, secrets...).(map[string]any)
 	return out
 }
 
@@ -446,27 +460,6 @@ func normalizeOp(op string) string {
 	}
 }
 
-func schemaAllows(schema map[string]any, value map[string]any) bool {
-	if schema == nil {
-		return true
-	}
-	typ, _ := schema["type"].(string)
-	if typ != "" && typ != "object" {
-		return false
-	}
-	if raw, ok := schema["required"].([]any); ok {
-		for _, item := range raw {
-			name, _ := item.(string)
-			if name != "" {
-				if _, exists := value[name]; !exists {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
 func atoi(s string) (int, error) {
 	n := 0
 	for _, r := range s {
@@ -478,34 +471,71 @@ func atoi(s string) (int, error) {
 	return n, nil
 }
 
-type pinnedTransport struct {
-	base   *http.Transport
-	dialIP net.IP
-	port   int
+// hopTransport re-resolves and re-pins the dial address for every request,
+// including allowed redirects to another host or port.
+type hopTransport struct {
+	ctx          context.Context
+	resolver     Resolver
+	policy       EndpointPolicy
+	pol          PolicyContext
+	op           string
+	allowPrivate bool
+	lastAddr     string
 }
 
-func newPinnedTransport(_ context.Context, _ Resolver, _ EndpointPolicy, dialIP net.IP, ep NormalizedEndpoint) *http.Transport {
-	_ = dialIP
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	return &http.Transport{
+func newHopTransport(ctx context.Context, resolver Resolver, policy EndpointPolicy, pol PolicyContext, op string, allowPrivate bool) *hopTransport {
+	return &hopTransport{ctx: ctx, resolver: resolver, policy: policy, pol: pol, op: op, allowPrivate: allowPrivate}
+}
+
+func (t *hopTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t == nil || req == nil || req.URL == nil {
+		return nil, engineError(CodeInvalidEndpoint, "request URL is missing", http.StatusBadRequest)
+	}
+	host := req.URL.Hostname()
+	port := 0
+	if p := req.URL.Port(); p != "" {
+		n, err := atoi(p)
+		if err != nil {
+			return nil, engineError(CodeInvalidEndpoint, "port is invalid", http.StatusBadRequest)
+		}
+		port = n
+	}
+	tlsRequired := t.policy.TLSRequired || req.URL.Scheme == "https"
+	if t.policy.TLSRequired && req.URL.Scheme != "https" {
+		return nil, engineError(CodeTLSRequired, "endpoint is not HTTPS", http.StatusForbidden)
+	}
+	ep, err := NormalizeEndpoint(host, req.URL.EscapedPath(), port, tlsRequired)
+	if err != nil {
+		return nil, err
+	}
+	if e := EnforceMethodPathTLS(req.Method, ep.Path, ep, t.policy); e != nil {
+		return nil, e
+	}
+	resolved, rerr := ResolveHostname(t.ctx, t.resolver, ep.Host, t.allowPrivate)
+	if rerr != nil {
+		return nil, rerr
+	}
+	if e := VerifyResolvedAddresses(ep.Host, resolved.Addresses, t.policy.AllowedAddresses, t.policy.AddressesPresent, t.allowPrivate); e != nil {
+		return nil, e
+	}
+	if e := ValidatePolicy(t.pol, t.op, ep.Host, addressStrings(resolved.Addresses)); e != nil {
+		return nil, e
+	}
+	dialAddr := DialNetworkAddress(resolved.DialIP, ep.Port)
+	t.lastAddr = dialAddr
+	hop := &http.Transport{
 		DisableKeepAlives: true,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			ServerName: ep.Host,
 		},
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			if dialIP == nil {
+			if resolved.DialIP == nil || dialAddr == "" {
 				return nil, engineError(CodeAddressDenied, "no verified destination address", http.StatusForbidden)
 			}
-			return dialer.DialContext(ctx, "tcp", DialNetworkAddress(dialIP, ep.Port))
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", dialAddr)
 		},
 	}
-}
-
-func (t *pinnedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t == nil || t.base == nil {
-		return nil, engineError(CodeDeliveryFailed, "transport is not configured", http.StatusBadGateway)
-	}
-	_ = t.port
-	return t.base.RoundTrip(req)
+	defer hop.CloseIdleConnections()
+	return hop.RoundTrip(req)
 }

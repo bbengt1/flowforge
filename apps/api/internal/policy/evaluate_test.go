@@ -332,6 +332,64 @@ spec:
 	}
 }
 
+func TestEvaluateHTTPAddressCIDRContainment(t *testing.T) {
+	connID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	policyID := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	yamlDoc := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: http-cidr
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Status
+      with:
+        connectionId: ` + connID + `
+        policyId: ` + policyID + `
+        method: GET
+        path: /v1/status
+  edges: []
+`
+	pins := func(connAddrs []string, policyAddrs []string) []opsconfig.Pin {
+		return []opsconfig.Pin{
+			{
+				Kind: opsconfig.KindConnection, ResourceID: connID,
+				VersionID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("e", 64),
+				Spec: map[string]any{
+					"type": "http",
+					"endpointPolicy": map[string]any{
+						"hosts": []string{"status.example.com"}, "methods": []string{"GET"}, "pathPrefixes": []string{"/v1/"},
+						"allowedAddresses": connAddrs,
+					},
+				},
+			},
+			{
+				Kind: opsconfig.KindPolicy, ResourceID: policyID,
+				VersionID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", VersionNumber: 1, Digest: "sha256:" + strings.Repeat("f", 64),
+				Spec: map[string]any{"kind": "http", "policy": map[string]any{"allowedAddresses": policyAddrs}},
+			},
+		}
+	}
+	allowed, err := Evaluate(Input{YAML: yamlDoc, Pins: pins([]string{"203.0.113.0/25"}, []string{"203.0.113.0/24"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed.Decision != DecisionAllow {
+		t.Fatalf("subset CIDR should allow, got %+v", allowed)
+	}
+	denied, err := Evaluate(Input{YAML: yamlDoc, Pins: pins([]string{"203.0.113.0/24"}, []string{"203.0.113.0/25"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.Decision != DecisionDeny {
+		t.Fatalf("superset CIDR should deny, got %+v", denied)
+	}
+}
+
 func workflowYAML(targetID, ns string) string {
 	return `apiVersion: flowforge/v1
 kind: Workflow

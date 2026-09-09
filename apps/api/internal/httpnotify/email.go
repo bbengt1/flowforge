@@ -172,7 +172,7 @@ func ExecuteEmail(ctx context.Context, req EmailRequest) EmailResult {
 		out.Error = terr
 		return finishEmail(req, out)
 	}
-	out.Subject = redactText(subject)
+	out.Subject = redactText(subject, requestEmailSecrets(req)...)
 	if req.Mailer == nil {
 		out.Error = engineError(CodeDeliveryFailed, "mailer is not configured", http.StatusBadGateway)
 		return finishEmail(req, out)
@@ -347,8 +347,13 @@ func substitutePlaceholders(text string, payload map[string]any) (string, *Engin
 	return out, nil
 }
 
+func requestEmailSecrets(req EmailRequest) []string {
+	return CollectSecretValues(req.Payload, req.Connection.Policy)
+}
+
 func finishEmail(req EmailRequest, out EmailResult) EmailResult {
-	out.Subject = redactText(out.Subject)
+	secrets := requestEmailSecrets(req)
+	out.Subject = redactText(out.Subject, secrets...)
 	out.Audit = redactAudit(map[string]any{
 		"operation":       NodeEmail,
 		"connectionId":    out.ConnectionID,
@@ -358,7 +363,7 @@ func finishEmail(req EmailRequest, out EmailResult) EmailResult {
 		"classification":  out.Classification,
 		"correlationId":   out.CorrelationID,
 		"outcome":         outcomeOf(out.OK, out.Error),
-	})
+	}, secrets...)
 	if out.Error != nil {
 		out.OK = false
 	}
@@ -366,11 +371,9 @@ func finishEmail(req EmailRequest, out EmailResult) EmailResult {
 	return out
 }
 
-func redactText(s string) string {
-	if looksLikeSecretString(s) {
-		return redactedMarker
-	}
-	return s
+func redactText(s string, secrets ...string) string {
+	out, _ := RedactValue(s, secrets...).(string)
+	return out
 }
 
 func lowerStrings(in []string) []string {

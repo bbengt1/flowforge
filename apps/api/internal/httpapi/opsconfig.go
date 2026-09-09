@@ -90,7 +90,7 @@ func (s *Server) getOpsCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = scope
-	writeJSON(w, http.StatusOK, opsconfig.TypeCatalog())
+	writeJSON(w, http.StatusOK, opsconfig.TypeCatalogWithGate(workflow.IntegrationActionsEnabled))
 }
 
 func (s *Server) listOpsResources(kind string) http.HandlerFunc {
@@ -406,7 +406,7 @@ func (s *Server) getHTTPCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = scope
-	writeJSON(w, http.StatusOK, httpnotify.Catalog())
+	writeJSON(w, http.StatusOK, httpnotify.CatalogWithEnabled(workflow.IntegrationActionsEnabled))
 }
 
 func (s *Server) authorizeOpsSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, kind string, spec map[string]any, ready bool) bool {
@@ -451,6 +451,10 @@ func (s *Server) authorizeCredentialSpec(w http.ResponseWriter, r *http.Request,
 	}
 	if kind == opsconfig.KindSSHTarget && meta.Type != vault.TypeSSHPrivateKey && meta.Type != ssheng.CredentialType {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "SSH targets require a workspace ssh_private_key credential.")
+		return false
+	}
+	if kind == opsconfig.KindConnection && meta.Type != vault.TypeToken && meta.Type != httpnotify.CredentialType {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Connections require a workspace token credential.")
 		return false
 	}
 	if meta.Status == vault.StatusDisabled {
