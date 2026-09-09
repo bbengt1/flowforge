@@ -15,6 +15,7 @@ import {
   hasCallerIdentity,
   hasOperatorCaller,
   hasWorkspaceLookup,
+  workspaceLookupKey,
   isWorkspaceIdOnlyIdentity,
   pickForwardedIdentityHeaders,
   pickIsolationForwardedHeaders,
@@ -188,6 +189,7 @@ describe("workspace lookup helpers", () => {
     identity.tenantSlug = "acme";
     identity.workbenchKey = "ops";
     assert.equal(hasWorkspaceLookup(identity), true);
+    assert.equal(workspaceLookupKey(identity), "|acme|ops");
   });
 
   it("detects workspace-id-only host identity so the UI never treats it as lookup", () => {

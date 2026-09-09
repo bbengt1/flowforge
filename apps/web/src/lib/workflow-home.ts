@@ -67,6 +67,7 @@ export type WorkflowHomeItem = {
   lastRunAt: string | null;
   lastRunStatus: string | null;
   lastRunId: string | null;
+  lastRunKnown: boolean;
 };
 
 function readOwner(record: WorkflowRecord): string {
@@ -74,12 +75,34 @@ function readOwner(record: WorkflowRecord): string {
 }
 
 export function folderFromSlug(slug: string): string {
-  const trimmed = slug.trim();
-  const slash = trimmed.indexOf("/");
-  if (slash <= 0) {
+  return folderBeforeSeparator(slug, "/");
+}
+
+/**
+ * Folders are not an API field. Slugs are `[a-z0-9-]+`, so `/` never
+ * survives create. Use a name prefix (`ops/…` or `ops: …`) or encode
+ * the folder in the slug as `ops--name`.
+ */
+export function workflowFolder(slug: string, name = ""): string {
+  const fromName =
+    folderBeforeSeparator(name, "/") || folderBeforeSeparator(name, ":");
+  if (fromName) {
+    return fromName;
+  }
+  const dashed = slug.trim().toLowerCase().split("--");
+  if (dashed.length >= 2 && dashed[0]) {
+    return dashed[0];
+  }
+  return folderFromSlug(slug);
+}
+
+function folderBeforeSeparator(value: string, separator: string): string {
+  const trimmed = value.trim();
+  const index = trimmed.indexOf(separator);
+  if (index <= 0) {
     return "";
   }
-  return trimmed.slice(0, slash);
+  return trimmed.slice(0, index).trim();
 }
 
 export function deriveWorkflowTags(record: WorkflowRecord): string[] {
@@ -117,11 +140,13 @@ export function toWorkflowHomeItem(
     draft?: WorkflowDraft | null;
     executions?: readonly ExecutionRecord[];
     approvals?: readonly ApprovalRequest[];
+    lastRunKnown?: boolean;
   } = {},
 ): WorkflowHomeItem {
   const draft = extras.draft ?? null;
   const triggers = (draft?.summary?.triggers ?? []).map((item) => item.type);
   const last = latestExecution(record.id, extras.executions ?? []);
+  const lastRunKnown = extras.lastRunKnown === true;
   const pendingApprovals = (extras.approvals ?? []).filter(
     (item) => item.workflowId === record.id && item.status === "pending",
   ).length;
@@ -143,7 +168,7 @@ export function toWorkflowHomeItem(
     owner: readOwner(record),
     updatedAt: record.updatedAt,
     createdAt: record.createdAt,
-    folder: folderFromSlug(record.slug),
+    folder: workflowFolder(record.slug, record.name),
     tags: deriveWorkflowTags(record),
     triggers,
     environment: extras.environment?.trim() ?? "",
@@ -152,6 +177,7 @@ export function toWorkflowHomeItem(
     lastRunAt: last?.startedAt || last?.createdAt || null,
     lastRunStatus: last?.status ?? null,
     lastRunId: last?.id ?? null,
+    lastRunKnown,
   };
 }
 
@@ -162,6 +188,7 @@ export function buildWorkflowHomeItems(
     drafts?: ReadonlyMap<string, WorkflowDraft>;
     executions?: readonly ExecutionRecord[];
     approvals?: readonly ApprovalRequest[];
+    lastRunKnownIds?: ReadonlySet<string>;
   } = {},
 ): WorkflowHomeItem[] {
   return records.map((record) =>
@@ -170,6 +197,7 @@ export function buildWorkflowHomeItems(
       draft: extras.drafts?.get(record.id) ?? null,
       executions: extras.executions,
       approvals: extras.approvals,
+      lastRunKnown: extras.lastRunKnownIds?.has(record.id) ?? false,
     }),
   );
 }
@@ -227,6 +255,9 @@ export function matchesWorkflowHomeFilters(
   }
   const lastRun = filters.lastRun;
   if (lastRun && lastRun !== "any") {
+    if (!item.lastRunKnown) {
+      return false;
+    }
     if (lastRun === "never" && item.lastRunAt) {
       return false;
     }

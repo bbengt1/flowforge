@@ -74,13 +74,15 @@ export function paletteCommands(
         workflowId: context.workflowId ?? undefined,
       },
     });
-    commands.push({
-      id: "validate",
-      label: "Validate",
-      hint: "Validate the current draft YAML",
-      keywords: ["validate", "lint", "yaml"],
-      action: { type: "validate" },
-    });
+    if (context.workflowId) {
+      commands.push({
+        id: "validate",
+        label: "Validate",
+        hint: "Validate the current draft YAML",
+        keywords: ["validate", "lint", "yaml"],
+        action: { type: "validate" },
+      });
+    }
     commands.push({
       id: "nav-workflows",
       label: "Go to Workflows",
@@ -103,7 +105,7 @@ export function paletteCommands(
       action: { type: "navigate", href: "/actions" },
     });
   }
-  if (allowed(permissions, canPublishWorkflows)) {
+  if (context.workflowId && allowed(permissions, canPublishWorkflows)) {
     commands.push({
       id: "publish",
       label: "Publish",
@@ -112,7 +114,7 @@ export function paletteCommands(
       action: { type: "publish" },
     });
   }
-  if (allowed(permissions, canExecuteWorkflows)) {
+  if (context.workflowId && allowed(permissions, canExecuteWorkflows)) {
     commands.push({
       id: "run-published",
       label: "Run published version",
@@ -204,6 +206,11 @@ export function filterPaletteCommands(
   });
 }
 
+/** Home already handles the command bus; do not also push ?create=1. */
+export function isWorkflowHomePath(pathname: string): boolean {
+  return pathname === "/workflows";
+}
+
 export function commandHref(action: CommandAction): string | null {
   if (action.type === "navigate") {
     return action.href;
@@ -216,8 +223,11 @@ export function commandHref(action: CommandAction): string | null {
       ? `/executions/${action.executionId}`
       : "/executions";
   }
-  if (action.type === "new-workflow" || action.type === "import-yaml") {
-    return "/workflows";
+  if (action.type === "new-workflow") {
+    return "/workflows?create=1";
+  }
+  if (action.type === "import-yaml") {
+    return "/workflows?import=1";
   }
   if (
     action.type === "validate" ||

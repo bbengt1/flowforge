@@ -8,6 +8,7 @@ import {
   buildWorkflowHomeItems,
   filterWorkflowHomeItems,
   folderFromSlug,
+  workflowFolder,
 } from "./workflow-home.ts";
 import { WORKFLOW_TEMPLATES, workflowTemplateById } from "./workflow-templates.ts";
 
@@ -112,17 +113,25 @@ const approval = {
 describe("workflow home list/filter", () => {
   it("derives folder, validation, last run, and pending approvals", () => {
     assert.equal(folderFromSlug("ops/deploy"), "ops");
-    const [item] = buildWorkflowHomeItems([record()], {
-      environment: "ops",
-      drafts: new Map([[record().id, draft]]),
-      executions: [execution],
-      approvals: [approval],
-    });
+    assert.equal(workflowFolder("ops--deploy", "Deploy app"), "ops");
+    assert.equal(workflowFolder("deploy", "ops/Deploy app"), "ops");
+    assert.equal(workflowFolder("deploy", "ops: nightly"), "ops");
+    const [item] = buildWorkflowHomeItems(
+      [record({ slug: "ops--deploy", name: "Deploy app" })],
+      {
+        environment: "ops",
+        drafts: new Map([[record().id, draft]]),
+        executions: [execution],
+        approvals: [approval],
+        lastRunKnownIds: new Set([record().id]),
+      },
+    );
     assert.equal(item?.folder, "ops");
     assert.equal(item?.validationHealth, "valid");
     assert.equal(item?.triggers[0], "manual");
     assert.equal(item?.pendingApprovals, 1);
     assert.equal(item?.lastRunStatus, "succeeded");
+    assert.equal(item?.lastRunKnown, true);
     assert.equal(item?.environment, "ops");
     assert.equal(item?.latestVersionNumber, 2);
   });
@@ -141,6 +150,7 @@ describe("workflow home list/filter", () => {
       environment: "ops",
       drafts: new Map([[record().id, draft]]),
       executions: [execution],
+      lastRunKnownIds: new Set([record().id, other.id]),
     });
     const found = filterWorkflowHomeItems(items, {
       ...EMPTY_WORKFLOW_HOME_FILTERS,
@@ -158,6 +168,21 @@ describe("workflow home list/filter", () => {
       environment: "prod",
     });
     assert.equal(none.length, 0);
+
+    const unknownRun = filterWorkflowHomeItems(
+      buildWorkflowHomeItems([other], { environment: "ops" }),
+      { ...EMPTY_WORKFLOW_HOME_FILTERS, lastRun: "never" },
+    );
+    assert.equal(unknownRun.length, 0);
+
+    const neverRun = filterWorkflowHomeItems(
+      buildWorkflowHomeItems([other], {
+        environment: "ops",
+        lastRunKnownIds: new Set([other.id]),
+      }),
+      { ...EMPTY_WORKFLOW_HOME_FILTERS, lastRun: "never" },
+    );
+    assert.equal(neverRun.length, 1);
   });
 });
 

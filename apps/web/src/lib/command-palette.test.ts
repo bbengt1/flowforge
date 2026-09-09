@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { filterPaletteCommands, paletteCommands } from "./command-palette.ts";
+import {
+  commandHref,
+  filterPaletteCommands,
+  isWorkflowHomePath,
+  paletteCommands,
+} from "./command-palette.ts";
 import {
   clearNotifications,
   pushNotification,
@@ -28,18 +33,40 @@ describe("paletteCommands", () => {
   });
 
   it("includes authoring commands for an editor with execute", () => {
+    const commands = paletteCommands(
+      [
+        ...viewer,
+        "workflow.edit",
+        "workflow.publish",
+        "workflow.execute",
+        "credential.view",
+      ],
+      { workflowId: "11111111-1111-4111-8111-111111111111" },
+    );
+    const ids = commands.map((item) => item.id);
+    assert.ok(ids.includes("new-workflow"));
+    assert.ok(ids.includes("publish"));
+    assert.ok(ids.includes("run-published"));
+    assert.ok(ids.includes("validate"));
+    assert.ok(ids.includes("nav-vault"));
+  });
+
+  it("omits editor-only commands without an open workflow", () => {
     const commands = paletteCommands([
       ...viewer,
       "workflow.edit",
       "workflow.publish",
       "workflow.execute",
-      "credential.view",
     ]);
     const ids = commands.map((item) => item.id);
     assert.ok(ids.includes("new-workflow"));
-    assert.ok(ids.includes("publish"));
-    assert.ok(ids.includes("run-published"));
-    assert.ok(ids.includes("nav-vault"));
+    assert.equal(ids.includes("publish"), false);
+    assert.equal(ids.includes("run-published"), false);
+    assert.equal(ids.includes("validate"), false);
+    assert.equal(isWorkflowHomePath("/workflows"), true);
+    assert.equal(isWorkflowHomePath("/workflows/abc"), false);
+    assert.equal(commandHref({ type: "new-workflow" }), "/workflows?create=1");
+    assert.equal(commandHref({ type: "import-yaml" }), "/workflows?import=1");
   });
 
   it("filters commands by query", () => {
