@@ -272,6 +272,14 @@ func writeScriptError(w http.ResponseWriter, r *http.Request, err error) {
 			code = CodeResourceLimit
 		case scripts.CodeIndeterminate:
 			code = CodeIndeterminate
+		case scripts.CodeRetryDenied:
+			code = CodeRetryDenied
+		case scripts.CodeHandleForbidden:
+			code = CodeInvalidRequest
+		case scripts.CodeEnvDenied:
+			code = CodeInvalidRequest
+		case scripts.CodeOutputTooLarge, scripts.CodeInputRejected, scripts.CodeInvalidVerification:
+			code = CodeInvalidRequest
 		default:
 			code = CodeInvalidRequest
 		}

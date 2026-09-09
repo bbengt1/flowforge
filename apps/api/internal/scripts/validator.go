@@ -51,6 +51,9 @@ func ValidatePublishInput(in PublishInput) error {
 	if err := ValidateDeclaredSchema(in.OutputSchema, "outputSchema"); err != nil {
 		return err
 	}
+	if err := ValidateRetryDeclaration(in.RetryWith); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -156,6 +159,7 @@ func InputFromNode(node NodeSpec, profileID, profileVersionID, profileDigest str
 	if raw, ok := node.With["outputSchema"].(map[string]any); ok {
 		in.OutputSchema = raw
 	}
+	in.RetryWith = node.With
 	return in, nil
 }
 

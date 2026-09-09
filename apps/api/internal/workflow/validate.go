@@ -498,6 +498,19 @@ func validateScriptNode(n Node, path string) ErrorList {
 		}
 		errs = append(errs, ValidateDeclaredSchema(schema, path+".with."+key)...)
 	}
+	if err := scripts.ValidateRetryDeclaration(n.With); err != nil {
+		errs = append(errs, scriptsAsField(err, path+".with", n.pos.Line, n.pos.Column))
+	}
+	if rp, ok := n.With["retryPolicy"]; ok {
+		m, ok := rp.(map[string]any)
+		if !ok {
+			errs = append(errs, fieldError(path+".with.retryPolicy", n.pos.Line, n.pos.Column, CodeInvalidType, "retryPolicy must be a mapping."))
+		} else if v, ok := m["maxAttempts"]; ok {
+			if !isBoundedInt(v, 0, 5) {
+				errs = append(errs, fieldError(path+".with.retryPolicy.maxAttempts", n.pos.Line, n.pos.Column, CodeInvalidWith, "retryPolicy.maxAttempts must be between 0 and 5."))
+			}
+		}
+	}
 	return errs
 }
 
@@ -521,6 +534,10 @@ func scriptsAsField(err error, path string, line, column int) FieldError {
 			code = CodeOutputTooLarge
 		case scripts.CodeInvalidSchema:
 			code = CodeInvalidSchema
+		case scripts.CodeRetryDenied:
+			code = CodeRetryDenied
+		case scripts.CodeInvalidVerification:
+			code = CodeInvalidVerification
 		}
 		return fieldError(path, line, column, code, ee.Message)
 	}

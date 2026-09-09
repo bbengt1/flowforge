@@ -26,37 +26,57 @@ type Request struct {
 	Builder            ControlledBuilder
 	CorrelationID      string
 	ActorID            string
+	Input              map[string]any
+	InputSchema        map[string]any
+	OutputSchema       map[string]any
+	Handles            []Handle
+	ExtraEnv           map[string]string
+	RetryPolicy        RetryPolicy
+	RetrySafe          bool
+	IdempotencyKey     string
+	Verification       *VerificationSpec
+	PriorOutput        map[string]any
+	Attempt            int
 	LeaseLost          bool
 	UnknownOutcome     bool
+	PriorIndeterminate bool
 	RequireLiveRuntime bool
 	Probes             []IsolationProbe
 }
 
 // Result is the redacted engine outcome persisted on the job.
 type Result struct {
-	OK                   bool             `json:"ok"`
-	Operation            string           `json:"operation"`
-	Language             string           `json:"language,omitempty"`
-	Entrypoint           string           `json:"entrypoint,omitempty"`
-	ArtifactID           string           `json:"artifactId,omitempty"`
-	ArtifactDigest       string           `json:"artifactDigest,omitempty"`
-	SignatureVerified    bool             `json:"signatureVerified"`
-	ScanStatus           string           `json:"scanStatus,omitempty"`
-	RuntimeProfileID     string           `json:"runtimeProfileId,omitempty"`
-	RuntimeProfileDigest string           `json:"runtimeProfileDigest,omitempty"`
-	Isolation            IsolationReport  `json:"isolation"`
-	Binary               *SignedBinary    `json:"binary,omitempty"`
-	Stdout               string           `json:"stdout,omitempty"`
-	Stderr               string           `json:"stderr,omitempty"`
-	ExitCode             *int             `json:"exitCode,omitempty"`
-	CorrelationID        string           `json:"correlationId,omitempty"`
-	Audit                map[string]any   `json:"audit,omitempty"`
-	Error                *EngineError     `json:"error,omitempty"`
+	OK                   bool              `json:"ok"`
+	Operation            string            `json:"operation"`
+	Language             string            `json:"language,omitempty"`
+	Entrypoint           string            `json:"entrypoint,omitempty"`
+	ArtifactID           string            `json:"artifactId,omitempty"`
+	ArtifactDigest       string            `json:"artifactDigest,omitempty"`
+	SignatureVerified    bool              `json:"signatureVerified"`
+	ScanStatus           string            `json:"scanStatus,omitempty"`
+	RuntimeProfileID     string            `json:"runtimeProfileId,omitempty"`
+	RuntimeProfileDigest string            `json:"runtimeProfileDigest,omitempty"`
+	Isolation            IsolationReport   `json:"isolation"`
+	Binary               *SignedBinary     `json:"binary,omitempty"`
+	Stdout               string            `json:"stdout,omitempty"`
+	Stderr               string            `json:"stderr,omitempty"`
+	ExitCode             *int              `json:"exitCode,omitempty"`
+	Input                map[string]any    `json:"input,omitempty"`
+	Output               map[string]any    `json:"output,omitempty"`
+	Handles              []map[string]any  `json:"handles,omitempty"`
+	Env                  map[string]string `json:"env,omitempty"`
+	InputValidated       bool              `json:"inputValidated"`
+	OutputValidated      bool              `json:"outputValidated"`
+	Retry                RetryState        `json:"retry"`
+	CorrelationID        string            `json:"correlationId,omitempty"`
+	Audit                map[string]any    `json:"audit,omitempty"`
+	Error                *EngineError      `json:"error,omitempty"`
 }
 
-// Execute re-verifies the artifact, builds the isolation spec, then runs
-// the short-lived harness (CI) or a live runtime. Typed I/O validation
-// and revocation/emergency-stop remain E9.3 / E9.4 hooks.
+// Execute re-verifies the artifact, validates typed I/O, injects scoped
+// handles only, then runs the short-lived harness (CI) or a live runtime.
+// Retries default to zero. Lease loss is indeterminate and never a blind re-run.
+// Artifact revocation / emergency-stop remain E9.4.
 func Execute(ctx context.Context, req Request) Result {
 	out := Result{
 		Operation:            nodeTypeFor(req),
@@ -68,14 +88,64 @@ func Execute(ctx context.Context, req Request) Result {
 		RuntimeProfileID:     firstNonEmpty(req.RuntimeProfileID, req.Artifact.RuntimeProfileID),
 		RuntimeProfileDigest: req.Artifact.RuntimeProfileDigest,
 		CorrelationID:        strings.TrimSpace(req.CorrelationID),
+		Retry:                stubRetry(req),
 	}
 	if req.LeaseLost || req.UnknownOutcome {
-		out.Error = engineError(CodeIndeterminate, "Worker lease was lost or the provider outcome is unknown; the script is not retried.", http.StatusConflict)
-		return finish(req, out)
+		return leaseLossResult(req, out)
 	}
 	if err := authorizeExecute(req); err != nil {
 		out.Error = err
 		return finish(req, out)
+	}
+	retry, rerr := normalizeRetry(req)
+	if rerr != nil {
+		out.Error = rerr
+		return finish(req, out)
+	}
+	out.Retry = retry
+	if err := ValidateExecutionInput(req.Input, req.InputSchema); err != nil {
+		out.Error = asEngineError(err)
+		return finish(req, out)
+	}
+	out.InputValidated = true
+	out.Input = cloneObject(req.Input)
+	handles, herr := PublicHandles(req.Handles, time.Time{})
+	if herr != nil {
+		out.Error = asEngineError(herr)
+		return finish(req, out)
+	}
+	out.Handles = handles
+	handleIDs := make([]string, 0, len(handles))
+	for _, h := range handles {
+		if id, _ := h["id"].(string); id != "" {
+			handleIDs = append(handleIDs, id)
+		}
+	}
+	env, eerr := RuntimeEnv(req, handleIDs)
+	if eerr != nil {
+		out.Error = asEngineError(eerr)
+		return finish(req, out)
+	}
+	out.Env = env
+	if requestAttempt(req) > 1 {
+		if req.Verification == nil {
+			out.Error = engineError(CodeRetryDenied, "a later attempt requires declared verification; the script is not re-run.", http.StatusConflict)
+			return finish(req, out)
+		}
+		verify := runVerification(req, *req.Verification)
+		out.Retry.Verification = &verify
+		switch verify.Outcome {
+		case VerifyAlreadyApplied:
+			out.OK = true
+			out.Output = cloneObject(req.PriorOutput)
+			out.OutputValidated = true
+			return finish(req, out)
+		case VerifySafeToRetry:
+			// Fall through to one mutating run.
+		default:
+			out.Error = engineError(CodeIndeterminate, "verification could not confirm state; the script is not re-run.", http.StatusConflict)
+			return finish(req, out)
+		}
 	}
 	if err := VerifyForDispatch(req.Artifact, req.SigningKey); err != nil {
 		out.Error = asEngineError(err)
@@ -167,6 +237,9 @@ func Execute(ctx context.Context, req Request) Result {
 		Lock:       spec.DependencyLockDigest,
 		Binary:     binary,
 		Probes:     req.Probes,
+		Input:      cloneObject(req.Input),
+		Handles:    handles,
+		Env:        env,
 	}
 	ran, runErr := runtime.Run(ctx, spec, job)
 	if runErr != nil {
@@ -185,6 +258,17 @@ func Execute(ctx context.Context, req Request) Result {
 	if ran.Binary != nil {
 		out.Binary = ran.Binary
 	}
+	parsed, safe, oerr := ValidateExecutionOutput(ran.Stdout, req.OutputSchema)
+	if oerr != nil {
+		out.OK = false
+		out.Stdout = safe
+		out.Error = asEngineError(oerr)
+		return finish(req, out)
+	}
+	out.Output = parsed
+	out.OutputValidated = true
+	out.Stdout = safe
+	out.Retry.ExecutedAttempts = requestAttempt(req)
 	return finish(req, out)
 }
 
@@ -267,9 +351,22 @@ func mergeEgress(base, extra EgressPolicy) EgressPolicy {
 }
 
 func finish(req Request, out Result) Result {
-	out.Audit = runAudit(req, out)
 	out.Stdout = RedactSource(out.Stdout)
 	out.Stderr = RedactSource(out.Stderr)
+	out.Input = redactObject(out.Input)
+	out.Output = redactObject(out.Output)
+	if out.Handles != nil {
+		cleaned := make([]map[string]any, 0, len(out.Handles))
+		for _, h := range out.Handles {
+			if err := rejectPublicSecret(h); err != nil {
+				continue
+			}
+			cleaned = append(cleaned, redactObject(h))
+		}
+		out.Handles = cleaned
+	}
+	out.Env = redactEnv(out.Env)
+	out.Audit = runAudit(req, out)
 	return out
 }
 
@@ -286,6 +383,11 @@ func runAudit(req Request, out Result) map[string]any {
 		"uid":                  out.Isolation.UID,
 		"readOnlyRootFS":       out.Isolation.ReadOnlyRootFS,
 		"noNewPrivs":           out.Isolation.NoNewPrivs,
+		"inputValidated":       out.InputValidated,
+		"outputValidated":      out.OutputValidated,
+		"retrySafe":            out.Retry.RetrySafe,
+		"retryAllowed":         out.Retry.Allowed,
+		"verificationDeclared": out.Retry.VerificationDeclared,
 		"correlationId":        out.CorrelationID,
 		"ok":                   out.OK,
 	}
@@ -299,7 +401,30 @@ func runAudit(req Request, out Result) map[string]any {
 		audit["binaryDigest"] = out.Binary.Digest
 		audit["binaryStub"] = out.Binary.Stub
 	}
+	if out.Retry.Verification != nil {
+		audit["verificationOutcome"] = out.Retry.Verification.Outcome
+	}
+	if len(out.Handles) > 0 {
+		ids := make([]string, 0, len(out.Handles))
+		for _, h := range out.Handles {
+			if id, _ := h["id"].(string); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		audit["handleIds"] = ids
+	}
 	return audit
+}
+
+func cloneObject(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func itoa(n int) string {

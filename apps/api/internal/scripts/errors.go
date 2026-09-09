@@ -27,6 +27,10 @@ var (
 	ErrImageDenied      = errors.New("arbitrary or unpinned runtime images are denied")
 	ErrResourceLimit    = errors.New("script exceeded pinned resource limits")
 	ErrLeaseLost        = errors.New("worker lease was lost; script outcome is indeterminate")
+	ErrRetryDenied      = errors.New("script retry is not allowed")
+	ErrHandleForbidden  = errors.New("script credential handle is forbidden")
+	ErrOutputTooLarge   = errors.New("script output exceeds the size limit")
+	ErrInputRejected    = errors.New("script input failed schema or secret checks")
 )
 
 // Documented engine / field codes for Chloe.
@@ -59,8 +63,13 @@ const (
 	CodeResourceLimit            = "resource-limit"
 	CodeIndeterminate            = "indeterminate"
 	CodeRunnerNotImplemented     = "runner-not-implemented"
-	CodeIONotImplemented         = "typed-io-not-implemented"
 	CodeRevocationNotImplemented = "revocation-not-implemented"
+	CodeRetryDenied              = "retry-denied"
+	CodeInvalidVerification      = "invalid-verification"
+	CodeHandleForbidden          = "handle-forbidden"
+	CodeOutputTooLarge           = "output-too-large"
+	CodeInputRejected            = "input-rejected"
+	CodeEnvDenied                = "env-denied"
 )
 
 // EngineError is a secret-free failure returned to publish/execute callers.
@@ -116,6 +125,14 @@ func asEngineError(err error) *EngineError {
 		return engineError(CodeResourceLimit, "CPU, memory, process, or time limit was exceeded.", http.StatusBadRequest)
 	case errors.Is(err, ErrLeaseLost):
 		return engineError(CodeIndeterminate, "Worker lease was lost; the script is not retried until a verification hook resolves it.", http.StatusConflict)
+	case errors.Is(err, ErrRetryDenied):
+		return engineError(CodeRetryDenied, "Retry requires a declared idempotency key, verification behavior, and remaining attempts.", http.StatusConflict)
+	case errors.Is(err, ErrHandleForbidden):
+		return engineError(CodeHandleForbidden, "Credential handles must be scoped, short-lived, and never include plaintext secrets.", http.StatusForbidden)
+	case errors.Is(err, ErrOutputTooLarge):
+		return engineError(CodeOutputTooLarge, "Script output exceeds the 16 KiB limit.", http.StatusBadRequest)
+	case errors.Is(err, ErrInputRejected):
+		return engineError(CodeInputRejected, "Script input failed schema, size, or secret checks.", http.StatusBadRequest)
 	case errors.Is(err, ErrIsolation):
 		return engineError(CodeIsolationDenied, "The isolated runner denied the requested execution environment.", http.StatusForbidden)
 	case errors.Is(err, ErrNotFound):

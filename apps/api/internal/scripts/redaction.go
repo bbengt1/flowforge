@@ -4,6 +4,42 @@ import (
 	"strings"
 )
 
+func redactObject(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if secretInputKeys[strings.ToLower(strings.ReplaceAll(k, "-", ""))] {
+			out[k] = "[redacted]"
+			continue
+		}
+		switch n := v.(type) {
+		case string:
+			out[k] = RedactSource(n)
+		case map[string]any:
+			out[k] = redactObject(n)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func redactEnv(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if !allowedRuntimeEnv[k] {
+			continue
+		}
+		out[k] = RedactSource(v)
+	}
+	return out
+}
+
 // RedactSource replaces isolated token-shaped strings. Irredactable material
 // is not rewritten — callers must reject it via ScanSource first.
 func RedactSource(source string) string {

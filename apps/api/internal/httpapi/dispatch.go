@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -256,13 +257,59 @@ func (s *Server) retryExecution(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	hint := s.sshRetryHint(r.Context(), scope, executionID, stepID)
+	hint := s.retryHint(r.Context(), scope, executionID, stepID)
 	result, err := s.workflows.RetryStep(r.Context(), scope, s.now(), executionID, stepID, hint)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, retryResponse{Execution: result.Execution, Step: result.Step, Job: result.Job})
+}
+
+func (s *Server) retryHint(ctx context.Context, scope isolation.Scope, executionID, stepID string) map[string]any {
+	if hint := s.sshRetryHint(ctx, scope, executionID, stepID); hint != nil {
+		return hint
+	}
+	return s.scriptRetryHint(ctx, scope, executionID, stepID)
+}
+
+func (s *Server) scriptRetryHint(ctx context.Context, scope isolation.Scope, executionID, stepID string) map[string]any {
+	if s.workflows == nil {
+		return nil
+	}
+	step, err := s.workflows.GetStep(ctx, scope, executionID, stepID)
+	if err != nil || !scripts.IsScriptNode(step.NodeType) {
+		return nil
+	}
+	exec, err := s.workflows.GetExecutionByID(ctx, scope, executionID)
+	if err != nil {
+		return nil
+	}
+	ver, err := s.workflows.GetVersion(ctx, scope, exec.WorkflowID, exec.WorkflowVersionID)
+	if err != nil {
+		return nil
+	}
+	res, errs := workflow.ParseAndNormalize([]byte(ver.DefinitionYAML))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return nil
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		if node.ID != step.NodeID || !scripts.IsScriptNode(node.Type) {
+			continue
+		}
+		decl, err := scripts.RetryDeclarationFromWith(node.With)
+		if err != nil {
+			return nil
+		}
+		return map[string]any{
+			"retrySafe":              decl.RetrySafe,
+			"verificationDeclared":   decl.Verification != nil,
+			"idempotencyKey":         decl.IdempotencyKey,
+			"idempotencyKeyDeclared": decl.IdempotencyKey != "",
+			"maxAttempts":            scripts.MaxAttemptsFromWith(node.With),
+		}
+	}
+	return nil
 }
 
 func (s *Server) sshRetryHint(ctx context.Context, scope isolation.Scope, executionID, stepID string) map[string]any {
@@ -308,9 +355,9 @@ func (s *Server) sshRetryHint(ctx context.Context, scope isolation.Scope, execut
 			retrySafe, _ := pin.Spec["retrySafe"].(bool)
 			_, hasVerify := pin.Spec["verification"].(map[string]any)
 			return map[string]any{
-				"retrySafe":              retrySafe,
-				"verificationDeclared":   hasVerify,
-				"maxAttempts":            ssheng.MaxAttemptsFromWith(step.Input),
+				"retrySafe":            retrySafe,
+				"verificationDeclared": hasVerify,
+				"maxAttempts":          ssheng.MaxAttemptsFromWith(step.Input),
 			}
 		}
 	}

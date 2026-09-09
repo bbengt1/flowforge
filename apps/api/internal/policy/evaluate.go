@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -47,15 +48,15 @@ type Requirement struct {
 
 // OperationResult is the per-node evaluation outcome.
 type OperationResult struct {
-	NodeID                 string       `json:"nodeId"`
-	Operation              string       `json:"operation"`
-	Decision               string       `json:"decision"`
-	Reason                 string       `json:"reason,omitempty"`
-	Requirement            *Requirement `json:"requirement,omitempty"`
-	RetrySafe              bool         `json:"retrySafe,omitempty"`
-	RetryMaxAttempts       int          `json:"retryMaxAttempts"`
-	RetryAllowed           bool         `json:"retryAllowed,omitempty"`
-	VerificationDeclared   bool         `json:"verificationDeclared,omitempty"`
+	NodeID               string       `json:"nodeId"`
+	Operation            string       `json:"operation"`
+	Decision             string       `json:"decision"`
+	Reason               string       `json:"reason,omitempty"`
+	Requirement          *Requirement `json:"requirement,omitempty"`
+	RetrySafe            bool         `json:"retrySafe,omitempty"`
+	RetryMaxAttempts     int          `json:"retryMaxAttempts"`
+	RetryAllowed         bool         `json:"retryAllowed,omitempty"`
+	VerificationDeclared bool         `json:"verificationDeclared,omitempty"`
 }
 
 // Result is the workflow-level evaluation used by preview and dispatch.
@@ -136,6 +137,9 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 	item := OperationResult{NodeID: node.ID, Operation: op, Decision: DecisionAllow}
 	if op == ssh.NodeSSHRun {
 		attachSSHRetry(&item, node, pins)
+	}
+	if scripts.IsScriptNode(op) {
+		attachScriptRetry(&item, node)
 	}
 	targetKind, targetID := targetRef(node)
 	var target opsconfig.Pin
@@ -451,6 +455,25 @@ func attachSSHRetry(item *OperationResult, node workflow.Node, pins map[string]o
 		MaxAttempts:     item.RetryMaxAttempts,
 		RetrySafe:       item.RetrySafe,
 		HasVerification: item.VerificationDeclared,
+	})
+	item.RetryAllowed = dec.Allowed
+}
+
+func attachScriptRetry(item *OperationResult, node workflow.Node) {
+	item.RetryMaxAttempts = scripts.MaxAttemptsFromWith(node.With)
+	decl, err := scripts.RetryDeclarationFromWith(node.With)
+	if err != nil {
+		return
+	}
+	item.RetrySafe = decl.RetrySafe
+	item.VerificationDeclared = decl.Verification != nil
+	dec := scripts.EvaluateRetry(scripts.RetryEval{
+		Status:            "failed",
+		Attempt:           1,
+		MaxAttempts:       item.RetryMaxAttempts,
+		RetrySafe:         decl.RetrySafe,
+		HasVerification:   decl.Verification != nil,
+		HasIdempotencyKey: decl.IdempotencyKey != "",
 	})
 	item.RetryAllowed = dec.Allowed
 }

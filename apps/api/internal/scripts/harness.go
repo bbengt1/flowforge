@@ -25,6 +25,9 @@ type IsolatedJob struct {
 	Lock       string
 	Binary     *SignedBinary
 	Probes     []IsolationProbe
+	Input      map[string]any
+	Handles    []map[string]any
+	Env        map[string]string
 }
 
 // IsolationProbe is a test/harness attempt (UID, write-root, metadata, …).

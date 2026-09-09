@@ -306,7 +306,7 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if err != nil {
 		return RetryResult{}, err
 	}
-	if exec.Status == ExecutionIndeterminate && src.NodeType != "ssh.run" {
+	if exec.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
 		return RetryResult{}, ErrRetryNotAllowed
 	}
 	if len(hint) > 0 {

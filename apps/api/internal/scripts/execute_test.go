@@ -401,10 +401,16 @@ func TestCatalogDocumentsRunnerContract(t *testing.T) {
 	for _, e := range cat.Errors {
 		seen[e.Code] = true
 	}
-	for _, code := range []string{CodeMetadataDenied, CodeEgressDenied, CodePackageInstallDenied, CodeImageDenied, CodeResourceLimit} {
+	for _, code := range []string{CodeMetadataDenied, CodeEgressDenied, CodePackageInstallDenied, CodeImageDenied, CodeResourceLimit, CodeRetryDenied, CodeHandleForbidden, CodeOutputTooLarge, CodeInputRejected, CodeEnvDenied} {
 		if !seen[code] {
 			t.Fatalf("catalog missing error %s", code)
 		}
+	}
+	if cat.IO.MaxInputBytes != MaxInputBytes || cat.IO.PlaintextCredentials || !cat.IO.ValidateBeforeInject {
+		t.Fatalf("io = %+v", cat.IO)
+	}
+	if cat.Retry.DefaultMaxAttempts != 0 || cat.Retry.BlindRetry || cat.Retry.LeaseLossOutcome != "indeterminate" {
+		t.Fatalf("retry = %+v", cat.Retry)
 	}
 }
 

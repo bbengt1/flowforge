@@ -57,6 +57,7 @@ const (
 	CodeInvalidEntrypoint     = "invalid-entrypoint"
 	CodeInvalidSource         = "invalid-source"
 	CodeInvalidRuntimeProfile = "invalid-runtime-profile"
+	CodeInvalidVerification   = "invalid-verification"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {

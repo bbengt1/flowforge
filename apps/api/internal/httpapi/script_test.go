@@ -85,6 +85,9 @@ func TestScriptCatalogPublishPinAndIsolation(t *testing.T) {
 		if cat.Isolation.RuntimePackageInstall || cat.Isolation.AllowPrivilegeEscalation {
 			t.Fatal("package install and privilege escalation must be denied")
 		}
+		if cat.IO.MaxInputBytes == 0 || cat.IO.PlaintextCredentials || cat.Retry.BlindRetry || cat.Retry.DefaultMaxAttempts != 0 {
+			t.Fatalf("io/retry = %+v %+v", cat.IO, cat.Retry)
+		}
 	})
 
 	t.Run("dedicated publish scan sign pin", func(t *testing.T) {

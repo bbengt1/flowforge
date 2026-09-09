@@ -29,10 +29,10 @@ func scriptNodeContract(typ, _, title, description string) NodeType {
 		Title:       title,
 		Description: description,
 		Inputs: []Port{
-			{Name: "input", Kind: PortObject, Classification: ClassInternal, MaxBytes: MaxPortBytes, Description: "Validated JSON input. Typed enforcement is E9.3."},
+			{Name: "input", Kind: PortObject, Classification: ClassInternal, MaxBytes: MaxPortBytes, Description: "Validated JSON input. Schema/size/secret checks run before handle inject."},
 		},
 		Outputs: []Port{
-			{Name: "result", Kind: PortObject, Classification: ClassInternal, MaxBytes: MaxPortBytes, Description: "Redacted result. Never includes secret handles."},
+			{Name: "result", Kind: PortObject, Classification: ClassInternal, MaxBytes: MaxPortBytes, Description: "Redacted result. Never includes plaintext credentials or secret handles."},
 		},
 		RequiredWith: []string{"source", "entrypoint", "runtimeProfileId", "timeoutSeconds"},
 		AllowedWith:  scriptWithFields(),
@@ -42,12 +42,12 @@ func scriptNodeContract(typ, _, title, description string) NodeType {
 			SideEffects:        true,
 			Idempotent:         false,
 			Cancellation:       "abort-process",
-			Verification:       "E9.2-isolated-runner",
-			DefaultMaxAttempts: 0,
+			Verification:       scripts.RetryVerificationContract,
+			DefaultMaxAttempts: scripts.DefaultMaxAttempts,
 		},
 		Bounds: scriptBounds(),
 		Redaction: &RedactionPolicy{
-			AuditFields:   []string{"runtimeProfileId", "entrypoint", "artifactDigest", "scanStatus", "language", "correlationId"},
+			AuditFields:   []string{"runtimeProfileId", "entrypoint", "artifactDigest", "scanStatus", "language", "inputValidated", "outputValidated", "correlationId"},
 			RedactInputs:  true,
 			RedactOutputs: true,
 			Strategy:      "drop-secrets",
@@ -64,8 +64,12 @@ func scriptWithFields() []WithField {
 		{Name: "memoryMiB", Kind: "integer", Description: "Bounded 32–2048."},
 		{Name: "cpuMillis", Kind: "integer", Description: "Optional CPU millicores."},
 		{Name: "processes", Kind: "integer", Description: "Optional process cap."},
-		{Name: "inputSchema", Kind: "object", Description: "Declared input JSON Schema subset. Shape validated at publish; typed I/O is E9.3."},
-		{Name: "outputSchema", Kind: "object", Description: "Declared output JSON Schema subset. Shape validated at publish; typed I/O is E9.3."},
+		{Name: "inputSchema", Kind: "object", Description: "Declared input JSON Schema subset. Validated at publish and again before inject (16 KiB, no secrets)."},
+		{Name: "outputSchema", Kind: "object", Description: "Declared output JSON Schema subset. Runner output is validated and redacted before persist."},
+		{Name: "retrySafe", Kind: "boolean", Description: "Default false. When true, idempotencyKey and verification are required."},
+		{Name: "idempotencyKey", Kind: "string", Description: "Required when retrySafe. Declares the node retry-safe with verification."},
+		{Name: "verification", Kind: "object", Description: "Required when retrySafe. {behavior:declared-hook, expect?, onMatch, onMismatch, onError}."},
+		{Name: "retryPolicy", Kind: "object", Description: "Optional {maxAttempts:0-5}. Default 0. maxAttempts>0 requires retrySafe + idempotencyKey + verification. Lease loss is indeterminate."},
 		{Name: "policyId", Kind: "uuid", Description: "Optional published kind=script policy UUID."},
 	}
 }
