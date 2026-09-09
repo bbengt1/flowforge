@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { proxyCsrfDenial } from "@/lib/csrf";
 import {
   fetchIdentityControlPlane,
+  fetchIdentityControlPlaneStream,
+  isArtifactDownloadStreamTarget,
   resolveIdentityProxyTarget,
+  sanitizeContentDisposition,
   withRequestSearch,
 } from "@/lib/identity-proxy";
 import { PROBLEM_JSON } from "@/lib/problem";
@@ -36,6 +39,40 @@ export async function forwardIdentityControlPlane(
     return problemResponse(csrfDenial, csrfDenial.status, requestId);
   }
 
+  const apiPath = withRequestSearch(target.apiPath, request.url);
+
+  if (isArtifactDownloadStreamTarget(request.method, segments)) {
+    const streamed = await fetchIdentityControlPlaneStream({
+      method: target.method,
+      apiPath,
+      instance: target.instance,
+      requestId,
+      identityHeaders: request.headers,
+      requestSecure: requestIsSecure(request),
+    });
+    const headers = new Headers();
+    headers.set(REQUEST_ID_HEADER, streamed.requestId);
+    applySessionResponseHeaders(headers, streamed);
+    if (!streamed.ok) {
+      return problemResponse(
+        streamed.problem,
+        streamed.statusCode,
+        streamed.requestId,
+        streamed,
+      );
+    }
+    headers.set("Cache-Control", "no-store");
+    headers.set("Content-Type", streamed.contentType || "application/octet-stream");
+    const disposition = sanitizeContentDisposition(streamed.contentDisposition);
+    if (disposition) {
+      headers.set("Content-Disposition", disposition);
+    }
+    return new NextResponse(streamed.body, {
+      status: streamed.statusCode,
+      headers,
+    });
+  }
+
   const body =
     request.method === "GET" || request.method === "HEAD"
       ? null
@@ -43,7 +80,7 @@ export async function forwardIdentityControlPlane(
 
   const result = await fetchIdentityControlPlane({
     method: target.method,
-    apiPath: withRequestSearch(target.apiPath, request.url),
+    apiPath,
     instance: target.instance,
     requestId,
     identityHeaders: request.headers,

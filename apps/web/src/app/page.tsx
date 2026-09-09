@@ -23,7 +23,8 @@ export default async function Home() {
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
           E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
-          approvals · E5.1 executions · E5.2 cancel/retry
+          approvals · E5.1 executions · E5.2 cancel/retry · E5.3
+          artifacts
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">

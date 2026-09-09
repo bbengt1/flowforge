@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
   cancelExecution,
+  downloadExecutionArtifact,
   getExecution,
+  listExecutionArtifacts,
   listExecutions,
   listWorkflowExecutions,
   listWorkspaceAuditEvents,
@@ -727,6 +729,257 @@ describe("execution client", () => {
     if (!denied.ok) {
       assert.equal(denied.statusCode, 403);
       assert.equal(denied.forbidden, true);
+    }
+  });
+
+  it("lists artifact metadata without persisting durable URLs", async () => {
+    withSession();
+    globalThis.fetch = (async (input) => {
+      assert.equal(String(input), `/api/v1/executions/${EXECUTION_ID}/artifacts`);
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "77777777-7777-4777-8777-777777777777",
+              name: "plan.json",
+              digest: "sha256:dddd",
+              sizeBytes: 12,
+              classification: "internal",
+              downloadUrl: "https://bucket.s3.amazonaws.com/durable",
+              bucket: "flowforge-prod",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await listExecutionArtifacts(identity, EXECUTION_ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.name, "plan.json");
+      assert.equal(JSON.stringify(result.items).includes("amazonaws"), false);
+      assert.equal(JSON.stringify(result.items).includes("flowforge-prod"), false);
+    }
+  });
+
+  it("mints a download grant with CSRF, streams via grantId, and drops the href", async () => {
+    withSession();
+    const saved: { size: number; name: string }[] = [];
+    const seen: { url?: string; body?: string; csrf?: string | null }[] = [];
+    const grantId = "88888888-8888-4888-8888-888888888888";
+    const artifactId = "77777777-7777-4777-8777-777777777777";
+    globalThis.fetch = (async (input, init) => {
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: headers.get(CSRF_HEADER),
+      });
+      if (String(input).endsWith(`/artifacts/${artifactId}/downloads`)) {
+        return new Response(
+          JSON.stringify({
+            download: {
+              id: grantId,
+              artifactId,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              href: `/api/v1/artifact-downloads/${grantId}`,
+              method: "GET",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${grantId}`)) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": 'attachment; filename="plan.json"',
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    }) as typeof fetch;
+
+    const result = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      artifactId,
+      {
+        save: (blob, filename) => {
+          saved.push({ size: blob.size, name: filename });
+        },
+      },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(seen[0]?.url, `/api/v1/artifacts/${artifactId}/downloads`);
+    assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(seen[0]?.body, "{}");
+    assert.equal(seen[1]?.url, `/api/v1/artifact-downloads/${grantId}`);
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0]?.name, "plan.json");
+    assert.equal(saved[0]?.size, 3);
+    if (result.ok) {
+      assert.equal(result.grant.id, grantId);
+      assert.equal("href" in result.grant, false);
+      assert.equal("url" in result.grant, false);
+      assert.equal("handle" in result.grant, false);
+      assert.equal(JSON.stringify(result).includes("artifact-downloads"), false);
+    }
+  });
+
+  it("remints the grant when the stream returns 404", async () => {
+    withSession();
+    const artifactId = "77777777-7777-4777-8777-777777777777";
+    const expiredId = "88888888-8888-4888-8888-888888888888";
+    const freshId = "99999999-9999-4999-8999-999999999999";
+    let mints = 0;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      urls.push(String(input));
+      if (String(input).endsWith(`/artifacts/${artifactId}/downloads`)) {
+        mints += 1;
+        const grantId = mints === 1 ? expiredId : freshId;
+        return new Response(
+          JSON.stringify({
+            download: {
+              id: grantId,
+              artifactId,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              href: `/api/v1/artifact-downloads/${grantId}`,
+              method: "GET",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${expiredId}`)) {
+        return new Response(
+          JSON.stringify({
+            type: "urn:flowforge:problem:not-found",
+            title: "Not Found",
+            status: 404,
+            detail: "Grant expired.",
+            instance: `/api/v1/artifact-downloads/${expiredId}`,
+            code: "not-found",
+            request_id: "grant-expired-16xxxx",
+          }),
+          { status: 404, headers: { "Content-Type": PROBLEM_JSON } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${freshId}`)) {
+        return new Response(new Uint8Array([9]), {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    }) as typeof fetch;
+
+    const result = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      artifactId,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(mints, 2);
+    assert.deepEqual(urls, [
+      `/api/v1/artifacts/${artifactId}/downloads`,
+      `/api/v1/artifact-downloads/${expiredId}`,
+      `/api/v1/artifacts/${artifactId}/downloads`,
+      `/api/v1/artifact-downloads/${freshId}`,
+    ]);
+    if (result.ok) {
+      assert.equal(result.grant.id, freshId);
+      assert.equal("href" in result.grant, false);
+    }
+  });
+
+  it("fails download grants closed on missing CSRF, 403, and expiry", async () => {
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("should-not-run", { status: 500 });
+    }) as typeof fetch;
+
+    const missing = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+    );
+    assert.equal(missing.ok, false);
+    assert.equal(fetched, false);
+    if (!missing.ok) {
+      assert.equal(missing.statusCode, 403);
+      assert.equal(missing.forbidden, true);
+    }
+
+    withSession();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "execution.view is required.",
+          instance: `/api/v1/artifacts/77777777-7777-4777-8777-777777777777/downloads`,
+          code: "forbidden",
+          request_id: "dl-forbid-16xxxxxx",
+        }),
+        { status: 403, headers: { "Content-Type": PROBLEM_JSON } },
+      )) as typeof fetch;
+
+    const denied = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+    );
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.forbidden, true);
+    }
+
+    withSession();
+    let saved = 0;
+    const grantId = "88888888-8888-4888-8888-888888888888";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          download: {
+            id: grantId,
+            artifactId: "77777777-7777-4777-8777-777777777777",
+            expiresAt: "2020-01-01T00:00:00.000Z",
+            href: `/api/v1/artifact-downloads/${grantId}`,
+            method: "GET",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      )) as typeof fetch;
+
+    const expired = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      "77777777-7777-4777-8777-777777777777",
+      { save: () => {
+        saved += 1;
+      } },
+    );
+    assert.equal(expired.ok, false);
+    assert.equal(saved, 0);
+    if (!expired.ok) {
+      assert.equal(expired.statusCode, 410);
     }
   });
 });

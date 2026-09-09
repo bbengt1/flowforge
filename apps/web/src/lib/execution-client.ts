@@ -1,25 +1,41 @@
 /**
- * Thin typed execution client (E5.1 list/detail + E5.2 cancel/retry).
+ * Thin typed execution client (E5.1 list/detail + E5.2 cancel/retry
+ * + E5.3 artifacts/download).
  *
- * Paths come only from execution-contract.ts (#53). Session:
- * credentials:include. CSRF on POST cancel/retry. Host-supplied
+ * Paths come only from execution-contract.ts. Session:
+ * credentials:include. CSRF on POST cancel/retry/downloads. Host-supplied
  * workspace IDs are never sent. Unexpected secrets are stripped.
- * Never log request bodies. Status is GET /executions/{id} only —
- * never /jobs/*.
+ * Never log request bodies, download tokens, or grant URLs. Status is
+ * GET /executions/{id} only — never /jobs/*. Downloads mint
+ * POST /artifacts/{id}/downloads then stream GET /artifact-downloads/{id}.
  */
 
-import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
+import {
+  callIdentityProxy,
+  streamIdentityProxy,
+  type IdentityClientResult,
+} from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
+  DOWNLOAD_APPLIED_MESSAGE,
+  EXECUTION_LOG_LIMIT_DEFAULT,
+  EXECUTION_LOG_MAX_BYTES_DEFAULT,
   RETRY_APPLIED_MESSAGE,
   buildCancelBody,
+  buildDownloadGrantBody,
   buildRetryBody,
+  artifactDownloadPath,
+  artifactDownloadStreamPath,
+  artifactPath,
+  executionArtifactsPath,
+  isSameOriginGrantHref,
   executionAuditEventsPath,
   executionCancelPath,
   executionJobsPath,
   executionPath,
   executionRetryPath,
+  executionStepLogsPath,
   executionStepRetryPath,
   executionStepsPath,
   listExecutionsPath,
@@ -31,22 +47,35 @@ import {
 } from "./execution-contract.ts";
 import {
   cancelOutcomeMessage,
+  canDownloadArtifact,
+  downloadGrantFailureMessage,
+  downloadGrantView,
+  forgetDownloadGrant,
+  isDownloadGrantExpired,
+  type EphemeralDownloadGrant,
   isExecutionForbidden,
   isIdempotentCancel,
+  parseDownloadGrant,
+  parseExecutionArtifact,
   parseExecutionDetail,
   parseExecutionEvent,
   parseExecutionJob,
   parseExecutionList,
+  parseExecutionLogs,
   parseExecutionStep,
   parseItemList,
   stripSecretFields,
+  wipeDownloadGrant,
 } from "./execution.ts";
 import type {
   AuditEventQuery,
+  DownloadGrantView,
+  ExecutionArtifact,
   ExecutionAuditEvent,
   ExecutionDetail,
   ExecutionJob,
   ExecutionListQuery,
+  ExecutionLogSlice,
   ExecutionRecord,
   ExecutionStep,
 } from "./execution-types.ts";
@@ -115,6 +144,31 @@ export type ExecutionRetrySuccess = {
   statusCode: number;
   requestId: string;
   execution: ExecutionDetail | null;
+  message: string;
+  strippedKeys: string[];
+};
+
+export type ExecutionArtifactsSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  items: ExecutionArtifact[];
+  strippedKeys: string[];
+};
+
+export type ExecutionLogsSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  logs: ExecutionLogSlice;
+  strippedKeys: string[];
+};
+
+export type ArtifactDownloadSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  grant: DownloadGrantView;
   message: string;
   strippedKeys: string[];
 };
@@ -374,6 +428,276 @@ export async function pollExecutionStatus(
   return getExecution(identity, executionId, workflowId);
 }
 
+export async function listExecutionArtifacts(
+  identity: DevIdentity,
+  executionId: string,
+): Promise<ExecutionArtifactsSuccess | ExecutionClientFailure> {
+  return itemsResult(
+    await callIdentityProxy<unknown>(
+      executionArtifactsPath(executionId),
+      identity,
+    ),
+    (item) => parseExecutionArtifact(item, executionId),
+  );
+}
+
+export async function getExecutionArtifact(
+  identity: DevIdentity,
+  executionId: string,
+  artifactId: string,
+): Promise<
+  | {
+      ok: true;
+      statusCode: number;
+      requestId: string;
+      artifact: ExecutionArtifact;
+      strippedKeys: string[];
+    }
+  | ExecutionClientFailure
+> {
+  const path = artifactPath(artifactId);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  const artifact = parseExecutionArtifact(result.data, executionId);
+  if (!artifact || artifact.id !== artifactId) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Artifact payload was missing a matching id.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    artifact,
+    strippedKeys,
+  };
+}
+
+export async function getExecutionStepLogs(
+  identity: DevIdentity,
+  executionId: string,
+  stepId: string,
+): Promise<ExecutionLogsSuccess | ExecutionClientFailure> {
+  const path = executionStepLogsPath(executionId, stepId, {
+    limit: EXECUTION_LOG_LIMIT_DEFAULT,
+    maxBytes: EXECUTION_LOG_MAX_BYTES_DEFAULT,
+  });
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    logs: parseExecutionLogs(result.data, stepId),
+    strippedKeys,
+  };
+}
+
+/**
+ * POST /artifacts/{id}/downloads (CSRF, 60s TTL), then stream
+ * GET /artifact-downloads/{grantId} with cookies. Re-mint once on
+ * stream 404. Never persist href / storageRef. 403 fails closed.
+ * Download tokens are never logged.
+ */
+export async function downloadExecutionArtifact(
+  identity: DevIdentity,
+  executionId: string,
+  artifactId: string,
+  options: {
+    artifact?: ExecutionArtifact;
+    save?: (blob: Blob, filename: string) => void;
+    now?: number;
+  } = {},
+): Promise<ArtifactDownloadSuccess | ExecutionClientFailure> {
+  const mintPath = artifactDownloadPath(artifactId);
+  if (options.artifact && !canDownloadArtifact(options.artifact)) {
+    return {
+      ok: false,
+      statusCode: 410,
+      requestId: "",
+      forbidden: false,
+      strippedKeys: [],
+      problem: {
+        type: "urn:flowforge:problem:not-found",
+        title: "Gone",
+        status: 410,
+        detail: downloadGrantFailureMessage({ expired: true, statusCode: 410 }),
+        instance: mintPath,
+        code: "not-found",
+        request_id: "",
+      },
+    };
+  }
+
+  const minted = await mintArtifactDownloadGrant(identity, artifactId);
+  if (!minted.ok) {
+    return minted;
+  }
+  const now = options.now ?? Date.now();
+  let grant = minted.grant;
+  const strippedKeys = [...minted.strippedKeys];
+
+  if (isDownloadGrantExpired(grant, now)) {
+    forgetDownloadGrant(grant);
+    return grantExpired(minted.requestId, mintPath, strippedKeys);
+  }
+  if (!isSameOriginGrantHref(grant.href, grant.id)) {
+    forgetDownloadGrant(grant);
+    return malformed(
+      minted.requestId,
+      minted.statusCode,
+      mintPath,
+      "Download grant href was not a same-origin /artifact-downloads/{grantId} path.",
+    );
+  }
+
+  wipeDownloadGrant(grant);
+  let stream = await streamIdentityProxy(
+    artifactDownloadStreamPath(grant.id),
+    identity,
+  );
+  if (!stream.ok && stream.statusCode === 404) {
+    forgetDownloadGrant(grant);
+    const reminted = await mintArtifactDownloadGrant(identity, artifactId);
+    if (!reminted.ok) {
+      return reminted;
+    }
+    strippedKeys.push(...reminted.strippedKeys);
+    grant = reminted.grant;
+    if (
+      isDownloadGrantExpired(grant, options.now ?? Date.now()) ||
+      !isSameOriginGrantHref(grant.href, grant.id)
+    ) {
+      forgetDownloadGrant(grant);
+      return grantExpired(reminted.requestId, mintPath, strippedKeys);
+    }
+    wipeDownloadGrant(grant);
+    stream = await streamIdentityProxy(
+      artifactDownloadStreamPath(grant.id),
+      identity,
+    );
+  }
+
+  const view = downloadGrantView(grant, now);
+  forgetDownloadGrant(grant);
+
+  if (!stream.ok) {
+    if (stream.statusCode === 403) {
+      return failure(stream);
+    }
+    if (stream.statusCode === 404) {
+      return grantExpired(stream.requestId, mintPath, strippedKeys);
+    }
+    return failure(stream);
+  }
+
+  const filename =
+    filenameFromDisposition(stream.contentDisposition) ||
+    options.artifact?.name ||
+    "artifact";
+  options.save?.(stream.blob, filename);
+
+  return {
+    ok: true,
+    statusCode: stream.statusCode,
+    requestId: stream.requestId,
+    grant: view,
+    message: DOWNLOAD_APPLIED_MESSAGE,
+    strippedKeys,
+  };
+}
+
+async function mintArtifactDownloadGrant(
+  identity: DevIdentity,
+  artifactId: string,
+): Promise<
+  | {
+      ok: true;
+      statusCode: number;
+      requestId: string;
+      grant: EphemeralDownloadGrant;
+      strippedKeys: string[];
+    }
+  | ExecutionClientFailure
+> {
+  const path = artifactDownloadPath(artifactId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildDownloadGrantBody(),
+  });
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  const grant = parseDownloadGrant(result.data, artifactId);
+  if (!grant) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Download grant was missing id or artifactId.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    grant,
+    strippedKeys,
+  };
+}
+
+function grantExpired(
+  requestId: string,
+  instance: string,
+  strippedKeys: string[],
+): ExecutionClientFailure {
+  return {
+    ok: false,
+    statusCode: 410,
+    requestId,
+    forbidden: false,
+    strippedKeys,
+    problem: {
+      type: "urn:flowforge:problem:not-found",
+      title: "Gone",
+      status: 410,
+      detail: downloadGrantFailureMessage({ expired: true, statusCode: 410 }),
+      instance,
+      code: "not-found",
+      request_id: requestId,
+    },
+  };
+}
+
+function filenameFromDisposition(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  const match = /filename\*?=(?:UTF-8''|"?)([^";]+)"?/i.exec(value);
+  const raw = match?.[1]?.trim() ?? "";
+  if (!raw || /[\\/]/.test(raw) || /https?:|s3:|gs:/i.test(raw)) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function cancelResult(
   result: IdentityClientResult<unknown>,
   instance: string,
@@ -488,6 +812,17 @@ export async function loadExecutionHistory(
       } else if (workspace.forbidden) {
         return workspace;
       }
+    }
+  }
+
+  if (execution.artifacts.length === 0) {
+    const artifacts = await listExecutionArtifacts(identity, executionId);
+    if (!artifacts.ok && artifacts.forbidden) {
+      return artifacts;
+    }
+    if (artifacts.ok) {
+      execution = { ...execution, artifacts: artifacts.items };
+      strippedKeys.push(...artifacts.strippedKeys);
     }
   }
 

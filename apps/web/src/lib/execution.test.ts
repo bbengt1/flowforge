@@ -4,9 +4,13 @@ import {
   CANCEL_APPLIED_MESSAGE,
   CANCEL_FORBIDDEN_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
+  ARTIFACT_DOWNLOADS_COLLECTION,
+  ARTIFACT_UPSTREAM_COLLECTION,
   EXECUTION_CANCEL_ACTION,
   EXECUTION_API_PR,
+  EXECUTION_ARTIFACT_API_PR,
   EXECUTION_RETRY_ROUTE_PUBLISHED,
+  EXECUTION_STATUS_STORY,
   EXECUTION_UPSTREAM_COLLECTION,
   IDEMPOTENCY_CONFLICT_MESSAGE,
   IDEMPOTENCY_CREATED_MESSAGE,
@@ -19,12 +23,19 @@ import {
   executionAuditEventsPath,
   executionCancelPath,
   executionHistoryHref,
+  executionArtifactsPath,
   executionJobsPath,
   executionPath,
   executionRetryPath,
+  executionStepLogsPath,
   executionStepPath,
   executionStepRetryPath,
   executionStepsPath,
+  artifactDownloadPath,
+  artifactDownloadStreamPath,
+  artifactPath,
+  sameOriginGrantHref,
+  buildDownloadGrantBody,
   listExecutionsPath,
   listWorkflowExecutionsPath,
   listWorkspaceAuditEventsPath,
@@ -52,11 +63,21 @@ import {
   isIndeterminateStatus,
   isSecretFieldName,
   jobDispatchView,
+  artifactStateHasDurableUrl,
+  boundRedactedDisplay,
+  canDownloadArtifact,
+  downloadGrantFailureMessage,
+  downloadGrantView,
+  isDownloadGrantExpired,
+  parseDownloadGrant,
+  parseExecutionArtifact,
   parseExecutionDetail,
   parseExecutionJob,
   parseExecutionList,
+  parseExecutionLogs,
   startOutcomeMessage,
   stripSecretFields,
+  wipeDownloadGrant,
 } from "./execution.ts";
 import type { ExecutionDetail, ExecutionRecord } from "./execution-types.ts";
 
@@ -155,6 +176,7 @@ describe("execution contract adapter", () => {
     assert.equal(Object.hasOwn(buildCancelBody(), "id"), false);
     assert.equal(Object.hasOwn(buildCancelBody(), "workspaceId"), false);
     assert.equal(EXECUTION_API_PR, 53);
+    assert.equal(EXECUTION_ARTIFACT_API_PR, 56);
     assert.equal(EXECUTION_RETRY_ROUTE_PUBLISHED, true);
     assert.equal(
       executionRetryPath(EXECUTION_ID),
@@ -169,6 +191,31 @@ describe("execution contract adapter", () => {
       stepId: VERSION_ID,
     });
     assert.equal(Object.hasOwn(buildRetryBody(), "workspaceId"), false);
+    assert.equal(EXECUTION_STATUS_STORY, 48);
+    assert.equal(
+      executionArtifactsPath(EXECUTION_ID),
+      `/executions/${EXECUTION_ID}/artifacts`,
+    );
+    assert.equal(
+      executionStepLogsPath(EXECUTION_ID, VERSION_ID),
+      `/executions/${EXECUTION_ID}/steps/${VERSION_ID}/logs`,
+    );
+    assert.equal(artifactPath(VERSION_ID), `/artifacts/${VERSION_ID}`);
+    assert.equal(
+      artifactDownloadPath(VERSION_ID),
+      `/artifacts/${VERSION_ID}/downloads`,
+    );
+    assert.equal(
+      artifactDownloadStreamPath(VERSION_ID),
+      `/artifact-downloads/${VERSION_ID}`,
+    );
+    assert.equal(
+      sameOriginGrantHref(VERSION_ID),
+      `/api/v1/artifact-downloads/${VERSION_ID}`,
+    );
+    assert.equal(ARTIFACT_DOWNLOADS_COLLECTION, "artifact-downloads");
+    assert.deepEqual(buildDownloadGrantBody(), {});
+    assert.equal(Object.hasOwn(buildDownloadGrantBody(), "workspaceId"), false);
   });
 
   it("retargets /api/v1/executions and leaves /audit-events unchanged", () => {
@@ -196,6 +243,15 @@ describe("execution contract adapter", () => {
     assert.equal(
       retargetExecutionApiPath(`/api/v1/executions/${EXECUTION_ID}/cancel`),
       `/api/v1/executions/${EXECUTION_ID}/cancel`,
+    );
+    assert.equal(ARTIFACT_UPSTREAM_COLLECTION, "artifacts");
+    assert.equal(
+      retargetExecutionApiPath(`/api/v1/artifacts/${VERSION_ID}/downloads`),
+      `/api/v1/artifacts/${VERSION_ID}/downloads`,
+    );
+    assert.equal(
+      retargetExecutionApiPath(`/api/v1/artifact-downloads/${VERSION_ID}`),
+      `/api/v1/artifact-downloads/${VERSION_ID}`,
     );
   });
 });
@@ -537,6 +593,8 @@ describe("execution redaction and list/detail rendering", () => {
       steps: [],
       jobs: [],
       auditEvents: [],
+      artifacts: [],
+      legalHold: false,
     });
     assert.equal(view.replayedMessage, IDEMPOTENCY_REPLAY_MESSAGE);
     assert.equal(startOutcomeMessage(200, true), IDEMPOTENCY_REPLAY_MESSAGE);
@@ -574,5 +632,194 @@ describe("execution RBAC fail-closed", () => {
       }),
       true,
     );
+  });
+});
+
+const ARTIFACT_ID = "77777777-7777-4777-8777-777777777777";
+
+describe("execution artifacts and bounded logs", () => {
+  it("parses encrypted metadata only and strips durable locators", () => {
+    const artifact = parseExecutionArtifact(
+      {
+        id: ARTIFACT_ID,
+        executionId: EXECUTION_ID,
+        name: "plan.json",
+        digest: "sha256:aaaaaaaaaaaaaaaa",
+        sizeBytes: 2048,
+        classification: "internal",
+        retentionUntil: "2026-12-08T01:00:00.000Z",
+        legalHold: false,
+        bucket: "flowforge-prod",
+        storageRef: "s3://flowforge-prod/ws/art",
+        downloadUrl: "https://bucket.s3.amazonaws.com/art?X-Amz-Expires=86400",
+        accessKeyId: "AKIAEXAMPLE",
+        secretAccessKey: "should-not-leak",
+      },
+      EXECUTION_ID,
+    );
+    assert.ok(artifact);
+    assert.equal(artifact?.name, "plan.json");
+    assert.equal(artifact?.digest, "sha256:aaaaaaaaaaaaaaaa");
+    assert.equal(artifact?.sizeBytes, 2048);
+    assert.equal(artifact?.classification, "internal");
+    assert.equal(artifact?.retentionUntil, "2026-12-08T01:00:00.000Z");
+    assert.equal(artifactStateHasDurableUrl(artifact), false);
+    assert.equal(JSON.stringify(artifact).includes("s3://"), false);
+    assert.equal(JSON.stringify(artifact).includes("AKIAEXAMPLE"), false);
+    assert.equal(JSON.stringify(artifact).includes("should-not-leak"), false);
+    assert.equal(JSON.stringify(artifact).includes("amazonaws"), false);
+  });
+
+  it("redacts step logs/output and bounds oversized payloads", () => {
+    const logs = parseExecutionLogs(
+      {
+        items: [
+          { line: "applied namespace" },
+          { line: "token: [redacted]" },
+          { line: "kubeconfig: [redacted]" },
+        ],
+        privateKey: "-----BEGIN",
+      },
+      "step-1",
+    );
+    assert.match(logs.text, /applied namespace/);
+    assert.match(logs.text, /\[redacted\]/);
+    assert.equal(logs.text.includes("-----BEGIN"), false);
+    assert.equal(logs.stepId, "step-1");
+
+    const windowed = parseExecutionLogs(
+      {
+        lines: ["applied namespace", "token: [redacted]"],
+        offset: 0,
+        nextOffset: 2,
+        truncated: false,
+        maxBytes: 16384,
+      },
+      "step-1",
+    );
+    assert.deepEqual(windowed.lines.slice(0, 2), [
+      "applied namespace",
+      "token: [redacted]",
+    ]);
+    assert.equal(windowed.offset, 0);
+    assert.equal(windowed.nextOffset, 2);
+    assert.equal(windowed.maxBytes, 16384);
+
+    const huge = "x".repeat(9000);
+    const bounded = boundRedactedDisplay(huge);
+    assert.equal(bounded.truncated, true);
+    assert.ok(bounded.text.length <= 8192 + 1);
+    const secretOut = boundRedactedDisplay({
+      token: "[redacted]",
+      privateKey: "hunter2",
+    });
+    assert.match(secretOut.text, /\[redacted\]/);
+    assert.equal(secretOut.text.includes("hunter2"), false);
+  });
+
+  it("fails closed on expired grants and never keeps locators on the view", () => {
+    const grantId = "88888888-8888-4888-8888-888888888888";
+    const grant = parseDownloadGrant({
+      download: {
+        id: grantId,
+        artifactId: ARTIFACT_ID,
+        expiresAt: "2020-01-01T00:00:00.000Z",
+        href: `/api/v1/artifact-downloads/${grantId}`,
+        method: "GET",
+      },
+    });
+    assert.ok(grant);
+    assert.equal(isDownloadGrantExpired(grant as { expiresAt: string }), true);
+    const view = downloadGrantView(grant!);
+    assert.equal(view.expired, true);
+    assert.equal(view.id, grantId);
+    assert.equal("href" in view, false);
+    assert.equal("url" in view, false);
+    assert.equal("handle" in view, false);
+    wipeDownloadGrant(grant!);
+    assert.equal(grant?.href, "");
+    assert.equal(
+      parseDownloadGrant({
+        download: {
+          id: grantId,
+          artifactId: ARTIFACT_ID,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          href: "https://bucket.s3.amazonaws.com/art?token=abc",
+          method: "GET",
+        },
+      })?.href,
+      "",
+    );
+    assert.equal(
+      parseDownloadGrant({
+        artifactId: ARTIFACT_ID,
+        downloadUrl: "https://bucket.s3.amazonaws.com/art?token=abc",
+      }),
+      null,
+    );
+    assert.match(downloadGrantFailureMessage({ expired: true }), /expired/);
+    assert.match(downloadGrantFailureMessage({ forbidden: true }), /403/);
+  });
+
+  it("hides download after retention deletion unless a legal hold preserves evidence", () => {
+    const deleted = parseExecutionArtifact({
+      id: ARTIFACT_ID,
+      name: "gone.bin",
+      digest: "sha256:bbbb",
+      deleted: true,
+      legalHold: false,
+    });
+    assert.equal(canDownloadArtifact(deleted), false);
+    const held = parseExecutionArtifact({
+      id: ARTIFACT_ID,
+      name: "held.bin",
+      digest: "sha256:cccc",
+      deleted: true,
+      legalHold: true,
+    });
+    assert.equal(canDownloadArtifact(held), true);
+  });
+
+  it("includes artifact metadata in detail text without durable URLs", () => {
+    const detail = parseExecutionDetail({
+      id: EXECUTION_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: VERSION_ID,
+      workflowName: "rollout",
+      status: "succeeded",
+      createdAt: "2026-09-09T01:00:00.000Z",
+      retentionUntil: "2026-12-08T01:00:00.000Z",
+      legalHold: true,
+      input: { secret: "[redacted]" },
+      artifacts: [
+        {
+          id: ARTIFACT_ID,
+          name: "plan.json",
+          digest: "sha256:dddd",
+          sizeBytes: 10,
+          classification: "internal",
+          retentionUntil: "2026-12-08T01:00:00.000Z",
+          downloadUrl: "https://example.com/durable/plan.json",
+        },
+      ],
+      steps: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          nodeId: "set",
+          nodeType: "data.set",
+          status: "succeeded",
+          output: { token: "[redacted]" },
+        },
+      ],
+    });
+    assert.ok(detail);
+    assert.equal(detail?.legalHold, true);
+    assert.equal(detail?.artifacts.length, 1);
+    assert.equal(artifactStateHasDurableUrl(detail?.artifacts), false);
+    const text = executionDetailText(detail as ExecutionDetail);
+    assert.match(text, /plan\.json/);
+    assert.match(text, /\[redacted\]/);
+    assert.match(text, /legal hold/i);
+    assert.equal(text.includes("example.com"), false);
   });
 });

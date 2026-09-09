@@ -43,6 +43,17 @@ export type IdentityClientResult<T> =
   | IdentityClientSuccess<T>
   | IdentityClientFailure;
 
+export type IdentityStreamSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  blob: Blob;
+  contentType: string | null;
+  contentDisposition: string | null;
+};
+
+export type IdentityStreamResult = IdentityStreamSuccess | IdentityClientFailure;
+
 export async function callIdentityProxy<T>(
   path: string,
   identity: DevIdentity,
@@ -118,6 +129,94 @@ export async function callIdentityProxy<T>(
     body: hasBody ? JSON.stringify(init.body) : undefined,
     requestId,
   });
+}
+
+/** GET bytes through the same-origin proxy. Never JSON-parses success bodies. */
+export async function streamIdentityProxy(
+  path: string,
+  identity: DevIdentity,
+): Promise<IdentityStreamResult> {
+  const requestId = generateRequestId();
+  const instance = sameOriginProxyUrl(path);
+  if (!instance) {
+    return {
+      ok: false,
+      statusCode: 400,
+      requestId,
+      problem: {
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Invalid Request",
+        status: 400,
+        detail:
+          "Browser session calls must use the same-origin /api/v1 proxy.",
+        instance: path,
+        code: "invalid-request",
+        request_id: requestId,
+      },
+    };
+  }
+
+  const session = getSessionSnapshot();
+  const headers: Record<string, string> = {
+    Accept: "application/octet-stream, application/problem+json",
+    [REQUEST_ID_HEADER]: requestId,
+    ...clientOperatorHeaders(identity, {
+      sessionActive: session.active,
+      headerFallback: headerFallbackEnabled(),
+    }),
+  };
+
+  try {
+    const response = await fetch(instance, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+      headers,
+    });
+    const echoed = resolveRequestId(
+      response.headers.get(REQUEST_ID_HEADER) ?? requestId,
+    );
+    const contentType = response.headers.get("content-type");
+    if (isProblemContentType(contentType) || !response.ok) {
+      const parsed = await readJson(response);
+      captureCsrfFromResponse(response.headers, parsed);
+      const problem = isProblemDetails(parsed)
+        ? parsed
+        : upstreamProblem(
+            response.status,
+            instance,
+            echoed,
+            "The control plane returned a problem response that could not be parsed.",
+          );
+      if (isStaleSessionProblem(problem)) {
+        markSessionStale();
+      }
+      return {
+        ok: false,
+        statusCode: response.status,
+        requestId: problem.request_id || echoed,
+        problem,
+      };
+    }
+    const blob = await response.blob();
+    captureCsrfFromResponse(response.headers, null);
+    return {
+      ok: true,
+      statusCode: response.status,
+      requestId: echoed,
+      blob,
+      contentType,
+      contentDisposition: response.headers.get("content-disposition"),
+    };
+  } catch {
+    const generated = resolveRequestId(requestId);
+    return {
+      ok: false,
+      statusCode: 503,
+      requestId: generated,
+      problem: unreachableProblem(instance, generated),
+    };
+  }
 }
 
 export async function fetchSameOriginProxy<T>(options: {
