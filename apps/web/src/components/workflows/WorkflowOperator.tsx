@@ -1076,7 +1076,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         <div className="space-y-4">
           <WorkflowCanvas
             graph={graph}
-            invalid={status === "invalid" || errors.length > 0}
+            invalid={status === "invalid" && errors.length > 0}
             pending={status === "pending"}
             selection={selection}
             entries={library}
