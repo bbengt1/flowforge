@@ -147,6 +147,11 @@ describe("ops-config contract (#41)", () => {
         .policyId,
       RESOURCE_ID,
     );
+    assert.equal(
+      pickSafeSpec({ hostname: "edge.example", allowedAddresses: [] }, "ssh_target")
+        .allowedAddresses,
+      undefined,
+    );
     const cluster = pickSafeSpec({
       credentialId: RESOURCE_ID,
       allowedNamespaces: [],

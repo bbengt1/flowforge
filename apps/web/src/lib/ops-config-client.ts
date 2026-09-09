@@ -140,11 +140,16 @@ export async function getOpsConfigCatalog(
     engineRaw && typeof engineRaw === "object" && !Array.isArray(engineRaw)
       ? stripSecrets(engineRaw as Record<string, unknown>)
       : undefined;
+  const sshEngineRaw = payload.sshEngine;
+  const sshEngine =
+    sshEngineRaw && typeof sshEngineRaw === "object" && !Array.isArray(sshEngineRaw)
+      ? stripSecrets(sshEngineRaw as Record<string, unknown>)
+      : undefined;
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    catalog: { kinds, kubernetesEngine },
+    catalog: { kinds, kubernetesEngine, sshEngine },
   };
 }
 

@@ -27,7 +27,8 @@ export default async function ConfigDraftPage({ params }: PageProps) {
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Save the mutable draft with body revision, publish an immutable
           revision, then restore a snapshot by PUT-ing it into the draft.
-          Published snapshots stay read-only.
+          Published snapshots stay read-only. SSH command profiles cannot be
+          edited in place after a workflow version pins them.
         </p>
       </header>
       <ConfigDraftEditor kind={kind} resourceId={id} />

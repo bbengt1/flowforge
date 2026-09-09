@@ -152,6 +152,8 @@ export type OpsConfigCatalogKind = {
 export type OpsConfigCatalog = {
   kinds: OpsConfigCatalogKind[];
   kubernetesEngine?: Record<string, unknown>;
+  /** Present when jonny ships E8.1 catalog fields. */
+  sshEngine?: Record<string, unknown>;
 };
 
 export type KindDescriptor = {

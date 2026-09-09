@@ -28,6 +28,7 @@ import {
   kubernetesPolicyPublishGap,
   parseKubernetesPolicy,
 } from "@/lib/kubernetes";
+import { commandProfilePublishGap, sshTargetPublishGap } from "@/lib/ssh";
 import { canPublishDraft, clientCompareSpecs, isDraftEditable } from "@/lib/ops-config";
 import type {
   OpsConfigDraft,
@@ -89,9 +90,13 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   const publishGap =
     kind === "cluster_target"
       ? clusterTargetPublishGap(spec)
-      : kind === "policy" && isKubernetesPolicySpec(spec)
-        ? kubernetesPolicyPublishGap(parseKubernetesPolicy(spec))
-        : null;
+      : kind === "ssh_target"
+        ? sshTargetPublishGap(spec)
+        : kind === "command_profile"
+          ? commandProfilePublishGap(spec)
+          : kind === "policy" && isKubernetesPolicySpec(spec)
+            ? kubernetesPolicyPublishGap(parseKubernetesPolicy(spec))
+            : null;
   const readOnly = !isDraftEditable(resource?.status);
 
   const applyDraft = useCallback((next: OpsConfigDraft, nextName?: string) => {

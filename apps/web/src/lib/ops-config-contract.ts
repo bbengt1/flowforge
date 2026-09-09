@@ -62,7 +62,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.ssh_target,
     group: "targets",
     title: "SSH targets",
-    summary: "Hostname, port, and host-key fingerprint. Private keys stay in the vault.",
+    summary:
+      "Workspace SSH host + vault credential + known-host fingerprint. Key-only auth. Private keys stay in the vault.",
     yamlRef: "sshTargetId",
   },
   {
@@ -70,7 +71,8 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.command_profile,
     group: "profiles",
     title: "Command profiles",
-    summary: "Approved SSH command templates with typed parameters. Published versions are immutable.",
+    summary:
+      "Admin-owned SSH command templates with typed parameter constraints. Published revisions are immutable pins.",
     yamlRef: "commandProfileId",
   },
   {
@@ -225,7 +227,14 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
         hostKeyFingerprint: "",
       };
     case "command_profile":
-      return { parameterSchema: {}, template: "", retrySafe: false };
+      return {
+        parameterSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {},
+        },
+        template: "",
+      };
     case "runtime_profile":
       return {
         language: "python",
@@ -392,7 +401,11 @@ export function pickSafeSpec(
       }
       continue;
     }
-    if (key === "allowedNamespaces" && Array.isArray(value) && value.length === 0) {
+    if (
+      (key === "allowedNamespaces" || key === "allowedAddresses") &&
+      Array.isArray(value) &&
+      value.length === 0
+    ) {
       continue;
     }
     if (key === "policy" && value && typeof value === "object" && !Array.isArray(value)) {

@@ -30,6 +30,11 @@ import {
   isKubernetesProxySegments,
   retargetKubernetesApiPath,
 } from "./kubernetes-contract.ts";
+import {
+  SSH_PROXY_ROUTES,
+  isSshProxySegments,
+  retargetSshApiPath,
+} from "./ssh-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -222,6 +227,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, ["ops-config", "catalog"]) },
   { methods: ["POST"], match: (s) => eq(s, ["ops-config", "select"]) },
   { methods: ["GET"], match: (s) => eq(s, ["kubernetes", "catalog"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["ssh", "catalog"]) },
   {
     methods: ["GET", "POST"],
     match: (s) => s.length === 1 && isOpsConfigCollection(s[0]),
@@ -288,6 +294,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // GET /kubernetes/catalog. Duplicate ops-config allowlist matches
   // are intentional.
   ...KUBERNETES_PROXY_ROUTES,
+  // E8.1 SSH target + command-profile UI (#82 / #86). Paths live in
+  // ssh-contract.ts. Upstream is ops-config collections plus
+  // GET /ssh/catalog. Duplicate allowlist matches are intentional.
+  ...SSH_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -352,6 +362,8 @@ export function resolveIdentityProxyTarget(
     apiPath = retargetAlertApiPath(mapped);
   } else if (isKubernetesProxySegments(segments)) {
     apiPath = retargetKubernetesApiPath(mapped);
+  } else if (isSshProxySegments(segments)) {
+    apiPath = retargetSshApiPath(mapped);
   }
   return {
     method,
