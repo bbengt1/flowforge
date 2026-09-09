@@ -210,15 +210,6 @@ export function canPublishOpsConfig(
   return Boolean(permissions?.includes("opsconfig.publish"));
 }
 
-const OPAQUE_SPEC_KEYS = new Set([
-  "parameterSchema",
-  "inputSchema",
-  "schema",
-  "policy",
-  "endpointPolicy",
-  "recipientPolicy",
-]);
-
 export function sanitizeSpec(raw: unknown): OpsConfigSpec {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return {};
@@ -226,27 +217,40 @@ export function sanitizeSpec(raw: unknown): OpsConfigSpec {
   return stripSecrets(raw as Record<string, unknown>) as OpsConfigSpec;
 }
 
+/**
+ * Drop secret-bearing leaves (token/password/kubeconfig strings).
+ * Keep schema/policy *keys* named token when the value is a nested object
+ * (JSON Schema properties.token, policy path maps).
+ */
 export function stripSecrets(
   value: Record<string, unknown>,
   stripped: string[] = [],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (isSecretKey(key)) {
+    if (isSecretKey(key) && isSecretLeaf(item)) {
       stripped.push(key);
-      continue;
-    }
-    if (OPAQUE_SPEC_KEYS.has(key)) {
-      out[key] = cloneJson(item);
       continue;
     }
     if (item && typeof item === "object" && !Array.isArray(item)) {
       out[key] = stripSecrets(item as Record<string, unknown>, stripped);
       continue;
     }
+    if (Array.isArray(item)) {
+      out[key] = item.map((entry) =>
+        entry && typeof entry === "object" && !Array.isArray(entry)
+          ? stripSecrets(entry as Record<string, unknown>, stripped)
+          : entry,
+      );
+      continue;
+    }
     out[key] = item;
   }
   return out;
+}
+
+function isSecretLeaf(value: unknown): boolean {
+  return value == null || typeof value === "string" || typeof value === "number";
 }
 
 export function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -408,13 +412,6 @@ export function specJson(spec: OpsConfigSpec): string {
 export function parseSpecJson(text: string): OpsConfigSpec | null {
   const parsed = parseJsonObject(text);
   return parsed ? sanitizeSpec(parsed) : null;
-}
-
-function cloneJson(value: unknown): unknown {
-  if (value === undefined) {
-    return undefined;
-  }
-  return JSON.parse(JSON.stringify(value));
 }
 
 export function clientCompareSpecs(

@@ -2,7 +2,8 @@
 # Prove state recovery: encrypted dump → isolated Postgres → schema check
 # (and optional API health/readiness against the restored database).
 #
-# Prerequisites: compose `postgres` is up and migrated (e.g. `docker compose up -d postgres api`).
+# Prerequisites: compose `postgres` + `api` are up and /readiness is 200
+# (compose --wait only covers /health; this script waits for readiness).
 # Never prints BACKUP_ENCRYPTION_KEY, DATABASE_URL, or POSTGRES_PASSWORD.
 #
 #   export POSTGRES_PASSWORD=...
@@ -98,7 +99,7 @@ row="$(docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$ISOLATED" \
   psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c \
     "SELECT COALESCE(MAX(version), 0) FROM schema_migrations")"
 row="$(echo "$row" | tr -d '[:space:]')"
-if [[ -z "$row" ]]; then
+if [[ -z "$row" || "$row" == "0" ]]; then
   echo "restore rehearsal failed: schema_migrations is empty" >&2
   exit 1
 fi

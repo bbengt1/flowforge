@@ -209,7 +209,10 @@ describe("publish / pin immutability UX helpers", () => {
       },
       parameterSchema: { properties: { password: { type: "string" } } },
       schema: { properties: { authorization: { type: "string" } } },
-      policy: { token: { path: "spec.token" } },
+      policy: {
+        token: { path: "spec.token" },
+        password: "plaintext-secret",
+      },
     });
     assert.deepEqual(schema.inputSchema, {
       type: "object",
@@ -226,7 +229,10 @@ describe("publish / pin immutability UX helpers", () => {
         ?.authorization !== undefined,
       true,
     );
-    assert.equal((schema.policy as { token?: unknown })?.token !== undefined, true);
+    assert.deepEqual((schema.policy as { token?: unknown })?.token, {
+      path: "spec.token",
+    });
+    assert.equal("password" in (schema.policy as object), false);
   });
 
   it("compares specs client-side because #41 has no compare route", () => {
