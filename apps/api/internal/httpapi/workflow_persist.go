@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -79,9 +80,10 @@ type workflowDetailResponse struct {
 }
 
 type publishResponse struct {
-	Workflow wfstore.Workflow `json:"workflow"`
-	Version  wfstore.Version  `json:"version"`
-	Pins     []opsconfig.Pin  `json:"pins"`
+	Workflow        wfstore.Workflow     `json:"workflow"`
+	Version         wfstore.Version      `json:"version"`
+	Pins            []opsconfig.Pin      `json:"pins"`
+	ScriptArtifacts []scripts.VersionPin `json:"scriptArtifacts"`
 }
 
 type executionResponse struct {
@@ -286,7 +288,11 @@ func (s *Server) publishWorkflow(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusCreated, publishResponse{Workflow: wf, Version: ver, Pins: pins})
+	scriptPins, ok := s.publishWorkflowScripts(w, r, scope, ver.DefinitionYAML, ver.ID, pins)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusCreated, publishResponse{Workflow: wf, Version: ver, Pins: pins, ScriptArtifacts: scriptPins})
 }
 
 func (s *Server) listWorkflowVersions(w http.ResponseWriter, r *http.Request) {
@@ -470,6 +476,20 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			writeOpsError(w, r, err)
 			return
 		}
+	}
+	preUser, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	_, _, _, prePerms, ok := s.requireAccess(w, r, preUser, authz.PermWorkflowExecute)
+	if !ok {
+		return
+	}
+	if !s.authorizeScriptNodes(w, r, prePerms, ver.DefinitionYAML) {
+		return
+	}
+	if !s.verifyWorkflowScriptPins(w, r, scope, ver.DefinitionYAML, ver.ID) {
+		return
 	}
 	if s.approvals != nil {
 		eval, evalErr := s.evaluateVersion(r.Context(), scope, workflowID, req.WorkflowVersionID)

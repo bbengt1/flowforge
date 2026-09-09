@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -38,6 +39,8 @@ type Server struct {
 	alerts           opsalert.Store
 	keys             vault.Keys
 	jobKey           []byte
+	scriptKey        []byte
+	scripts          *scripts.Pipeline
 	objects          artifact.Objects
 	downloadTTL      time.Duration
 	artifactMaxBytes int
@@ -60,6 +63,8 @@ type Deps struct {
 	Alerts           opsalert.Store
 	Keys             vault.Keys
 	JobBindingKey    []byte
+	ScriptSigningKey []byte
+	Scripts          scripts.Store
 	Objects          artifact.Objects
 	DownloadTTL      time.Duration
 	ArtifactMaxBytes int
@@ -136,6 +141,13 @@ func inferApprovals(db postgres.Checker) approval.Store {
 	return approval.NewMemory()
 }
 
+func inferScripts(db postgres.Checker) scripts.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return scripts.NewPostgres(p)
+	}
+	return scripts.NewMemory()
+}
+
 func inferAlerts(db postgres.Checker) opsalert.Store {
 	if p, ok := db.(*postgres.Pool); ok {
 		return opsalert.NewPostgres(p)
@@ -192,6 +204,14 @@ func newServer(d Deps) http.Handler {
 	if len(jobKey) == 0 {
 		jobKey = wfstore.LoadJobBindingKey()
 	}
+	scriptKey := d.ScriptSigningKey
+	if len(scriptKey) == 0 {
+		scriptKey = scripts.LoadSigningKey()
+	}
+	scriptStore := d.Scripts
+	if scriptStore == nil {
+		scriptStore = inferScripts(d.DB)
+	}
 	objects := d.Objects
 	if objects == nil {
 		if root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")); root != "" {
@@ -220,6 +240,8 @@ func newServer(d Deps) http.Handler {
 		alerts:           alertStore,
 		keys:             keys,
 		jobKey:           jobKey,
+		scriptKey:        scriptKey,
+		scripts:          &scripts.Pipeline{Store: scriptStore, Key: scriptKey},
 		objects:          objects,
 		downloadTTL:      downloadTTL,
 		artifactMaxBytes: d.ArtifactMaxBytes,
@@ -326,6 +348,10 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/ops-config/catalog", s.getOpsCatalog)
 	mux.HandleFunc("GET /api/v1/kubernetes/catalog", s.getKubernetesCatalog)
 	mux.HandleFunc("GET /api/v1/ssh/catalog", s.getSSHCatalog)
+	mux.HandleFunc("GET /api/v1/scripts/catalog", s.getScriptCatalog)
+	mux.HandleFunc("POST /api/v1/scripts", s.publishScript)
+	mux.HandleFunc("GET /api/v1/scripts/{artifactId}", s.getScriptArtifact)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts", s.listWorkflowScriptArtifacts)
 	mux.HandleFunc("POST /api/v1/ops-config/select", s.selectOpsBatch)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/pins", s.listWorkflowVersionPins)
 	for _, info := range opsconfig.KindInfos() {

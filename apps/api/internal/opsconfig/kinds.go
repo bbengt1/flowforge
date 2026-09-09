@@ -74,7 +74,7 @@ func KindInfos() []KindInfo {
 		{Kind: KindClusterTarget, Collection: "cluster-targets", DisplayName: "Cluster target", YAMLFields: []string{YAMLClusterTargetID}, UsePermission: authz.PermClusterTargetUse, AllowedCredentialTypes: []string{kubernetes.CredentialType}, Engine: "kubernetes"},
 		{Kind: KindSSHTarget, Collection: "ssh-targets", DisplayName: "SSH target", YAMLFields: []string{YAMLSSHTargetID}, UsePermission: authz.PermSSHTargetUse, AllowedCredentialTypes: []string{ssheng.CredentialType}, Engine: "ssh"},
 		{Kind: KindCommandProfile, Collection: "command-profiles", DisplayName: "Command profile", YAMLFields: []string{YAMLCommandProfileID}, UsePermission: authz.PermCommandProfileUse, Engine: "ssh"},
-		{Kind: KindRuntimeProfile, Collection: "runtime-profiles", DisplayName: "Runtime profile", YAMLFields: []string{YAMLRuntimeProfileID}, UsePermission: authz.PermRuntimeProfileUse},
+		{Kind: KindRuntimeProfile, Collection: "runtime-profiles", DisplayName: "Runtime profile", YAMLFields: []string{YAMLRuntimeProfileID}, UsePermission: authz.PermRuntimeProfileUse, Engine: "script"},
 		{Kind: KindConnection, Collection: "connections", DisplayName: "Connection", YAMLFields: []string{YAMLConnectionID}, UsePermission: authz.PermConnectionUse},
 		{Kind: KindRecipientList, Collection: "recipient-lists", DisplayName: "Recipient list", YAMLFields: []string{YAMLRecipientListID}, UsePermission: authz.PermRecipientListUse},
 		{Kind: KindMessageTemplate, Collection: "message-templates", DisplayName: "Message template", YAMLFields: []string{YAMLTemplateID, YAMLMessageTemplateID}, UsePermission: authz.PermMessageTemplateUse},

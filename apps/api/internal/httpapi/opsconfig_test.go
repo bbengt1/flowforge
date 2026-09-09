@@ -480,6 +480,9 @@ func TestClusterTargetKubernetesPolicyHardening(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), `"kubernetesEngine"`) || !strings.Contains(rec.Body.String(), kubernetes.CredentialType) {
 			t.Fatalf("ops catalog missing engine: %s", rec.Body.String())
 		}
+		if !strings.Contains(rec.Body.String(), `"scriptEngine"`) || !strings.Contains(rec.Body.String(), `"script.python"`) {
+			t.Fatalf("ops catalog missing script engine: %s", rec.Body.String())
+		}
 		rec = httptest.NewRecorder()
 		req = workspaceRequest(http.MethodGet, "/api/v1/kubernetes/catalog", nil, admin, tenant, wsA)
 		h.ServeHTTP(rec, req)

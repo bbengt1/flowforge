@@ -29,6 +29,15 @@ var schemaKeys = map[string]bool{
 	"classification":       true,
 }
 
+// ValidateDeclaredSchema checks a declared input/output schema (core data
+// nodes and script.python / script.go). Empty/nil is valid (optional field).
+func ValidateDeclaredSchema(schema map[string]any, path string) ErrorList {
+	if schema == nil {
+		return nil
+	}
+	return validateSchemaShape(schema, path, 0)
+}
+
 // validateSchemaShape checks a declared core-node schema (data.set / data.validate).
 func validateSchemaShape(schema map[string]any, path string, depth int) ErrorList {
 	var errs ErrorList

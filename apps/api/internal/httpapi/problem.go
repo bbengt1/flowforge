@@ -25,6 +25,10 @@ const (
 	CodeDependencyUnavailable = "dependency-unavailable"
 	CodeInvalidWorkflow       = "invalid-workflow"
 	CodeRetryDenied           = "retry-denied"
+	CodeArtifactMutable       = "artifact-mutable"
+	CodeArtifactUnscanned     = "artifact-unscanned"
+	CodeArtifactUnsigned      = "artifact-unsigned"
+	CodeArtifactScanFailed    = "artifact-scan-failed"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

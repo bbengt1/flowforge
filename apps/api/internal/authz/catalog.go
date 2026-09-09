@@ -35,6 +35,7 @@ const (
 	PermKubernetesApply     = "kubernetes.apply"
 	PermKubernetesRead      = "kubernetes.read"
 	PermSSHRun              = "ssh.run"
+	PermScriptRun           = "script.run"
 	PermOpsConfigView       = "opsconfig.view"
 	PermOpsConfigEdit       = "opsconfig.edit"
 	PermOpsConfigPublish    = "opsconfig.publish"
@@ -93,6 +94,7 @@ func Permissions() []Permission {
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermKubernetesRead, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
+		{Key: PermScriptRun, Family: FamilyExecute},
 		{Key: PermOpsConfigView, Family: FamilyView},
 		{Key: PermOpsConfigEdit, Family: FamilyEdit},
 		{Key: PermOpsConfigPublish, Family: FamilyPublish},
@@ -132,7 +134,7 @@ func Roles() []Role {
 			Description: "Execute published workflows and use credentials. Cannot edit definitions or administer.",
 			Permissions: []string{
 				PermWorkflowView, PermWorkflowExecute, PermExecutionView, PermExecutionCancel,
-				PermCredentialView, PermCredentialUse, PermApprovalView, PermKubernetesApply, PermKubernetesRead, PermSSHRun,
+				PermCredentialView, PermCredentialUse, PermApprovalView, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermScriptRun,
 				PermAlertView, PermAlertAck,
 				PermOpsConfigView, PermOpsConfigUse,
 				PermClusterTargetUse, PermSSHTargetUse, PermCommandProfileUse, PermRuntimeProfileUse,

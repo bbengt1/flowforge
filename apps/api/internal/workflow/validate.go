@@ -1,11 +1,13 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 )
 
 var (
@@ -36,6 +38,8 @@ var forbiddenWithByType = map[string][]string{
 	"kubernetes.get":           {"kubeconfig", "server"},
 	"kubernetes.list":          {"kubeconfig", "server"},
 	"kubernetes.rolloutStatus": {"kubeconfig", "server"},
+	"script.python":            {"env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig", "command", "shell"},
+	"script.go":                {"env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig", "command", "shell"},
 }
 
 func validate(doc *Document) ErrorList {
@@ -412,20 +416,7 @@ func validateNodeWith(n Node, path string) ErrorList {
 		}
 	case "script.python", "script.go":
 		errs = append(errs, validateTimeout(n.With, path)...)
-		if v, ok := n.With["source"]; ok {
-			if _, ok := v.(string); !ok {
-				errs = append(errs, fieldError(path+".with.source", n.pos.Line, n.pos.Column, CodeInvalidType, "source must be a string."))
-			}
-		}
-		if v, ok := n.With["entrypoint"]; ok {
-			s, ok := v.(string)
-			if !ok || strings.TrimSpace(s) == "" {
-				errs = append(errs, fieldError(path+".with.entrypoint", n.pos.Line, n.pos.Column, CodeInvalidType, "entrypoint must be a non-empty string."))
-			}
-		}
-		if v, ok := n.With["memoryMiB"]; ok && !isBoundedInt(v, 32, 2048) {
-			errs = append(errs, fieldError(path+".with.memoryMiB", n.pos.Line, n.pos.Column, CodeInvalidWith, "memoryMiB must be between 32 and 2048."))
-		}
+		errs = append(errs, validateScriptNode(n, path)...)
 	case "http.request":
 		if v, ok := n.With["method"]; ok {
 			s, ok := v.(string)
@@ -455,6 +446,85 @@ func validateNodeWith(n Node, path string) ErrorList {
 		}
 	}
 	return errs
+}
+
+func validateScriptNode(n Node, path string) ErrorList {
+	var errs ErrorList
+	lang := "python"
+	if n.Type == "script.go" {
+		lang = "go"
+	}
+	if v, ok := n.With["source"]; ok {
+		s, ok := v.(string)
+		if !ok {
+			errs = append(errs, fieldError(path+".with.source", n.pos.Line, n.pos.Column, CodeInvalidType, "source must be a string."))
+		} else {
+			if err := scripts.ValidateSource(lang, s, stringField(n.With, "entrypoint")); err != nil {
+				if ee := scriptsAsField(err, path+".with.source", n.pos.Line, n.pos.Column); ee.Code != CodeInvalidEntrypoint {
+					errs = append(errs, ee)
+				}
+			}
+			if err := scripts.ScanSource(s); err != nil {
+				errs = append(errs, scriptsAsField(err, path+".with.source", n.pos.Line, n.pos.Column))
+			}
+		}
+	}
+	if v, ok := n.With["entrypoint"]; ok {
+		s, ok := v.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			errs = append(errs, fieldError(path+".with.entrypoint", n.pos.Line, n.pos.Column, CodeInvalidType, "entrypoint must be a non-empty string."))
+		} else if err := scripts.ValidateEntrypoint(lang, s); err != nil {
+			errs = append(errs, scriptsAsField(err, path+".with.entrypoint", n.pos.Line, n.pos.Column))
+		}
+	}
+	if v, ok := n.With["memoryMiB"]; ok && !isBoundedInt(v, 32, 2048) {
+		errs = append(errs, fieldError(path+".with.memoryMiB", n.pos.Line, n.pos.Column, CodeInvalidWith, "memoryMiB must be between 32 and 2048."))
+	}
+	if v, ok := n.With["cpuMillis"]; ok && !isBoundedInt(v, 1, 8000) {
+		errs = append(errs, fieldError(path+".with.cpuMillis", n.pos.Line, n.pos.Column, CodeInvalidWith, "cpuMillis must be between 1 and 8000."))
+	}
+	if v, ok := n.With["processes"]; ok && !isBoundedInt(v, 1, 256) {
+		errs = append(errs, fieldError(path+".with.processes", n.pos.Line, n.pos.Column, CodeInvalidWith, "processes must be between 1 and 256."))
+	}
+	for _, key := range []string{"inputSchema", "outputSchema"} {
+		raw, ok := n.With[key]
+		if !ok {
+			continue
+		}
+		schema, ok := raw.(map[string]any)
+		if !ok {
+			errs = append(errs, fieldError(path+".with."+key, n.pos.Line, n.pos.Column, CodeInvalidType, key+" must be a mapping."))
+			continue
+		}
+		errs = append(errs, ValidateDeclaredSchema(schema, path+".with."+key)...)
+	}
+	return errs
+}
+
+func stringField(with map[string]any, key string) string {
+	s, _ := with[key].(string)
+	return s
+}
+
+func scriptsAsField(err error, path string, line, column int) FieldError {
+	var ee *scripts.EngineError
+	if errors.As(err, &ee) && ee != nil {
+		code := ee.Code
+		switch code {
+		case scripts.CodeInvalidEntrypoint:
+			code = CodeInvalidEntrypoint
+		case scripts.CodeInvalidSource:
+			code = CodeInvalidSource
+		case scripts.CodeSecretForbidden:
+			code = CodeSecretForbidden
+		case scripts.CodeSizeLimit:
+			code = CodeOutputTooLarge
+		case scripts.CodeInvalidSchema:
+			code = CodeInvalidSchema
+		}
+		return fieldError(path, line, column, code, ee.Message)
+	}
+	return fieldError(path, line, column, CodeInvalidWith, "script configuration is not valid.")
 }
 
 func validateTimeout(with map[string]any, path string) ErrorList {

@@ -3387,7 +3387,7 @@ paths:
     get:
       operationId: getOpsConfigCatalog
       summary: Operational configuration kinds
-      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, use permissions, `kubernetesEngine` (E7.1), and `sshEngine` (E8.1).
+      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, use permissions, `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1).
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -3476,6 +3476,118 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /scripts/catalog:
+    get:
+      operationId: getScriptCatalog
+      summary: Script engine catalog
+      description: |
+        Requires `opsconfig.view`. Documents `script.python` / `script.go`
+        node fields, publish/scan/sign/pin rules, runtime-profile digest
+        pinning, error codes, and E9.2–E9.4 isolation hooks.
+        Does not start a runner.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Script engine catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptEngineCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /scripts:
+    post:
+      operationId: publishScriptArtifact
+      summary: Publish a scanned and signed script artifact
+      description: |
+        Requires `workflow.publish`. Validates source, entrypoint, published
+        runtime profile, and declared I/O schema shape. Packages an immutable
+        content-addressed artifact, scans and signs it, and rejects secrets
+        in source. Host-supplied workspace IDs are rejected. The package blob
+        is never returned.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptPublishRequest"
+      responses:
+        "201":
+          description: Published artifact
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptArtifact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /scripts/{artifactId}:
+    get:
+      operationId: getScriptArtifact
+      summary: Get a published script artifact
+      description: |
+        Requires `workflow.view`. Returns metadata, digest, scan status, and
+        signature. Never includes the package blob or storage locator.
+        Cross-workspace IDs are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Artifact metadata
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptArtifact"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /ops-config/select:
     post:
       operationId: selectOpsConfigBatch
@@ -3703,6 +3815,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpsPinList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/versions/{versionId}/script-artifacts:
+    get:
+      operationId: listWorkflowVersionScriptArtifacts
+      summary: Script artifact pins for a published workflow version
+      description: |
+        Immutable content-addressed script packages bound at publish.
+        Requires `workflow.view`. Execution uses these digests, not draft source.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - $ref: "#/components/parameters/VersionID"
+      responses:
+        "200":
+          description: Script pins
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptPinList"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -4448,6 +4593,8 @@ components:
           $ref: "#/components/schemas/KubernetesEngineCatalog"
         sshEngine:
           $ref: "#/components/schemas/SSHEngineCatalog"
+        scriptEngine:
+          $ref: "#/components/schemas/ScriptEngineCatalog"
     KubernetesEngineCatalog:
       type: object
       required: [credentialType, allowedKinds, allowedVerbs, evaluationKeys, serviceAccount, publishRules]
@@ -4690,6 +4837,147 @@ components:
             nonRootRemoteAccount: {type: boolean}
             defaultUsername: {type: string}
             privateKeyNeverExported: {type: boolean}
+    ScriptEngineCatalog:
+      type: object
+      required: [languages, publishRules, nodes, errors, permissions, isolation]
+      properties:
+        languages:
+          type: array
+          items: {type: string, enum: [python, go]}
+        publishRules:
+          type: object
+          properties:
+            requiredWith:
+              type: array
+              items: {type: string}
+            allowedLanguages:
+              type: array
+              items: {type: string}
+            sourceVisibleInYAML: {type: boolean}
+            secretsForbiddenInYAML: {type: boolean}
+            draftsCannotExecute: {type: boolean}
+            mutableArtifactsRejected: {type: boolean}
+            unscannedRejected: {type: boolean}
+            unsignedRejected: {type: boolean}
+            failedScanRejected: {type: boolean}
+            publishedRevisionsPinned: {type: boolean}
+            digestPinnedRuntime: {type: boolean}
+            maxSourceBytes: {type: integer}
+            maxTimeoutSeconds: {type: integer}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              language: {type: string}
+              title: {type: string}
+              description: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+              allowedWith:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    kind: {type: string}
+                    required: {type: boolean}
+                    description: {type: string}
+              outputs:
+                type: array
+                items: {type: string}
+              sideEffects: {type: boolean}
+              retrySafe: {type: boolean}
+              idempotent: {type: boolean}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        permissions:
+          type: array
+          items: {type: string}
+        isolation:
+          type: object
+          properties:
+            nonRoot: {type: boolean}
+            readOnlyRootFS: {type: boolean}
+            droppedCapabilities: {type: boolean}
+            noNewPrivs: {type: boolean}
+            noMetadataService: {type: boolean}
+            noHostDockerSocket: {type: boolean}
+            runtimePackageInstall: {type: boolean}
+            approvedImagesOnly: {type: boolean}
+            note: {type: string}
+            hooks:
+              type: array
+              items: {type: string}
+        hooks:
+          type: object
+          additionalProperties: {type: string}
+    ScriptArtifact:
+      type: object
+      required: [id, language, entrypoint, digest, signature, scanStatus, status, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        language: {type: string, enum: [python, go]}
+        entrypoint: {type: string}
+        digest: {type: string}
+        signature: {type: string}
+        scanStatus: {type: string, enum: [pending, clean, failed, unsigned]}
+        status: {type: string, enum: [draft, published]}
+        runtimeProfileId: {type: string, format: uuid}
+        runtimeProfileVersionId: {type: string, format: uuid}
+        runtimeProfileDigest: {type: string}
+        sourceBytes: {type: integer}
+        metadata: {type: object, additionalProperties: true}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        revokedAt: {type: string, format: date-time}
+    ScriptVersionPin:
+      type: object
+      required: [workflowVersionId, nodeId, artifactId, digest, scanStatus]
+      properties:
+        workflowVersionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeType: {type: string}
+        artifactId: {type: string, format: uuid}
+        digest: {type: string}
+        scanStatus: {type: string}
+        signature: {type: string}
+        language: {type: string}
+        entrypoint: {type: string}
+    ScriptPinList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScriptVersionPin"
+    ScriptPublishRequest:
+      type: object
+      required: [language, source, entrypoint, runtimeProfileId]
+      properties:
+        language: {type: string, enum: [python, go]}
+        source: {type: string}
+        entrypoint: {type: string}
+        runtimeProfileId: {type: string, format: uuid}
+        runtimeProfileVersionId: {type: string, format: uuid}
+        inputSchema: {type: object, additionalProperties: true}
+        outputSchema: {type: object, additionalProperties: true}
+        timeoutSeconds: {type: integer}
+        memoryMiB: {type: integer}
+        cpuMillis: {type: integer}
+        processes: {type: integer}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]
@@ -4984,6 +5272,10 @@ components:
             - dependency-unavailable
             - invalid-workflow
             - retry-denied
+            - artifact-mutable
+            - artifact-unscanned
+            - artifact-unsigned
+            - artifact-scan-failed
         request_id:
           type: string
         errors:
@@ -5531,6 +5823,14 @@ components:
           $ref: "#/components/schemas/WorkflowRecord"
         version:
           $ref: "#/components/schemas/WorkflowVersion"
+        pins:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpsPin"
+        scriptArtifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScriptVersionPin"
     CompareRef:
       type: object
       required: [kind]

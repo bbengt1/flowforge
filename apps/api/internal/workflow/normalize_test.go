@@ -91,6 +91,7 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 	}
 	found := false
 	foundSSH := false
+	foundScript := false
 	for _, n := range cat.Nodes {
 		if n.Type == "kubernetes.apply" && n.Phase == PhaseCore {
 			if _, ok := n.outputPort("result"); !ok {
@@ -110,12 +111,21 @@ func TestCatalogExposesCorePorts(t *testing.T) {
 			}
 			foundSSH = true
 		}
+		if n.Type == "script.python" || n.Type == "script.go" {
+			if n.Policy == nil || !n.Policy.SideEffects || len(n.AllowedWith) == 0 || n.Redaction == nil {
+				t.Fatalf("%s contract incomplete: %+v", n.Type, n)
+			}
+			foundScript = true
+		}
 	}
 	if !found {
 		t.Fatal("core catalog missing kubernetes.apply")
 	}
 	if !foundSSH {
 		t.Fatal("core catalog missing ssh.run")
+	}
+	if !foundScript {
+		t.Fatal("core catalog missing script.python / script.go")
 	}
 	cond, ok := lookupNode("flow.condition")
 	if !ok || cond.Policy == nil || cond.Policy.SideEffects {
