@@ -56,6 +56,7 @@ import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { EMBED_PROXY_ROUTES } from "./embed-contract.ts";
+import { PORTAL_PROXY_ROUTES } from "./portal-adapter-contract.ts";
 import {
   EMBED_TENANCY_PROXY_ROUTES,
   isEmbedTenancyProxySegments,
@@ -144,6 +145,8 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // E11.2 tenancy retarget. Empty until jonny publishes new embed tenancy
   // routes. GET /workspace + GET /workspaces stay on the E2 allowlist.
   ...EMBED_TENANCY_PROXY_ROUTES,
+  // E11.3 CP Ops Portal adapter. Catalog + role-mapped mint. Exchange stays embed.
+  ...PORTAL_PROXY_ROUTES,
   { methods: ["GET"], match: (s) => eq(s, ["workflows", "catalog"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },

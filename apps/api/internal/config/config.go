@@ -12,6 +12,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
+	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -60,11 +61,13 @@ type Config struct {
 	IntegrationActionsEnabled bool
 	// EmbedKeys is the Ed25519 material used to mint/verify embed
 	// assertions. Empty env yields an ephemeral process key.
-	EmbedKeys     embed.Material
-	EmbedAudience string
-	EmbedTTL      time.Duration
-	EmbedIssuer   string
-	EmbedIssuers  []string
+	EmbedKeys            embed.Material
+	EmbedAudience        string
+	EmbedTTL             time.Duration
+	EmbedIssuer          string
+	EmbedIssuers         []string
+	PortalIssuers        []string
+	PortalFrameAncestors []string
 }
 
 // Load reads configuration from the process environment.
@@ -112,6 +115,8 @@ func Load() (Config, error) {
 		EmbedTTL:                  durationEnv("EMBED_ASSERTION_TTL", embed.DefaultTTL),
 		EmbedIssuer:               strings.TrimSpace(os.Getenv("EMBED_ISSUER")),
 		EmbedIssuers:              embed.ParseIssuerAllowlist(os.Getenv(embed.EnvIssuerAllow), os.Getenv(embed.EnvIssuer)),
+		PortalIssuers:             portal.ParseIssuers(os.Getenv(portal.EnvIssuerAllow), os.Getenv(portal.EnvIssuer)),
+		PortalFrameAncestors:      portal.ParseFrameAncestors(os.Getenv(portal.EnvFrameAllow)),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

@@ -95,6 +95,7 @@ func NewCatalog() Catalog {
 			{ID: "jti.consume", Status: "ready", Fail: "replayed jti is 409; store failure is 503", Note: "Atomic Postgres INSERT ON CONFLICT with TTL. MemoryJTI remains for process-local tests."},
 			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed", Note: "Active signing key plus explicit overlap verification keys (env + rotate API)."},
 			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit."},
+			{ID: "portal.adapter", Status: "ready", Fail: "hostile host, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). FlowForge never shares its database or executor."},
 		},
 		Rules: CatalogRules{
 			AssertionNotInURL:     true,

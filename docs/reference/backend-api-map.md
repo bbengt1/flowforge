@@ -54,7 +54,22 @@ Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,
 
 Rotate body: `{action:"register-overlap"|"retire", publicJwk, overlapUntil?, kid?}`. Ops: register current public JWK as overlap, deploy new `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`, retire after max assertion TTL. `EMBED_OVERLAP_KEYS` is the env form of the same public set.
 
-Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. Chloe UI honors that bind on chrome and deep links (`apps/web/src/lib/embed-tenancy-contract.ts`, `EMBED_TENANCY_RULES`). E11.3 is the CP Ops Portal adapter.
+Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. Chloe UI honors that bind on chrome and deep links (`apps/web/src/lib/embed-tenancy-contract.ts`, `EMBED_TENANCY_RULES`).
+
+## CP Ops Portal adapter (E11.3)
+
+Replace/adapt Portal’s protected workflow surface without sharing the FlowForge database or executor. Portal entry RBAC is not FlowForge authorization. After Portal RBAC, the Portal backend mints via E11.1 (`aud=flowforge`, portal issuer, mapped capabilities, tenant, workbench). Exchange stays `POST /embed/exchange`. Full host wiring: [portal adapter](portal-adapter.md). UI adapter: `apps/web/src/lib/portal-adapter-contract.ts`. Relates to #123 / Part of #120 — **Keep #123 open** (Chloe still has host wiring pending).
+
+**Host wiring (Chloe):** Portal entry → map Portal roles → `POST /api/v1/portal/adapter/assertions` → mount `/embed/v1` → `POST /api/v1/embed/exchange`. Persist tenant + workbench from the exchanged session, not from host query. `WEB_PORTAL_FRAME_ANCESTORS` (merged with `WEB_EMBED_FRAME_ANCESTORS`) relaxes framing on `/embed/v1` only.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/portal/adapter` | Adapter `portal.v1`, capability map, host wiring, issuer/frame allowlists. No auth. Never includes DB/executor/credentials. | `200` catalog | — |
+| `POST /api/v1/portal/adapter/assertions` | Portal-backend mint. `portalRoles` → FlowForge capabilities, then E11.1 `embed.Mint`. Identity headers + tenant/workbench. Issuer must be on `PORTAL_ISSUER_ALLOWLIST` when set. | `201` minted assertion (JWS once) | `400` unknown role `401` `403` hostile issuer / binding `503` |
+
+Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`. Roles: `portal.viewer` / `viewer`, `portal.editor` / `editor`, `portal.publisher` / `publisher`, `portal.operator` / `operator`, `portal.approver` / `approver`, `portal.admin` / `admin`.
+
+Epic #120 negatives (fail closed): hostile host issuer, replayed assertion (`409` on exchange), cross-tenant/workbench (`403`), no credential plaintext or raw runner-log exposure.
 
 ## Workspace identity and RBAC (E2.1)
 

@@ -74,6 +74,8 @@ API_INTERNAL_URL=http://api:8080
 # E11.1 embed framing (exact origins, space or comma separated). Empty keeps
 # frame-ancestors 'none' / X-Frame-Options DENY. Ignored on non-/embed/v1 paths.
 # WEB_EMBED_FRAME_ANCESTORS=
+# Exact Portal origins (merged with WEB_EMBED_FRAME_ANCESTORS on /embed/v1).
+# WEB_PORTAL_FRAME_ANCESTORS=
 
 # --- Embed assertions (E11.1) ---
 # Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
@@ -87,3 +89,11 @@ API_INTERNAL_URL=http://api:8080
 # EMBED_ISSUER_ALLOWLIST=
 # Previous public JWKS for the overlap window after a signing-key rotate:
 # EMBED_OVERLAP_KEYS=
+
+# --- CP Ops Portal adapter (E11.3) ---
+# Portal issuer allowlist for POST /api/v1/portal/adapter/assertions.
+# Merged into embed exchange verification. Empty adds no extra mint constraint.
+# PORTAL_ISSUER=
+# PORTAL_ISSUER_ALLOWLIST=
+# Exact Portal origins published on GET /api/v1/portal/adapter.
+# PORTAL_FRAME_ANCESTORS=

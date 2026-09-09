@@ -11,6 +11,10 @@ Adapter: `apps/web/src/lib/embed-contract.ts`. E11.2 UI adapter:
 `apps/web/src/lib/embed-tenancy-contract.ts`. Relates to #122 / Part of #120 —
 **Keep #122 open**. Relates to #121 for the shell.
 
+E11.3 CP Ops Portal adapter (Relates to #123 / **Keep #123 open**):
+[portal adapter](portal-adapter.md). Portal backends mint through this
+SDK after Portal RBAC — they do not share FlowForge’s database or executor.
+
 ## SDK
 
 | Field | Value |
@@ -151,6 +155,9 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_ISSUER` | empty | Optional single allowed `iss` |
 | `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty accepts any `ValidIssuer` |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Space/comma exact origins allowed to frame `/embed/v1` only. `*` / `null` ignored. Standalone stays `frame-ancestors 'none'` |
+| `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Merged into embed exchange verification |
+| `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on `GET /api/v1/portal/adapter` |
+| `WEB_PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins merged into `/embed/v1` `frame-ancestors` |
 
 Production must set a stable `EMBED_SIGNING_KEY`. Public JWKS never includes
 `d`, PEM, or seed. Logs redact `assertion`, `token`, and `private_key`. Audit
@@ -164,4 +171,4 @@ and `workspace_id` only.
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
 | `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. |
-| Portal adapter | out of scope | E11.3 CP Ops Portal add-in |
+| Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). |

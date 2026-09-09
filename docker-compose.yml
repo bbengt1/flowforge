@@ -76,6 +76,9 @@ services:
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
       EMBED_SIGNING_KEY: ${EMBED_SIGNING_KEY:-}
       EMBED_SIGNING_KEY_ID: ${EMBED_SIGNING_KEY_ID:-}
+      PORTAL_ISSUER: ${PORTAL_ISSUER:-}
+      PORTAL_ISSUER_ALLOWLIST: ${PORTAL_ISSUER_ALLOWLIST:-}
+      PORTAL_FRAME_ANCESTORS: ${PORTAL_FRAME_ANCESTORS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +107,8 @@ services:
       API_INTERNAL_URL: http://api:8080
       WEB_HSTS: ${WEB_HSTS:-}
       WEB_CSP_CONNECT_SRC: ${WEB_CSP_CONNECT_SRC:-}
+      WEB_EMBED_FRAME_ANCESTORS: ${WEB_EMBED_FRAME_ANCESTORS:-}
+      WEB_PORTAL_FRAME_ANCESTORS: ${WEB_PORTAL_FRAME_ANCESTORS:-}
     depends_on:
       - api
     restart: unless-stopped

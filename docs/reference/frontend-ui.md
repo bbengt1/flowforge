@@ -724,7 +724,21 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 | `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller |
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |
 
-E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell honors that contract (see below). Do not implement the E11.3 Portal adapter here.
+E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell honors that contract (see below).
+
+## E11.3 CP Ops Portal adapter (API → UI)
+
+Jonny's Portal adapter APIs + host wiring map. Relates to #123 / Part of #120 — **Keep #123 open**. Chloe owns Portal embed host wiring. Do not rewrite the product shell. Adapter: `apps/web/src/lib/portal-adapter-contract.ts`. Wire exactly as `docs/reference/portal-adapter.md`.
+
+**Host flow**
+
+1. Portal RBAC allows entry (Portal-owned). This is not FlowForge authorization.
+2. Portal backend maps Portal roles → FlowForge capabilities (`GET /api/v1/portal/adapter` `capabilityMap`).
+3. Portal backend `POST /api/v1/portal/adapter/assertions` `{portalRoles}` (identity headers + tenant/workbench). Same mint as E11.1 (`aud=flowforge`). Compact JWS once.
+4. Embed shell `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` — **body only**.
+5. Navigate to `/embed/v1/…`. Persist tenant + workbench from the exchanged session.
+
+`WEB_PORTAL_FRAME_ANCESTORS` is merged with `WEB_EMBED_FRAME_ANCESTORS` on `/embed/v1` only. Standalone stays `frame-ancestors 'none'`. Portal never receives credentials or raw runner logs.
 
 ## E11.1 embed shell (Chloe UI)
 
@@ -750,7 +764,7 @@ After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `
 - **Fail closed:** no verified pair → no `GET /workspace`. Mismatch vs `GET /workspace` closes the surface. Durable `jti` replay is HTTP `409` (no silent retry).
 - **Deep links:** same standalone hrefs under `/embed/v1`. Chrome nav, session chip, command palette, and search remap hrefs. In-app `<a>` / `Link` clicks stay on the mount.
 - **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `workspace.administer`) and is not an embed-shell control. Do not send `X-FlowForge-Workspace-ID` as the lookup key.
-- **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops.
+- **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops. E11.3 adds `/api/v1/portal/adapter` and `/api/v1/portal/adapter/assertions` for the Portal host (Chloe).
 
 ## Required validation
 
