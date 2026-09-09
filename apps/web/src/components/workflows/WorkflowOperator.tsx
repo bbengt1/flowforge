@@ -820,6 +820,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       jsonText: runTriggerInput,
       idempotencyKey: runIdempotencyKey,
       permissions,
+      catalog,
     });
     if (!prepared.ok || !prepared.body) {
       setProblem({

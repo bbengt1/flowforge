@@ -19,7 +19,6 @@ import { buildPreRunReview, publishedRunVersions } from "@/lib/execution-replay"
 import {
   MANUAL_START_AUDIT_HELP,
   MANUAL_START_CONFIRM_HELP,
-  MANUAL_START_CONTRACT_FALLBACK_HELP,
   MANUAL_START_CSRF_HELP,
   MANUAL_START_FORBIDDEN_MESSAGE,
   MANUAL_START_IDEMPOTENCY_HELP,
@@ -28,6 +27,7 @@ import {
   extractManualStartSchema,
   generateManualStartIdempotencyKey,
   manualStartAuthFailureMessage,
+  manualStartHelp,
 } from "@/lib/manual-start-contract";
 import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -105,6 +105,7 @@ export function RunControl({
     jsonText: triggerInput,
     idempotencyKey,
     permissions,
+    catalog,
   });
   const review = buildPreRunReview({
     version: selectedVersion ?? published.find((item) => item.id === selectedVersionId),
@@ -143,12 +144,16 @@ export function RunControl({
       <p className="mt-1 text-sm text-zinc-600">
         {PRE_RUN_PUBLISHED_ONLY_HELP} POST body is{" "}
         <code className="font-mono text-xs">
-          {"{workflowVersionId, idempotencyKey, input?}"}
+          {"{workflowVersionId, idempotencyKey, input}"}
         </code>
-        . CSRF is required.{" "}
+        {" "}plus <code className="font-mono text-xs">Idempotency-Key</code>.
+        CSRF is required.{" "}
         <code className="font-mono text-xs">201</code> is a new run;{" "}
-        <code className="font-mono text-xs">200</code> is a replay.{" "}
-        {MANUAL_START_CONTRACT_FALLBACK_HELP}
+        <code className="font-mono text-xs">200</code> is a replay;{" "}
+        <code className="font-mono text-xs">400</code> is draft or bad input;{" "}
+        <code className="font-mono text-xs">403</code> is authz or policy deny;{" "}
+        <code className="font-mono text-xs">409</code> is fingerprint mismatch
+        or approval-required. {manualStartHelp(catalog)}
       </p>
 
       {published.length === 0 ? (

@@ -147,7 +147,7 @@ Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.
 
 E6.4 (Chloe) extends E5.1–E5.3 `/executions` and the E6.2/E6.3 editor run control. `apps/api` is unchanged. Prefer existing E5 routes. Session cookies + `X-CSRF-Token` stay the same.
 
-- **Published-version run:** `/workflows/{id}` run control lists published versions only. Pre-run review shows version digest, trigger input (optional JSON, secrets stripped), pinned target/environment, `POST /policy/evaluate`, and side-effect warnings. Start is still `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input?}`. E10.1 run dialog always sends a key and typed input from the published manual trigger schema. Drafts never execute.
+- **Published-version run:** `/workflows/{id}` run control lists published versions only. Pre-run review shows version digest, trigger input (optional JSON, secrets stripped), pinned target/environment, `POST /policy/evaluate`, and side-effect warnings. Start is still `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input}` plus `Idempotency-Key` (#111). E10.1 run dialog always sends a key and typed `input` from the published manual trigger schema / catalog `triggers[type=manual].start`. Drafts never execute.
 - **Graph replay:** `/executions/{id}` overlays step status on the E6.2 canvas projection of the pinned version YAML (`GET /workflows/{id}/versions/{versionId}`). Invalid YAML is never guessed. Current node, duration, attempts, waiting/approval, safe outputs, artifacts, correlation ID, and redacted logs are shown. Status uses icon + text — `indeterminate` is unmistakable.
 - **Cancel / retry:** E5.2 rules unchanged. Cancel is idempotent. Retry is hidden for `indeterminate` and provider nodes.
 - **Compare:** two executions on `/executions` or detail — client-side diff of redacted summaries (status, inputs, outcomes, policy, pins). Same-workflow YAML can still use `POST /workflows/{id}/compare`. Secrets are stripped; plaintext never appears in the diff.
@@ -274,13 +274,14 @@ E9.4 (Chloe UI) wires jonny's **#103** map on `main` (`e94-#103`). `apps/api` is
 
 ## E10.1 authenticated manual starts (Chloe UI)
 
-E10.1 (Chloe UI) enables the full authenticated start flow on existing E5 routes. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/manual-start-contract.ts`. Jonny owns start APIs (#106); until that map lands on `main`, the adapter uses a marked **e5-fallback**: `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input?}`. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Do not invent `POST /executions`. Relates to #106 / Part of #105 — **Keep #106 open** (jonny owns start APIs).
+E10.1 (Chloe UI) wires jonny's **#111** map on `main` (`e10-#111`). `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/manual-start-contract.ts`. Prefer `GET /workflows/catalog` `triggers[type=manual].start` plus existing `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input}` and `GET /workflows/{id}/versions` (published only). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Do not invent `POST /executions`. Relates to #106 / Part of #105 — **Keep #106 open** (jonny owns start APIs).
 
-- **Published version only:** home, editor run control, and execution history pick a published `workflowVersionId`. Drafts never run.
-- **Typed bounded input:** fields come from the published version YAML manual trigger `schema` / `inputSchema` (JSON Schema subset). Secret property names are omitted. Payload is object-only and capped at 16 KiB. When no schema is declared, optional JSON uses the contract-fallback object schema.
-- **Idempotency:** the UI generates a letter-prefixed key (1–128) and always sends it. 201 is a new run; 200 replays the same (workspace, version, key); 409 is a fingerprint mismatch.
-- **Authorization:** `workflow.execute` is required. Unknown permissions, HTTP 401, HTTP 403, and missing CSRF fail closed — the UI does not treat a run as started.
-- **Audit confirmation:** pre-start review shows version digest, redacted input, and the idempotency key (the secret-free record audit will keep).
+- **Published version only:** home, editor run control, and execution history pick a published `workflowVersionId` from `GET /workflows/{id}/versions`. Drafts never run (`400`).
+- **Typed bounded input:** fields come from the published version YAML manual trigger `schema` / `inputSchema` / `with.schema` / `with.inputSchema` (catalog `schemaFields`). Secret property names are omitted. Payload is object-only and capped at 16 KiB. The body always includes `input` (`{}` when empty). When no schema is declared, optional JSON uses the contract-fallback object schema.
+- **Idempotency:** the UI generates a key (`^[A-Za-z0-9._~:-]{1,128}$`, still `m-…` by default) and always sends it in the body and the `Idempotency-Key` header. `201` is a new run; `200` replays the same (workspace, version, key); `409` is a fingerprint mismatch **or** approval-required.
+- **Authorization:** `workflow.execute` is required. Unknown permissions, HTTP 401, HTTP 403 (authz **or** policy deny), and missing CSRF fail closed — the UI does not treat a run as started.
+- **Audit confirmation:** pre-start review shows version digest, redacted input, and the idempotency key. Audit action `execution.start` is secret-free.
+- **Catalog fallback:** if `GET /workflows/catalog` `triggers[type=manual].start` is missing, the adapter uses marked **e10-#111** defaults (`catalog-fallback`). Route stays `POST /workflows/{id}/executions`.
 - **Unchanged:** E5 start route, E6.4 wait/resume still disabled, `apps/api` untouched.
 
 ## Foundation operator shell
@@ -365,7 +366,7 @@ The Go API now persists drafts and immutable versions. Chloe owns the draft/publ
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | `workflow.view` | JSON export or `Accept: application/yaml` |
 | `POST` | `/api/v1/workflows/{workflowId}/compare` | `workflow.view` | `{left,right}` where `kind` is `draft` or `version` (`versionId` or `versionNumber`) |
 | `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | `workflow.edit` | `{expectedRevision?}` → new draft revision; version unchanged |
-| `POST` | `/api/v1/workflows/{workflowId}/executions` | `workflow.execute` | **must** send `{workflowVersionId}`. E10.1 run dialog also sends `idempotencyKey` + typed `input?`. `201` new / `200` replay / `409` key conflict. Drafts cannot run. |
+| `POST` | `/api/v1/workflows/{workflowId}/executions` | `workflow.execute` | **must** send `{workflowVersionId}`. E10.1 (#111) run dialog sends `{workflowVersionId, idempotencyKey, input}` plus `Idempotency-Key`. `201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. Drafts cannot run. |
 | `GET` | `/api/v1/workflows/{workflowId}/executions` | `execution.view` | per-workflow list (`status`, `limit`) |
 | `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | `execution.view` | detail + steps/jobs/pins/audit; pin is stable |
 
@@ -401,7 +402,7 @@ Next proxies (Chloe): `/api/control-plane/workflows` plus `/api/control-plane/wo
 - **Conflict:** on `409` `conflict`, `GET` the draft and offer **Reload server draft**. The editor is not overwritten until the operator confirms.
 - **Publish:** `POST /workflows/{id}/publish` `{revision, note?}`. Publish uses the last saved draft (unsaved editor buffer is not published). Show the immutable version digest.
 - **History:** versions list, JSON export download (`filename` + `definitionYaml`), compare draft vs version or version vs version, restore-as-new-draft (`expectedRevision`).
-- **Run:** `POST /workflows/{id}/executions` **must** send `{workflowVersionId}`. E10.1 run dialog also sends `idempotencyKey` and optional typed `input`. CSRF on POST. `201` new / `200` `replayed` / `409` same key + different input. The selector lists published versions only — never a draft. Re-read pin after later edits.
+- **Run:** `POST /workflows/{id}/executions` **must** send `{workflowVersionId}`. E10.1 (#111) run dialog sends `idempotencyKey`, `input` (always, `{}` when empty), and `Idempotency-Key`. CSRF on POST. `201` new / `200` `replayed` / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. The selector lists published versions only — never a draft. Re-read pin after later edits.
 - **Proxies:** `/api/control-plane/workflows` plus `/{workflowId}`, `.../draft`, `.../publish`, `.../compare`, `.../versions`, `.../versions/{versionId}`, `.../export`, `.../restore`, `.../executions`, `.../executions/{executionId}`. CSRF on POST/PUT; `If-Match` forwarded; problem+json including `errors[]` preserved.
 
 | Method | Path | CSRF | Notes |
@@ -618,18 +619,18 @@ Use TypeScript/React with PascalCase components, camelCase hooks/utilities, Tail
 
 ## E10.1 authenticated manual start (Chloe UI)
 
-Jonny's start APIs stay on `POST /workflows/{id}/executions`. Do **not** invent `POST /executions`. Relates to #106 / Part of #105 — keep #106 open until this UI lands. Cookie session + `X-CSRF-Token`. Catalog: `GET /workflows/catalog` `triggers[type=manual].start`.
+Jonny's start APIs from **#111** stay on `POST /workflows/{id}/executions`. Do **not** invent `POST /executions`. Relates to #106 / Part of #105 — **Keep #106 open**. Cookie session + `X-CSRF-Token`. Catalog: `GET /workflows/catalog` `triggers[type=manual].start`. Body `{workflowVersionId, idempotencyKey, input}` plus `Idempotency-Key`.
 
 Run dialog fields:
 
 | Control | Source | Notes |
 | --- | --- | --- |
 | Published version picker | `GET /workflows/{id}/versions` | Drafts never listed or sent |
-| Typed input | version YAML `schema` / `inputSchema` / `with.schema` | 16 KiB; secret names stripped |
-| Idempotency key | generated or operator-entered | Required. 201 / 200 / 409 |
+| Typed input | version YAML `schema` / `inputSchema` / `with.schema` / `with.inputSchema` | Always sent; `{}` when empty; ≤16 KiB; secret names stripped |
+| Idempotency key | generated or operator-entered | Required in body + `Idempotency-Key`. `201` / `200` / `409` |
 | CSRF | `X-CSRF-Token` | Fail closed |
 
-`workflow.execute` 403 and stale-session 401 fail closed. Policy deny is 403; approval-required is 409. Webhook, schedule, and wait/resume stay E10.2 / E10.3.
+`201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Webhook, schedule, and wait/resume stay E10.2 / E10.3.
 
 ## Required validation
 

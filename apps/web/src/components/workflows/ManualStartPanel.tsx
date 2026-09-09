@@ -16,7 +16,6 @@ import {
   MANUAL_START_AUDIT_HELP,
   MANUAL_START_CONFIRM_HELP,
   MANUAL_START_CONFLICT_MESSAGE,
-  MANUAL_START_CONTRACT_FALLBACK_HELP,
   MANUAL_START_CSRF_HELP,
   MANUAL_START_FORBIDDEN_MESSAGE,
   MANUAL_START_IDEMPOTENCY_HELP,
@@ -29,17 +28,23 @@ import {
   generateManualStartIdempotencyKey,
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
+  manualStartHelp,
   startOutcomeMessage,
 } from "@/lib/manual-start-contract";
 import { executionHistoryHref } from "@/lib/execution-contract";
 import { publishedRunVersions } from "@/lib/execution-replay";
 import { shortDigest } from "@/lib/workflow";
 import {
+  fetchWorkflowCatalog,
   getWorkflowVersion,
   listWorkflowVersions,
   startWorkflowExecution,
 } from "@/lib/workflow-client";
-import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
+import type {
+  WorkflowCatalog,
+  WorkflowExecution,
+  WorkflowVersion,
+} from "@/lib/workflow-types";
 import { pushNotification } from "@/lib/workspace-notifications";
 import { ManualStartFields } from "@/components/workflows/ManualStartFields";
 
@@ -62,6 +67,7 @@ export function ManualStartPanel({
 }: ManualStartPanelProps) {
   const canExecute = canOfferManualStart(permissions);
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
+  const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [selectedVersion, setSelectedVersion] = useState<WorkflowVersion | null>(
     null,
@@ -92,6 +98,7 @@ export function ManualStartPanel({
     jsonText,
     idempotencyKey,
     permissions,
+    catalog,
   });
 
   const loadVersion = useCallback(
@@ -133,10 +140,14 @@ export function ManualStartPanel({
 
   useEffect(() => {
     let cancelled = false;
-    void listWorkflowVersions(identity, workflowId).then((result) => {
+    void Promise.all([
+      listWorkflowVersions(identity, workflowId),
+      fetchWorkflowCatalog(identity),
+    ]).then(([result, catalogResult]) => {
       if (cancelled) {
         return;
       }
+      setCatalog(catalogResult.ok ? catalogResult.catalog : null);
       if (!result.ok) {
         setProblem(result.problem);
         return;
@@ -175,6 +186,7 @@ export function ManualStartPanel({
       jsonText,
       idempotencyKey,
       permissions,
+      catalog,
     });
     if (!prepared.ok || !prepared.body) {
       setProblem({
@@ -249,7 +261,7 @@ export function ManualStartPanel({
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
             {workflowName ? `${workflowName}. ` : null}
-            {MANUAL_START_PUBLISHED_ONLY_HELP} {MANUAL_START_CONTRACT_FALLBACK_HELP}
+            {MANUAL_START_PUBLISHED_ONLY_HELP} {manualStartHelp(catalog)}
           </p>
         </div>
         {onClose ? (

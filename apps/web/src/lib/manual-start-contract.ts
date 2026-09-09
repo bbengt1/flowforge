@@ -1,13 +1,16 @@
 /**
  * Single retarget adapter for Chloe's E10.1 authenticated manual-start UI.
+ * Wired to jonny's **#111** map on `main` (`e10-#111`).
  *
- * Jonny owns start APIs (#106). Until that map lands on `main`, this
- * adapter uses a clearly marked E5 fallback — do not invent routes:
+ * Prefer existing routes — do not invent `POST /executions`:
  *   POST /workflows/{id}/executions
- *     `{workflowVersionId, idempotencyKey, input?}`
- *     Cookie session + `X-CSRF-Token`. 201 new run; 200 replay;
- *     409 fingerprint mismatch. Never POST /executions.
- *   GET  /workflows/{id}/versions[/{versionId}]
+ *     `{workflowVersionId, idempotencyKey, input}`
+ *     + `Idempotency-Key` header OK
+ *     Cookie session + `X-CSRF-Token`. 201 new / 200 replayed /
+ *     400 draft or bad input / 403 authz or policy deny /
+ *     409 fingerprint mismatch or approval-required.
+ *   GET  /workflows/catalog → `triggers[type=manual].start`
+ *   GET  /workflows/{id}/versions (published only)
  *   POST /policy/evaluate
  *
  * Cookie + CSRF. camelCase JSON. RFC 9457.
@@ -18,7 +21,6 @@
 import { isResourceId } from "./identity-proxy-ids.ts";
 import {
   EXECUTION_PROBLEM_CODES,
-  IDEMPOTENCY_CONFLICT_MESSAGE,
   IDEMPOTENCY_CREATED_MESSAGE,
   IDEMPOTENCY_REPLAY_MESSAGE,
   PRE_RUN_PUBLISHED_ONLY_HELP,
@@ -34,7 +36,9 @@ import {
 } from "./script-io-contract.ts";
 import { executionStartBody } from "./workflow.ts";
 import type {
+  CatalogTriggerStart,
   StartExecutionBody,
+  WorkflowCatalog,
   WorkflowVersion,
 } from "./workflow-types.ts";
 import { listYamlTriggers } from "./workflow-yaml-nodes.ts";
@@ -42,9 +46,9 @@ import { canExecuteWorkflows } from "./workspace-nav.ts";
 
 export const MANUAL_START_STORY = 106;
 export const MANUAL_START_EPIC = 105;
-/** Jonny's E10.1 start map is not on main yet — retarget this constant. */
-export const MANUAL_START_API_PR = 0;
-export const MANUAL_START_ROUTE_MAP_SOURCE = "e5-fallback" as const;
+/** Jonny's E10.1 start map on main. */
+export const MANUAL_START_API_PR = 111;
+export const MANUAL_START_ROUTE_MAP_SOURCE = "e10-#111" as const;
 export const MANUAL_START_SEMANTICS = "E10.1" as const;
 
 export const MANUAL_START_PERMISSION = "workflow.execute" as const;
@@ -52,9 +56,12 @@ export const MANUAL_START_MAX_INPUT_BYTES = SCRIPT_IO_MAX_INPUT_BYTES;
 export const MANUAL_START_MAX_IDEMPOTENCY_KEY = 128;
 export const MANUAL_START_QUERY = "start";
 export const MANUAL_TRIGGER_TYPE = "manual";
+export const MANUAL_START_IDEMPOTENCY_HEADER = "Idempotency-Key" as const;
+export const MANUAL_START_AUDIT_ACTION = "execution.start" as const;
 
+/** #111 catalog `idempotencyKeyPattern`. */
 export const MANUAL_START_IDEMPOTENCY_KEY_RE =
-  /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
+  /^[A-Za-z0-9._~:-]{1,128}$/;
 
 export const MANUAL_START_PROBLEM_CODES = {
   ...EXECUTION_PROBLEM_CODES,
@@ -62,18 +69,21 @@ export const MANUAL_START_PROBLEM_CODES = {
 } as const;
 
 export const MANUAL_START_CONTRACT_FALLBACK_HELP =
-  "Using marked e5-fallback because jonny's E10.1 start route map is not on main yet. Prefer existing POST /workflows/{id}/executions {workflowVersionId, idempotencyKey, input?} with cookie session + X-CSRF-Token. HTTP 201 is a new run; 200 replays the same (workspace, workflow version, idempotency key); 409 is a fingerprint mismatch. Drafts never run. Do not invent POST /executions. Retarget this adapter when the map lands.";
+  "Using marked e10-#111 start defaults because GET /workflows/catalog triggers[type=manual].start was unavailable. Prefer existing POST /workflows/{id}/executions {workflowVersionId, idempotencyKey, input} plus Idempotency-Key with cookie session + X-CSRF-Token. HTTP 201 is a new run; 200 replays the same (workspace, workflow version, idempotency key); 400 is a draft or bad/oversized input; 403 is missing workflow.execute or policy deny; 409 is a fingerprint mismatch or approval-required. Drafts never run. Do not invent POST /executions.";
+
+export const MANUAL_START_CATALOG_HELP =
+  "Start follows jonny's #111 catalog map (e10-#111): GET /workflows/catalog triggers[type=manual].start. POST /workflows/{id}/executions {workflowVersionId, idempotencyKey, input} plus Idempotency-Key. Cookie session + X-CSRF-Token. 201 new / 200 replayed / 400 draft or bad input / 403 authz or policy deny / 409 fingerprint mismatch or approval-required. Do not invent POST /executions.";
 
 export const MANUAL_START_PUBLISHED_ONLY_HELP = PRE_RUN_PUBLISHED_ONLY_HELP;
 
 export const MANUAL_START_INPUT_HELP =
-  "Typed start input comes from the published version's manual trigger schema (JSON Schema subset). Values are bounded (16 KiB), secret field names are stripped, and extra keys are rejected when additionalProperties is false.";
+  "Typed start input comes from the published version's manual trigger schema (JSON Schema subset: schema / inputSchema / with.schema / with.inputSchema). Values are bounded (16 KiB), secret field names are stripped, and extra keys are rejected when additionalProperties is false. The body always includes input (empty object when none).";
 
 export const MANUAL_START_IDEMPOTENCY_HELP =
-  "Required for audit. This UI generates a letter-prefixed key (1–128). Same key + same input returns the original run (200). Same key + different input is 409.";
+  "Required. This UI generates a key (1–128, [A-Za-z0-9._~:-]) and sends it in the body and the Idempotency-Key header. Same key + same input returns the original run (200). Same key + different input is 409 fingerprint mismatch.";
 
 export const MANUAL_START_FORBIDDEN_MESSAGE =
-  "Start requires workflow.execute. HTTP 403 is fail-closed; this UI does not treat a run as started.";
+  "Start requires workflow.execute. HTTP 403 is fail-closed (missing permission or policy deny). This UI does not treat a run as started.";
 
 export const MANUAL_START_UNAUTHENTICATED_MESSAGE =
   "Session is missing or stale (HTTP 401). Start is fail-closed; sign in again. This UI does not treat a run as started.";
@@ -82,14 +92,18 @@ export const MANUAL_START_CSRF_HELP =
   "Start sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 
 export const MANUAL_START_AUDIT_HELP =
-  "This start is audited: actor, published workflowVersionId, digest, idempotency key, and redacted input. Secrets are stripped before display and POST.";
+  "Audit action execution.start is secret-free: actor, published workflowVersionId, digest, correlation, outcome, and idempotency key. Input is redacted; secrets are stripped before display and POST.";
 
 export const MANUAL_START_CONFIRM_HELP =
-  "Review the published version digest, typed input, and idempotency key before starting. The confirmation below is what audit will record (secret-free).";
+  "Review the published version digest, typed input, and idempotency key before starting. The confirmation below is the secret-free record audit action execution.start will keep.";
+
+export const MANUAL_START_BAD_INPUT_MESSAGE =
+  "HTTP 400: drafts cannot run, or the start body/input is invalid or exceeds 16 KiB.";
 
 export const MANUAL_START_CREATED_MESSAGE = IDEMPOTENCY_CREATED_MESSAGE;
 export const MANUAL_START_REPLAY_MESSAGE = IDEMPOTENCY_REPLAY_MESSAGE;
-export const MANUAL_START_CONFLICT_MESSAGE = IDEMPOTENCY_CONFLICT_MESSAGE;
+export const MANUAL_START_CONFLICT_MESSAGE =
+  "HTTP 409: this idempotency key was already used with a different input (fingerprint mismatch), or this start requires approval. The API did not start a new run.";
 
 export const DEFAULT_MANUAL_START_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -97,7 +111,157 @@ export const DEFAULT_MANUAL_START_SCHEMA: Record<string, unknown> = {
   properties: {},
 };
 
+/** Documented #111 `triggers[type=manual].start` when catalog is missing. */
+export const MANUAL_START_DEFAULT_START = {
+  route: "POST /api/v1/workflows/{workflowId}/executions",
+  method: "POST",
+  permission: MANUAL_START_PERMISSION,
+  csrf: true,
+  publishedVersionRequired: true,
+  versionField: "workflowVersionId",
+  inputField: "input",
+  schemaFields: [
+    "schema",
+    "inputSchema",
+    "with.schema",
+    "with.inputSchema",
+  ],
+  idempotencyKeyField: "idempotencyKey",
+  idempotencyHeader: MANUAL_START_IDEMPOTENCY_HEADER,
+  idempotencyKeyRequired: true,
+  idempotencyKeyPattern: "^[A-Za-z0-9._~:-]{1,128}$",
+  maxInputBytes: MANUAL_START_MAX_INPUT_BYTES,
+  createdStatus: 201,
+  replayStatus: 200,
+  conflictStatus: 409,
+  policyDenyStatus: 403,
+  approvalRequiredStatus: 409,
+  draftStatus: 400,
+  help: MANUAL_START_CATALOG_HELP,
+} as const;
+
 export type ManualStartRouteMapSource = typeof MANUAL_START_ROUTE_MAP_SOURCE;
+export type ManualStartCatalogSource = "workflows-catalog" | "catalog-fallback";
+
+export type ManualStartResolved = {
+  source: ManualStartCatalogSource;
+  start: {
+    route: string;
+    method: string;
+    permission: string;
+    csrf: boolean;
+    publishedVersionRequired: boolean;
+    versionField: string;
+    inputField: string;
+    schemaFields: string[];
+    idempotencyKeyField: string;
+    idempotencyHeader: string;
+    idempotencyKeyRequired: boolean;
+    idempotencyKeyPattern: string;
+    maxInputBytes: number;
+    createdStatus: number;
+    replayStatus: number;
+    conflictStatus: number;
+    policyDenyStatus: number;
+    approvalRequiredStatus: number;
+    draftStatus: number;
+    help: string;
+  };
+};
+
+export function resolveManualStartContract(
+  catalog?: WorkflowCatalog | null,
+): ManualStartResolved {
+  const listed = catalog?.triggers?.find((item) => item.type === MANUAL_TRIGGER_TYPE)
+    ?.start;
+  if (!listed) {
+    return {
+      source: "catalog-fallback",
+      start: { ...MANUAL_START_DEFAULT_START },
+    };
+  }
+  return {
+    source: "workflows-catalog",
+    start: mergeCatalogStart(listed),
+  };
+}
+
+function mergeCatalogStart(listed: CatalogTriggerStart): ManualStartResolved["start"] {
+  const defaults = MANUAL_START_DEFAULT_START;
+  return {
+    route: stringOr(listed.route, defaults.route),
+    method: stringOr(listed.method, defaults.method),
+    permission: stringOr(listed.permission, defaults.permission),
+    csrf: typeof listed.csrf === "boolean" ? listed.csrf : defaults.csrf,
+    publishedVersionRequired:
+      typeof listed.publishedVersionRequired === "boolean"
+        ? listed.publishedVersionRequired
+        : defaults.publishedVersionRequired,
+    versionField: stringOr(listed.versionField, defaults.versionField),
+    inputField: stringOr(listed.inputField, defaults.inputField),
+    schemaFields:
+      Array.isArray(listed.schemaFields) && listed.schemaFields.length > 0
+        ? listed.schemaFields.filter((item): item is string => typeof item === "string")
+        : [...defaults.schemaFields],
+    idempotencyKeyField: stringOr(
+      listed.idempotencyKeyField,
+      defaults.idempotencyKeyField,
+    ),
+    idempotencyHeader: stringOr(
+      listed.idempotencyHeader,
+      defaults.idempotencyHeader,
+    ),
+    idempotencyKeyRequired:
+      typeof listed.idempotencyKeyRequired === "boolean"
+        ? listed.idempotencyKeyRequired
+        : defaults.idempotencyKeyRequired,
+    idempotencyKeyPattern: stringOr(
+      listed.idempotencyKeyPattern,
+      defaults.idempotencyKeyPattern,
+    ),
+    maxInputBytes:
+      typeof listed.maxInputBytes === "number" && listed.maxInputBytes > 0
+        ? listed.maxInputBytes
+        : defaults.maxInputBytes,
+    createdStatus: statusOr(listed.createdStatus, defaults.createdStatus),
+    replayStatus: statusOr(listed.replayStatus, defaults.replayStatus),
+    conflictStatus: statusOr(listed.conflictStatus, defaults.conflictStatus),
+    policyDenyStatus: statusOr(listed.policyDenyStatus, defaults.policyDenyStatus),
+    approvalRequiredStatus: statusOr(
+      listed.approvalRequiredStatus,
+      defaults.approvalRequiredStatus,
+    ),
+    draftStatus: statusOr(listed.draftStatus, defaults.draftStatus),
+    help: stringOr(listed.help, defaults.help),
+  };
+}
+
+function stringOr(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || fallback;
+}
+
+function statusOr(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && value >= 200 && value < 600 ? value : fallback;
+}
+
+export function manualStartHelp(catalog?: WorkflowCatalog | null): string {
+  const resolved = resolveManualStartContract(catalog);
+  return resolved.source === "catalog-fallback"
+    ? MANUAL_START_CONTRACT_FALLBACK_HELP
+    : resolved.start.help || MANUAL_START_CATALOG_HELP;
+}
+
+export function compileManualStartIdempotencyKeyRe(
+  catalog?: WorkflowCatalog | null,
+): RegExp {
+  const pattern = resolveManualStartContract(catalog).start.idempotencyKeyPattern;
+  try {
+    return new RegExp(pattern);
+  } catch {
+    return MANUAL_START_IDEMPOTENCY_KEY_RE;
+  }
+}
 
 export type ManualStartInputField = {
   name: string;
@@ -130,6 +294,7 @@ export type ManualStartConfirmation = {
   permission: string;
   route: string;
   routeMapSource: ManualStartRouteMapSource;
+  catalogSource: ManualStartCatalogSource;
   auditHelp: string;
 };
 
@@ -180,18 +345,20 @@ function randomToken(): string {
 
 export function normalizeManualStartIdempotencyKey(
   value: string | null | undefined,
+  catalog?: WorkflowCatalog | null,
 ): { ok: boolean; key: string; error: string } {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) {
     const generated = generateManualStartIdempotencyKey();
     return { ok: true, key: generated, error: "" };
   }
-  if (!MANUAL_START_IDEMPOTENCY_KEY_RE.test(trimmed)) {
+  const pattern = compileManualStartIdempotencyKeyRe(catalog);
+  if (!pattern.test(trimmed) || trimmed.length > MANUAL_START_MAX_IDEMPOTENCY_KEY) {
     return {
       ok: false,
       key: "",
       error:
-        "Idempotency key must be 1–128 letters, digits, or ._: - and start with a letter.",
+        "Idempotency key must be 1–128 characters: letters, digits, or . _ ~ : -.",
     };
   }
   return { ok: true, key: trimmed.slice(0, MANUAL_START_MAX_IDEMPOTENCY_KEY), error: "" };
@@ -474,12 +641,12 @@ function validateValueAgainstSchema(
 export function validateManualStartInput(
   input: Record<string, unknown>,
   schema: ManualStartInputSchema,
+  catalog?: WorkflowCatalog | null,
 ): string[] {
   const errors = validateValueAgainstSchema(input, schema);
-  if (encodedJsonBytes(input) > MANUAL_START_MAX_INPUT_BYTES) {
-    errors.push(
-      `Start input exceeds the ${MANUAL_START_MAX_INPUT_BYTES} byte size bound.`,
-    );
+  const maxBytes = resolveManualStartContract(catalog).start.maxInputBytes;
+  if (encodedJsonBytes(input) > maxBytes) {
+    errors.push(`Start input exceeds the ${maxBytes} byte size bound.`);
   }
   return unique(errors);
 }
@@ -495,9 +662,11 @@ export function buildManualStartConfirmation(input: {
   idempotencyKey: string;
   input: Record<string, unknown>;
   strippedKeys?: string[];
+  catalog?: WorkflowCatalog | null;
 }): ManualStartConfirmation {
   const cleanedKeys: string[] = [...(input.strippedKeys ?? [])];
   const cleaned = stripSecretFields(input.input, cleanedKeys) as Record<string, unknown>;
+  const resolved = resolveManualStartContract(input.catalog);
   return {
     workflowVersionId: input.version.id,
     versionLabel: `v${input.version.versionNumber}`,
@@ -506,9 +675,10 @@ export function buildManualStartConfirmation(input: {
     input: cleaned,
     inputText: JSON.stringify(cleaned, null, 2),
     strippedKeys: unique(cleanedKeys),
-    permission: MANUAL_START_PERMISSION,
+    permission: resolved.start.permission,
     route: "POST /workflows/{id}/executions",
     routeMapSource: MANUAL_START_ROUTE_MAP_SOURCE,
+    catalogSource: resolved.source,
     auditHelp: MANUAL_START_AUDIT_HELP,
   };
 }
@@ -521,6 +691,7 @@ export function buildManualStartRequest(input: {
   jsonText?: string;
   idempotencyKey?: string;
   permissions?: readonly string[] | null;
+  catalog?: WorkflowCatalog | null;
 }): ManualStartRequestResult {
   const schema = extractManualStartSchema(input.yaml);
   const emptyConfirmation = null;
@@ -555,7 +726,10 @@ export function buildManualStartRequest(input: {
       reason: published.reason || MANUAL_START_PUBLISHED_ONLY_HELP,
     };
   }
-  const key = normalizeManualStartIdempotencyKey(input.idempotencyKey);
+  const key = normalizeManualStartIdempotencyKey(
+    input.idempotencyKey,
+    input.catalog,
+  );
   if (!key.ok) {
     return {
       ok: false,
@@ -582,7 +756,7 @@ export function buildManualStartRequest(input: {
       parsed = fromJson.value ?? {};
     }
   }
-  errors.push(...validateManualStartInput(parsed, schema));
+  errors.push(...validateManualStartInput(parsed, schema, input.catalog));
   const uniqueErrors = unique(errors);
   if (uniqueErrors.length > 0) {
     return {
@@ -598,7 +772,7 @@ export function buildManualStartRequest(input: {
   }
   const extras = {
     idempotencyKey: key.key,
-    ...(Object.keys(parsed).length > 0 ? { input: parsed } : {}),
+    input: parsed,
   };
   const body = executionStartBody(published.body.workflowVersionId, extras);
   const version = publishedRunVersions(input.versions).find(
@@ -626,6 +800,7 @@ export function buildManualStartRequest(input: {
       version,
       idempotencyKey: key.key,
       input: parsed,
+      catalog: input.catalog,
     }),
     authClosed: false,
     reason: "",
@@ -667,6 +842,25 @@ export function startOutcomeMessage(statusCode: number | null | undefined): stri
     return MANUAL_START_CREATED_MESSAGE;
   }
   return "";
+}
+
+export function startFailureMessage(
+  problem: ProblemDetails | null | undefined,
+): string | null {
+  const auth = manualStartAuthFailureMessage(problem);
+  if (auth) {
+    return auth;
+  }
+  if (!problem) {
+    return null;
+  }
+  if (problem.status === 400) {
+    return MANUAL_START_BAD_INPUT_MESSAGE;
+  }
+  if (problem.status === 409) {
+    return MANUAL_START_CONFLICT_MESSAGE;
+  }
+  return null;
 }
 
 function unique(values: string[]): string[] {

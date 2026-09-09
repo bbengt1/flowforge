@@ -42,6 +42,7 @@ import type {
   WorkflowVersion,
   WorkflowVersionList,
 } from "./workflow-types.ts";
+import { MANUAL_START_IDEMPOTENCY_HEADER } from "./manual-start-contract.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import { parseScriptVersionPins, type ScriptVersionPin } from "./script-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
@@ -623,7 +624,14 @@ export async function startWorkflowExecution(
   extras: { idempotencyKey?: string; input?: Record<string, unknown> } = {},
 ): Promise<ExecutionClientSuccess | WorkflowClientFailure> {
   const path = workflowExecutionsPath(workflowId);
-  const body = executionStartBody(workflowVersionId, extras);
+  const key = extras.idempotencyKey?.trim();
+  const body = executionStartBody(workflowVersionId, {
+    idempotencyKey: key,
+    input:
+      extras.input && typeof extras.input === "object" && !Array.isArray(extras.input)
+        ? extras.input
+        : {},
+  });
   if (!body) {
     return malformed(
       "local-execution-16",
@@ -635,6 +643,9 @@ export async function startWorkflowExecution(
   const result = await callIdentityProxy<WorkflowExecution>(path, identity, {
     method: "POST",
     body,
+    ...(key
+      ? { headers: { [MANUAL_START_IDEMPOTENCY_HEADER]: key.slice(0, 128) } }
+      : {}),
   });
   return executionResult(result, path, { started: true });
 }

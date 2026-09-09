@@ -3,10 +3,15 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_MANUAL_START_SCHEMA,
   MANUAL_START_API_PR,
+  MANUAL_START_AUDIT_ACTION,
+  MANUAL_START_CATALOG_HELP,
+  MANUAL_START_CONFLICT_MESSAGE,
   MANUAL_START_CONTRACT_FALLBACK_HELP,
   MANUAL_START_CSRF_HELP,
+  MANUAL_START_DEFAULT_START,
   MANUAL_START_EPIC,
   MANUAL_START_FORBIDDEN_MESSAGE,
+  MANUAL_START_IDEMPOTENCY_HEADER,
   MANUAL_START_IDEMPOTENCY_KEY_RE,
   MANUAL_START_MAX_INPUT_BYTES,
   MANUAL_START_PERMISSION,
@@ -22,14 +27,17 @@ import {
   inputFromTypedFields,
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
+  manualStartHelp,
   manualStartHref,
   manualStartPath,
   normalizeManualStartIdempotencyKey,
   parseManualStartInputText,
+  resolveManualStartContract,
+  startFailureMessage,
   startOutcomeMessage,
   validateManualStartInput,
 } from "./manual-start-contract.ts";
-import type { WorkflowVersion } from "./workflow-types.ts";
+import type { WorkflowCatalog, WorkflowVersion } from "./workflow-types.ts";
 import { listYamlTriggers } from "./workflow-yaml-nodes.ts";
 
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
@@ -79,12 +87,14 @@ function version(overrides: Partial<WorkflowVersion> = {}): WorkflowVersion {
 }
 
 describe("manual-start contract adapter", () => {
-  it("keeps the E5 fallback route as the single retarget point", () => {
+  it("cites jonny's #111 map as the single retarget point", () => {
     assert.equal(MANUAL_START_STORY, 106);
     assert.equal(MANUAL_START_EPIC, 105);
-    assert.equal(MANUAL_START_API_PR, 0);
-    assert.equal(MANUAL_START_ROUTE_MAP_SOURCE, "e5-fallback");
+    assert.equal(MANUAL_START_API_PR, 111);
+    assert.equal(MANUAL_START_ROUTE_MAP_SOURCE, "e10-#111");
     assert.equal(MANUAL_START_PERMISSION, "workflow.execute");
+    assert.equal(MANUAL_START_IDEMPOTENCY_HEADER, "Idempotency-Key");
+    assert.equal(MANUAL_START_AUDIT_ACTION, "execution.start");
     assert.equal(
       manualStartPath(WORKFLOW_ID),
       `/workflows/${WORKFLOW_ID}/executions`,
@@ -92,8 +102,59 @@ describe("manual-start contract adapter", () => {
     assert.equal(manualStartHref(WORKFLOW_ID), `/workflows?start=${WORKFLOW_ID}`);
     assert.equal(manualStartHref("draft"), "/workflows?start=1");
     assert.equal(editorManualStartHref(WORKFLOW_ID), `/workflows/${WORKFLOW_ID}`);
-    assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /e5-fallback/);
+    assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /e10-#111/);
+    assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /catalog-fallback|unavailable/);
     assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /Do not invent POST \/executions/);
+    assert.match(MANUAL_START_CATALOG_HELP, /#111/);
+    assert.equal(resolveManualStartContract(null).source, "catalog-fallback");
+    assert.equal(
+      resolveManualStartContract(null).start.route,
+      MANUAL_START_DEFAULT_START.route,
+    );
+    assert.match(manualStartHelp(null), /e10-#111/);
+  });
+
+  it("merges GET /workflows/catalog triggers[type=manual].start", () => {
+    const catalog: WorkflowCatalog = {
+      apiVersion: "flowforge/v1",
+      triggers: [
+        {
+          type: "manual",
+          phase: "core",
+          start: {
+            route: "POST /api/v1/workflows/{workflowId}/executions",
+            method: "POST",
+            permission: "workflow.execute",
+            csrf: true,
+            publishedVersionRequired: true,
+            versionField: "workflowVersionId",
+            inputField: "input",
+            schemaFields: ["schema", "inputSchema", "with.schema", "with.inputSchema"],
+            idempotencyKeyField: "idempotencyKey",
+            idempotencyHeader: "Idempotency-Key",
+            idempotencyKeyRequired: true,
+            idempotencyKeyPattern: "^[A-Za-z0-9._~:-]{1,128}$",
+            maxInputBytes: 16384,
+            createdStatus: 201,
+            replayStatus: 200,
+            conflictStatus: 409,
+            policyDenyStatus: 403,
+            approvalRequiredStatus: 409,
+            draftStatus: 400,
+            help: "catalog start help",
+          },
+        },
+      ],
+      nodes: [],
+    };
+    const resolved = resolveManualStartContract(catalog);
+    assert.equal(resolved.source, "workflows-catalog");
+    assert.equal(resolved.start.idempotencyHeader, "Idempotency-Key");
+    assert.equal(resolved.start.maxInputBytes, 16384);
+    assert.equal(resolved.start.approvalRequiredStatus, 409);
+    assert.equal(resolved.start.draftStatus, 400);
+    assert.equal(resolved.start.policyDenyStatus, 403);
+    assert.equal(manualStartHelp(catalog), "catalog start help");
   });
 
   it("extracts a typed schema from published version YAML and skips secret fields", () => {
@@ -116,18 +177,23 @@ describe("manual-start contract adapter", () => {
     assert.deepEqual(fallback.schema.type, DEFAULT_MANUAL_START_SCHEMA.type);
   });
 
-  it("generates and validates a letter-prefixed idempotency key", () => {
+  it("generates m-… keys and validates the #111 catalog charset", () => {
     const generated = generateManualStartIdempotencyKey(1_725_000_000_000, () => "abc-123");
     assert.match(generated, MANUAL_START_IDEMPOTENCY_KEY_RE);
     assert.equal(generated.startsWith("m-"), true);
     const empty = normalizeManualStartIdempotencyKey("  ");
     assert.equal(empty.ok, true);
     assert.match(empty.key, MANUAL_START_IDEMPOTENCY_KEY_RE);
-    const bad = normalizeManualStartIdempotencyKey("1bad");
-    assert.equal(bad.ok, false);
+    const digitOk = normalizeManualStartIdempotencyKey("1bad");
+    assert.equal(digitOk.ok, true);
+    assert.equal(digitOk.key, "1bad");
+    const tilde = normalizeManualStartIdempotencyKey("run~prod:1");
+    assert.equal(tilde.ok, true);
     const ok = normalizeManualStartIdempotencyKey("deploy-prod-1");
     assert.equal(ok.ok, true);
     assert.equal(ok.key, "deploy-prod-1");
+    const bad = normalizeManualStartIdempotencyKey("has space");
+    assert.equal(bad.ok, false);
   });
 
   it("coerces typed fields and rejects extra/secret/oversize input", () => {
@@ -213,9 +279,25 @@ describe("manual-start contract adapter", () => {
     });
     assert.equal(JSON.stringify(started.body).includes("draft"), false);
     assert.equal(started.confirmation?.digest, "sha256:abcdef0123456789");
-    assert.equal(started.confirmation?.routeMapSource, "e5-fallback");
+    assert.equal(started.confirmation?.routeMapSource, "e10-#111");
+    assert.equal(started.confirmation?.catalogSource, "catalog-fallback");
     assert.equal(started.confirmation?.permission, "workflow.execute");
-    assert.match(started.confirmation?.auditHelp ?? "", /audited/);
+    assert.match(started.confirmation?.auditHelp ?? "", /execution\.start/);
+
+    const emptyInput = buildManualStartRequest({
+      versions: [version({ definitionYaml: "" })],
+      selectedVersionId: VERSION_ID,
+      yaml: "",
+      jsonText: "",
+      idempotencyKey: "empty-input-1",
+      permissions: ["workflow.execute"],
+    });
+    assert.equal(emptyInput.ok, true);
+    assert.deepEqual(emptyInput.body, {
+      workflowVersionId: VERSION_ID,
+      idempotencyKey: "empty-input-1",
+      input: {},
+    });
   });
 
   it("fails closed on 401/403/CSRF and reports 201/200 replay copy", () => {
@@ -261,5 +343,31 @@ describe("manual-start contract adapter", () => {
     assert.match(MANUAL_START_CSRF_HELP, /X-CSRF-Token/);
     assert.match(startOutcomeMessage(201), /201/);
     assert.match(startOutcomeMessage(200), /200/);
+    assert.match(MANUAL_START_FORBIDDEN_MESSAGE, /policy deny/);
+    assert.match(MANUAL_START_CONFLICT_MESSAGE, /approval/);
+    assert.equal(
+      startFailureMessage({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Invalid",
+        status: 400,
+        detail: "draft",
+        instance: "/workflows",
+        code: "invalid-request",
+        request_id: "req-4",
+      }),
+      "HTTP 400: drafts cannot run, or the start body/input is invalid or exceeds 16 KiB.",
+    );
+    assert.equal(
+      startFailureMessage({
+        type: "urn:flowforge:problem:conflict",
+        title: "Conflict",
+        status: 409,
+        detail: "approval required",
+        instance: "/workflows",
+        code: "conflict",
+        request_id: "req-5",
+      }),
+      MANUAL_START_CONFLICT_MESSAGE,
+    );
   });
 });

@@ -375,13 +375,20 @@ describe("workflow client", () => {
     }
   });
 
-  it("starts an execution with workflowVersionId and optional idempotency — never draft: true", async () => {
+  it("starts an execution with workflowVersionId, idempotency, and input — never draft: true", async () => {
     withSession();
-    const seen: { url?: string; body?: string; csrf?: string | null } = {};
+    const seen: {
+      url?: string;
+      body?: string;
+      csrf?: string | null;
+      idempotency?: string | null;
+    } = {};
     globalThis.fetch = (async (input, init) => {
       seen.url = String(input);
       seen.body = typeof init?.body === "string" ? init.body : "";
-      seen.csrf = new Headers(init?.headers).get(CSRF_HEADER);
+      const headers = new Headers(init?.headers);
+      seen.csrf = headers.get(CSRF_HEADER);
+      seen.idempotency = headers.get("Idempotency-Key");
       return new Response(
         JSON.stringify({
           id: "33333333-3333-4333-8333-333333333333",
@@ -427,8 +434,10 @@ describe("workflow client", () => {
     );
     assert.match(seen.body ?? "", /workflowVersionId/);
     assert.match(seen.body ?? "", /idempotencyKey/);
+    assert.match(seen.body ?? "", /"input":\{\}/);
     assert.doesNotMatch(seen.body ?? "", /"draft"/);
     assert.equal(seen.csrf, "csrf-ok");
+    assert.equal(seen.idempotency, "deploy-prod-1");
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(
