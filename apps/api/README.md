@@ -49,7 +49,14 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}` | Frozen snapshot. |
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable YAML export. |
 | `POST` | `/api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore as a new draft revision. |
-| `POST` / `GET` | `/api/v1/workflows/{workflowId}/executions` | Stub start pins version/digest; drafts cannot run. |
+| `POST` / `GET` | `/api/v1/workflows/{workflowId}/executions` | Durable start pins version/digest; drafts cannot run. Optional idempotency key. |
+| `GET` | `/api/v1/workflows/{workflowId}/executions/{executionId}` | Execution detail (redacted steps/jobs/audit). |
+| `GET` | `/api/v1/executions` | Workspace execution history. |
+| `GET` | `/api/v1/executions/{executionId}` | Execution detail by id. |
+| `GET` | `/api/v1/executions/{executionId}/steps` | Redacted steps. |
+| `GET` | `/api/v1/executions/{executionId}/jobs` | Dispatch jobs. |
+| `GET` | `/api/v1/executions/{executionId}/audit-events` | Execution audit events. |
+| `GET` | `/api/v1/audit-events` | Workspace audit events (redacted). |
 | `GET` | `/api/v1/credentials/catalog` | Typed vault field catalog (`credential.view`). |
 | `GET` / `POST` | `/api/v1/credentials` | List metadata / create encrypted credential. |
 | `GET` / `PATCH` / `DELETE` | `/api/v1/credentials/{credentialId}` | Metadata, safe patch, confirmed delete. |

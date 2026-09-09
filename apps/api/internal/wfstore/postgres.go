@@ -478,17 +478,9 @@ func (p *Postgres) Restore(ctx context.Context, scope isolation.Scope, workflowI
 }
 
 func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
-	if scope.Zero() {
-		return Execution{}, ErrNoScope
-	}
-	if strings.TrimSpace(in.VersionID) == "" {
-		return Execution{}, ErrDraftNotRunnable
-	}
-	if !authz.ValidUUID(workflowID) {
-		return Execution{}, ErrNotFound
-	}
-	if !authz.ValidUUID(in.VersionID) {
-		return Execution{}, ErrInvalid
+	prepared, err := prepareStart(scope, workflowID, in)
+	if err != nil {
+		return Execution{}, err
 	}
 
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
@@ -501,20 +493,86 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 	if err != nil {
 		return Execution{}, err
 	}
-
-	var exec Execution
-	err = tx.QueryRow(ctx, `
-		INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, workflow_digest, status, requested_by)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'pinned', $5::uuid)
-		RETURNING id::text, workflow_id::text, workflow_version_id::text, workflow_digest, status,
-		          COALESCE(requested_by::text, ''), created_at
-	`, scope.WorkspaceID(), workflowID, ver.ID, ver.Digest, actorArg(scope)).Scan(
-		&exec.ID, &exec.WorkflowID, &exec.WorkflowVersionID, &exec.WorkflowDigest, &exec.Status,
-		&exec.RequestedBy, &exec.CreatedAt,
-	)
-	if err != nil {
-		return Execution{}, mapDBErr(err)
+	if prepared.policy["workflowVersionId"] == nil {
+		prepared.policy["workflowVersionId"] = ver.ID
+		prepared.policy["workflowDigest"] = ver.Digest
 	}
+
+	if prepared.key != "" {
+		existing, found, ferr := lookupIdempotentTx(ctx, tx, workflowID, ver.ID, prepared.key)
+		if ferr != nil {
+			return Execution{}, ferr
+		}
+		if found {
+			if existing.fingerprint != prepared.fingerprint {
+				return Execution{}, ErrIdempotencyConflict
+			}
+			existing.Replayed = true
+			if err := tx.Commit(ctx); err != nil {
+				return Execution{}, mapDBErr(err)
+			}
+			return existing, nil
+		}
+	}
+
+	inputRaw, err := marshalObject(prepared.input)
+	if err != nil {
+		return Execution{}, ErrInvalid
+	}
+	policyRaw, err := marshalObject(prepared.policy)
+	if err != nil {
+		return Execution{}, ErrInvalid
+	}
+
+	exec, err := scanExecution(tx.QueryRow(ctx, `
+		INSERT INTO executions (
+			workspace_id, workflow_id, workflow_version_id, workflow_digest, status,
+			trigger_id, idempotency_key, idempotency_fingerprint, input_redacted, policy_snapshot,
+			correlation_id, requested_by, started_at, retention_until
+		) VALUES (
+			$1::uuid, $2::uuid, $3::uuid, $4, 'queued',
+			NULLIF($5, '')::uuid, NULLIF($6, ''), NULLIF($7, ''), $8::jsonb, $9::jsonb,
+			NULLIF($10, ''), $11::uuid, now(), now() + interval '90 days'
+		)
+		RETURNING `+executionInsertReturning+`
+	`, scope.WorkspaceID(), workflowID, ver.ID, ver.Digest, strings.TrimSpace(in.TriggerID),
+		prepared.key, prepared.fingerprint, inputRaw, policyRaw, strings.TrimSpace(in.CorrelationID), actorArg(scope)))
+	if err != nil {
+		if errors.Is(err, ErrConflict) && prepared.key != "" {
+			existing, found, ferr := lookupIdempotentTx(ctx, tx, workflowID, ver.ID, prepared.key)
+			if ferr != nil {
+				return Execution{}, ferr
+			}
+			if found && existing.fingerprint == prepared.fingerprint {
+				existing.Replayed = true
+				if err := tx.Commit(ctx); err != nil {
+					return Execution{}, mapDBErr(err)
+				}
+				return existing, nil
+			}
+			return Execution{}, ErrIdempotencyConflict
+		}
+		return Execution{}, err
+	}
+
+	if err := insertPlanTx(ctx, tx, scope, exec.ID, planNodes(ver.DefinitionYAML, ver.Summary)); err != nil {
+		return Execution{}, err
+	}
+	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:        "execution.start",
+		ResourceType:  "execution",
+		ResourceID:    exec.ID,
+		Outcome:       "created",
+		CorrelationID: exec.CorrelationID,
+		HostContext:   in.HostContext,
+		Details: map[string]any{
+			"workflowId":        workflowID,
+			"workflowVersionId": ver.ID,
+		},
+	}); err != nil {
+		return Execution{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
@@ -550,7 +608,7 @@ func (p *Postgres) FindCredentialRefs(ctx context.Context, scope isolation.Scope
 		JOIN workflow_versions v ON v.workspace_id = e.workspace_id AND v.id = e.workflow_version_id
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
 		WHERE position($1 in v.normalized_yaml) > 0
-		  AND e.status IN ('queued', 'pinned')
+		  AND e.status IN ('queued', 'pinned', 'running')
 		ORDER BY 1, 3
 	`, credentialID)
 	if err != nil {
@@ -593,18 +651,14 @@ func (p *Postgres) GetExecution(ctx context.Context, scope isolation.Scope, work
 	}
 	defer tx.Rollback(ctx)
 
-	var exec Execution
-	err = tx.QueryRow(ctx, `
-		SELECT id::text, workflow_id::text, workflow_version_id::text, workflow_digest, status,
-		       COALESCE(requested_by::text, ''), created_at
-		FROM executions
-		WHERE workflow_id = $1::uuid AND id = $2::uuid
-	`, workflowID, executionID).Scan(
-		&exec.ID, &exec.WorkflowID, &exec.WorkflowVersionID, &exec.WorkflowDigest, &exec.Status,
-		&exec.RequestedBy, &exec.CreatedAt,
-	)
+	exec, err := scanExecution(tx.QueryRow(ctx, `
+		SELECT `+executionColumns+`
+		FROM executions e
+		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		WHERE e.workflow_id = $1::uuid AND e.id = $2::uuid
+	`, workflowID, executionID))
 	if err != nil {
-		return Execution{}, mapDBErr(err)
+		return Execution{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Execution{}, mapDBErr(err)
@@ -795,6 +849,9 @@ func mapDBErr(err error) error {
 		case "23505":
 			if pgErr.ConstraintName == "workflow_versions_digest_unique" {
 				return ErrDuplicateVersion
+			}
+			if pgErr.ConstraintName == "executions_idempotency_uidx" {
+				return ErrConflict
 			}
 			return ErrConflict
 		case "23503", "22P02", "42501":

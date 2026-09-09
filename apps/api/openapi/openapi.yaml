@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.9.0
+  version: 0.10.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -859,14 +859,10 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
   /workflows/{workflowId}/executions:
-    post:
-      operationId: startWorkflowExecution
-      summary: Pin a published version for execution
-      description: |
-        E3.2 stub. Requires `workflow.execute` and `workflowVersionId`.
-        Drafts cannot run (`400` `invalid-request`). The created row
-        stores `workflowVersionId` + `workflowDigest` and later draft
-        edits cannot change that pin. Full durable engine is E5.
+    get:
+      operationId: listWorkflowExecutions
+      summary: List executions for a workflow
+      description: Requires `execution.view`. Newest first. Query `status` and `limit` (1-100, default 50).
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -876,6 +872,53 @@ paths:
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
         - $ref: "#/components/parameters/WorkflowID"
+        - name: status
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: Execution summaries
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: startWorkflowExecution
+      summary: Start a durable execution
+      description: |
+        Requires `workflow.execute` and `workflowVersionId`.
+        Drafts cannot run (`400` `invalid-request`). The created row
+        stores `workflowVersionId` + `workflowDigest` and later draft
+        edits cannot change that pin. Optional `idempotencyKey` (or
+        `Idempotency-Key` header) is unique per
+        `(workspace, workflowVersionId, key)`. Same fingerprint returns
+        `200` with `replayed=true` and does not create steps/jobs again.
+        A different fingerprint is `409`. Inputs are redacted before persist.
+        E4.3 evaluates current target/action policy first.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+        - name: Idempotency-Key
+          in: header
+          schema: {type: string, maxLength: 128}
       requestBody:
         required: true
         content:
@@ -883,8 +926,17 @@ paths:
             schema:
               $ref: "#/components/schemas/StartExecutionRequest"
       responses:
+        "200":
+          description: Idempotent replay of an existing execution
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
         "201":
-          description: Pinned execution stub
+          description: Created execution with redacted steps and jobs
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestID"
@@ -900,11 +952,13 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /workflows/{workflowId}/executions/{executionId}:
     get:
       operationId: getWorkflowExecution
-      summary: Get pinned execution
-      description: Requires `execution.view`. Digest/version remain the start-time pin.
+      summary: Get execution detail
+      description: Requires `execution.view`. Digest/version remain the start-time pin. Includes redacted `steps`, `jobs`, `pins`, and `auditEvents`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -936,6 +990,250 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /executions:
+    get:
+      operationId: listWorkspaceExecutions
+      summary: List workspace executions
+      description: Requires `execution.view`. Newest first. Query `workflowId`, `status`, and `limit`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: workflowId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: status
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: Execution summaries
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /executions/{executionId}:
+    get:
+      operationId: getWorkspaceExecution
+      summary: Get execution by id
+      description: Requires `execution.view`. Cross-workspace IDs are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Execution detail
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /executions/{executionId}/steps:
+    get:
+      operationId: listExecutionSteps
+      summary: List redacted execution steps
+      description: Requires `execution.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Steps
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStepList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /executions/{executionId}/steps/{stepId}:
+    get:
+      operationId: getExecutionStep
+      summary: Get one redacted step
+      description: Requires `execution.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: stepId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Step
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStep"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /executions/{executionId}/jobs:
+    get:
+      operationId: listExecutionJobs
+      summary: List durable dispatch jobs
+      description: Requires `execution.view`. Lease/fencing fields are reserved for E5.2.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Jobs
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionJobList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /executions/{executionId}/audit-events:
+    get:
+      operationId: listExecutionAuditEvents
+      summary: List redacted audit events for one execution
+      description: Requires `execution.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: executionId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Audit events
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /audit-events:
+    get:
+      operationId: listWorkspaceAuditEvents
+      summary: List workspace audit events
+      description: Requires `execution.view`. Redacted details only. Distinct from E2.2 `GET /workspace/audit-events` isolation hooks.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: resourceType
+          in: query
+          schema: {type: string}
+        - name: resourceId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: Audit events
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /permission-matrix:
     get:
       operationId: getPermissionMatrix
@@ -4053,9 +4351,20 @@ components:
         workflowVersionId:
           type: string
           format: uuid
+        idempotencyKey:
+          type: string
+          maxLength: 128
+        input:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
+        triggerId:
+          type: string
+          format: uuid
     WorkflowExecution:
       type: object
-      required: [id, workflowId, workflowVersionId, workflowDigest, status, createdAt]
+      required: [id, workflowId, workflowVersionId, workflowDigest, status, createdAt, input, policySnapshot, replayed]
       properties:
         id:
           type: string
@@ -4063,19 +4372,146 @@ components:
         workflowId:
           type: string
           format: uuid
+        workflowSlug:
+          type: string
+        workflowName:
+          type: string
         workflowVersionId:
           type: string
           format: uuid
         workflowDigest:
           type: string
+        triggerId:
+          type: string
         status:
           type: string
-          enum: [queued, pinned]
+          enum: [queued, pinned, running, succeeded, failed, canceled, indeterminate]
+        idempotencyKey:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        policySnapshot:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
         requestedBy:
           type: string
         createdAt:
           type: string
           format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        retentionUntil:
+          type: string
+          format: date-time
+        replayed:
+          type: boolean
+        pins:
+          type: array
+          items: {$ref: "#/components/schemas/OpsPin"}
+        steps:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionStep"}
+        jobs:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionJob"}
+        auditEvents:
+          type: array
+          items: {$ref: "#/components/schemas/AuditEvent"}
+    ExecutionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/WorkflowExecution"}
+    ExecutionStep:
+      type: object
+      required: [id, executionId, nodeId, nodeType, attempt, status, input, output, error]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeType: {type: string}
+        attempt: {type: integer}
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled, indeterminate]
+        leaseId: {type: string}
+        fencingToken: {type: integer}
+        idempotencyKey: {type: string}
+        policySnapshot: {type: object, additionalProperties: true}
+        targetSnapshot: {type: object, additionalProperties: true}
+        input: {type: object, additionalProperties: true}
+        output: {type: object, additionalProperties: true}
+        error: {type: object, additionalProperties: true}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExecutionStepList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionStep"}
+    ExecutionJob:
+      type: object
+      required: [id, executionId, executionStepId, status, availableAt, attempt]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        executionStepId: {type: string, format: uuid}
+        status:
+          type: string
+          enum: [queued, claimed, running, succeeded, failed, canceled, indeterminate]
+        availableAt: {type: string, format: date-time}
+        leaseExpiresAt: {type: string, format: date-time}
+        heartbeatAt: {type: string, format: date-time}
+        workerId: {type: string}
+        fencingToken: {type: integer}
+        attempt: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExecutionJobList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionJob"}
+    AuditEvent:
+      type: object
+      required: [id, action, resourceType, outcome, occurredAt, details, hostContext]
+      properties:
+        id: {type: string, format: uuid}
+        actorId: {type: string}
+        hostContext: {type: object, additionalProperties: true}
+        action: {type: string}
+        resourceType: {type: string}
+        resourceId: {type: string}
+        outcome: {type: string}
+        correlationId: {type: string}
+        details: {type: object, additionalProperties: true}
+        occurredAt: {type: string, format: date-time}
+        retentionUntil: {type: string, format: date-time}
+    AuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AuditEvent"}
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]

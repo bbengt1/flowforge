@@ -36,8 +36,8 @@ BEGIN
     IF to_regclass('public.workflow_versions') IS NOT NULL THEN
         REVOKE UPDATE, DELETE ON workflow_versions FROM flowforge_app;
     END IF;
-    IF to_regclass('public.executions') IS NOT NULL THEN
-        REVOKE UPDATE, DELETE ON executions FROM flowforge_app;
+    IF to_regclass('public.audit_events') IS NOT NULL THEN
+        REVOKE UPDATE ON audit_events FROM flowforge_app;
     END IF;
     IF to_regclass('public.credential_events') IS NOT NULL THEN
         REVOKE UPDATE ON credential_events FROM flowforge_app;

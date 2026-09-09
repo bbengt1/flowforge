@@ -20,12 +20,26 @@ type memWorkflow struct {
 	draft       Draft
 }
 
+type memExecution struct {
+	workspaceID string
+	record      Execution
+	fingerprint string
+	steps       []ExecutionStep
+	jobs        []ExecutionJob
+}
+
+type memAudit struct {
+	workspaceID string
+	record      AuditEvent
+}
+
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
 	mu         sync.Mutex
-	workflows  map[string]memWorkflow // id -> row
-	versions   map[string][]Version   // workflow id -> versions
-	executions map[string][]Execution // workflow id -> executions
+	workflows  map[string]memWorkflow  // id -> row
+	versions   map[string][]Version    // workflow id -> versions
+	executions map[string]memExecution // execution id -> row
+	audits     []memAudit
 }
 
 // NewMemory returns an empty workflow store.
@@ -33,7 +47,7 @@ func NewMemory() *Memory {
 	return &Memory{
 		workflows:  map[string]memWorkflow{},
 		versions:   map[string][]Version{},
-		executions: map[string][]Execution{},
+		executions: map[string]memExecution{},
 	}
 }
 
@@ -303,16 +317,12 @@ func (m *Memory) Restore(_ context.Context, scope isolation.Scope, workflowID st
 }
 
 func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
-	if scope.Zero() {
-		return Execution{}, ErrNoScope
+	prepared, err := prepareStart(scope, workflowID, in)
+	if err != nil {
+		return Execution{}, err
 	}
-	if strings.TrimSpace(in.VersionID) == "" {
-		return Execution{}, ErrDraftNotRunnable
-	}
-	if !authz.ValidUUID(in.VersionID) {
-		return Execution{}, ErrInvalid
-	}
-	if _, err := m.lookup(scope, workflowID); err != nil {
+	row, err := m.lookup(scope, workflowID)
+	if err != nil {
 		return Execution{}, err
 	}
 	m.mu.Lock()
@@ -329,17 +339,98 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 	if !found {
 		return Execution{}, ErrNotFound
 	}
+	if prepared.key != "" {
+		if existing, ok, err := m.peekLocked(scope, workflowID, ver.ID, prepared); err != nil {
+			return Execution{}, err
+		} else if ok {
+			return existing, nil
+		}
+	}
+	now := time.Now().UTC()
 	exec := Execution{
 		ID:                newID(),
 		WorkflowID:        workflowID,
+		WorkflowSlug:      row.record.Slug,
+		WorkflowName:      row.record.Name,
 		WorkflowVersionID: ver.ID,
 		WorkflowDigest:    ver.Digest,
-		Status:            ExecutionPinned,
+		TriggerID:         strings.TrimSpace(in.TriggerID),
+		Status:            ExecutionQueued,
+		IdempotencyKey:    prepared.key,
+		Input:             prepared.input,
+		PolicySnapshot:    prepared.policy,
+		CorrelationID:     strings.TrimSpace(in.CorrelationID),
 		RequestedBy:       scope.ActorID(),
-		CreatedAt:         time.Now().UTC(),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		RetentionUntil:    now.Add(DefaultExecutionRetention),
 	}
-	m.executions[workflowID] = append(m.executions[workflowID], exec)
+	steps, jobs := materializePlan(exec.ID, planNodes(ver.DefinitionYAML, ver.Summary), now)
+	m.executions[exec.ID] = memExecution{
+		workspaceID: scope.WorkspaceID(),
+		record:      exec,
+		fingerprint: prepared.fingerprint,
+		steps:       steps,
+		jobs:        jobs,
+	}
+	m.audits = append(m.audits, memAudit{
+		workspaceID: scope.WorkspaceID(),
+		record: newAudit(scope, AuditWrite{
+			Action:        "execution.start",
+			ResourceType:  "execution",
+			ResourceID:    exec.ID,
+			Outcome:       "created",
+			CorrelationID: exec.CorrelationID,
+			HostContext:   in.HostContext,
+			Details: map[string]any{
+				"workflowId":        workflowID,
+				"workflowVersionId": ver.ID,
+			},
+		}, now),
+	})
+	return cloneExecution(exec, row.record), nil
+}
+
+func (m *Memory) PeekIdempotent(_ context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
+	prepared, err := prepareStart(scope, workflowID, in)
+	if err != nil {
+		return Execution{}, err
+	}
+	if prepared.key == "" {
+		return Execution{}, ErrNotFound
+	}
+	if _, err := m.lookup(scope, workflowID); err != nil {
+		return Execution{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exec, ok, err := m.peekLocked(scope, workflowID, in.VersionID, prepared)
+	if err != nil {
+		return Execution{}, err
+	}
+	if !ok {
+		return Execution{}, ErrNotFound
+	}
 	return exec, nil
+}
+
+func (m *Memory) peekLocked(scope isolation.Scope, workflowID, versionID string, prepared preparedStart) (Execution, bool, error) {
+	for _, existing := range m.executions {
+		if existing.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if existing.record.WorkflowID != workflowID || existing.record.WorkflowVersionID != versionID || existing.record.IdempotencyKey != prepared.key {
+			continue
+		}
+		if existing.fingerprint != prepared.fingerprint {
+			return Execution{}, false, ErrIdempotencyConflict
+		}
+		wf := m.workflows[existing.record.WorkflowID]
+		out := cloneExecution(existing.record, wf.record)
+		out.Replayed = true
+		return out, true, nil
+	}
+	return Execution{}, false, nil
 }
 
 func (m *Memory) FindCredentialRefs(_ context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error) {
@@ -376,11 +467,14 @@ func (m *Memory) FindCredentialRefs(_ context.Context, scope isolation.Scope, cr
 				VersionID:     ver.ID,
 				VersionNumber: ver.VersionNumber,
 			})
-			for _, exec := range m.executions[row.record.ID] {
-				if exec.WorkflowVersionID != ver.ID {
+			for _, exec := range m.executions {
+				if exec.workspaceID != scope.WorkspaceID() || exec.record.WorkflowID != row.record.ID {
 					continue
 				}
-				if exec.Status != ExecutionQueued && exec.Status != ExecutionPinned {
+				if exec.record.WorkflowVersionID != ver.ID {
+					continue
+				}
+				if !isActiveExecution(exec.record.Status) {
 					continue
 				}
 				out = append(out, CredentialRef{
@@ -390,8 +484,8 @@ func (m *Memory) FindCredentialRefs(_ context.Context, scope isolation.Scope, cr
 					WorkflowName:    row.record.Name,
 					VersionID:       ver.ID,
 					VersionNumber:   ver.VersionNumber,
-					ExecutionID:     exec.ID,
-					ExecutionStatus: exec.Status,
+					ExecutionID:     exec.record.ID,
+					ExecutionStatus: exec.record.Status,
 				})
 			}
 		}
@@ -406,14 +500,206 @@ func (m *Memory) GetExecution(_ context.Context, scope isolation.Scope, workflow
 	if _, err := m.lookup(scope, workflowID); err != nil {
 		return Execution{}, err
 	}
+	exec, err := m.GetExecutionByID(context.Background(), scope, executionID)
+	if err != nil {
+		return Execution{}, err
+	}
+	if exec.WorkflowID != workflowID {
+		return Execution{}, ErrNotFound
+	}
+	return exec, nil
+}
+
+func (m *Memory) GetExecutionByID(_ context.Context, scope isolation.Scope, executionID string) (Execution, error) {
+	if scope.Zero() {
+		return Execution{}, ErrNoScope
+	}
+	if !authz.ValidUUID(executionID) {
+		return Execution{}, ErrNotFound
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, exec := range m.executions[workflowID] {
-		if exec.ID == executionID {
-			return exec, nil
+	exec, ok := m.executions[executionID]
+	if !ok || exec.workspaceID != scope.WorkspaceID() {
+		return Execution{}, ErrNotFound
+	}
+	wf := m.workflows[exec.record.WorkflowID]
+	return cloneExecution(exec.record, wf.record), nil
+}
+
+func (m *Memory) ListExecutions(_ context.Context, scope isolation.Scope, filter ExecutionListFilter) ([]Execution, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	if filter.WorkflowID != "" {
+		if _, err := m.lookup(scope, filter.WorkflowID); err != nil {
+			return nil, err
 		}
 	}
-	return Execution{}, ErrNotFound
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Execution
+	for _, exec := range m.executions {
+		if exec.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if filter.WorkflowID != "" && exec.record.WorkflowID != filter.WorkflowID {
+			continue
+		}
+		if filter.Status != "" && exec.record.Status != filter.Status {
+			continue
+		}
+		wf := m.workflows[exec.record.WorkflowID]
+		out = append(out, cloneExecution(exec.record, wf.record))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	limit := listLimit(filter.Limit)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if out == nil {
+		out = []Execution{}
+	}
+	return out, nil
+}
+
+func (m *Memory) ListSteps(_ context.Context, scope isolation.Scope, executionID string) ([]ExecutionStep, error) {
+	exec, err := m.requireExecution(scope, executionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ExecutionStep, len(exec.steps))
+	copy(out, exec.steps)
+	if out == nil {
+		out = []ExecutionStep{}
+	}
+	return out, nil
+}
+
+func (m *Memory) GetStep(_ context.Context, scope isolation.Scope, executionID, stepID string) (ExecutionStep, error) {
+	exec, err := m.requireExecution(scope, executionID)
+	if err != nil {
+		return ExecutionStep{}, err
+	}
+	for _, step := range exec.steps {
+		if step.ID == stepID {
+			return step, nil
+		}
+	}
+	return ExecutionStep{}, ErrNotFound
+}
+
+func (m *Memory) ListJobs(_ context.Context, scope isolation.Scope, executionID string) ([]ExecutionJob, error) {
+	exec, err := m.requireExecution(scope, executionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ExecutionJob, len(exec.jobs))
+	copy(out, exec.jobs)
+	if out == nil {
+		out = []ExecutionJob{}
+	}
+	return out, nil
+}
+
+func (m *Memory) ListAuditEvents(_ context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []AuditEvent
+	for _, row := range m.audits {
+		if row.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if filter.ResourceType != "" && row.record.ResourceType != filter.ResourceType {
+			continue
+		}
+		if filter.ResourceID != "" && row.record.ResourceID != filter.ResourceID {
+			continue
+		}
+		if filter.Action != "" && row.record.Action != filter.Action {
+			continue
+		}
+		out = append(out, row.record)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].OccurredAt.After(out[j].OccurredAt)
+	})
+	limit := listLimit(filter.Limit)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if out == nil {
+		out = []AuditEvent{}
+	}
+	return out, nil
+}
+
+func (m *Memory) WriteAudit(_ context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error) {
+	if scope.Zero() {
+		return AuditEvent{}, ErrNoScope
+	}
+	ev := newAudit(scope, in, time.Now().UTC())
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.audits = append(m.audits, memAudit{workspaceID: scope.WorkspaceID(), record: ev})
+	return ev, nil
+}
+
+func (m *Memory) PurgeExpired(_ context.Context, scope isolation.Scope, now time.Time) (int, int, error) {
+	if scope.Zero() {
+		return 0, 0, ErrNoScope
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	execs := 0
+	for id, exec := range m.executions {
+		if exec.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if exec.record.RetentionUntil.After(now) {
+			continue
+		}
+		if !isTerminalExecution(exec.record.Status) && exec.record.Status != ExecutionQueued {
+			continue
+		}
+		delete(m.executions, id)
+		execs++
+	}
+	kept := m.audits[:0]
+	audits := 0
+	for _, row := range m.audits {
+		if row.workspaceID == scope.WorkspaceID() && !row.record.RetentionUntil.After(now) {
+			audits++
+			continue
+		}
+		kept = append(kept, row)
+	}
+	m.audits = kept
+	return execs, audits, nil
+}
+
+func (m *Memory) requireExecution(scope isolation.Scope, executionID string) (memExecution, error) {
+	if scope.Zero() {
+		return memExecution{}, ErrNoScope
+	}
+	if !authz.ValidUUID(executionID) {
+		return memExecution{}, ErrNotFound
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exec, ok := m.executions[executionID]
+	if !ok || exec.workspaceID != scope.WorkspaceID() {
+		return memExecution{}, ErrNotFound
+	}
+	return exec, nil
 }
 
 type compareDoc struct {
