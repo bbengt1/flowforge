@@ -229,6 +229,25 @@ export function commandProfilePublishGap(spec: OpsConfigSpec): string | null {
       return `Template placeholder {${placeholder}} is not in parameterSchema.`;
     }
   }
+  const retrySafe = spec.retrySafe === true;
+  const probe = spec.verification?.template?.trim() ?? "";
+  if (retrySafe && !probe) {
+    return "retrySafe=true requires spec.verification.template (idempotent probe).";
+  }
+  if (!retrySafe && probe) {
+    return "verification is only valid when retrySafe=true.";
+  }
+  if (probe) {
+    const probeHits = templateForbiddenHits(probe);
+    if (probeHits.length > 0) {
+      return `Verification template must not use raw shell interpolation (${probeHits.join(", ")}).`;
+    }
+    for (const placeholder of templatePlaceholders(probe)) {
+      if (!names.has(placeholder)) {
+        return `Verification placeholder {${placeholder}} is not in parameterSchema.`;
+      }
+    }
+  }
   return null;
 }
 

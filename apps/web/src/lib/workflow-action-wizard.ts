@@ -39,6 +39,7 @@ import {
   type SshNodeWithField,
 } from "./ssh-node-contract.ts";
 import type { PolicyEvaluation } from "./approval-types.ts";
+import { parseSshEvaluateRetry } from "./ssh-retry-contract.ts";
 import type { CredentialRecord, CredentialType } from "./credential-types.ts";
 import { isSecretFieldName } from "./credential.ts";
 import { authorizedSelectorOptions, pinFromSummary } from "./ops-config.ts";
@@ -132,6 +133,7 @@ export type WizardValidationContext = {
   commandProfileSelectorClosed?: boolean;
   parameterConstraints?: SshNodeConfigContext["parameterConstraints"];
   profileRetrySafe?: boolean;
+  verificationDeclared?: boolean;
 };
 
 export type WizardRecommendation = {
@@ -504,14 +506,20 @@ export function wizardPolicyPreview(input: {
   const retrySafe = policy?.retrySafe === true;
   const attempts = policy?.defaultMaxAttempts ?? 1;
   const evaluation = input.evaluation ?? null;
+  const sshEval = parseSshEvaluateRetry(evaluation);
+  const sshRetry = sshEval[0];
   const approvalRequired =
     evaluation?.decision === "approval-required" ||
     (evaluation?.requirements.length ?? 0) > 0;
+  const catalogRetryHint = retrySafe
+    ? `Retry-safe · default max attempts ${attempts}.`
+    : "Not retry-safe. Default automatic retries are zero; an uncertain remote outcome is indeterminate.";
+  const evaluateRetryHint = sshRetry
+    ? ` Evaluate retryAllowed=${String(sshRetry.retryAllowed)} retrySafe=${String(sshRetry.retrySafe)} verificationDeclared=${String(sshRetry.verificationDeclared)} retryMaxAttempts=${sshRetry.retryMaxAttempts}.`
+    : "";
   return {
     permissions: policy?.permissions ?? ["workflow.execute"],
-    retryHint: retrySafe
-      ? `Retry-safe · default max attempts ${attempts}.`
-      : "Not retry-safe. Default automatic retries are zero; an uncertain remote outcome is indeterminate.",
+    retryHint: `${catalogRetryHint}${evaluateRetryHint}`,
     sideEffects: policy?.sideEffects === true,
     approvalHint: approvalRequired
       ? "Server evaluation requires a current approval before dispatch."
@@ -589,6 +597,7 @@ export function validateWizardDraft(
         profileSelectorClosed: context.commandProfileSelectorClosed,
         parameterConstraints: context.parameterConstraints,
         profileRetrySafe: context.profileRetrySafe,
+        verificationDeclared: context.verificationDeclared,
         sshCatalog: context.sshCatalog,
       }),
     );

@@ -362,6 +362,22 @@ describe("action wizard insert + redaction", () => {
     assert.equal(retries.ok, false);
     assert.ok(retries.errors.includes(SSH_RETRY_DENIED_MESSAGE));
 
+    const retrySafeAllowed = validateWizardDraft(
+      {
+        ...draft,
+        with: {
+          sshTargetId: draft.with.sshTargetId,
+          commandProfileId: draft.with.commandProfileId,
+          retryPolicy: { maxAttempts: 2 },
+        },
+      },
+      catalog,
+      entry,
+      { profileRetrySafe: true, verificationDeclared: true },
+    );
+    assert.equal(retrySafeAllowed.ok, true);
+    assert.deepEqual(defaultWithForType("ssh.run").retryPolicy, { maxAttempts: 0 });
+
     const sanitized = sanitizeWizardWith(draft.with, "ssh.run");
     assert.equal("privateKey" in sanitized, false);
     assert.equal("command" in sanitized, false);

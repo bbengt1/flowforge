@@ -426,7 +426,7 @@ Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port
 
 ## SSH indeterminate / retry semantics (E8.3)
 
-Default retries are **zero**. A retry is allowed only when the **pinned** command profile has `retrySafe=true`, declares `verification`, and the node `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise the engine and `POST /executions/{id}/retry` fail closed (`retry-denied`). Chloe should keep #84 open for UI; this API is the contract.
+Default retries are **zero**. A retry is allowed only when the **pinned** command profile has `retrySafe=true`, declares `verification`, and the node `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise the engine and `POST /executions/{id}/retry` fail closed (`retry-denied`). Relates to #84 (already closed by #90) / Part of #81 — do not re-close #84; keep epic #81 open until the UI PR merges. This API is the contract.
 
 **UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Read `GET /ssh/catalog` `retry.ui` + `retry.probe` and `GET /workflows/catalog` `ssh.run.policy.defaultMaxAttempts=0`. Cookie session + `X-CSRF-Token`. Show an unmistakable `indeterminate` badge (not color alone). Enable **Retry** only when `result.retry.allowed` is true (or evaluate `retryAllowed` on `POST /policy/evaluate` for `ssh.run`). Hide/disable Retry for non-retrySafe indeterminate — never imply the remote command did not run.
 

@@ -34,12 +34,24 @@ import {
   SSH_NODE_POLICY_NOTES,
   commandProfileParameterConstraints,
   commandProfileRetrySafe,
+  commandProfileVerificationDeclared,
   isSshConfigurableType,
   pruneSshParameters,
   sshNodeErrorShapes,
   sshRetryRules,
   type SshNodeCatalog,
 } from "@/lib/ssh-node-contract";
+import {
+  SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+  SSH_INDETERMINATE_HELP,
+  SSH_MAX_RETRY_ATTEMPTS,
+  SSH_RETRY_DENIED_MESSAGE,
+  SSH_RETRY_ZERO_MESSAGE,
+  defaultSshRetryPolicy,
+  parseSshEvaluateRetry,
+  sshRetryPolicyHint,
+  validateSshRetryPolicy,
+} from "@/lib/ssh-retry-contract";
 import type { SshEngineCatalog, SshParameterConstraint } from "@/lib/ssh-types";
 import type { PolicyEvaluation } from "@/lib/approval-types";
 import {
@@ -169,6 +181,9 @@ export function ActionWizard({
     selectedCommandProfile?.spec,
   );
   const profileRetrySafe = commandProfileRetrySafe(selectedCommandProfile?.spec);
+  const verificationDeclared = commandProfileVerificationDeclared(
+    selectedCommandProfile?.spec,
+  );
   const clusterTargetsLoaded = pinStatus.cluster_target !== undefined;
   const sshTargetsLoaded = pinStatus.ssh_target !== undefined;
   const commandProfilesLoaded = pinStatus.command_profile !== undefined;
@@ -193,6 +208,7 @@ export function ActionWizard({
     commandProfileSelectorClosed,
     parameterConstraints,
     profileRetrySafe,
+    verificationDeclared,
   };
   const applyRules = applyRulesFromCatalog(engineCatalog);
   const engineErrors = engineErrorShapes(engineCatalog);
@@ -447,6 +463,7 @@ export function ActionWizard({
               sshEngineCatalog={sshEngineCatalog}
               parameterConstraints={parameterConstraints}
               profileRetrySafe={profileRetrySafe}
+              verificationDeclared={verificationDeclared}
               onChange={setDraft}
             />
           ) : null}
@@ -472,6 +489,7 @@ export function ActionWizard({
               engineCatalog={engineCatalog}
               sshCatalog={sshCatalog}
               profileRetrySafe={profileRetrySafe}
+              verificationDeclared={verificationDeclared}
               evaluation={evaluation ?? null}
               evaluationPending={Boolean(evaluationPending)}
               evaluationProblem={evaluationProblem ?? null}
@@ -774,6 +792,7 @@ function ConfigureStep({
   sshEngineCatalog,
   parameterConstraints,
   profileRetrySafe,
+  verificationDeclared,
   onChange,
 }: {
   draft: ActionWizardDraft;
@@ -787,13 +806,17 @@ function ConfigureStep({
   sshEngineCatalog: SshEngineCatalog | null;
   parameterConstraints: readonly SshParameterConstraint[];
   profileRetrySafe: boolean;
+  verificationDeclared: boolean;
   onChange: (draft: ActionWizardDraft) => void;
 }) {
   const inferred = fields.some((field) => field.inferred);
   const kubernetes = isKubernetesConfigurableType(draft.type);
   const ssh = isSshConfigurableType(draft.type);
   const visible = fields.filter(
-    (field) => !field.selectorKind && !(ssh && field.name === "parameters"),
+    (field) =>
+      !field.selectorKind &&
+      !(ssh && field.name === "parameters") &&
+      !(ssh && field.name === "retryPolicy"),
   );
   const primary = visible.filter((field) => !field.advanced);
   const advanced = visible.filter((field) => field.advanced);
@@ -857,12 +880,12 @@ function ConfigureStep({
             />
           </div>
           <p className="mt-3 text-sm text-teal-950">
-            retrySafe={String(profileRetrySafe)} (profile flag).{" "}
-            {sshRetryRules(sshCatalog).note ??
-              "Retries default to zero. E8.2 never blindly re-runs."}{" "}
-            defaultMaxAttempts={sshRetryRules(sshCatalog).defaultMaxAttempts};{" "}
-            semantics={sshRetryRules(sshCatalog).semantics}. Lease loss is
-            indeterminate — never a blind retry.
+            {sshRetryPolicyHint({
+              profileRetrySafe,
+              verificationDeclared,
+              maxAttempts: sshRetryRules(sshCatalog).defaultMaxAttempts,
+            })}{" "}
+            {SSH_INDETERMINATE_HELP}
           </p>
           {sshNodeErrorShapes(sshCatalog).length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
@@ -935,11 +958,16 @@ function ConfigureStep({
         />
       ) : null}
       {ssh ? (
-        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
-          retrySafe is {profileRetrySafe ? "true" : "false"} on the selected
-          profile. maxAttempts defaults to 0; values above 0 require retrySafe
-          and are still not auto-retried in E8.2. Lease loss is indeterminate.
-        </p>
+        <SshRetryPolicyFields
+          profileRetrySafe={profileRetrySafe}
+          verificationDeclared={verificationDeclared}
+          value={
+            draft.with.retryPolicy && typeof draft.with.retryPolicy === "object"
+              ? (draft.with.retryPolicy as { maxAttempts?: unknown })
+              : defaultSshRetryPolicy()
+          }
+          onChange={(retryPolicy) => patchWith("retryPolicy", retryPolicy)}
+        />
       ) : null}
       {advanced.length > 0 ? (
         <details className="rounded-xl border border-zinc-200 px-4 py-3">
@@ -1191,6 +1219,7 @@ function ReviewStep({
   engineCatalog,
   sshCatalog,
   profileRetrySafe,
+  verificationDeclared,
 }: {
   draft: ActionWizardDraft;
   validation: ReturnType<typeof validateWizardDraft>;
@@ -1205,6 +1234,7 @@ function ReviewStep({
   engineCatalog: KubernetesEngineCatalog | null;
   sshCatalog: SshNodeCatalog | null;
   profileRetrySafe: boolean;
+  verificationDeclared: boolean;
 }) {
   const errors = [...validation.errors, ...localErrors];
   return (
@@ -1252,11 +1282,14 @@ function ReviewStep({
             ssh.run uses an ephemeral key handle (no privateKey on the wire),
             known-host fingerprint match, and every resolved IP must be in
             allowedAddresses — the worker dials only that verified address.
-            Key-only, non-root, no forwarding/proxy/interactive shell. retrySafe=
-            {String(profileRetrySafe)}; retries default to{" "}
-            {sshRetryRules(sshCatalog).defaultMaxAttempts} ({sshRetryRules(sshCatalog).semantics}).
-            Lease loss is indeterminate. YAML holds target/profile UUIDs and
-            typed values only.
+            Key-only, non-root, no forwarding/proxy/interactive shell.{" "}
+            {sshRetryPolicyHint({
+              profileRetrySafe,
+              verificationDeclared,
+              maxAttempts: sshRetryRules(sshCatalog).defaultMaxAttempts,
+            })}{" "}
+            {SSH_INDETERMINATE_HELP} YAML holds target/profile UUIDs and typed
+            values only.
           </p>
         ) : null}
       </section>
@@ -1265,6 +1298,19 @@ function ReviewStep({
         pending={evaluationPending}
         problem={evaluationProblem}
       />
+      {parseSshEvaluateRetry(evaluation).map((item) => (
+        <p
+          key={`${item.nodeId}-${item.operation}`}
+          className="text-xs text-zinc-600"
+        >
+          Evaluate {item.operation}
+          {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
+          {String(item.retryAllowed)}, retrySafe={String(item.retrySafe)},
+          verificationDeclared={String(item.verificationDeclared)},
+          retryMaxAttempts={item.retryMaxAttempts}. POST …/retry is 409
+          retry-denied when closed.
+        </p>
+      ))}
       <section className="rounded-xl border border-zinc-200 px-4 py-3">
         <h3 className="text-sm font-semibold">Redacted YAML preview</h3>
         <pre className="mt-2 overflow-auto font-mono text-xs text-zinc-800">{preview}</pre>
@@ -1279,6 +1325,70 @@ function ReviewStep({
         <p className="text-sm text-zinc-600">Validation passed. Add writes this node into the draft YAML.</p>
       )}
     </div>
+  );
+}
+
+function SshRetryPolicyFields({
+  profileRetrySafe,
+  verificationDeclared,
+  value,
+  onChange,
+}: {
+  profileRetrySafe: boolean;
+  verificationDeclared: boolean;
+  value: { maxAttempts?: unknown };
+  onChange: (value: { maxAttempts: number }) => void;
+}) {
+  const parsed = validateSshRetryPolicy({
+    maxAttempts: value.maxAttempts,
+    profileRetrySafe,
+    verificationDeclared,
+  });
+  const maxAttempts =
+    typeof value.maxAttempts === "number"
+      ? value.maxAttempts
+      : SSH_DEFAULT_RETRY_MAX_ATTEMPTS;
+  return (
+    <fieldset className="space-y-3 rounded-xl border border-zinc-200 px-4 py-3">
+      <legend className="px-1 text-sm font-medium">Retry policy</legend>
+      <p className="text-xs text-zinc-500">
+        {SSH_RETRY_ZERO_MESSAGE} This control never auto-retries. Lease loss
+        stays indeterminate until verification — there is no blind-retry
+        button.
+      </p>
+      <label className="block text-sm">
+        <span className="font-medium">maxAttempts</span>
+        <input
+          type="number"
+          min={SSH_DEFAULT_RETRY_MAX_ATTEMPTS}
+          max={SSH_MAX_RETRY_ATTEMPTS}
+          value={Number.isInteger(maxAttempts) ? maxAttempts : SSH_DEFAULT_RETRY_MAX_ATTEMPTS}
+          onChange={(event) =>
+            onChange({
+              maxAttempts: Number(event.target.value) || SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+            })
+          }
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+        />
+        <span className="mt-1 block text-xs text-zinc-500">
+          Default {SSH_DEFAULT_RETRY_MAX_ATTEMPTS}. Allowed range{" "}
+          {SSH_DEFAULT_RETRY_MAX_ATTEMPTS}–{SSH_MAX_RETRY_ATTEMPTS}. Values
+          above 0 require a retrySafe profile with a declared verification
+          probe.
+        </span>
+      </label>
+      <p className="text-sm text-zinc-700">
+        Selected profile retrySafe is {profileRetrySafe ? "true" : "false"};
+        verification is {verificationDeclared ? "declared" : "missing"}.
+      </p>
+      {parsed.errors.length > 0 ? (
+        <p role="status" className="text-sm text-amber-950">
+          {parsed.errors[0] || SSH_RETRY_DENIED_MESSAGE}
+        </p>
+      ) : parsed.warnings.length > 0 ? (
+        <p className="text-sm text-zinc-700">{parsed.warnings[0]}</p>
+      ) : null}
+    </fieldset>
   );
 }
 

@@ -33,6 +33,9 @@ import {
   type SshEngineCatalog,
 } from "./ssh-types.ts";
 
+export const SSH_RETRY_SAFE_HELP =
+  "Mark retrySafe only when this profile declares an idempotent verification probe. Enabling it means a later ssh.run may retry after that probe — never a blind repeat. Default is false. retrySafe=true requires spec.verification.template. maxAttempts>0 on ssh.run requires retrySafe plus verification.";
+
 export { SSH_DENIED_FEATURES } from "./ssh-types.ts";
 
 export const SSH_STORY = 82;
@@ -91,9 +94,6 @@ export const SSH_IMMUTABLE_PIN_HELP =
 
 export const SSH_KEY_ONLY_HELP =
   "Key-only authentication. Bind a workspace ssh_private_key vault credential. Password authentication is denied in MVP.";
-
-export const SSH_RETRY_SAFE_HELP =
-  "retrySafe is a schema flag only. Retries default to zero; verification and bounded retry are E8.3.";
 
 export const SSH_CONTRACT_FALLBACK_HELP =
   "Using local #86 catalog defaults because GET /ssh/catalog was unavailable. Collections stay on /ssh-targets and /command-profiles.";
@@ -389,6 +389,7 @@ export function emptySshTargetSpec(): {
 export function emptyCommandProfileSpec(): {
   parameterSchema: Record<string, unknown>;
   template: string;
+  retrySafe: false;
 } {
   return {
     parameterSchema: {
@@ -397,5 +398,6 @@ export function emptyCommandProfileSpec(): {
       properties: {},
     },
     template: "",
+    retrySafe: false,
   };
 }

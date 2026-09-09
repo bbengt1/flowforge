@@ -81,6 +81,18 @@ import {
   collectRolloutObservations,
   executionHasRolloutObservation,
 } from "@/lib/kubernetes-rollout-contract";
+import {
+  SSH_NO_BLIND_RETRY_HELP,
+  SSH_RETRY_DENIED_MESSAGE,
+  canOfferSshRetry,
+  executionHasSshIndeterminate,
+  executionHasSshRun,
+  isSshRunType,
+  parseSshRetryResult,
+  sshIndeterminateCopy,
+  sshRetryBlockedMessage,
+  sshVerificationOutcomeCopy,
+} from "@/lib/ssh-retry-contract";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -147,12 +159,26 @@ export function ExecutionDetail({
       status: view?.header.status,
       permittedActions: view?.permittedActions,
     });
-  const showRetry = canRetryExecution({
-    permissions,
-    permittedActions: view?.permittedActions,
-    status: view?.header.status,
-    steps: view?.steps,
-  });
+  const sshRetryAllowed = Boolean(
+    view?.steps.some((step) =>
+      canOfferSshRetry({
+        permissions,
+        nodeType: step.nodeType,
+        status: step.status,
+        output: step.output,
+        error: step.error,
+        input: step.input,
+      }),
+    ),
+  );
+  const showRetry =
+    sshRetryAllowed ||
+    canRetryExecution({
+      permissions,
+      permittedActions: view?.permittedActions,
+      status: view?.header.status,
+      steps: view?.steps,
+    });
   const indeterminate = Boolean(view?.header.indeterminate);
   const live =
     normalizeExecutionStatus(view?.header.status) === "queued" ||
@@ -253,17 +279,27 @@ export function ExecutionDetail({
   }
 
   async function onRetry(stepId?: string) {
-    if (indeterminate || retryPending) {
+    if (retryPending) {
       return;
     }
     if (stepId) {
+      const step = view?.steps.find((item) => item.id === stepId);
+      const sshOffer = canOfferSshRetry({
+        permissions,
+        nodeType: step?.nodeType,
+        status: step?.status,
+        output: step?.output,
+        error: step?.error,
+        input: step?.input,
+      });
       if (
+        !sshOffer &&
         !canRetryExecutionStep({
           permissions,
           permittedActions: view?.permittedActions,
           executionStatus: view?.header.status,
-          stepStatus: view?.steps.find((step) => step.id === stepId)?.status,
-          nodeType: view?.steps.find((step) => step.id === stepId)?.nodeType,
+          stepStatus: step?.status,
+          nodeType: step?.nodeType,
         })
       ) {
         return;
@@ -286,7 +322,11 @@ export function ExecutionDetail({
       if (result.forbidden) {
         setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (result.statusCode === 409) {
-        setRetryMessage(RETRY_CONFLICT_MESSAGE);
+        setRetryMessage(
+          result.problem.code === "retry-denied"
+            ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
+            : RETRY_CONFLICT_MESSAGE,
+        );
       }
       return;
     }
@@ -523,7 +563,21 @@ export function ExecutionDetail({
             </div>
             {view.header.indeterminate ? (
               <p className="mt-3 text-sm text-amber-950">
-                {INDETERMINATE_STATUS_HELP}
+                {executionHasSshRun(view.steps) ||
+                executionHasSshIndeterminate(view.steps)
+                  ? sshIndeterminateCopy({
+                      status: view.header.status,
+                      nodeType: view.steps.find((step) =>
+                        isSshRunType(step.nodeType),
+                      )?.nodeType,
+                      verificationOutcome: parseSshRetryResult(
+                        view.steps.find((step) => isSshRunType(step.nodeType))
+                          ?.output,
+                        view.steps.find((step) => isSshRunType(step.nodeType))
+                          ?.error,
+                      )?.verificationOutcome,
+                    })
+                  : INDETERMINATE_STATUS_HELP}
               </p>
             ) : null}
             {view.legalHold ? (
@@ -573,8 +627,22 @@ export function ExecutionDetail({
                 </button>
               ) : indeterminate ? (
                 <p className="text-sm font-medium text-amber-950">
-                  {RETRY_INDETERMINATE_MESSAGE}
+                  {executionHasSshRun(view.steps) ||
+                  executionHasSshIndeterminate(view.steps)
+                    ? sshRetryBlockedMessage({
+                        status: view.header.status,
+                        steps: view.steps,
+                        output: view.steps.find((step) =>
+                          isSshRunType(step.nodeType),
+                        )?.output,
+                        error: view.steps.find((step) =>
+                          isSshRunType(step.nodeType),
+                        )?.error,
+                      })
+                    : RETRY_INDETERMINATE_MESSAGE}
                 </p>
+              ) : executionHasSshRun(view.steps) ? (
+                <p className="text-xs text-zinc-500">{SSH_NO_BLIND_RETRY_HELP}</p>
               ) : (
                 <p className="text-xs text-zinc-500">
                   {retryAffordanceMessage(view.header.status)}
@@ -798,7 +866,15 @@ export function ExecutionDetail({
                           : ""}
                       </p>
                     ) : null}
-                    {canRetryExecutionStep({
+                    {canOfferSshRetry({
+                      permissions,
+                      nodeType: step.nodeType,
+                      status: step.status,
+                      output: step.output,
+                      error: step.error,
+                      input: step.input,
+                    }) ||
+                    canRetryExecutionStep({
                       permissions,
                       permittedActions: view.permittedActions,
                       executionStatus: view.header.status,
@@ -816,9 +892,34 @@ export function ExecutionDetail({
                     ) : isIndeterminateStatus(step.status) ||
                       isIndeterminateStatus(view.header.status) ? (
                       <p className="mt-3 text-sm font-medium text-amber-950">
-                        {RETRY_INDETERMINATE_MESSAGE}
+                        {isSshRunType(step.nodeType)
+                          ? sshRetryBlockedMessage({
+                              status: step.status,
+                              nodeType: step.nodeType,
+                              output: step.output,
+                              error: step.error,
+                            })
+                          : RETRY_INDETERMINATE_MESSAGE}
+                      </p>
+                    ) : isSshRunType(step.nodeType) ? (
+                      <p className="mt-3 text-xs text-zinc-500">
+                        {SSH_NO_BLIND_RETRY_HELP}
                       </p>
                     ) : null}
+                    {isSshRunType(step.nodeType)
+                      ? (() => {
+                          const retry = parseSshRetryResult(
+                            step.output,
+                            step.error,
+                            step.input,
+                          );
+                          return retry?.verificationOutcome ? (
+                            <p className="mt-2 text-xs text-zinc-700">
+                              {sshVerificationOutcomeCopy(retry.verificationOutcome)}
+                            </p>
+                          ) : null;
+                        })()
+                      : null}
                     {(() => {
                       const logs =
                         stepLogs[step.id] ??

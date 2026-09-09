@@ -393,4 +393,29 @@ describe("secret-free approval payloads", () => {
     assert.equal(evaluation.requirements[0]?.operation, "workflow.execute");
     assert.equal(evaluation.approvals[0]?.id, APPROVAL_ID);
   });
+
+  it("parses evaluate operations retry fields from #90", () => {
+    const evaluation = parsePolicyEvaluation({
+      decision: "allow",
+      dispatchAllowed: true,
+      operations: [
+        {
+          nodeId: "run",
+          operation: "ssh.run",
+          retrySafe: true,
+          retryMaxAttempts: 2,
+          retryAllowed: false,
+          verificationDeclared: true,
+        },
+      ],
+      requirements: [],
+      denied: [],
+    });
+    assert.ok(evaluation);
+    assert.equal(evaluation.operations?.[0]?.operation, "ssh.run");
+    assert.equal(evaluation.operations?.[0]?.retrySafe, true);
+    assert.equal(evaluation.operations?.[0]?.retryMaxAttempts, 2);
+    assert.equal(evaluation.operations?.[0]?.retryAllowed, false);
+    assert.equal(evaluation.operations?.[0]?.verificationDeclared, true);
+  });
 });

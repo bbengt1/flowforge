@@ -205,6 +205,23 @@ describe("ssh target / profile publish gaps", () => {
       "${",
       "{{",
     ]);
+    assert.match(
+      commandProfilePublishGap({
+        template: "systemctl restart nginx",
+        parameterSchema: EMPTY_PARAMETER_SCHEMA,
+        retrySafe: true,
+      }) ?? "",
+      /verification/,
+    );
+    assert.equal(
+      commandProfilePublishGap({
+        template: "systemctl restart nginx",
+        parameterSchema: EMPTY_PARAMETER_SCHEMA,
+        retrySafe: true,
+        verification: { template: "systemctl is-active nginx" },
+      }),
+      null,
+    );
   });
 });
 
