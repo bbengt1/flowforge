@@ -11,13 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// consumeJTI SQL is a single statement: insert or conflict. No
+// check-then-insert and no DELETE. Zero RETURNING rows means replay.
+const consumeJTISQL = `
+		INSERT INTO embed_assertion_jtis (jti, expires_at, consumed_at, retain_until)
+		VALUES ($1::uuid, $2, $3, $4)
+		ON CONFLICT (jti) DO NOTHING
+		RETURNING jti
+	`
+
+const purgeJTISQL = `
+		DELETE FROM embed_assertion_jtis WHERE retain_until <= $1
+	`
+
 // JTIDB is the subset of pgx used by PostgresJTI.
 type JTIDB interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// PostgresJTI atomically consumes assertion token IDs with TTL.
-// INSERT … ON CONFLICT DO NOTHING: zero rows means replay.
+// PostgresJTI atomically consumes assertion token IDs.
+// One statement: INSERT … ON CONFLICT DO NOTHING RETURNING.
+// Used ids are retained until retain_until (assertion exp + JTIRetention).
+// PurgeExpired is a separate job and must not run inside Consume.
 type PostgresJTI struct {
 	db JTIDB
 }
@@ -27,7 +43,8 @@ func NewPostgresJTI(db JTIDB) *PostgresJTI {
 	return &PostgresJTI{db: db}
 }
 
-// Consume inserts jti until expiresAt. Replay and store failure fail closed.
+// Consume inserts jti until retain_until in one statement. Replay and
+// store failure fail closed.
 func (p *PostgresJTI) Consume(ctx context.Context, jti string, expiresAt time.Time) error {
 	if p == nil || p.db == nil {
 		return ErrStoreUnavailable
@@ -44,22 +61,34 @@ func (p *PostgresJTI) Consume(ctx context.Context, jti string, expiresAt time.Ti
 		expiresAt = now.Add(DefaultTTL)
 	}
 	expiresAt = expiresAt.UTC()
-	// Drop expired rows so a reused UUID after TTL can be issued again.
-	if _, err := p.db.Exec(ctx, `DELETE FROM embed_assertion_jtis WHERE expires_at <= $1`, now); err != nil {
-		return mapJTIErr(err)
-	}
-	tag, err := p.db.Exec(ctx, `
-		INSERT INTO embed_assertion_jtis (jti, expires_at, consumed_at)
-		VALUES ($1::uuid, $2, $3)
-		ON CONFLICT (jti) DO NOTHING
-	`, jti, expiresAt, now)
+	retainUntil := jtiRetainUntil(expiresAt, now)
+	var consumed string
+	err := p.db.QueryRow(ctx, consumeJTISQL, jti, expiresAt, now, retainUntil).Scan(&consumed)
 	if err != nil {
 		return mapJTIErr(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrReplay
-	}
 	return nil
+}
+
+// PurgeExpired deletes consumed ids whose retain_until has elapsed.
+// It never deletes solely because JWT exp has passed.
+func (p *PostgresJTI) PurgeExpired(ctx context.Context, now time.Time) (int, error) {
+	if p == nil || p.db == nil {
+		return 0, ErrStoreUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, ErrStoreUnavailable
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	tag, err := p.db.Exec(ctx, purgeJTISQL, now)
+	if err != nil {
+		return 0, mapJTIErr(err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func mapJTIErr(err error) error {

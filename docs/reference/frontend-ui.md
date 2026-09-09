@@ -726,7 +726,7 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 | `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`). This shell does not mint. |
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |
 
-E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti`, and verifies active + overlap keys. The embed shell honors that contract (see below).
+E11.2 (API #127) binds `(tenant_id, workbench_key)` onto `session.embed`, atomically consumes `jti` (ADV-009: single-statement consume; used ids retained 24h past exp), and verifies active + overlap keys. The embed shell honors that contract (see below). No UI change for ADV-009.
 
 ## E11.3 CP Ops Portal adapter (API → UI)
 

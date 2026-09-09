@@ -295,8 +295,11 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry {
 		t.Fatal("rules")
+	}
+	if c.JTIRetention != JTIRetention.String() {
+		t.Fatalf("jtiRetention %q", c.JTIRetention)
 	}
 	foundRotate, foundMint, foundExchange := false, false, false
 	for _, r := range c.API {
@@ -340,7 +343,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
-	foundCHIPS, foundVerifyFirst := false, false
+	foundCHIPS, foundVerifyFirst, foundJTI := false, false, false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
@@ -357,12 +360,21 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("verify-before-lookup hook %q", h.Note)
 			}
 		}
+		if h.ID == "jti.consume" {
+			foundJTI = true
+			if !strings.Contains(h.Note, "RETURNING") || !strings.Contains(h.Note, "24h") || !strings.Contains(h.Note, "retain_until") {
+				t.Fatalf("jti.consume hook %q", h.Note)
+			}
+		}
 	}
 	if !foundCHIPS {
 		t.Fatal("catalog missing chips.embed-cookies hook")
 	}
 	if !foundVerifyFirst {
 		t.Fatal("catalog missing assertion.verify-before-lookup hook")
+	}
+	if !foundJTI {
+		t.Fatal("catalog missing jti.consume hook")
 	}
 }
 

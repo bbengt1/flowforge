@@ -352,6 +352,12 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"verifyBeforeWorkspaceLookup":true`) {
 		t.Fatal("catalog must require verify before workspace lookup")
 	}
+	if !strings.Contains(rec.Body.String(), `"jtiRetainPastExpiry":true`) {
+		t.Fatal("catalog must retain used jtis past assertion exp")
+	}
+	if !strings.Contains(rec.Body.String(), `"jtiRetention":"24h0m0s"`) {
+		t.Fatal("catalog must document the 24h jti retention window")
+	}
 
 	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
 	if mintedRec.Code != http.StatusCreated {
@@ -396,6 +402,51 @@ func TestEmbedExchangeReplayConflict(t *testing.T) {
 	}
 	second := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(second, req)
+	assertProblem(t, second, http.StatusConflict, CodeConflict, "")
+}
+
+func TestEmbedExchangeUsedJTIRejectedAfterAssertionExp(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	tid := tenantID(t, env)
+	jti := "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	firstToken := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      jti,
+		TenantID:     tid,
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	first := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, firstToken)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(first, req)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first exchange %d %s", first.Code, first.Body.String())
+	}
+	later := now.Add(2 * time.Minute)
+	*env.now = later
+	reused := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    later.Unix(),
+		ExpiresAt:    later.Add(time.Minute).Unix(),
+		TokenID:      jti,
+		TenantID:     tid,
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	second := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, reused)+`}`))
 	req.Header.Set("Content-Type", "application/json")
 	env.h.ServeHTTP(second, req)
 	assertProblem(t, second, http.StatusConflict, CodeConflict, "")
