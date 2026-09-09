@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { shortDigest } from "@/lib/workflow";
 import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
 
@@ -93,6 +94,13 @@ export function RunControl({
           <p className="font-mono text-xs break-all text-zinc-600">
             workflowDigest {execution.workflowDigest}
           </p>
+          <div className="pt-1">
+            <p className="text-xs font-medium text-zinc-600">Config pins</p>
+            <ConfigPinList
+              pins={execution.pins}
+              empty="No ops-config pins on this execution."
+            />
+          </div>
           <button
             type="button"
             onClick={onRefreshPin}

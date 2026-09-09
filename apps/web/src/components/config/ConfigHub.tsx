@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
+import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
+import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
+import { getOpsConfigCatalog } from "@/lib/ops-config-client";
 import { OPS_CONFIG_KIND_CATALOG } from "@/lib/ops-config-contract";
-import type { OpsConfigGroup } from "@/lib/ops-config-types";
+import type { OpsConfigCatalogKind, OpsConfigGroup } from "@/lib/ops-config-types";
+import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
   {
@@ -35,6 +40,42 @@ export function ConfigHub({ group }: ConfigHubProps) {
     }
     return "targets";
   }, [group]);
+  const identity = useSyncExternalStore(
+    subscribeDevIdentity,
+    loadDevIdentity,
+    emptyStoredIdentity,
+  );
+  const session = useSyncExternalStore(
+    subscribeSession,
+    getSessionSnapshot,
+    getSessionSnapshot,
+  );
+  const headerFallback = useSyncExternalStore(
+    subscribeHeaderFallback,
+    loadHeaderFallback,
+    () => false,
+  );
+  const [catalogKinds, setCatalogKinds] = useState<OpsConfigCatalogKind[]>([]);
+
+  const ready =
+    hasOperatorCaller(session.active, identity, headerFallback) &&
+    hasWorkspaceLookup(identity);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    let cancelled = false;
+    void getOpsConfigCatalog(identity).then((result) => {
+      if (cancelled || !result.ok) {
+        return;
+      }
+      setCatalogKinds(result.catalog.kinds);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity, ready]);
 
   return (
     <div className="space-y-6">
@@ -69,20 +110,27 @@ export function ConfigHub({ group }: ConfigHubProps) {
           </div>
           <ul className="grid gap-4 md:grid-cols-2">
             {OPS_CONFIG_KIND_CATALOG.filter((kind) => kind.group === item.id).map(
-              (kind) => (
-                <li key={kind.kind}>
-                  <Link
-                    href={`/config/${kind.collection}`}
-                    className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-teal-700"
-                  >
-                    <h3 className="font-semibold">{kind.title}</h3>
-                    <p className="mt-1 text-sm text-zinc-600">{kind.summary}</p>
-                    <p className="mt-3 font-mono text-xs text-zinc-500">
-                      YAML {kind.yamlRef} · /{kind.collection}
-                    </p>
-                  </Link>
-                </li>
-              ),
+              (kind) => {
+                const remote = catalogKinds.find((row) => row.kind === kind.kind);
+                const title = remote?.displayName ?? kind.title;
+                const yamlRef = remote?.yamlFields?.[0] ?? kind.yamlRef;
+                const collection = remote?.collection ?? kind.collection;
+                return (
+                  <li key={kind.kind}>
+                    <Link
+                      href={`/config/${collection}`}
+                      className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-teal-700"
+                    >
+                      <h3 className="font-semibold">{title}</h3>
+                      <p className="mt-1 text-sm text-zinc-600">{kind.summary}</p>
+                      <p className="mt-3 font-mono text-xs text-zinc-500">
+                        YAML {yamlRef} · /{collection}
+                        {remote?.usePermission ? ` · ${remote.usePermission}` : ""}
+                      </p>
+                    </Link>
+                  </li>
+                );
+              },
             )}
           </ul>
         </section>

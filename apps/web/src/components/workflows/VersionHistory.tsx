@@ -1,6 +1,8 @@
 "use client";
 
+import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { compareRefLabel, shortDigest } from "@/lib/workflow";
+import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type {
   CompareKind,
   CompareWorkflowResult,
@@ -19,6 +21,7 @@ type VersionHistoryProps = {
   onCompare: () => void;
   onExport: (version: WorkflowVersion) => void;
   onRestore: (version: WorkflowVersion) => void;
+  versionPins?: Record<string, OpsConfigPin[]>;
 };
 
 export function VersionHistory({
@@ -33,6 +36,7 @@ export function VersionHistory({
   onCompare,
   onExport,
   onRestore,
+  versionPins,
 }: VersionHistoryProps) {
   const busy = pending !== null;
 
@@ -72,6 +76,12 @@ export function VersionHistory({
                   {version.digest}
                 </p>
                 <p className="text-xs text-zinc-500">{version.publishedAt}</p>
+                <div className="mt-2">
+                  <ConfigPinList
+                    pins={versionPins?.[version.id]}
+                    empty="No ops-config pins on this version."
+                  />
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

@@ -1,3 +1,5 @@
+import type { OpsConfigPin } from "./ops-config-types.ts";
+
 /** Shapes from jonny's E3.1 workflow YAML API (PR #27). */
 
 export const WORKFLOW_API_VERSION = "flowforge/v1";
@@ -220,6 +222,7 @@ export type PublishWorkflowBody = {
 export type PublishWorkflowResult = {
   workflow: WorkflowRecord;
   version: WorkflowVersion;
+  pins?: OpsConfigPin[];
 };
 
 export type CompareKind = "draft" | "version";
@@ -277,4 +280,5 @@ export type WorkflowExecution = {
   status: "queued" | "pinned" | string;
   requestedBy?: string;
   createdAt: string;
+  pins?: OpsConfigPin[];
 };
