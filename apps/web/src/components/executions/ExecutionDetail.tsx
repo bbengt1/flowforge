@@ -6,18 +6,25 @@ import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { loadExecutionHistory } from "@/lib/execution-client";
+import { cancelExecution, loadExecutionHistory } from "@/lib/execution-client";
 import {
+  CANCEL_CSRF_HELP,
+  CANCEL_FORBIDDEN_MESSAGE,
   IDEMPOTENCY_KEY_HELP,
+  INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
+  RETRY_UNAVAILABLE_MESSAGE,
 } from "@/lib/execution-contract";
 import {
+  canCancelExecution,
+  canRetryExecution,
   canSeeExecutionsNav,
   executionDetailDisplay,
   isExecutionForbidden,
   isIndeterminateStatus,
   redactedJson,
 } from "@/lib/execution";
+import { EXECUTION_CANCEL_PERMISSION } from "@/lib/execution-types";
 import type { ExecutionDetail as ExecutionDetailModel } from "@/lib/execution-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -58,6 +65,8 @@ export function ExecutionDetail({
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -65,6 +74,17 @@ export function ExecutionDetail({
   const denied = ready && permissions != null && !canSeeExecutionsNav(permissions);
   const forbidden = isExecutionForbidden(problem);
   const view = detail && !forbidden && !denied ? executionDetailDisplay(detail) : null;
+  const canCancel =
+    Boolean(view) &&
+    canCancelExecution({
+      permissions,
+      status: view?.header.status,
+      permittedActions: view?.permittedActions,
+    });
+  const showRetry = canRetryExecution({
+    permissions,
+    permittedActions: view?.permittedActions,
+  });
 
   async function refresh() {
     setPending(true);
@@ -89,6 +109,34 @@ export function ExecutionDetail({
     }
     setDetail(result.execution);
     setStrippedKeys(result.strippedKeys);
+  }
+
+  async function onCancel() {
+    if (!canCancel || cancelPending) {
+      return;
+    }
+    setCancelPending(true);
+    setProblem(null);
+    setCancelMessage(null);
+    const result = await cancelExecution(identity, executionId, {
+      workflowId: workflowId || detail?.workflowId,
+      previousStatus: detail?.status,
+    });
+    setLastRequestId(result.requestId);
+    setCancelPending(false);
+    if (!result.ok) {
+      setProblem(result.problem);
+      if (result.forbidden && result.problem.code === "forbidden") {
+        setCancelMessage(CANCEL_FORBIDDEN_MESSAGE);
+      }
+      return;
+    }
+    setCancelMessage(result.message);
+    if (result.execution) {
+      setDetail(result.execution);
+      setStrippedKeys(result.strippedKeys);
+    }
+    await refresh();
   }
 
   useEffect(() => {
@@ -173,8 +221,45 @@ export function ExecutionDetail({
             </div>
             {view.header.indeterminate ? (
               <p className="mt-3 text-sm text-amber-950">
-                Indeterminate means a remote side effect may have occurred and
-                was not verified. Do not assume the action did not run.
+                {INDETERMINATE_STATUS_HELP}
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {canCancel ? (
+                <button
+                  type="button"
+                  onClick={() => void onCancel()}
+                  disabled={cancelPending || pending}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                >
+                  {cancelPending ? "Canceling…" : "Cancel execution"}
+                </button>
+              ) : permissions != null &&
+                !permissions.includes(EXECUTION_CANCEL_PERMISSION) ? (
+                <p className="text-sm text-zinc-600">
+                  Cancel requires{" "}
+                  <code className="font-mono text-xs">
+                    {EXECUTION_CANCEL_PERMISSION}
+                  </code>
+                  . This action is separately authorized.
+                </p>
+              ) : null}
+              {showRetry ? (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-500"
+                >
+                  Retry
+                </button>
+              ) : (
+                <p className="text-xs text-zinc-500">{RETRY_UNAVAILABLE_MESSAGE}</p>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">{CANCEL_CSRF_HELP}</p>
+            {cancelMessage ? (
+              <p role="status" className="mt-3 text-sm text-zinc-800">
+                {cancelMessage}
               </p>
             ) : null}
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -271,6 +356,15 @@ export function ExecutionDetail({
                       </div>
                       <ExecutionStatusBadge status={step.status} />
                     </div>
+                    {step.workerId || step.leaseId || step.fencingToken != null ? (
+                      <p className="mt-2 font-mono text-xs text-zinc-600">
+                        {step.workerId ? `worker ${step.workerId}` : ""}
+                        {step.leaseId ? ` · lease ${step.leaseId}` : ""}
+                        {step.fencingToken != null
+                          ? ` · fence ${step.fencingToken}`
+                          : ""}
+                      </p>
+                    ) : null}
                     <pre className="mt-3 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
                       {redactedJson(step.output ?? step.error ?? step.input)}
                     </pre>
@@ -283,24 +377,67 @@ export function ExecutionDetail({
           <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold">Jobs</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Dispatch records. Lease and fencing fields are reserved for
-              E5.2 — this UI does not claim jobs.
+              Dispatch records with safe lease/claim/heartbeat metadata when
+              the API returns them. Worker secrets are never shown. This UI
+              does not claim jobs.
             </p>
-            {view.jobs.length === 0 ? (
+            {view.jobViews.length === 0 ? (
               <p className="mt-3 text-sm text-zinc-600">No jobs returned.</p>
             ) : (
               <ul className="mt-4 grid gap-2">
-                {view.jobs.map((job) => (
+                {view.jobViews.map((job) => (
                   <li
                     key={job.id}
-                    className="rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+                    className={
+                      job.presentation.indeterminate
+                        ? "rounded-xl border-2 border-amber-700 bg-amber-50 px-4 py-3 text-sm"
+                        : "rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+                    }
                   >
-                    <p className="font-medium">{job.status}</p>
-                    <p className="font-mono text-xs break-all text-zinc-600">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <p className="font-medium">
+                        <span aria-hidden="true">{job.presentation.icon} </span>
+                        {job.presentation.label}
+                        {job.claimed ? " · lease/claim" : ""}
+                      </p>
+                      <ExecutionStatusBadge status={job.status} />
+                    </div>
+                    <p className="mt-1 font-mono text-xs break-all text-zinc-600">
                       {job.id}
                       {job.executionStepId ? ` · step ${job.executionStepId}` : ""}
-                      {job.workerId ? ` · worker ${job.workerId}` : ""}
                     </p>
+                    <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                      {job.workerId ? (
+                        <div>
+                          <dt className="text-zinc-500">Worker id</dt>
+                          <dd className="font-mono break-all">{job.workerId}</dd>
+                        </div>
+                      ) : null}
+                      {job.leaseId ? (
+                        <div>
+                          <dt className="text-zinc-500">Lease id</dt>
+                          <dd className="font-mono break-all">{job.leaseId}</dd>
+                        </div>
+                      ) : null}
+                      {job.leaseExpiresAt ? (
+                        <div>
+                          <dt className="text-zinc-500">Lease expires</dt>
+                          <dd className="font-mono">{job.leaseExpiresAt}</dd>
+                        </div>
+                      ) : null}
+                      {job.heartbeatAt ? (
+                        <div>
+                          <dt className="text-zinc-500">Heartbeat</dt>
+                          <dd className="font-mono">{job.heartbeatAt}</dd>
+                        </div>
+                      ) : null}
+                      {job.fencingToken != null ? (
+                        <div>
+                          <dt className="text-zinc-500">Fencing token</dt>
+                          <dd className="font-mono">{job.fencingToken}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
                   </li>
                 ))}
               </ul>

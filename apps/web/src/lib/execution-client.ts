@@ -1,26 +1,31 @@
 /**
- * Thin typed E5.1 client against jonny's #51 map.
+ * Thin typed execution client (E5.1 list/detail + E5.2 cancel).
  *
  * Paths come only from execution-contract.ts. Session: credentials:include.
- * Host-supplied workspace IDs are never sent. Unexpected secrets are
- * stripped before callers see the payload. Never log request bodies.
+ * CSRF on POST cancel. Host-supplied workspace IDs are never sent.
+ * Unexpected secrets are stripped. Never log request bodies.
  */
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
+  buildCancelBody,
   executionAuditEventsPath,
+  executionCancelPath,
   executionJobsPath,
   executionPath,
   executionStepsPath,
   listExecutionsPath,
   listWorkflowExecutionsPath,
   listWorkspaceAuditEventsPath,
+  workflowExecutionCancelPath,
   workflowExecutionPath,
 } from "./execution-contract.ts";
 import {
+  cancelOutcomeMessage,
   isExecutionForbidden,
+  isIdempotentCancel,
   parseExecutionDetail,
   parseExecutionEvent,
   parseExecutionJob,
@@ -85,6 +90,16 @@ export type ExecutionEventsSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionAuditEvent[];
+  strippedKeys: string[];
+};
+
+export type ExecutionCancelSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  execution: ExecutionDetail | null;
+  idempotent: boolean;
+  message: string;
   strippedKeys: string[];
 };
 
@@ -193,6 +208,115 @@ export async function getExecutionAuditEvents(
     ),
     parseExecutionEvent,
   );
+}
+
+/**
+ * POST /executions/{id}/cancel with CSRF. Empty body — never send
+ * host-supplied id / workspaceId. A second cancel is success
+ * (idempotent). 403 is fail-closed. Falls back to the workflow-scoped
+ * twin on 404 when workflowId is known.
+ */
+export async function cancelExecution(
+  identity: DevIdentity,
+  executionId: string,
+  options: { workflowId?: string; previousStatus?: string } = {},
+): Promise<ExecutionCancelSuccess | ExecutionClientFailure> {
+  const path = executionCancelPath(executionId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildCancelBody(),
+  });
+  if (
+    !result.ok &&
+    result.statusCode === 404 &&
+    options.workflowId?.trim()
+  ) {
+    return cancelWorkflowExecution(
+      identity,
+      options.workflowId.trim(),
+      executionId,
+      options.previousStatus,
+    );
+  }
+  return cancelResult(result, path, executionId, options.previousStatus);
+}
+
+export async function cancelWorkflowExecution(
+  identity: DevIdentity,
+  workflowId: string,
+  executionId: string,
+  previousStatus?: string,
+): Promise<ExecutionCancelSuccess | ExecutionClientFailure> {
+  const path = workflowExecutionCancelPath(workflowId, executionId);
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildCancelBody(),
+  });
+  return cancelResult(result, path, executionId, previousStatus);
+}
+
+function cancelResult(
+  result: IdentityClientResult<unknown>,
+  instance: string,
+  executionId: string,
+  previousStatus?: string,
+): ExecutionCancelSuccess | ExecutionClientFailure {
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretFields(result.data, strippedKeys);
+  if (result.statusCode === 204 || result.data == null) {
+    const idempotent = isIdempotentCancel({
+      previousStatus,
+      status: "canceled",
+    });
+    return {
+      ok: true,
+      statusCode: result.statusCode,
+      requestId: result.requestId,
+      execution: null,
+      idempotent,
+      message: cancelOutcomeMessage({
+        previousStatus,
+        status: "canceled",
+      }),
+      strippedKeys,
+    };
+  }
+  const parsed = parseExecutionDetail(result.data);
+  if (parsed && executionId && parsed.id !== executionId) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      instance,
+      "Cancel payload id did not match the requested execution.",
+    );
+  }
+  const raw =
+    result.data && typeof result.data === "object"
+      ? (result.data as Record<string, unknown>)
+      : {};
+  const idempotent = isIdempotentCancel({
+    previousStatus,
+    status: parsed?.status,
+    canceled: raw.canceled === true,
+    replayed: raw.replayed === true || parsed?.replayed === true,
+  });
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    execution: parsed,
+    idempotent,
+    message: cancelOutcomeMessage({
+      previousStatus,
+      status: parsed?.status ?? "canceled",
+      canceled: raw.canceled === true,
+      replayed: raw.replayed === true || parsed?.replayed === true,
+    }),
+    strippedKeys,
+  };
 }
 
 export async function listWorkspaceAuditEvents(

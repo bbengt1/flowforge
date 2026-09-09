@@ -1,17 +1,23 @@
 /**
- * Single adapter for Chloe's E5.1 UI against jonny's #51 route map.
+ * Single adapter for Chloe's execution UI.
  *
- * Exact paths only — do not invent collections or query params.
+ * E5.1 (#51 on `main`): list/detail/steps/jobs/audit + idempotent start.
+ * E5.2 (#47): cancel + status hooks. Jonny's dispatch/lease/fencing
+ * routes are still in flight — keep cancel/retry path names here so a
+ * later map change does not scatter through UI. Do not invent retry
+ * until the route is published (`EXECUTION_RETRY_ROUTE_PUBLISHED`).
+ *
  * Browser stays on same-origin `/api/v1/…`. Next rewrites to
  * `/api/control-plane/*`; identity-proxy maps onto the Go API.
  *
- * Relates to #46 / Part of #45. Do not change `apps/api`.
+ * Relates to #47 / Part of #45. Do not change `apps/api`.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
 import type { AuditEventQuery, ExecutionListQuery } from "./execution-types.ts";
 
 export const EXECUTION_STORY = 46;
+export const EXECUTION_DISPATCH_STORY = 47;
 export const EXECUTION_EPIC = 45;
 export const EXECUTION_API_PR = 51;
 
@@ -21,6 +27,11 @@ export const EXECUTION_UPSTREAM_COLLECTION = "executions";
 export const EXECUTION_STEPS_ACTION = "steps";
 export const EXECUTION_JOBS_ACTION = "jobs";
 export const EXECUTION_AUDIT_EVENTS_ACTION = "audit-events";
+export const EXECUTION_CANCEL_ACTION = "cancel";
+export const EXECUTION_CANCEL_UPSTREAM_ACTION = "cancel";
+export const EXECUTION_RETRY_ACTION = "retry";
+/** Jonny has not published a retry route on `main`. Do not invent one. */
+export const EXECUTION_RETRY_ROUTE_PUBLISHED = false;
 export const WORKSPACE_AUDIT_EVENTS_COLLECTION = "audit-events";
 
 export const EXECUTION_WORKFLOW_QUERY = "workflowId";
@@ -53,6 +64,24 @@ export const IDEMPOTENCY_KEY_HELP =
 export const REDACTED_HELP =
   "Secret values from the API appear as [redacted]. Unexpected secret field names are stripped.";
 
+export const CANCEL_APPLIED_MESSAGE =
+  "Cancellation recorded. The API accepted the request (HTTP 200).";
+
+export const CANCEL_IDEMPOTENT_MESSAGE =
+  "Already canceled. A second cancel is idempotent — the API did not start new work.";
+
+export const CANCEL_FORBIDDEN_MESSAGE =
+  "Cancel is separately authorized (execution.cancel). HTTP 403 is fail-closed; this UI does not treat the run as canceled.";
+
+export const CANCEL_CSRF_HELP =
+  "Cancel sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
+
+export const INDETERMINATE_STATUS_HELP =
+  "Indeterminate means a remote side effect may have occurred and was not verified. Do not assume the action did not run.";
+
+export const RETRY_UNAVAILABLE_MESSAGE =
+  "Retry is not offered. No retry route is in the published map, and this UI will not invent one.";
+
 export function executionsPath(): string {
   return `/${EXECUTION_UI_COLLECTION}`;
 }
@@ -78,6 +107,33 @@ export function executionJobsPath(executionId: string): string {
 
 export function executionAuditEventsPath(executionId: string): string {
   return `${executionPath(executionId)}/${EXECUTION_AUDIT_EVENTS_ACTION}`;
+}
+
+export function executionCancelPath(executionId: string): string {
+  return `${executionPath(executionId)}/${EXECUTION_CANCEL_ACTION}`;
+}
+
+export function workflowExecutionCancelPath(
+  workflowId: string,
+  executionId: string,
+): string {
+  return `${workflowExecutionPath(workflowId, executionId)}/${EXECUTION_CANCEL_ACTION}`;
+}
+
+/**
+ * Retry is not in the published route map. Returns null so callers
+ * cannot invent POST …/retry.
+ */
+export function executionRetryPath(_executionId: string): string | null {
+  if (!EXECUTION_RETRY_ROUTE_PUBLISHED) {
+    return null;
+  }
+  return `${executionPath(_executionId)}/${EXECUTION_RETRY_ACTION}`;
+}
+
+/** Empty JSON body. Never send host-supplied id / workspaceId. */
+export function buildCancelBody(): Record<string, never> {
+  return {};
 }
 
 /** @deprecated Use executionAuditEventsPath — #51 is …/audit-events, not …/events. */
@@ -155,9 +211,17 @@ export function executionHistoryHref(
 }
 
 export function isExecutionProxySegments(segments: string[]): boolean {
-  return (
+  if (
     segments[0] === EXECUTION_UI_COLLECTION ||
     segments[0] === WORKSPACE_AUDIT_EVENTS_COLLECTION
+  ) {
+    return true;
+  }
+  return (
+    segments[0] === "workflows" &&
+    segments[2] === EXECUTION_UI_COLLECTION &&
+    (segments[4] === EXECUTION_CANCEL_ACTION ||
+      segments[4] === EXECUTION_CANCEL_UPSTREAM_ACTION)
   );
 }
 
@@ -190,11 +254,20 @@ export function retargetExecutionApiPath(uiApiPath: string): string {
   ) {
     return uiApiPath;
   }
-  return retargetCollectionPath(
+  const collected = retargetCollectionPath(
     uiApiPath,
     EXECUTION_UI_COLLECTION,
     EXECUTION_UPSTREAM_COLLECTION,
   );
+  if (EXECUTION_CANCEL_ACTION === EXECUTION_CANCEL_UPSTREAM_ACTION) {
+    return collected;
+  }
+  const from = `/${EXECUTION_CANCEL_ACTION}`;
+  const to = `/${EXECUTION_CANCEL_UPSTREAM_ACTION}`;
+  if (collected.endsWith(from) || collected.includes(`${from}?`)) {
+    return collected.replace(from, to);
+  }
+  return collected;
 }
 
 export type ExecutionProxyRoute = {
@@ -210,9 +283,10 @@ function eq(segments: string[], expected: readonly string[]): boolean {
 }
 
 /**
- * Allowlisted Next proxy routes from #51. identity-proxy spreads this
- * array. POST start stays on `/workflows/{id}/executions` (already
- * allowlisted with CSRF). Do not add POST /executions.
+ * Allowlisted Next proxy routes. identity-proxy spreads this array.
+ * POST start stays on `/workflows/{id}/executions` (already
+ * allowlisted with CSRF). Do not add POST /executions. Cancel is
+ * POST `…/cancel` only. Retry is not allowlisted until published.
  */
 export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, [EXECUTION_UI_COLLECTION]) },
@@ -236,6 +310,14 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
         s[2] === EXECUTION_AUDIT_EVENTS_ACTION),
   },
   {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 3 &&
+      s[0] === EXECUTION_UI_COLLECTION &&
+      isResourceId(s[1]) &&
+      s[2] === EXECUTION_CANCEL_ACTION,
+  },
+  {
     methods: ["GET"],
     match: (s) =>
       s.length === 2 &&
@@ -253,5 +335,15 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       s[0] === "workflows" &&
       isResourceId(s[1]) &&
       s[2] === "executions",
+  },
+  {
+    methods: ["POST"],
+    match: (s) =>
+      s.length === 5 &&
+      s[0] === "workflows" &&
+      isResourceId(s[1]) &&
+      s[2] === "executions" &&
+      isResourceId(s[3]) &&
+      s[4] === EXECUTION_CANCEL_ACTION,
   },
 ];

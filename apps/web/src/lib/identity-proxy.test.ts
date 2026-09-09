@@ -335,6 +335,22 @@ describe("resolveIdentityProxyTarget", () => {
         ["executions", "33333333-3333-4333-8333-333333333333", "audit-events"],
         "/api/v1/executions/33333333-3333-4333-8333-333333333333/audit-events",
       ],
+      [
+        "POST",
+        ["executions", "33333333-3333-4333-8333-333333333333", "cancel"],
+        "/api/v1/executions/33333333-3333-4333-8333-333333333333/cancel",
+      ],
+      [
+        "POST",
+        [
+          "workflows",
+          "11111111-1111-4111-8111-111111111111",
+          "executions",
+          "33333333-3333-4333-8333-333333333333",
+          "cancel",
+        ],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333/cancel",
+      ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
     ];
 
@@ -487,6 +503,24 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in inventedReplay, true);
     if ("status" in inventedReplay) {
       assert.equal(inventedReplay.status, 404);
+    }
+    const inventedRetry = resolveIdentityProxyTarget("POST", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "retry",
+    ]);
+    assert.equal("status" in inventedRetry, true);
+    if ("status" in inventedRetry) {
+      assert.equal(inventedRetry.status, 404);
+    }
+    const cancelGet = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "cancel",
+    ]);
+    assert.equal("status" in cancelGet, true);
+    if ("status" in cancelGet) {
+      assert.equal(cancelGet.status, 405);
     }
     const reservedAsId = resolveIdentityProxyTarget("GET", [
       "executions",

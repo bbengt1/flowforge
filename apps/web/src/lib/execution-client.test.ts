@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
+  cancelExecution,
   getExecution,
   listExecutions,
   listWorkflowExecutions,
@@ -434,6 +435,112 @@ describe("execution client", () => {
     if (!conflict.ok) {
       assert.equal(conflict.statusCode, 409);
       assert.equal(conflict.conflict, true);
+    }
+  });
+
+  it("POSTs cancel with CSRF and treats a second cancel as idempotent", async () => {
+    withSession();
+    const seen: { url?: string; body?: string; csrf?: string | null; method?: string }[] =
+      [];
+    let call = 0;
+    globalThis.fetch = (async (input, init) => {
+      call += 1;
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: headers.get(CSRF_HEADER),
+        method: init?.method,
+      });
+      return new Response(
+        JSON.stringify(
+          summaryPayload({
+            status: "canceled",
+            replayed: call === 2,
+          }),
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const first = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "running",
+    });
+    assert.equal(first.ok, true);
+    if (first.ok) {
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.idempotent, false);
+      assert.equal(first.execution?.status, "canceled");
+    }
+    assert.equal(seen[0]?.url, `/api/v1/executions/${EXECUTION_ID}/cancel`);
+    assert.equal(seen[0]?.method, "POST");
+    assert.equal(seen[0]?.csrf, "csrf-ok");
+    assert.equal(seen[0]?.body, "{}");
+    assert.equal(seen[0]?.body?.includes("workspaceId"), false);
+
+    const second = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "canceled",
+    });
+    assert.equal(second.ok, true);
+    if (second.ok) {
+      assert.equal(second.idempotent, true);
+      assert.match(second.message, /idempotent/);
+    }
+  });
+
+  it("fails cancel closed on missing CSRF and on 403", async () => {
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("should-not-run", { status: 500 });
+    }) as typeof fetch;
+
+    const missing = await cancelExecution(identity, EXECUTION_ID);
+    assert.equal(missing.ok, false);
+    assert.equal(fetched, false);
+    if (!missing.ok) {
+      assert.equal(missing.statusCode, 403);
+      assert.match(missing.problem.code, /csrf|forbidden/);
+      assert.equal(missing.forbidden, true);
+    }
+
+    withSession();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail: "execution.cancel is required.",
+          instance: `/api/v1/executions/${EXECUTION_ID}/cancel`,
+          code: "forbidden",
+          request_id: "cancel-forbid-16xx",
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            "X-Request-ID": "cancel-forbid-16xx",
+          },
+        },
+      )) as typeof fetch;
+
+    const denied = await cancelExecution(identity, EXECUTION_ID, {
+      previousStatus: "running",
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.forbidden, true);
     }
   });
 });
