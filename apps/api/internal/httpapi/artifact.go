@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -156,12 +157,14 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 	}
 	scan := artifact.Scan(kind, class, payload)
 	if scan.Reject != "" {
-		_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
-			Action:       "artifact.upload.rejected",
+		execID := strings.TrimSpace(r.PathValue("executionId"))
+		s.emitAlert(r, scope, opsalert.Signal{
+			Kind:         opsalert.KindRedaction,
+			Action:       "artifact.upload",
 			ResourceType: "execution",
-			ResourceID:   strings.TrimSpace(r.PathValue("executionId")),
-			Outcome:      "denied",
-			Details:      map[string]any{"reason": "unsafe-content", "kind": kind},
+			ResourceID:   execID,
+			Code:         CodeInvalidRequest,
+			Details:      map[string]any{"reason": "unsafe-content"},
 		})
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Unsafe artifact content was rejected before upload.")
 		return

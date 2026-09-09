@@ -156,6 +156,7 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing permission")
 		}
+		s.emitAuthorizationDenied(r, user, ws, action)
 		WriteForbidden(w, r)
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}

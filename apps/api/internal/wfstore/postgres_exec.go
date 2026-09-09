@@ -348,14 +348,14 @@ func (p *Postgres) PurgeExpired(ctx context.Context, scope isolation.Scope, now 
 		return 0, 0, mapDBErr(err)
 	}
 	execs := int(tag.RowsAffected())
-	tag, err = tx.Exec(ctx, `DELETE FROM audit_events WHERE retention_until <= $1`, now)
-	if err != nil {
+	var audits int
+	if err := tx.QueryRow(ctx, `SELECT app.purge_expired_audit_events($1)`, now).Scan(&audits); err != nil {
 		return 0, 0, mapDBErr(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, 0, mapDBErr(err)
 	}
-	return execs, int(tag.RowsAffected()), nil
+	return execs, audits, nil
 }
 
 func lookupIdempotentTx(ctx context.Context, tx pgx.Tx, workflowID, versionID, key string) (Execution, bool, error) {

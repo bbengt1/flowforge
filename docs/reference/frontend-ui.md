@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1–E5.3 list/detail, cancel/retry, artifacts; `execution.view` / `execution.cancel` / `workflow.execute`), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Approvals (E4.3; `approval.view`), Executions (E5.1–E5.3 list/detail, cancel/retry, artifacts; `execution.view` / `execution.cancel` / `workflow.execute`), Alerts (E5.4; `alert.view` / `alert.ack`), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -111,7 +111,7 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 
 ## Foundation operator shell
 
-Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, and the E5.1–E5.3 execution history operator:
+Until authoring (E6) lands, the deployable shell is the home page, a slim header, the E2.1 membership operator, the E2.2 isolation exercise, the E2.3 cookie session controls, the E3.1 YAML validate/normalize editor, the E3.2 draft/publish/history operator, the E3.3 core-neutral node palette/inspector, the E4.1 credential vault, the E4.2 versioned operational-config operator, the E4.3 approvals operator, the E5.1–E5.3 execution history operator, and the E5.4 operational-alert queue:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
 - OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
@@ -394,6 +394,28 @@ Suggested UI flow:
 **Implemented (#55):** paths live in `apps/web/src/lib/execution-contract.ts` against the #56 map on `main`. Artifact cards show metadata only. Download mints a grant, streams via `grantId`, remints once on 404, and discards the href. E5.1/E5.2 cancel/retry/`indeterminate` stay intact.
 
 **Proxies:** `/api/control-plane/executions/{id}/artifacts`, `.../steps/{stepId}/logs`, `/artifacts/{id}`, `.../downloads`, `/artifact-downloads/{grantId}`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Grant streams pass through bytes with `Cache-Control: no-store`. Grant hrefs and artifact bytes are never stored in `localStorage`.
+
+## E5.4 operational alerts (Chloe UI)
+
+Jonny's alert APIs land against **`main`** (Relates to #49 / Part of #45 — do **not** close #49 alone; this is the last E5 story). Do **not** stack the UI on an API feature branch. **Base is `main`.** This UI does **not** change `apps/api`. Cookie session + `credentials: "include"`; `X-CSRF-Token` on POST. JSON camelCase. Host `id` / `workspaceId` on ack is `400`. Cross-workspace UUIDs are `404`. Do not invent SIEM webhooks or extra write routes.
+
+**Canonical routes**
+
+| Method | Path | Perm | CSRF | Notes |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/alerts` | `alert.view` | no | `{items}` · query `kind` (`authorization`\|`replay`\|`policy`\|`redaction`), `status` (`open`\|`acked`), `resourceType`, `resourceId`, `limit` |
+| `GET` | `/api/v1/alerts/{alertId}` | `alert.view` | no | One row. Fields: `id`, `kind`, `severity`, `action`, `resourceType`, `resourceId`, `correlationId`, `requestId`, `actorId`, `outcome`, `code`, `acknowledgedAt`, `acknowledgedBy`, `occurredAt` |
+| `POST` | `/api/v1/alerts/{alertId}/ack` | `alert.ack` | yes | `{}` · idempotent `200` · operator/admin |
+
+Suggested flow:
+
+1. Nav Alerts when `GET /workspace` includes `alert.view`. Hide Ack unless `alert.ack`.
+2. Open queue: `GET /alerts?status=open`. Badge `critical` (policy/redaction) vs `warning` (authorization/replay).
+3. Detail: render identifiers + `requestId` / `correlationId`. If `resourceType=execution`, link to `/executions/{resourceId}`. Optional audit: `GET /audit-events?action=alert.{kind}`.
+4. Ack with CSRF. Already-acked → `200`. Viewer ack → `403` fail-closed.
+5. Strip unexpected `details`, `token`, `authorization`, `storageRef`, or secret-shaped values. Alerts never include secret material.
+
+**Proxies:** `/api/control-plane/alerts`, `/{id}`, `/{id}/ack`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved.
 
 ## Initial implementation components
 

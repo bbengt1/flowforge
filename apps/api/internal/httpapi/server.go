@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
@@ -25,37 +26,39 @@ import (
 
 // Server is the versioned control-plane HTTP API.
 type Server struct {
-	db        postgres.Checker
-	store     identity.Store
-	scoped    isolation.Store
-	cache     *isolation.Cache
-	sessions  session.Store
-	workflows wfstore.Store
-	vault     vault.Store
-	ops       opsconfig.Store
-	approvals approval.Store
-	keys      vault.Keys
-	jobKey          []byte
-	objects         artifact.Objects
-	downloadTTL     time.Duration
+	db               postgres.Checker
+	store            identity.Store
+	scoped           isolation.Store
+	cache            *isolation.Cache
+	sessions         session.Store
+	workflows        wfstore.Store
+	vault            vault.Store
+	ops              opsconfig.Store
+	approvals        approval.Store
+	alerts           opsalert.Store
+	keys             vault.Keys
+	jobKey           []byte
+	objects          artifact.Objects
+	downloadTTL      time.Duration
 	artifactMaxBytes int
-	log             *slog.Logger
-	registry        *observability.Registry
-	sec             Security
-	clock           func() time.Time
+	log              *slog.Logger
+	registry         *observability.Registry
+	sec              Security
+	clock            func() time.Time
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
-	DB            postgres.Checker
-	Store         identity.Store
-	Scoped        isolation.Store
-	Sessions      session.Store
-	Workflows     wfstore.Store
-	Vault         vault.Store
-	Ops           opsconfig.Store
-	Approvals     approval.Store
-	Keys          vault.Keys
+	DB               postgres.Checker
+	Store            identity.Store
+	Scoped           isolation.Store
+	Sessions         session.Store
+	Workflows        wfstore.Store
+	Vault            vault.Store
+	Ops              opsconfig.Store
+	Approvals        approval.Store
+	Alerts           opsalert.Store
+	Keys             vault.Keys
 	JobBindingKey    []byte
 	Objects          artifact.Objects
 	DownloadTTL      time.Duration
@@ -133,6 +136,13 @@ func inferApprovals(db postgres.Checker) approval.Store {
 	return approval.NewMemory()
 }
 
+func inferAlerts(db postgres.Checker) opsalert.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return opsalert.NewPostgres(p)
+	}
+	return opsalert.NewMemory()
+}
+
 func newServer(d Deps) http.Handler {
 	log := d.Log
 	if log == nil {
@@ -162,6 +172,10 @@ func newServer(d Deps) http.Handler {
 	approvalStore := d.Approvals
 	if approvalStore == nil {
 		approvalStore = inferApprovals(d.DB)
+	}
+	alertStore := d.Alerts
+	if alertStore == nil {
+		alertStore = inferAlerts(d.DB)
 	}
 	vaultStore := d.Vault
 	if vaultStore == nil {
@@ -203,6 +217,7 @@ func newServer(d Deps) http.Handler {
 		vault:            vaultStore,
 		ops:              opsStore,
 		approvals:        approvalStore,
+		alerts:           alertStore,
 		keys:             keys,
 		jobKey:           jobKey,
 		objects:          objects,
@@ -286,6 +301,9 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/jobs/{jobId}/complete", s.completeJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobId}/fail", s.failJob)
 	mux.HandleFunc("GET /api/v1/audit-events", s.listProductAuditEvents)
+	mux.HandleFunc("GET /api/v1/alerts", s.listOperationalAlerts)
+	mux.HandleFunc("GET /api/v1/alerts/{alertId}", s.getOperationalAlert)
+	mux.HandleFunc("POST /api/v1/alerts/{alertId}/ack", s.ackOperationalAlert)
 	mux.HandleFunc("GET /api/v1/artifacts/{artifactId}", s.getProductArtifact)
 	mux.HandleFunc("POST /api/v1/artifacts/{artifactId}/downloads", s.createArtifactDownload)
 	mux.HandleFunc("GET /api/v1/artifact-downloads/{grantId}", s.streamArtifactDownload)

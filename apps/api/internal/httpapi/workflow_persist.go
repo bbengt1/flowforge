@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -458,6 +459,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if !errors.Is(peekErr, wfstore.ErrNotFound) {
+			s.emitSecurityError(r, scope, peekErr)
 			writeWorkflowStoreError(w, r, peekErr)
 			return
 		}
@@ -475,11 +477,27 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if eval.Decision == policy.DecisionDeny {
+			s.emitAlert(r, scope, opsalert.Signal{
+				Kind:         opsalert.KindPolicy,
+				Action:       "workflow.execute",
+				ResourceType: "workflow",
+				ResourceID:   workflowID,
+				Code:         CodeForbidden,
+				Details:      map[string]any{"reason": "policy-deny"},
+			})
 			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 			return
 		}
 		if _, gateErr := s.dispatchApprovalsOK(r.Context(), scope, eval, workflowID, ver.ID); gateErr != nil {
 			if errors.Is(gateErr, errPolicyDenied) {
+				s.emitAlert(r, scope, opsalert.Signal{
+					Kind:         opsalert.KindPolicy,
+					Action:       "workflow.execute",
+					ResourceType: "workflow",
+					ResourceID:   workflowID,
+					Code:         CodeForbidden,
+					Details:      map[string]any{"reason": "policy-deny"},
+				})
 				WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 				return
 			}
@@ -493,6 +511,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 	}
 	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, start)
 	if err != nil {
+		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}

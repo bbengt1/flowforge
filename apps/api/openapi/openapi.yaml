@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.12.0
+  version: 0.13.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -2048,6 +2048,125 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /alerts:
+    get:
+      operationId: listOperationalAlerts
+      summary: List operational alerts
+      description: |
+        Actionable authorization, replay, policy, and redaction failures.
+        Rows contain correlation/resource identifiers only — never secrets,
+        headers, or unredacted payloads. Requires `alert.view`.
+        Distinct from `GET /audit-events`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: kind
+          in: query
+          schema: {type: string, enum: [authorization, replay, policy, redaction]}
+        - name: status
+          in: query
+          schema: {type: string, enum: [open, acked]}
+        - name: resourceType
+          in: query
+          schema: {type: string}
+        - name: resourceId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: Operational alerts
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationalAlertList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /alerts/{alertId}:
+    get:
+      operationId: getOperationalAlert
+      summary: Get one operational alert
+      description: Requires `alert.view`. Cross-workspace IDs are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/AlertID"
+      responses:
+        "200":
+          description: Alert
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationalAlert"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /alerts/{alertId}/ack:
+    post:
+      operationId: ackOperationalAlert
+      summary: Acknowledge an operational alert
+      description: |
+        Requires `alert.ack` (operator/admin). Idempotent. CSRF required for
+        cookie callers. Host-supplied `id` / `workspaceId` is `400`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/AlertID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses:
+        "200":
+          description: Acknowledged alert
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationalAlert"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /permission-matrix:
     get:
       operationId: getPermissionMatrix
@@ -4208,6 +4327,13 @@ components:
       schema:
         type: string
         format: uuid
+    AlertID:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     OpsResourceID:
       name: resourceId
       in: path
@@ -5502,6 +5628,31 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/AuditEvent"}
+    OperationalAlert:
+      type: object
+      required: [id, kind, severity, outcome, code, occurredAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [authorization, replay, policy, redaction]}
+        severity: {type: string, enum: [warning, critical]}
+        action: {type: string}
+        resourceType: {type: string}
+        resourceId: {type: string, format: uuid}
+        correlationId: {type: string}
+        requestId: {type: string}
+        actorId: {type: string, format: uuid}
+        outcome: {type: string}
+        code: {type: string}
+        acknowledgedAt: {type: string, format: date-time}
+        acknowledgedBy: {type: string, format: uuid}
+        occurredAt: {type: string, format: date-time}
+    OperationalAlertList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OperationalAlert"}
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]
