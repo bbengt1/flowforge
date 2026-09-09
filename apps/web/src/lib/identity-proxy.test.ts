@@ -9,11 +9,13 @@ import {
 } from "./identity-headers.ts";
 import {
   fetchIdentityControlPlane,
+  fetchIdentityControlPlaneStream,
   methodNotAllowedProblem,
   notFoundProblem,
   pickConditionalHeaders,
   pickSessionCredentialHeaders,
   resolveIdentityProxyTarget,
+  sanitizeContentDisposition,
   withRequestSearch,
 } from "./identity-proxy.ts";
 import { PROBLEM_JSON } from "./problem.ts";
@@ -377,27 +379,6 @@ describe("resolveIdentityProxyTarget", () => {
         [
           "executions",
           "33333333-3333-4333-8333-333333333333",
-          "artifacts",
-          "77777777-7777-4777-8777-777777777777",
-        ],
-        "/api/v1/executions/33333333-3333-4333-8333-333333333333/artifacts/77777777-7777-4777-8777-777777777777",
-      ],
-      [
-        "POST",
-        [
-          "executions",
-          "33333333-3333-4333-8333-333333333333",
-          "artifacts",
-          "77777777-7777-4777-8777-777777777777",
-          "download",
-        ],
-        "/api/v1/executions/33333333-3333-4333-8333-333333333333/artifacts/77777777-7777-4777-8777-777777777777/download",
-      ],
-      [
-        "GET",
-        [
-          "executions",
-          "33333333-3333-4333-8333-333333333333",
           "steps",
           "44444444-4444-4444-8444-444444444444",
           "logs",
@@ -411,8 +392,13 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       [
         "POST",
-        ["artifacts", "77777777-7777-4777-8777-777777777777", "download"],
-        "/api/v1/artifacts/77777777-7777-4777-8777-777777777777/download",
+        ["artifacts", "77777777-7777-4777-8777-777777777777", "downloads"],
+        "/api/v1/artifacts/77777777-7777-4777-8777-777777777777/downloads",
+      ],
+      [
+        "GET",
+        ["artifact-downloads", "88888888-8888-4888-8888-888888888888"],
+        "/api/v1/artifact-downloads/88888888-8888-4888-8888-888888888888",
       ],
       ["GET", ["audit-events"], "/api/v1/audit-events"],
     ];
@@ -599,16 +585,52 @@ describe("resolveIdentityProxyTarget", () => {
     if ("status" in cancelGet) {
       assert.equal(cancelGet.status, 405);
     }
-    const downloadGet = resolveIdentityProxyTarget("GET", [
+    const nestedArtifactGet = resolveIdentityProxyTarget("GET", [
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "artifacts",
+      "77777777-7777-4777-8777-777777777777",
+    ]);
+    assert.equal("status" in nestedArtifactGet, true);
+    if ("status" in nestedArtifactGet) {
+      assert.equal(nestedArtifactGet.status, 404);
+    }
+    const nestedDownload = resolveIdentityProxyTarget("POST", [
       "executions",
       "33333333-3333-4333-8333-333333333333",
       "artifacts",
       "77777777-7777-4777-8777-777777777777",
       "download",
     ]);
+    assert.equal("status" in nestedDownload, true);
+    if ("status" in nestedDownload) {
+      assert.equal(nestedDownload.status, 404);
+    }
+    const singularDownload = resolveIdentityProxyTarget("POST", [
+      "artifacts",
+      "77777777-7777-4777-8777-777777777777",
+      "download",
+    ]);
+    assert.equal("status" in singularDownload, true);
+    if ("status" in singularDownload) {
+      assert.equal(singularDownload.status, 404);
+    }
+    const downloadGet = resolveIdentityProxyTarget("GET", [
+      "artifacts",
+      "77777777-7777-4777-8777-777777777777",
+      "downloads",
+    ]);
     assert.equal("status" in downloadGet, true);
     if ("status" in downloadGet) {
       assert.equal(downloadGet.status, 405);
+    }
+    const streamPost = resolveIdentityProxyTarget("POST", [
+      "artifact-downloads",
+      "88888888-8888-4888-8888-888888888888",
+    ]);
+    assert.equal("status" in streamPost, true);
+    if ("status" in streamPost) {
+      assert.equal(streamPost.status, 405);
     }
     const reservedAsId = resolveIdentityProxyTarget("GET", [
       "executions",
@@ -983,6 +1005,50 @@ describe("fetchIdentityControlPlane", () => {
       assert.doesNotMatch(result.setCookies[0] ?? "", /Domain=/);
       assert.doesNotMatch(result.setCookies[0] ?? "", /Secure/);
     }
+  });
+
+  it("streams artifact-download bytes without JSON-parsing the body", async () => {
+    const seen: { url?: string; accept?: string | null } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.accept = new Headers(init?.headers).get("Accept");
+      return new Response(new Uint8Array([4, 5, 6]), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": 'attachment; filename="plan.json"',
+          "Cache-Control": "no-store",
+          [REQUEST_ID_HEADER]: "stream-request-16",
+        },
+      });
+    }) as typeof fetch;
+
+    const result = await fetchIdentityControlPlaneStream({
+      method: "GET",
+      apiPath: "/api/v1/artifact-downloads/88888888-8888-4888-8888-888888888888",
+      instance:
+        "/api/control-plane/artifact-downloads/88888888-8888-4888-8888-888888888888",
+      requestId: "caller-stream-16xx",
+      identityHeaders: new Headers({
+        Cookie: "ff_session=opaque",
+        Authorization: "Bearer secret",
+      }),
+    });
+
+    assert.match(seen.url ?? "", /\/artifact-downloads\/88888888-8888-4888-8888-888888888888$/);
+    assert.match(seen.accept ?? "", /octet-stream/);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.statusCode, 200);
+      assert.equal(result.contentType, "application/octet-stream");
+      assert.equal(result.cacheControl, "no-store");
+      assert.equal(new Uint8Array(result.body)[0], 4);
+      assert.equal(result.body.byteLength, 3);
+    }
+    assert.equal(
+      sanitizeContentDisposition('attachment; filename="https://bucket.example/x"'),
+      "attachment",
+    );
   });
 });
 

@@ -130,7 +130,7 @@ export function ExecutionArtifacts({
                     className="mt-3 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
                   >
                     {pendingId === artifact.id
-                      ? "Requesting grant…"
+                      ? "Downloading…"
                       : "Download"}
                   </button>
                 ) : (

@@ -391,6 +391,8 @@ Suggested UI flow:
 3. Download: mint a grant with CSRF, `GET` the returned `href` with cookies (stream via `grantId`), then discard the `href`. On `404`, mint again. On `403`, fail closed. Never store `storageRef`, bucket URLs, or the grant past expiry in `localStorage` / `sessionStorage` / React state.
 4. Legal hold / purge stay admin-only (`POST /artifacts/{id}/legal-hold`, `POST /retention/purge`) — not required for the viewer. Operator-safe copy: retention removes metadata + payload; legal hold preserves evidence.
 
+**Implemented (#55):** paths live in `apps/web/src/lib/execution-contract.ts` against the #56 map on `main`. Artifact cards show metadata only. Download mints a grant, streams via `grantId`, remints once on 404, and discards the href. E5.1/E5.2 cancel/retry/`indeterminate` stay intact.
+
 **Proxies:** `/api/control-plane/executions/{id}/artifacts`, `.../steps/{stepId}/logs`, `/artifacts/{id}`, `.../downloads`, `/artifact-downloads/{grantId}`. Session cookies, CSRF on POST, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Grant streams pass through bytes with `Cache-Control: no-store`. Grant hrefs and artifact bytes are never stored in `localStorage`.
 
 ## Initial implementation components

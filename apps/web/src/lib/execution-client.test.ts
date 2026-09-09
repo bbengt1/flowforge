@@ -763,10 +763,12 @@ describe("execution client", () => {
     }
   });
 
-  it("requests a download grant with CSRF, consumes it once, and drops the URL", async () => {
+  it("mints a download grant with CSRF, streams via grantId, and drops the href", async () => {
     withSession();
-    const opened: string[] = [];
+    const saved: { size: number; name: string }[] = [];
     const seen: { url?: string; body?: string; csrf?: string | null }[] = [];
+    const grantId = "88888888-8888-4888-8888-888888888888";
+    const artifactId = "77777777-7777-4777-8777-777777777777";
     globalThis.fetch = (async (input, init) => {
       const headers = new Headers(init?.headers);
       seen.push({
@@ -774,37 +776,124 @@ describe("execution client", () => {
         body: typeof init?.body === "string" ? init.body : "",
         csrf: headers.get(CSRF_HEADER),
       });
-      return new Response(
-        JSON.stringify({
-          artifactId: "77777777-7777-4777-8777-777777777777",
-          expiresAt: "2099-01-01T00:00:00.000Z",
-          downloadUrl: "https://short.example/grant?token=once",
-          handle: "ephemeral-handle",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      if (String(input).endsWith(`/artifacts/${artifactId}/downloads`)) {
+        return new Response(
+          JSON.stringify({
+            download: {
+              id: grantId,
+              artifactId,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              href: `/api/v1/artifact-downloads/${grantId}`,
+              method: "GET",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${grantId}`)) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": 'attachment; filename="plan.json"',
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+      return new Response("unexpected", { status: 500 });
     }) as typeof fetch;
 
     const result = await downloadExecutionArtifact(
       identity,
       EXECUTION_ID,
-      "77777777-7777-4777-8777-777777777777",
-      { open: (url) => opened.push(url) },
+      artifactId,
+      {
+        save: (blob, filename) => {
+          saved.push({ size: blob.size, name: filename });
+        },
+      },
     );
     assert.equal(result.ok, true);
-    assert.equal(
-      seen[0]?.url,
-      `/api/v1/executions/${EXECUTION_ID}/artifacts/77777777-7777-4777-8777-777777777777/download`,
-    );
+    assert.equal(seen[0]?.url, `/api/v1/artifacts/${artifactId}/downloads`);
     assert.equal(seen[0]?.csrf, "csrf-ok");
     assert.equal(seen[0]?.body, "{}");
-    assert.equal(opened.length, 1);
-    assert.equal(opened[0], "https://short.example/grant?token=once");
+    assert.equal(seen[1]?.url, `/api/v1/artifact-downloads/${grantId}`);
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0]?.name, "plan.json");
+    assert.equal(saved[0]?.size, 3);
     if (result.ok) {
+      assert.equal(result.grant.id, grantId);
+      assert.equal("href" in result.grant, false);
       assert.equal("url" in result.grant, false);
       assert.equal("handle" in result.grant, false);
-      assert.equal(JSON.stringify(result).includes("short.example"), false);
-      assert.equal(JSON.stringify(result).includes("ephemeral-handle"), false);
+      assert.equal(JSON.stringify(result).includes("artifact-downloads"), false);
+    }
+  });
+
+  it("remints the grant when the stream returns 404", async () => {
+    withSession();
+    const artifactId = "77777777-7777-4777-8777-777777777777";
+    const expiredId = "88888888-8888-4888-8888-888888888888";
+    const freshId = "99999999-9999-4999-8999-999999999999";
+    let mints = 0;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      urls.push(String(input));
+      if (String(input).endsWith(`/artifacts/${artifactId}/downloads`)) {
+        mints += 1;
+        const grantId = mints === 1 ? expiredId : freshId;
+        return new Response(
+          JSON.stringify({
+            download: {
+              id: grantId,
+              artifactId,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              href: `/api/v1/artifact-downloads/${grantId}`,
+              method: "GET",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${expiredId}`)) {
+        return new Response(
+          JSON.stringify({
+            type: "urn:flowforge:problem:not-found",
+            title: "Not Found",
+            status: 404,
+            detail: "Grant expired.",
+            instance: `/api/v1/artifact-downloads/${expiredId}`,
+            code: "not-found",
+            request_id: "grant-expired-16xxxx",
+          }),
+          { status: 404, headers: { "Content-Type": PROBLEM_JSON } },
+        );
+      }
+      if (String(input).endsWith(`/artifact-downloads/${freshId}`)) {
+        return new Response(new Uint8Array([9]), {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    }) as typeof fetch;
+
+    const result = await downloadExecutionArtifact(
+      identity,
+      EXECUTION_ID,
+      artifactId,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(mints, 2);
+    assert.deepEqual(urls, [
+      `/api/v1/artifacts/${artifactId}/downloads`,
+      `/api/v1/artifact-downloads/${expiredId}`,
+      `/api/v1/artifacts/${artifactId}/downloads`,
+      `/api/v1/artifact-downloads/${freshId}`,
+    ]);
+    if (result.ok) {
+      assert.equal(result.grant.id, freshId);
+      assert.equal("href" in result.grant, false);
     }
   });
 
@@ -844,7 +933,7 @@ describe("execution client", () => {
           title: "Forbidden",
           status: 403,
           detail: "execution.view is required.",
-          instance: `/api/v1/executions/${EXECUTION_ID}/artifacts/77777777-7777-4777-8777-777777777777/download`,
+          instance: `/api/v1/artifacts/77777777-7777-4777-8777-777777777777/downloads`,
           code: "forbidden",
           request_id: "dl-forbid-16xxxxxx",
         }),
@@ -863,27 +952,32 @@ describe("execution client", () => {
     }
 
     withSession();
-    let opened = 0;
+    let saved = 0;
+    const grantId = "88888888-8888-4888-8888-888888888888";
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
-          artifactId: "77777777-7777-4777-8777-777777777777",
-          expiresAt: "2020-01-01T00:00:00.000Z",
-          downloadUrl: "https://short.example/expired",
+          download: {
+            id: grantId,
+            artifactId: "77777777-7777-4777-8777-777777777777",
+            expiresAt: "2020-01-01T00:00:00.000Z",
+            href: `/api/v1/artifact-downloads/${grantId}`,
+            method: "GET",
+          },
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 201, headers: { "Content-Type": "application/json" } },
       )) as typeof fetch;
 
     const expired = await downloadExecutionArtifact(
       identity,
       EXECUTION_ID,
       "77777777-7777-4777-8777-777777777777",
-      { open: () => {
-        opened += 1;
+      { save: () => {
+        saved += 1;
       } },
     );
     assert.equal(expired.ok, false);
-    assert.equal(opened, 0);
+    assert.equal(saved, 0);
     if (!expired.ok) {
       assert.equal(expired.statusCode, 410);
     }

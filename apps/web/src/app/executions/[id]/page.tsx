@@ -35,8 +35,11 @@ export default async function ExecutionDetailPage({
           or canceled core <code className="font-mono text-sm">data.*</code>{" "}
           / <code className="font-mono text-sm">flow.*</code> steps only —
           never <code className="font-mono text-sm">indeterminate</code>.
-          Artifacts list encrypted metadata only. Each download requests
-          a new short-lived grant — HTTP 403 and expired grants fail
+          Artifacts list encrypted metadata only. Download mints{" "}
+          <code className="font-mono text-sm">POST /artifacts/{"{id}"}/downloads</code>{" "}
+          then streams{" "}
+          <code className="font-mono text-sm">GET /artifact-downloads/{"{grantId}"}</code>
+          . Grants expire in 60s; HTTP 404 remints once; 403 fails
           closed. Secrets appear as{" "}
           <code className="font-mono text-sm">[redacted]</code>.
         </p>

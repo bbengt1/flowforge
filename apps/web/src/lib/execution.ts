@@ -28,6 +28,7 @@ import {
   RETRY_INDETERMINATE_MESSAGE,
   RETRY_UNAVAILABLE_MESSAGE,
   executionHistoryHref,
+  isSameOriginGrantHref,
 } from "./execution-contract.ts";
 import {
   ARTIFACT_LOCATOR_KEYS,
@@ -943,7 +944,10 @@ export function boundRedactedDisplay(
   if (!text || text === "—") {
     return {
       stepId: "",
+      lines: [],
       text: "—",
+      offset: 0,
+      nextOffset: 0,
       truncated: false,
       byteCount: 0,
       maxBytes: maxChars,
@@ -959,9 +963,13 @@ export function boundRedactedDisplay(
     text = `${text.slice(0, maxChars)}…`;
     truncated = true;
   }
+  const boundedLines = text === "—" ? [] : text.split("\n");
   return {
     stepId: "",
+    lines: boundedLines,
     text,
+    offset: 0,
+    nextOffset: boundedLines.length,
     truncated,
     byteCount: text.length,
     maxBytes: maxChars,
@@ -1002,9 +1010,15 @@ export function parseExecutionLogs(
   const truncated =
     bounded.truncated ||
     readBoolean(row?.truncated, row?.truncatedBytes);
+  const offset = readNumber(row?.offset) ?? 0;
+  const nextOffset =
+    readNumber(row?.nextOffset, row?.next_offset) ??
+    offset + bounded.lines.length;
   return {
     ...bounded,
     stepId,
+    offset,
+    nextOffset,
     truncated,
     byteCount: readNumber(row?.byteCount, row?.byte_count) ?? bounded.byteCount,
     maxBytes: readNumber(row?.maxBytes, row?.max_bytes) ?? bounded.maxBytes,
@@ -1012,10 +1026,11 @@ export function parseExecutionLogs(
 }
 
 export type EphemeralDownloadGrant = {
+  id: string;
   artifactId: string;
   expiresAt: string;
-  url: string;
-  handle: string;
+  href: string;
+  method: string;
 };
 
 export function parseDownloadGrant(
@@ -1028,36 +1043,39 @@ export function parseDownloadGrant(
   if (!row) {
     return null;
   }
-  const nested = asRecord(row.grant) ?? asRecord(row.download) ?? row;
-  const id =
-    readString(nested.artifactId, nested.artifact_id, nested.id) || artifactId;
-  if (!id) {
+  const nested = asRecord(row.download) ?? asRecord(row.grant) ?? row;
+  const id = readString(nested.id);
+  const artifact =
+    readString(nested.artifactId, nested.artifact_id) || artifactId;
+  if (!isUuid(id) || !artifact) {
     return null;
   }
+  const rawHref = readString(nested.href);
+  const href = isSameOriginGrantHref(rawHref, id) ? rawHref : "";
   return {
-    artifactId: id,
+    id,
+    artifactId: artifact,
     expiresAt: readString(nested.expiresAt, nested.expires_at),
-    url: readString(
-      nested.downloadUrl,
-      nested.download_url,
-      nested.url,
-      nested.href,
-      nested.location,
-    ),
-    handle: readString(nested.handle, nested.downloadToken, nested.download_token),
+    href,
+    method: readString(nested.method) || "GET",
   };
 }
 
 export function wipeDownloadGrant(grant: EphemeralDownloadGrant): void {
-  grant.url = "";
-  grant.handle = "";
+  grant.href = "";
+}
+
+export function forgetDownloadGrant(grant: EphemeralDownloadGrant): void {
+  grant.href = "";
+  grant.id = "";
 }
 
 export function downloadGrantView(
-  grant: Pick<EphemeralDownloadGrant, "artifactId" | "expiresAt">,
+  grant: Pick<EphemeralDownloadGrant, "id" | "artifactId" | "expiresAt">,
   now = Date.now(),
 ): DownloadGrantView {
   return {
+    id: grant.id,
     artifactId: grant.artifactId,
     expiresAt: grant.expiresAt,
     expired: isDownloadGrantExpired(grant, now),

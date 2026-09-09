@@ -4,9 +4,11 @@ import {
   CANCEL_APPLIED_MESSAGE,
   CANCEL_FORBIDDEN_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
+  ARTIFACT_DOWNLOADS_COLLECTION,
   ARTIFACT_UPSTREAM_COLLECTION,
   EXECUTION_CANCEL_ACTION,
   EXECUTION_API_PR,
+  EXECUTION_ARTIFACT_API_PR,
   EXECUTION_RETRY_ROUTE_PUBLISHED,
   EXECUTION_STATUS_STORY,
   EXECUTION_UPSTREAM_COLLECTION,
@@ -21,8 +23,6 @@ import {
   executionAuditEventsPath,
   executionCancelPath,
   executionHistoryHref,
-  executionArtifactDownloadPath,
-  executionArtifactPath,
   executionArtifactsPath,
   executionJobsPath,
   executionPath,
@@ -32,7 +32,9 @@ import {
   executionStepRetryPath,
   executionStepsPath,
   artifactDownloadPath,
+  artifactDownloadStreamPath,
   artifactPath,
+  sameOriginGrantHref,
   buildDownloadGrantBody,
   listExecutionsPath,
   listWorkflowExecutionsPath,
@@ -174,6 +176,7 @@ describe("execution contract adapter", () => {
     assert.equal(Object.hasOwn(buildCancelBody(), "id"), false);
     assert.equal(Object.hasOwn(buildCancelBody(), "workspaceId"), false);
     assert.equal(EXECUTION_API_PR, 53);
+    assert.equal(EXECUTION_ARTIFACT_API_PR, 56);
     assert.equal(EXECUTION_RETRY_ROUTE_PUBLISHED, true);
     assert.equal(
       executionRetryPath(EXECUTION_ID),
@@ -194,22 +197,23 @@ describe("execution contract adapter", () => {
       `/executions/${EXECUTION_ID}/artifacts`,
     );
     assert.equal(
-      executionArtifactPath(EXECUTION_ID, VERSION_ID),
-      `/executions/${EXECUTION_ID}/artifacts/${VERSION_ID}`,
-    );
-    assert.equal(
-      executionArtifactDownloadPath(EXECUTION_ID, VERSION_ID),
-      `/executions/${EXECUTION_ID}/artifacts/${VERSION_ID}/download`,
-    );
-    assert.equal(
       executionStepLogsPath(EXECUTION_ID, VERSION_ID),
       `/executions/${EXECUTION_ID}/steps/${VERSION_ID}/logs`,
     );
     assert.equal(artifactPath(VERSION_ID), `/artifacts/${VERSION_ID}`);
     assert.equal(
       artifactDownloadPath(VERSION_ID),
-      `/artifacts/${VERSION_ID}/download`,
+      `/artifacts/${VERSION_ID}/downloads`,
     );
+    assert.equal(
+      artifactDownloadStreamPath(VERSION_ID),
+      `/artifact-downloads/${VERSION_ID}`,
+    );
+    assert.equal(
+      sameOriginGrantHref(VERSION_ID),
+      `/api/v1/artifact-downloads/${VERSION_ID}`,
+    );
+    assert.equal(ARTIFACT_DOWNLOADS_COLLECTION, "artifact-downloads");
     assert.deepEqual(buildDownloadGrantBody(), {});
     assert.equal(Object.hasOwn(buildDownloadGrantBody(), "workspaceId"), false);
   });
@@ -242,14 +246,12 @@ describe("execution contract adapter", () => {
     );
     assert.equal(ARTIFACT_UPSTREAM_COLLECTION, "artifacts");
     assert.equal(
-      retargetExecutionApiPath(
-        `/api/v1/executions/${EXECUTION_ID}/artifacts/${VERSION_ID}/download`,
-      ),
-      `/api/v1/executions/${EXECUTION_ID}/artifacts/${VERSION_ID}/download`,
+      retargetExecutionApiPath(`/api/v1/artifacts/${VERSION_ID}/downloads`),
+      `/api/v1/artifacts/${VERSION_ID}/downloads`,
     );
     assert.equal(
-      retargetExecutionApiPath(`/api/v1/artifacts/${VERSION_ID}/download`),
-      `/api/v1/artifacts/${VERSION_ID}/download`,
+      retargetExecutionApiPath(`/api/v1/artifact-downloads/${VERSION_ID}`),
+      `/api/v1/artifact-downloads/${VERSION_ID}`,
     );
   });
 });
@@ -685,6 +687,24 @@ describe("execution artifacts and bounded logs", () => {
     assert.equal(logs.text.includes("-----BEGIN"), false);
     assert.equal(logs.stepId, "step-1");
 
+    const windowed = parseExecutionLogs(
+      {
+        lines: ["applied namespace", "token: [redacted]"],
+        offset: 0,
+        nextOffset: 2,
+        truncated: false,
+        maxBytes: 16384,
+      },
+      "step-1",
+    );
+    assert.deepEqual(windowed.lines.slice(0, 2), [
+      "applied namespace",
+      "token: [redacted]",
+    ]);
+    assert.equal(windowed.offset, 0);
+    assert.equal(windowed.nextOffset, 2);
+    assert.equal(windowed.maxBytes, 16384);
+
     const huge = "x".repeat(9000);
     const bounded = boundRedactedDisplay(huge);
     assert.equal(bounded.truncated, true);
@@ -698,21 +718,45 @@ describe("execution artifacts and bounded logs", () => {
   });
 
   it("fails closed on expired grants and never keeps locators on the view", () => {
+    const grantId = "88888888-8888-4888-8888-888888888888";
     const grant = parseDownloadGrant({
-      artifactId: ARTIFACT_ID,
-      expiresAt: "2020-01-01T00:00:00.000Z",
-      downloadUrl: "https://bucket.s3.amazonaws.com/art?token=abc",
-      handle: "grant-secret",
+      download: {
+        id: grantId,
+        artifactId: ARTIFACT_ID,
+        expiresAt: "2020-01-01T00:00:00.000Z",
+        href: `/api/v1/artifact-downloads/${grantId}`,
+        method: "GET",
+      },
     });
     assert.ok(grant);
     assert.equal(isDownloadGrantExpired(grant as { expiresAt: string }), true);
-    const view = downloadGrantView(grant as { artifactId: string; expiresAt: string });
+    const view = downloadGrantView(grant!);
     assert.equal(view.expired, true);
+    assert.equal(view.id, grantId);
+    assert.equal("href" in view, false);
     assert.equal("url" in view, false);
     assert.equal("handle" in view, false);
     wipeDownloadGrant(grant!);
-    assert.equal(grant?.url, "");
-    assert.equal(grant?.handle, "");
+    assert.equal(grant?.href, "");
+    assert.equal(
+      parseDownloadGrant({
+        download: {
+          id: grantId,
+          artifactId: ARTIFACT_ID,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          href: "https://bucket.s3.amazonaws.com/art?token=abc",
+          method: "GET",
+        },
+      })?.href,
+      "",
+    );
+    assert.equal(
+      parseDownloadGrant({
+        artifactId: ARTIFACT_ID,
+        downloadUrl: "https://bucket.s3.amazonaws.com/art?token=abc",
+      }),
+      null,
+    );
     assert.match(downloadGrantFailureMessage({ expired: true }), /expired/);
     assert.match(downloadGrantFailureMessage({ forbidden: true }), /403/);
   });

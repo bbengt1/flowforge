@@ -256,12 +256,17 @@ export function ExecutionDetail({
       artifactId,
       {
         artifact,
-        open: (url) => {
-          const link = document.createElement("a");
-          link.href = url;
-          link.rel = "noopener noreferrer";
-          link.target = "_blank";
-          link.click();
+        save: (blob, filename) => {
+          const objectUrl = URL.createObjectURL(blob);
+          try {
+            const link = document.createElement("a");
+            link.href = objectUrl;
+            link.download = filename;
+            link.rel = "noopener noreferrer";
+            link.click();
+          } finally {
+            URL.revokeObjectURL(objectUrl);
+          }
         },
       },
     );

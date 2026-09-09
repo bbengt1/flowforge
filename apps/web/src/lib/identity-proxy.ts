@@ -16,6 +16,7 @@ import {
 import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
 import {
   EXECUTION_PROXY_ROUTES,
+  isArtifactDownloadStreamSegments,
   isExecutionProxySegments,
   retargetExecutionApiPath,
 } from "./execution-contract.ts";
@@ -259,9 +260,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // approval-contract.ts.
   ...APPROVAL_PROXY_ROUTES,
   // E5.1/E5.2/E5.3 execution UI. Paths live in execution-contract.ts.
-  // POST start stays above this block. Cancel/retry/download are CSRF
+  // POST start stays above this block. Cancel/retry/downloads are CSRF
   // POSTs. Do not invent POST /executions or any /jobs/* worker route.
   // GET /workspace/artifacts/{id} above is the E2.2 isolation hook.
+  // GET /artifact-downloads/{grantId} streams bytes (not JSON).
   ...EXECUTION_PROXY_ROUTES,
 ];
 
@@ -384,6 +386,44 @@ export type IdentityProxyFailure = {
 
 export type IdentityProxyResult = IdentityProxySuccess | IdentityProxyFailure;
 
+export type IdentityProxyStreamSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  contentType: string | null;
+  contentDisposition: string | null;
+  cacheControl: string | null;
+  body: ArrayBuffer;
+  setCookies: string[];
+  csrfToken: string | null;
+};
+
+export type IdentityProxyStreamResult =
+  | IdentityProxyStreamSuccess
+  | IdentityProxyFailure;
+
+export function isArtifactDownloadStreamTarget(
+  method: string,
+  segments: string[],
+): boolean {
+  return method.toUpperCase() === "GET" && isArtifactDownloadStreamSegments(segments);
+}
+
+/** Never forward bucket URLs or header injection via Content-Disposition. */
+export function sanitizeContentDisposition(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || /[\r\n]/.test(trimmed)) {
+    return null;
+  }
+  if (/https?:|s3:|gs:|azblob:|storageRef/i.test(trimmed)) {
+    return "attachment";
+  }
+  if (!/^attachment\b/i.test(trimmed)) {
+    return "attachment";
+  }
+  return trimmed.slice(0, 256);
+}
+
 export async function fetchIdentityControlPlane(options: {
   method: string;
   apiPath: string;
@@ -498,6 +538,101 @@ export async function fetchIdentityControlPlane(options: {
       setCookies: [],
       csrfToken: null,
     };
+  }
+}
+
+/**
+ * Binary hop for GET /artifact-downloads/{grantId}. Never JSON-parses
+ * success bodies or logs bytes / grant tokens.
+ */
+export async function fetchIdentityControlPlaneStream(options: {
+  method: string;
+  apiPath: string;
+  instance: string;
+  requestId?: string;
+  identityHeaders: Headers;
+  requestSecure?: boolean;
+}): Promise<IdentityProxyStreamResult> {
+  const requestId = resolveRequestId(options.requestId);
+  const url = `${getApiInternalUrl()}${options.apiPath}`;
+  const headers = pickIsolationForwardedHeaders(options.identityHeaders);
+  pickSessionCredentialHeaders(options.identityHeaders, headers);
+  pickConditionalHeaders(options.identityHeaders, headers);
+  headers.set(REQUEST_ID_HEADER, requestId);
+  headers.set("Accept", "application/octet-stream, application/problem+json");
+
+  try {
+    const response = await fetch(url, {
+      method: options.method,
+      cache: "no-store",
+      signal: AbortSignal.timeout(IDENTITY_TIMEOUT_MS),
+      headers,
+    });
+
+    const echoed = resolveRequestId(
+      response.headers.get(REQUEST_ID_HEADER) ?? requestId,
+    );
+    const contentType = response.headers.get("content-type");
+    const setCookies = rewriteUpstreamSetCookies(collectSetCookies(response.headers), {
+      requestSecure: options.requestSecure === true,
+    });
+    const csrfToken = response.headers.get(CSRF_HEADER)?.trim() || null;
+    const body = await response.arrayBuffer();
+
+    if (isProblemContentType(contentType) || !response.ok) {
+      const parsed = decodeJsonBuffer(body);
+      const problem = isProblemDetails(parsed)
+        ? parsed
+        : upstreamProblem(
+            response.status,
+            options.instance,
+            echoed,
+            "The control plane returned a problem response that could not be parsed.",
+          );
+      return {
+        ok: false,
+        statusCode: response.status,
+        requestId: problem.request_id || echoed,
+        contentType: PROBLEM_JSON,
+        problem,
+        setCookies,
+        csrfToken,
+      };
+    }
+
+    return {
+      ok: true,
+      statusCode: response.status,
+      requestId: echoed,
+      contentType: mediaType(contentType) || "application/octet-stream",
+      contentDisposition: response.headers.get("content-disposition"),
+      cacheControl: response.headers.get("cache-control"),
+      body,
+      setCookies,
+      csrfToken,
+    };
+  } catch {
+    const problem = unreachableProblem(options.instance, requestId);
+    return {
+      ok: false,
+      statusCode: 503,
+      requestId,
+      contentType: PROBLEM_JSON,
+      problem,
+      setCookies: [],
+      csrfToken: null,
+    };
+  }
+}
+
+function decodeJsonBuffer(body: ArrayBuffer): unknown {
+  if (body.byteLength === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return null;
   }
 }
 

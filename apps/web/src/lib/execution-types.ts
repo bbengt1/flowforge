@@ -1,4 +1,4 @@
-/** Shapes from jonny's E5.1 OpenAPI (#51), E5.2 #53 cancel/retry, and the E5.3 artifact scaffold. Do not invent fields or routes. */
+/** Shapes from jonny's E5.1 OpenAPI (#51), E5.2 #53 cancel/retry, and E5.3 #56 artifacts. Do not invent fields or routes. */
 
 import type { OpsConfigPin } from "./ops-config-types.ts";
 
@@ -183,14 +183,18 @@ export type ExecutionArtifact = {
 
 export type ExecutionLogSlice = {
   stepId: string;
+  lines: string[];
   text: string;
+  offset: number;
+  nextOffset: number;
   truncated: boolean;
   byteCount: number;
   maxBytes: number;
 };
 
-/** Safe operator view of a grant. URL/handle must never land here. */
+/** Safe operator view of a grant. href / URL / handle must never land here. */
 export type DownloadGrantView = {
+  id: string;
   artifactId: string;
   expiresAt: string;
   expired: boolean;

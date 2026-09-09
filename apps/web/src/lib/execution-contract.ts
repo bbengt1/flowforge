@@ -9,16 +9,15 @@
  * from polling `GET /api/v1/executions/{id}` — never `/jobs/*`
  * (claim / heartbeat / complete / fail / recover).
  *
- * Artifact routes are scaffolded against the documented E5.3 outcome
- * (encrypted metadata + short-lived grants). Flip the UPSTREAM_*
- * constants in this file when jonny publishes the map — do not stack
- * on an API feature branch.
+ * Artifact routes follow jonny's #56 map on `main`. Do not use nested
+ * `GET /executions/{id}/artifacts/{id}` or `POST …/download`. Do not
+ * stack on an API feature branch.
  *
  * Browser stays on same-origin `/api/v1/…`. Next rewrites to
  * `/api/control-plane/*`; identity-proxy maps onto the Go API.
  *
- * Relates to #48 / Part of #45. Cites #53. Do not change `apps/api`.
- * Do not close #48 alone.
+ * Relates to #48 / Part of #45. Cites #56 (artifacts) and #53 (cancel).
+ * Do not change `apps/api`. Do not close #48 alone.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -29,6 +28,8 @@ export const EXECUTION_DISPATCH_STORY = 47;
 export const EXECUTION_STATUS_STORY = 48;
 export const EXECUTION_EPIC = 45;
 export const EXECUTION_API_PR = 53;
+/** Jonny's E5.3 artifact / grant / stream map on `main`. */
+export const EXECUTION_ARTIFACT_API_PR = 56;
 
 export const EXECUTION_UI_COLLECTION = "executions";
 export const EXECUTION_UPSTREAM_COLLECTION = "executions";
@@ -41,12 +42,18 @@ export const EXECUTION_CANCEL_UPSTREAM_ACTION = "cancel";
 export const EXECUTION_RETRY_ACTION = "retry";
 export const EXECUTION_ARTIFACTS_ACTION = "artifacts";
 export const EXECUTION_ARTIFACTS_UPSTREAM_ACTION = "artifacts";
-export const EXECUTION_DOWNLOAD_ACTION = "download";
-export const EXECUTION_DOWNLOAD_UPSTREAM_ACTION = "download";
+export const EXECUTION_DOWNLOAD_ACTION = "downloads";
+export const EXECUTION_DOWNLOAD_UPSTREAM_ACTION = "downloads";
 export const EXECUTION_LOGS_ACTION = "logs";
 export const EXECUTION_LOGS_UPSTREAM_ACTION = "logs";
 export const ARTIFACT_UI_COLLECTION = "artifacts";
 export const ARTIFACT_UPSTREAM_COLLECTION = "artifacts";
+export const ARTIFACT_DOWNLOADS_COLLECTION = "artifact-downloads";
+export const ARTIFACT_DOWNLOADS_UPSTREAM_COLLECTION = "artifact-downloads";
+/** #56: default grant TTL is 60s (`ARTIFACT_DOWNLOAD_TTL`). */
+export const ARTIFACT_DOWNLOAD_TTL_MS = 60_000;
+export const EXECUTION_LOG_LIMIT_DEFAULT = 200;
+export const EXECUTION_LOG_MAX_BYTES_DEFAULT = 16_384;
 /** #53 published POST …/retry and POST …/steps/{stepId}/retry. */
 export const EXECUTION_RETRY_ROUTE_PUBLISHED = true;
 /** Poll GET /executions/{id} while queued/running. Never poll /jobs/*. */
@@ -123,16 +130,16 @@ export const ARTIFACT_METADATA_HELP =
   "Artifact cards show encrypted metadata only: name, digest, size, classification, and retention. Bucket credentials and durable public URLs are never displayed or stored.";
 
 export const DOWNLOAD_GRANT_HELP =
-  "Each download requests a new short-lived grant. Authorization is re-evaluated per request. The grant URL or handle is used once and discarded — it is never persisted in UI state.";
+  "Each download POSTs /artifacts/{id}/downloads (CSRF, 60s TTL) then streams GET /artifact-downloads/{grantId} with cookies. Authorization is re-evaluated per request. The grant href is used once and discarded — it is never persisted in UI state.";
 
 export const DOWNLOAD_FORBIDDEN_MESSAGE =
   "Download authorization failed (HTTP 403). Auth is re-evaluated per grant. This UI fails closed and does not retry with a cached URL.";
 
 export const DOWNLOAD_EXPIRED_MESSAGE =
-  "The download grant expired. Request a new grant — this UI does not reuse an expired URL or handle.";
+  "The download grant expired (HTTP 404). This UI remints once and does not reuse an expired href.";
 
 export const DOWNLOAD_APPLIED_MESSAGE =
-  "Download grant accepted. The short-lived locator was used once and discarded.";
+  "Download streamed through the short-lived grant. The href was discarded and is not stored.";
 
 export const DOWNLOAD_CSRF_HELP =
   "Download grant sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called. Grant tokens are never logged.";
@@ -204,34 +211,61 @@ export function executionStepRetryPath(
 export function executionStepLogsPath(
   executionId: string,
   stepId: string,
+  query: { limit?: number; offset?: number; maxBytes?: number } = {},
 ): string {
-  return `${executionStepPath(executionId, stepId)}/${EXECUTION_LOGS_ACTION}`;
+  return appendQuery(
+    `${executionStepPath(executionId, stepId)}/${EXECUTION_LOGS_ACTION}`,
+    [
+      ["limit", query.limit],
+      ["offset", query.offset],
+      ["maxBytes", query.maxBytes],
+    ],
+  );
 }
 
 export function executionArtifactsPath(executionId: string): string {
   return `${executionPath(executionId)}/${EXECUTION_ARTIFACTS_ACTION}`;
 }
 
-export function executionArtifactPath(
-  executionId: string,
-  artifactId: string,
-): string {
-  return `${executionArtifactsPath(executionId)}/${artifactId}`;
-}
-
-export function executionArtifactDownloadPath(
-  executionId: string,
-  artifactId: string,
-): string {
-  return `${executionArtifactPath(executionId, artifactId)}/${EXECUTION_DOWNLOAD_ACTION}`;
-}
-
 export function artifactPath(artifactId: string): string {
   return `/${ARTIFACT_UI_COLLECTION}/${artifactId}`;
 }
 
+/** POST /artifacts/{id}/downloads — mint a 60s grant. Not POST …/download. */
 export function artifactDownloadPath(artifactId: string): string {
   return `${artifactPath(artifactId)}/${EXECUTION_DOWNLOAD_ACTION}`;
+}
+
+export function artifactDownloadsPath(artifactId: string): string {
+  return artifactDownloadPath(artifactId);
+}
+
+/** GET /artifact-downloads/{grantId} — stream bytes with cookies. */
+export function artifactDownloadStreamPath(grantId: string): string {
+  return `/${ARTIFACT_DOWNLOADS_COLLECTION}/${grantId}`;
+}
+
+export function sameOriginGrantHref(grantId: string): string {
+  return `/api/v1/${ARTIFACT_DOWNLOADS_COLLECTION}/${grantId}`;
+}
+
+/** Accept only same-origin grant streams. Reject bucket / signed URLs. */
+export function isSameOriginGrantHref(href: string, grantId: string): boolean {
+  const folded = href.trim();
+  if (!folded || folded.includes("://") || folded.startsWith("//")) {
+    return false;
+  }
+  const expected = sameOriginGrantHref(grantId);
+  const relative = artifactDownloadStreamPath(grantId);
+  return folded === expected || folded === relative;
+}
+
+export function isArtifactDownloadStreamSegments(segments: string[]): boolean {
+  return (
+    segments.length === 2 &&
+    segments[0] === ARTIFACT_DOWNLOADS_COLLECTION &&
+    isResourceId(segments[1])
+  );
 }
 
 export function workflowExecutionRetryPath(
@@ -339,7 +373,8 @@ export function isExecutionProxySegments(segments: string[]): boolean {
   if (
     segments[0] === EXECUTION_UI_COLLECTION ||
     segments[0] === WORKSPACE_AUDIT_EVENTS_COLLECTION ||
-    segments[0] === ARTIFACT_UI_COLLECTION
+    segments[0] === ARTIFACT_UI_COLLECTION ||
+    segments[0] === ARTIFACT_DOWNLOADS_COLLECTION
   ) {
     return true;
   }
@@ -396,6 +431,17 @@ export function retargetExecutionApiPath(uiApiPath: string): string {
     uiApiPath.startsWith(`/api/v1/${WORKSPACE_AUDIT_EVENTS_COLLECTION}?`)
   ) {
     return uiApiPath;
+  }
+  const downloads = retargetCollectionPath(
+    uiApiPath,
+    ARTIFACT_DOWNLOADS_COLLECTION,
+    ARTIFACT_DOWNLOADS_UPSTREAM_COLLECTION,
+  );
+  if (
+    downloads !== uiApiPath ||
+    uiApiPath.startsWith(`/api/v1/${ARTIFACT_DOWNLOADS_COLLECTION}`)
+  ) {
+    return downloads;
   }
   const artifacts = retargetCollectionPath(
     uiApiPath,
@@ -454,7 +500,9 @@ function eq(segments: string[], expected: readonly string[]): boolean {
  * POST start stays on `/workflows/{id}/executions` (already
  * allowlisted with CSRF). Do not add POST /executions or any
  * `/jobs/*` worker route (claim / heartbeat / complete / fail /
- * recover). Cancel and retry follow the #53 map.
+ * recover). Cancel and retry follow the #53 map. Artifact grants
+ * follow the #56 map — no nested GET …/artifacts/{id} and no
+ * POST …/download.
  */
 export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   { methods: ["GET"], match: (s) => eq(s, [EXECUTION_UI_COLLECTION]) },
@@ -490,25 +538,6 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
   {
     methods: ["GET"],
     match: (s) =>
-      s.length === 4 &&
-      s[0] === EXECUTION_UI_COLLECTION &&
-      isResourceId(s[1]) &&
-      s[2] === EXECUTION_ARTIFACTS_ACTION &&
-      isResourceId(s[3]),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 5 &&
-      s[0] === EXECUTION_UI_COLLECTION &&
-      isResourceId(s[1]) &&
-      s[2] === EXECUTION_ARTIFACTS_ACTION &&
-      isResourceId(s[3]) &&
-      s[4] === EXECUTION_DOWNLOAD_ACTION,
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
       s.length === 3 &&
       s[0] === EXECUTION_UI_COLLECTION &&
       isResourceId(s[1]) &&
@@ -531,6 +560,13 @@ export const EXECUTION_PROXY_ROUTES: readonly ExecutionProxyRoute[] = [
       s[0] === ARTIFACT_UI_COLLECTION &&
       isResourceId(s[1]) &&
       s[2] === EXECUTION_DOWNLOAD_ACTION,
+  },
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 &&
+      s[0] === ARTIFACT_DOWNLOADS_COLLECTION &&
+      isResourceId(s[1]),
   },
   {
     methods: ["POST"],
