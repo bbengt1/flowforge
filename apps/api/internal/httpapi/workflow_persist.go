@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -434,6 +435,29 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 	if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 && s.ops != nil {
 		if _, err := s.ops.Resolve(r.Context(), scope, refs); err != nil {
 			writeOpsError(w, r, err)
+			return
+		}
+	}
+	if s.approvals != nil {
+		eval, evalErr := s.evaluateVersion(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), req.WorkflowVersionID)
+		if evalErr != nil {
+			writeApprovalEvalError(w, r, evalErr)
+			return
+		}
+		if eval.Decision == policy.DecisionDeny {
+			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
+			return
+		}
+		if _, gateErr := s.dispatchApprovalsOK(r.Context(), scope, eval, strings.TrimSpace(r.PathValue("workflowId")), ver.ID); gateErr != nil {
+			if errors.Is(gateErr, errPolicyDenied) {
+				WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
+				return
+			}
+			if errors.Is(gateErr, errApprovalRequired) {
+				WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Dispatch requires a valid approval bound to the current workflow version, target, policy revision, and operation.")
+				return
+			}
+			writeApprovalError(w, r, gateErr)
 			return
 		}
 	}

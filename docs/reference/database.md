@@ -84,7 +84,8 @@ Credentials use envelope encryption: the database stores ciphertext, encrypted d
 | `execution_steps` | `id`, `execution_id`, `node_id`, `node_type`, `attempt`, `status`, `lease_id`, `fencing_token`, `idempotency_key`, `policy_snapshot`, `target_snapshot`, `input_redacted`, `output_redacted`, `error_redacted`, timestamps | Unique `(execution_id, node_id, attempt)`; never store secret/plain raw output. |
 | `execution_jobs` | `id`, `execution_step_id`, `status`, `available_at`, `lease_expires_at`, `heartbeat_at`, `worker_id`, `fencing_token`, `attempt` | Durable dispatch record; at most one active claim for a step attempt. |
 | `execution_artifacts` | `id`, `workspace_id`, `execution_id`, `execution_step_id`, `kind`, `storage_ref`, `digest`, `size_bytes`, `content_classification`, `redacted`, `expires_at` | Object-store reference with integrity/retention metadata. |
-| `approvals` | `id`, `workspace_id`, `execution_id`, `execution_step_id`, `policy_version_id`, `status`, `requested_by`, `decided_by`, timestamps | Approval is version/policy-pinned and cannot be reused. |
+| `approvals` | `id`, `workspace_id`, `workflow_id`, `workflow_version_id`, `workflow_digest`, `execution_id`, `node_id`, `operation`, target/policy version columns, `binding_fingerprint`, `approver_role`, `status`, `expires_at`, `requested_by`, `decided_by` | Approval is bound to workflow version, target revision, policy revision, operation, and expiry. Pending/approved rows are invalidated when those bindings change. Unique active fingerprint. |
+| `approval_events` | `id`, `workspace_id`, `approval_id`, `event_type`, `actor_id`, `details`, `occurred_at` | Append-only, secret-free decision/invalidation audit. |
 | `audit_events` | `id`, `workspace_id`, `actor_id`, `host_context_redacted`, `action`, `resource_type`, `resource_id`, `outcome`, `correlation_id`, `details_redacted`, `occurred_at` | Append-only, separately retained and access controlled. |
 
 Workers claim eligible jobs with `FOR UPDATE SKIP LOCKED`. A claim increments and returns `fencing_token`; every heartbeat, completion, and result write requires the matching active lease and token. A stale worker cannot overwrite a later worker's result. Lease expiry resolves to safe provider verification when available; otherwise the step becomes `indeterminate`, not silently retried.
@@ -116,6 +117,7 @@ Migrations are forward-only, transaction-safe where PostgreSQL permits, and incl
 1. tenant/workspace/identity/RBAC and RLS helpers;
 2. workflows, drafts, immutable versions, triggers, and templates;
 3. credentials, target/profile/policy versioning, and artifact metadata;
-4. executions, steps, jobs/leases, approvals, artifacts, and audit partitions.
+4. executions, steps, jobs/leases, artifacts, and audit partitions;
+5. E4.3 `approvals` / `approval_events` (policy-bound requirements; E10 extends wait/resume).
 
 Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test ./...`, `go run ./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.

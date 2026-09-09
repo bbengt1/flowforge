@@ -246,6 +246,9 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/ssh-targets", "/command-profiles", "/runtime-profiles", "/connections",
 		"/recipient-lists", "/message-templates", "/response-schemas", "/policies",
 		"/workflows/{workflowId}/versions/{versionId}/pins",
+		"/policy/evaluate", "/approvals/catalog", "/approvals",
+		"/approvals/{approvalId}", "/approvals/{approvalId}/decide",
+		"/approvals/{approvalId}/events",
 	} {
 		if paths[p] == nil {
 			t.Fatalf("openapi missing path %s", p)

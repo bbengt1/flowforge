@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.8.0
+  version: 0.9.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -2412,6 +2412,261 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /policy/evaluate:
+    post:
+      operationId: evaluatePolicy
+      summary: Evaluate target/action policy before dispatch
+      description: |
+        Requires `workflow.view`. Resolves current published target and policy
+        revisions for a pinned workflow version. Returns allow / deny /
+        approval-required plus bound requirement shapes. Host-supplied
+        workspace IDs are rejected. Cross-workspace UUIDs are `404`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyEvaluateRequest"
+      responses:
+        "200":
+          description: Evaluation
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyEvaluateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /approvals/catalog:
+    get:
+      operationId: getApprovalCatalog
+      summary: Approval statuses and decisions
+      description: Requires `approval.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /approvals:
+    get:
+      operationId: listApprovals
+      summary: List approval requirements
+      description: Requires `approval.view`. Stale bindings are refreshed fail-closed.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected, expired, invalidated]
+        - name: workflowId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: workflowVersionId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: executionId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Approvals
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createApprovals
+      summary: Materialize approval requirements
+      description: |
+        Requires `workflow.execute`. Creates pending rows bound to the current
+        workflow version, target revision, policy revision, operation, and
+        expiry. Idempotent on an active binding fingerprint.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalCreateRequest"
+      responses:
+        "201":
+          description: Created or existing active bindings
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /approvals/{approvalId}:
+    get:
+      operationId: getApproval
+      summary: Get one approval
+      description: Requires `approval.view`. Refreshes expiry and binding freshness.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/ApprovalID"
+      responses:
+        "200":
+          description: Approval
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /approvals/{approvalId}/decide:
+    post:
+      operationId: decideApproval
+      summary: Approve or reject
+      description: |
+        Requires `approval.decide` and the bound `approverRole` (or `admin`).
+        Authorization is rechecked server-side. The requester cannot decide
+        their own approval. Changed workflow version, target revision, or
+        policy revision invalidates the row (`409`).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/ApprovalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecideRequest"
+      responses:
+        "200":
+          description: Decision
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /approvals/{approvalId}/events:
+    get:
+      operationId: listApprovalEvents
+      summary: Approval audit events
+      description: Requires `approval.view`. Secret-free.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/ApprovalID"
+      responses:
+        "200":
+          description: Events
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   pathItems:
     OpsCollection:
@@ -2829,6 +3084,13 @@ components:
       schema:
         type: string
         format: uuid
+    ApprovalID:
+      name: approvalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     OpsResourceID:
       name: resourceId
       in: path
@@ -2950,6 +3212,140 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}
+    PolicyEvaluateRequest:
+      type: object
+      required: [workflowId, workflowVersionId]
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+    PolicyEvaluateResponse:
+      type: object
+      required: [decision, dispatchAllowed, operations, requirements, denied, evaluatedAt]
+      properties:
+        decision: {type: string, enum: [allow, deny, approval-required]}
+        dispatchAllowed: {type: boolean}
+        operations:
+          type: array
+          items: {$ref: "#/components/schemas/PolicyOperationResult"}
+        requirements:
+          type: array
+          items: {$ref: "#/components/schemas/ApprovalRequirement"}
+        denied:
+          type: array
+          items: {$ref: "#/components/schemas/PolicyOperationResult"}
+        evaluatedAt: {type: string, format: date-time}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        approvals:
+          type: array
+          items: {$ref: "#/components/schemas/Approval"}
+    PolicyOperationResult:
+      type: object
+      required: [nodeId, operation, decision]
+      properties:
+        nodeId: {type: string}
+        operation: {type: string}
+        decision: {type: string, enum: [allow, deny, approval-required]}
+        reason: {type: string}
+        requirement: {$ref: "#/components/schemas/ApprovalRequirement"}
+    ApprovalRequirement:
+      type: object
+      required: [nodeId, operation, approverRole, expiresIn, expiresAt]
+      properties:
+        nodeId: {type: string}
+        nodeName: {type: string}
+        operation: {type: string}
+        targetKind: {type: string}
+        targetId: {type: string, format: uuid}
+        targetVersionId: {type: string, format: uuid}
+        targetDigest: {type: string}
+        policyResourceId: {type: string, format: uuid}
+        policyVersionId: {type: string, format: uuid}
+        policyDigest: {type: string}
+        policyRevision: {type: integer}
+        approverRole: {type: string}
+        expiresIn: {type: string}
+        expiresAt: {type: string, format: date-time}
+        reason: {type: string}
+    Approval:
+      type: object
+      required: [id, workflowId, workflowVersionId, workflowDigest, nodeId, operation, bindingFingerprint, approverRole, status, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeName: {type: string}
+        operation: {type: string}
+        targetKind: {type: string}
+        targetId: {type: string, format: uuid}
+        targetVersionId: {type: string, format: uuid}
+        targetDigest: {type: string}
+        policyResourceId: {type: string, format: uuid}
+        policyVersionId: {type: string, format: uuid}
+        policyDigest: {type: string}
+        policyRevision: {type: integer}
+        bindingFingerprint: {type: string}
+        approverRole: {type: string}
+        status: {type: string, enum: [pending, approved, rejected, expired, invalidated]}
+        expiresAt: {type: string, format: date-time}
+        requestedBy: {type: string, format: uuid}
+        decidedBy: {type: string, format: uuid}
+        decidedAt: {type: string, format: date-time}
+        decisionNote: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ApprovalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Approval"}
+    ApprovalCatalog:
+      type: object
+      required: [statuses, decisions, defaultExpiresIn]
+      properties:
+        statuses:
+          type: array
+          items: {type: string}
+        decisions:
+          type: array
+          items: {type: string}
+        defaultExpiresIn: {type: string}
+    ApprovalCreateRequest:
+      type: object
+      required: [workflowId, workflowVersionId]
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+    ApprovalDecideRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approved, rejected, approve, reject]}
+        note: {type: string}
+    ApprovalEvent:
+      type: object
+      required: [id, approvalId, eventType, occurredAt]
+      properties:
+        id: {type: string, format: uuid}
+        approvalId: {type: string, format: uuid}
+        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated]}
+        actorId: {type: string, format: uuid}
+        details: {type: object, additionalProperties: true}
+        occurredAt: {type: string, format: date-time}
+    ApprovalEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ApprovalEvent"}
     OpsCreateRequest:
       type: object
       required: [name, spec]
