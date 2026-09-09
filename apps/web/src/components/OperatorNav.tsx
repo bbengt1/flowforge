@@ -8,6 +8,7 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { CurrentWorkspace } from "@/lib/identity-types";
+import { canSeeAlertsNav, canSeeAuditNav } from "@/lib/alert";
 import { canSeeApprovalsNav } from "@/lib/approval";
 import { canSeeExecutionsNav } from "@/lib/execution";
 import { canSeeOpsConfigNav } from "@/lib/ops-config";
@@ -69,6 +70,8 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
   const showConfig = canSeeOpsConfigNav(ready ? permissions : null);
   const showApprovals = canSeeApprovalsNav(ready ? permissions : null);
   const showExecutions = canSeeExecutionsNav(ready ? permissions : null);
+  const showAlerts = canSeeAlertsNav(ready ? permissions : null);
+  const showAudit = canSeeAuditNav(ready ? permissions : null);
 
   return (
     <nav aria-label="Operator" className="flex flex-wrap items-center gap-4">
@@ -100,6 +103,16 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
       {showExecutions ? (
         <Link href="/executions" className={linkClass}>
           Executions
+        </Link>
+      ) : null}
+      {showAlerts ? (
+        <Link href="/alerts" className={linkClass}>
+          Alerts
+        </Link>
+      ) : null}
+      {showAudit ? (
+        <Link href="/audit" className={linkClass}>
+          Audit
         </Link>
       ) : null}
       <Link href="/membership" className={linkClass}>

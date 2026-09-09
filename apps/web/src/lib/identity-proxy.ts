@@ -15,6 +15,11 @@ import {
 } from "./session-cookies.ts";
 import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
 import {
+  ALERT_PROXY_ROUTES,
+  isAlertProxySegments,
+  retargetAlertApiPath,
+} from "./alert-contract.ts";
+import {
   EXECUTION_PROXY_ROUTES,
   isArtifactDownloadStreamSegments,
   isExecutionProxySegments,
@@ -265,6 +270,13 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // GET /workspace/artifacts/{id} above is the E2.2 isolation hook.
   // GET /artifact-downloads/{grantId} streams bytes (not JSON).
   ...EXECUTION_PROXY_ROUTES,
+  // E5.4 alert/audit UI (#58). Paths live in alert-contract.ts.
+  // GET /audit-events list stays on EXECUTION_PROXY_ROUTES. This
+  // block adds GET /alerts, GET /alerts/{id}, and CSRF POST
+  // /alerts/{id}/ack. No catalog, resolve, or GET
+  // /audit-events/{id}. Do not allowlist audit mutations.
+  // Isolation GET /workspace/audit-events stays above this block.
+  ...ALERT_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -322,11 +334,15 @@ export function resolveIdentityProxyTarget(
   }
 
   const mapped = `${API_PREFIX}/${segments.join("/")}`;
+  let apiPath = mapped;
+  if (isExecutionProxySegments(segments)) {
+    apiPath = retargetExecutionApiPath(mapped);
+  } else if (isAlertProxySegments(segments)) {
+    apiPath = retargetAlertApiPath(mapped);
+  }
   return {
     method,
-    apiPath: isExecutionProxySegments(segments)
-      ? retargetExecutionApiPath(mapped)
-      : mapped,
+    apiPath,
     instance,
   };
 }
