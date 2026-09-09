@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -71,6 +72,12 @@ type workflowDetailResponse struct {
 type publishResponse struct {
 	Workflow wfstore.Workflow `json:"workflow"`
 	Version  wfstore.Version  `json:"version"`
+	Pins     []opsconfig.Pin  `json:"pins"`
+}
+
+type executionResponse struct {
+	wfstore.Execution
+	Pins []opsconfig.Pin `json:"pins"`
 }
 
 type exportResponse struct {
@@ -243,6 +250,17 @@ func (s *Server) publishWorkflow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	draft, err := s.workflows.GetDraft(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")))
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	if refs := opsconfig.ExtractRefs(draft.DefinitionYAML); len(refs) > 0 && s.ops != nil {
+		if _, err := s.ops.Resolve(r.Context(), scope, refs); err != nil {
+			writeOpsError(w, r, err)
+			return
+		}
+	}
 	wf, ver, err := s.workflows.Publish(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), wfstore.PublishInput{
 		ExpectedRevision: req.Revision,
 		Note:             req.Note,
@@ -251,7 +269,11 @@ func (s *Server) publishWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, publishResponse{Workflow: wf, Version: ver})
+	pins, ok := s.pinWorkflowRefs(w, r, scope, ver.DefinitionYAML, opsconfig.OwnerWorkflowVersion, ver.ID)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusCreated, publishResponse{Workflow: wf, Version: ver, Pins: pins})
 }
 
 func (s *Server) listWorkflowVersions(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +426,17 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Drafts cannot be executed. Select a published workflow version.")
 		return
 	}
+	ver, err := s.workflows.GetVersion(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), req.WorkflowVersionID)
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 && s.ops != nil {
+		if _, err := s.ops.Resolve(r.Context(), scope, refs); err != nil {
+			writeOpsError(w, r, err)
+			return
+		}
+	}
 	exec, err := s.workflows.StartExecution(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), wfstore.StartInput{
 		VersionID: req.WorkflowVersionID,
 	})
@@ -411,7 +444,35 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, exec)
+	pins := []opsconfig.Pin{}
+	if s.ops != nil {
+		copied, copyErr := s.ops.CopyPins(r.Context(), scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
+		if copyErr != nil {
+			writeOpsError(w, r, copyErr)
+			return
+		}
+		if len(copied) == 0 {
+			var ok bool
+			pins, ok = s.pinWorkflowRefs(w, r, scope, ver.DefinitionYAML, opsconfig.OwnerExecution, exec.ID)
+			if !ok {
+				return
+			}
+		} else {
+			pins = copied
+		}
+	}
+	user, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	_, _, _, perms, ok := s.requireAccess(w, r, user, authz.PermWorkflowExecute)
+	if !ok {
+		return
+	}
+	if !s.authorizeExecutionPins(w, r, perms, pins) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, executionResponse{Execution: exec, Pins: pins})
 }
 
 func (s *Server) getWorkflowExecution(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +488,15 @@ func (s *Server) getWorkflowExecution(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, exec)
+	pins := []opsconfig.Pin{}
+	if s.ops != nil {
+		pins, err = s.ops.ListPins(r.Context(), scope, opsconfig.OwnerExecution, exec.ID)
+		if err != nil {
+			writeOpsError(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, executionResponse{Execution: exec, Pins: pins})
 }
 
 func (s *Server) workflowScope(w http.ResponseWriter, r *http.Request, perm string) (isolation.Scope, bool) {

@@ -11,6 +11,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -28,6 +29,7 @@ type Server struct {
 	sessions  session.Store
 	workflows wfstore.Store
 	vault     vault.Store
+	ops       opsconfig.Store
 	keys      vault.Keys
 	log       *slog.Logger
 	registry  *observability.Registry
@@ -43,6 +45,7 @@ type Deps struct {
 	Sessions  session.Store
 	Workflows wfstore.Store
 	Vault     vault.Store
+	Ops       opsconfig.Store
 	Keys      vault.Keys
 	Cache     *isolation.Cache
 	Log       *slog.Logger
@@ -95,15 +98,19 @@ func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.
 	return nil, isolation.NewMemory(), session.NewMemory(), wfstore.NewMemory()
 }
 
-func inferVault(db postgres.Checker, keys vault.Keys, workflows wfstore.Store) vault.Store {
-	var refs vault.RefFinder
-	if workflows != nil {
-		refs = workflows
-	}
+func inferVault(db postgres.Checker, keys vault.Keys, workflows wfstore.Store, ops opsconfig.Store) vault.Store {
+	refs := vault.CompositeRefFinder{workflows, ops}
 	if p, ok := db.(*postgres.Pool); ok {
 		return vault.NewPostgres(p, keys, refs)
 	}
 	return vault.NewMemory(keys, refs)
+}
+
+func inferOps(db postgres.Checker) opsconfig.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return opsconfig.NewPostgres(p)
+	}
+	return opsconfig.NewMemory()
 }
 
 func newServer(d Deps) http.Handler {
@@ -128,9 +135,13 @@ func newServer(d Deps) http.Handler {
 		workflows = wfstore.NewMemory()
 	}
 	keys := d.Keys
+	opsStore := d.Ops
+	if opsStore == nil {
+		opsStore = inferOps(d.DB)
+	}
 	vaultStore := d.Vault
 	if vaultStore == nil {
-		vaultStore = inferVault(d.DB, keys, workflows)
+		vaultStore = inferVault(d.DB, keys, workflows, opsStore)
 	}
 	clock := d.Now
 	if clock == nil {
@@ -144,6 +155,7 @@ func newServer(d Deps) http.Handler {
 		sessions:  sessions,
 		workflows: workflows,
 		vault:     vaultStore,
+		ops:       opsStore,
 		keys:      keys,
 		log:       log,
 		registry:  registry,
@@ -215,6 +227,24 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/deletion-impact", s.getCredentialDeletionImpact)
 	mux.HandleFunc("DELETE /api/v1/credentials/{credentialId}", s.deleteCredential)
 	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/events", s.listCredentialEvents)
+	mux.HandleFunc("GET /api/v1/ops-config/catalog", s.getOpsCatalog)
+	mux.HandleFunc("POST /api/v1/ops-config/select", s.selectOpsBatch)
+	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/pins", s.listWorkflowVersionPins)
+	for _, info := range opsconfig.KindInfos() {
+		kind := info.Kind
+		col := info.Collection
+		mux.HandleFunc("GET /api/v1/"+col, s.listOpsResources(kind))
+		mux.HandleFunc("POST /api/v1/"+col, s.createOpsResource(kind))
+		mux.HandleFunc("GET /api/v1/"+col+"/{resourceId}", s.getOpsResource(kind))
+		mux.HandleFunc("GET /api/v1/"+col+"/{resourceId}/draft", s.getOpsDraft(kind))
+		mux.HandleFunc("PUT /api/v1/"+col+"/{resourceId}/draft", s.putOpsDraft(kind))
+		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/publish", s.publishOpsResource(kind))
+		mux.HandleFunc("GET /api/v1/"+col+"/{resourceId}/versions", s.listOpsVersions(kind))
+		mux.HandleFunc("GET /api/v1/"+col+"/{resourceId}/versions/{versionId}", s.getOpsVersion(kind))
+		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/disable", s.disableOpsResource(kind))
+		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/enable", s.enableOpsResource(kind))
+		mux.HandleFunc("POST /api/v1/"+col+"/{resourceId}/select", s.selectOpsResource(kind))
+	}
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {

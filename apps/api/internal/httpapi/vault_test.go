@@ -190,8 +190,9 @@ func TestCredentialVaultUsageAndDeletionImpact(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
 	created := createVaultCredential(t, h, admin, tenant, ws, "token", "Used", map[string]string{"token": vaultPlaintext})
+	target := createPublishedClusterTarget(t, h, admin, tenant, ws, created.ID, "used-cluster")
 
-	yamlDoc := strings.ReplaceAll(validWorkflowYAML, "11111111-1111-4111-8111-111111111111", created.ID)
+	yamlDoc := workflowYAMLWithTarget(target.Resource.ID)
 	wf := createWorkflow(t, h, admin, tenant, ws, yamlDoc)
 	pub := publishWorkflow(t, h, admin, tenant, ws, wf.Workflow.ID, wf.Draft.Revision, "pin")
 	exec := startExecution(t, h, admin, tenant, ws, wf.Workflow.ID, pub.Version.ID)

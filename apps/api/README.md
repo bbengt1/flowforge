@@ -61,6 +61,14 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/credentials/{credentialId}/usage` | Usage visibility. |
 | `GET` | `/api/v1/credentials/{credentialId}/deletion-impact` | Deletion impact. |
 | `GET` | `/api/v1/credentials/{credentialId}/events` | Redacted vault audit. |
+| `GET` | `/api/v1/ops-config/catalog` | Ops-config kinds and YAML field map (`opsconfig.view`). |
+| `POST` | `/api/v1/ops-config/select` | Batch server-authorized pins. |
+| `GET` / `POST` | `/api/v1/{collection}` | List / create draft for `cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`. |
+| `GET` / `PUT` | `/api/v1/{collection}/{resourceId}/draft` | Read or conflict-safe save. |
+| `POST` | `/api/v1/{collection}/{resourceId}/publish` | Immutable revision (`opsconfig.publish`). |
+| `GET` | `/api/v1/{collection}/{resourceId}/versions` | Version history. |
+| `POST` | `/api/v1/{collection}/{resourceId}/select` | Pin a published revision. |
+| `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/pins` | Pins bound at workflow publish. |
 
 Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
 

@@ -35,7 +35,7 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if all[0].Version != 1 {
 		t.Fatalf("first migration version = %d, want 1", all[0].Version)
 	}
-	var sawIsolation, sawSessions, sawWorkflows, sawCredentials bool
+	var sawIsolation, sawSessions, sawWorkflows, sawCredentials, sawOps bool
 	for _, m := range all {
 		if m.Version == 3 && m.Name == "workspace_isolation" {
 			sawIsolation = true
@@ -49,6 +49,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 		if m.Version == 6 && m.Name == "credentials" {
 			sawCredentials = true
 		}
+		if m.Version == 7 && m.Name == "ops_config" {
+			sawOps = true
+		}
 	}
 	if !sawIsolation {
 		t.Fatal("expected 000003_workspace_isolation.sql")
@@ -61,6 +64,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	}
 	if !sawCredentials {
 		t.Fatal("expected 000006_credentials.sql")
+	}
+	if !sawOps {
+		t.Fatal("expected 000007_ops_config.sql")
 	}
 }
 
