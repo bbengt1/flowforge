@@ -9,9 +9,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 var (
@@ -626,6 +628,13 @@ func normalizeKubernetesPolicyObject(policy map[string]any) (map[string]any, err
 	if v, ok, err := optionalString(policy, kubernetes.KeyExpiresIn, 2, 32); err != nil {
 		return nil, err
 	} else if ok {
+		exp, parseErr := workflow.ParseISODuration(v)
+		if parseErr != nil || exp <= 0 {
+			return nil, fmt.Errorf("%w: policy.expiresIn must be an ISO-8601 duration", ErrInvalid)
+		}
+		if exp > 7*24*time.Hour {
+			return nil, fmt.Errorf("%w: policy.expiresIn cannot exceed P7D", ErrInvalid)
+		}
 		out[kubernetes.KeyExpiresIn] = v
 	}
 	ops, err := stringList(policy, kubernetes.KeyOperations, 16, 64)
@@ -964,9 +973,10 @@ func containsFold(items []string, want string) bool {
 	return false
 }
 
+// Top-level vault secret field names only. Nested JSON Schema properties such
+// as password/token/authorization must be preserved so drafts match their digest.
 var secretSpecKeys = map[string]struct{}{
 	"kubeconfig": {}, "privatekey": {}, "private_key": {}, "passphrase": {},
-	"token": {}, "secret": {}, "password": {}, "authorization": {},
 }
 
 func redactMap(in map[string]any) map[string]any {
@@ -978,22 +988,7 @@ func redactMap(in map[string]any) map[string]any {
 		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret {
 			continue
 		}
-		out[k] = redactValue(v)
+		out[k] = v
 	}
 	return out
-}
-
-func redactValue(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		return redactMap(t)
-	case []any:
-		out := make([]any, len(t))
-		for i, item := range t {
-			out[i] = redactValue(item)
-		}
-		return out
-	default:
-		return t
-	}
 }

@@ -101,6 +101,27 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 	if _, ok := redacted["kubeconfig"]; ok {
 		t.Fatal("kubeconfig must be stripped")
 	}
+	schema := map[string]any{
+		"parameterSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"password": map[string]any{"type": "string"},
+				"token":    map[string]any{"type": "string"},
+			},
+		},
+	}
+	kept := RedactSpec(schema)
+	props, _ := kept["parameterSchema"].(map[string]any)["properties"].(map[string]any)
+	if props["password"] == nil || props["token"] == nil {
+		t.Fatalf("schema property names must be preserved: %+v", kept)
+	}
+	_, _, err = NormalizeSpec(KindPolicy, map[string]any{
+		"kind":   "kubernetes",
+		"policy": map[string]any{"allowedNamespaces": []any{"prod"}, "expiresIn": "tomorrow"},
+	})
+	if err == nil {
+		t.Fatal("invalid expiresIn must be rejected")
+	}
 }
 
 func TestExtractRefsFromWorkflowYAML(t *testing.T) {
