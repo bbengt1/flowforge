@@ -23,6 +23,7 @@ import {
   EMBED_ROTATE_HELP,
   EMBED_ROTATE_PATH,
   EMBED_TENANCY_RULES,
+  EMBED_VERIFY_RULES,
   EMBED_CHIPS_RULES,
   EMBED_CHIPS_SET_COOKIE,
   EMBED_COOKIE_CREDENTIALS,
@@ -281,6 +282,9 @@ describe("embed-contract", () => {
     assert.equal(EMBED_CHIPS_RULES.neverDropSecure, true);
     assert.equal(EMBED_CHIPS_RULES.neverSameSiteNoneWithoutPartitioned, true);
     assert.equal(EMBED_CHIPS_RULES.neverWeakenTopLevelSameSite, true);
+    assert.equal(EMBED_VERIFY_RULES.verifyBeforeWorkspaceLookup, true);
+    assert.equal(EMBED_VERIFY_RULES.noWorkspaceOracleOnInvalidAssertion, true);
+    assert.equal(EMBED_VERIFY_RULES.jtiConsumeAfterVerify, true);
     assert.match(
       embedAuthFailureMessage({ status: 401, code: "unauthenticated" }),
       /Partitioned/,

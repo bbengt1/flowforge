@@ -138,7 +138,7 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then validate + atomic `jti` consume + bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then **verify signature / iss / aud / nbf / exp / jti eligibility before any workspace lookup**. Durable `jti` consume runs only after verify succeeds. Then resolve `(tenant_id, workbench_key)` and bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. |
 | `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap (`overlapUntil` **required**, max 4h), or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
@@ -154,7 +154,9 @@ Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,
 
 **Active key vs overlap keys:** the process **active** signing key (`EMBED_SIGNING_KEY`) is not an overlap key and does not carry `overlapUntil`. Missing `overlapUntil` on the active JWKS entry is correct — that key stays valid until a new signing key replaces it. Every **overlap** verify key (rotate API or `EMBED_OVERLAP_KEYS`) must carry a short finite `overlapUntil`. A missing field is not “valid forever”.
 
-Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown or expired-overlap kid `401`; tenancy mismatch / foreign subject without `embed.impersonate` / spoofed issuer `403`; replayed `jti` `409`; missing signing key or JTI/overlap store `503`. Production **boot-fails** if `EMBED_SIGNING_KEY` is unset (empty/`production` `APP_ENV` or `REQUIRE_TLS`). Problem details never echo the JWS or private keys. Successful impersonation is audited (`reason=impersonated`).
+Failures: missing claims `400`; wrong audience / expired / nbf / bad signature / unknown or expired-overlap kid `401` (same class whether or not the claimed tenant/workbench exists — exchange never resolves a workspace until verify succeeds); tenancy mismatch / foreign subject without `embed.impersonate` / spoofed issuer `403`; replayed `jti` `409`; missing signing key or JTI/overlap store `503`. A verified assertion for an unknown workspace is `404` after verify. Production **boot-fails** if `EMBED_SIGNING_KEY` is unset (empty/`production` `APP_ENV` or `REQUIRE_TLS`). Problem details never echo the JWS or private keys. Successful impersonation is audited (`reason=impersonated`).
+
+**ADV-008:** `POST /embed/exchange` (the only assertion-accepting path) completes cryptographic verify, audience, issuer allowlist, `nbf`/`exp`, and `jti` eligibility **before** `ResolveWorkspace` / membership. Peeking unverified JWT claims must not drive tenant lookup. Durable `jti` consume is after verify success so forged tokens do not burn ids. Chloe: **no UI change.**
 
 ## Key rotation (ops)
 
@@ -206,7 +208,8 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 
 | Hook | Status | Fail closed |
 | --- | --- | --- |
-| `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
+| `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. Consume runs only after signature and claims verify succeed. |
+| `assertion.verify-before-lookup` | ready | Forged/invalid assertions fail closed without resolving tenant/workbench. Same error class whether or not the workspace exists. Tenancy bind is after verify. |
 | `key.rotation` | ready | Durable active key + overlap verification. Every overlap key requires a short `overlapUntil` (max 4h). Unknown / missing-expiry / expired / far-future `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only, requires `overlapUntil`, and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` or bad `EMBED_OVERLAP_KEYS` is boot-fail. The active key is not an overlap key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |

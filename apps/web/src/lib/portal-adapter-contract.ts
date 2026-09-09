@@ -17,6 +17,9 @@
  * ADV-007: embed exchange cookies are CHIPS (SameSite=None; Secure;
  * Partitioned). Keep credentials:include. Do not request Storage
  * Access / unpartitioned cookies. Cookie not sent is 401/403.
+ *
+ * ADV-008: POST /embed/exchange verifies before workspace lookup.
+ * No host chrome change.
  */
 
 import {

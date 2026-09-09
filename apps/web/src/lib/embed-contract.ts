@@ -22,6 +22,10 @@
  *
  * ADV-014: register-overlap requires short overlapUntil (max 4h).
  * The embed shell does not rotate keys. No UI rewrite.
+ *
+ * ADV-008: POST /embed/exchange verifies the assertion before any
+ * workspace lookup. Invalid assertions fail closed the same way
+ * whether or not the tenant exists. No UI rewrite.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -336,7 +340,7 @@ export const EMBED_PROBLEM_CODES = {
 } as const;
 
 export const EMBED_EXCHANGE_HELP =
-  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds.";
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds.";
 
 /** Embed session cookies after POST /embed/exchange. Not used for POST /session. */
 export const EMBED_SESSION_COOKIE = {
@@ -471,6 +475,13 @@ export const EMBED_TENANCY_RULES = {
   headerMismatchFailsClosed: true,
   capabilitiesCapSession: true,
   sessionEmbedIsSourceOfTruth: true,
+} as const;
+
+/** ADV-008: exchange verifies before tenant/workbench resolution. No UI. */
+export const EMBED_VERIFY_RULES = {
+  verifyBeforeWorkspaceLookup: true,
+  noWorkspaceOracleOnInvalidAssertion: true,
+  jtiConsumeAfterVerify: true,
 } as const;
 
 /** ADV-007: embed cookies are CHIPS; top-level cookies stay Lax/Strict. */

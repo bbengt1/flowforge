@@ -128,6 +128,16 @@ func IntersectCapabilities(membership, assertion []string) []string {
 	return out
 }
 
+// BindVerifiedWorkspace confirms optional claim workspace_id against the
+// server-resolved workspace. Call only after Verify succeeds so a
+// forged assertion never drives tenant/workbench lookup (ADV-008).
+func BindVerifiedWorkspace(resolvedWorkspaceID string, c Claims) error {
+	if err := authz.ConfirmResolvedID(resolvedWorkspaceID, c.WorkspaceID); err != nil {
+		return ErrWorkspaceBinding
+	}
+	return nil
+}
+
 // TenancyPropagationHook documents that E11.2 tenancy bind is enabled.
 // Call PropagateTenancy at request time; this helper exists so older
 // fail-closed tests can assert the hook is no longer a stub.
