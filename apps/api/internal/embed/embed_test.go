@@ -181,6 +181,67 @@ func TestVerifyExpiredAndNBF(t *testing.T) {
 	}
 }
 
+func TestVerifySucceedsBeforeWorkspaceBind(t *testing.T) {
+	m := TestMaterial()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	minted, claims, err := Mint(m, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jti := NewMemoryJTI()
+	got, err := Verify(m, minted.Assertion, VerifyOptions{
+		Audience:       DefaultAudience,
+		Now:            now.Add(time.Second),
+		Consumer:       jti,
+		AllowedIssuers: []string{claims.Issuer},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Claims.WorkspaceID != claims.WorkspaceID {
+		t.Fatalf("workspace claim %q", got.Claims.WorkspaceID)
+	}
+	if err := BindVerifiedWorkspace(claims.WorkspaceID, got.Claims); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindVerifiedWorkspace("33333333-3333-3333-3333-333333333333", got.Claims); err != ErrWorkspaceBinding {
+		t.Fatalf("mismatch bind: %v", err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Audience:       DefaultAudience,
+		Now:            now.Add(time.Second),
+		Consumer:       jti,
+		AllowedIssuers: []string{claims.Issuer},
+	}); err != ErrReplay {
+		t.Fatalf("jti must consume after verify success: %v", err)
+	}
+}
+
+func TestVerifyForgedDoesNotConsumeJTI(t *testing.T) {
+	m := TestMaterial()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	minted, claims, err := Mint(m, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := minted.Assertion
+	if len(forged) < 4 {
+		t.Fatal("token too short")
+	}
+	forged = forged[:len(forged)-2] + "xx"
+	jti := NewMemoryJTI()
+	if _, err := Verify(m, forged, VerifyOptions{
+		Now: now.Add(time.Second), Consumer: jti, AllowedIssuers: []string{claims.Issuer},
+	}); err != ErrSignature {
+		t.Fatalf("forged: %v", err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), Consumer: jti, AllowedIssuers: []string{claims.Issuer},
+	}); err != nil {
+		t.Fatalf("valid after forged must still consume: %v", err)
+	}
+}
+
 func TestJTIReplayRejected(t *testing.T) {
 	m := TestMaterial()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -234,7 +295,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup {
 		t.Fatal("rules")
 	}
 	foundRotate, foundMint, foundExchange := false, false, false
@@ -256,6 +317,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 			if !strings.Contains(r.Note, "Partitioned") || !strings.Contains(r.Note, "SameSite=None") {
 				t.Fatalf("exchange note %q", r.Note)
 			}
+			if !strings.Contains(r.Note, "before any workspace lookup") {
+				t.Fatalf("exchange note must require verify before workspace lookup: %q", r.Note)
+			}
 		}
 	}
 	if !foundRotate {
@@ -276,7 +340,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
-	foundCHIPS := false
+	foundCHIPS, foundVerifyFirst := false, false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
@@ -287,9 +351,18 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("chips hook %q", h.Note)
 			}
 		}
+		if h.ID == "assertion.verify-before-lookup" {
+			foundVerifyFirst = true
+			if !strings.Contains(h.Note, "before any workspace") {
+				t.Fatalf("verify-before-lookup hook %q", h.Note)
+			}
+		}
 	}
 	if !foundCHIPS {
 		t.Fatal("catalog missing chips.embed-cookies hook")
+	}
+	if !foundVerifyFirst {
+		t.Fatal("catalog missing assertion.verify-before-lookup hook")
 	}
 }
 

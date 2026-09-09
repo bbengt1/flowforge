@@ -239,15 +239,20 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "assertion is required.")
 		return
 	}
-	peek, peekErr := peekEmbedClaims(req.Assertion)
-	if peekErr != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "malformed", "", s.embedMaterial().KeyID, "", "")
-		writeEmbedError(w, r, peekErr)
+	// ADV-008: verify signature, audience, issuer allowlist, nbf/exp,
+	// claims, and consume jti before any tenant/workbench lookup so a
+	// forged assertion cannot probe workspace existence.
+	verified, err := s.verifyEmbedAssertion(r, req.Assertion)
+	if err != nil {
+		peek, _ := peekEmbedClaims(req.Assertion)
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
+		writeEmbedError(w, r, err)
 		return
 	}
-	ws, tenant, err := s.store.ResolveWorkspace(r.Context(), peek.TenantID, "", peek.WorkbenchKey)
+	c := verified.Claims
+	ws, tenant, err := s.store.ResolveWorkspace(r.Context(), c.TenantID, "", c.WorkbenchKey)
 	if err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		writeIdentityError(w, r, err)
 		return
 	}
@@ -255,13 +260,11 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		WriteForbidden(w, r)
 		return
 	}
-	verified, err := s.verifyEmbedAssertion(r, req.Assertion, ws.ID)
-	if err != nil {
-		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
+	if err := embed.BindVerifiedWorkspace(ws.ID, c); err != nil {
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "workspace", c.TokenID, verified.KeyID, c.Issuer, c.Subject)
 		writeEmbedError(w, r, err)
 		return
 	}
-	c := verified.Claims
 	user, err := s.store.UpsertUser(r.Context(), c.Issuer, c.Subject, c.DisplayName)
 	if err != nil {
 		writeIdentityError(w, r, err)
@@ -298,6 +301,8 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// peekEmbedClaims decodes unverified JWT claims for audit fields only.
+// Never use the result to resolve a workspace or authorize (ADV-008).
 func peekEmbedClaims(token string) (embed.Claims, error) {
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) != 3 {
@@ -309,9 +314,6 @@ func peekEmbedClaims(token string) (embed.Claims, error) {
 	}
 	var c embed.Claims
 	if err := json.Unmarshal(payload, &c); err != nil {
-		return embed.Claims{}, embed.ErrMissingClaim
-	}
-	if strings.TrimSpace(c.TenantID) == "" || strings.TrimSpace(c.WorkbenchKey) == "" {
 		return embed.Claims{}, embed.ErrMissingClaim
 	}
 	return c, nil
@@ -416,12 +418,11 @@ func embedDenyReason(err error) string {
 	}
 }
 
-func (s *Server) verifyEmbedAssertion(r *http.Request, assertion, resolvedWS string) (embed.Verified, error) {
+func (s *Server) verifyEmbedAssertion(r *http.Request, assertion string) (embed.Verified, error) {
 	opt := embed.VerifyOptions{
 		Audience:       embed.DefaultAudience,
 		Now:            s.clockNow(),
 		Consumer:       s.embedJTI,
-		ResolvedWS:     resolvedWS,
 		Context:        r.Context(),
 		AllowedIssuers: s.embedIssuers,
 	}

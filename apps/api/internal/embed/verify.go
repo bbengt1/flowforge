@@ -12,7 +12,11 @@ import (
 )
 
 // VerifyOptions controls assertion checks. Fail closed on iss/aud/nbf/exp/
-// jti/capabilities/workspace. Host IDs remain untrusted until resolved.
+// jti/capabilities. Workspace/tenant resolution is the caller's job
+// after Verify succeeds (ADV-008). Host IDs remain untrusted until
+// resolved. ResolvedWS is optional: when set, claim workspace_id must
+// match; when empty, binding is deferred so callers can verify before
+// any store lookup.
 type VerifyOptions struct {
 	Audience       string
 	Now            time.Time
@@ -24,7 +28,7 @@ type VerifyOptions struct {
 }
 
 // Verified is a signature-checked assertion. Host IDs remain untrusted
-// until the API resolves the workspace.
+// until the API resolves the workspace after Verify returns.
 type Verified struct {
 	Claims Claims
 	KeyID  string
@@ -33,7 +37,10 @@ type Verified struct {
 
 // Verify checks signature (active + overlap), SDK, required claims,
 // audience, issuer allowlist, time bounds including nbf, capabilities,
-// workspace binding, and atomically consumes jti.
+// and jti eligibility. Durable jti consume runs only after those
+// checks succeed so forged tokens do not burn ids. Workspace binding
+// is confirmed here only when ResolvedWS is already known; exchange
+// verifies first, then resolves tenant/workbench, then binds.
 func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -121,8 +128,12 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if c.WorkspaceID != "" && !authz.ValidUUID(c.WorkspaceID) {
 		return Verified{}, ErrWorkspaceBinding
 	}
-	if err := authz.ConfirmResolvedID(opt.ResolvedWS, c.WorkspaceID); err != nil {
-		return Verified{}, ErrWorkspaceBinding
+	// Empty ResolvedWS means the caller has not looked up a workspace
+	// yet (ADV-008). Do not treat claim workspace_id as a mismatch.
+	if strings.TrimSpace(opt.ResolvedWS) != "" {
+		if err := BindVerifiedWorkspace(opt.ResolvedWS, c); err != nil {
+			return Verified{}, err
+		}
 	}
 	if now.Unix() < c.NotBefore {
 		return Verified{}, ErrNotYetValid

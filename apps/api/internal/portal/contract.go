@@ -111,7 +111,7 @@ func HostWiring() []HostStep {
 			Actor: "embed-shell",
 			Do:    "POST {assertion,sdk:embed.v1} to the E11.1 exchange. Issues CHIPS ff_session / ff_csrf (SameSite=None; Secure; Partitioned) bound to (tenant_id, workbench_key).",
 			Path:  "/api/v1/embed/exchange",
-			Note:  "Not a Portal-specific exchange. Replay is 409. Body only. Cross-site iframe cookies are Partitioned — do not weaken SameSite. Cookie not sent is 401/403. ADV-013 owns a full cross-origin host check.",
+			Note:  "Not a Portal-specific exchange. Verify completes before workspace lookup. Replay is 409. Body only. Cross-site iframe cookies are Partitioned — do not weaken SameSite. Cookie not sent is 401/403. ADV-013 owns a full cross-origin host check.",
 		},
 		{
 			ID:    "authorize",

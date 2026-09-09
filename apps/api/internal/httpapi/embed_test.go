@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,11 +42,15 @@ func newEmbedEnv(t *testing.T) embedEnv {
 
 func newEmbedEnvWithIssuers(t *testing.T, embedIssuers, portalIssuers []string) embedEnv {
 	t.Helper()
+	return newEmbedEnvWithStore(t, embedIssuers, portalIssuers, identity.NewMemory())
+}
+
+func newEmbedEnvWithStore(t *testing.T, embedIssuers, portalIssuers []string, store identity.Store) embedEnv {
+	t.Helper()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
 	keys := embed.TestMaterial()
 	ring := embed.NewRing(keys, embed.NewMemoryKeys())
-	store := identity.NewMemory()
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	ops := identity.User{Issuer: "https://idp.example", ExternalSubject: "platform-ops-1", DisplayName: "Platform Ops"}
@@ -342,6 +348,9 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"maxOverlapTtl":"4h0m0s"`) {
 		t.Fatal("catalog must document the overlapUntil cap")
+	}
+	if !strings.Contains(rec.Body.String(), `"verifyBeforeWorkspaceLookup":true`) {
+		t.Fatal("catalog must require verify before workspace lookup")
 	}
 
 	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
@@ -868,6 +877,228 @@ func TestEmbedMintImpersonationStillEnforcesCapsSubset(t *testing.T) {
 	ops := env.addWorkspaceAdmin(t, env.ops)
 	rec := env.mintAs(t, ops, `{"capabilities":["workflow.view","not.a.permission"],"subject":"impersonated-user"}`)
 	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+}
+
+func TestEmbedExchangeForgedAssertionNeverLooksUpWorkspace(t *testing.T) {
+	spy := newIdentityLookupSpy(identity.NewMemory())
+	env := newEmbedEnvWithStore(t, []string{"https://idp.example"}, nil, spy)
+	existingTenant := tenantID(t, env)
+	spy.Reset()
+	foreign := embed.NewEphemeralMaterial()
+	now := *env.now
+	existingWS := signClaims(t, foreign, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		TenantID:     existingTenant,
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	missingWS := signClaims(t, foreign, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		TenantID:     "99999999-9999-4999-8999-999999999999",
+		WorkbenchKey: "missing",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+
+	existRec := postEmbedExchange(t, env, existingWS)
+	missRec := postEmbedExchange(t, env, missingWS)
+	existProb := assertProblem(t, existRec, http.StatusUnauthorized, CodeUnauthenticated, "")
+	missProb := assertProblem(t, missRec, http.StatusUnauthorized, CodeUnauthenticated, "")
+	if existProb.Title != missProb.Title || existProb.Detail != missProb.Detail || existProb.Code != missProb.Code {
+		t.Fatalf("oracle: existing workspace %+v vs missing %+v", existProb, missProb)
+	}
+	if lookups := spy.workspaceLookups(); len(lookups) != 0 {
+		t.Fatalf("forged assertion must not look up workspace: %v", lookups)
+	}
+}
+
+func TestEmbedExchangeInvalidClaimsNeverLookUpWorkspace(t *testing.T) {
+	spy := newIdentityLookupSpy(identity.NewMemory())
+	env := newEmbedEnvWithStore(t, []string{"https://idp.example"}, nil, spy)
+	now := *env.now
+	tid := tenantID(t, env)
+	spy.Reset()
+
+	wrongAud := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     "other-audience",
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		TenantID:     tid,
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	unknownIss := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://hostile.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+		TenantID:     tid,
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+
+	audRec := postEmbedExchange(t, env, wrongAud)
+	issRec := postEmbedExchange(t, env, unknownIss)
+	assertProblem(t, audRec, http.StatusUnauthorized, CodeUnauthenticated, "")
+	assertProblem(t, issRec, http.StatusForbidden, CodeForbidden, "")
+	if lookups := spy.workspaceLookups(); len(lookups) != 0 {
+		t.Fatalf("invalid assertion must not look up workspace: %v", lookups)
+	}
+}
+
+func TestEmbedExchangeValidAssertionBindsTenancyAfterVerify(t *testing.T) {
+	spy := newIdentityLookupSpy(identity.NewMemory())
+	env := newEmbedEnvWithStore(t, []string{"https://idp.example"}, nil, spy)
+	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if mintedRec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", mintedRec.Code, mintedRec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(mintedRec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	spy.Reset()
+
+	rec := postEmbedExchange(t, env, minted.Assertion)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("exchange %d %s", rec.Code, rec.Body.String())
+	}
+	var exchanged embedExchangeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &exchanged); err != nil {
+		t.Fatal(err)
+	}
+	if exchanged.Session.Embed == nil || exchanged.Session.Embed.WorkbenchKey != "ops" {
+		t.Fatalf("session embed binding %+v", exchanged.Session.Embed)
+	}
+	if exchanged.Session.Embed.TenantID != exchanged.Tenant.ID {
+		t.Fatalf("session tenant %s", exchanged.Session.Embed.TenantID)
+	}
+	lookups := spy.workspaceLookups()
+	if len(lookups) != 1 || lookups[0] != "ResolveWorkspace" {
+		t.Fatalf("valid exchange should resolve workspace once after verify: %v", lookups)
+	}
+}
+
+func TestEmbedExchangeUnknownWorkspaceAfterVerify(t *testing.T) {
+	spy := newIdentityLookupSpy(identity.NewMemory())
+	env := newEmbedEnvWithStore(t, []string{"https://idp.example"}, nil, spy)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+		TenantID:     "99999999-9999-4999-8999-999999999999",
+		WorkbenchKey: "missing",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	spy.Reset()
+
+	rec := postEmbedExchange(t, env, token)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	lookups := spy.workspaceLookups()
+	if len(lookups) != 1 || lookups[0] != "ResolveWorkspace" {
+		t.Fatalf("verified assertion may resolve once: %v", lookups)
+	}
+
+	replay := postEmbedExchange(t, env, token)
+	assertProblem(t, replay, http.StatusConflict, CodeConflict, "")
+	if extra := spy.workspaceLookups(); len(extra) != 1 {
+		t.Fatalf("replay must not look up workspace again: %v", extra)
+	}
+}
+
+type identityLookupSpy struct {
+	identity.Store
+	mu  sync.Mutex
+	ops []string
+}
+
+func newIdentityLookupSpy(inner identity.Store) *identityLookupSpy {
+	return &identityLookupSpy{Store: inner}
+}
+
+func (s *identityLookupSpy) Reset() {
+	s.mu.Lock()
+	s.ops = nil
+	s.mu.Unlock()
+}
+
+func (s *identityLookupSpy) note(op string) {
+	s.mu.Lock()
+	s.ops = append(s.ops, op)
+	s.mu.Unlock()
+}
+
+func (s *identityLookupSpy) workspaceLookups() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.ops...)
+}
+
+func (s *identityLookupSpy) ResolveWorkspace(ctx context.Context, tenantID, tenantSlug, workbenchKey string) (identity.Workspace, identity.Tenant, error) {
+	s.note("ResolveWorkspace")
+	return s.Store.ResolveWorkspace(ctx, tenantID, tenantSlug, workbenchKey)
+}
+
+func (s *identityLookupSpy) GetWorkspace(ctx context.Context, id string) (identity.Workspace, error) {
+	s.note("GetWorkspace")
+	return s.Store.GetWorkspace(ctx, id)
+}
+
+func (s *identityLookupSpy) GetTenant(ctx context.Context, id string) (identity.Tenant, error) {
+	s.note("GetTenant")
+	return s.Store.GetTenant(ctx, id)
+}
+
+func (s *identityLookupSpy) GetTenantBySlug(ctx context.Context, slug string) (identity.Tenant, error) {
+	s.note("GetTenantBySlug")
+	return s.Store.GetTenantBySlug(ctx, slug)
+}
+
+func (s *identityLookupSpy) ListMembers(ctx context.Context, workspaceID string) ([]identity.Member, error) {
+	s.note("ListMembers")
+	return s.Store.ListMembers(ctx, workspaceID)
+}
+
+func (s *identityLookupSpy) EffectiveAccess(ctx context.Context, workspaceID, userID string) (roles, perms []string, err error) {
+	s.note("EffectiveAccess")
+	return s.Store.EffectiveAccess(ctx, workspaceID, userID)
+}
+
+func (s *identityLookupSpy) ListWorkspacesForUser(ctx context.Context, userID string) ([]identity.Membership, error) {
+	s.note("ListWorkspacesForUser")
+	return s.Store.ListWorkspacesForUser(ctx, userID)
+}
+
+func postEmbedExchange(t *testing.T, env embedEnv, assertion string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	return rec
 }
 
 func encodeEmbedPub(m embed.Material) string {

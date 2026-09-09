@@ -452,8 +452,11 @@ paths:
         `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` merged with Portal issuers;
         empty fails closed with 403), audience (`flowforge`),
         `nbf`/`exp`, `jti`, signature (active + live overlap kids),
-        `tenant_id` + `workbench_key`, optional workspace binding, and
-        capabilities. Atomically consumes `jti` with TTL (replay is 409).
+        and capabilities **before any workspace lookup**. Atomically
+        consumes `jti` with TTL only after verify succeeds (replay is
+        409). Then resolves `tenant_id` + `workbench_key` and confirms
+        optional workspace binding. Invalid assertions fail closed
+        without probing whether the tenant or workbench exists.
         Issues `ff_session` / `ff_csrf` bound to that pair with CHIPS
         attributes (`SameSite=None; Secure; Partitioned`). Top-level
         `POST /session` cookies stay `SameSite=Lax` / `Strict` and are
