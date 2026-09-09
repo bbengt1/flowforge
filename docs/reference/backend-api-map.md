@@ -54,7 +54,7 @@ Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,
 
 Rotate body: `{action:"register-overlap"|"retire", publicJwk, overlapUntil?, kid?}`. Ops: register current public JWK as overlap, deploy new `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`, retire after max assertion TTL. `EMBED_OVERLAP_KEYS` is the env form of the same public set.
 
-Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. E11.3 is the CP Ops Portal adapter.
+Embed sessions propagate `(tenant_id, workbench_key)` through API authorization (capability intersection), configuration lookups, job tickets (`v2` when present), workers, caches, realtime, history, and audit. Chloe UI honors that bind on chrome and deep links (`apps/web/src/lib/embed-tenancy-contract.ts`, `EMBED_TENANCY_RULES`). E11.3 is the CP Ops Portal adapter.
 
 ## Workspace identity and RBAC (E2.1)
 

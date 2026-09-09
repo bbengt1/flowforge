@@ -1,4 +1,5 @@
 import { attachCsrfHeader, resolveCsrfToken, shouldAttachCsrf } from "./csrf.ts";
+import { persistVerifiedFromSession } from "./embed-tenancy-client.ts";
 import { fetchSameOriginProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { ItemList } from "./identity-types.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
@@ -168,4 +169,5 @@ function applySessionPayload(payload: SessionPayload): void {
     parsed.csrfToken = remembered;
   }
   setActiveSession(parsed);
+  persistVerifiedFromSession(payload.session);
 }

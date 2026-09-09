@@ -9,7 +9,6 @@ import {
   EMBED_EXCHANGE_HELP,
   EMBED_HOST_DISPLAY_HELP,
   EMBED_MOUNT_PREFIX,
-  EMBED_ROUTE_MAP_SOURCE,
   EMBED_SDK,
   embedPostMessageAllowlist,
   isAllowedEmbedMessageOrigin,
@@ -18,6 +17,12 @@ import {
   type EmbedHostDisplay,
   type EmbedVerifiedContext,
 } from "@/lib/embed-contract";
+import {
+  EMBED_TENANCY_ROUTE_MAP_SOURCE,
+  EMBED_VERIFIED_HELP,
+  embedVerifiedLabel,
+  verifiedWorkspaceFromExchange,
+} from "@/lib/embed-tenancy-contract";
 import type { ProblemDetails } from "@/lib/problem";
 
 type EmbedExchangeGateProps = {
@@ -87,15 +92,15 @@ export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
       <header className="space-y-2">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E11.1 · {EMBED_SDK} · {EMBED_ROUTE_MAP_SOURCE}
+          E11.2 · {EMBED_SDK} · {EMBED_TENANCY_ROUTE_MAP_SOURCE}
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
           Exchange a host assertion
         </h1>
         <p className="text-sm leading-6 text-zinc-600">
           {EMBED_EXCHANGE_HELP} Mount is {EMBED_MOUNT_PREFIX}. Audience is{" "}
-          <code>{EMBED_AUDIENCE}</code>. Relates to #121 / Part of #120 — keep
-          #121 open.
+          <code>{EMBED_AUDIENCE}</code>. Relates to #122 / Part of #120 — keep
+          #122 open. {EMBED_VERIFIED_HELP}
         </p>
       </header>
 
@@ -146,14 +151,31 @@ export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
         </button>
       </section>
 
-      {context ? (
-        <p className="text-xs text-zinc-500">
-          Verified {context.sdk} · {context.tenantSlug || context.tenantId} /{" "}
-          {context.workbenchKey}. Capabilities are display-only; GET /workspace
-          authorizes.
-        </p>
-      ) : null}
+      {context ? <VerifiedContextCard context={context} /> : null}
     </main>
+  );
+}
+
+function VerifiedContextCard({
+  context,
+}: {
+  context: EmbedVerifiedContext;
+}) {
+  const verified = verifiedWorkspaceFromExchange(context);
+  if (!verified) {
+    return null;
+  }
+  return (
+    <section className="rounded-2xl border border-teal-200 bg-teal-50 px-5 py-4 text-sm">
+      <p className="text-xs font-medium tracking-wide text-teal-800 uppercase">
+        FlowForge verified · {context.sdk}
+      </p>
+      <p className="mt-2 text-teal-950">{EMBED_VERIFIED_HELP}</p>
+      <dl className="mt-3 grid gap-1">
+        <DisplayRow label="Tenant / workbench" value={embedVerifiedLabel(verified)} />
+        <DisplayRow label="Workspace" value={verified.workspaceName} />
+      </dl>
+    </section>
   );
 }
 

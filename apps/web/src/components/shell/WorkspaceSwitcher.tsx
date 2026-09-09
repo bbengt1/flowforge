@@ -3,8 +3,15 @@
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 
 export function WorkspaceSwitcher() {
-  const { current, memberships, environment, roles, ready, switchWorkspace } =
-    useWorkspace();
+  const {
+    current,
+    memberships,
+    environment,
+    roles,
+    ready,
+    switchWorkspace,
+    embedLocked,
+  } = useWorkspace();
 
   const roleLabel = roles[0] || (ready ? "member" : "no workspace");
   const workspaceName = current?.workspace.name || "No workspace";
@@ -27,7 +34,7 @@ export function WorkspaceSwitcher() {
               ? `${current.workspace.tenant_id}:${current.workspace.workbench_key}`
               : ""
           }
-          disabled={memberships.length === 0}
+          disabled={embedLocked || memberships.length === 0}
           onChange={(event) => {
             const next = memberships.find((item) => {
               const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
@@ -66,6 +73,11 @@ export function WorkspaceSwitcher() {
       </dl>
       {tenantName ? (
         <p className="mt-1 truncate text-[11px] text-zinc-500">{tenantName}</p>
+      ) : null}
+      {embedLocked ? (
+        <p className="mt-2 text-[11px] text-zinc-500">
+          Locked to the FlowForge-verified tenant/workbench.
+        </p>
       ) : null}
     </section>
   );

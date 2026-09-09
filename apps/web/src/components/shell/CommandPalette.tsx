@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
   commandHref,
@@ -9,6 +10,7 @@ import {
   isWorkflowHomePath,
   paletteCommands,
 } from "@/lib/command-palette";
+import { maybeEmbedDeepLink } from "@/lib/embed-tenancy-contract";
 import { dispatchWorkspaceCommand } from "@/lib/workspace-commands";
 
 function workflowIdFromPath(pathname: string): string | undefined {
@@ -24,6 +26,7 @@ function executionIdFromPath(pathname: string): string | undefined {
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
+  const embed = useEmbedMode();
   const { permissions } = useWorkspace();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -64,7 +67,7 @@ export function CommandPalette() {
     if (action.type === "validate") {
       dispatchWorkspaceCommand("validate");
       if (!workflowId) {
-        router.push("/workflows");
+        router.push(maybeEmbedDeepLink("/workflows", embed));
       }
       return;
     }
@@ -81,7 +84,7 @@ export function CommandPalette() {
         dispatchWorkspaceCommand("new-workflow");
         return;
       }
-      router.push("/workflows?create=1");
+      router.push(maybeEmbedDeepLink("/workflows?create=1", embed));
       return;
     }
     if (action.type === "import-yaml") {
@@ -89,12 +92,12 @@ export function CommandPalette() {
         dispatchWorkspaceCommand("import-yaml");
         return;
       }
-      router.push("/workflows?import=1");
+      router.push(maybeEmbedDeepLink("/workflows?import=1", embed));
       return;
     }
     const href = commandHref(action);
     if (href) {
-      router.push(href);
+      router.push(maybeEmbedDeepLink(href, embed));
     }
   }
 

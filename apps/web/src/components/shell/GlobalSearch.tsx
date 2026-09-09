@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
+import { maybeEmbedDeepLink } from "@/lib/embed-tenancy-contract";
 import { workspaceLookupKey } from "@/lib/identity-headers";
 import { listAlerts } from "@/lib/alert-client";
 import { canSeeAlertsNav } from "@/lib/alert";
@@ -40,6 +42,7 @@ export function GlobalSearch({ swaggerUrl }: GlobalSearchProps) {
 
 function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
   const router = useRouter();
+  const embed = useEmbedMode();
   const { identity, ready, permissions } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -110,7 +113,7 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
       window.open(hit.href, "_blank", "noopener,noreferrer");
       return;
     }
-    router.push(hit.href);
+    router.push(maybeEmbedDeepLink(hit.href, embed));
   }
 
   return (
