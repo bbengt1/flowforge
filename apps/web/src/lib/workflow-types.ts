@@ -75,33 +75,49 @@ export type CatalogTriggerStart = {
   help?: string;
 };
 
-/** Additive E10.2 catalog map on `triggers[type=webhook]` when jonny posts it. */
-export type CatalogTriggerWebhookRoutes = {
-  list?: string;
-  create?: string;
-  get?: string;
-  update?: string;
-  rotate?: string;
-  disable?: string;
-  enable?: string;
+/** Jonny's E10.2 catalog ingress map (#113) on `triggers[type=webhook].ingress`. */
+export type CatalogTriggerIngress = {
+  route?: string;
+  method?: string;
+  public?: boolean;
+  csrf?: boolean;
+  session?: boolean;
+  signatureHeader?: string;
+  timestampHeader?: string;
+  signatureVersion?: string;
+  idempotencyHeader?: string;
+  maxBodyBytes?: number;
+  maxInputBytes?: number;
+  clockSkewSeconds?: number;
+  replayRetentionSeconds?: number;
+  defaultRatePerMinute?: number;
+  defaultWorkspaceRatePerMinute?: number;
+  defaultMaxConcurrency?: number;
+  defaultWorkspaceMaxConcurrency?: number;
+  contentTypes?: string[];
+  createdStatus?: number;
+  replayStatus?: number;
+  conflictStatus?: number;
+  unauthorizedStatus?: number;
+  rateLimitedStatus?: number;
+  tooLargeStatus?: number;
+  disabledStatus?: number;
+  help?: string;
 };
 
-export type CatalogTriggerWebhook = {
-  routes?: CatalogTriggerWebhookRoutes;
-  collection?: string;
+/** Jonny's E10.2 catalog admin map (#113) on `triggers[type=webhook].admin`. */
+export type CatalogTriggerAdmin = {
+  listRoute?: string;
+  createRoute?: string;
+  itemRoute?: string;
+  rotateRoute?: string;
+  disableRoute?: string;
+  enableRoute?: string;
+  deleteRoute?: string;
   permission?: string;
-  managePermission?: string;
+  viewPermission?: string;
   csrf?: boolean;
-  secretRevealOnce?: boolean;
-  signatureRequired?: boolean;
-  replayRequired?: boolean;
-  rawBodyBeforeParse?: boolean;
-  maxBodyBytes?: number;
-  defaultTimestampSkewSeconds?: number;
-  defaultReplayWindowSeconds?: number;
-  defaultRateLimitPerMinute?: number;
-  defaultMaxConcurrent?: number;
-  contentTypes?: string[];
+  secretNeverReturned?: boolean;
   help?: string;
 };
 
@@ -116,7 +132,8 @@ export type CatalogTrigger = {
   bounds?: CatalogNodeBounds;
   redaction?: CatalogRedaction;
   start?: CatalogTriggerStart;
-  webhook?: CatalogTriggerWebhook;
+  ingress?: CatalogTriggerIngress;
+  admin?: CatalogTriggerAdmin;
 };
 
 export type CatalogRules = {

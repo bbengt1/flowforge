@@ -1,10 +1,11 @@
 /**
  * Typed webhook trigger client. Paths and write bodies come from
  * webhook-trigger-contract.ts so a retarget only edits that adapter.
- * Cookie session + CSRF on mutations. One-time secrets are extracted
- * then stripped — never persisted.
+ * Cookie session + CSRF on admin mutations. Secrets are never persisted
+ * or shown — unexpected secret fields are a #113 contract leak.
  */
 
+import { forgetSecretDraft } from "./credential-contract.ts";
 import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -13,24 +14,25 @@ import type { WorkflowCatalog } from "./workflow-types.ts";
 import {
   WEBHOOK_FORBIDDEN_MESSAGE,
   WEBHOOK_HOST_SUPPLIED_MESSAGE,
-  WEBHOOK_MAP_PENDING_MESSAGE,
   WEBHOOK_TRIGGER_PROBLEM_CODES,
   WEBHOOK_VIEW_FORBIDDEN_MESSAGE,
   hostSuppliedWebhookIdentityKeys,
-  isWebhookMapPending,
+  isWebhookTriggerRef,
   parseWebhookTriggerList,
   parseWebhookTriggerRecord,
   rejectHostSuppliedWebhookBody,
-  takeOneTimeSecret,
+  stripUnexpectedWebhookSecret,
   webhookMutationOutcomeMessage,
   webhookTriggerCreatePath,
+  webhookTriggerDeletePath,
   webhookTriggerDisablePath,
   webhookTriggerEnablePath,
   webhookTriggerListPath,
   webhookTriggerPath,
+  webhookTriggerRotateBody,
   webhookTriggerRotatePath,
   webhookTriggerUpdatePath,
-  type WebhookOneTimeReveal,
+  type WebhookSecretLeak,
   type WebhookTriggerDraft,
   type WebhookTriggerRecord,
   type WebhookTriggerWriteBody,
@@ -43,7 +45,6 @@ export type WebhookTriggerClientFailure = {
   requestId: string;
   problem: ProblemDetails;
   forbidden: boolean;
-  mapPending: boolean;
 };
 
 export type WebhookTriggerListSuccess = {
@@ -52,7 +53,7 @@ export type WebhookTriggerListSuccess = {
   requestId: string;
   items: WebhookTriggerRecord[];
   strippedKeys: string[];
-  usedFallback: boolean;
+  secretLeak: boolean;
 };
 
 export type WebhookTriggerMutationSuccess = {
@@ -60,8 +61,7 @@ export type WebhookTriggerMutationSuccess = {
   statusCode: number;
   requestId: string;
   trigger: WebhookTriggerRecord | null;
-  reveal: WebhookOneTimeReveal;
-  strippedKeys: string[];
+  leak: WebhookSecretLeak;
   message: string;
 };
 
@@ -81,7 +81,6 @@ function failure(result: {
     requestId: result.requestId,
     problem: result.problem,
     forbidden,
-    mapPending: isWebhookMapPending(result.statusCode, result.problem),
   };
 }
 
@@ -110,7 +109,6 @@ function invalidWorkflowProblem(path: string): WebhookTriggerClientFailure {
     statusCode: 400,
     requestId: "",
     forbidden: false,
-    mapPending: false,
     problem: localProblem(
       path,
       "",
@@ -118,6 +116,40 @@ function invalidWorkflowProblem(path: string): WebhookTriggerClientFailure {
       WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
       "Invalid request",
       "workflowId must be a workspace resource UUID.",
+    ),
+  };
+}
+
+function invalidTriggerProblem(path: string): WebhookTriggerClientFailure {
+  return {
+    ok: false,
+    statusCode: 400,
+    requestId: "",
+    forbidden: false,
+    problem: localProblem(
+      path,
+      "",
+      400,
+      WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
+      "Invalid request",
+      "triggerId must be a UUID or opaque publicId (wh_…).",
+    ),
+  };
+}
+
+function hostIdentityFailure(path: string): WebhookTriggerClientFailure {
+  return {
+    ok: false,
+    statusCode: 400,
+    requestId: "",
+    forbidden: false,
+    problem: localProblem(
+      path,
+      "",
+      400,
+      WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
+      "Invalid request",
+      WEBHOOK_HOST_SUPPLIED_MESSAGE,
     ),
   };
 }
@@ -134,16 +166,6 @@ export async function listWebhookTriggers(
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     const failed = failure(result);
-    if (failed.mapPending) {
-      return {
-        ok: true,
-        statusCode: result.statusCode,
-        requestId: result.requestId,
-        items: [],
-        strippedKeys: [],
-        usedFallback: true,
-      };
-    }
     if (failed.forbidden) {
       failed.problem = {
         ...failed.problem,
@@ -152,56 +174,38 @@ export async function listWebhookTriggers(
     }
     return failed;
   }
-  const strippedKeys: string[] = [];
-  takeOneTimeSecret(result.data);
-  const items = parseWebhookTriggerList(result.data, workflowId);
+  const extracted = stripUnexpectedWebhookSecret(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    items,
-    strippedKeys,
-    usedFallback: false,
+    items: parseWebhookTriggerList(result.data, workflowId, catalog),
+    strippedKeys: extracted.strippedKeys,
+    secretLeak: extracted.leaked,
   };
 }
 
 async function mutateWebhookTrigger(
   identity: DevIdentity,
   path: string,
-  method: "POST" | "PATCH",
-  action: "create" | "rotate" | "disable" | "enable" | "update",
-  body?: WebhookTriggerWriteBody | Record<string, never>,
+  method: "POST" | "PATCH" | "DELETE",
+  action: "create" | "update" | "rotate" | "disable" | "enable" | "delete",
+  body?: WebhookTriggerWriteBody | ReturnType<typeof webhookTriggerRotateBody>,
   workflowId = "",
+  catalog?: WorkflowCatalog | null,
 ): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
   if (body && hostSuppliedWebhookIdentityKeys(body as Record<string, unknown>).length > 0) {
-    return {
-      ok: false,
-      statusCode: 400,
-      requestId: "",
-      forbidden: false,
-      mapPending: false,
-      problem: localProblem(
-        path,
-        "",
-        400,
-        WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
-        "Invalid request",
-        WEBHOOK_HOST_SUPPLIED_MESSAGE,
-      ),
-    };
+    return hostIdentityFailure(path);
   }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method,
-    body: body ?? {},
+    ...(body !== undefined ? { body } : {}),
   });
+  if (action === "rotate" && body && "secret" in body && body.secret) {
+    forgetSecretDraft({ secret: body.secret.secret });
+  }
   if (!result.ok) {
     const failed = failure(result);
-    if (failed.mapPending) {
-      failed.problem = {
-        ...failed.problem,
-        detail: failed.problem.detail || WEBHOOK_MAP_PENDING_MESSAGE,
-      };
-    }
     if (failed.forbidden) {
       failed.problem = {
         ...failed.problem,
@@ -210,27 +214,24 @@ async function mutateWebhookTrigger(
     }
     return failed;
   }
-  const extracted = takeOneTimeSecret(result.data);
-  const trigger = parseWebhookTriggerRecord(result.data, workflowId);
-  const reveal: WebhookOneTimeReveal = {
-    secret: extracted.secret,
-    revealed: Boolean(extracted.secret),
-  };
-  const outcomeAction =
-    action === "update" ? "create" : action === "create" || action === "rotate" || action === "disable" || action === "enable"
-      ? action
-      : "create";
+  if (action === "delete" || result.statusCode === 204) {
+    return {
+      ok: true,
+      statusCode: result.statusCode,
+      requestId: result.requestId,
+      trigger: null,
+      leak: { leaked: false, strippedKeys: [] },
+      message: webhookMutationOutcomeMessage("delete"),
+    };
+  }
+  const leak = stripUnexpectedWebhookSecret(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    trigger,
-    reveal,
-    strippedKeys: extracted.strippedKeys,
-    message: webhookMutationOutcomeMessage(
-      outcomeAction,
-      reveal,
-    ),
+    trigger: parseWebhookTriggerRecord(result.data, workflowId, catalog),
+    leak,
+    message: webhookMutationOutcomeMessage(action, leak),
   };
 }
 
@@ -243,14 +244,13 @@ export async function createWebhookTrigger(
   if (!isResourceId(workflowId)) {
     return invalidWorkflowProblem("/workflows/{workflowId}/triggers");
   }
-  const validated = validateWebhookTriggerDraft(draft, catalog);
+  const validated = validateWebhookTriggerDraft(draft, catalog, "create");
   if (!validated.ok) {
     return {
       ok: false,
       statusCode: 400,
       requestId: "",
       forbidden: false,
-      mapPending: false,
       problem: localProblem(
         webhookTriggerCreatePath(workflowId, catalog),
         "",
@@ -261,14 +261,24 @@ export async function createWebhookTrigger(
       ),
     };
   }
-  return mutateWebhookTrigger(
+  const body = rejectHostSuppliedWebhookBody(
+    validated.body as Record<string, unknown>,
+  ) as WebhookTriggerWriteBody;
+  const inline = body.secret?.secret;
+  const result = await mutateWebhookTrigger(
     identity,
     webhookTriggerCreatePath(workflowId, catalog),
     "POST",
     "create",
-    rejectHostSuppliedWebhookBody(validated.body),
+    body,
     workflowId,
+    catalog,
   );
+  if (inline) {
+    forgetSecretDraft({ secret: inline });
+  }
+  draft.inlineSecret = "";
+  return result;
 }
 
 export async function updateWebhookTrigger(
@@ -278,19 +288,21 @@ export async function updateWebhookTrigger(
   draft: WebhookTriggerDraft,
   catalog?: WorkflowCatalog | null,
 ): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isResourceId(triggerId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers/{triggerId}");
+  if (!isResourceId(workflowId)) {
+    return invalidWorkflowProblem("/triggers/{triggerId}");
   }
-  const validated = validateWebhookTriggerDraft(draft, catalog);
+  if (!isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}");
+  }
+  const validated = validateWebhookTriggerDraft(draft, catalog, "update");
   if (!validated.ok) {
     return {
       ok: false,
       statusCode: 400,
       requestId: "",
       forbidden: false,
-      mapPending: false,
       problem: localProblem(
-        webhookTriggerUpdatePath(workflowId, triggerId, catalog),
+        webhookTriggerUpdatePath(triggerId, catalog),
         "",
         400,
         WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
@@ -299,13 +311,33 @@ export async function updateWebhookTrigger(
       ),
     };
   }
+  const body = rejectHostSuppliedWebhookBody(
+    validated.body as Record<string, unknown>,
+  ) as WebhookTriggerWriteBody;
+  if (body.secret) {
+    return {
+      ok: false,
+      statusCode: 400,
+      requestId: "",
+      forbidden: false,
+      problem: localProblem(
+        webhookTriggerUpdatePath(triggerId, catalog),
+        "",
+        400,
+        WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
+        "Invalid request",
+        "Secret material can only be sent to create or rotate.",
+      ),
+    };
+  }
   return mutateWebhookTrigger(
     identity,
-    webhookTriggerUpdatePath(workflowId, triggerId, catalog),
+    webhookTriggerUpdatePath(triggerId, catalog),
     "PATCH",
     "update",
-    rejectHostSuppliedWebhookBody(validated.body),
+    body,
     workflowId,
+    catalog,
   );
 }
 
@@ -313,18 +345,42 @@ export async function rotateWebhookTrigger(
   identity: DevIdentity,
   workflowId: string,
   triggerId: string,
+  secret: string,
   catalog?: WorkflowCatalog | null,
 ): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isResourceId(triggerId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers/{triggerId}/rotate");
+  if (!isResourceId(workflowId)) {
+    return invalidWorkflowProblem("/triggers/{triggerId}/rotate");
   }
+  if (!isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}/rotate");
+  }
+  if (!secret.trim()) {
+    return {
+      ok: false,
+      statusCode: 400,
+      requestId: "",
+      forbidden: false,
+      problem: localProblem(
+        webhookTriggerRotatePath(triggerId, catalog),
+        "",
+        400,
+        WEBHOOK_TRIGGER_PROBLEM_CODES.invalidRequest,
+        "Invalid request",
+        "Rotate requires a new webhook secret.",
+      ),
+    };
+  }
+  const body = rejectHostSuppliedWebhookBody(
+    webhookTriggerRotateBody(secret) as unknown as Record<string, unknown>,
+  ) as ReturnType<typeof webhookTriggerRotateBody>;
   return mutateWebhookTrigger(
     identity,
-    webhookTriggerRotatePath(workflowId, triggerId, catalog),
+    webhookTriggerRotatePath(triggerId, catalog),
     "POST",
     "rotate",
-    {},
+    body,
     workflowId,
+    catalog,
   );
 }
 
@@ -334,16 +390,17 @@ export async function disableWebhookTrigger(
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isResourceId(triggerId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers/{triggerId}/disable");
+  if (!isResourceId(workflowId) || !isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}/disable");
   }
   return mutateWebhookTrigger(
     identity,
-    webhookTriggerDisablePath(workflowId, triggerId, catalog),
+    webhookTriggerDisablePath(triggerId, catalog),
     "POST",
     "disable",
     {},
     workflowId,
+    catalog,
   );
 }
 
@@ -353,16 +410,37 @@ export async function enableWebhookTrigger(
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
-  if (!isResourceId(workflowId) || !isResourceId(triggerId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers/{triggerId}/enable");
+  if (!isResourceId(workflowId) || !isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}/enable");
   }
   return mutateWebhookTrigger(
     identity,
-    webhookTriggerEnablePath(workflowId, triggerId, catalog),
+    webhookTriggerEnablePath(triggerId, catalog),
     "POST",
     "enable",
     {},
     workflowId,
+    catalog,
+  );
+}
+
+export async function deleteWebhookTrigger(
+  identity: DevIdentity,
+  workflowId: string,
+  triggerId: string,
+  catalog?: WorkflowCatalog | null,
+): Promise<WebhookTriggerMutationSuccess | WebhookTriggerClientFailure> {
+  if (!isResourceId(workflowId) || !isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}");
+  }
+  return mutateWebhookTrigger(
+    identity,
+    webhookTriggerDeletePath(triggerId, catalog),
+    "DELETE",
+    "delete",
+    undefined,
+    workflowId,
+    catalog,
   );
 }
 
@@ -372,33 +450,39 @@ export async function getWebhookTrigger(
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): Promise<
-  | { ok: true; statusCode: number; requestId: string; trigger: WebhookTriggerRecord; strippedKeys: string[] }
+  | {
+      ok: true;
+      statusCode: number;
+      requestId: string;
+      trigger: WebhookTriggerRecord;
+      strippedKeys: string[];
+      secretLeak: boolean;
+    }
   | WebhookTriggerClientFailure
 > {
-  if (!isResourceId(workflowId) || !isResourceId(triggerId)) {
-    return invalidWorkflowProblem("/workflows/{workflowId}/triggers/{triggerId}");
+  if (!isResourceId(workflowId) || !isWebhookTriggerRef(triggerId)) {
+    return invalidTriggerProblem("/triggers/{triggerId}");
   }
-  const path = webhookTriggerPath(workflowId, triggerId, catalog);
+  const path = webhookTriggerPath(triggerId, catalog);
   const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     return failure(result);
   }
-  const extracted = takeOneTimeSecret(result.data);
-  const trigger = parseWebhookTriggerRecord(result.data, workflowId);
+  const extracted = stripUnexpectedWebhookSecret(result.data);
+  const trigger = parseWebhookTriggerRecord(result.data, workflowId, catalog);
   if (!trigger) {
     return {
       ok: false,
       statusCode: 502,
       requestId: result.requestId,
       forbidden: false,
-      mapPending: false,
       problem: localProblem(
         path,
         result.requestId,
         502,
         "invalid-request",
         "Invalid response",
-        "Webhook trigger metadata was missing an opaque id. Secret fields were stripped.",
+        "Webhook trigger metadata was missing publicId. Secret fields were stripped.",
       ),
     };
   }
@@ -408,5 +492,6 @@ export async function getWebhookTrigger(
     requestId: result.requestId,
     trigger,
     strippedKeys: extracted.strippedKeys,
+    secretLeak: extracted.leaked,
   };
 }

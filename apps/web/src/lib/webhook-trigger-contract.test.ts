@@ -5,15 +5,15 @@ import {
   WEBHOOK_FIELD_MAPPING_HELP,
   WEBHOOK_FORBIDDEN_MESSAGE,
   WEBHOOK_HOST_SUPPLIED_MESSAGE,
-  WEBHOOK_MAP_PENDING_MESSAGE,
-  WEBHOOK_NO_REVEAL_MESSAGE,
+  WEBHOOK_INGRESS_HELP,
   WEBHOOK_RATE_HELP,
   WEBHOOK_REPLAY_HELP,
   WEBHOOK_SECRET_HELP,
+  WEBHOOK_SECRET_LEAK_MESSAGE,
   WEBHOOK_SIGNATURE_HELP,
   WEBHOOK_TRIGGER_API_PR,
-  WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP,
-  WEBHOOK_TRIGGER_DEFAULT_ROUTES,
+  WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP,
+  WEBHOOK_TRIGGER_DEFAULT_ADMIN,
   WEBHOOK_TRIGGER_EPIC,
   WEBHOOK_TRIGGER_MANAGE_PERMISSION,
   WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE,
@@ -24,12 +24,14 @@ import {
   applyWebhookRouteTemplate,
   canManageWebhookTriggers,
   canViewWebhookTriggers,
+  catalogPath,
   editorWebhookTriggersHref,
   emptyWebhookTriggerDraft,
-  forgetOneTimeSecret,
   hostSuppliedWebhookIdentityKeys,
-  isWebhookMapPending,
+  isWebhookCatalogFallback,
+  isWebhookPublicId,
   isWebhookTriggerAuthFailure,
+  isWebhookTriggerRef,
   parseFieldMappingText,
   parseWebhookTriggerList,
   parseWebhookTriggerRecord,
@@ -37,16 +39,22 @@ import {
   resolveWebhookTriggerContract,
   retargetWebhookTriggerApiPath,
   seedDraftFromYaml,
-  takeOneTimeSecret,
+  stripUnexpectedWebhookSecret,
   validateWebhookTriggerDraft,
+  webhookIngressDisplayPath,
+  webhookIngressHelp,
+  webhookIngressPath,
   webhookMutationOutcomeMessage,
   webhookTriggerAuthFailureMessage,
+  webhookTriggerCreateBody,
   webhookTriggerCreatePath,
+  webhookTriggerDeletePath,
   webhookTriggerDisablePath,
   webhookTriggerHelp,
   webhookTriggerListPath,
+  webhookTriggerPath,
+  webhookTriggerRotateBody,
   webhookTriggerRotatePath,
-  webhookTriggerWriteBody,
   webhookTriggersHref,
   yamlWebhookTriggers,
 } from "./webhook-trigger-contract.ts";
@@ -54,6 +62,9 @@ import type { WorkflowCatalog } from "./workflow-types.ts";
 
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
 const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
+const VERSION_ID = "33333333-3333-4333-8333-333333333333";
+const CREDENTIAL_ID = "44444444-4444-4444-8444-444444444444";
+const PUBLIC_ID = `wh_${"ab".repeat(32)}`;
 
 const fallbackCatalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
@@ -67,101 +78,155 @@ const mappedCatalog: WorkflowCatalog = {
     {
       type: "webhook",
       phase: "core",
-      webhook: {
-        routes: {
-          list: "/hooks?workflowId={workflowId}",
-          create: "/hooks",
-          get: "/hooks/{triggerId}",
-          update: "/hooks/{triggerId}",
-          rotate: "/hooks/{triggerId}/rotate",
-          disable: "/hooks/{triggerId}/disable",
-          enable: "/hooks/{triggerId}/enable",
-        },
-        help: "catalog webhook map",
+      ingress: {
+        route: "POST /api/v1/hooks/{publicId}",
+        method: "POST",
+        public: true,
+        csrf: false,
+        session: false,
+        signatureHeader: "X-FlowForge-Signature",
+        timestampHeader: "X-FlowForge-Timestamp",
+        signatureVersion: "v1",
+        idempotencyHeader: "Idempotency-Key",
+        maxBodyBytes: 65536,
+        clockSkewSeconds: 300,
+        replayRetentionSeconds: 600,
+        defaultRatePerMinute: 60,
+        defaultWorkspaceRatePerMinute: 300,
+        defaultMaxConcurrency: 5,
+        defaultWorkspaceMaxConcurrency: 20,
+        contentTypes: ["application/json"],
+        help: "catalog ingress map",
+      },
+      admin: {
+        listRoute: "GET /api/v1/workflows/{workflowId}/triggers",
+        createRoute: "POST /api/v1/workflows/{workflowId}/triggers",
+        itemRoute: "GET|PATCH|DELETE /api/v1/triggers/{triggerId}",
+        rotateRoute: "POST /api/v1/triggers/{triggerId}/rotate",
+        disableRoute: "POST /api/v1/triggers/{triggerId}/disable",
+        enableRoute: "POST /api/v1/triggers/{triggerId}/enable",
+        deleteRoute: "DELETE /api/v1/triggers/{triggerId}",
+        permission: "workflow.edit",
+        viewPermission: "workflow.view",
+        csrf: true,
+        secretNeverReturned: true,
+        help: "catalog admin map",
       },
     },
   ],
   nodes: [],
 };
 
+function validDraft() {
+  return emptyWebhookTriggerDraft({
+    workflowVersionId: VERSION_ID,
+    secretMode: "vault",
+    secretCredentialId: CREDENTIAL_ID,
+    fieldMappingText: "alert.id: payload.id\n",
+  });
+}
+
 describe("webhook-trigger contract adapter", () => {
-  it("keeps story links and marks the map as pending", () => {
+  it("cites #113 and keeps #107/#105 open", () => {
     assert.equal(WEBHOOK_TRIGGER_STORY, 107);
     assert.equal(WEBHOOK_TRIGGER_EPIC, 105);
-    assert.equal(WEBHOOK_TRIGGER_API_PR, 0);
-    assert.equal(WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE, "contract-fallback");
+    assert.equal(WEBHOOK_TRIGGER_API_PR, 113);
+    assert.equal(WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE, "e102-#113");
     assert.equal(WEBHOOK_TRIGGER_VIEW_PERMISSION, "workflow.view");
     assert.equal(WEBHOOK_TRIGGER_MANAGE_PERMISSION, "workflow.edit");
-    assert.match(WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP, /contract-fallback/);
-    assert.match(WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP, /#107/);
-    assert.match(WEBHOOK_MAP_PENDING_MESSAGE, /#107/);
+    assert.match(WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP, /#113/);
+    assert.match(WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP, /#107/);
+    assert.match(WEBHOOK_INGRESS_HELP, /POST \/hooks\/\{publicId\}/);
+    assert.match(WEBHOOK_INGRESS_HELP, /X-FlowForge-Signature/);
     assert.match(WEBHOOK_SIGNATURE_HELP, /raw body/);
     assert.match(WEBHOOK_REPLAY_HELP, /Replay/);
-    assert.match(WEBHOOK_RATE_HELP, /16 KiB/);
-    assert.match(WEBHOOK_SECRET_HELP, /shown once/);
+    assert.match(WEBHOOK_RATE_HELP, /64 KiB/);
+    assert.match(WEBHOOK_SECRET_HELP, /never returns secret/);
     assert.match(WEBHOOK_YAML_HELP, /inputSchema/);
     assert.match(WEBHOOK_FIELD_MAPPING_HELP, /dotted/);
     assert.match(WEBHOOK_HOST_SUPPLIED_MESSAGE, /workspaceId/);
   });
 
-  it("uses marked contract-fallback until catalog posts routes", () => {
+  it("prefers catalog ingress+admin and falls back only when those objects are missing", () => {
     const missing = resolveWebhookTriggerContract(null);
-    assert.equal(missing.source, "contract-fallback");
-    assert.equal(missing.routeMapSource, "contract-fallback");
-    assert.deepEqual(missing.routes, WEBHOOK_TRIGGER_DEFAULT_ROUTES);
+    assert.equal(missing.source, "catalog-fallback");
+    assert.equal(missing.routeMapSource, "e102-#113");
+    assert.equal(missing.apiPr, 113);
+    assert.deepEqual(missing.admin, WEBHOOK_TRIGGER_DEFAULT_ADMIN);
+    assert.equal(missing.secretNeverReturned, true);
     assert.equal(missing.signatureRequired, true);
-    assert.equal(missing.replayRequired, true);
-    assert.equal(missing.rawBodyBeforeParse, true);
-    assert.equal(missing.csrf, true);
-    assert.equal(missing.secretRevealOnce, true);
-    assert.match(webhookTriggerHelp(fallbackCatalog), /contract-fallback/);
-
-    const listed = resolveWebhookTriggerContract(fallbackCatalog);
-    assert.equal(listed.source, "contract-fallback");
+    assert.equal(missing.ingress.session, false);
+    assert.equal(missing.ingress.csrf, false);
+    assert.equal(isWebhookCatalogFallback(fallbackCatalog), true);
+    assert.match(webhookTriggerHelp(fallbackCatalog), /catalog-fallback/);
 
     const mapped = resolveWebhookTriggerContract(mappedCatalog);
     assert.equal(mapped.source, "workflows-catalog");
-    assert.equal(mapped.routes.rotate, "/hooks/{triggerId}/rotate");
-    assert.match(webhookTriggerHelp(mappedCatalog), /catalog webhook map/);
+    assert.equal(mapped.admin.rotateRoute, "/triggers/{triggerId}/rotate");
+    assert.equal(mapped.admin.itemRoute, "/triggers/{triggerId}");
+    assert.equal(mapped.ingress.route, "POST /api/v1/hooks/{publicId}");
+    assert.match(webhookTriggerHelp(mappedCatalog), /catalog admin map/);
+    assert.match(webhookIngressHelp(mappedCatalog), /catalog ingress map/);
   });
 
-  it("builds nested fallback paths and retargets through one function", () => {
+  it("builds #113 admin paths and documents ingress without calling it", () => {
+    assert.equal(catalogPath("GET /api/v1/workflows/{workflowId}/triggers", ""), "/workflows/{workflowId}/triggers");
+    assert.equal(
+      catalogPath("GET|PATCH|DELETE /api/v1/triggers/{triggerId}", ""),
+      "/triggers/{triggerId}",
+    );
     assert.equal(
       webhookTriggerListPath(WORKFLOW_ID),
-      `/workflows/${WORKFLOW_ID}/triggers?type=webhook`,
+      `/workflows/${WORKFLOW_ID}/triggers`,
     );
     assert.equal(
       webhookTriggerCreatePath(WORKFLOW_ID),
       `/workflows/${WORKFLOW_ID}/triggers`,
     );
+    assert.equal(webhookTriggerPath(TRIGGER_ID), `/triggers/${TRIGGER_ID}`);
     assert.equal(
-      webhookTriggerRotatePath(WORKFLOW_ID, TRIGGER_ID),
-      `/workflows/${WORKFLOW_ID}/triggers/${TRIGGER_ID}/rotate`,
+      webhookTriggerRotatePath(TRIGGER_ID),
+      `/triggers/${TRIGGER_ID}/rotate`,
     );
     assert.equal(
-      webhookTriggerDisablePath(WORKFLOW_ID, TRIGGER_ID),
-      `/workflows/${WORKFLOW_ID}/triggers/${TRIGGER_ID}/disable`,
+      webhookTriggerDisablePath(TRIGGER_ID),
+      `/triggers/${TRIGGER_ID}/disable`,
     );
     assert.equal(
-      applyWebhookRouteTemplate("/api/v1/hooks/{triggerId}", {
-        workflowId: WORKFLOW_ID,
-        triggerId: TRIGGER_ID,
-      }),
-      `/hooks/${TRIGGER_ID}`,
-    );
-    assert.equal(
-      retargetWebhookTriggerApiPath("/workflows/x/triggers"),
-      "/workflows/x/triggers",
+      webhookTriggerDeletePath(PUBLIC_ID),
+      `/triggers/${PUBLIC_ID}`,
     );
     assert.equal(
       webhookTriggerListPath(WORKFLOW_ID, mappedCatalog),
-      `/hooks?workflowId=${WORKFLOW_ID}&type=webhook`,
+      `/workflows/${WORKFLOW_ID}/triggers`,
+    );
+    assert.equal(
+      webhookIngressPath(PUBLIC_ID, mappedCatalog),
+      `/hooks/${PUBLIC_ID}`,
+    );
+    assert.equal(
+      webhookIngressDisplayPath(PUBLIC_ID, mappedCatalog),
+      `/api/v1/hooks/${PUBLIC_ID}`,
+    );
+    assert.equal(
+      applyWebhookRouteTemplate("POST /api/v1/hooks/{publicId}", {
+        publicId: PUBLIC_ID,
+      }),
+      `/hooks/${PUBLIC_ID}`,
+    );
+    assert.equal(
+      retargetWebhookTriggerApiPath("/triggers/x"),
+      "/triggers/x",
     );
     assert.equal(webhookTriggersHref(WORKFLOW_ID), `/workflows?webhooks=${WORKFLOW_ID}`);
     assert.equal(
       editorWebhookTriggersHref(WORKFLOW_ID),
       `/workflows/${WORKFLOW_ID}#webhook-triggers`,
     );
+    assert.equal(isWebhookPublicId(PUBLIC_ID), true);
+    assert.equal(isWebhookTriggerRef(PUBLIC_ID), true);
+    assert.equal(isWebhookTriggerRef(TRIGGER_ID), true);
+    assert.equal(isWebhookTriggerRef("not-an-id"), false);
   });
 
   it("fails closed on permissions and never treats viewers as managers", () => {
@@ -175,39 +240,75 @@ describe("webhook-trigger contract adapter", () => {
     );
   });
 
-  it("validates settings without offering signature or replay off switches", () => {
-    const valid = validateWebhookTriggerDraft(
-      emptyWebhookTriggerDraft({
-        fieldMappingText: "alert.id: payload.id\n",
-      }),
-    );
+  it("validates #113 fields and never offers signature or replay off switches", () => {
+    const valid = validateWebhookTriggerDraft(validDraft());
     assert.equal(valid.ok, true);
     if (valid.ok) {
       assert.equal(valid.settings.signatureRequired, true);
       assert.equal(valid.settings.replayRequired, true);
       assert.equal(valid.settings.rawBodyBeforeParse, true);
-      assert.equal(valid.settings.fieldMapping[0]?.dest, "alert.id");
-      const body = webhookTriggerWriteBody(valid.settings);
-      assert.equal("id" in body, false);
-      assert.equal("workspaceId" in body, false);
-      assert.equal("secret" in body, false);
+      assert.equal(valid.settings.fieldMapping["alert.id"], "payload.id");
+      assert.equal(valid.body.type, "webhook");
+      assert.equal(valid.body.workflowVersionId, VERSION_ID);
+      assert.equal(valid.body.secretCredentialId, CREDENTIAL_ID);
+      assert.equal(valid.body.clockSkewSeconds, 300);
+      assert.equal(valid.body.replayRetentionSeconds, 600);
+      assert.equal(valid.body.maxConcurrency, 5);
+      assert.equal("id" in valid.body, false);
+      assert.equal("workspaceId" in valid.body, false);
+      assert.equal("secret" in valid.body, false);
+      assert.equal("inputSchema" in valid.body, false);
+      assert.equal("timestampSkewSeconds" in valid.body, false);
+    }
+
+    const inline = validateWebhookTriggerDraft(
+      emptyWebhookTriggerDraft({
+        workflowVersionId: VERSION_ID,
+        secretMode: "inline",
+        inlineSecret: "whsec_operator",
+      }),
+    );
+    assert.equal(inline.ok, true);
+    if (inline.ok) {
+      assert.deepEqual(inline.body.secret, { secret: "whsec_operator" });
+      assert.equal(inline.body.secretCredentialId, undefined);
     }
 
     const secretMap = parseFieldMappingText("token: payload.token");
     assert.ok(secretMap.errors.some((error) => /secret-shaped/.test(error)));
 
     const badType = validateWebhookTriggerDraft(
-      emptyWebhookTriggerDraft({ contentType: "text/yaml" }),
+      validDraft() && emptyWebhookTriggerDraft({
+        ...validDraft(),
+        contentType: "text/yaml",
+      }),
     );
     assert.equal(badType.ok, false);
 
     const tinyReplay = validateWebhookTriggerDraft(
       emptyWebhookTriggerDraft({
-        timestampSkewSeconds: "300",
-        replayWindowSeconds: "30",
+        ...validDraft(),
+        clockSkewSeconds: "300",
+        replayRetentionSeconds: "30",
       }),
     );
     assert.equal(tinyReplay.ok, false);
+
+    const noVersion = validateWebhookTriggerDraft(
+      emptyWebhookTriggerDraft({ secretMode: "vault", secretCredentialId: CREDENTIAL_ID }),
+    );
+    assert.equal(noVersion.ok, false);
+
+    const patchSecret = validateWebhookTriggerDraft(
+      emptyWebhookTriggerDraft({
+        ...validDraft(),
+        secretMode: "inline",
+        inlineSecret: "nope",
+      }),
+      null,
+      "update",
+    );
+    assert.equal(patchSecret.ok, false);
 
     const host = hostSuppliedWebhookIdentityKeys({
       id: TRIGGER_ID,
@@ -216,66 +317,92 @@ describe("webhook-trigger contract adapter", () => {
     });
     assert.deepEqual(host, ["id", "workspaceId"]);
     const cleaned = rejectHostSuppliedWebhookBody({
-      contentType: "application/json",
+      type: "webhook" as const,
+      workflowVersionId: VERSION_ID,
       maxBodyBytes: 16,
-      timestampSkewSeconds: 30,
-      replayWindowSeconds: 30,
-      rateLimitPerMinute: 10,
-      maxConcurrent: 1,
-      fieldMapping: [],
     });
     assert.equal("workspaceId" in cleaned, false);
+    assert.deepEqual(webhookTriggerRotateBody("next"), { secret: { secret: "next" } });
   });
 
-  it("shows a one-time secret then forgets it and never re-displays from GET", () => {
-    const created = takeOneTimeSecret({
+  it("never returns or keeps a secret from API payloads", () => {
+    const leaked = stripUnexpectedWebhookSecret({
       id: TRIGGER_ID,
-      opaqueId: "wh_opaque_1",
-      secret: "whsec_once",
-      fingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      secretRef: "cred-1",
+      publicId: PUBLIC_ID,
+      secret: "whsec_should_not_exist",
+      secretCredentialId: CREDENTIAL_ID,
     });
-    assert.equal(created.secret, "whsec_once");
-    assert.equal("secret" in created.record, false);
-    assert.ok(created.strippedKeys.includes("secret"));
+    assert.equal(leaked.leaked, true);
+    assert.equal("secret" in leaked.record, false);
+    assert.ok(leaked.strippedKeys.includes("secret"));
 
     const listed = parseWebhookTriggerRecord({
       id: TRIGGER_ID,
       workflowId: WORKFLOW_ID,
-      opaqueId: "wh_opaque_1",
-      status: "active",
+      workflowVersionId: VERSION_ID,
+      publicId: PUBLIC_ID,
+      ingressPath: `/api/v1/hooks/${PUBLIC_ID}`,
+      status: "enabled",
       secret: "should-never-stick",
-      fingerprint: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      secretCredentialId: CREDENTIAL_ID,
+      fieldMapping: { env: "environment" },
+      clockSkewSeconds: 300,
+      replayRetentionSeconds: 600,
+      maxConcurrency: 5,
     });
     assert.ok(listed);
-    assert.equal(listed.opaqueId, "wh_opaque_1");
+    assert.equal(listed.publicId, PUBLIC_ID);
+    assert.equal(listed.ingressPath, `/api/v1/hooks/${PUBLIC_ID}`);
+    assert.equal(listed.status, "enabled");
+    assert.equal(listed.fieldMapping.env, "environment");
     assert.equal("secret" in listed, false);
-    assert.equal(listed.signatureRequired, true);
-
-    const forgotten = forgetOneTimeSecret({ secret: "whsec_once", revealed: true });
-    assert.equal(forgotten.secret, null);
-    assert.equal(forgotten.revealed, false);
-    assert.equal(
-      webhookMutationOutcomeMessage("create", { secret: null, revealed: false }),
-      WEBHOOK_NO_REVEAL_MESSAGE,
+    assert.equal("opaqueId" in listed, false);
+    assert.match(
+      webhookMutationOutcomeMessage("create", { leaked: true, strippedKeys: ["secret"] }),
+      /never returned/,
     );
     assert.match(
-      webhookMutationOutcomeMessage("rotate", { secret: "x", revealed: true }),
-      /rotated/i,
+      webhookMutationOutcomeMessage("create", { leaked: true, strippedKeys: ["secret"] }),
+      new RegExp(WEBHOOK_SECRET_LEAK_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     );
+    assert.match(webhookMutationOutcomeMessage("rotate"), /not returned/);
+    const createBody = webhookTriggerCreateBody(validDraft(), {
+      workflowVersionId: VERSION_ID,
+      contentType: "application/json",
+      maxBodyBytes: 65536,
+      clockSkewSeconds: 300,
+      replayRetentionSeconds: 600,
+      rateLimitPerMinute: 60,
+      workspaceRatePerMinute: 300,
+      maxConcurrency: 5,
+      workspaceMaxConcurrency: 20,
+      fieldMapping: {},
+      signatureRequired: true,
+      replayRequired: true,
+      rawBodyBeforeParse: true,
+    });
+    assert.equal(createBody.secretCredentialId, CREDENTIAL_ID);
+    assert.equal(createBody.secret, undefined);
   });
 
   it("parses list payloads and YAML-only webhook declarations", () => {
     const items = parseWebhookTriggerList(
       {
         items: [
-          { id: TRIGGER_ID, opaqueId: "wh_a", type: "webhook", status: "disabled" },
+          {
+            id: TRIGGER_ID,
+            publicId: PUBLIC_ID,
+            type: "webhook",
+            status: "disabled",
+            ingressPath: `/api/v1/hooks/${PUBLIC_ID}`,
+          },
         ],
       },
       WORKFLOW_ID,
     );
     assert.equal(items[0]?.status, "disabled");
     assert.equal(items[0]?.workflowId, WORKFLOW_ID);
+    assert.equal(items[0]?.publicId, PUBLIC_ID);
 
     const yaml = `apiVersion: flowforge/v1
 kind: Workflow
@@ -301,10 +428,9 @@ spec:
     assert.equal(declared[0]?.hasSchema, true);
     const seeded = seedDraftFromYaml(yaml);
     assert.equal(seeded.contentType, "application/json");
-    assert.match(seeded.inputSchemaText, /object/);
   });
 
-  it("maps RFC 9457 auth and missing-map failures closed", () => {
+  it("maps RFC 9457 auth failures closed", () => {
     assert.match(
       webhookTriggerAuthFailureMessage({
         type: "urn:flowforge:problem:csrf-required",
@@ -342,7 +468,6 @@ spec:
       WEBHOOK_FORBIDDEN_MESSAGE,
     );
     assert.equal(isWebhookTriggerAuthFailure(null), false);
-    assert.equal(isWebhookMapPending(404), true);
     assert.match(WEBHOOK_CSRF_HELP, /X-CSRF-Token/);
   });
 });

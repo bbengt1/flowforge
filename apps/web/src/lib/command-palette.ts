@@ -138,9 +138,9 @@ export function paletteCommands(
       id: "webhook-triggers",
       label: "Configure webhook triggers",
       hint: context.workflowId
-        ? "Replay-safe webhook config for this workflow"
-        : "Replay-safe webhook trigger config",
-      keywords: ["webhook", "trigger", "secret", "replay", "signature"],
+        ? "Replay-safe webhook config for this workflow (#113)"
+        : "Replay-safe webhook trigger config (#113)",
+      keywords: ["webhook", "trigger", "secret", "replay", "signature", "hmac"],
       action: {
         type: "navigate",
         href: context.workflowId

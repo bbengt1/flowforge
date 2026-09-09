@@ -1,13 +1,20 @@
 /**
  * Single retarget adapter for Chloe's E10.2 webhook trigger config UI.
  *
- * Jonny owns ingress + security (#107). This UI does **not** invent a
- * route map. Prefer `GET /workflows/catalog` `triggers[type=webhook]`
- * when jonny posts routes/fields there. Until that map lands, use the
- * marked **contract-fallback** nested under existing workflows
- * (same house style as `/workflows/{id}/executions`).
+ * Wired to jonny's **#113** map on `main` (`e102-#113`).
  *
- * Cookie session + `X-CSRF-Token`. camelCase JSON. RFC 9457.
+ * Admin (cookie session + `X-CSRF-Token` on POST/PATCH/DELETE):
+ *   GET|POST /workflows/{id}/triggers
+ *   GET|PATCH|DELETE /triggers/{id}
+ *   POST /triggers/{id}/rotate|disable|enable
+ * Catalog: GET /workflows/catalog `triggers[type=webhook].ingress` + `.admin`
+ *
+ * Public ingress is operator documentation only — not a session UI path:
+ *   POST /hooks/{publicId}  →  POST /api/v1/hooks/{publicId}
+ *   HMAC over `v1.{timestamp}.{rawBody}` before parse
+ *   Headers: X-FlowForge-Timestamp, X-FlowForge-Signature: v1=<hex>
+ *
+ * Vault `webhook_secret` only. Never return or render `secret`.
  * Relates to #107 / Part of #105. Keep #107 open.
  * Do not change `apps/api`. Do not stack on an API feature branch.
  */
@@ -18,39 +25,48 @@ import type { ProblemDetails } from "./problem.ts";
 import { isCsrfProblem, isUnauthenticatedProblem } from "./session.ts";
 import { listYamlTriggers } from "./workflow-yaml-nodes.ts";
 import type {
-  CatalogTriggerWebhook,
-  CatalogTriggerWebhookRoutes,
+  CatalogTriggerAdmin,
+  CatalogTriggerIngress,
   WorkflowCatalog,
 } from "./workflow-types.ts";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "./workspace-nav.ts";
 
 export const WEBHOOK_TRIGGER_STORY = 107;
 export const WEBHOOK_TRIGGER_EPIC = 105;
-/** 0 = jonny's webhook route map is not on main yet. */
-export const WEBHOOK_TRIGGER_API_PR = 0;
-export const WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE = "contract-fallback" as const;
+/** Jonny's E10.2 webhook map on main. */
+export const WEBHOOK_TRIGGER_API_PR = 113;
+export const WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE = "e102-#113" as const;
 export const WEBHOOK_TRIGGER_SEMANTICS = "E10.2" as const;
 
 export const WEBHOOK_TRIGGER_TYPE = "webhook" as const;
 export const WEBHOOK_TRIGGER_QUERY = "webhooks";
 export const WEBHOOK_TRIGGER_COLLECTION = "triggers";
+export const WEBHOOK_SECRET_CREDENTIAL_TYPE = "webhook_secret" as const;
 
 export const WEBHOOK_TRIGGER_VIEW_PERMISSION = "workflow.view" as const;
 export const WEBHOOK_TRIGGER_MANAGE_PERMISSION = "workflow.edit" as const;
 
-export const WEBHOOK_TRIGGER_MAX_BODY_BYTES = 16 * 1024;
-export const WEBHOOK_TRIGGER_MAX_MAPPINGS = 32;
-export const WEBHOOK_TRIGGER_MAX_CONTENT_TYPE = 128;
-export const WEBHOOK_TRIGGER_DEFAULT_SKEW_SECONDS = 300;
-export const WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS = 300;
+export const WEBHOOK_TRIGGER_DEFAULT_MAX_BODY_BYTES = 65536;
+export const WEBHOOK_TRIGGER_HARD_MAX_BODY_BYTES = 262144;
+export const WEBHOOK_TRIGGER_DEFAULT_CLOCK_SKEW_SECONDS = 300;
+export const WEBHOOK_TRIGGER_HARD_CLOCK_SKEW_SECONDS = 3600;
+export const WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS = 600;
+export const WEBHOOK_TRIGGER_HARD_REPLAY_SECONDS = 7200;
 export const WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE = 60;
-export const WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENT = 1;
+export const WEBHOOK_TRIGGER_HARD_RATE_PER_MINUTE = 600;
+export const WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_RATE = 300;
+export const WEBHOOK_TRIGGER_HARD_WORKSPACE_RATE = 3000;
+export const WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENCY = 5;
+export const WEBHOOK_TRIGGER_HARD_MAX_CONCURRENCY = 20;
+export const WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_CONCURRENCY = 20;
+export const WEBHOOK_TRIGGER_HARD_WORKSPACE_CONCURRENCY = 100;
+export const WEBHOOK_TRIGGER_MAX_MAPPINGS = 32;
 export const WEBHOOK_TRIGGER_MIN_RATE = 1;
-export const WEBHOOK_TRIGGER_MAX_RATE = 600;
-export const WEBHOOK_TRIGGER_MAX_CONCURRENT_CAP = 32;
-export const WEBHOOK_TRIGGER_MAX_SKEW_SECONDS = 600;
 
-export const WEBHOOK_TRIGGER_STATUSES = ["active", "disabled"] as const;
+export const WEBHOOK_PUBLIC_ID_PREFIX = "wh_";
+export const WEBHOOK_PUBLIC_ID_RE = /^wh_[0-9a-f]{64}$/i;
+
+export const WEBHOOK_TRIGGER_STATUSES = ["enabled", "disabled"] as const;
 export type WebhookTriggerStatus = (typeof WEBHOOK_TRIGGER_STATUSES)[number];
 
 export const WEBHOOK_TRIGGER_PROBLEM_CODES = {
@@ -61,13 +77,15 @@ export const WEBHOOK_TRIGGER_PROBLEM_CODES = {
   conflict: "conflict",
 } as const;
 
-export const WEBHOOK_YAML_ONLY_FIELDS = ["inputSchema", "contentType"] as const;
-
-export const WEBHOOK_ALLOWED_CONTENT_TYPES = [
-  "application/json",
+export const WEBHOOK_YAML_ONLY_FIELDS = [
+  "schema",
+  "inputSchema",
+  "contentType",
 ] as const;
 
-export const WEBHOOK_ONE_TIME_SECRET_KEYS = [
+export const WEBHOOK_ALLOWED_CONTENT_TYPES = ["application/json"] as const;
+
+export const WEBHOOK_SECRET_KEYS = [
   "secret",
   "plaintext",
   "webhookSecret",
@@ -87,32 +105,35 @@ export const WEBHOOK_HOST_SUPPLIED_KEYS = [
 export const FIELD_MAPPING_PATH_RE =
   /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
-export const WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP =
-  "Using marked contract-fallback webhook trigger paths because GET /workflows/catalog triggers[type=webhook] has no route map yet (jonny / #107). Assumed nested collection: GET|POST /workflows/{workflowId}/triggers, GET|PATCH /workflows/{workflowId}/triggers/{triggerId}, POST …/rotate|disable|enable. Cookie session + X-CSRF-Token. camelCase. RFC 9457. Do not invent ingress URLs, POST /executions, or a local secret store. Retarget this adapter when jonny posts the map.";
+export const WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP =
+  "Using marked catalog-fallback #113 defaults because GET /workflows/catalog triggers[type=webhook] is missing ingress+admin. Admin: GET|POST /workflows/{id}/triggers and GET|PATCH|DELETE /triggers/{id} plus POST …/rotate|disable|enable. Public ingress POST /hooks/{publicId} is operator documentation only — not a session UI path. HMAC over v1.{timestamp}.{rawBody} before parse. Cookie session + X-CSRF-Token. camelCase. RFC 9457. Vault webhook_secret only; secret is never returned. Cite #113 / e102-#113. Relates to #107.";
 
 export const WEBHOOK_TRIGGER_CATALOG_HELP =
-  "Webhook trigger config follows GET /workflows/catalog triggers[type=webhook]. Mutations send X-CSRF-Token. Secrets are shown once on create/rotate if the map returns them, then stripped. Signature is verified on the raw body before parse. Timestamp and replay protection stay on. Rate and concurrency limits apply before enqueue.";
+  "Webhook trigger config follows jonny's #113 catalog map (e102-#113): GET /workflows/catalog triggers[type=webhook].ingress + .admin. Admin mutations send X-CSRF-Token. Public POST /hooks/{publicId} is not a browser session route. HMAC is verified over v1.{timestamp}.{rawBody} before parse. The vault webhook_secret is never returned.";
+
+export const WEBHOOK_INGRESS_HELP =
+  "Public ingress is server-to-server, not a session UI path: POST /hooks/{publicId} (POST /api/v1/hooks/{publicId}). Send X-FlowForge-Timestamp (unix seconds) and X-FlowForge-Signature: v1=<hex>. HMAC-SHA256 over v1.{timestamp}.{rawBody} is verified before JSON parse. No cookie, no CSRF. Optional Idempotency-Key. Never put the secret in the URL.";
 
 export const WEBHOOK_SIGNATURE_HELP =
-  "Ingress verifies a versioned signature over the exact raw body and timestamp before parsing. Absent, invalid, expired, or replayed signatures are rejected. This UI has no toggle that skips signature-before-parse.";
+  "Ingress verifies a v1 HMAC over the exact raw body and timestamp before parsing. Absent, invalid, expired, or replayed signatures are rejected. This UI has no toggle that skips signature-before-parse and does not POST /hooks/{publicId} from the browser session.";
 
 export const WEBHOOK_REPLAY_HELP =
-  "Replay protection keeps request identifiers for at least the clock-skew window. Replayed or stale timestamps fail closed. Skew and replay window are bounded; they cannot turn protection off.";
+  "Replay protection retains the signed-payload digest for at least the clock-skew window (default 600s). Replayed or stale timestamps fail closed. Skew and replay retention are bounded; they cannot turn protection off.";
 
 export const WEBHOOK_RATE_HELP =
-  "Per-trigger rate and concurrency limits apply before enqueue. Oversized bodies and unsupported content types are rejected. Defaults fail closed (JSON only, 16 KiB).";
+  "Per-trigger and workspace rate/concurrency limits apply before enqueue. Oversized bodies and unsupported content types are rejected. Defaults fail closed (JSON only, 64 KiB body, 60/min, 5 in-flight).";
 
 export const WEBHOOK_SECRET_HELP =
-  "The server owns the webhook secret reference. Plaintext is shown once after create or rotate if the API returns it, then discarded. Later GETs are metadata only (opaque id, fingerprint, secretRef). This UI never writes secrets to localStorage, the URL, or YAML.";
+  "Pick an existing vault webhook_secret or send {secret:{secret}} once on create/rotate. The API never returns secret. Later GETs are metadata only (publicId, ingressPath, secretCredentialId). This UI never writes secrets to localStorage, the URL, or YAML.";
 
 export const WEBHOOK_YAML_HELP =
-  "Workflow YAML may declare only inputSchema and contentType on type=webhook. The opaque trigger id and secret reference live outside YAML.";
+  "Workflow YAML may declare only schema / inputSchema and contentType on type=webhook. The opaque publicId (wh_…) and vault secret reference live outside YAML.";
 
 export const WEBHOOK_FIELD_MAPPING_HELP =
-  "Map only allowlisted dotted fields into typed trigger input. Payload text is never YAML, shell, template, or code. Secret-shaped destination or source names are rejected.";
+  "Map destination identifier → dotted source path. Empty mapping copies the root JSON object. Payload text is never YAML, shell, template, or code. Secret-shaped destination or source names are rejected.";
 
 export const WEBHOOK_CSRF_HELP =
-  "Create, update, rotate, disable, and enable send X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
+  "Create, patch, rotate, disable, enable, and delete send X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called. Public ingress does not use CSRF.";
 
 export const WEBHOOK_FORBIDDEN_MESSAGE =
   "Webhook trigger changes require workflow.edit. HTTP 403 is fail-closed; this UI does not keep leftover rows or treat the secret as rotated.";
@@ -123,175 +144,242 @@ export const WEBHOOK_VIEW_FORBIDDEN_MESSAGE =
 export const WEBHOOK_UNAUTHENTICATED_MESSAGE =
   "Session is missing or stale (HTTP 401). Mutation is fail-closed; sign in again.";
 
-export const WEBHOOK_MAP_PENDING_MESSAGE =
-  "Jonny's webhook route map is not on main yet (#107). This adapter uses marked contract-fallback paths. HTTP 404 is fail-closed — no local secret store and no invented ingress.";
+export const WEBHOOK_CATALOG_FALLBACK_MESSAGE =
+  "GET /workflows/catalog triggers[type=webhook] is missing ingress+admin. Using marked #113 catalog-fallback admin paths. HTTP 404 is fail-closed — no local secret store and no invented ingress.";
 
 export const WEBHOOK_HOST_SUPPLIED_MESSAGE =
   "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers. Host-supplied identity is HTTP 400.";
 
 export const WEBHOOK_CREATED_MESSAGE =
-  "Webhook trigger created. Copy the one-time secret now if the API revealed it. It will not be shown again.";
+  "Webhook trigger created. Copy publicId and ingressPath. The HMAC secret is never returned — it lives only in the vault webhook_secret.";
+
+export const WEBHOOK_UPDATED_MESSAGE =
+  "Webhook trigger settings saved. Secret was not sent (PATCH rejects secret; rotate is the only secret write path).";
 
 export const WEBHOOK_ROTATED_MESSAGE =
-  "Webhook secret rotated. Copy the one-time secret now if the API revealed it. The previous secret is no longer valid in this UI.";
+  "Webhook secret rotated on the existing vault credential. Plaintext was not returned.";
 
 export const WEBHOOK_DISABLED_MESSAGE =
-  "Webhook trigger disabled. Ingress for this opaque id fails closed until it is enabled again.";
+  "Webhook trigger disabled. Ingress for this publicId is HTTP 404 until it is enabled again.";
 
 export const WEBHOOK_ENABLED_MESSAGE =
   "Webhook trigger enabled. Signature, timestamp, and replay checks stay required.";
 
-export const WEBHOOK_NO_REVEAL_MESSAGE =
-  "The API did not return a one-time secret. This UI never invents or re-displays plaintext. Rotate again after jonny's map lands if you need a reveal.";
+export const WEBHOOK_DELETED_MESSAGE =
+  "Webhook trigger deleted.";
 
-export const WEBHOOK_COPY_DISMISS_HELP =
-  "I copied it — discard the one-time secret from this page. It is not stored in browser state after dismiss.";
+export const WEBHOOK_SECRET_LEAK_MESSAGE =
+  "The API unexpectedly included a secret field, contrary to #113 secretNeverReturned. It was discarded and not shown.";
+
+export const WEBHOOK_PUBLISHED_ONLY_HELP =
+  "Webhook triggers must pin a published workflowVersionId. Drafts are HTTP 400.";
+
+export const WEBHOOK_ROTATE_SECRET_HELP =
+  "Rotate is rotate-only: POST /triggers/{id}/rotate {secret:{secret}}. PATCH rejects secret.";
 
 export type WebhookTriggerRouteMapSource =
   | typeof WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE
   | `e102-#${number}`;
 
-export type WebhookTriggerCatalogSource = "workflows-catalog" | "contract-fallback";
+export type WebhookTriggerCatalogSource = "workflows-catalog" | "catalog-fallback";
 
-export type WebhookFieldMapping = {
-  dest: string;
-  from: string;
-};
+export type WebhookFieldMapping = Record<string, string>;
 
 export type WebhookTriggerSettings = {
+  workflowVersionId: string;
   contentType: string;
-  inputSchema: Record<string, unknown>;
   maxBodyBytes: number;
-  timestampSkewSeconds: number;
-  replayWindowSeconds: number;
+  clockSkewSeconds: number;
+  replayRetentionSeconds: number;
   rateLimitPerMinute: number;
-  maxConcurrent: number;
-  fieldMapping: WebhookFieldMapping[];
+  workspaceRatePerMinute: number;
+  maxConcurrency: number;
+  workspaceMaxConcurrency: number;
+  fieldMapping: WebhookFieldMapping;
   signatureRequired: true;
   replayRequired: true;
   rawBodyBeforeParse: true;
 };
 
 export type WebhookTriggerDraft = {
+  workflowVersionId: string;
+  secretMode: "vault" | "inline";
+  secretCredentialId: string;
+  inlineSecret: string;
   contentType: string;
-  inputSchemaText: string;
   maxBodyBytes: string;
-  timestampSkewSeconds: string;
-  replayWindowSeconds: string;
+  clockSkewSeconds: string;
+  replayRetentionSeconds: string;
   rateLimitPerMinute: string;
-  maxConcurrent: string;
+  workspaceRatePerMinute: string;
+  maxConcurrency: string;
+  workspaceMaxConcurrency: string;
   fieldMappingText: string;
 };
 
 export type WebhookTriggerRecord = {
   id: string;
+  publicId: string;
+  ingressPath: string;
   workflowId: string;
+  workflowVersionId: string;
   type: typeof WEBHOOK_TRIGGER_TYPE;
   status: WebhookTriggerStatus;
-  opaqueId: string;
-  secretRef?: string;
-  fingerprint?: string;
+  secretCredentialId: string;
   contentType: string;
-  inputSchema?: Record<string, unknown>;
   maxBodyBytes: number;
-  timestampSkewSeconds: number;
-  replayWindowSeconds: number;
+  clockSkewSeconds: number;
+  replayRetentionSeconds: number;
   rateLimitPerMinute: number;
-  maxConcurrent: number;
-  fieldMapping: WebhookFieldMapping[];
+  workspaceRatePerMinute: number;
+  maxConcurrency: number;
+  workspaceMaxConcurrency: number;
+  fieldMapping: WebhookFieldMapping;
   signatureRequired: true;
   replayRequired: true;
   rawBodyBeforeParse: true;
   createdAt?: string;
-  rotatedAt?: string;
-  disabledAt?: string;
+  updatedAt?: string;
 };
 
 export type WebhookTriggerWriteBody = {
-  contentType: string;
-  inputSchema?: Record<string, unknown>;
-  maxBodyBytes: number;
-  timestampSkewSeconds: number;
-  replayWindowSeconds: number;
-  rateLimitPerMinute: number;
-  maxConcurrent: number;
-  fieldMapping: WebhookFieldMapping[];
+  type?: typeof WEBHOOK_TRIGGER_TYPE;
+  workflowVersionId?: string;
+  secretCredentialId?: string;
+  secret?: { secret: string };
+  contentType?: string;
+  fieldMapping?: WebhookFieldMapping;
+  maxBodyBytes?: number;
+  clockSkewSeconds?: number;
+  replayRetentionSeconds?: number;
+  rateLimitPerMinute?: number;
+  workspaceRatePerMinute?: number;
+  maxConcurrency?: number;
+  workspaceMaxConcurrency?: number;
 };
 
-export type WebhookOneTimeReveal = {
-  secret: string | null;
-  revealed: boolean;
+export type WebhookTriggerRotateBody = {
+  secret: { secret: string };
+};
+
+export type WebhookSecretLeak = {
+  leaked: boolean;
+  strippedKeys: string[];
+};
+
+export type WebhookTriggerAdminRoutes = {
+  listRoute: string;
+  createRoute: string;
+  itemRoute: string;
+  rotateRoute: string;
+  disableRoute: string;
+  enableRoute: string;
+  deleteRoute: string;
 };
 
 export type WebhookTriggerResolved = {
   source: WebhookTriggerCatalogSource;
-  routeMapSource: typeof WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE | "workflows-catalog";
+  routeMapSource: typeof WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE;
   apiPr: number;
   collection: string;
   permission: string;
-  managePermission: string;
+  viewPermission: string;
   csrf: boolean;
-  secretRevealOnce: boolean;
+  secretNeverReturned: true;
   signatureRequired: true;
   replayRequired: true;
   rawBodyBeforeParse: true;
   maxBodyBytes: number;
-  defaultTimestampSkewSeconds: number;
-  defaultReplayWindowSeconds: number;
-  defaultRateLimitPerMinute: number;
-  defaultMaxConcurrent: number;
+  hardMaxBodyBytes: number;
+  clockSkewSeconds: number;
+  hardClockSkewSeconds: number;
+  replayRetentionSeconds: number;
+  hardReplayRetentionSeconds: number;
+  defaultRatePerMinute: number;
+  hardRatePerMinute: number;
+  defaultWorkspaceRatePerMinute: number;
+  hardWorkspaceRatePerMinute: number;
+  defaultMaxConcurrency: number;
+  hardMaxConcurrency: number;
+  defaultWorkspaceMaxConcurrency: number;
+  hardWorkspaceMaxConcurrency: number;
   contentTypes: string[];
-  routes: Required<CatalogTriggerWebhookRoutes>;
+  admin: WebhookTriggerAdminRoutes;
+  ingress: Required<
+    Pick<
+      CatalogTriggerIngress,
+      | "route"
+      | "method"
+      | "public"
+      | "csrf"
+      | "session"
+      | "signatureHeader"
+      | "timestampHeader"
+      | "signatureVersion"
+      | "idempotencyHeader"
+      | "help"
+    >
+  >;
   help: string;
+  ingressHelp: string;
 };
 
-export const WEBHOOK_TRIGGER_DEFAULT_ROUTES: Required<CatalogTriggerWebhookRoutes> =
-  {
-    list: "/workflows/{workflowId}/triggers",
-    create: "/workflows/{workflowId}/triggers",
-    get: "/workflows/{workflowId}/triggers/{triggerId}",
-    update: "/workflows/{workflowId}/triggers/{triggerId}",
-    rotate: "/workflows/{workflowId}/triggers/{triggerId}/rotate",
-    disable: "/workflows/{workflowId}/triggers/{triggerId}/disable",
-    enable: "/workflows/{workflowId}/triggers/{triggerId}/enable",
-  };
+export const WEBHOOK_TRIGGER_DEFAULT_ADMIN: WebhookTriggerAdminRoutes = {
+  listRoute: "/workflows/{workflowId}/triggers",
+  createRoute: "/workflows/{workflowId}/triggers",
+  itemRoute: "/triggers/{triggerId}",
+  rotateRoute: "/triggers/{triggerId}/rotate",
+  disableRoute: "/triggers/{triggerId}/disable",
+  enableRoute: "/triggers/{triggerId}/enable",
+  deleteRoute: "/triggers/{triggerId}",
+};
 
-export const WEBHOOK_TRIGGER_DEFAULT_CONTRACT = {
-  collection: WEBHOOK_TRIGGER_COLLECTION,
-  permission: WEBHOOK_TRIGGER_VIEW_PERMISSION,
-  managePermission: WEBHOOK_TRIGGER_MANAGE_PERMISSION,
-  csrf: true,
-  secretRevealOnce: true,
-  signatureRequired: true as const,
-  replayRequired: true as const,
-  rawBodyBeforeParse: true as const,
-  maxBodyBytes: WEBHOOK_TRIGGER_MAX_BODY_BYTES,
-  defaultTimestampSkewSeconds: WEBHOOK_TRIGGER_DEFAULT_SKEW_SECONDS,
-  defaultReplayWindowSeconds: WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS,
-  defaultRateLimitPerMinute: WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE,
-  defaultMaxConcurrent: WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENT,
-  contentTypes: [...WEBHOOK_ALLOWED_CONTENT_TYPES],
-  routes: { ...WEBHOOK_TRIGGER_DEFAULT_ROUTES },
-  help: WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP,
+export const WEBHOOK_TRIGGER_DEFAULT_INGRESS = {
+  route: "POST /api/v1/hooks/{publicId}",
+  method: "POST",
+  public: true,
+  csrf: false,
+  session: false,
+  signatureHeader: "X-FlowForge-Signature",
+  timestampHeader: "X-FlowForge-Timestamp",
+  signatureVersion: "v1",
+  idempotencyHeader: "Idempotency-Key",
+  help: WEBHOOK_INGRESS_HELP,
 };
 
 export function emptyWebhookTriggerDraft(
   seed: Partial<WebhookTriggerDraft> = {},
 ): WebhookTriggerDraft {
   return {
+    workflowVersionId: seed.workflowVersionId ?? "",
+    secretMode: seed.secretMode ?? "vault",
+    secretCredentialId: seed.secretCredentialId ?? "",
+    inlineSecret: seed.inlineSecret ?? "",
     contentType: seed.contentType ?? "application/json",
-    inputSchemaText: seed.inputSchemaText ?? '{\n  "type": "object"\n}',
-    maxBodyBytes: seed.maxBodyBytes ?? String(WEBHOOK_TRIGGER_MAX_BODY_BYTES),
-    timestampSkewSeconds:
-      seed.timestampSkewSeconds ?? String(WEBHOOK_TRIGGER_DEFAULT_SKEW_SECONDS),
-    replayWindowSeconds:
-      seed.replayWindowSeconds ?? String(WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS),
+    maxBodyBytes:
+      seed.maxBodyBytes ?? String(WEBHOOK_TRIGGER_DEFAULT_MAX_BODY_BYTES),
+    clockSkewSeconds:
+      seed.clockSkewSeconds ?? String(WEBHOOK_TRIGGER_DEFAULT_CLOCK_SKEW_SECONDS),
+    replayRetentionSeconds:
+      seed.replayRetentionSeconds ?? String(WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS),
     rateLimitPerMinute:
       seed.rateLimitPerMinute ?? String(WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE),
-    maxConcurrent:
-      seed.maxConcurrent ?? String(WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENT),
+    workspaceRatePerMinute:
+      seed.workspaceRatePerMinute ?? String(WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_RATE),
+    maxConcurrency:
+      seed.maxConcurrency ?? String(WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENCY),
+    workspaceMaxConcurrency:
+      seed.workspaceMaxConcurrency ??
+      String(WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_CONCURRENCY),
     fieldMappingText: seed.fieldMappingText ?? "",
   };
+}
+
+export function forgetWebhookInlineSecret(
+  draft: WebhookTriggerDraft,
+): WebhookTriggerDraft {
+  draft.inlineSecret = "";
+  return { ...draft, inlineSecret: "" };
 }
 
 export function resolveWebhookTriggerContract(
@@ -299,83 +387,161 @@ export function resolveWebhookTriggerContract(
 ): WebhookTriggerResolved {
   const listed = catalog?.triggers?.find(
     (item) => item.type === WEBHOOK_TRIGGER_TYPE,
-  )?.webhook;
-  if (!listed || !catalogHasWebhookRoutes(listed)) {
-    return {
-      source: "contract-fallback",
-      routeMapSource: WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE,
-      apiPr: WEBHOOK_TRIGGER_API_PR,
-      ...WEBHOOK_TRIGGER_DEFAULT_CONTRACT,
-      routes: { ...WEBHOOK_TRIGGER_DEFAULT_ROUTES },
-      contentTypes: [...WEBHOOK_TRIGGER_DEFAULT_CONTRACT.contentTypes],
-    };
+  );
+  const hasMap = Boolean(listed?.ingress && listed?.admin);
+  if (!listed || !hasMap) {
+    return defaultResolved("catalog-fallback", WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP);
   }
   return {
-    source: "workflows-catalog",
-    routeMapSource: "workflows-catalog",
-    apiPr: WEBHOOK_TRIGGER_API_PR,
-    collection: stringOr(listed.collection, WEBHOOK_TRIGGER_COLLECTION),
-    permission: stringOr(listed.permission, WEBHOOK_TRIGGER_VIEW_PERMISSION),
-    managePermission: stringOr(
-      listed.managePermission,
-      WEBHOOK_TRIGGER_MANAGE_PERMISSION,
+    ...defaultResolved("workflows-catalog", stringOr(listed.admin?.help, WEBHOOK_TRIGGER_CATALOG_HELP)),
+    permission: stringOr(listed.admin?.permission, WEBHOOK_TRIGGER_MANAGE_PERMISSION),
+    viewPermission: stringOr(
+      listed.admin?.viewPermission,
+      WEBHOOK_TRIGGER_VIEW_PERMISSION,
     ),
-    csrf: listed.csrf !== false,
-    secretRevealOnce: listed.secretRevealOnce !== false,
+    csrf: listed.admin?.csrf !== false,
+    maxBodyBytes: positiveIntOr(
+      listed.ingress?.maxBodyBytes,
+      WEBHOOK_TRIGGER_DEFAULT_MAX_BODY_BYTES,
+    ),
+    clockSkewSeconds: positiveIntOr(
+      listed.ingress?.clockSkewSeconds,
+      WEBHOOK_TRIGGER_DEFAULT_CLOCK_SKEW_SECONDS,
+    ),
+    replayRetentionSeconds: positiveIntOr(
+      listed.ingress?.replayRetentionSeconds,
+      WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS,
+    ),
+    defaultRatePerMinute: positiveIntOr(
+      listed.ingress?.defaultRatePerMinute,
+      WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE,
+    ),
+    defaultWorkspaceRatePerMinute: positiveIntOr(
+      listed.ingress?.defaultWorkspaceRatePerMinute,
+      WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_RATE,
+    ),
+    defaultMaxConcurrency: positiveIntOr(
+      listed.ingress?.defaultMaxConcurrency,
+      WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENCY,
+    ),
+    defaultWorkspaceMaxConcurrency: positiveIntOr(
+      listed.ingress?.defaultWorkspaceMaxConcurrency,
+      WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_CONCURRENCY,
+    ),
+    contentTypes: listedContentTypes(listed.ingress?.contentTypes),
+    admin: mergeAdminRoutes(listed.admin),
+    ingress: mergeIngress(listed.ingress),
+    help: stringOr(listed.admin?.help, WEBHOOK_TRIGGER_CATALOG_HELP),
+    ingressHelp: stringOr(listed.ingress?.help, WEBHOOK_INGRESS_HELP),
+  };
+}
+
+function defaultResolved(
+  source: WebhookTriggerCatalogSource,
+  help: string,
+): WebhookTriggerResolved {
+  return {
+    source,
+    routeMapSource: WEBHOOK_TRIGGER_ROUTE_MAP_SOURCE,
+    apiPr: WEBHOOK_TRIGGER_API_PR,
+    collection: WEBHOOK_TRIGGER_COLLECTION,
+    permission: WEBHOOK_TRIGGER_MANAGE_PERMISSION,
+    viewPermission: WEBHOOK_TRIGGER_VIEW_PERMISSION,
+    csrf: true,
+    secretNeverReturned: true,
     signatureRequired: true,
     replayRequired: true,
     rawBodyBeforeParse: true,
-    maxBodyBytes: positiveIntOr(listed.maxBodyBytes, WEBHOOK_TRIGGER_MAX_BODY_BYTES),
-    defaultTimestampSkewSeconds: positiveIntOr(
-      listed.defaultTimestampSkewSeconds,
-      WEBHOOK_TRIGGER_DEFAULT_SKEW_SECONDS,
-    ),
-    defaultReplayWindowSeconds: positiveIntOr(
-      listed.defaultReplayWindowSeconds,
-      WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS,
-    ),
-    defaultRateLimitPerMinute: positiveIntOr(
-      listed.defaultRateLimitPerMinute,
-      WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE,
-    ),
-    defaultMaxConcurrent: positiveIntOr(
-      listed.defaultMaxConcurrent,
-      WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENT,
-    ),
-    contentTypes: listedContentTypes(listed.contentTypes),
-    routes: mergeRoutes(listed.routes),
-    help: stringOr(listed.help, WEBHOOK_TRIGGER_CATALOG_HELP),
+    maxBodyBytes: WEBHOOK_TRIGGER_DEFAULT_MAX_BODY_BYTES,
+    hardMaxBodyBytes: WEBHOOK_TRIGGER_HARD_MAX_BODY_BYTES,
+    clockSkewSeconds: WEBHOOK_TRIGGER_DEFAULT_CLOCK_SKEW_SECONDS,
+    hardClockSkewSeconds: WEBHOOK_TRIGGER_HARD_CLOCK_SKEW_SECONDS,
+    replayRetentionSeconds: WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS,
+    hardReplayRetentionSeconds: WEBHOOK_TRIGGER_HARD_REPLAY_SECONDS,
+    defaultRatePerMinute: WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE,
+    hardRatePerMinute: WEBHOOK_TRIGGER_HARD_RATE_PER_MINUTE,
+    defaultWorkspaceRatePerMinute: WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_RATE,
+    hardWorkspaceRatePerMinute: WEBHOOK_TRIGGER_HARD_WORKSPACE_RATE,
+    defaultMaxConcurrency: WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENCY,
+    hardMaxConcurrency: WEBHOOK_TRIGGER_HARD_MAX_CONCURRENCY,
+    defaultWorkspaceMaxConcurrency: WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_CONCURRENCY,
+    hardWorkspaceMaxConcurrency: WEBHOOK_TRIGGER_HARD_WORKSPACE_CONCURRENCY,
+    contentTypes: [...WEBHOOK_ALLOWED_CONTENT_TYPES],
+    admin: { ...WEBHOOK_TRIGGER_DEFAULT_ADMIN },
+    ingress: { ...WEBHOOK_TRIGGER_DEFAULT_INGRESS },
+    help,
+    ingressHelp: WEBHOOK_INGRESS_HELP,
   };
 }
 
-function catalogHasWebhookRoutes(listed: CatalogTriggerWebhook): boolean {
-  const routes = listed.routes;
-  if (!routes) {
-    return false;
-  }
-  return Boolean(
-    routes.list ||
-      routes.create ||
-      routes.get ||
-      routes.update ||
-      routes.rotate ||
-      routes.disable ||
-      routes.enable,
-  );
-}
-
-function mergeRoutes(
-  listed?: CatalogTriggerWebhookRoutes,
-): Required<CatalogTriggerWebhookRoutes> {
+function mergeAdminRoutes(listed?: CatalogTriggerAdmin): WebhookTriggerAdminRoutes {
   return {
-    list: stringOr(listed?.list, WEBHOOK_TRIGGER_DEFAULT_ROUTES.list),
-    create: stringOr(listed?.create, WEBHOOK_TRIGGER_DEFAULT_ROUTES.create),
-    get: stringOr(listed?.get, WEBHOOK_TRIGGER_DEFAULT_ROUTES.get),
-    update: stringOr(listed?.update, WEBHOOK_TRIGGER_DEFAULT_ROUTES.update),
-    rotate: stringOr(listed?.rotate, WEBHOOK_TRIGGER_DEFAULT_ROUTES.rotate),
-    disable: stringOr(listed?.disable, WEBHOOK_TRIGGER_DEFAULT_ROUTES.disable),
-    enable: stringOr(listed?.enable, WEBHOOK_TRIGGER_DEFAULT_ROUTES.enable),
+    listRoute: catalogPath(listed?.listRoute, WEBHOOK_TRIGGER_DEFAULT_ADMIN.listRoute),
+    createRoute: catalogPath(
+      listed?.createRoute,
+      WEBHOOK_TRIGGER_DEFAULT_ADMIN.createRoute,
+    ),
+    itemRoute: catalogPath(listed?.itemRoute, WEBHOOK_TRIGGER_DEFAULT_ADMIN.itemRoute),
+    rotateRoute: catalogPath(
+      listed?.rotateRoute,
+      WEBHOOK_TRIGGER_DEFAULT_ADMIN.rotateRoute,
+    ),
+    disableRoute: catalogPath(
+      listed?.disableRoute,
+      WEBHOOK_TRIGGER_DEFAULT_ADMIN.disableRoute,
+    ),
+    enableRoute: catalogPath(
+      listed?.enableRoute,
+      WEBHOOK_TRIGGER_DEFAULT_ADMIN.enableRoute,
+    ),
+    deleteRoute: catalogPath(
+      listed?.deleteRoute,
+      WEBHOOK_TRIGGER_DEFAULT_ADMIN.deleteRoute,
+    ),
   };
+}
+
+function mergeIngress(
+  listed?: CatalogTriggerIngress,
+): WebhookTriggerResolved["ingress"] {
+  return {
+    route: stringOr(listed?.route, WEBHOOK_TRIGGER_DEFAULT_INGRESS.route),
+    method: stringOr(listed?.method, WEBHOOK_TRIGGER_DEFAULT_INGRESS.method),
+    public: listed?.public !== false,
+    csrf: listed?.csrf === true,
+    session: listed?.session === true,
+    signatureHeader: stringOr(
+      listed?.signatureHeader,
+      WEBHOOK_TRIGGER_DEFAULT_INGRESS.signatureHeader,
+    ),
+    timestampHeader: stringOr(
+      listed?.timestampHeader,
+      WEBHOOK_TRIGGER_DEFAULT_INGRESS.timestampHeader,
+    ),
+    signatureVersion: stringOr(
+      listed?.signatureVersion,
+      WEBHOOK_TRIGGER_DEFAULT_INGRESS.signatureVersion,
+    ),
+    idempotencyHeader: stringOr(
+      listed?.idempotencyHeader,
+      WEBHOOK_TRIGGER_DEFAULT_INGRESS.idempotencyHeader,
+    ),
+    help: stringOr(listed?.help, WEBHOOK_INGRESS_HELP),
+  };
+}
+
+/** Strip HTTP method prefixes and /api/v1 from catalog route strings. */
+export function catalogPath(route: string | undefined, fallback: string): string {
+  const trimmed = route?.trim() ?? "";
+  if (!trimmed) {
+    return fallback;
+  }
+  const withoutMethod = trimmed.replace(
+    /^(GET|POST|PATCH|PUT|DELETE)(\|(GET|POST|PATCH|PUT|DELETE))*\s+/i,
+    "",
+  );
+  const withoutPrefix = withoutMethod.replace(/^\/api\/v1/, "");
+  return withoutPrefix.startsWith("/") ? withoutPrefix : `/${withoutPrefix}`;
 }
 
 function listedContentTypes(value: string[] | undefined): string[] {
@@ -387,30 +553,30 @@ function listedContentTypes(value: string[] | undefined): string[] {
 
 export function webhookTriggerHelp(catalog?: WorkflowCatalog | null): string {
   const resolved = resolveWebhookTriggerContract(catalog);
-  return resolved.source === "contract-fallback"
-    ? WEBHOOK_TRIGGER_CONTRACT_FALLBACK_HELP
+  return resolved.source === "catalog-fallback"
+    ? WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP
     : resolved.help || WEBHOOK_TRIGGER_CATALOG_HELP;
 }
 
-/**
- * Single rewrite point when jonny shares the map.
- * Identity today: fallback paths are already the documented assumption.
- */
+export function webhookIngressHelp(catalog?: WorkflowCatalog | null): string {
+  return resolveWebhookTriggerContract(catalog).ingressHelp;
+}
+
 export function retargetWebhookTriggerApiPath(uiApiPath: string): string {
   return uiApiPath;
 }
 
 export function applyWebhookRouteTemplate(
   template: string,
-  ids: { workflowId: string; triggerId?: string },
+  ids: { workflowId?: string; triggerId?: string; publicId?: string },
 ): string {
-  const triggerId = ids.triggerId ?? "";
-  const filled = template
-    .replaceAll("{workflowId}", ids.workflowId)
-    .replaceAll("{workflow_id}", ids.workflowId)
-    .replaceAll("{triggerId}", triggerId)
-    .replaceAll("{trigger_id}", triggerId)
-    .replace(/^\/api\/v1/, "");
+  const filled = catalogPath(template, template)
+    .replaceAll("{workflowId}", ids.workflowId ?? "")
+    .replaceAll("{workflow_id}", ids.workflowId ?? "")
+    .replaceAll("{triggerId}", ids.triggerId ?? "")
+    .replaceAll("{trigger_id}", ids.triggerId ?? "")
+    .replaceAll("{publicId}", ids.publicId ?? "")
+    .replaceAll("{public_id}", ids.publicId ?? "");
   return retargetWebhookTriggerApiPath(filled.startsWith("/") ? filled : `/${filled}`);
 }
 
@@ -418,12 +584,10 @@ export function webhookTriggerListPath(
   workflowId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
-  const resolved = resolveWebhookTriggerContract(catalog);
-  const path = applyWebhookRouteTemplate(resolved.routes.list, { workflowId });
-  if (path.includes("?")) {
-    return path.includes("type=") ? path : `${path}&type=${WEBHOOK_TRIGGER_TYPE}`;
-  }
-  return `${path}?type=${WEBHOOK_TRIGGER_TYPE}`;
+  return applyWebhookRouteTemplate(
+    resolveWebhookTriggerContract(catalog).admin.listRoute,
+    { workflowId },
+  );
 }
 
 export function webhookTriggerCreatePath(
@@ -431,64 +595,87 @@ export function webhookTriggerCreatePath(
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.create,
+    resolveWebhookTriggerContract(catalog).admin.createRoute,
     { workflowId },
   );
 }
 
 export function webhookTriggerPath(
-  workflowId: string,
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.get,
-    { workflowId, triggerId },
+    resolveWebhookTriggerContract(catalog).admin.itemRoute,
+    { triggerId },
   );
 }
 
 export function webhookTriggerUpdatePath(
-  workflowId: string,
+  triggerId: string,
+  catalog?: WorkflowCatalog | null,
+): string {
+  return webhookTriggerPath(triggerId, catalog);
+}
+
+export function webhookTriggerDeletePath(
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.update,
-    { workflowId, triggerId },
+    resolveWebhookTriggerContract(catalog).admin.deleteRoute,
+    { triggerId },
   );
 }
 
 export function webhookTriggerRotatePath(
-  workflowId: string,
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.rotate,
-    { workflowId, triggerId },
+    resolveWebhookTriggerContract(catalog).admin.rotateRoute,
+    { triggerId },
   );
 }
 
 export function webhookTriggerDisablePath(
-  workflowId: string,
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.disable,
-    { workflowId, triggerId },
+    resolveWebhookTriggerContract(catalog).admin.disableRoute,
+    { triggerId },
   );
 }
 
 export function webhookTriggerEnablePath(
-  workflowId: string,
   triggerId: string,
   catalog?: WorkflowCatalog | null,
 ): string {
   return applyWebhookRouteTemplate(
-    resolveWebhookTriggerContract(catalog).routes.enable,
-    { workflowId, triggerId },
+    resolveWebhookTriggerContract(catalog).admin.enableRoute,
+    { triggerId },
   );
+}
+
+export function webhookIngressPath(
+  publicId: string,
+  catalog?: WorkflowCatalog | null,
+): string {
+  const route = resolveWebhookTriggerContract(catalog).ingress.route;
+  return applyWebhookRouteTemplate(route, { publicId });
+}
+
+/** Operator copy path. Keeps `/api/v1` — this is not a session UI route. */
+export function webhookIngressDisplayPath(
+  publicId: string,
+  catalog?: WorkflowCatalog | null,
+): string {
+  const route = resolveWebhookTriggerContract(catalog).ingress.route;
+  const path = route
+    .replace(/^(GET|POST|PATCH|PUT|DELETE)(\|(GET|POST|PATCH|PUT|DELETE))*\s+/i, "")
+    .replaceAll("{publicId}", publicId)
+    .replaceAll("{public_id}", publicId);
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 export function webhookTriggersHref(workflowId?: string): string {
@@ -517,6 +704,15 @@ export function canManageWebhookTriggers(
   return canCreateWorkflows(permissions);
 }
 
+export function isWebhookPublicId(value: string | undefined): boolean {
+  return Boolean(value && WEBHOOK_PUBLIC_ID_RE.test(value));
+}
+
+/** Item routes accept a UUID or opaque publicId (`wh_` + 64 hex). */
+export function isWebhookTriggerRef(value: string | undefined): boolean {
+  return isResourceId(value) || isWebhookPublicId(value);
+}
+
 export function hostSuppliedWebhookIdentityKeys(
   body: Record<string, unknown> | null | undefined,
 ): string[] {
@@ -527,19 +723,18 @@ export function hostSuppliedWebhookIdentityKeys(
 }
 
 export function parseFieldMappingText(text: string): {
-  mapping: WebhookFieldMapping[];
+  mapping: WebhookFieldMapping;
   errors: string[];
 } {
   const errors: string[] = [];
-  const mapping: WebhookFieldMapping[] = [];
-  const seen = new Set<string>();
+  const mapping: WebhookFieldMapping = {};
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length > WEBHOOK_TRIGGER_MAX_MAPPINGS) {
     errors.push(`Field mapping is limited to ${WEBHOOK_TRIGGER_MAX_MAPPINGS} rows.`);
-    return { mapping: [], errors };
+    return { mapping: {}, errors };
   }
   for (const line of lines) {
     const sep = line.includes(":") ? ":" : line.includes("=") ? "=" : "";
@@ -554,14 +749,19 @@ export function parseFieldMappingText(text: string): {
       errors.push(row.error);
       continue;
     }
-    if (seen.has(row.dest)) {
+    if (row.dest in mapping) {
       errors.push(`Destination ${row.dest} is already mapped.`);
       continue;
     }
-    seen.add(row.dest);
-    mapping.push({ dest: row.dest, from: row.from });
+    mapping[row.dest] = row.from;
   }
   return { mapping, errors };
+}
+
+export function fieldMappingText(mapping: WebhookFieldMapping): string {
+  return Object.entries(mapping)
+    .map(([dest, from]) => `${dest}: ${from}`)
+    .join("\n");
 }
 
 function validateFieldMappingRow(
@@ -584,43 +784,32 @@ function validateFieldMappingRow(
   return { dest, from };
 }
 
-export function parseInputSchemaText(text: string): {
-  schema: Record<string, unknown>;
-  error: string;
-} {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return { schema: { type: "object" }, error: "" };
-  }
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { schema: {}, error: "inputSchema must be a JSON object." };
-    }
-    const schema = parsed as Record<string, unknown>;
-    const strippedKeys: string[] = [];
-    const clean = stripSecretFields(schema, strippedKeys) as Record<string, unknown>;
-    if (strippedKeys.length > 0) {
-      return { schema: {}, error: "inputSchema cannot declare secret field names." };
-    }
-    if (schema.type !== undefined && schema.type !== "object") {
-      return { schema: {}, error: "inputSchema type must be object." };
-    }
-    return { schema: clean, error: "" };
-  } catch {
-    return { schema: {}, error: "inputSchema must be valid JSON." };
-  }
-}
+export type WebhookDraftKind = "create" | "update";
 
 export function validateWebhookTriggerDraft(
   draft: WebhookTriggerDraft,
   catalog?: WorkflowCatalog | null,
+  kind: WebhookDraftKind = "create",
 ): { ok: true; settings: WebhookTriggerSettings; body: WebhookTriggerWriteBody } | {
   ok: false;
   errors: string[];
 } {
   const resolved = resolveWebhookTriggerContract(catalog);
   const errors: string[] = [];
+  if (!isResourceId(draft.workflowVersionId)) {
+    errors.push("workflowVersionId must be a published version UUID.");
+  }
+  if (kind === "create") {
+    if (draft.secretMode === "vault") {
+      if (!isResourceId(draft.secretCredentialId)) {
+        errors.push("Pick an active vault webhook_secret, or enter an inline secret.");
+      }
+    } else if (!draft.inlineSecret.trim()) {
+      errors.push("Inline secret is required when not picking a vault webhook_secret.");
+    }
+  } else if (draft.secretMode === "inline" && draft.inlineSecret.trim()) {
+    errors.push(WEBHOOK_ROTATE_SECRET_HELP);
+  }
   const contentType = draft.contentType.trim().toLowerCase();
   if (!contentType) {
     errors.push("contentType is required.");
@@ -629,211 +818,262 @@ export function validateWebhookTriggerDraft(
       `contentType ${contentType} is not allowlisted. Supported: ${resolved.contentTypes.join(", ")}.`,
     );
   }
-  const schema = parseInputSchemaText(draft.inputSchemaText);
-  if (schema.error) {
-    errors.push(schema.error);
-  }
   const mapping = parseFieldMappingText(draft.fieldMappingText);
   errors.push(...mapping.errors);
   const maxBodyBytes = parseBoundedInt(
     draft.maxBodyBytes,
     1,
-    resolved.maxBodyBytes,
+    resolved.hardMaxBodyBytes,
     "maxBodyBytes",
   );
   if (maxBodyBytes.error) {
     errors.push(maxBodyBytes.error);
   }
   const skew = parseBoundedInt(
-    draft.timestampSkewSeconds,
+    draft.clockSkewSeconds,
     1,
-    WEBHOOK_TRIGGER_MAX_SKEW_SECONDS,
-    "timestampSkewSeconds",
+    resolved.hardClockSkewSeconds,
+    "clockSkewSeconds",
   );
   if (skew.error) {
     errors.push(skew.error);
   }
   const replay = parseBoundedInt(
-    draft.replayWindowSeconds,
+    draft.replayRetentionSeconds,
     1,
-    WEBHOOK_TRIGGER_MAX_SKEW_SECONDS,
-    "replayWindowSeconds",
+    resolved.hardReplayRetentionSeconds,
+    "replayRetentionSeconds",
   );
   if (replay.error) {
     errors.push(replay.error);
   }
   if (!skew.error && !replay.error && replay.value < skew.value) {
-    errors.push("replayWindowSeconds must be at least timestampSkewSeconds.");
+    errors.push("replayRetentionSeconds must be at least clockSkewSeconds.");
   }
   const rate = parseBoundedInt(
     draft.rateLimitPerMinute,
     WEBHOOK_TRIGGER_MIN_RATE,
-    WEBHOOK_TRIGGER_MAX_RATE,
+    resolved.hardRatePerMinute,
     "rateLimitPerMinute",
   );
   if (rate.error) {
     errors.push(rate.error);
   }
+  const workspaceRate = parseBoundedInt(
+    draft.workspaceRatePerMinute,
+    WEBHOOK_TRIGGER_MIN_RATE,
+    resolved.hardWorkspaceRatePerMinute,
+    "workspaceRatePerMinute",
+  );
+  if (workspaceRate.error) {
+    errors.push(workspaceRate.error);
+  }
   const concurrent = parseBoundedInt(
-    draft.maxConcurrent,
+    draft.maxConcurrency,
     1,
-    WEBHOOK_TRIGGER_MAX_CONCURRENT_CAP,
-    "maxConcurrent",
+    resolved.hardMaxConcurrency,
+    "maxConcurrency",
   );
   if (concurrent.error) {
     errors.push(concurrent.error);
+  }
+  const workspaceConcurrent = parseBoundedInt(
+    draft.workspaceMaxConcurrency,
+    1,
+    resolved.hardWorkspaceMaxConcurrency,
+    "workspaceMaxConcurrency",
+  );
+  if (workspaceConcurrent.error) {
+    errors.push(workspaceConcurrent.error);
   }
   if (errors.length > 0) {
     return { ok: false, errors };
   }
   const settings: WebhookTriggerSettings = {
+    workflowVersionId: draft.workflowVersionId,
     contentType,
-    inputSchema: schema.schema,
     maxBodyBytes: maxBodyBytes.value,
-    timestampSkewSeconds: skew.value,
-    replayWindowSeconds: replay.value,
+    clockSkewSeconds: skew.value,
+    replayRetentionSeconds: replay.value,
     rateLimitPerMinute: rate.value,
-    maxConcurrent: concurrent.value,
+    workspaceRatePerMinute: workspaceRate.value,
+    maxConcurrency: concurrent.value,
+    workspaceMaxConcurrency: workspaceConcurrent.value,
     fieldMapping: mapping.mapping,
     signatureRequired: true,
     replayRequired: true,
     rawBodyBeforeParse: true,
   };
-  return { ok: true, settings, body: webhookTriggerWriteBody(settings) };
+  return {
+    ok: true,
+    settings,
+    body:
+      kind === "create"
+        ? webhookTriggerCreateBody(draft, settings)
+        : webhookTriggerPatchBody(settings),
+  };
 }
 
-export function webhookTriggerWriteBody(
+export function webhookTriggerCreateBody(
+  draft: WebhookTriggerDraft,
   settings: WebhookTriggerSettings,
 ): WebhookTriggerWriteBody {
   const body: WebhookTriggerWriteBody = {
+    type: WEBHOOK_TRIGGER_TYPE,
+    workflowVersionId: settings.workflowVersionId,
     contentType: settings.contentType,
+    fieldMapping: { ...settings.fieldMapping },
     maxBodyBytes: settings.maxBodyBytes,
-    timestampSkewSeconds: settings.timestampSkewSeconds,
-    replayWindowSeconds: settings.replayWindowSeconds,
+    clockSkewSeconds: settings.clockSkewSeconds,
+    replayRetentionSeconds: settings.replayRetentionSeconds,
     rateLimitPerMinute: settings.rateLimitPerMinute,
-    maxConcurrent: settings.maxConcurrent,
-    fieldMapping: settings.fieldMapping.map((row) => ({
-      dest: row.dest,
-      from: row.from,
-    })),
+    workspaceRatePerMinute: settings.workspaceRatePerMinute,
+    maxConcurrency: settings.maxConcurrency,
+    workspaceMaxConcurrency: settings.workspaceMaxConcurrency,
   };
-  if (Object.keys(settings.inputSchema).length > 0) {
-    body.inputSchema = settings.inputSchema;
+  if (draft.secretMode === "vault") {
+    body.secretCredentialId = draft.secretCredentialId;
+  } else {
+    body.secret = { secret: draft.inlineSecret };
   }
   return body;
 }
 
-export function rejectHostSuppliedWebhookBody(
-  body: WebhookTriggerWriteBody,
+export function webhookTriggerPatchBody(
+  settings: WebhookTriggerSettings,
 ): WebhookTriggerWriteBody {
+  return {
+    workflowVersionId: settings.workflowVersionId,
+    contentType: settings.contentType,
+    fieldMapping: { ...settings.fieldMapping },
+    maxBodyBytes: settings.maxBodyBytes,
+    clockSkewSeconds: settings.clockSkewSeconds,
+    replayRetentionSeconds: settings.replayRetentionSeconds,
+    rateLimitPerMinute: settings.rateLimitPerMinute,
+    workspaceRatePerMinute: settings.workspaceRatePerMinute,
+    maxConcurrency: settings.maxConcurrency,
+    workspaceMaxConcurrency: settings.workspaceMaxConcurrency,
+  };
+}
+
+export function webhookTriggerRotateBody(secret: string): WebhookTriggerRotateBody {
+  return { secret: { secret } };
+}
+
+export function rejectHostSuppliedWebhookBody<T extends Record<string, unknown>>(
+  body: T,
+): T {
   const copy = { ...body };
   for (const key of WEBHOOK_HOST_SUPPLIED_KEYS) {
-    delete (copy as Record<string, unknown>)[key];
+    delete copy[key];
   }
   return copy;
 }
 
-export function takeOneTimeSecret(payload: unknown): {
-  secret: string | null;
+export function stripUnexpectedWebhookSecret(payload: unknown): {
+  leaked: boolean;
   strippedKeys: string[];
   record: Record<string, unknown>;
 } {
   const strippedKeys: string[] = [];
-  const secret = extractOneTimeSecret(payload);
   const sanitized = stripSecretFields(payload, strippedKeys);
   const record =
     sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
       ? (sanitized as Record<string, unknown>)
       : {};
-  for (const key of WEBHOOK_ONE_TIME_SECRET_KEYS) {
+  let leaked = strippedKeys.some((key) =>
+    WEBHOOK_SECRET_KEYS.includes(key as (typeof WEBHOOK_SECRET_KEYS)[number]),
+  );
+  for (const key of WEBHOOK_SECRET_KEYS) {
     if (key in record) {
       delete record[key];
       if (!strippedKeys.includes(key)) {
         strippedKeys.push(key);
       }
+      leaked = true;
     }
   }
-  delete record.reveal;
-  delete record.oneTime;
-  delete record.one_time;
-  return { secret, strippedKeys, record };
-}
-
-function extractOneTimeSecret(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-  const root = payload as Record<string, unknown>;
-  const bags = [root];
-  for (const nestedKey of ["reveal", "oneTime", "one_time", "trigger", "webhookTrigger"]) {
-    const nested = root[nestedKey];
-    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-      bags.push(nested as Record<string, unknown>);
-    }
-  }
-  for (const bag of bags) {
-    for (const key of WEBHOOK_ONE_TIME_SECRET_KEYS) {
-      const value = bag[key];
-      if (typeof value === "string" && value.trim()) {
-        return value;
+  for (const nested of ["secret", "reveal", "oneTime", "one_time"]) {
+    if (nested in record) {
+      delete record[nested];
+      if (!strippedKeys.includes(nested)) {
+        strippedKeys.push(nested);
       }
+      leaked = true;
     }
   }
-  return null;
+  return { leaked, strippedKeys, record };
 }
 
 export function parseWebhookTriggerRecord(
   payload: unknown,
   fallbackWorkflowId = "",
+  catalog?: WorkflowCatalog | null,
 ): WebhookTriggerRecord | null {
-  const { record } = takeOneTimeSecret(payload);
+  const { record } = stripUnexpectedWebhookSecret(payload);
   const source = unwrapTriggerRecord(record);
   const id = readString(source.id);
-  const opaqueId = readString(source.opaqueId, source.opaque_id, source.triggerId, source.id);
-  if (!id && !opaqueId) {
+  const publicId = readString(source.publicId, source.public_id);
+  if (!id && !publicId) {
     return null;
   }
-  const workflowId = readString(source.workflowId, source.workflow_id) || fallbackWorkflowId;
-  const status = readStatus(source.status);
-  const mapping = readFieldMapping(source.fieldMapping ?? source.field_mapping);
+  const resolvedPublicId = publicId || (isWebhookPublicId(id) ? id : "");
+  const ingressPath =
+    optionalString(source.ingressPath, source.ingress_path) ??
+    (resolvedPublicId ? webhookIngressDisplayPath(resolvedPublicId, catalog) : "");
   return {
-    id: id || opaqueId,
-    workflowId,
+    id: id || resolvedPublicId,
+    publicId: resolvedPublicId,
+    ingressPath,
+    workflowId: readString(source.workflowId, source.workflow_id) || fallbackWorkflowId,
+    workflowVersionId: readString(
+      source.workflowVersionId,
+      source.workflow_version_id,
+    ),
     type: WEBHOOK_TRIGGER_TYPE,
-    status,
-    opaqueId: opaqueId || id,
-    secretRef: optionalString(source.secretRef, source.secret_ref),
-    fingerprint: optionalString(source.fingerprint),
+    status: readStatus(source.status),
+    secretCredentialId: readString(
+      source.secretCredentialId,
+      source.secret_credential_id,
+    ),
     contentType:
       optionalString(source.contentType, source.content_type) ?? "application/json",
-    inputSchema: readObject(source.inputSchema ?? source.input_schema),
     maxBodyBytes: positiveIntOr(
       numberish(source.maxBodyBytes ?? source.max_body_bytes),
-      WEBHOOK_TRIGGER_MAX_BODY_BYTES,
+      WEBHOOK_TRIGGER_DEFAULT_MAX_BODY_BYTES,
     ),
-    timestampSkewSeconds: positiveIntOr(
-      numberish(source.timestampSkewSeconds ?? source.timestamp_skew_seconds),
-      WEBHOOK_TRIGGER_DEFAULT_SKEW_SECONDS,
+    clockSkewSeconds: positiveIntOr(
+      numberish(source.clockSkewSeconds ?? source.clock_skew_seconds),
+      WEBHOOK_TRIGGER_DEFAULT_CLOCK_SKEW_SECONDS,
     ),
-    replayWindowSeconds: positiveIntOr(
-      numberish(source.replayWindowSeconds ?? source.replay_window_seconds),
+    replayRetentionSeconds: positiveIntOr(
+      numberish(source.replayRetentionSeconds ?? source.replay_retention_seconds),
       WEBHOOK_TRIGGER_DEFAULT_REPLAY_SECONDS,
     ),
     rateLimitPerMinute: positiveIntOr(
       numberish(source.rateLimitPerMinute ?? source.rate_limit_per_minute),
       WEBHOOK_TRIGGER_DEFAULT_RATE_PER_MINUTE,
     ),
-    maxConcurrent: positiveIntOr(
-      numberish(source.maxConcurrent ?? source.max_concurrent),
-      WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENT,
+    workspaceRatePerMinute: positiveIntOr(
+      numberish(source.workspaceRatePerMinute ?? source.workspace_rate_per_minute),
+      WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_RATE,
     ),
-    fieldMapping: mapping,
+    maxConcurrency: positiveIntOr(
+      numberish(source.maxConcurrency ?? source.max_concurrency),
+      WEBHOOK_TRIGGER_DEFAULT_MAX_CONCURRENCY,
+    ),
+    workspaceMaxConcurrency: positiveIntOr(
+      numberish(
+        source.workspaceMaxConcurrency ?? source.workspace_max_concurrency,
+      ),
+      WEBHOOK_TRIGGER_DEFAULT_WORKSPACE_CONCURRENCY,
+    ),
+    fieldMapping: readFieldMapping(source.fieldMapping ?? source.field_mapping),
     signatureRequired: true,
     replayRequired: true,
     rawBodyBeforeParse: true,
     createdAt: optionalString(source.createdAt, source.created_at),
-    rotatedAt: optionalString(source.rotatedAt, source.rotated_at),
-    disabledAt: optionalString(source.disabledAt, source.disabled_at),
+    updatedAt: optionalString(source.updatedAt, source.updated_at),
   };
 }
 
@@ -850,11 +1090,11 @@ function unwrapTriggerRecord(record: Record<string, unknown>): Record<string, un
 export function parseWebhookTriggerList(
   payload: unknown,
   fallbackWorkflowId = "",
+  catalog?: WorkflowCatalog | null,
 ): WebhookTriggerRecord[] {
-  const items = readItems(payload);
   const records: WebhookTriggerRecord[] = [];
-  for (const item of items) {
-    const record = parseWebhookTriggerRecord(item, fallbackWorkflowId);
+  for (const item of readItems(payload)) {
+    const record = parseWebhookTriggerRecord(item, fallbackWorkflowId, catalog);
     if (record) {
       records.push(record);
     }
@@ -879,28 +1119,40 @@ function readItems(payload: unknown): unknown[] {
   return [];
 }
 
+export function seedDraftFromRecord(
+  record: WebhookTriggerRecord,
+): WebhookTriggerDraft {
+  return emptyWebhookTriggerDraft({
+    workflowVersionId: record.workflowVersionId,
+    secretMode: "vault",
+    secretCredentialId: record.secretCredentialId,
+    contentType: record.contentType,
+    maxBodyBytes: String(record.maxBodyBytes),
+    clockSkewSeconds: String(record.clockSkewSeconds),
+    replayRetentionSeconds: String(record.replayRetentionSeconds),
+    rateLimitPerMinute: String(record.rateLimitPerMinute),
+    workspaceRatePerMinute: String(record.workspaceRatePerMinute),
+    maxConcurrency: String(record.maxConcurrency),
+    workspaceMaxConcurrency: String(record.workspaceMaxConcurrency),
+    fieldMappingText: fieldMappingText(record.fieldMapping),
+  });
+}
+
 export function seedDraftFromYaml(
   yaml: string | null | undefined,
-): WebhookTriggerDraft {
+): Partial<WebhookTriggerDraft> {
   const webhook = (yaml ? listYamlTriggers(yaml) : []).find(
     (item) => item.type === WEBHOOK_TRIGGER_TYPE,
   );
   if (!webhook) {
-    return emptyWebhookTriggerDraft();
+    return {};
   }
   const contentType = stringFromUnknown(
     webhook.with.contentType ?? webhook.with.content_type,
   );
-  const schema =
-    webhook.inputSchema ??
-    readObject(webhook.with.inputSchema) ??
-    readObject(webhook.with.schema);
-  return emptyWebhookTriggerDraft({
+  return {
     contentType: contentType || "application/json",
-    inputSchemaText: schema
-      ? JSON.stringify(schema, null, 2)
-      : '{\n  "type": "object"\n}',
-  });
+  };
 }
 
 export function yamlWebhookTriggers(yaml: string | null | undefined): {
@@ -948,37 +1200,32 @@ export function isWebhookTriggerAuthFailure(
   return Boolean(webhookTriggerAuthFailureMessage(problem));
 }
 
-export function isWebhookMapPending(
-  statusCode: number,
-  problem?: ProblemDetails | null,
+export function isWebhookCatalogFallback(
+  catalog?: WorkflowCatalog | null,
 ): boolean {
-  if (statusCode === 404) {
-    return true;
-  }
-  return problem?.code === WEBHOOK_TRIGGER_PROBLEM_CODES.notFound;
+  return resolveWebhookTriggerContract(catalog).source === "catalog-fallback";
 }
 
 export function webhookMutationOutcomeMessage(
-  action: "create" | "rotate" | "disable" | "enable",
-  reveal: WebhookOneTimeReveal,
+  action: "create" | "update" | "rotate" | "disable" | "enable" | "delete",
+  leak?: WebhookSecretLeak,
 ): string {
-  if (action === "create") {
-    return reveal.revealed ? WEBHOOK_CREATED_MESSAGE : WEBHOOK_NO_REVEAL_MESSAGE;
+  const base =
+    action === "create"
+      ? WEBHOOK_CREATED_MESSAGE
+      : action === "update"
+        ? WEBHOOK_UPDATED_MESSAGE
+        : action === "rotate"
+          ? WEBHOOK_ROTATED_MESSAGE
+          : action === "disable"
+            ? WEBHOOK_DISABLED_MESSAGE
+            : action === "enable"
+              ? WEBHOOK_ENABLED_MESSAGE
+              : WEBHOOK_DELETED_MESSAGE;
+  if (leak?.leaked) {
+    return `${base} ${WEBHOOK_SECRET_LEAK_MESSAGE}`;
   }
-  if (action === "rotate") {
-    return reveal.revealed ? WEBHOOK_ROTATED_MESSAGE : WEBHOOK_NO_REVEAL_MESSAGE;
-  }
-  if (action === "disable") {
-    return WEBHOOK_DISABLED_MESSAGE;
-  }
-  return WEBHOOK_ENABLED_MESSAGE;
-}
-
-export function forgetOneTimeSecret(reveal: WebhookOneTimeReveal): WebhookOneTimeReveal {
-  if (reveal.secret) {
-    reveal.secret = "";
-  }
-  return { secret: null, revealed: false };
+  return base;
 }
 
 function parseBoundedInt(
@@ -998,29 +1245,43 @@ function parseBoundedInt(
   return { value, error: "" };
 }
 
-function readFieldMapping(value: unknown): WebhookFieldMapping[] {
-  if (!Array.isArray(value)) {
-    return [];
+function readFieldMapping(value: unknown): WebhookFieldMapping {
+  const mapping: WebhookFieldMapping = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [dest, from] of Object.entries(value as Record<string, unknown>)) {
+      const source = stringFromUnknown(from);
+      if (
+        !dest ||
+        !source ||
+        isSecretFieldName(dest) ||
+        isSecretFieldName(source)
+      ) {
+        continue;
+      }
+      mapping[dest] = source;
+    }
+    return mapping;
   }
-  const mapping: WebhookFieldMapping[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") {
-      continue;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const row = item as Record<string, unknown>;
+      const dest = stringFromUnknown(row.dest);
+      const from = stringFromUnknown(row.from);
+      if (!dest || !from || isSecretFieldName(dest) || isSecretFieldName(from)) {
+        continue;
+      }
+      mapping[dest] = from;
     }
-    const row = item as Record<string, unknown>;
-    const dest = stringFromUnknown(row.dest);
-    const from = stringFromUnknown(row.from);
-    if (!dest || !from || isSecretFieldName(dest) || isSecretFieldName(from)) {
-      continue;
-    }
-    mapping.push({ dest, from });
   }
   return mapping;
 }
 
 function readStatus(value: unknown): WebhookTriggerStatus {
   const status = stringFromUnknown(value).toLowerCase();
-  return status === "disabled" ? "disabled" : "active";
+  return status === "disabled" ? "disabled" : "enabled";
 }
 
 function readObject(value: unknown): Record<string, unknown> | undefined {
