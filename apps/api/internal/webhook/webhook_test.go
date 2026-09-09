@@ -73,7 +73,7 @@ func TestMemoryReplayRateAndTenancy(t *testing.T) {
 		WorkflowID:         "55555555-5555-4555-8555-555555555555",
 		WorkflowVersionID:  "66666666-6666-4666-8666-666666666666",
 		SecretCredentialID: "77777777-7777-4777-8777-777777777777",
-		RateLimitPerMinute: 1,
+		RateLimitPerMinute: 2,
 		MaxConcurrency:     1,
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestMemoryReplayRateAndTenancy(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	limits := DeliveryLimits{
 		ReplayID: ReplayID("1700000000", []byte(`{}`)), ReplayRetention: 10 * time.Minute,
-		RateLimitPerMinute: 1, WorkspaceRatePerMinute: 10, MaxConcurrency: 1, WorkspaceMaxConcurrency: 2,
+		RateLimitPerMinute: 2, WorkspaceRatePerMinute: 10, MaxConcurrency: 1, WorkspaceMaxConcurrency: 2,
 	}
 	if err := store.AcquireDelivery(ctx, scopeA, trig.ID, now, limits); err != nil {
 		t.Fatal(err)
@@ -101,6 +101,7 @@ func TestMemoryReplayRateAndTenancy(t *testing.T) {
 		t.Fatalf("concurrency: %v", err)
 	}
 	store.ReleaseDelivery(ctx, scopeA, trig.ID, now)
+	limits.RateLimitPerMinute = 1
 	if err := store.AcquireDelivery(ctx, scopeA, trig.ID, now, limits); err != ErrRateLimited {
 		t.Fatalf("rate: %v", err)
 	}
