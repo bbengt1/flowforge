@@ -79,11 +79,14 @@ export type OpsConfigSpec = {
     timeoutSeconds?: number;
     processes?: number;
   };
-  /** Present only when the E9.2 catalog exposes egress allowlists. */
+  /** Optional #98 runtime-profile egress. Omitted = default-deny. */
   egress?: {
-    destinations?: string[];
-    ports?: number[];
-    dnsAllowlist?: string[];
+    destinations?: Array<{
+      host?: string;
+      port?: number;
+      protocol?: string;
+    }>;
+    dnsConstrained?: boolean;
   };
   type?: ConnectionType | string;
   endpointPolicy?: Record<string, unknown>;

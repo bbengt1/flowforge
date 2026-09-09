@@ -10,6 +10,7 @@ import {
   SCRIPT_RUNTIME_NO_IMAGE_HELP,
   SCRIPT_RUNTIME_NO_INSTALL_HELP,
   SCRIPT_RUNTIME_PROFILE_REQUIRED_HELP,
+  deniedEgressHost,
   isPinnedImageDigest,
   runtimeProfilePublishGap,
   type ScriptRuntimeLimitKey,
@@ -34,6 +35,10 @@ const LIMIT_FIELDS: {
   { key: "processes", label: "Processes" },
 ];
 
+type EgressDestination = NonNullable<
+  NonNullable<OpsConfigSpec["egress"]>["destinations"]
+>[number];
+
 export function RuntimeProfileForm({
   spec,
   readOnly,
@@ -44,13 +49,29 @@ export function RuntimeProfileForm({
   const inputClass =
     "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
   const limits = spec.limits ?? {};
-  const egress = spec.egress ?? {};
+  const destinations = spec.egress?.destinations ?? [];
   const gap = runtimeProfilePublishGap(spec, map);
   const imagePinned = isPinnedImageDigest(spec.imageDigest);
   const lockPinned = isPinnedImageDigest(spec.dependencyLockDigest);
+  const showEgress = map?.egressExposed !== false;
 
   function patch(partial: Partial<OpsConfigSpec>) {
     onChange({ ...spec, ...partial });
+  }
+
+  function setDestinations(next: EgressDestination[]) {
+    if (next.length === 0) {
+      const { egress: _drop, ...rest } = spec;
+      void _drop;
+      onChange(rest);
+      return;
+    }
+    patch({
+      egress: {
+        destinations: next,
+        dnsConstrained: true,
+      },
+    });
   }
 
   return (
@@ -151,63 +172,104 @@ export function RuntimeProfileForm({
         })}
       </fieldset>
 
-      {map?.egressExposed ? (
+      {showEgress ? (
         <fieldset className="grid gap-3 rounded-xl border border-zinc-200 px-4 py-3">
           <legend className="px-1 text-sm font-medium">Egress allowlist</legend>
           <p className="text-xs text-zinc-500">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
-          <label className="text-sm">
-            <span className="font-medium">Destinations (comma-separated)</span>
-            <input
-              value={(egress.destinations ?? []).join(", ")}
-              disabled={readOnly}
-              autoComplete="off"
-              onChange={(event) =>
-                patch({
-                  egress: {
-                    ...egress,
-                    destinations: splitList(event.target.value),
-                  },
-                })
-              }
-              className={inputClass}
-            />
-          </label>
-          <label className="text-sm">
-            <span className="font-medium">Ports (comma-separated)</span>
-            <input
-              value={(egress.ports ?? []).join(", ")}
-              disabled={readOnly}
-              autoComplete="off"
-              onChange={(event) =>
-                patch({
-                  egress: {
-                    ...egress,
-                    ports: splitList(event.target.value)
-                      .map((item) => Number(item))
-                      .filter((item) => Number.isInteger(item)),
-                  },
-                })
-              }
-              className={inputClass}
-            />
-          </label>
-          <label className="text-sm">
-            <span className="font-medium">DNS allowlist (comma-separated)</span>
-            <input
-              value={(egress.dnsAllowlist ?? []).join(", ")}
-              disabled={readOnly}
-              autoComplete="off"
-              onChange={(event) =>
-                patch({
-                  egress: {
-                    ...egress,
-                    dnsAllowlist: splitList(event.target.value),
-                  },
-                })
-              }
-              className={inputClass}
-            />
-          </label>
+          <p className="text-xs text-zinc-500">
+            dnsConstrained is required and always true. There is no toggle for
+            package install, Docker socket, metadata, or unconstrained DNS.
+          </p>
+          {destinations.length === 0 ? (
+            <p className="text-sm text-zinc-600">
+              No destinations — default-deny egress.
+            </p>
+          ) : null}
+          {destinations.map((row, index) => (
+            <div
+              key={`${row.host ?? ""}-${index}`}
+              className="grid gap-2 sm:grid-cols-[1fr_7rem_6rem_auto]"
+            >
+              <label className="text-sm">
+                <span className="font-medium">Host</span>
+                <input
+                  value={row.host ?? ""}
+                  disabled={readOnly}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    const next = [...destinations];
+                    next[index] = { ...row, host: event.target.value };
+                    setDestinations(next);
+                  }}
+                  className={`${inputClass} font-mono`}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="font-medium">Port</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={String(row.port ?? 443)}
+                  disabled={readOnly}
+                  onChange={(event) => {
+                    const next = [...destinations];
+                    next[index] = {
+                      ...row,
+                      port: Number(event.target.value) || 443,
+                    };
+                    setDestinations(next);
+                  }}
+                  className={inputClass}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="font-medium">Protocol</span>
+                <select
+                  value={row.protocol === "udp" ? "udp" : "tcp"}
+                  disabled={readOnly}
+                  onChange={(event) => {
+                    const next = [...destinations];
+                    next[index] = { ...row, protocol: event.target.value };
+                    setDestinations(next);
+                  }}
+                  className={inputClass}
+                >
+                  <option value="tcp">tcp</option>
+                  <option value="udp">udp</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() =>
+                  setDestinations(destinations.filter((_, i) => i !== index))
+                }
+                className="self-end rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-60"
+              >
+                Remove
+              </button>
+              {deniedEgressHost(row.host) ? (
+                <p className="sm:col-span-4 text-sm text-amber-900">
+                  {row.host} is denied (metadata, loopback, Docker socket, or *).
+                </p>
+              ) : null}
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={readOnly || destinations.length >= 32}
+            onClick={() =>
+              setDestinations([
+                ...destinations,
+                { host: "", port: 443, protocol: "tcp" },
+              ])
+            }
+            className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-60"
+          >
+            Add destination
+          </button>
         </fieldset>
       ) : (
         <p className="text-xs text-zinc-500">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
@@ -220,11 +282,4 @@ export function RuntimeProfileForm({
       ) : null}
     </div>
   );
-}
-
-function splitList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }

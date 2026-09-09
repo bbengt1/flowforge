@@ -245,13 +245,13 @@ E9.1 (Chloe UI) wires jonny's **#97** map on `main` (`e91-#97`). `apps/api` is u
 
 ## E9.2 isolated script runner runtime-profile UI
 
-E9.2 (Chloe UI) authors and selects isolation-safe script runtime profiles. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-runtime-contract.ts` plus `script-runtime-client.ts`. Jonny's isolated-runner map is **not** on `main` yet — the adapter is marked `e92-contract-fallback`. Prefer existing ops-config `/runtime-profiles` draft/publish/select verbs plus `GET /scripts/catalog` (or `GET /ops-config/catalog` `scriptEngine`) isolation/runtimeProfile hooks. Do not invent routes. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #93 / Part of #91 — **Keep #93 open** (jonny owns runner isolation).
+E9.2 (Chloe UI) authors and selects isolation-safe script runtime profiles. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-runtime-contract.ts` plus `script-runtime-client.ts`, wired to jonny's **#98** map on `main` (`e92-#98`). Prefer existing ops-config `/runtime-profiles` draft/publish/select verbs plus additive `GET /scripts/catalog` `isolation` / `errors[]` (or `GET /ops-config/catalog` `scriptEngine`). Do not invent routes. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #93 (already closed by #98) / Part of #91 — **do not re-close #93**; keep epic #91 open.
 
-- **`/config/runtime-profiles`:** language `python`/`go`, digest-pinned `imageDigest` + `dependencyLockDigest` (`sha256:<64 hex>`), `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`. Publish uses the E4.2 draft/publish/versions verbs. Mutable tags and unknown spec keys are rejected.
-- **Fail-closed surfaces:** no arbitrary base image, Dockerfile, package-install toggle, Docker socket, metadata, or privilege-escalation controls. Isolation is server-enforced copy: non-root, read-only root FS, dropped capabilities, `no_new_privs`, default-deny egress.
-- **Egress:** destination/port/DNS allowlists render only when the catalog sets `runtimeProfile.egressExposed` (or lists `egress` in allowed spec). Until jonny's map lands they stay hidden and are never sent.
+- **`/config/runtime-profiles`:** language `python`/`go`, digest-pinned `imageDigest` + `dependencyLockDigest` (`sha256:<64 hex>`), `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`. Optional `egress.destinations[{host,port,protocol}]` + `egress.dnsConstrained` (always true). Omitted egress is default-deny. Publish uses the E4.2 draft/publish/versions verbs. Mutable tags and unknown spec keys are rejected.
+- **Fail-closed surfaces:** no package-install, Docker socket, metadata, privilege-escalation, or unconstrained-DNS toggles. Isolation is server-enforced copy: UID/GID `65532`, read-only root FS, ephemeral `/workspace`, drop ALL + `no_new_privs`, no SA mount, default-deny egress. CI uses HarnessRuntime (no live containers); prod manifests are `deploy/kubernetes/script-runner-*.yaml`.
+- **Egress:** metadata / loopback / `*` / Docker socket destinations are rejected. Typed I/O and revocation stay E9.3 / E9.4.
 - **Authoring / wizard:** `script.python` / `script.go` only list published profiles whose language matches the node. HTTP 403 empties the selector. Labels show language + display name + version.
-- **Unchanged:** E9.1 script source/publish; no `/scripts/*` additions; `apps/api` untouched.
+- **Unchanged:** E9.1 script source/publish; no extra `/scripts/*` routes; `apps/api` untouched.
 
 ## Foundation operator shell
 

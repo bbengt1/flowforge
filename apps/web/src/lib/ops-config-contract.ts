@@ -86,7 +86,7 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     group: "profiles",
     title: "Runtime profiles",
     summary:
-      "Digest-pinned script runtime image and dependency lock. Language python/go only. Isolation is server-enforced — no arbitrary images or package-install toggles.",
+      "Digest-pinned script runtime image and dependency lock (sha256: only). Language python/go. Optional egress destinations; omitted is default-deny. Isolation is server-enforced — no package-install, Docker socket, or metadata toggles.",
     yamlRef: "runtimeProfileId",
   },
   {

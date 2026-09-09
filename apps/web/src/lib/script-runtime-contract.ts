@@ -1,31 +1,28 @@
 /**
  * Single retarget adapter for Chloe's E9.2 runtime-profile UI.
+ * Wired to jonny's **#98** map on `main` (`e92-#98`).
  *
- * Jonny's isolated-runner map has not landed — this file is the
- * marked `e92-contract-fallback`. Prefer existing ops-config
- * runtime-profiles plus GET /scripts/catalog (or GET /ops-config/catalog
- * scriptEngine) isolation/runtimeProfile hooks. Do not invent routes.
- *
- *   GET  /scripts/catalog                 isolation + runtimeProfile hooks
- *   GET  /ops-config/catalog              scriptEngine; runtime-profiles engine=script
+ *   GET  /scripts/catalog                 additive isolation + errors[]
+ *   GET  /ops-config/catalog              scriptEngine; optional egress
  *   GET|POST /runtime-profiles            E4.2 draft/publish verbs
  *   GET|PUT  /runtime-profiles/{id}/draft
  *   POST /runtime-profiles/{id}/publish|select|disable|enable
  *   GET  /runtime-profiles/{id}/versions[/{versionId}]
  *   POST /ops-config/select
  *
- * Current published spec (E4.2 / #97): language (python|go), digest-pinned
- * imageDigest + dependencyLockDigest (sha256:<64 hex>),
- * limits.{cpuMillis,memoryMib,timeoutSeconds,processes}. Unknown spec
- * keys are rejected by the API — do not send image tags, package-install
- * toggles, engine, or egress until the catalog exposes them.
+ * Spec: language (python|go), digest-pinned imageDigest +
+ * dependencyLockDigest (sha256:<64 hex>),
+ * limits.{cpuMillis,memoryMib,timeoutSeconds,processes}, optional
+ * egress.destinations[{host,port,protocol}] + egress.dnsConstrained
+ * (omitted = default-deny; metadata / loopback / * rejected).
  *
  * Cookie session + `X-CSRF-Token` on mutations. JSON camelCase. RFC 9457.
  * Host-supplied `id` / `workspaceId` → 400 UX. Isolation is
  * server-enforced; the UI authors/selects published profiles only.
+ * No package-install / Docker socket / metadata toggles.
  *
- * Relates to #93 / Part of #91. Keep #93 open (jonny owns runner isolation).
- * Do not change `apps/api`.
+ * Relates to #93 (already closed by #98) / Part of #91 — do not
+ * re-close #93; keep epic #91 open. Do not change `apps/api`.
  */
 
 import type {
@@ -53,15 +50,15 @@ import type { ScriptActionType } from "./script-contract.ts";
 
 export const SCRIPT_RUNTIME_STORY = 93;
 export const SCRIPT_RUNTIME_EPIC = 91;
-/** Jonny's E9.2 runner map is not on main yet. */
-export const SCRIPT_RUNTIME_API_PR = 0;
-export const SCRIPT_RUNTIME_ROUTE_MAP_SOURCE = "e92-contract-fallback" as const;
+/** Jonny's E9.2 isolated-runner map on main. */
+export const SCRIPT_RUNTIME_API_PR = 98;
+export const SCRIPT_RUNTIME_ROUTE_MAP_SOURCE = "e92-#98" as const;
 
 export const SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP =
-  "Using the marked e92-contract-fallback runtime-profile map because jonny's isolated-runner contract is not on main yet. Prefer GET /scripts/catalog (or GET /ops-config/catalog scriptEngine) plus existing /runtime-profiles draft/publish/select verbs. Isolation is server-enforced.";
+  "Using the marked e92-#98 runtime-profile map because GET /scripts/catalog was unavailable. Prefer GET /scripts/catalog isolation (or GET /ops-config/catalog scriptEngine) plus existing /runtime-profiles draft/publish/select verbs.";
 
 export const SCRIPT_RUNTIME_ISOLATION_HELP =
-  "Runners are non-root, read-only root filesystem, dropped capabilities, and no_new_privs. Egress is default-deny. There is no Docker socket, cloud-instance metadata, or arbitrary base image.";
+  "Runners are non-root UID/GID 65532, read-only root filesystem, ephemeral /workspace, drop ALL capabilities, and no_new_privs. Egress is default-deny with constrained DNS. There is no Docker socket, cloud-instance metadata, Kubernetes SA mount, or arbitrary base image. CI uses HarnessRuntime (no live containers); production manifests are deploy/kubernetes/script-runner-*.yaml.";
 
 export const SCRIPT_RUNTIME_DIGEST_HELP =
   "imageDigest and dependencyLockDigest must be sha256:<64 hex>. Mutable tags and unpinned names are rejected.";
@@ -71,7 +68,7 @@ export const SCRIPT_RUNTIME_NO_INSTALL_HELP = SCRIPT_PACKAGE_INSTALL_MESSAGE;
 export const SCRIPT_RUNTIME_NO_IMAGE_HELP = SCRIPT_ARBITRARY_IMAGE_MESSAGE;
 
 export const SCRIPT_RUNTIME_EGRESS_HELP =
-  "Egress is default-deny. Destination/port allowlists appear only when the catalog exposes them. The UI never offers a wide-open toggle.";
+  "Egress is default-deny when omitted. Destinations are {host,port,protocol}. Metadata, loopback, Docker socket, and * are rejected. dnsConstrained is always true — there is no unconstrained-DNS toggle.";
 
 export const SCRIPT_RUNTIME_PROFILE_REQUIRED_HELP =
   "Publish requires language (python or go), digest-pinned imageDigest and dependencyLockDigest, and limits.cpuMillis / memoryMib / timeoutSeconds / processes.";
@@ -102,6 +99,14 @@ export const SCRIPT_RUNTIME_ALLOWED_SPEC_KEYS = [
   "imageDigest",
   "dependencyLockDigest",
   "limits",
+  "egress",
+] as const;
+
+export const SCRIPT_RUNTIME_DENIED_EGRESS_HOSTS = [
+  "*",
+  "0.0.0.0",
+  "localhost",
+  "127.0.0.1",
 ] as const;
 
 export const SCRIPT_RUNTIME_LANGUAGES = ["python", "go"] as const;
@@ -118,10 +123,15 @@ export const SCRIPT_RUNTIME_LIMIT_BOUNDS = {
 
 export type ScriptRuntimeLimitKey = keyof typeof SCRIPT_RUNTIME_LIMIT_BOUNDS;
 
+export type ScriptRuntimeEgressDestination = {
+  host: string;
+  port: number;
+  protocol: "tcp" | "udp";
+};
+
 export type ScriptRuntimeEgress = {
-  destinations?: string[];
-  ports?: number[];
-  dnsAllowlist?: string[];
+  destinations?: ScriptRuntimeEgressDestination[];
+  dnsConstrained?: boolean;
 };
 
 export type ScriptRuntimeProfileMap = {
@@ -149,9 +159,9 @@ export const SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK: ScriptRuntimeProfileMap = {
   source: "contract-fallback",
   engine: SCRIPT_RUNTIME_PROFILE_ENGINE,
   languages: SCRIPT_RUNTIME_LANGUAGES,
-  requiredSpec: SCRIPT_RUNTIME_ALLOWED_SPEC_KEYS,
+  requiredSpec: ["language", "imageDigest", "dependencyLockDigest", "limits"],
   allowedSpec: SCRIPT_RUNTIME_ALLOWED_SPEC_KEYS,
-  egressExposed: false,
+  egressExposed: true,
   isolation: {
     ...DEFAULT_SCRIPT_ISOLATION,
     note: SCRIPT_RUNTIME_ISOLATION_HELP,
@@ -278,11 +288,10 @@ export function pickRuntimeProfileSpec(
   if (limits) {
     out.limits = limits;
   }
-  if (map?.egressExposed) {
-    const egress = pickRuntimeEgress(spec.egress);
-    if (egress) {
-      out.egress = egress;
-    }
+  const egress =
+    map?.egressExposed === false ? undefined : pickRuntimeEgress(spec.egress);
+  if (egress) {
+    out.egress = egress;
   }
   return out;
 }
@@ -311,14 +320,12 @@ export function runtimeProfilePublishGap(
   if (forbiddenRuntimeProfileKeys(spec).length > 0) {
     return "Runtime profiles cannot set image tags, package-install toggles, or privileged surfaces. Isolation is server-enforced.";
   }
-  if (spec.egress && !map?.egressExposed) {
+  if (map?.egressExposed === false && spec.egress) {
     return "Egress allowlists are not exposed by the current catalog. Leave them unset — default-deny is server-enforced.";
   }
-  if (map?.egressExposed) {
-    const destinations = spec.egress?.destinations ?? [];
-    if (destinations.some((item) => item === "*" || item === "0.0.0.0/0")) {
-      return "Egress destinations cannot be wildcard or default-route.";
-    }
+  const egressGap = runtimeEgressPublishGap(spec.egress);
+  if (egressGap) {
+    return egressGap;
   }
   return null;
 }
@@ -335,14 +342,19 @@ export function runtimeProfileIsolationNotes(
   map?: ScriptRuntimeProfileMap | null,
 ): string[] {
   const isolation = map?.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK.isolation;
+  const uid = isolation.uid ?? 65532;
+  const workspace = isolation.ephemeralWorkspace ?? "/workspace";
   return [
     SCRIPT_RUNTIME_ISOLATION_HELP,
+    `Non-root UID/GID ${uid}. Read-only root FS. Ephemeral writable ${workspace}. Drop ${isolation.dropCapabilityNames?.join(", ") || "ALL"}. no_new_privs. No Docker socket, metadata, or SA mount.`,
     SCRIPT_RUNTIME_DIGEST_HELP,
     SCRIPT_RUNTIME_NO_INSTALL_HELP,
     SCRIPT_RUNTIME_NO_IMAGE_HELP,
     SCRIPT_RUNTIME_EGRESS_HELP,
+    isolation.ciHarness,
+    ...(isolation.kubernetesManifests ?? []),
     isolation.note,
-  ].filter((note, index, all) => note && all.indexOf(note) === index);
+  ].filter((note, index, all): note is string => Boolean(note) && all.indexOf(note) === index);
 }
 
 export function runtimeProfileSelectorLabel(pin: OpsConfigPin): string {
@@ -449,22 +461,82 @@ function pickRuntimeEgress(
     return undefined;
   }
   const destinations = (egress.destinations ?? [])
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const dnsAllowlist = (egress.dnsAllowlist ?? [])
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const ports = (egress.ports ?? []).filter(
-    (item) => Number.isInteger(item) && item > 0 && item <= 65535,
-  );
-  if (!destinations.length && !dnsAllowlist.length && !ports.length) {
+    .map(normalizeEgressDestination)
+    .filter((item): item is ScriptRuntimeEgressDestination => item !== null);
+  if (!destinations.length && egress.dnsConstrained !== true) {
     return undefined;
   }
   return {
+    dnsConstrained: true,
     ...(destinations.length ? { destinations } : {}),
-    ...(dnsAllowlist.length ? { dnsAllowlist } : {}),
-    ...(ports.length ? { ports } : {}),
   };
+}
+
+function normalizeEgressDestination(
+  raw: unknown,
+): ScriptRuntimeEgressDestination | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const rec = raw as Record<string, unknown>;
+  const host = String(rec.host ?? "").trim().toLowerCase();
+  if (!host) {
+    return null;
+  }
+  const portRaw = rec.port == null ? 443 : Number(rec.port);
+  const port = Number.isInteger(portRaw) ? portRaw : 443;
+  const protocol = String(rec.protocol ?? "tcp").trim().toLowerCase();
+  return {
+    host,
+    port: port >= 1 && port <= 65535 ? port : 443,
+    protocol: protocol === "udp" ? "udp" : "tcp",
+  };
+}
+
+export function deniedEgressHost(host: string | undefined): boolean {
+  const normalized = String(host ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    (SCRIPT_RUNTIME_DENIED_EGRESS_HOSTS as readonly string[]).includes(normalized)
+  ) {
+    return true;
+  }
+  return (
+    normalized.startsWith("169.254.") ||
+    normalized.includes("metadata.google") ||
+    normalized.includes("docker.sock")
+  );
+}
+
+function runtimeEgressPublishGap(
+  egress: OpsConfigSpec["egress"] | undefined,
+): string | null {
+  if (!egress) {
+    return null;
+  }
+  if (egress.dnsConstrained === false) {
+    return "Unconstrained DNS is denied. Omit egress for default-deny, or keep dnsConstrained true.";
+  }
+  for (const item of egress.destinations ?? []) {
+    const host = String(item.host ?? "").trim();
+    if (!host) {
+      return "Each egress destination requires a host.";
+    }
+    if (deniedEgressHost(host)) {
+      return "Egress destinations cannot be metadata, loopback, Docker socket, or *.";
+    }
+    const port = item.port ?? 443;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return "Egress destination port must be 1–65535.";
+    }
+    const protocol = String(item.protocol ?? "tcp").toLowerCase();
+    if (protocol !== "tcp" && protocol !== "udp") {
+      return "Egress protocol must be tcp or udp.";
+    }
+  }
+  return null;
 }
 
 function limitGap(key: ScriptRuntimeLimitKey, value: unknown): string | null {
@@ -481,16 +553,13 @@ function runtimeProfileEgressExposed(
   allowedSpec: string[],
   isolation: ScriptIsolationRules,
 ): boolean {
-  if (declared.egressExposed === true) {
-    return true;
+  if (declared.egressExposed === false) {
+    return false;
   }
-  if (allowedSpec.includes("egress")) {
-    return true;
+  if (isolation.defaultDenyEgress === false && allowedSpec.length === 0) {
+    return false;
   }
-  const isolationRec = isolation as ScriptIsolationRules & {
-    egressAllowlist?: unknown;
-  };
-  return Array.isArray(isolationRec.egressAllowlist);
+  return true;
 }
 
 function stringList(value: unknown): string[] {

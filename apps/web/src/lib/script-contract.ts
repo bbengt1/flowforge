@@ -108,7 +108,7 @@ export const SCRIPT_HOST_SUPPLIED_IDENTITY_DETAIL =
   "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers.";
 
 export const SCRIPT_EXECUTE_FAIL_CLOSED_HELP =
-  "Execute fails closed: drafts, mutable, unscanned, unsigned, or scan-failed artifacts return 400. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are E9.2.";
+  "Execute fails closed: drafts, mutable, unscanned, unsigned, or scan-failed artifacts return 400. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are server-enforced (E9.2 / #98).";
 
 export const SCRIPT_RUNTIME_PROFILE_ENGINE = "script" as const;
 
@@ -249,6 +249,17 @@ export type ScriptIsolationRules = {
   noHostDockerSocket: boolean;
   runtimePackageInstall: boolean;
   approvedImagesOnly: boolean;
+  uid?: number;
+  gid?: number;
+  ephemeralWorkspace?: string;
+  dropCapabilityNames?: string[];
+  allowPrivilegeEscalation?: boolean;
+  noServiceAccountMount?: boolean;
+  defaultDenyEgress?: boolean;
+  dnsConstrained?: boolean;
+  metadataCIDRs?: string[];
+  ciHarness?: string;
+  kubernetesManifests?: string[];
   note: string;
   hooks: string[];
 };
@@ -349,8 +360,22 @@ export const DEFAULT_SCRIPT_ISOLATION: ScriptIsolationRules = {
   noHostDockerSocket: true,
   runtimePackageInstall: false,
   approvedImagesOnly: true,
-  note: "E9.2 implements the isolated runner. E9.1 only packages, scans, signs, and pins.",
-  hooks: ["VerifyForDispatch", "RunnerNotImplemented"],
+  uid: 65532,
+  gid: 65532,
+  ephemeralWorkspace: "/workspace",
+  dropCapabilityNames: ["ALL"],
+  allowPrivilegeEscalation: false,
+  noServiceAccountMount: true,
+  defaultDenyEgress: true,
+  dnsConstrained: true,
+  ciHarness:
+    "HarnessRuntime enforces UID/FS/caps/no_new_privs/metadata/egress/limits/package-install without starting a container.",
+  kubernetesManifests: [
+    "deploy/kubernetes/script-runner-deployment.yaml",
+    "deploy/kubernetes/script-runner-networkpolicy.yaml",
+  ],
+  note: "E9.2 isolated runner. VerifyForDispatch then Execute. Typed I/O is E9.3; revocation is E9.4.",
+  hooks: ["VerifyForDispatch", "Execute", "IsolationSpec"],
 };
 
 export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
@@ -367,7 +392,20 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "artifact-scan-failed", status: 400, meaning: "Artifact scanStatus is failed." },
   { code: "artifact-revoked", status: 409, meaning: "E9.4: revoked artifacts cannot start. Hook only in E9.1." },
   { code: "permission-denied", status: 403, meaning: "Missing workflow.execute, script.run, or runtimeProfile.use." },
-  { code: "runner-not-implemented", status: 501, meaning: "E9.2 isolated runner is not enabled." },
+  { code: "isolation-denied", status: 403, meaning: "Requested runner environment violates isolation (UID, FS, caps, mounts)." },
+  { code: "root-denied", status: 403, meaning: "Runner UID/GID must be non-root (65532)." },
+  { code: "writable-rootfs-denied", status: 403, meaning: "Root filesystem is read-only; only /workspace is writable." },
+  { code: "capability-denied", status: 403, meaning: "All Linux capabilities are dropped." },
+  { code: "privilege-escalation-denied", status: 403, meaning: "no_new_privs is required; privilege escalation is denied." },
+  { code: "metadata-denied", status: 403, meaning: "Cloud instance metadata (169.254.169.254 and equivalents) is denied." },
+  { code: "egress-denied", status: 403, meaning: "Destination is outside the default-deny egress allowlist, or DNS is unconstrained." },
+  { code: "package-install-denied", status: 403, meaning: "Runtime package installation is denied." },
+  { code: "image-denied", status: 400, meaning: "Arbitrary or mutable base images are denied. imageDigest must be sha256:<hex>." },
+  { code: "docker-socket-denied", status: 403, meaning: "Host Docker socket is denied." },
+  { code: "service-account-denied", status: 403, meaning: "Kubernetes service-account mounts are denied (MVP)." },
+  { code: "resource-limit", status: 400, meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile." },
+  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch. The script is not retried (E9.3 recovery hook)." },
+  { code: "runner-not-implemented", status: 501, meaning: "Live container runtime requested but only the CI harness is available." },
   { code: "typed-io-not-implemented", status: 501, meaning: "E9.3 typed I/O execution is not enabled." },
   { code: "revocation-not-implemented", status: 501, meaning: "E9.4 revocation API is not enabled." },
 ];
@@ -1140,8 +1178,8 @@ export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
   publish: DEFAULT_SCRIPT_PUBLISH_RULES,
   isolation: DEFAULT_SCRIPT_ISOLATION,
   hooks: {
-    "E9.2": "isolated runner (VerifyForDispatch before exec)",
-    "E9.3": "typed I/O + scoped handles + output redaction",
+    "E9.2": "isolated runner (VerifyForDispatch then Execute)",
+    "E9.3": "typed I/O + scoped handles + output redaction + lease-loss recovery",
     "E9.4": "artifact revocation + emergency stop",
   },
   notes: SCRIPT_CONTRACT_FALLBACK_HELP,
@@ -1483,6 +1521,8 @@ function parseIsolation(raw: unknown): ScriptIsolationRules {
     return { ...DEFAULT_SCRIPT_ISOLATION };
   }
   const rec = raw as Record<string, unknown>;
+  const uid = Number(rec.uid);
+  const gid = Number(rec.gid);
   return {
     nonRoot: rec.nonRoot !== false,
     readOnlyRootFS: rec.readOnlyRootFS !== false,
@@ -1492,6 +1532,24 @@ function parseIsolation(raw: unknown): ScriptIsolationRules {
     noHostDockerSocket: rec.noHostDockerSocket !== false,
     runtimePackageInstall: rec.runtimePackageInstall === true,
     approvedImagesOnly: rec.approvedImagesOnly !== false,
+    uid: Number.isInteger(uid) && uid > 0 ? uid : DEFAULT_SCRIPT_ISOLATION.uid,
+    gid: Number.isInteger(gid) && gid > 0 ? gid : DEFAULT_SCRIPT_ISOLATION.gid,
+    ephemeralWorkspace:
+      String(rec.ephemeralWorkspace ?? "").trim() ||
+      DEFAULT_SCRIPT_ISOLATION.ephemeralWorkspace,
+    dropCapabilityNames: stringList(rec.dropCapabilityNames).length
+      ? stringList(rec.dropCapabilityNames)
+      : DEFAULT_SCRIPT_ISOLATION.dropCapabilityNames,
+    allowPrivilegeEscalation: rec.allowPrivilegeEscalation === true,
+    noServiceAccountMount: rec.noServiceAccountMount !== false,
+    defaultDenyEgress: rec.defaultDenyEgress !== false,
+    dnsConstrained: rec.dnsConstrained !== false,
+    metadataCIDRs: stringList(rec.metadataCIDRs),
+    ciHarness:
+      String(rec.ciHarness ?? "").trim() || DEFAULT_SCRIPT_ISOLATION.ciHarness,
+    kubernetesManifests: stringList(rec.kubernetesManifests).length
+      ? stringList(rec.kubernetesManifests)
+      : DEFAULT_SCRIPT_ISOLATION.kubernetesManifests,
     note: String(rec.note ?? "").trim() || DEFAULT_SCRIPT_ISOLATION.note,
     hooks: stringList(rec.hooks).length
       ? stringList(rec.hooks)
