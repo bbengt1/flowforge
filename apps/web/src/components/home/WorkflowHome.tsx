@@ -96,17 +96,21 @@ function WorkflowHomeSession() {
     [items, filters],
   );
   const options = useMemo(() => uniqueFilterValues(items), [items]);
+  const resolvedStartId =
+    startWorkflowId === "1"
+      ? (items.find((item) => item.latestVersionId)?.id ?? "")
+      : startWorkflowId;
   const startItem = useMemo(() => {
-    if (!startWorkflowId || startWorkflowId === "1") {
+    if (!resolvedStartId) {
       return null;
     }
     return (
-      items.find((item) => item.id === startWorkflowId) ?? {
-        id: startWorkflowId,
+      items.find((item) => item.id === resolvedStartId) ?? {
+        id: resolvedStartId,
         name: undefined,
       }
     );
-  }, [items, startWorkflowId]);
+  }, [items, resolvedStartId]);
 
   const refresh = useCallback(async () => {
     const token = refreshGate.current.begin();
@@ -281,16 +285,6 @@ function WorkflowHomeSession() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [searchParams, createFromYaml, createName, createSlug]);
-
-  useEffect(() => {
-    if (startWorkflowId !== "1") {
-      return;
-    }
-    const first = items.find((item) => item.latestVersionId);
-    if (first) {
-      setStartWorkflowId(first.id);
-    }
-  }, [startWorkflowId, items]);
 
   async function createFromTemplate(template: WorkflowTemplate) {
     await createFromYaml(template.definitionYaml, template.name, template.slugHint);
