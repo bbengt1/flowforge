@@ -265,6 +265,8 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/credentials/{credentialId}/deletion-impact",
 		"/credentials/{credentialId}/events",
 		"/ops-config/catalog", "/ops-config/select", "/kubernetes/catalog", "/ssh/catalog",
+		"/scripts/catalog", "/scripts", "/scripts/{artifactId}",
+		"/workflows/{workflowId}/versions/{versionId}/script-artifacts",
 		"/cluster-targets", "/cluster-targets/{resourceId}",
 		"/cluster-targets/{resourceId}/draft", "/cluster-targets/{resourceId}/publish",
 		"/cluster-targets/{resourceId}/versions", "/cluster-targets/{resourceId}/versions/{versionId}",
@@ -308,6 +310,8 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeNotFound: true, CodeConflict: true, CodeMethodNotAllowed: true, CodeRequestTooLarge: true,
 		CodeInternalError: true, CodeDependencyUnavailable: true,
 		CodeInvalidWorkflow: true, CodeRetryDenied: true,
+		CodeArtifactMutable: true, CodeArtifactUnscanned: true,
+		CodeArtifactUnsigned: true, CodeArtifactScanFailed: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)

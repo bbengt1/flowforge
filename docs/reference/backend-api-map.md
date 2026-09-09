@@ -125,7 +125,7 @@ Physical tables: `ops_resources`, `ops_resource_drafts`, `ops_resource_versions`
 
 Suggested UI flow:
 
-1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, (E7.1) `kubernetesEngine`, and (E8.1) `sshEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`. SSH-target rows include `allowedCredentialTypes: ["ssh_private_key"]`.
+1. `GET /ops-config/catalog` for kinds, URL collections, YAML field names, `usePermission`, (E7.1) `kubernetesEngine`, (E8.1) `sshEngine`, and (E9.1) `scriptEngine`. Cluster-target rows include `allowedCredentialTypes: ["kubernetes"]`. SSH-target rows include `allowedCredentialTypes: ["ssh_private_key"]`. Runtime-profile rows include `engine: "script"`.
 2. List: `GET /{collection}` (`cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`).
 3. Create draft: `POST /{collection}` `{name, slug?, spec}`. Keep `resource.id` and `draft.revision`.
 4. Save: `PUT /{collection}/{id}/draft` `{revision, spec, name?}`. On `409`, reload the draft.
@@ -139,9 +139,10 @@ RBAC: `opsconfig.view` list/get/select snapshot; `opsconfig.edit` create/save/di
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1) and `sshEngine` (E8.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine}` | `401` `403` |
+| `GET /api/v1/ops-config/catalog` | Kinds, collections, YAML fields, plus `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1). Requires `opsconfig.view`. | `200` `{kinds,kubernetesEngine,sshEngine,scriptEngine}` | `401` `403` |
 | `GET /api/v1/kubernetes/catalog` | Engine allowlists, evaluation keys, service-account templates. Requires `opsconfig.view`. Does not contact a cluster. | `200` engine catalog | `401` `403` |
 | `GET /api/v1/ssh/catalog` | Profile parameter types, reviewed render rules, retry/indeterminate contract (`retry.ui`, `retry.probe`), publish rules, and error codes. Requires `opsconfig.view`. Does not open SSH. | `200` engine catalog | `401` `403` |
+| `GET /api/v1/scripts/catalog` | Script node fields, publish/scan/sign/pin rules, error codes, and E9.2–E9.4 hooks. Requires `opsconfig.view`. Does not start a runner. | `200` engine catalog | `401` `403` |
 | `POST /api/v1/ops-config/select` | Batch server-authorized pins. | `200` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/{collection}` | List heads. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/{collection}` | Create draft revision 1. | `201` `{resource,draft}` | `400` `401` `403` `409` |
@@ -470,6 +471,78 @@ Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker l
 
 Types: `kubernetes` (`secret.kubeconfig`), `ssh_private_key` (`privateKey`, optional `passphrase`), `token` (`token`), `webhook_secret` (`secret`), `provider` (`token`). Metadata cannot store those secret keys. `fingerprint` is `sha256:<hex>` of canonical secret JSON (not reversible).
 
+## Script source validation and publish pipeline (E9.1)
+
+Control-plane publish/scan/sign/pin for `script.python` and `script.go`. Isolated runners (E9.2), typed I/O execution (E9.3), and revocation/emergency-stop (E9.4) are not implemented — catalogs document hooks only. Relates to #92 / Part of #91. Keep #92 open until Chloe's UI lands; do not treat this API story as closing the issue.
+
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Cross-workspace artifact or runtime-profile UUIDs are `404`. Read `GET /scripts/catalog` (or `GET /ops-config/catalog` → `scriptEngine`) for node fields, publish rules, and error codes. Wizard/library should use `GET /workflows/catalog` `script.python` / `script.go` `allowedWith`. YAML still holds source; the artifact digest lives **outside** YAML on version pins. Execution uses the pinned digest only.
+
+Suggested UI flow:
+
+1. Author `script.python` / `script.go` with `source`, `entrypoint` (basename only: `main.py` / `main.go` or Go `package.Function`), published `runtimeProfileId`, and `timeoutSeconds` (1–3600). Optional `memoryMiB` / `cpuMillis` / `processes` / `inputSchema` / `outputSchema` / `policyId`.
+2. Create or reuse an approved runtime profile (`POST /runtime-profiles` → publish). Spec requires `language` (`python`/`go`), digest-pinned `imageDigest` + `dependencyLockDigest` (`sha256:<64 hex>`), and `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`. Mutable image tags are rejected.
+3. Save draft YAML as today. Drafts never execute.
+4. Publish: `POST /workflows/{id}/publish` `{revision, note}` packages, scans, signs, and pins each script node. Response includes `scriptArtifacts[]` (`nodeId`, `artifactId`, `digest`, `scanStatus`, `signature`). Dedicated publish: `POST /scripts` `{language,source,entrypoint,runtimeProfileId,...}` → `201` artifact (no package blob).
+5. Inspect pins: `GET /workflows/{id}/versions/{versionId}/script-artifacts` and `GET /scripts/{artifactId}`.
+6. Run: `POST /workflows/{id}/executions` `{workflowVersionId}`. Requires `workflow.execute` + `script.run` + `runtimeProfile.use`. Mutable / unscanned / unsigned / failed-scan artifacts fail closed (`artifact-*`) **before** a run is created.
+
+RBAC: `opsconfig.view` for catalogs; `workflow.publish` for dedicated `POST /scripts` and workflow publish; `workflow.view` for get/list artifacts; operator/admin have `script.run` and `runtimeProfile.use`. Viewer cannot publish or run.
+
+Signing: HMAC-SHA256 over the content digest, domain-separated with SHA-3 (`SCRIPT_SIGNING_KEY`, 32-byte hex/base64). Signature format `hmac-sha256:<hex>`. Scan reuses the E5.3 artifact scanner; secrets in published source fail closed (not just redacted). Max source 64 KiB. Same digest reuses the immutable workspace artifact.
+
+### Routes
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/scripts/catalog` | Node fields, publish rules, error codes, isolation hooks. Requires `opsconfig.view`. | `200` catalog | `401` `403` |
+| `POST /api/v1/scripts` | Dedicated package/scan/sign. Requires `workflow.publish`. Body `language`, `source`, `entrypoint`, `runtimeProfileId` (optional version, schemas, limits). Host-supplied workspace IDs rejected. | `201` artifact | `400` `401` `403` `404` |
+| `GET /api/v1/scripts/{artifactId}` | Metadata + digest + scan/signature. Never the package blob. Requires `workflow.view`. | `200` artifact | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts` | Pins bound at publish. Requires `workflow.view`. | `200` `{items}` | `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/publish` | Also packages/scans/signs/pins script nodes. | `201` `{workflow,version,pins,scriptArtifacts}` | `400` `401` `403` `404` `409` |
+
+### Node `with` fields (`script.python` / `script.go`)
+
+| Field | Required | Kind | Notes |
+| --- | --- | --- | --- |
+| `source` | yes | string | Visible in YAML. UTF-8, no NUL, ≤64 KiB. Secrets (PEM, kubeconfig, tokens) rejected. Go must declare `package`. |
+| `entrypoint` | yes | string | Basename only. Python: `*.py`. Go: `*.go` or `package.Function`. Paths/`..` rejected. |
+| `runtimeProfileId` | yes | uuid | Published `runtime_profile`. Language must match the node. Workflow publish pins the exact revision. |
+| `timeoutSeconds` | yes | integer | 1–3600. Must not exceed the pinned profile. |
+| `memoryMiB` | no | integer | 32–2048. Must not exceed the pinned profile. |
+| `cpuMillis` | no | integer | 1–8000. Must not exceed the pinned profile. |
+| `processes` | no | integer | 1–256. Must not exceed the pinned profile. |
+| `inputSchema` / `outputSchema` | no | object | Documented JSON Schema subset. Shape validated at publish; typed execution is E9.3. |
+| `policyId` | no | uuid | Optional published `kind=script` policy. |
+
+Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateKey`, `token`, `password`, `kubeconfig`, `command`, `shell`.
+
+### Artifact JSON (never `package` / `storageRef`)
+
+`id`, `language`, `entrypoint`, `digest` (`sha256:<hex>`), `signature` (`hmac-sha256:<hex>`), `scanStatus` (`clean` required to execute), `status` (`published` required to execute), `runtimeProfileId`, `runtimeProfileVersionId`, `runtimeProfileDigest`, `sourceBytes`, `metadata` (secret-free), `createdBy`, `createdAt`, `revokedAt?` (reserved for E9.4).
+
+### Catalog error codes (`GET /scripts/catalog` → `errors[]`)
+
+| Code | Status | When |
+| --- | --- | --- |
+| `invalid-source` | 400 | Missing, not UTF-8, wrong language shape, or >64 KiB |
+| `invalid-entrypoint` | 400 | Empty, a path, or language mismatch |
+| `invalid-runtime-profile` | 400 | Missing, unpublished, or not digest-pinned |
+| `language-mismatch` | 400 | `script.python` must pin a python profile |
+| `invalid-schema` | 400 | Declared I/O schema is not the documented subset |
+| `secret-forbidden` | 400 | Source or YAML contained secret material |
+| `size-limit` | 400 | Source, timeout, or resource cap exceeded |
+| `artifact-mutable` | 400 | Draft/unsigned package cannot execute |
+| `artifact-unscanned` | 400 | `scanStatus` pending or missing |
+| `artifact-unsigned` | 400 | Signature missing or does not verify |
+| `artifact-scan-failed` | 400 | `scanStatus` is failed |
+| `artifact-revoked` | 409 | E9.4 hook only |
+| `permission-denied` | 403 | Missing `workflow.execute`, `script.run`, or `runtimeProfile.use` |
+| `runner-not-implemented` | 501 | E9.2 isolated runner is not enabled |
+| `typed-io-not-implemented` | 501 | E9.3 typed I/O is not enabled |
+| `revocation-not-implemented` | 501 | E9.4 revocation API is not enabled |
+
+Out of scope: `apps/web` rewrite, isolated container runners (E9.2), typed I/O execution (E9.3), revocation/emergency-stop (E9.4), SSH/K8s engines.
+
 ## Workflow YAML contract (E3.1)
 
 Ephemeral parse/normalize/validate. Persistence is E3.2 below. Browser callers use the E2.3 session + CSRF pair; header-only callers skip CSRF.
@@ -480,7 +553,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. E7.3 adds `kubernetes.rolloutStatus` (`verb=watch`, `cancellation=stop-wait`). E8.2/E8.3 add `ssh.run` (`allowedWith`, `policy.defaultMaxAttempts=0`, `policy.verification=profile-declared-idempotent-probe`, redaction). E9.1 adds `script.python` / `script.go` (`source`, `entrypoint`, `runtimeProfileId`, `timeoutSeconds`, `policy.permissions` includes `script.run`). Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 
@@ -513,13 +586,13 @@ Suggested UI flow:
 | `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, latest version. | `200` workflow | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/draft` | Current mutable draft. | `200` `{workflowId,revision,definitionYaml,digest,summary,warnings,validationState}` | `401` `403` `404` |
 | `PUT /api/v1/workflows/{workflowId}/draft` | Conflict-safe save. JSON `{revision,definitionYaml}` or YAML + `If-Match: <revision>`. Requires `workflow.edit`. | `200` `{workflow,draft}` (revision incremented) | `400` `invalid-workflow` / `409` revision mismatch / `401` `403` `404` |
-| `POST /api/v1/workflows/{workflowId}/publish` | Copy current draft to an immutable version. JSON `{revision?,note?}`. Requires `workflow.publish`. | `201` `{workflow,version}` | `409` duplicate digest or stale revision / `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/publish` | Copy current draft to an immutable version. JSON `{revision?,note?}`. Requires `workflow.publish`. Script nodes are packaged, scanned, signed, and pinned (`scriptArtifacts[]`). | `201` `{workflow,version,pins,scriptArtifacts}` | `409` duplicate digest or stale revision / `400` invalid script / `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions` | Version history, newest first. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}` | One frozen snapshot (includes YAML). | `200` version | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable export. JSON `{filename,definitionYaml,digest,...}`; `Accept: application/yaml` returns raw YAML. | `200` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/compare` | Diff two refs. `{left:{kind:"draft"}, right:{kind:"version",versionId}}` (or `versionNumber`). | `200` `{equal,digestMatch,left,right,leftDigest,rightDigest,changes[]}` | `400` `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore version as a **new** draft revision. JSON `{expectedRevision?}`. Requires `workflow.edit`. Version is unchanged. | `200` `{workflow,draft}` | `409` stale draft / `401` `403` `404` |
-| `POST /api/v1/workflows/{workflowId}/executions` | Start a durable run. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. Optional `idempotencyKey` / `Idempotency-Key` is unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Inputs redacted before persist. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. | `201` / `200` execution | `400` drafts cannot run / `401` `403` `404` `409` |
+| `POST /api/v1/workflows/{workflowId}/executions` | Start a durable run. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. Optional `idempotencyKey` / `Idempotency-Key` is unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Inputs redacted before persist. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. Script nodes also require `script.run` + `runtimeProfile.use` and a published, scanned, signed pin (`artifact-mutable` / `artifact-unscanned` / `artifact-unsigned` / `artifact-scan-failed` fail closed before a run is created). | `201` / `200` execution | `400` drafts cannot run / `400` artifact-* / `401` `403` `404` `409` |
 | `GET /api/v1/workflows/{workflowId}/executions` | List runs for one workflow. Requires `execution.view`. Query `status`, `limit`. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Execution detail (redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`). Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
 
@@ -676,6 +749,10 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, or a retry/cancel that is not allowed |
 | `retry-denied` | 409 | SSH (or other) retry rejected: default `maxAttempts=0`, profile not `retrySafe`, missing verification, or no attempts remain. Indeterminate non-retrySafe SSH stays closed. |
+| `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
+| `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |
+| `artifact-unsigned` | 400 | Script artifact signature is missing or does not verify. |
+| `artifact-scan-failed` | 400 | Script artifact `scanStatus` is failed. |
 | `method-not-allowed` | 405 | Known path, unsupported method |
 | `request-too-large` | 413 | Body exceeds 1048576 bytes |
 | `internal-error` | 500 | Unexpected failure |

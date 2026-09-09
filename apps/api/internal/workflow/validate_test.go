@@ -309,6 +309,59 @@ spec:
 	assertHasCode(t, errs, CodeUnsupportedTrigger)
 }
 
+func TestScriptSourceAndEntrypointRejected(t *testing.T) {
+	t.Run("secret in source", func(t *testing.T) {
+		src := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: secret-script
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: script.python
+      name: Run
+      with:
+        source: |
+          token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+        entrypoint: main.py
+        runtimeProfileId: 66666666-6666-4666-8666-666666666666
+        timeoutSeconds: 30
+  edges: []
+`
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeSecretForbidden)
+	})
+	t.Run("path entrypoint", func(t *testing.T) {
+		src := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: bad-entry
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: script.python
+      name: Run
+      with:
+        source: |
+          print("ok")
+        entrypoint: ../main.py
+        runtimeProfileId: 66666666-6666-4666-8666-666666666666
+        timeoutSeconds: 30
+  edges: []
+`
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeInvalidEntrypoint)
+	})
+}
+
 func nodeYAML(typ string) string {
 	return `
 apiVersion: flowforge/v1

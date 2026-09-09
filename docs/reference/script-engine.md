@@ -26,19 +26,19 @@ Retries are zero by default. A node may be retry-safe only when it declares an i
 
 ## Initial implementation layout
 
+E9.1 (this story) implements the control-plane publish pipeline only. E9.2–E9.4 remain hooks (`VerifyForDispatch`, `RunnerNotImplemented`, `revoked_at`).
+
 ```text
-internal/scripts/
-  model.go source.go validator.go package.go signer.go policy.go runtime.go redaction.go
-internal/workflows/nodes/script.go
-internal/executions/script_runner.go
-internal/api/v1/script_handlers.go
-internal/store/script_artifacts.go
-internal/store/runtime_profiles.go
-migrations/0003_script_artifacts_and_runtime_profiles.sql
-deploy/kubernetes/
-  script-runner-deployment.yaml
-  script-runner-networkpolicy.yaml
+apps/api/internal/scripts/
+  model.go source.go validator.go package.go signer.go scan.go
+  policy.go runtime.go redaction.go catalog.go pipeline.go
+  store.go memory.go postgres.go
+apps/api/internal/workflow/script_contract.go
+apps/api/internal/httpapi/script.go
+apps/api/migrations/000013_script_artifacts.sql
 ```
+
+Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`. Isolated runner manifests (`deploy/kubernetes/script-runner-*.yaml`) are E9.2.
 
 ## Required validation
 

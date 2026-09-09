@@ -74,18 +74,8 @@ func coreNodeTypes() []NodeType {
 		kubernetesListContract(),
 		kubernetesRolloutContract(),
 		sshRunContract(),
-		{
-			Type: "script.python", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "input", Kind: PortObject}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"source", "entrypoint", "runtimeProfileId", "timeoutSeconds"},
-		},
-		{
-			Type: "script.go", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "input", Kind: PortObject}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"source", "entrypoint", "runtimeProfileId", "timeoutSeconds"},
-		},
+		scriptPythonContract(),
+		scriptGoContract(),
 		// Next / provider — rejected at parse time in MVP.
 		{Type: "workflow.call", Phase: PhaseNext, Inputs: []Port{}, Outputs: []Port{}},
 		{Type: "flow.switch", Phase: PhaseNext, Inputs: []Port{}, Outputs: []Port{}},
