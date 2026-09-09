@@ -630,7 +630,28 @@ Run dialog fields:
 | Idempotency key | generated or operator-entered | Required in body + `Idempotency-Key`. `201` / `200` / `409` |
 | CSRF | `X-CSRF-Token` | Fail closed |
 
-`201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Webhook, schedule, and wait/resume stay E10.2 / E10.3.
+`201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Schedule and wait/resume stay E10.3. Webhook admin/ingress is E10.2 below.
+
+## E10.2 replay-safe webhooks (Chloe UI)
+
+The E10.2 ingress and admin APIs stay on `POST /hooks/{publicId}` and `/workflows/{id}/triggers` / `/triggers/{id}`. Relates to #107 / Part of #105 — **Keep #107 open**. Do **not** rewrite `apps/web` in the API story; this section is the UI contract.
+
+Cookie session + `X-CSRF-Token` on admin writes. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Never render or persist the HMAC secret. Host-supplied `id` / `workspaceId` is `400`.
+
+Admin fields:
+
+| Control | Source | Notes |
+| --- | --- | --- |
+| Published version picker | `GET /workflows/{id}/versions` | Drafts never listed or sent |
+| Secret | existing `webhook_secret` picker or create `{secret:{secret}}` | Shown once at create/rotate; then only `secretCredentialId` + fingerprint |
+| Ingress URL | response `ingressPath` | `/api/v1/hooks/{publicId}`. Copyable. Secret is never in the URL |
+| Field mapping | `fieldMapping` | Destination identifier → dotted source path |
+| Limits | body/skew/replay/rate/concurrency | Defaults from catalog `ingress` |
+| CSRF | `X-CSRF-Token` | Fail closed on admin writes |
+
+Public delivery is server-to-server: `X-FlowForge-Timestamp` + `X-FlowForge-Signature: v1=<hex>` over `v1.{timestamp}.{raw}`. UI should document those headers and fail-closed statuses: `201` / `200` / `401` bad sig or skew / `404` unknown or disabled / `409` replay / `413` oversize / `429` rate. Do not call ingress from the browser session.
+
+Schedule + durable `flow.approval` wait/resume stay E10.3. HTTP/notification actions stay E10.4.
 
 ## Required validation
 

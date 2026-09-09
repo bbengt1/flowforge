@@ -21,6 +21,7 @@ const (
 	CodeConflict              = "conflict"
 	CodeMethodNotAllowed      = "method-not-allowed"
 	CodeRequestTooLarge       = "request-too-large"
+	CodeRateLimited           = "rate-limited"
 	CodeInternalError         = "internal-error"
 	CodeDependencyUnavailable = "dependency-unavailable"
 	CodeInvalidWorkflow       = "invalid-workflow"

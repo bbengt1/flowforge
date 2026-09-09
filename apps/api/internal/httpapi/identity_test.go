@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -183,13 +184,15 @@ func seededWorkspace(t *testing.T) (http.Handler, identity.User) {
 	keys := vault.TestKeys()
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
+	hooks := webhook.NewMemory()
 	h := NewWithDeps(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
 		Sessions:  session.NewMemory(),
 		Workflows: workflows,
 		Ops:       ops,
-		Vault:     vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops}),
+		Hooks:     hooks,
+		Vault:     vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops, hooks}),
 		Keys:      keys,
 	})
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}

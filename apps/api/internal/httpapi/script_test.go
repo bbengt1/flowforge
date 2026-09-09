@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -278,13 +279,15 @@ func seededWorkspaceWithScripts(t *testing.T, store scripts.Store, key []byte) (
 	keys := vault.TestKeys()
 	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
+	hooks := webhook.NewMemory()
 	h := NewWithDeps(Deps{
 		Store:            idStore,
 		Scoped:           isolation.NewMemory(),
 		Sessions:         session.NewMemory(),
 		Workflows:        workflows,
 		Ops:              ops,
-		Vault:            vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops}),
+		Hooks:            hooks,
+		Vault:            vault.NewMemory(keys, vault.CompositeRefFinder{workflows, ops, hooks}),
 		Keys:             keys,
 		Scripts:          store,
 		ScriptSigningKey: key,

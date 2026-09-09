@@ -176,21 +176,7 @@ func validateTrigger(t Trigger, path string) ErrorList {
 	case "manual":
 		errs = append(errs, validateManualTrigger(t, path)...)
 	case "webhook":
-		for k, v := range t.With {
-			switch k {
-			case "inputSchema":
-				if _, ok := v.(map[string]any); !ok && v != nil {
-					errs = append(errs, fieldError(path+".inputSchema", t.pos.Line, t.pos.Column, CodeInvalidType, "inputSchema must be a mapping."))
-				}
-			case "contentType":
-				s, ok := v.(string)
-				if !ok || strings.TrimSpace(s) == "" {
-					errs = append(errs, fieldError(path+".contentType", t.pos.Line, t.pos.Column, CodeInvalidType, "contentType must be a string."))
-				}
-			default:
-				errs = append(errs, fieldError(path+"."+k, t.pos.Line, t.pos.Column, CodeUnknownField, "webhook YAML may declare only inputSchema and contentType."))
-			}
-		}
+		errs = append(errs, validateWebhookTrigger(t, path)...)
 	case "schedule":
 		errs = append(errs, validateSchedule(t, path)...)
 	}

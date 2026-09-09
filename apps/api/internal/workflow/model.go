@@ -111,6 +111,52 @@ type TriggerStart struct {
 	Help                     string   `json:"help"`
 }
 
+// TriggerIngress is the public webhook delivery contract (E10.2).
+type TriggerIngress struct {
+	Route                  string   `json:"route"`
+	Method                 string   `json:"method"`
+	Public                 bool     `json:"public"`
+	CSRF                   bool     `json:"csrf"`
+	Session                bool     `json:"session"`
+	SignatureHeader        string   `json:"signatureHeader"`
+	TimestampHeader        string   `json:"timestampHeader"`
+	SignatureVersion       string   `json:"signatureVersion"`
+	IdempotencyHeader      string   `json:"idempotencyHeader"`
+	MaxBodyBytes           int      `json:"maxBodyBytes"`
+	MaxInputBytes          int      `json:"maxInputBytes"`
+	ClockSkewSeconds       int      `json:"clockSkewSeconds"`
+	ReplayRetentionSeconds int      `json:"replayRetentionSeconds"`
+	DefaultRatePerMinute   int      `json:"defaultRatePerMinute"`
+	DefaultWorkspaceRate   int      `json:"defaultWorkspaceRatePerMinute"`
+	DefaultMaxConcurrency  int      `json:"defaultMaxConcurrency"`
+	DefaultWorkspaceConc   int      `json:"defaultWorkspaceMaxConcurrency"`
+	ContentTypes           []string `json:"contentTypes"`
+	CreatedStatus          int      `json:"createdStatus"`
+	ReplayStatus           int      `json:"replayStatus"`
+	ConflictStatus         int      `json:"conflictStatus"`
+	UnauthorizedStatus     int      `json:"unauthorizedStatus"`
+	RateLimitedStatus      int      `json:"rateLimitedStatus"`
+	TooLargeStatus         int      `json:"tooLargeStatus"`
+	DisabledStatus         int      `json:"disabledStatus"`
+	Help                   string   `json:"help"`
+}
+
+// TriggerAdmin is the cookie-session CRUD/rotate contract (E10.2).
+type TriggerAdmin struct {
+	ListRoute           string `json:"listRoute"`
+	CreateRoute         string `json:"createRoute"`
+	ItemRoute           string `json:"itemRoute"`
+	RotateRoute         string `json:"rotateRoute"`
+	DisableRoute        string `json:"disableRoute"`
+	EnableRoute         string `json:"enableRoute"`
+	DeleteRoute         string `json:"deleteRoute"`
+	Permission          string `json:"permission"`
+	ViewPermission      string `json:"viewPermission"`
+	CSRF                bool   `json:"csrf"`
+	SecretNeverReturned bool   `json:"secretNeverReturned"`
+	Help                string `json:"help"`
+}
+
 // TriggerType describes an allowlisted trigger.
 type TriggerType struct {
 	Type        string           `json:"type"`
@@ -122,6 +168,8 @@ type TriggerType struct {
 	Bounds      *NodeBounds      `json:"bounds,omitempty"`
 	Redaction   *RedactionPolicy `json:"redaction,omitempty"`
 	Start       *TriggerStart    `json:"start,omitempty"`
+	Ingress     *TriggerIngress  `json:"ingress,omitempty"`
+	Admin       *TriggerAdmin    `json:"admin,omitempty"`
 }
 
 // NodeType describes an allowlisted action node.

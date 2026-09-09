@@ -9,7 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
-const corsAllowHeaders = "Content-Type, X-CSRF-Token, X-Request-ID, X-FlowForge-Issuer, X-FlowForge-Subject, X-FlowForge-Display-Name, X-FlowForge-Tenant-ID, X-FlowForge-Tenant-Slug, X-FlowForge-Workbench-Key, X-FlowForge-Workspace-ID"
+const corsAllowHeaders = "Content-Type, X-CSRF-Token, X-Request-ID, X-FlowForge-Issuer, X-FlowForge-Subject, X-FlowForge-Display-Name, X-FlowForge-Tenant-ID, X-FlowForge-Tenant-Slug, X-FlowForge-Workbench-Key, X-FlowForge-Workspace-ID, X-FlowForge-Signature, X-FlowForge-Timestamp, Idempotency-Key"
 const corsAllowMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
 
 func (s Security) classifyOrigin(r *http.Request) (allowed bool, emitCORS bool, origin string) {

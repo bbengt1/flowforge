@@ -48,8 +48,12 @@ Host/embed identity assertions are validated before a transaction starts. The da
 | `workflow_drafts` | `workflow_id`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `validation_state`, `revision` | Exactly one mutable draft per workflow; optimistic update requires current revision. |
 | `workflow_versions` | `id`, `workflow_id`, `version_number`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `publish_note`, `published_by`, `published_at` | Immutable after publish; unique `(workflow_id, version_number)` and `(workflow_id, definition_digest)`. |
 | `workflow_version_artifacts` | `workflow_version_id`, `node_id`, `script_artifact_id` | Pins published script artifact per node. |
-| `workflow_triggers` | `id`, `workflow_id`, `type`, `config`, `status` | Safe trigger metadata only; webhook secrets remain credentials. |
+| `workflow_triggers` | `workspace_id`, `id`, `public_id` (`wh_`+64 hex), `workflow_id`, `workflow_version_id`, `type`, `status`, `secret_credential_id`, `content_type`, `field_mapping`, body/skew/replay/rate/concurrency limits | E10.2 (`000015_webhook_triggers.sql`). Safe metadata only; HMAC secret stays in `credentials` (`webhook_secret`). Unique `public_id`. Composite FKs to workflow, published version, and credential. FORCE RLS. |
+| `webhook_replays` | `workspace_id`, `trigger_id`, `replay_id` (sha256 hex), `expires_at` | Exact signed-payload replay identifiers retained ≥ clock-skew window. |
+| `webhook_rate_windows` | `workspace_id`, `scope_kind` (`trigger`/`workspace`), `scope_id`, `window_start`, `count`, `in_flight` | Per-minute rate and in-flight concurrency gates. |
 | `workflow_templates` | `id`, `workspace_id` nullable, `name`, `normalized_yaml`, `digest`, `status` | Reviewed source for new drafts; never executed directly. |
+
+`app.lookup_webhook_workspace(public_id)` is `SECURITY DEFINER` so public ingress can resolve an opaque id to a workspace before RLS-scoped reads. It returns NULL for unknown ids and never returns secrets.
 
 `normalized_yaml` is the canonical saved document. `parsed_definition` is a validated query/execution projection, never an independently editable canvas graph. A draft save stores revision, YAML, digest, and parser/validation result atomically. Publishing copies the normalized definition into an immutable version and records exact policy/profile/artifact references.
 

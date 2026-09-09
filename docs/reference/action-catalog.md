@@ -11,7 +11,7 @@ This catalog distinguishes **core** nodes (first implementation target), **next*
 | Trigger type | Phase | Purpose | Key rules |
 | --- | --- | --- | --- |
 | `manual` | Core | User starts a published workflow. | Captures actor, optional input schema (`schema` / `inputSchema`), idempotency key, and version digest. Start is `POST /workflows/{id}/executions` with `workflow.execute`, CSRF, and a published `workflowVersionId`. |
-| `webhook` | Core | Authenticated external event starts a workflow. | Server-managed rotatable secret reference, request schema/size/rate limits, and replay-resistant signature verification before parsing. |
+| `webhook` | Core | Authenticated external event starts a workflow. | Opaque `publicId` (`wh_`+64 hex); rotatable vault `webhook_secret` (never returned); `POST /hooks/{publicId}` reads the raw body and verifies `v1` HMAC over `v1.{timestamp}.{raw}` before JSON parse; timestamp/replay, size/rate/concurrency limits; allowlisted field mapping into 16 KiB typed input; E10.1 idempotency/fingerprint start. Fail closed on bad sig, replay, skew, oversize, rate, unpublished/disabled. YAML may declare only `schema` / `inputSchema` / `contentType`. |
 | `schedule` | Core | Cron/timezone schedule starts a workflow. | The scheduler is server-owned; configuration is version-pinned, timezone-explicit, and has bounded missed-run, catch-up, and overlap behavior. |
 | `event` | Next | Provider/event bus event starts a workflow. | Explicit subscription, source verification, and dedupe. |
 

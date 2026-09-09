@@ -3046,6 +3046,336 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /workflows/{workflowId}/triggers:
+    get:
+      operationId: listWorkflowTriggers
+      summary: List webhook triggers for a workflow
+      description: E10.2 admin list. Requires `workflow.view`. Never returns plaintext secrets.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowID"
+      responses:
+        "200":
+          description: Trigger metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookTrigger"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createWorkflowTrigger
+      summary: Create a webhook trigger
+      description: |
+        E10.2 admin create. Cookie session + CSRF. Requires `workflow.edit`.
+        Pins a published `workflowVersionId` and a vault `webhook_secret`
+        via `secretCredentialId` (or `{secret:{secret}}` to create one).
+        Returns an opaque `publicId` and `ingressPath`. Never returns plaintext.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookTriggerWrite"
+      responses:
+        "201":
+          description: Created trigger metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /triggers/{triggerId}:
+    get:
+      operationId: getWebhookTrigger
+      summary: Get a webhook trigger
+      description: Requires `workflow.view`. Accepts internal UUID or opaque publicId.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Trigger metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateWebhookTrigger
+      summary: Update webhook trigger config
+      description: Requires `workflow.edit` and CSRF. Secret material is rejected here; use rotate.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookTriggerWrite"
+      responses:
+        "200":
+          description: Updated trigger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteWebhookTrigger
+      summary: Delete a webhook trigger
+      description: Requires `workflow.edit` and CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /triggers/{triggerId}/rotate:
+    post:
+      operationId: rotateWebhookTrigger
+      summary: Rotate the webhook secret
+      description: Requires `workflow.edit` and CSRF. Body `{secret:{secret}}`. Never returns plaintext.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret:
+                  type: object
+                  additionalProperties: {type: string}
+      responses:
+        "200":
+          description: Trigger metadata after rotate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /triggers/{triggerId}/disable:
+    post:
+      operationId: disableWebhookTrigger
+      summary: Disable a webhook trigger
+      description: Requires `workflow.edit` and CSRF. Disabled triggers fail closed as 404 on public ingress.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Disabled trigger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /triggers/{triggerId}/enable:
+    post:
+      operationId: enableWebhookTrigger
+      summary: Enable a webhook trigger
+      description: Requires `workflow.edit` and CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: triggerId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Enabled trigger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTrigger"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /hooks/{publicId}:
+    post:
+      operationId: deliverWebhook
+      summary: Public replay-safe webhook ingress
+      description: |
+        E10.2 public ingress. No session or CSRF. Reads the raw body first
+        and verifies `X-FlowForge-Signature: v1=<hex>` over
+        `v1.{timestamp}.{raw}` before JSON parse. Fail closed on bad
+        signature, replay, timestamp skew, oversize, rate/concurrency,
+        or a disabled/unpublished trigger. Mapped fields become bounded
+        typed input; execution start uses E10.1 idempotency/fingerprint
+        semantics. Never put the secret in the URL.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - name: publicId
+          in: path
+          required: true
+          schema: {type: string, pattern: '^wh_[0-9a-f]{64}$'}
+        - name: X-FlowForge-Timestamp
+          in: header
+          required: true
+          schema: {type: string}
+        - name: X-FlowForge-Signature
+          in: header
+          required: true
+          schema: {type: string}
+        - name: Idempotency-Key
+          in: header
+          schema: {type: string, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          description: New execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "200":
+          description: Idempotent replay of the same fingerprint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecution"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /credentials:
     get:
       operationId: listCredentials
@@ -5496,6 +5826,7 @@ components:
             - conflict
             - method-not-allowed
             - request-too-large
+            - rate-limited
             - internal-error
             - dependency-unavailable
             - invalid-workflow
@@ -5836,6 +6167,54 @@ components:
                     type: integer
                   help:
                     type: string
+              ingress:
+                type: object
+                description: E10.2 public webhook ingress contract. No session or CSRF.
+                properties:
+                  route: {type: string}
+                  method: {type: string}
+                  public: {type: boolean}
+                  csrf: {type: boolean}
+                  session: {type: boolean}
+                  signatureHeader: {type: string}
+                  timestampHeader: {type: string}
+                  signatureVersion: {type: string}
+                  idempotencyHeader: {type: string}
+                  maxBodyBytes: {type: integer}
+                  maxInputBytes: {type: integer}
+                  clockSkewSeconds: {type: integer}
+                  replayRetentionSeconds: {type: integer}
+                  defaultRatePerMinute: {type: integer}
+                  defaultWorkspaceRatePerMinute: {type: integer}
+                  defaultMaxConcurrency: {type: integer}
+                  defaultWorkspaceMaxConcurrency: {type: integer}
+                  contentTypes:
+                    type: array
+                    items: {type: string}
+                  createdStatus: {type: integer}
+                  replayStatus: {type: integer}
+                  conflictStatus: {type: integer}
+                  unauthorizedStatus: {type: integer}
+                  rateLimitedStatus: {type: integer}
+                  tooLargeStatus: {type: integer}
+                  disabledStatus: {type: integer}
+                  help: {type: string}
+              admin:
+                type: object
+                description: E10.2 cookie-session CRUD/rotate contract. Never returns plaintext secrets.
+                properties:
+                  listRoute: {type: string}
+                  createRoute: {type: string}
+                  itemRoute: {type: string}
+                  rotateRoute: {type: string}
+                  disableRoute: {type: string}
+                  enableRoute: {type: string}
+                  deleteRoute: {type: string}
+                  permission: {type: string}
+                  viewPermission: {type: string}
+                  csrf: {type: boolean}
+                  secretNeverReturned: {type: boolean}
+                  help: {type: string}
         nodes:
           type: array
           items:
@@ -6283,6 +6662,61 @@ components:
         auditEvents:
           type: array
           items: {$ref: "#/components/schemas/AuditEvent"}
+    WebhookTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, publicId, ingressPath, workflowId, workflowVersionId, type, status, secretCredentialId, contentType, fieldMapping]
+      properties:
+        id: {type: string, format: uuid}
+        publicId: {type: string, pattern: '^wh_[0-9a-f]{64}$'}
+        ingressPath: {type: string, example: /api/v1/hooks/wh_0123}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        type: {type: string, enum: [webhook]}
+        status: {type: string, enum: [enabled, disabled]}
+        secretCredentialId: {type: string, format: uuid, description: Vault webhook_secret reference. Never a plaintext secret.}
+        contentType: {type: string, example: application/json}
+        fieldMapping:
+          type: object
+          additionalProperties: {type: string}
+          description: Destination field → dotted source path. Empty mapping copies the root JSON object.
+        maxBodyBytes: {type: integer, minimum: 1, maximum: 262144}
+        clockSkewSeconds: {type: integer, minimum: 1, maximum: 3600}
+        replayRetentionSeconds: {type: integer, minimum: 1, maximum: 7200}
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 600}
+        workspaceRatePerMinute: {type: integer, minimum: 1, maximum: 3000}
+        maxConcurrency: {type: integer, minimum: 1, maximum: 20}
+        workspaceMaxConcurrency: {type: integer, minimum: 1, maximum: 100}
+        createdBy: {type: string}
+        updatedBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+      description: Safe webhook trigger metadata. The API never returns the HMAC secret.
+    WebhookTriggerWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [webhook]}
+        workflowVersionId: {type: string, format: uuid, description: Published version UUID. Drafts are 400.}
+        secretCredentialId: {type: string, format: uuid, description: Existing vault webhook_secret. Omit when creating via secret.}
+        contentType: {type: string, example: application/json}
+        fieldMapping:
+          type: object
+          additionalProperties: {type: string}
+        maxBodyBytes: {type: integer, minimum: 1, maximum: 262144}
+        clockSkewSeconds: {type: integer, minimum: 1, maximum: 3600}
+        replayRetentionSeconds: {type: integer, minimum: 1, maximum: 7200}
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 600}
+        workspaceRatePerMinute: {type: integer, minimum: 1, maximum: 3000}
+        maxConcurrency: {type: integer, minimum: 1, maximum: 20}
+        workspaceMaxConcurrency: {type: integer, minimum: 1, maximum: 100}
+        secret:
+          type: object
+          additionalProperties: {type: string}
+          description: Create only. `{secret:"..."}` stores a new webhook_secret. Rejected on PATCH; use rotate.
+        id: {type: string, description: Rejected if present}
+        workspace_id: {type: string, description: Rejected if present}
+        workspaceId: {type: string, description: Rejected if present}
     ExecutionList:
       type: object
       required: [items]
@@ -6843,7 +7277,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [draft, version, execution]
+          enum: [draft, version, execution, trigger]
         workflowId:
           type: string
         workflowSlug:
@@ -6860,7 +7294,7 @@ components:
           type: string
     CredentialUsage:
       type: object
-      required: [credentialId, drafts, versions, executions]
+      required: [credentialId, drafts, versions, executions, triggers]
       properties:
         credentialId:
           type: string
@@ -6883,9 +7317,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CredentialRef"
+        triggers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
     CredentialDeletionImpact:
       type: object
-      required: [credentialId, displayName, status, canDelete, drafts, versions, activeExecutions]
+      required: [credentialId, displayName, status, canDelete, drafts, versions, activeExecutions, triggers]
       properties:
         credentialId:
           type: string
@@ -6906,6 +7344,10 @@ components:
           items:
             $ref: "#/components/schemas/CredentialRef"
         activeExecutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        triggers:
           type: array
           items:
             $ref: "#/components/schemas/CredentialRef"
@@ -7152,6 +7594,23 @@ components:
             detail: The request body exceeds the 1048576 byte limit.
             instance: /api/v1/health
             code: request-too-large
+            request_id: 0123456789abcdef0123456789abcdef
+    RateLimited:
+      description: Webhook rate or concurrency limit exceeded
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:rate-limited
+            title: Rate Limited
+            status: 429
+            detail: Webhook rate or concurrency limit was exceeded.
+            instance: /api/v1/hooks/wh_example
+            code: rate-limited
             request_id: 0123456789abcdef0123456789abcdef
     InternalError:
       description: Unexpected server failure
