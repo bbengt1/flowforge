@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/schedule"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -36,6 +37,7 @@ type Server struct {
 	workflows        wfstore.Store
 	vault            vault.Store
 	hooks            webhook.Store
+	schedules        schedule.Store
 	ops              opsconfig.Store
 	approvals        approval.Store
 	alerts           opsalert.Store
@@ -61,6 +63,7 @@ type Deps struct {
 	Workflows        wfstore.Store
 	Vault            vault.Store
 	Hooks            webhook.Store
+	Schedules        schedule.Store
 	Ops              opsconfig.Store
 	Approvals        approval.Store
 	Alerts           opsalert.Store
@@ -137,6 +140,13 @@ func inferHooks(db postgres.Checker) webhook.Store {
 	return webhook.NewMemory()
 }
 
+func inferSchedules(db postgres.Checker) schedule.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return schedule.NewPostgres(p)
+	}
+	return schedule.NewMemory()
+}
+
 func inferOps(db postgres.Checker) opsconfig.Store {
 	if p, ok := db.(*postgres.Pool); ok {
 		return opsconfig.NewPostgres(p)
@@ -203,6 +213,10 @@ func newServer(d Deps) http.Handler {
 	if hookStore == nil {
 		hookStore = inferHooks(d.DB)
 	}
+	scheduleStore := d.Schedules
+	if scheduleStore == nil {
+		scheduleStore = inferSchedules(d.DB)
+	}
 	vaultStore := d.Vault
 	if vaultStore == nil {
 		vaultStore = inferVault(d.DB, keys, workflows, opsStore, hookStore)
@@ -250,6 +264,7 @@ func newServer(d Deps) http.Handler {
 		workflows:        workflows,
 		vault:            vaultStore,
 		hooks:            hookStore,
+		schedules:        scheduleStore,
 		ops:              opsStore,
 		approvals:        approvalStore,
 		alerts:           alertStore,
@@ -323,6 +338,15 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/triggers/{triggerId}/enable", s.enableTrigger)
 	mux.HandleFunc("DELETE /api/v1/triggers/{triggerId}", s.deleteTrigger)
 	mux.HandleFunc("POST /api/v1/hooks/{publicId}", s.deliverWebhook)
+	mux.HandleFunc("GET /api/v1/schedules/catalog", s.getScheduleCatalog)
+	mux.HandleFunc("GET /api/v1/schedules", s.listSchedules)
+	mux.HandleFunc("POST /api/v1/schedules", s.createSchedule)
+	mux.HandleFunc("POST /api/v1/schedules/dispatch", s.dispatchSchedules)
+	mux.HandleFunc("GET /api/v1/schedules/{scheduleId}", s.getSchedule)
+	mux.HandleFunc("PATCH /api/v1/schedules/{scheduleId}", s.updateSchedule)
+	mux.HandleFunc("POST /api/v1/schedules/{scheduleId}/enable", s.enableSchedule)
+	mux.HandleFunc("POST /api/v1/schedules/{scheduleId}/disable", s.disableSchedule)
+	mux.HandleFunc("DELETE /api/v1/schedules/{scheduleId}", s.deleteSchedule)
 	mux.HandleFunc("POST /api/v1/workflows/{workflowId}/executions", s.startWorkflowExecution)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions", s.listWorkflowExecutions)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/executions/{executionId}", s.getWorkflowExecution)

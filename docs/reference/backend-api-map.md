@@ -175,9 +175,9 @@ Workflow publish fails closed if a YAML resource UUID is missing, unpublished, d
 
 ## Policy evaluation and approvals (E4.3)
 
-Evaluate target/action policy **before dispatch**. Approval requirements are bound to workflow version, target revision, policy revision, operation, and expiry. A changed policy, target, or workflow version invalidates a prior approval. Decide rechecks membership and `approval.decide` on the server. Requester self-approval is denied. This is the control-plane **boundary** (requirements + binding + fail-closed invalidation), not the E10 durable `flow.approval` wait/resume worker.
+Evaluate target/action policy **before dispatch**. Approval requirements are bound to workflow version, target revision, policy revision, operation, and expiry. A changed policy, target, or workflow version invalidates a prior approval. Decide rechecks membership and `approval.decide` on the server. Requester self-approval is denied. Pre-run `requireApproval` still gates start (`409`). Mid-run `flow.approval` nodes are **wait** requirements (`wait: true`): they do not block start. Durable wait/resume is E10.3 below.
 
-**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Suggested screens: `/approvals` (inbox) and a pre-run policy panel on the workflow run dialog. Next proxies can rewrite `/api/control-plane/policy/evaluate` and `/api/control-plane/approvals/...`. Do not rewrite `apps/web` in this API story. Durable wait/resume UI stays disabled until E10.
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable on `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Suggested screens: `/approvals` (inbox) and a pre-run policy panel on the workflow run dialog. Next proxies can rewrite `/api/control-plane/policy/evaluate` and `/api/control-plane/approvals/...`. Do not rewrite `apps/web` in this API story. Enable decide UX for mid-run waits (E10.3): `GET /approvals/catalog` now has `waitResumeEnabled: true`; resume is `POST /approvals/{id}/decide`.
 
 Suggested UI flow:
 
@@ -204,7 +204,7 @@ RBAC: `approval.view` list/get/events/catalog/evaluate; `workflow.execute` creat
 
 Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding fields on every requirement/record: `workflowVersionId`, `workflowDigest`, `targetId`/`targetVersionId`/`targetDigest`, `policyResourceId`/`policyVersionId`/`policyDigest`/`policyRevision`, `operation`, `nodeId`, `expiresAt`, `bindingFingerprint`.
 
-`flow.approval` nodes always produce a requirement (`with.approverRole`, `with.expiresIn`). A kubernetes/ssh/http/notification/script policy produces a requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present (a present empty list denies). Cluster-target `allowedNamespaces` is also enforced at evaluate. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
+`flow.approval` nodes always produce a **wait** requirement (`with.approverRole`, `with.expiresIn`, `wait: true`). Wait-only graphs are `decision=allow` / `dispatchAllowed=true` so the run can start and park. A kubernetes/ssh/http/notification/script policy produces a pre-dispatch requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present (a present empty list denies). Cluster-target `allowedNamespaces` is also enforced at evaluate. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
 
 ## Kubernetes target and policy management (E7.1)
 
@@ -729,7 +729,7 @@ Suggested UI flow:
 
 First-class E10 trigger. **Do not invent** `POST /executions` or webhook/schedule/wait-resume routes here. Extend the existing E5 start path.
 
-**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Suggested screen: workflow run dialog (published-version picker, typed input, idempotency field, CSRF). Catalog: `GET /workflows/catalog` `triggers[]` where `type=manual` (`start`, `allowedWith`, `bounds`, `redaction`). Next proxies stay `/api/control-plane/workflows/{id}/executions`. Webhook admin/ingress is E10.2 below. Schedule and wait/resume UI stay disabled (E10.3).
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Suggested screen: workflow run dialog (published-version picker, typed input, idempotency field, CSRF). Catalog: `GET /workflows/catalog` `triggers[]` where `type=manual` (`start`, `allowedWith`, `bounds`, `redaction`). Next proxies stay `/api/control-plane/workflows/{id}/executions`. Webhook admin/ingress is E10.2 below. Schedule + durable `flow.approval` wait/resume are E10.3 below.
 
 Suggested run-dialog flow:
 
@@ -748,13 +748,13 @@ Suggested run-dialog flow:
 | `input` | no | Object, max 16 KiB. Validated against the published manual trigger schema when declared |
 | `X-CSRF-Token` | browser yes | Cookie session. Header-only callers skip CSRF |
 
-Out of scope for E10.1: webhook triggers (E10.2 below), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / notification actions (E10.4), `apps/web` rewrite.
+Out of scope for E10.1: webhook triggers (E10.2 below), schedules + durable `flow.approval` wait/resume (E10.3 below), `http.request` / notification actions (E10.4), `apps/web` rewrite.
 
 ## Replay-safe webhooks (E10.2)
 
 First-class E10 trigger. Opaque `publicId` (`wh_` + 64 hex) is generated server-side and is not guessable. Secrets live in the vault as type `webhook_secret` (`secret` field) and are **never** returned, logged, or placed in the URL. YAML may declare only `schema` / `inputSchema` / `contentType`; trigger IDs and secret refs stay outside YAML.
 
-**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Relates to #107 / Part of #105 — **Keep #107 open**. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on admin POST/PATCH/DELETE. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Suggested screens: workflow trigger settings (create/rotate/disable, copy ingress path, field mapping, limits). Public ingress is origin-less server-to-server; hostile `Origin` still fails closed. Next proxies can expose `/api/control-plane/workflows/{id}/triggers` and `/api/control-plane/triggers/{id}`. Public `POST /api/v1/hooks/{publicId}` is not a browser session route. Schedule + approval wait/resume stay E10.3.
+**UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Relates to #107 / Part of #105 — **Keep #107 open**. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on admin POST/PATCH/DELETE. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Catalog: `GET /workflows/catalog` `triggers[type=webhook].ingress` + `.admin`. Suggested screens: workflow trigger settings (create/rotate/disable, copy ingress path, field mapping, limits). Public ingress is origin-less server-to-server; hostile `Origin` still fails closed. Next proxies can expose `/api/control-plane/workflows/{id}/triggers` and `/api/control-plane/triggers/{id}`. Public `POST /api/v1/hooks/{publicId}` is not a browser session route. Schedule + approval wait/resume are E10.3 below.
 
 Suggested admin flow:
 
@@ -808,7 +808,59 @@ Public ingress (`POST /api/v1/hooks/{publicId}`):
 | `POST /api/v1/triggers/{triggerId}/enable` | Re-enable. | `200` trigger | `401` `403` `404` |
 | `POST /api/v1/hooks/{publicId}` | Public replay-safe ingress. No session/CSRF. | `201` / `200` execution | `400` `401` `404` `409` `413` `429` |
 
-Out of scope: `apps/web` rewrite (Chloe), schedules + durable `flow.approval` wait/resume (E10.3), `http.request` / `notification.webhook` / `notification.email` (E10.4).
+Out of scope: `apps/web` rewrite (Chloe), schedules + durable `flow.approval` wait/resume (E10.3 below), `http.request` / `notification.webhook` / `notification.email` (E10.4).
+
+## Schedules and durable flow.approval (E10.3)
+
+Timezone-explicit, version-pinned schedules plus mid-run `flow.approval` wait/resume that survives worker/pod loss. Relates to #108 / Part of #105 — **Keep #108 open** (Chloe enables schedule UI + approval decide UX against this map). Do **not** rewrite `apps/web` in this API story.
+
+**Safe schedule defaults (documented + enforced):** `overlapPolicy=skip` (one active execution unless the workflow is verified idempotent), `misfirePolicy=ignore`, `catchUp=0` (no missed-slot replay). Timezone is a required IANA name — no implicit local TZ. Dispatcher starts with E10.1 idempotency (`sched-{scheduleId}-{unix}`), authz, and policy. Fail closed when the schedule is disabled or the pinned version is unpublished.
+
+**UI route map (Chloe):** Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST/PATCH/DELETE. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Catalog: `GET /workflows/catalog` `triggers[type=schedule].admin` + `GET /schedules/catalog`. Suggested screens: workflow schedule settings (timezone, cron XOR interval, overlap/catch-up, enable/disable) and approval inbox decide (resume). Next proxies can expose `/api/control-plane/schedules`. `POST /schedules/dispatch` is an operator/tick route, not a public ingress.
+
+Suggested schedule flow:
+
+1. Publish the workflow. Schedules must pin a published `workflowVersionId`. Drafts are `400`.
+2. Create: `POST /schedules` `{workflowId,workflowVersionId,timezone,cron|interval,overlapPolicy?,misfirePolicy?,catchUp?}`. YAML schedule `with` fields are copied when omitted. Response includes `nextFireAt`.
+3. List/get: `GET /schedules?workflowId=`, `GET /schedules/{scheduleId}`. Viewer (`workflow.view`) can list/get; create/update/enable/disable/delete require `workflow.edit`.
+4. Enable/disable: `POST /schedules/{id}/enable` / `.../disable`. Disabled schedules are not due.
+5. Tick: `POST /schedules/dispatch` `{scheduleId?}`. Requires `workflow.execute`. Overlap skip/reject produces no fire while another run for that schedule is `queued`/`running`/`waiting`. Catch-up `0` fires only the current slot.
+
+Suggested approval wait flow:
+
+1. Start a published version that contains `flow.approval`. Evaluate lists wait requirements with `wait: true` and still allows start.
+2. Worker `POST /jobs/claim` parks the node: job/step/execution become `waiting` with **no lease**. Wait survives `POST /jobs/recover` and pod loss.
+3. A bound approval row is materialized with `executionId`. Fingerprint includes version, target, policy, operation, node, and execution.
+4. Approver decides: `POST /approvals/{id}/decide` `{decision}`. Fresh `approval.decide` + membership. Requester self-approval is `403`. Resume writes output port `approved` / `rejected`.
+5. Expiry (`availableAt`) or binding change (policy/target/version digest) resumes `expired` and never `approved`.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `workflowId` | create yes | Workflow UUID |
+| `workflowVersionId` | create yes | Published version UUID |
+| `timezone` | create yes | IANA name (`UTC`, `America/Chicago`) |
+| `cron` | XOR interval | 5-field cron |
+| `interval` | XOR cron | ISO-8601 duration, max `P7D` |
+| `overlapPolicy` | no | Default `skip`. `reject` / `queue` |
+| `misfirePolicy` | no | Default `ignore`. `fire-once` |
+| `catchUp` | no | Default `0`, max `5` |
+| `X-CSRF-Token` | browser yes | Cookie session. Header-only callers skip CSRF |
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/schedules/catalog` | Vocabulary + safe defaults. Requires `workflow.view`. | `200` catalog | `401` `403` |
+| `GET /api/v1/schedules` | List. Query `workflowId`. Requires `workflow.view`. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/schedules` | Create. Pins published version. Requires `workflow.edit` + CSRF. | `201` schedule | `400` `401` `403` `404` |
+| `GET /api/v1/schedules/{scheduleId}` | Get one. Requires `workflow.view`. | `200` schedule | `401` `403` `404` |
+| `PATCH /api/v1/schedules/{scheduleId}` | Update pin or schedule fields. Requires `workflow.edit` + CSRF. | `200` schedule | `400` `401` `403` `404` |
+| `POST /api/v1/schedules/{scheduleId}/enable` | Enable. | `200` schedule | `401` `403` `404` |
+| `POST /api/v1/schedules/{scheduleId}/disable` | Disable; dispatcher fails closed. | `200` schedule | `401` `403` `404` |
+| `DELETE /api/v1/schedules/{scheduleId}` | Delete. Requires `workflow.edit` + CSRF. | `204` | `401` `403` `404` |
+| `POST /api/v1/schedules/dispatch` | Tick due schedules. Requires `workflow.execute` + CSRF. | `200` `{items}` | `401` `403` |
+| `GET /api/v1/approvals/catalog` | Now `waitResumeEnabled: true`. Resume via decide. | `200` catalog | `401` `403` |
+| `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. | `200` approval | `401` `403` `409` |
+
+Out of scope: `apps/web` rewrite (Chloe), `http.request` / `notification.webhook` / `notification.email` (E10.4).
 
 ## Durable executions (E5.1)
 
@@ -826,7 +878,7 @@ Suggested UI flow:
 6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`, `/artifacts`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
-Statuses: `queued`, `pinned` (legacy stub), `running`, `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). Workers claim jobs via `/jobs/*`; the UI cancels/retries via `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser.
+Statuses: `queued`, `pinned` (legacy stub), `running`, `waiting` (E10.3 durable `flow.approval`), `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). Workers claim jobs via `/jobs/*`; the UI cancels/retries via `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser. Waiting jobs hold no lease — resume via `POST /approvals/{id}/decide`.
 
 Retention: executions `retentionUntil` default 90 days; audit events 365 days. Monthly partitions apply to `audit_events` only.
 

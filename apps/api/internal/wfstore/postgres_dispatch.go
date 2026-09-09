@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -65,7 +66,7 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
 		WHERE j.status = 'queued'
 		  AND j.available_at <= $1
-		  AND e.status IN ('queued', 'running')
+		  AND e.status IN ('queued', 'running', 'waiting')
 		  AND NOT EXISTS (
 			SELECT 1 FROM execution_jobs active
 			WHERE active.workspace_id = j.workspace_id
@@ -250,14 +251,14 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_jobs
 		SET status = 'canceled', updated_at = $1
-		WHERE execution_id = $2::uuid AND status IN ('queued', 'claimed', 'running')
+		WHERE execution_id = $2::uuid AND status IN ('queued', 'claimed', 'running', 'waiting')
 	`, now, executionID); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_steps
 		SET status = 'canceled', finished_at = COALESCE(finished_at, $1), updated_at = $1
-		WHERE execution_id = $2::uuid AND status IN ('queued', 'running')
+		WHERE execution_id = $2::uuid AND status IN ('queued', 'running', 'waiting')
 	`, now, executionID); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
@@ -540,6 +541,173 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	return RetryResult{Execution: exec, Step: next, Job: job}, nil
 }
 
+func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
+	if scope.Zero() {
+		return DispatchResult{}, ErrNoScope
+	}
+	if !authz.ValidUUID(in.JobID) {
+		return DispatchResult{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return DispatchResult{}, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	job, err := scanJob(tx.QueryRow(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE id = $1::uuid FOR UPDATE`, in.JobID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if job.Status == JobWaiting {
+		return p.dispatchSnapshotTx(ctx, tx, scope, now, job)
+	}
+	if job.Status != JobClaimed && job.Status != JobRunning && job.Status != JobQueued {
+		return DispatchResult{}, ErrNotClaimable
+	}
+	avail := job.AvailableAt
+	if !in.AvailableAt.IsZero() {
+		avail = in.AvailableAt.UTC()
+	}
+	job, err = scanJob(tx.QueryRow(ctx, `
+		UPDATE execution_jobs
+		SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+		    available_at = $2, updated_at = $1
+		WHERE id = $3::uuid
+		RETURNING `+jobColumns, now, avail, in.JobID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	step, err := scanStep(tx.QueryRow(ctx, `
+		UPDATE execution_steps
+		SET status = 'waiting', lease_id = NULL, finished_at = NULL, updated_at = $1
+		WHERE id = $2::uuid
+		RETURNING `+stepColumns, now, job.ExecutionStepID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
+		return DispatchResult{}, err
+	}
+	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:       "job.wait",
+		ResourceType: "execution",
+		ResourceID:   job.ExecutionID,
+		Outcome:      "waiting",
+		Details:      map[string]any{"jobId": job.ID, "nodeId": step.NodeID},
+	}); err != nil {
+		return DispatchResult{}, err
+	}
+	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DispatchResult{}, mapDBErr(err)
+	}
+	return DispatchResult{
+		Execution: exec,
+		Step:      step,
+		Job:       job,
+		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+	}, nil
+}
+
+func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
+	if scope.Zero() {
+		return DispatchResult{}, ErrNoScope
+	}
+	if !authz.ValidUUID(in.JobID) {
+		return DispatchResult{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	port := strings.TrimSpace(in.Port)
+	if port == "" {
+		port = "expired"
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return DispatchResult{}, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	job, err := scanJob(tx.QueryRow(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE id = $1::uuid FOR UPDATE`, in.JobID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if job.Status == JobSucceeded {
+		return p.dispatchSnapshotTx(ctx, tx, scope, now, job)
+	}
+	if job.Status != JobWaiting {
+		return DispatchResult{}, ErrNotClaimable
+	}
+	payload, err := marshalObject(redactObject(waitOutput(port, in.Output)))
+	if err != nil {
+		return DispatchResult{}, ErrInvalid
+	}
+	job, err = scanJob(tx.QueryRow(ctx, `
+		UPDATE execution_jobs SET status = 'succeeded', updated_at = $1 WHERE id = $2::uuid
+		RETURNING `+jobColumns, now, in.JobID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	step, err := scanStep(tx.QueryRow(ctx, `
+		UPDATE execution_steps
+		SET status = 'succeeded', output_redacted = $2::jsonb, finished_at = COALESCE(finished_at, $1), updated_at = $1
+		WHERE id = $3::uuid
+		RETURNING `+stepColumns, now, payload, job.ExecutionStepID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
+		return DispatchResult{}, err
+	}
+	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:       "job.resume",
+		ResourceType: "execution",
+		ResourceID:   job.ExecutionID,
+		Outcome:      port,
+		Details:      map[string]any{"jobId": job.ID, "nodeId": step.NodeID},
+	}); err != nil {
+		return DispatchResult{}, err
+	}
+	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DispatchResult{}, mapDBErr(err)
+	}
+	return DispatchResult{
+		Execution: exec,
+		Step:      step,
+		Job:       job,
+		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+	}, nil
+}
+
+func (p *Postgres) dispatchSnapshotTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, job ExecutionJob) (DispatchResult, error) {
+	step, err := scanStep(tx.QueryRow(ctx, `SELECT `+stepColumns+` FROM execution_steps WHERE id = $1::uuid`, job.ExecutionStepID))
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DispatchResult{}, mapDBErr(err)
+	}
+	return DispatchResult{
+		Execution: exec,
+		Step:      step,
+		Job:       job,
+		Binding:   buildBinding(scope.WorkspaceID(), exec, step, job, now.Add(DefaultJobBindingTTL), now),
+	}, nil
+}
+
 func (p *Postgres) RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error) {
 	if scope.Zero() {
 		return 0, ErrNoScope
@@ -669,7 +837,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		    fencing_token = $4,
 		    started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, $1) ELSE started_at END,
 		    finished_at = CASE WHEN $2 IN ('succeeded', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
-		                       WHEN $2 IN ('queued', 'running') THEN NULL
+		                       WHEN $2 IN ('queued', 'running', 'waiting') THEN NULL
 		                       ELSE finished_at END,
 		    updated_at = $1`
 	args := []any{now, stepStatus, leaseID, job.FencingToken}
@@ -720,6 +888,39 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 }
 
 func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time) (int, error) {
+	n := 0
+	parked, err := tx.Query(ctx, `
+		UPDATE execution_jobs j
+		SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
+		FROM execution_steps s
+		WHERE s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+		  AND j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
+		  AND s.node_type = 'flow.approval'
+		RETURNING j.execution_id::text, j.execution_step_id::text
+	`, now)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	parkPairs, err := collectRecoverPairs(parked)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range parkPairs {
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'waiting', lease_id = NULL, finished_at = NULL, updated_at = $1
+			WHERE id = $2::uuid
+		`, now, p.step); err != nil {
+			return 0, mapDBErr(err)
+		}
+		n++
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, parkPairs, "waiting"); err != nil {
+		return 0, err
+	}
+
 	rows, err := tx.Query(ctx, `
 		UPDATE execution_jobs
 		SET status = 'indeterminate', updated_at = $1
@@ -731,20 +932,10 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	if err != nil {
 		return 0, mapDBErr(err)
 	}
-	defer rows.Close()
-	type pair struct{ exec, step string }
-	var pairs []pair
-	for rows.Next() {
-		var p pair
-		if err := rows.Scan(&p.exec, &p.step); err != nil {
-			return 0, mapDBErr(err)
-		}
-		pairs = append(pairs, p)
+	pairs, err := collectRecoverPairs(rows)
+	if err != nil {
+		return 0, err
 	}
-	if err := rows.Err(); err != nil {
-		return 0, mapDBErr(err)
-	}
-	seen := map[string]struct{}{}
 	for _, p := range pairs {
 		if _, err := tx.Exec(ctx, `
 			UPDATE execution_steps
@@ -753,24 +944,84 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		`, now, p.step); err != nil {
 			return 0, mapDBErr(err)
 		}
+		n++
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, pairs, "indeterminate"); err != nil {
+		return 0, err
+	}
+
+	expired, err := tx.Query(ctx, `
+		UPDATE execution_jobs
+		SET status = 'succeeded', updated_at = $1
+		WHERE status = 'waiting' AND available_at <= $1
+		RETURNING execution_id::text, execution_step_id::text
+	`, now)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	expPairs, err := collectRecoverPairs(expired)
+	if err != nil {
+		return 0, err
+	}
+	payload, err := marshalObject(waitOutput("expired", nil))
+	if err != nil {
+		return 0, ErrInvalid
+	}
+	for _, p := range expPairs {
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'succeeded', output_redacted = $2::jsonb, finished_at = COALESCE(finished_at, $1), updated_at = $1
+			WHERE id = $3::uuid
+		`, now, payload, p.step); err != nil {
+			return 0, mapDBErr(err)
+		}
+		n++
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, expPairs, "expired"); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+type recoverPair struct{ exec, step string }
+
+func collectRecoverPairs(rows pgx.Rows) ([]recoverPair, error) {
+	defer rows.Close()
+	var pairs []recoverPair
+	for rows.Next() {
+		var p recoverPair
+		if err := rows.Scan(&p.exec, &p.step); err != nil {
+			return nil, mapDBErr(err)
+		}
+		pairs = append(pairs, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+	return pairs, nil
+}
+
+func finishRecoverPairs(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, pairs []recoverPair, outcome string) error {
+	seen := map[string]struct{}{}
+	for _, p := range pairs {
 		if _, ok := seen[p.exec]; ok {
 			continue
 		}
 		seen[p.exec] = struct{}{}
 		if err := rollupExecutionTx(ctx, tx, p.exec, now); err != nil {
-			return 0, err
+			return err
 		}
 		if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
 			Action:       "job.recover",
 			ResourceType: "execution",
 			ResourceID:   p.exec,
-			Outcome:      "indeterminate",
+			Outcome:      outcome,
 			Details:      map[string]any{"reason": "lease-expired"},
 		}); err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return len(pairs), nil
+	return nil
 }
 
 func rollupExecutionTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) error {
@@ -799,7 +1050,7 @@ func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, executionID, status 
 		SET status = $2,
 		    started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, $1) ELSE started_at END,
 		    finished_at = CASE WHEN $2 IN ('succeeded', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
-		                       WHEN $2 IN ('queued', 'running') THEN NULL
+		                       WHEN $2 IN ('queued', 'running', 'waiting') THEN NULL
 		                       ELSE finished_at END,
 		    updated_at = $1
 		WHERE id = $3::uuid

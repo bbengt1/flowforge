@@ -386,7 +386,7 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 		Input:             prepared.input,
 		PolicySnapshot:    prepared.policy,
 		CorrelationID:     strings.TrimSpace(in.CorrelationID),
-		RequestedBy:       scope.ActorID(),
+		RequestedBy:       firstNonEmpty(strings.TrimSpace(in.RequestedBy), scope.ActorID()),
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		RetentionUntil:    now.Add(DefaultExecutionRetention),

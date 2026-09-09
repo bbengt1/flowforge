@@ -218,6 +218,45 @@ func flowFailContract() NodeType {
 	}
 }
 
+func flowApprovalContract() NodeType {
+	b := defaultNeutralBounds()
+	b.MaxDurationSeconds = MaxDelaySeconds
+	return NodeType{
+		Type:        "flow.approval",
+		Phase:       PhaseCore,
+		Title:       "Approval gate",
+		Description: "Durable mid-run wait. Parks a waiting job with no worker lease until decide, expiry, or invalidation. Typed ports: request → approved / rejected / expired.",
+		Inputs:      []Port{inheritPort("request", PortObject, false, "Optional approval request payload.")},
+		Outputs: []Port{
+			inheritPort("approved", PortObject, false, "Emitted when an authorized approver approves."),
+			inheritPort("rejected", PortObject, false, "Emitted when an authorized approver rejects."),
+			inheritPort("expired", PortObject, false, "Emitted when the wait expires or the binding is invalidated."),
+		},
+		RequiredWith: []string{"approverRole", "expiresIn"},
+		AllowedWith: []WithField{
+			{Name: "approverRole", Kind: "string", Required: true, Description: "Workspace role that may decide. Requester self-approval is denied."},
+			{Name: "expiresIn", Kind: "duration", Required: true, Description: "ISO-8601 wait expiry. Max P7D."},
+			{Name: "policyId", Kind: "uuid", Description: "Optional published policy UUID bound into the approval snapshot."},
+		},
+		Policy: &NodePolicy{
+			Permissions:        []string{"workflow.execute", "approval.decide"},
+			RetrySafe:          true,
+			SideEffects:        false,
+			Idempotent:         true,
+			Cancellation:       "path-local",
+			Verification:       "none",
+			DefaultMaxAttempts: 1,
+		},
+		Bounds: b,
+		Redaction: &RedactionPolicy{
+			AuditFields:   []string{"approverRole", "expiresIn", "decision", "bindingFingerprint"},
+			RedactInputs:  true,
+			RedactOutputs: true,
+			Strategy:      "mask-classified",
+		},
+	}
+}
+
 func coreNeutralTypes() map[string]NodeType {
 	return map[string]NodeType{
 		"flow.condition": flowConditionContract(),
@@ -227,6 +266,7 @@ func coreNeutralTypes() map[string]NodeType {
 		"data.validate":  dataValidateContract(),
 		"flow.stop":      flowStopContract(),
 		"flow.fail":      flowFailContract(),
+		"flow.approval":  flowApprovalContract(),
 	}
 }
 
@@ -318,6 +358,8 @@ func validateNeutralWith(n Node, nt NodeType, path string) ErrorList {
 		return validateStopWith(n, path)
 	case "flow.fail":
 		return validateFailWith(n, path)
+	case "flow.approval":
+		return validateApprovalWith(n, path)
 	default:
 		_ = nt
 		return nil
@@ -355,6 +397,35 @@ func validateConditionWith(n Node, path string) ErrorList {
 		if _, classErrs := classifyLiteral(raw); len(classErrs) > 0 {
 			errs = append(errs, relocateErrors(classErrs, path+".with.compare")...)
 		}
+	}
+	return errs
+}
+
+func validateApprovalWith(n Node, path string) ErrorList {
+	var errs ErrorList
+	if raw, ok := n.With["approverRole"]; ok {
+		s, ok := raw.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			errs = append(errs, fieldError(path+".with.approverRole", n.pos.Line, n.pos.Column, CodeInvalidType, "approverRole must be a non-empty string."))
+		}
+	}
+	raw, ok := n.With["expiresIn"]
+	if !ok {
+		return errs
+	}
+	s, ok := raw.(string)
+	if !ok || !validISODuration(s) {
+		return append(errs, fieldError(path+".with.expiresIn", n.pos.Line, n.pos.Column, CodeInvalidWith, "expiresIn must be an ISO-8601 duration."))
+	}
+	secs, err := isoDurationSeconds(s)
+	if err != nil {
+		return append(errs, fieldError(path+".with.expiresIn", n.pos.Line, n.pos.Column, CodeInvalidWith, err.Error()))
+	}
+	if secs <= 0 {
+		errs = append(errs, fieldError(path+".with.expiresIn", n.pos.Line, n.pos.Column, CodeInvalidWith, "expiresIn must be greater than zero."))
+	}
+	if secs > MaxDelaySeconds {
+		errs = append(errs, fieldError(path+".with.expiresIn", n.pos.Line, n.pos.Column, CodeDurationLimit, fmt.Sprintf("expiresIn cannot exceed P7D (%d seconds).", MaxDelaySeconds)))
 	}
 	return errs
 }

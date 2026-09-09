@@ -99,6 +99,23 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	if parked, parkErr := s.parkApprovalClaim(r.Context(), scope, result); parkErr != nil {
+		writeApprovalEvalError(w, r, parkErr)
+		return
+	} else {
+		result = parked
+	}
+	if result.Job.Status == wfstore.JobWaiting {
+		writeJSON(w, http.StatusOK, claimJobResponse{
+			Claimed:   true,
+			Binding:   result.Binding,
+			Job:       result.Job,
+			Step:      result.Step,
+			Execution: result.Execution,
+			Recovered: result.Recovered,
+		})
+		return
+	}
 	if err := s.revalidateScriptDispatch(r, scope, result); err != nil {
 		fail := map[string]any{"code": scripts.CodeArtifactRevoked, "message": "Revoked or unverified script artifacts cannot be executed."}
 		if ee := scriptEngineError(err); ee != nil {
@@ -140,6 +157,7 @@ func (s *Server) recoverJobs(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	s.syncWaitingApprovals(r.Context(), scope)
 	writeJSON(w, http.StatusOK, recoverJobsResponse{Recovered: n})
 }
 

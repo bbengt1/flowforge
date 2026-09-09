@@ -178,5 +178,5 @@ Existing codes still apply: `unknown-field`, `invalid-with`, `secret-forbidden`,
 - Durable worker execution, leases, or real timers (E5). Delay is a **contract** (`durationSeconds`) only.
 - Provider engines (Kubernetes / SSH / script) and HTTP/notification dispatch.
 - Credentials (E4). These nodes never accept credential or connection IDs.
-- `flow.approval` remains an E3.1 stub (required `approverRole` + `expiresIn` only).
+- `flow.approval` is a full E10.3 contract: required `approverRole` + `expiresIn` (max `P7D`), optional `policyId`, typed ports `request` → `approved`/`rejected`/`expired`, unknown `with` keys rejected. Durable wait/resume is decide; it is not a worker sleep.
 - Canvas persistence / rewrite of `apps/web`.

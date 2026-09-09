@@ -105,6 +105,7 @@ type CreateInput struct {
 	WorkflowVersionID string
 	WorkflowDigest    string
 	ExecutionID       string
+	RequestedBy       string
 	Requirement       policy.Requirement
 }
 
@@ -136,17 +137,29 @@ type CurrentHeads struct {
 
 // Catalog is the UI vocabulary for approval surfaces.
 type Catalog struct {
-	Statuses      []string `json:"statuses"`
-	Decisions     []string `json:"decisions"`
-	DefaultExpiry string   `json:"defaultExpiresIn"`
+	Statuses               []string `json:"statuses"`
+	Decisions              []string `json:"decisions"`
+	DefaultExpiry          string   `json:"defaultExpiresIn"`
+	WaitResumeEnabled      bool     `json:"waitResumeEnabled"`
+	ResumeRoute            string   `json:"resumeRoute"`
+	WaitSurvivesWorkerLoss bool     `json:"waitSurvivesWorkerLoss"`
+	SelfApprovalDenied     bool     `json:"selfApprovalDenied"`
+	FreshAuthRequired      bool     `json:"freshAuthRequired"`
+	Help                   string   `json:"help"`
 }
 
 // TypeCatalog returns stable status/decision names.
 func TypeCatalog() Catalog {
 	return Catalog{
-		Statuses:      []string{StatusPending, StatusApproved, StatusRejected, StatusExpired, StatusInvalidated},
-		Decisions:     []string{DecisionApproved, DecisionRejected},
-		DefaultExpiry: "PT1H",
+		Statuses:               []string{StatusPending, StatusApproved, StatusRejected, StatusExpired, StatusInvalidated},
+		Decisions:              []string{DecisionApproved, DecisionRejected},
+		DefaultExpiry:          "PT1H",
+		WaitResumeEnabled:      true,
+		ResumeRoute:            "POST /api/v1/approvals/{approvalId}/decide",
+		WaitSurvivesWorkerLoss: true,
+		SelfApprovalDenied:     true,
+		FreshAuthRequired:      true,
+		Help:                   "Mid-run flow.approval parks a durable waiting job with no worker lease. Decide is resume: approved/rejected ports. Expiry and binding change resume on expired. Requester self-approval is denied. Decide rechecks approval.decide on the server.",
 	}
 }
 
@@ -162,8 +175,9 @@ type Store interface {
 }
 
 // BindingFingerprint is the immutable bind of version + target + policy + operation.
-func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID string) string {
-	parts := strings.Join([]string{
+// Pass a non-empty executionID only for mid-run waits so pre-run fingerprints stay stable.
+func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID string, executionID ...string) string {
+	parts := []string{
 		strings.TrimSpace(workspaceID),
 		strings.TrimSpace(workflowVersionID),
 		strings.TrimSpace(workflowDigest),
@@ -172,8 +186,13 @@ func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVe
 		strings.TrimSpace(policyDigest),
 		strings.TrimSpace(operation),
 		strings.TrimSpace(nodeID),
-	}, "\x1f")
-	sum := sha256.Sum256([]byte(parts))
+	}
+	if len(executionID) > 0 {
+		if exec := strings.TrimSpace(executionID[0]); exec != "" {
+			parts = append(parts, exec)
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.13.0
+  version: 0.14.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -3376,6 +3376,305 @@ paths:
           $ref: "#/components/responses/RequestTooLarge"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /schedules/catalog:
+    get:
+      operationId: getScheduleCatalog
+      summary: Schedule vocabulary and safe defaults
+      description: E10.3. Requires `workflow.view`. Timezone-explicit cron/interval; overlap skip and catchUp=0 by default.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /schedules:
+    get:
+      operationId: listSchedules
+      summary: List workspace schedules
+      description: Requires `workflow.view`. Optional `workflowId` query.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: workflowId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Schedule list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createSchedule
+      summary: Create a version-pinned schedule
+      description: |
+        E10.3 admin create. Cookie session + CSRF. Requires `workflow.edit`.
+        Pins a published `workflowVersionId`. Timezone is a required IANA name.
+        Safe defaults: overlapPolicy=skip, misfirePolicy=ignore, catchUp=0.
+        Host-supplied id/workspaceId is 400.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleWrite"
+      responses:
+        "201":
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /schedules/dispatch:
+    post:
+      operationId: dispatchSchedules
+      summary: Tick due schedules
+      description: |
+        Requires `workflow.execute` + CSRF. Starts due fires with E10.1
+        idempotency (`sched-{scheduleId}-{unix}`), authz, and policy.
+        Fail closed on disabled or unpublished. Safe overlap/catch-up defaults.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scheduleId: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Dispatch outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scheduleId: {type: string, format: uuid}
+                        executionId: {type: string, format: uuid}
+                        skipReason: {type: string}
+                        fireAt: {type: string, format: date-time}
+                        error: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /schedules/{scheduleId}:
+    get:
+      operationId: getSchedule
+      summary: Get one schedule
+      description: Requires `workflow.view`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - name: scheduleId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateSchedule
+      summary: Update a schedule
+      description: Requires `workflow.edit` + CSRF. May retarget a published version.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: scheduleId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleWrite"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteSchedule
+      summary: Delete a schedule
+      description: Requires `workflow.edit` + CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: scheduleId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /schedules/{scheduleId}/enable:
+    post:
+      operationId: enableSchedule
+      summary: Enable a schedule
+      description: Requires `workflow.edit` + CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: scheduleId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Enabled schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /schedules/{scheduleId}/disable:
+    post:
+      operationId: disableSchedule
+      summary: Disable a schedule
+      description: Requires `workflow.edit` + CSRF. Dispatcher fails closed.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: scheduleId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Disabled schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /credentials:
     get:
       operationId: listCredentials
@@ -5720,6 +6019,12 @@ components:
           type: array
           items: {type: string}
         defaultExpiresIn: {type: string}
+        waitResumeEnabled: {type: boolean}
+        resumeRoute: {type: string}
+        waitSurvivesWorkerLoss: {type: boolean}
+        selfApprovalDenied: {type: boolean}
+        freshAuthRequired: {type: boolean}
+        help: {type: string}
     ApprovalCreateRequest:
       type: object
       required: [workflowId, workflowVersionId]
@@ -6616,7 +6921,7 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, pinned, running, succeeded, failed, canceled, indeterminate]
+          enum: [queued, pinned, running, waiting, succeeded, failed, canceled, indeterminate]
         idempotencyKey:
           type: string
         input:
@@ -6717,6 +7022,74 @@ components:
         id: {type: string, description: Rejected if present}
         workspace_id: {type: string, description: Rejected if present}
         workspaceId: {type: string, description: Rejected if present}
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [id, workflowId, workflowVersionId, timezone, overlapPolicy, misfirePolicy, catchUp, status, nextFireAt]
+      properties:
+        id: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        triggerId: {type: string}
+        timezone: {type: string, description: IANA timezone. Required.}
+        cron: {type: string}
+        interval: {type: string}
+        overlapPolicy: {type: string, enum: [skip, reject, queue]}
+        misfirePolicy: {type: string, enum: [ignore, fire-once]}
+        catchUp: {type: integer, minimum: 0, maximum: 5}
+        status: {type: string, enum: [enabled, disabled]}
+        nextFireAt: {type: string, format: date-time}
+        lastFiredAt: {type: string, format: date-time}
+        lastExecutionId: {type: string, format: uuid}
+        lastError: {type: string}
+        createdBy: {type: string}
+        updatedBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ScheduleWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid, description: Published version UUID. Drafts are 400.}
+        triggerId: {type: string}
+        timezone: {type: string, description: IANA name. Required on create.}
+        cron: {type: string}
+        interval: {type: string}
+        overlapPolicy: {type: string, enum: [skip, reject, queue]}
+        misfirePolicy: {type: string, enum: [ignore, fire-once]}
+        catchUp: {type: integer, minimum: 0, maximum: 5}
+        id: {type: string, description: Rejected if present}
+        workspace_id: {type: string, description: Rejected if present}
+        workspaceId: {type: string, description: Rejected if present}
+    ScheduleCatalog:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items: {type: string}
+        overlapPolicies:
+          type: array
+          items: {type: string}
+        misfirePolicies:
+          type: array
+          items: {type: string}
+        defaultOverlapPolicy: {type: string}
+        defaultMisfirePolicy: {type: string}
+        defaultCatchUp: {type: integer}
+        maxCatchUp: {type: integer}
+        timezoneRequired: {type: boolean}
+        safeDefaults: {type: string}
+        failClosedUnpublished: {type: boolean}
+        failClosedDisabled: {type: boolean}
+        idempotencyKeyPattern: {type: string}
+        dispatchRoute: {type: string}
+        permission: {type: string}
+        viewPermission: {type: string}
+        dispatchPermission: {type: string}
+        csrf: {type: boolean}
+        help: {type: string}
     ExecutionList:
       type: object
       required: [items]
@@ -6735,7 +7108,7 @@ components:
         attempt: {type: integer}
         status:
           type: string
-          enum: [queued, running, succeeded, failed, canceled, indeterminate]
+          enum: [queued, running, waiting, succeeded, failed, canceled, indeterminate]
         leaseId: {type: string}
         fencingToken: {type: integer}
         idempotencyKey: {type: string}
@@ -6765,7 +7138,7 @@ components:
         executionStepId: {type: string, format: uuid}
         status:
           type: string
-          enum: [queued, claimed, running, succeeded, failed, canceled, indeterminate]
+          enum: [queued, claimed, running, waiting, succeeded, failed, canceled, indeterminate]
         availableAt: {type: string, format: date-time}
         leaseExpiresAt: {type: string, format: date-time}
         heartbeatAt: {type: string, format: date-time}

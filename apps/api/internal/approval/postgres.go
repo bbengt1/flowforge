@@ -386,9 +386,17 @@ func insertRecord(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Rec
 		scope.WorkspaceID(), rec.WorkflowID, rec.WorkflowVersionID, rec.WorkflowDigest, nullUUID(rec.ExecutionID),
 		rec.NodeID, rec.NodeName, rec.Operation, rec.TargetKind, nullUUID(rec.TargetID), nullUUID(rec.TargetVersionID), rec.TargetDigest,
 		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
-		rec.BindingFingerprint, rec.ApproverRole, rec.ExpiresAt, actorArg(scope),
+		rec.BindingFingerprint, rec.ApproverRole, rec.ExpiresAt, requestedByArg(scope, rec.RequestedBy),
 	), &out)
 	return out, err
+}
+
+func requestedByArg(scope isolation.Scope, requestedBy string) any {
+	requestedBy = strings.TrimSpace(requestedBy)
+	if requestedBy != "" && authz.ValidUUID(requestedBy) {
+		return requestedBy
+	}
+	return actorArg(scope)
 }
 
 func updateStatus(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Record, status, reason string, now time.Time) (Record, error) {

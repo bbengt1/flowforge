@@ -51,6 +51,8 @@ func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResu
 		return evalStop(with)
 	case "flow.fail":
 		return evalFail(with)
+	case "flow.approval":
+		return evalApproval(with, inputs)
 	default:
 		return nil, ErrorList{fieldError("type", 0, 0, CodeUnknownNodeType, fmt.Sprintf("No evaluation contract for %q.", typ))}
 	}
@@ -400,5 +402,23 @@ func evalFail(with map[string]any) (*EvalResult, ErrorList) {
 		Classification: ClassPublic,
 		Terminal:       &TerminalResult{Status: "failure", Code: code, Message: msg},
 		Audit:          map[string]any{"status": "failure", "code": code},
+	}, nil
+}
+
+func evalApproval(with, inputs map[string]any) (*EvalResult, ErrorList) {
+	role, _ := with["approverRole"].(string)
+	if strings.TrimSpace(role) == "" {
+		return nil, ErrorList{fieldError("with.approverRole", 0, 0, CodeMissingField, "flow.approval requires with.approverRole.")}
+	}
+	exp, _ := with["expiresIn"].(string)
+	secs, err := isoDurationSeconds(exp)
+	if err != nil || secs <= 0 || secs > MaxDelaySeconds {
+		return nil, ErrorList{fieldError("with.expiresIn", 0, 0, CodeDurationLimit, "expiresIn must be an ISO-8601 duration up to P7D.")}
+	}
+	_ = inputs
+	return &EvalResult{
+		Outputs:        map[string]any{},
+		Classification: ClassInternal,
+		Audit:          map[string]any{"approverRole": strings.TrimSpace(role), "expiresIn": exp, "expiresSeconds": secs},
 	}, nil
 }

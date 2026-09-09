@@ -225,6 +225,7 @@ func (s *Server) decideApproval(w http.ResponseWriter, r *http.Request) {
 		writeApprovalError(w, r, err)
 		return
 	}
+	s.resumeApprovalWait(r.Context(), scope, out, out.Status)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -358,6 +359,10 @@ func (s *Server) refreshRecord(ctx context.Context, scope isolation.Scope, rec a
 	if err != nil {
 		return rec
 	}
+	if rec.ExecutionID != "" && rec.Status == approval.StatusPending &&
+		(out.Status == approval.StatusExpired || out.Status == approval.StatusInvalidated) {
+		s.resumeApprovalWait(ctx, scope, out, "expired")
+	}
 	return out
 }
 
@@ -395,16 +400,158 @@ func (s *Server) invalidateApprovalsForResource(ctx context.Context, scope isola
 		Reason:     reason,
 		Now:        s.clock().UTC(),
 	})
+	items, err := s.approvals.List(ctx, scope, approval.Filter{})
+	if err != nil {
+		return
+	}
+	for _, rec := range items {
+		if rec.ExecutionID == "" || rec.Status != approval.StatusInvalidated {
+			continue
+		}
+		if rec.TargetID == resourceID || rec.PolicyResourceID == resourceID {
+			s.resumeApprovalWait(ctx, scope, rec, "expired")
+		}
+	}
+}
+
+func (s *Server) parkApprovalClaim(ctx context.Context, scope isolation.Scope, result wfstore.DispatchResult) (wfstore.DispatchResult, error) {
+	if result.Step.NodeType != "flow.approval" || s.workflows == nil {
+		return result, nil
+	}
+	eval, err := s.evaluateVersion(ctx, scope, result.Execution.WorkflowID, result.Execution.WorkflowVersionID)
+	if err != nil {
+		return result, err
+	}
+	var req *policy.Requirement
+	expires := s.clock().UTC().Add(time.Hour)
+	for i := range eval.Requirements {
+		item := eval.Requirements[i]
+		if item.NodeID == result.Step.NodeID && item.Wait {
+			req = &eval.Requirements[i]
+			if !item.ExpiresAt.IsZero() {
+				expires = item.ExpiresAt
+			}
+			break
+		}
+	}
+	waited, err := s.workflows.WaitJob(ctx, scope, s.clock().UTC(), wfstore.WaitJobInput{
+		JobID:       result.Job.ID,
+		AvailableAt: expires,
+	})
+	if err != nil {
+		return result, err
+	}
+	if s.approvals != nil && req != nil {
+		_, _ = s.approvals.Create(ctx, scope, approval.CreateInput{
+			WorkflowID:        result.Execution.WorkflowID,
+			WorkflowVersionID: result.Execution.WorkflowVersionID,
+			WorkflowDigest:    result.Execution.WorkflowDigest,
+			ExecutionID:       result.Execution.ID,
+			RequestedBy:       result.Execution.RequestedBy,
+			Requirement:       *req,
+		})
+	}
+	waited.Recovered = result.Recovered
+	return waited, nil
+}
+
+func (s *Server) syncWaitingApprovals(ctx context.Context, scope isolation.Scope) {
+	if s.workflows == nil || s.approvals == nil {
+		return
+	}
+	items, err := s.workflows.ListExecutions(ctx, scope, wfstore.ExecutionListFilter{Status: wfstore.ExecutionWaiting, Limit: 100})
+	if err != nil {
+		return
+	}
+	for _, exec := range items {
+		steps, err := s.workflows.ListSteps(ctx, scope, exec.ID)
+		if err != nil {
+			continue
+		}
+		eval, evalErr := s.evaluateVersion(ctx, scope, exec.WorkflowID, exec.WorkflowVersionID)
+		if evalErr != nil {
+			continue
+		}
+		for _, step := range steps {
+			if step.NodeType != "flow.approval" || step.Status != wfstore.ExecutionWaiting {
+				continue
+			}
+			for _, req := range eval.Requirements {
+				if req.NodeID != step.NodeID || !req.Wait {
+					continue
+				}
+				_, _ = s.approvals.Create(ctx, scope, approval.CreateInput{
+					WorkflowID:        exec.WorkflowID,
+					WorkflowVersionID: exec.WorkflowVersionID,
+					WorkflowDigest:    exec.WorkflowDigest,
+					ExecutionID:       exec.ID,
+					RequestedBy:       exec.RequestedBy,
+					Requirement:       req,
+				})
+			}
+		}
+	}
+}
+
+func (s *Server) resumeApprovalWait(ctx context.Context, scope isolation.Scope, rec approval.Record, port string) {
+	if s.workflows == nil || strings.TrimSpace(rec.ExecutionID) == "" {
+		return
+	}
+	jobs, err := s.workflows.ListJobs(ctx, scope, rec.ExecutionID)
+	if err != nil {
+		return
+	}
+	steps, err := s.workflows.ListSteps(ctx, scope, rec.ExecutionID)
+	if err != nil {
+		return
+	}
+	stepByID := map[string]wfstore.ExecutionStep{}
+	for _, step := range steps {
+		stepByID[step.ID] = step
+	}
+	for _, job := range jobs {
+		step, ok := stepByID[job.ExecutionStepID]
+		if !ok || step.NodeID != rec.NodeID {
+			continue
+		}
+		if job.Status != wfstore.JobWaiting && job.Status != wfstore.JobSucceeded {
+			continue
+		}
+		_, _ = s.workflows.ResumeWait(ctx, scope, s.clock().UTC(), wfstore.ResumeWaitInput{
+			JobID: job.ID,
+			Port:  port,
+			Output: map[string]any{
+				"approvalId": rec.ID,
+				"status":     rec.Status,
+			},
+		})
+		return
+	}
+}
+
+func gateRequirements(reqs []policy.Requirement) []policy.Requirement {
+	out := make([]policy.Requirement, 0, len(reqs))
+	for _, req := range reqs {
+		if req.Wait {
+			continue
+		}
+		out = append(out, req)
+	}
+	return out
 }
 
 func (s *Server) dispatchApprovalsOK(ctx context.Context, scope isolation.Scope, eval policy.Result, workflowID, versionID string) ([]approval.Record, error) {
-	if eval.Decision == policy.DecisionAllow {
+	reqs := gateRequirements(eval.Requirements)
+	if eval.Decision == policy.DecisionAllow && len(reqs) == 0 {
 		return []approval.Record{}, nil
 	}
 	if eval.Decision == policy.DecisionDeny {
 		return nil, errPolicyDenied
 	}
-	created, err := s.materializeRequirements(ctx, scope, workflowID, versionID, eval.WorkflowDigest, "", eval.Requirements)
+	if len(reqs) == 0 {
+		return []approval.Record{}, nil
+	}
+	created, err := s.materializeRequirements(ctx, scope, workflowID, versionID, eval.WorkflowDigest, "", reqs)
 	if err != nil {
 		return nil, err
 	}
