@@ -410,6 +410,21 @@ describe("execution redaction and list/detail rendering", () => {
       false,
     );
     assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "canceled",
+        permissions: ["workflow.execute"],
+      }),
+      false,
+    );
+    assert.equal(
       canRetryExecutionStep({
         permissions: ["workflow.execute"],
         executionStatus: "failed",
