@@ -35,6 +35,11 @@ export function ConfigSpecForm({
     onChange({ ...spec, ...partial });
   }
 
+  const endpoint = spec.endpoint ?? {};
+  const limits = spec.limits ?? {};
+  const endpointPolicy = asRecord(spec.endpointPolicy);
+  const recipientPolicy = asRecord(spec.recipientPolicy);
+
   return (
     <div className="grid gap-3">
       {needsCredential(kind) ? (
@@ -43,40 +48,50 @@ export function ConfigSpecForm({
           ready={ready}
           value={spec.credentialId ?? ""}
           disabled={readOnly}
-          onChange={(credentialId, credentialDisplayName) =>
-            patch({ credentialId, credentialDisplayName })
-          }
+          onChange={(credentialId) => patch({ credentialId })}
         />
       ) : null}
 
       {kind === "cluster_target" ? (
         <>
           <TextField
-            label="API server host"
-            value={String(spec.endpointMetadata?.apiServerHost ?? "")}
+            label="API server"
+            value={String(endpoint.apiServer ?? "")}
             disabled={readOnly}
             className={inputClass}
-            onChange={(apiServerHost) =>
-              patch({
-                endpointMetadata: {
-                  ...spec.endpointMetadata,
-                  apiServerHost,
-                },
-              })
+            onChange={(apiServer) =>
+              patch({ endpoint: { ...endpoint, apiServer } })
             }
           />
           <TextField
-            label="API server port"
-            value={String(spec.endpointMetadata?.apiServerPort ?? "")}
+            label="TLS server name"
+            value={String(endpoint.tlsServerName ?? "")}
             disabled={readOnly}
             className={inputClass}
-            onChange={(port) =>
-              patch({
-                endpointMetadata: {
-                  ...spec.endpointMetadata,
-                  apiServerPort: Number(port) || 6443,
-                },
-              })
+            onChange={(tlsServerName) =>
+              patch({ endpoint: { ...endpoint, tlsServerName } })
+            }
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(endpoint.skipTLSVerify)}
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  endpoint: { ...endpoint, skipTLSVerify: event.target.checked },
+                })
+              }
+            />
+            Skip TLS verify
+          </label>
+          <TextField
+            label="Allowed namespaces (comma-separated)"
+            value={(spec.allowedNamespaces ?? []).join(", ")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) =>
+              patch({ allowedNamespaces: splitList(value) })
             }
           />
         </>
@@ -104,6 +119,13 @@ export function ConfigSpecForm({
             disabled={readOnly}
             className={inputClass}
             onChange={(hostKeyFingerprint) => patch({ hostKeyFingerprint })}
+          />
+          <TextField
+            label="Allowed addresses (comma-separated)"
+            value={(spec.allowedAddresses ?? []).join(", ")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) => patch({ allowedAddresses: splitList(value) })}
           />
         </>
       ) : null}
@@ -167,17 +189,63 @@ export function ConfigSpecForm({
             className={inputClass}
             onChange={(dependencyLockDigest) => patch({ dependencyLockDigest })}
           />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="CPU millis"
+              value={String(limits.cpuMillis ?? 500)}
+              disabled={readOnly}
+              className={inputClass}
+              onChange={(value) =>
+                patch({
+                  limits: { ...limits, cpuMillis: Number(value) || 500 },
+                })
+              }
+            />
+            <TextField
+              label="Memory MiB"
+              value={String(limits.memoryMib ?? 256)}
+              disabled={readOnly}
+              className={inputClass}
+              onChange={(value) =>
+                patch({
+                  limits: { ...limits, memoryMib: Number(value) || 256 },
+                })
+              }
+            />
+            <TextField
+              label="Timeout seconds"
+              value={String(limits.timeoutSeconds ?? 30)}
+              disabled={readOnly}
+              className={inputClass}
+              onChange={(value) =>
+                patch({
+                  limits: { ...limits, timeoutSeconds: Number(value) || 30 },
+                })
+              }
+            />
+            <TextField
+              label="Processes"
+              value={String(limits.processes ?? 1)}
+              disabled={readOnly}
+              className={inputClass}
+              onChange={(value) =>
+                patch({
+                  limits: { ...limits, processes: Number(value) || 1 },
+                })
+              }
+            />
+          </div>
         </>
       ) : null}
 
       {kind === "connection" ? (
         <>
           <label className="text-sm">
-            <span className="font-medium">Connection type</span>
+            <span className="font-medium">Type</span>
             <select
-              value={spec.connectionType ?? "http"}
+              value={spec.type ?? "http"}
               disabled={readOnly}
-              onChange={(event) => patch({ connectionType: event.target.value })}
+              onChange={(event) => patch({ type: event.target.value })}
               className={inputClass}
             >
               {CONNECTION_TYPES.map((type) => (
@@ -187,24 +255,108 @@ export function ConfigSpecForm({
               ))}
             </select>
           </label>
-          <JsonField
-            label="Endpoint policy"
-            value={spec.endpointPolicy ?? {}}
+          <TextField
+            label="Hosts (comma-separated)"
+            value={stringList(endpointPolicy.hosts).join(", ")}
             disabled={readOnly}
             className={inputClass}
-            onChange={(endpointPolicy) => patch({ endpointPolicy })}
+            onChange={(value) =>
+              patch({
+                endpointPolicy: { ...endpointPolicy, hosts: splitList(value) },
+              })
+            }
           />
+          <TextField
+            label="Methods (comma-separated)"
+            value={stringList(endpointPolicy.methods).join(", ")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) =>
+              patch({
+                endpointPolicy: { ...endpointPolicy, methods: splitList(value) },
+              })
+            }
+          />
+          <TextField
+            label="Path prefixes (comma-separated)"
+            value={stringList(endpointPolicy.pathPrefixes).join(", ")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) =>
+              patch({
+                endpointPolicy: {
+                  ...endpointPolicy,
+                  pathPrefixes: splitList(value),
+                },
+              })
+            }
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={endpointPolicy.tlsRequired !== false}
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  endpointPolicy: {
+                    ...endpointPolicy,
+                    tlsRequired: event.target.checked,
+                  },
+                })
+              }
+            />
+            TLS required
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(endpointPolicy.allowRedirects)}
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  endpointPolicy: {
+                    ...endpointPolicy,
+                    allowRedirects: event.target.checked,
+                  },
+                })
+              }
+            />
+            Allow redirects
+          </label>
         </>
       ) : null}
 
       {kind === "recipient_list" ? (
-        <JsonField
-          label="Recipient policy"
-          value={spec.recipientPolicy ?? {}}
-          disabled={readOnly}
-          className={inputClass}
-          onChange={(recipientPolicy) => patch({ recipientPolicy })}
-        />
+        <>
+          <TextAreaField
+            label="Emails (one per line)"
+            value={stringList(recipientPolicy.emails).join("\n")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) =>
+              patch({
+                recipientPolicy: {
+                  ...recipientPolicy,
+                  emails: splitLines(value),
+                },
+              })
+            }
+          />
+          <TextAreaField
+            label="Domains (one per line)"
+            value={stringList(recipientPolicy.domains).join("\n")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(value) =>
+              patch({
+                recipientPolicy: {
+                  ...recipientPolicy,
+                  domains: splitLines(value),
+                },
+              })
+            }
+          />
+        </>
       ) : null}
 
       {kind === "message_template" ? (
@@ -215,6 +367,13 @@ export function ConfigSpecForm({
             disabled={readOnly}
             className={inputClass}
             onChange={(contentClassification) => patch({ contentClassification })}
+          />
+          <TextField
+            label="Subject"
+            value={spec.subject ?? ""}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(subject) => patch({ subject })}
           />
           <TextAreaField
             label="Template body"
@@ -255,11 +414,11 @@ export function ConfigSpecForm({
       {kind === "policy" ? (
         <>
           <label className="text-sm">
-            <span className="font-medium">Policy kind</span>
+            <span className="font-medium">Kind</span>
             <select
-              value={spec.policyKind ?? "kubernetes"}
+              value={spec.kind ?? "kubernetes"}
               disabled={readOnly}
-              onChange={(event) => patch({ policyKind: event.target.value })}
+              onChange={(event) => patch({ kind: event.target.value })}
               className={inputClass}
             >
               {POLICY_KINDS.map((policyKind) => (
@@ -270,11 +429,11 @@ export function ConfigSpecForm({
             </select>
           </label>
           <JsonField
-            label="Policy JSON"
-            value={spec.policyJson ?? {}}
+            label="Policy"
+            value={spec.policy ?? {}}
             disabled={readOnly}
             className={inputClass}
-            onChange={(policyJson) => patch({ policyJson })}
+            onChange={(policy) => patch({ policy })}
           />
         </>
       ) : null}
@@ -292,6 +451,32 @@ export function ConfigSpecForm({
 
 function needsCredential(kind: OpsConfigKind): boolean {
   return kind === "cluster_target" || kind === "ssh_target" || kind === "connection";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function TextField({

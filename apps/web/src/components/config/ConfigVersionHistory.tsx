@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
 import { OPS_CONFIG_COLLECTIONS } from "@/lib/ops-config-contract";
-import type { CompareConfigResult, OpsConfigKind, OpsConfigVersion } from "@/lib/ops-config-types";
+import type { OpsConfigKind, OpsConfigVersion } from "@/lib/ops-config-types";
+
+type ClientCompare = {
+  equal: boolean;
+  digestMatch: boolean;
+  changes: Array<{ path: string; message?: string }>;
+};
 
 type ConfigVersionHistoryProps = {
   kind: OpsConfigKind;
@@ -12,7 +18,7 @@ type ConfigVersionHistoryProps = {
   pending: boolean;
   compareLeft: string;
   compareRight: string;
-  compare: CompareConfigResult | null;
+  compare: ClientCompare | null;
   onCompareLeft: (value: string) => void;
   onCompareRight: (value: string) => void;
   onCompare: () => void;
@@ -42,7 +48,8 @@ export function ConfigVersionHistory({
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
         Publish creates an immutable revision. Published detail is read-only.
-        Restore writes a new draft and never mutates the pin.
+        Restore PUTs the snapshot spec into the current draft — there is no
+        restore route. Compare is client-side spec JSON only.
       </p>
 
       {versions.length === 0 ? (
@@ -59,7 +66,7 @@ export function ConfigVersionHistory({
             >
               <div className="space-y-1">
                 <VersionPinBadge
-                  name={version.name}
+                  name={`v${version.versionNumber}`}
                   versionNumber={version.versionNumber}
                   digest={version.digest}
                   readOnly
@@ -82,7 +89,7 @@ export function ConfigVersionHistory({
                   disabled={pending}
                   className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60"
                 >
-                  Restore as new draft
+                  Restore into draft
                 </button>
               </div>
             </li>
@@ -128,7 +135,7 @@ export function ConfigVersionHistory({
               disabled={pending || !compareRight}
               className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-60"
             >
-              Compare
+              Compare specs
             </button>
           </div>
         </div>
@@ -138,12 +145,12 @@ export function ConfigVersionHistory({
         <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
           <p>
             {compare.equal ? "Equal" : "Different"}
-            {compare.digestMatch ? " · digests match" : " · digests differ"}
+            {compare.digestMatch ? " · specs match" : " · specs differ"}
           </p>
           {compare.changes.length ? (
             <ul className="mt-2 list-disc pl-5 font-mono text-xs">
               {compare.changes.map((change) => (
-                <li key={`${change.path}:${change.message}`}>
+                <li key={`${change.path}:${change.message ?? ""}`}>
                   {change.path}
                   {change.message ? ` — ${change.message}` : ""}
                 </li>
@@ -155,4 +162,3 @@ export function ConfigVersionHistory({
     </section>
   );
 }
-

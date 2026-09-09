@@ -96,10 +96,10 @@ export function ConfigPublishedDetail({
           </Link>
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold">{version?.name ?? descriptor.title}</h2>
+          <h2 className="text-lg font-semibold">{descriptor.title}</h2>
           {version ? (
             <VersionPinBadge
-              name={version.name}
+              name={`v${version.versionNumber}`}
               versionNumber={version.versionNumber}
               digest={version.digest}
               readOnly

@@ -23,7 +23,7 @@ flowchart TB
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
-- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2, hidden for viewers), Membership, and Isolation.
+- Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, and Settings. Navigation only shows capabilities permitted by RBAC. Until E6, the operator header exposes Workflows, Credentials, Targets/Profiles/Config (E4.2; `opsconfig.view` — viewers can read), Membership, and Isolation.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
 - Command palette for keyboard-first navigation and common commands: new workflow, add action, open YAML, validate, publish, run a selected published version, and open execution.
 - Notifications show background validation, credential-test completion, publish outcomes, and execution state; they do not expose secrets.
@@ -284,16 +284,16 @@ Masked, paste-safe secret fields; clear them from component state after `201`/`2
 
 ## E4.2 versioned operational config (Chloe UI)
 
-`/config` is Chloe's operator for workspace-scoped cluster/SSH targets, command/runtime profiles, connections, recipient lists, message templates, response schemas, and policies. This UI does **not** close **#36** alone and does not change `apps/api`. Relates to #36 / Part of #34. Jonny owns the versioned APIs; this slice scaffolds a typed client + Next proxies against the documented E4.2 REST shape (`list/create`, `GET|PATCH …/draft`, `POST …/publish`, versions, compare/restore, `GET …/authorized`). Retarget `apps/web/src/lib/ops-config-contract.ts` when the route map lands on **main** — do not stack this PR on an API feature branch.
+`/config` is Chloe's operator for workspace-scoped cluster/SSH targets, command/runtime profiles, connections, recipient lists, message templates, response schemas, and policies. Stacked on the **#41** map now on `main` (`docs/reference/backend-api-map.md`). This UI does **not** close **#36** and does not change `apps/api`. Relates to #36 (already closed by #41) / Part of #34.
 
-- **Draft / publish:** drafts are editable; publish creates an immutable revision. Published detail is read-only. Workflows/executions pin display name + version id/number/digest, never a live draft.
-- **Selectors:** `GET /{collection}/authorized` (or published items from list). 403 or empty foreign results fail closed with problem+json. Options show display name + version pin only — no secrets.
-- **Credentials:** E4.1 vault stays the secret store. Target/connection forms select credentials by display name/id only.
-- **RBAC nav:** Targets / Profiles / Config appear when `GET /workspace` includes `credential.view`, `workflow.edit`, or `workspace.administer`. Viewers do not see the management links. TODO(#36): retarget to jonny's config-specific permission keys.
-- **Session:** cookie session + `X-CSRF-Token` on POST/PUT/PATCH; tenant + workbench identity; `credentials: include`. Host-supplied `id` / `workspaceId` are never sent on writes.
-- **Proxies:** `/api/control-plane/{cluster-targets,ssh-targets,command-profiles,runtime-profiles,connections,recipient-lists,message-templates,response-schemas,policies}` plus `authorized`, `{id}`, `…/draft`, `…/publish`, `…/compare`, `…/versions`, `…/restore`.
+- **Draft / publish:** `POST /{collection}` `{name, slug?, spec}` → `{resource, draft}`. Save is `PUT /{collection}/{id}/draft` `{revision, spec, name?}` — **not** If-Match. `409` reloads the draft. Publish is `POST …/publish` `{revision?, note?}`. Draft and version JSON have **no `name`**; the resource head holds display name. Published detail is read-only.
+- **Selectors / pins:** there is **no** `GET …/authorized`, compare, or restore route. Picker lists published heads, then `POST /{collection}/{id}/select` `{versionId?}` or batch `POST /ops-config/select` `{refs:[{kind,resourceId,versionId?}]}`. Pin shape is `{kind, resourceId, versionId, versionNumber, digest, name?, slug?, spec?}`. Restore in UI = PUT draft from a version snapshot. Compare, if shown, is client-side spec JSON only. Workflow pins: `GET /workflows/{workflowId}/versions/{versionId}/pins`.
+- **Credentials:** E4.1 vault stays the secret store. Target/connection forms select credentials by display name/id only. Specs use #41 fields (`endpoint.apiServer`, `type` + `endpointPolicy.pathPrefixes`, `limits.*`, `kind` + `policy`, `recipientPolicy.emails`/`domains`).
+- **RBAC nav:** Targets / Profiles / Config appear when `GET /workspace` includes `opsconfig.view` (viewers included). Edit/publish buttons still require `opsconfig.edit` / `opsconfig.publish`.
+- **Session:** cookie session + `X-CSRF-Token` on POST/PUT; tenant + workbench identity; `credentials: include`. Host-supplied `id` / `workspaceId` are never sent on writes.
+- **Proxies:** `/api/control-plane/ops-config/{catalog,select}` plus `{cluster-targets,ssh-targets,command-profiles,runtime-profiles,connections,recipient-lists,message-templates,response-schemas,policies}` `{id}`, `…/draft` (GET|PUT), `…/publish`, `…/select`, `…/disable`, `…/enable`, `…/versions`, and `GET /workflows/{id}/versions/{versionId}/pins`.
 - **Operator routes:** `/config`, `/config/{collection}`, `/config/{collection}/new`, `/config/{collection}/{id}`, `/config/{collection}/{id}/versions/{versionId}`.
-- **Workflow editor:** `/workflows` adds a light authorized-pin picker. E3 draft/publish/run and the E4.1 vault are unchanged.
+- **Workflow editor:** `/workflows` adds a light published-pin picker (list + POST select). E3 draft/publish/run and the E4.1 vault are unchanged.
 
 ## Initial implementation components
 

@@ -41,7 +41,9 @@ export function AuthorizedResourceSelect({
           disabled={disabled || selected.closed}
           onChange={(event) => {
             const next = selected.options.find(
-              (item) => item.versionId === event.target.value || item.id === event.target.value,
+              (item) =>
+                item.versionId === event.target.value ||
+                item.resourceId === event.target.value,
             );
             onChange(next ?? null);
           }}
@@ -51,15 +53,18 @@ export function AuthorizedResourceSelect({
             {selected.closed ? "No authorized resources" : "Select a published version"}
           </option>
           {selected.options.map((pin) => (
-            <option key={`${pin.id}:${pin.versionId}`} value={pin.versionId}>
+            <option
+              key={`${pin.resourceId}:${pin.versionId}`}
+              value={pin.versionId}
+            >
               {selectorOptionLabel(pin)}
             </option>
           ))}
         </select>
       </label>
       <p className="text-xs text-zinc-500">
-        Server-authorized {kind.replaceAll("_", " ")} pins only. Display name +
-        version — never secrets.
+        Published {kind.replaceAll("_", " ")} pins from list + POST select.
+        Display name + version — never secrets.
       </p>
       {problem ? <ProblemBanner problem={problem} /> : null}
       {selected.closed && !problem ? (

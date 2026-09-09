@@ -155,13 +155,10 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Operational config</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E4.2 UI for versioned cluster/SSH targets, command and
-          runtime profiles, connections, recipient lists, templates, response
-          schemas, and policies. Drafts stay editable; publish mints an
-          immutable pin. Selectors fail closed on 403 or empty authorized
-          lists. The typed client is a #36 contract adapter until jonny&apos;s
-          route map lands on main. E4.1 vault and E3 workflow surfaces stay
-          intact.
+          Chloe&apos;s E4.2 UI stacked on the #41 ops-config map on main.
+          Drafts stay editable and save with body revision; publish mints an
+          immutable pin. Select is POST (no authorized/compare/restore
+          routes). E4.1 vault and E3 workflow surfaces stay intact.
         </p>
         <p className="mt-4">
           <Link

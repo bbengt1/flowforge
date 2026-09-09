@@ -215,16 +215,17 @@ describe("resolveIdentityProxyTarget", () => {
         ],
         "/api/v1/credentials/11111111-1111-4111-8111-111111111111/deletion-impact",
       ],
+      ["GET", ["ops-config", "catalog"], "/api/v1/ops-config/catalog"],
+      ["POST", ["ops-config", "select"], "/api/v1/ops-config/select"],
       ["GET", ["cluster-targets"], "/api/v1/cluster-targets"],
       ["POST", ["cluster-targets"], "/api/v1/cluster-targets"],
-      ["GET", ["cluster-targets", "authorized"], "/api/v1/cluster-targets/authorized"],
       [
         "GET",
         ["ssh-targets", "11111111-1111-4111-8111-111111111111"],
         "/api/v1/ssh-targets/11111111-1111-4111-8111-111111111111",
       ],
       [
-        "PATCH",
+        "PUT",
         ["command-profiles", "11111111-1111-4111-8111-111111111111", "draft"],
         "/api/v1/command-profiles/11111111-1111-4111-8111-111111111111/draft",
       ],
@@ -240,8 +241,18 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       [
         "POST",
-        ["recipient-lists", "11111111-1111-4111-8111-111111111111", "compare"],
-        "/api/v1/recipient-lists/11111111-1111-4111-8111-111111111111/compare",
+        ["recipient-lists", "11111111-1111-4111-8111-111111111111", "select"],
+        "/api/v1/recipient-lists/11111111-1111-4111-8111-111111111111/select",
+      ],
+      [
+        "POST",
+        ["policies", "11111111-1111-4111-8111-111111111111", "disable"],
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/disable",
+      ],
+      [
+        "POST",
+        ["policies", "11111111-1111-4111-8111-111111111111", "enable"],
+        "/api/v1/policies/11111111-1111-4111-8111-111111111111/enable",
       ],
       [
         "GET",
@@ -259,15 +270,15 @@ describe("resolveIdentityProxyTarget", () => {
         "/api/v1/response-schemas/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222",
       ],
       [
-        "POST",
+        "GET",
         [
-          "policies",
+          "workflows",
           "11111111-1111-4111-8111-111111111111",
           "versions",
           "22222222-2222-4222-8222-222222222222",
-          "restore",
+          "pins",
         ],
-        "/api/v1/policies/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/restore",
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/pins",
       ],
     ];
 
@@ -308,13 +319,41 @@ describe("resolveIdentityProxyTarget", () => {
     if ("status" in unknown) {
       assert.equal(unknown.status, 404);
     }
-    const authorizedWrite = resolveIdentityProxyTarget("POST", [
-      "ssh-targets",
+    const catalogWrite = resolveIdentityProxyTarget("POST", [
+      "ops-config",
+      "catalog",
+    ]);
+    assert.equal("status" in catalogWrite, true);
+    if ("status" in catalogWrite) {
+      assert.equal(catalogWrite.status, 405);
+    }
+    const retiredAuthorized = resolveIdentityProxyTarget("GET", [
+      "cluster-targets",
       "authorized",
     ]);
-    assert.equal("status" in authorizedWrite, true);
-    if ("status" in authorizedWrite) {
-      assert.equal(authorizedWrite.status, 405);
+    assert.equal("status" in retiredAuthorized, true);
+    if ("status" in retiredAuthorized) {
+      assert.equal(retiredAuthorized.status, 404);
+    }
+    const retiredCompare = resolveIdentityProxyTarget("POST", [
+      "recipient-lists",
+      "11111111-1111-4111-8111-111111111111",
+      "compare",
+    ]);
+    assert.equal("status" in retiredCompare, true);
+    if ("status" in retiredCompare) {
+      assert.equal(retiredCompare.status, 404);
+    }
+    const retiredRestore = resolveIdentityProxyTarget("POST", [
+      "policies",
+      "11111111-1111-4111-8111-111111111111",
+      "versions",
+      "22222222-2222-4222-8222-222222222222",
+      "restore",
+    ]);
+    assert.equal("status" in retiredRestore, true);
+    if ("status" in retiredRestore) {
+      assert.equal(retiredRestore.status, 404);
     }
     const invented = resolveIdentityProxyTarget("GET", ["targets"]);
     assert.equal("status" in invented, true);

@@ -1,36 +1,31 @@
 /**
- * E4.2 versioned operational-config contract (Chloe UI, #36).
+ * E4.2 contract adapter aligned to #41 on main
+ * (`docs/reference/backend-api-map.md`).
  *
- * Jonny owns the Go APIs + immutability. This adapter is the single
- * retarget point when the route map lands on main — do not stack this
- * UI on a disappearing API feature branch (lesson from #31/#39).
- *
- * TODO(#36): replace OPS_CONFIG_COLLECTIONS / path helpers if jonny
- * publishes different collection names or nests under /workspace/.
- * Prefer REST under /api/v1/ consistent with credentials/workflows:
- * list/create, get/patch draft, publish, versions, compare/restore.
- *
- * Never invent encryption or store secrets client-side. Credentials
- * stay in the E4.1 vault — select by display name / id only.
+ * Draft save is PUT + body `revision` (not If-Match). There is no
+ * authorized/compare/restore route — select is POST, restore is PUT
+ * draft from a version snapshot.
  */
 
 import type {
-  CompareConfigBody,
-  CompareConfigRef,
+  BatchSelectBody,
   CreateConfigBody,
   KindDescriptor,
   OpsConfigKind,
   OpsConfigSpec,
   PublishConfigBody,
-  RestoreDraftBody,
   SaveDraftBody,
+  SelectConfigBody,
+  SelectRef,
 } from "./ops-config-types.ts";
 import { OPS_CONFIG_KINDS } from "./ops-config-types.ts";
 
 export const OPS_CONFIG_STORY = 36;
 export const OPS_CONFIG_EPIC = 34;
+export const OPS_CONFIG_API_PR = 41;
 
-export const IF_MATCH_HEADER = "If-Match";
+export const OPS_CONFIG_CATALOG_PATH = "/ops-config/catalog";
+export const OPS_CONFIG_SELECT_PATH = "/ops-config/select";
 
 export const OPS_CONFIG_PROBLEM_CODES = {
   invalidRequest: "invalid-request",
@@ -40,7 +35,6 @@ export const OPS_CONFIG_PROBLEM_CODES = {
   conflict: "conflict",
 } as const;
 
-/** Collection paths keyed to #36. Easy to retarget when the API map lands. */
 export const OPS_CONFIG_COLLECTIONS: Record<OpsConfigKind, string> = {
   cluster_target: "cluster-targets",
   ssh_target: "ssh-targets",
@@ -91,7 +85,7 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.connection,
     group: "config",
     title: "Connections",
-    summary: "HTTP, webhook, and email endpoint policy. Credentials stay in the vault.",
+    summary: "HTTP, webhook, and SMTP endpoint policy. Credentials stay in the vault.",
     yamlRef: "connectionId",
   },
   {
@@ -99,7 +93,7 @@ export const OPS_CONFIG_KIND_CATALOG: readonly KindDescriptor[] = [
     collection: OPS_CONFIG_COLLECTIONS.recipient_list,
     group: "config",
     title: "Recipient lists",
-    summary: "Approved recipient domains and addresses. Published versions are pinned.",
+    summary: "Approved recipient emails and domains. Published versions are pinned.",
     yamlRef: "recipientListId",
   },
   {
@@ -134,12 +128,8 @@ export function isOpsConfigKind(value: string | undefined): value is OpsConfigKi
   return Boolean(value && (OPS_CONFIG_KINDS as readonly string[]).includes(value));
 }
 
-export function isOpsConfigCollection(
-  value: string | undefined,
-): boolean {
-  return Boolean(
-    value && OPS_CONFIG_COLLECTION_VALUES.includes(value),
-  );
+export function isOpsConfigCollection(value: string | undefined): boolean {
+  return Boolean(value && OPS_CONFIG_COLLECTION_VALUES.includes(value));
 }
 
 export function kindFromCollection(
@@ -166,8 +156,12 @@ export function collectionPath(kind: OpsConfigKind): string {
   return `/${OPS_CONFIG_COLLECTIONS[kind]}`;
 }
 
-export function authorizedPath(kind: OpsConfigKind): string {
-  return `${collectionPath(kind)}/authorized`;
+export function catalogPath(): string {
+  return OPS_CONFIG_CATALOG_PATH;
+}
+
+export function batchSelectPath(): string {
+  return OPS_CONFIG_SELECT_PATH;
 }
 
 export function resourcePath(kind: OpsConfigKind, resourceId: string): string {
@@ -182,8 +176,16 @@ export function publishPath(kind: OpsConfigKind, resourceId: string): string {
   return `${resourcePath(kind, resourceId)}/publish`;
 }
 
-export function comparePath(kind: OpsConfigKind, resourceId: string): string {
-  return `${resourcePath(kind, resourceId)}/compare`;
+export function selectPath(kind: OpsConfigKind, resourceId: string): string {
+  return `${resourcePath(kind, resourceId)}/select`;
+}
+
+export function disablePath(kind: OpsConfigKind, resourceId: string): string {
+  return `${resourcePath(kind, resourceId)}/disable`;
+}
+
+export function enablePath(kind: OpsConfigKind, resourceId: string): string {
+  return `${resourcePath(kind, resourceId)}/enable`;
 }
 
 export function versionsPath(kind: OpsConfigKind, resourceId: string): string {
@@ -198,21 +200,17 @@ export function versionPath(
   return `${versionsPath(kind, resourceId)}/${versionId}`;
 }
 
-export function restorePath(
-  kind: OpsConfigKind,
-  resourceId: string,
+export function workflowVersionPinsPath(
+  workflowId: string,
   versionId: string,
 ): string {
-  return `${versionPath(kind, resourceId, versionId)}/restore`;
+  return `/workflows/${workflowId}/versions/${versionId}/pins`;
 }
 
 export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
   switch (kind) {
     case "cluster_target":
-      return {
-        credentialId: "",
-        endpointMetadata: { apiServerHost: "", apiServerPort: 6443 },
-      };
+      return { credentialId: "", endpoint: { apiServer: "" } };
     case "ssh_target":
       return {
         credentialId: "",
@@ -227,22 +225,26 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
         language: "python",
         imageDigest: "",
         dependencyLockDigest: "",
-        limits: { cpu: "500m", memory: "256Mi", timeoutSeconds: 30 },
+        limits: {
+          cpuMillis: 500,
+          memoryMib: 256,
+          timeoutSeconds: 30,
+          processes: 1,
+        },
       };
     case "connection":
       return {
-        credentialId: "",
-        connectionType: "http",
+        type: "http",
         endpointPolicy: {
           hosts: [],
           methods: ["GET"],
-          paths: ["/"],
-          tlsVerify: true,
+          pathPrefixes: ["/"],
+          tlsRequired: true,
           allowRedirects: false,
         },
       };
     case "recipient_list":
-      return { recipientPolicy: { domains: [], addresses: [] } };
+      return { recipientPolicy: { emails: [], domains: [] } };
     case "message_template":
       return {
         inputSchema: {},
@@ -252,7 +254,7 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
     case "response_schema":
       return { schema: { type: "object" }, maxBytes: 16384 };
     case "policy":
-      return { policyKind: "kubernetes", policyJson: {} };
+      return { kind: "kubernetes", policy: {} };
   }
 }
 
@@ -260,23 +262,33 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
 export function buildCreateBody(
   name: string,
   spec: OpsConfigSpec,
+  slug?: string,
 ): CreateConfigBody {
-  return {
+  const body: CreateConfigBody = {
     name: name.trim(),
     spec: pickSafeSpec(spec),
   };
+  const trimmedSlug = slug?.trim();
+  if (trimmedSlug) {
+    body.slug = trimmedSlug;
+  }
+  return body;
 }
 
 export function buildSaveDraftBody(
   revision: number,
-  name: string,
   spec: OpsConfigSpec,
+  name?: string,
 ): SaveDraftBody {
-  return {
+  const body: SaveDraftBody = {
     revision,
-    name: name.trim(),
     spec: pickSafeSpec(spec),
   };
+  const trimmed = name?.trim();
+  if (trimmed) {
+    body.name = trimmed;
+  }
+  return body;
 }
 
 export function buildPublishBody(
@@ -294,24 +306,34 @@ export function buildPublishBody(
   return body;
 }
 
-export function buildRestoreBody(expectedRevision?: number): RestoreDraftBody {
-  return typeof expectedRevision === "number" ? { expectedRevision } : {};
+export function buildSelectBody(versionId?: string): SelectConfigBody {
+  const trimmed = versionId?.trim();
+  return trimmed ? { versionId: trimmed } : {};
 }
 
-export function buildCompareBody(
-  left: CompareConfigRef,
-  right: CompareConfigRef,
-): CompareConfigBody {
-  return { left, right };
+export function buildBatchSelectBody(refs: SelectRef[]): BatchSelectBody {
+  return {
+    refs: refs.map((ref) => {
+      const next: SelectRef = {
+        kind: ref.kind,
+        resourceId: ref.resourceId,
+      };
+      if (ref.versionId?.trim()) {
+        next.versionId = ref.versionId.trim();
+      }
+      return next;
+    }),
+  };
 }
 
 const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "credentialId",
-  "credentialDisplayName",
-  "endpointMetadata",
+  "endpoint",
+  "allowedNamespaces",
   "hostname",
   "port",
   "hostKeyFingerprint",
+  "allowedAddresses",
   "policyId",
   "parameterSchema",
   "template",
@@ -320,16 +342,17 @@ const SPEC_KEYS: readonly (keyof OpsConfigSpec)[] = [
   "imageDigest",
   "dependencyLockDigest",
   "limits",
-  "connectionType",
+  "type",
   "endpointPolicy",
   "recipientPolicy",
   "inputSchema",
   "contentClassification",
+  "subject",
   "body",
   "schema",
   "maxBytes",
-  "policyKind",
-  "policyJson",
+  "kind",
+  "policy",
 ];
 
 export function pickSafeSpec(spec: OpsConfigSpec): OpsConfigSpec {
@@ -351,25 +374,6 @@ export function pickSafeSpec(spec: OpsConfigSpec): OpsConfigSpec {
   return out;
 }
 
-/**
- * Permissions that currently exist on the E2.1 matrix and reasonably
- * gate this operator until jonny publishes E4.2-specific keys.
- *
- * TODO(#36): retarget to clusterTarget.view / commandProfile.manage / etc.
- */
-export const OPS_CONFIG_VIEW_PERMISSIONS = [
-  "credential.view",
-  "workflow.edit",
-  "workspace.administer",
-] as const;
-
-export const OPS_CONFIG_EDIT_PERMISSIONS = [
-  "credential.manage",
-  "workflow.edit",
-  "workspace.administer",
-] as const;
-
-export const OPS_CONFIG_PUBLISH_PERMISSIONS = [
-  "workflow.publish",
-  "workspace.administer",
-] as const;
+export const OPS_CONFIG_VIEW_PERMISSIONS = ["opsconfig.view"] as const;
+export const OPS_CONFIG_EDIT_PERMISSIONS = ["opsconfig.edit"] as const;
+export const OPS_CONFIG_PUBLISH_PERMISSIONS = ["opsconfig.publish"] as const;

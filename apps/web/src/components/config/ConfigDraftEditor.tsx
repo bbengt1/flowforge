@@ -11,19 +11,16 @@ import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/li
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import {
-  compareOpsConfig,
   createOpsConfig,
   getOpsConfig,
   getOpsConfigDraft,
   listOpsConfigVersions,
   publishOpsConfig,
-  restoreOpsConfigVersion,
   saveOpsConfigDraft,
 } from "@/lib/ops-config-client";
 import { descriptorForKind, emptySpecForKind } from "@/lib/ops-config-contract";
-import { canPublishDraft, isDraftEditable } from "@/lib/ops-config";
+import { canPublishDraft, clientCompareSpecs, isDraftEditable } from "@/lib/ops-config";
 import type {
-  CompareConfigResult,
   OpsConfigDraft,
   OpsConfigKind,
   OpsConfigRecord,
@@ -37,6 +34,8 @@ type ConfigDraftEditorProps = {
   kind: OpsConfigKind;
   resourceId?: string;
 };
+
+type ClientCompare = ReturnType<typeof clientCompareSpecs>;
 
 export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) {
   const descriptor = descriptorForKind(kind);
@@ -68,7 +67,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [compareLeft, setCompareLeft] = useState("draft");
   const [compareRight, setCompareRight] = useState("");
-  const [compare, setCompare] = useState<CompareConfigResult | null>(null);
+  const [compare, setCompare] = useState<ClientCompare | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -76,9 +75,11 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   const id = resource?.id ?? draft?.resourceId ?? resourceId;
   const readOnly = !isDraftEditable(resource?.status);
 
-  const applyDraft = useCallback((next: OpsConfigDraft) => {
+  const applyDraft = useCallback((next: OpsConfigDraft, nextName?: string) => {
     setDraft(next);
-    setName(next.name);
+    if (nextName !== undefined) {
+      setName(nextName);
+    }
     setSpec(next.spec);
     setDirty(false);
   }, []);
@@ -102,13 +103,13 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
         return;
       }
       setResource(record.resource);
+      setName(record.resource.name);
       if (draftResult.ok) {
-        applyDraft(draftResult.draft);
+        applyDraft(draftResult.draft, record.resource.name);
       } else if (draftResult.statusCode !== 404) {
         setProblem(draftResult.problem);
       } else {
-        setName(record.resource.name);
-        setSpec(record.resource.spec);
+        setSpec(emptySpecForKind(kind));
         setDirty(false);
       }
       if (history.ok) {
@@ -131,7 +132,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
       setProblem(result.problem);
       return;
     }
-    applyDraft(result.draft);
+    applyDraft(result.draft, result.resource?.name ?? name);
     if (result.resource) {
       setResource(result.resource);
     }
@@ -148,8 +149,8 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
       kind,
       id,
       draft.revision,
-      name,
       spec,
+      name,
     );
     setLastRequestId(result.requestId);
     setPending(null);
@@ -157,7 +158,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
       setProblem(result.problem);
       return;
     }
-    applyDraft(result.draft);
+    applyDraft(result.draft, result.resource?.name ?? name);
     if (result.resource) {
       setResource(result.resource);
     }
@@ -183,17 +184,18 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   }
 
   async function restore(version: OpsConfigVersion) {
-    if (!id) {
+    if (!id || !draft) {
       return;
     }
     setPending("restore");
     setProblem(null);
-    const result = await restoreOpsConfigVersion(
+    const result = await saveOpsConfigDraft(
       identity,
       kind,
       id,
-      version.id,
-      draft?.revision,
+      draft.revision,
+      version.spec,
+      name,
     );
     setLastRequestId(result.requestId);
     setPending(null);
@@ -201,33 +203,22 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
       setProblem(result.problem);
       return;
     }
-    applyDraft(result.draft);
+    applyDraft(result.draft, result.resource?.name ?? name);
     if (result.resource) {
       setResource(result.resource);
     }
   }
 
-  async function runCompare() {
-    if (!id) {
-      return;
-    }
-    setPending("compare");
-    setProblem(null);
-    const left =
+  function runCompare() {
+    const leftSpec =
       compareLeft === "draft"
-        ? ({ kind: "draft" } as const)
-        : { kind: "version" as const, versionId: compareLeft };
-    const result = await compareOpsConfig(identity, kind, id, left, {
-      kind: "version",
-      versionId: compareRight,
-    });
-    setLastRequestId(result.requestId);
-    setPending(null);
-    if (!result.ok) {
-      setProblem(result.problem);
+        ? spec
+        : versions.find((item) => item.id === compareLeft)?.spec;
+    const rightSpec = versions.find((item) => item.id === compareRight)?.spec;
+    if (!leftSpec || !rightSpec) {
       return;
     }
-    setCompare(result.compare);
+    setCompare(clientCompareSpecs(leftSpec, rightSpec));
   }
 
   return (
@@ -255,16 +246,17 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               {resourceId ? "Edit draft" : "Create draft"}
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-              Save updates the mutable draft with revision / If-Match. Publish
-              copies the last saved draft into an immutable revision. Unsaved
-              buffer is not published.
+              Save updates the mutable draft with body{" "}
+              <code className="font-mono text-xs">revision</code> (no If-Match).
+              Publish copies the last saved draft into an immutable revision.
+              Unsaved buffer is not published.
             </p>
           </div>
           {resource?.latestVersionNumber ? (
             <VersionPinBadge
               name={resource.name}
               versionNumber={resource.latestVersionNumber}
-              digest={resource.latestDigest}
+              digest={resource.latestVersionDigest}
               readOnly
             />
           ) : (
@@ -339,7 +331,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               !ready ||
               pending !== null ||
               readOnly ||
-              !canPublishDraft(draft, dirty)
+              !canPublishDraft(draft, name, dirty)
             }
             className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
           >
@@ -364,7 +356,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
           compare={compare}
           onCompareLeft={setCompareLeft}
           onCompareRight={setCompareRight}
-          onCompare={() => void runCompare()}
+          onCompare={runCompare}
           onRestore={(version) => void restore(version)}
         />
       ) : null}

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
-  compareOpsConfig,
   createOpsConfig,
-  listAuthorizedPins,
+  getOpsConfigCatalog,
   listOpsConfig,
+  listWorkflowVersionPins,
   publishOpsConfig,
   saveOpsConfigDraft,
+  selectOpsConfig,
+  selectOpsConfigBatch,
 } from "./ops-config-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -26,6 +28,7 @@ const identity: DevIdentity = {
 
 const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
+const WORKFLOW_ID = "33333333-3333-4333-8333-333333333333";
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -44,13 +47,29 @@ function withSession() {
   });
 }
 
+const pinPayload = {
+  kind: "cluster_target",
+  resourceId: RESOURCE_ID,
+  name: "prod-cluster",
+  versionId: VERSION_ID,
+  versionNumber: 2,
+  digest: "sha256:aa",
+};
+
 describe("ops-config client", () => {
-  it("lists and selects authorized pins with credentials include", async () => {
+  it("lists heads and POSTs select with credentials include", async () => {
     withSession();
-    const seen: { url?: string; init?: RequestInit } = {};
+    const seen: { url?: string; init?: RequestInit; body?: string } = {};
     globalThis.fetch = (async (input, init) => {
       seen.url = String(input);
       seen.init = init;
+      seen.body = typeof init?.body === "string" ? init.body : "";
+      if (String(input).endsWith("/select")) {
+        return new Response(JSON.stringify(pinPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       return new Response(
         JSON.stringify({
           items: [
@@ -61,7 +80,7 @@ describe("ops-config client", () => {
               status: "published",
               latestVersionId: VERSION_ID,
               latestVersionNumber: 2,
-              latestDigest: "sha256:aa",
+              latestVersionDigest: "sha256:aa",
             },
           ],
         }),
@@ -75,16 +94,26 @@ describe("ops-config client", () => {
     assert.equal(seen.init?.credentials, "include");
     if (list.ok) {
       assert.equal(list.items[0]?.name, "prod-cluster");
+      assert.equal(list.items[0]?.latestVersionId, VERSION_ID);
     }
 
-    seen.url = undefined;
-    const authorized = await listAuthorizedPins(identity, "cluster_target");
-    assert.equal(authorized.ok, true);
-    assert.equal(seen.url, "/api/v1/cluster-targets/authorized");
+    const selected = await selectOpsConfig(
+      identity,
+      "cluster_target",
+      RESOURCE_ID,
+      VERSION_ID,
+    );
+    assert.equal(selected.ok, true);
+    assert.equal(seen.url, `/api/v1/cluster-targets/${RESOURCE_ID}/select`);
     assert.equal(seen.init?.credentials, "include");
+    assert.match(seen.body ?? "", /versionId/);
+    if (selected.ok) {
+      assert.equal(selected.pin.resourceId, RESOURCE_ID);
+      assert.equal(selected.pin.name, "prod-cluster");
+    }
   });
 
-  it("create/save/publish send CSRF and If-Match, never secrets or workspaceId", async () => {
+  it("create/save/publish send CSRF and body revision, never If-Match, secrets, or workspaceId", async () => {
     withSession();
     const seen: Array<{ url: string; headers: Headers; body: string }> = [];
     globalThis.fetch = (async (input, init) => {
@@ -103,13 +132,11 @@ describe("ops-config client", () => {
               name: "restart",
               status: "published",
               draftRevision: 2,
-              spec: { template: "true", retrySafe: true },
             },
             version: {
               id: VERSION_ID,
               resourceId: RESOURCE_ID,
               kind: "command_profile",
-              name: "restart",
               versionNumber: 1,
               digest: "sha256:abc",
               spec: { template: "true", retrySafe: true },
@@ -123,7 +150,6 @@ describe("ops-config client", () => {
           draft: {
             resourceId: RESOURCE_ID,
             kind: "command_profile",
-            name: "restart",
             revision: url.includes("/draft") ? 2 : 1,
             spec: { template: "true", retrySafe: true },
           },
@@ -133,7 +159,6 @@ describe("ops-config client", () => {
             name: "restart",
             status: "draft",
             draftRevision: url.includes("/draft") ? 2 : 1,
-            spec: { template: "true", retrySafe: true },
           },
         }),
         {
@@ -153,8 +178,8 @@ describe("ops-config client", () => {
       "command_profile",
       RESOURCE_ID,
       1,
-      "restart",
       { template: "true", retrySafe: true },
+      "restart",
     );
     assert.equal(saved.ok, true);
     const published = await publishOpsConfig(
@@ -176,13 +201,14 @@ describe("ops-config client", () => {
     assert.doesNotMatch(seen[0]?.body ?? "", /secret|kubeconfig|privateKey/);
     assert.equal(seen[1]?.url, `/api/v1/command-profiles/${RESOURCE_ID}/draft`);
     assert.equal(seen[1]?.headers.get(CSRF_HEADER), "csrf-ok");
-    assert.equal(seen[1]?.headers.get("If-Match"), "1");
+    assert.equal(seen[1]?.headers.get("If-Match"), null);
+    assert.match(seen[1]?.body ?? "", /"revision":1/);
     assert.equal(seen[2]?.url, `/api/v1/command-profiles/${RESOURCE_ID}/publish`);
     assert.equal(seen[2]?.headers.get(CSRF_HEADER), "csrf-ok");
     assert.match(seen[2]?.body ?? "", /first pin/);
   });
 
-  it("fails closed when authorized selection returns 403 problem+json", async () => {
+  it("fails closed when select returns 403 problem+json", async () => {
     withSession();
     globalThis.fetch = (async () =>
       new Response(
@@ -191,7 +217,7 @@ describe("ops-config client", () => {
           title: "Forbidden",
           status: 403,
           detail: "Foreign workspace resource.",
-          instance: "/api/v1/ssh-targets/authorized",
+          instance: "/api/v1/ssh-targets/11111111-1111-4111-8111-111111111111/select",
           code: "forbidden",
           request_id: "cfg-forbidden-16xx",
         }),
@@ -201,7 +227,7 @@ describe("ops-config client", () => {
         },
       )) as typeof fetch;
 
-    const result = await listAuthorizedPins(identity, "ssh_target");
+    const result = await selectOpsConfig(identity, "ssh_target", RESOURCE_ID);
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.statusCode, 403);
@@ -210,38 +236,57 @@ describe("ops-config client", () => {
     }
   });
 
-  it("compare posts CSRF and preserves digestMatch", async () => {
+  it("loads catalog and workflow pins, and batch-selects refs", async () => {
     withSession();
-    const seen: { url?: string; headers?: Headers; body?: string } = {};
-    globalThis.fetch = (async (input, init) => {
-      seen.url = String(input);
-      seen.headers = new Headers(init?.headers);
-      seen.body = typeof init?.body === "string" ? init.body : "";
-      return new Response(
-        JSON.stringify({
-          equal: false,
-          digestMatch: false,
-          leftDigest: "sha256:aa",
-          rightDigest: "sha256:bb",
-          changes: [{ path: "spec.template", message: "changed" }],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.endsWith("/ops-config/catalog")) {
+        return new Response(
+          JSON.stringify({
+            kinds: [
+              {
+                kind: "cluster_target",
+                collection: "cluster-targets",
+                displayName: "Cluster targets",
+                yamlFields: ["clusterTargetId"],
+                usePermission: "clusterTarget.use",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/pins") || url.endsWith("/ops-config/select")) {
+        return new Response(JSON.stringify({ items: [pinPayload] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 404 });
     }) as typeof fetch;
 
-    const result = await compareOpsConfig(
-      identity,
-      "command_profile",
-      RESOURCE_ID,
-      { kind: "draft" },
-      { kind: "version", versionId: VERSION_ID },
-    );
-    assert.equal(result.ok, true);
-    assert.equal(seen.url, `/api/v1/command-profiles/${RESOURCE_ID}/compare`);
-    assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
-    if (result.ok) {
-      assert.equal(result.compare.digestMatch, false);
-      assert.equal(result.compare.changes[0]?.path, "spec.template");
+    const catalog = await getOpsConfigCatalog(identity);
+    assert.equal(catalog.ok, true);
+    if (catalog.ok) {
+      assert.equal(catalog.catalog.kinds[0]?.collection, "cluster-targets");
     }
+
+    const pins = await listWorkflowVersionPins(identity, WORKFLOW_ID, VERSION_ID);
+    assert.equal(pins.ok, true);
+    if (pins.ok) {
+      assert.equal(pins.items[0]?.resourceId, RESOURCE_ID);
+    }
+
+    const batch = await selectOpsConfigBatch(identity, [
+      { kind: "cluster_target", resourceId: RESOURCE_ID, versionId: VERSION_ID },
+    ]);
+    assert.equal(batch.ok, true);
+    assert.deepEqual(seen, [
+      "/api/v1/ops-config/catalog",
+      `/api/v1/workflows/${WORKFLOW_ID}/versions/${VERSION_ID}/pins`,
+      "/api/v1/ops-config/select",
+    ]);
   });
 });

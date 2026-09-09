@@ -25,9 +25,9 @@ export default async function ConfigKindPage({ params }: PageProps) {
           {kind.replaceAll("_", " ")}
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          List workspace-authorized resources, then create or edit a draft and
-          publish an immutable pin. Foreign or unauthorized lists fail closed
-          with problem+json.
+          List workspace heads, then create or edit a draft and publish an
+          immutable pin. Select uses POST …/select. Foreign or empty lists fail
+          closed with problem+json.
         </p>
       </header>
       <ConfigKindList kind={kind} />

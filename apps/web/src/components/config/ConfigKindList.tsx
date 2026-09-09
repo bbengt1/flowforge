@@ -105,8 +105,8 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
         <EmptyKindState descriptor={descriptor} />
       ) : items.length === 0 && problem ? (
         <p className="text-sm text-zinc-600">
-          Selector and list fail closed when the API returns 403 or an empty
-          authorized set. Route map is still aligning on #36.
+          List and select fail closed when the API returns 403 or an empty
+          published set. Pins come from POST …/select, not GET …/authorized.
         </p>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
@@ -127,7 +127,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
                     <VersionPinBadge
                       name={item.name}
                       versionNumber={item.latestVersionNumber}
-                      digest={item.latestDigest}
+                      digest={item.latestVersionDigest}
                       readOnly
                     />
                   ) : (

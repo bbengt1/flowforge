@@ -1,39 +1,41 @@
 /**
- * Thin typed E4.2 client. Session cookies + CSRF on mutations.
- * Paths come from ops-config-contract.ts so a route-map retarget is one file.
+ * Thin typed E4.2 client aligned to #41.
+ * PUT draft with body revision. POST select for pins.
+ * Session cookies + CSRF on mutations. credentials: include.
  */
 
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { problemFieldErrors, type ProblemDetails } from "./problem.ts";
 import {
-  authorizedPath,
-  buildCompareBody,
+  batchSelectPath,
+  buildBatchSelectBody,
   buildCreateBody,
   buildPublishBody,
-  buildRestoreBody,
   buildSaveDraftBody,
+  buildSelectBody,
+  catalogPath,
   collectionPath,
-  comparePath,
+  disablePath,
   draftPath,
-  IF_MATCH_HEADER,
+  enablePath,
   publishPath,
   resourcePath,
-  restorePath,
+  selectPath,
   versionPath,
   versionsPath,
+  workflowVersionPinsPath,
 } from "./ops-config-contract.ts";
 import {
   parseAuthorizedPins,
-  parseCompareResult,
   parseOpsConfigDraft,
   parseOpsConfigList,
+  parseOpsConfigPin,
   parseOpsConfigRecord,
   parseOpsConfigVersion,
 } from "./ops-config.ts";
 import type {
-  CompareConfigRef,
-  CompareConfigResult,
+  OpsConfigCatalog,
   OpsConfigDraft,
   OpsConfigKind,
   OpsConfigPin,
@@ -41,6 +43,7 @@ import type {
   OpsConfigSpec,
   OpsConfigSummary,
   OpsConfigVersion,
+  SelectRef,
 } from "./ops-config-types.ts";
 
 export type OpsConfigClientFailure = {
@@ -95,19 +98,44 @@ export type VersionSuccess = {
   version: OpsConfigVersion;
 };
 
-export type CompareSuccess = {
+export type SelectSuccess = {
   ok: true;
   statusCode: number;
   requestId: string;
-  compare: CompareConfigResult;
+  pin: OpsConfigPin;
 };
 
-export type AuthorizedSuccess = {
+export type PinsSuccess = {
   ok: true;
   statusCode: number;
   requestId: string;
   items: OpsConfigPin[];
 };
+
+export type CatalogSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  catalog: OpsConfigCatalog;
+};
+
+export async function getOpsConfigCatalog(
+  identity: DevIdentity,
+): Promise<CatalogSuccess | OpsConfigClientFailure> {
+  const result = await callIdentityProxy<unknown>(catalogPath(), identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const kinds = Array.isArray((result.data as { kinds?: unknown }).kinds)
+    ? (result.data as OpsConfigCatalog).kinds
+    : [];
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    catalog: { kinds },
+  };
+}
 
 export async function listOpsConfig(
   identity: DevIdentity,
@@ -126,33 +154,17 @@ export async function listOpsConfig(
   };
 }
 
-export async function listAuthorizedPins(
-  identity: DevIdentity,
-  kind: OpsConfigKind,
-): Promise<AuthorizedSuccess | OpsConfigClientFailure> {
-  const path = authorizedPath(kind);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    items: parseAuthorizedPins(result.data, kind),
-  };
-}
-
 export async function createOpsConfig(
   identity: DevIdentity,
   kind: OpsConfigKind,
   name: string,
   spec: OpsConfigSpec,
+  slug?: string,
 ): Promise<DraftSuccess | OpsConfigClientFailure> {
   const path = collectionPath(kind);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
-    body: buildCreateBody(name, spec),
+    body: buildCreateBody(name, spec, slug),
   });
   return draftResult(result, path, kind);
 }
@@ -199,14 +211,13 @@ export async function saveOpsConfigDraft(
   kind: OpsConfigKind,
   resourceId: string,
   revision: number,
-  name: string,
   spec: OpsConfigSpec,
+  name?: string,
 ): Promise<DraftSuccess | OpsConfigClientFailure> {
   const path = draftPath(kind, resourceId);
   const result = await callIdentityProxy<unknown>(path, identity, {
-    method: "PATCH",
-    body: buildSaveDraftBody(revision, name, spec),
-    headers: { [IF_MATCH_HEADER]: String(revision) },
+    method: "PUT",
+    body: buildSaveDraftBody(revision, spec, name),
   });
   return draftResult(result, path, kind);
 }
@@ -256,7 +267,7 @@ export async function listOpsConfigVersions(
   if (!result.ok) {
     return failure(result);
   }
-  const items = (asItems(result.data))
+  const items = asItems(result.data)
     .map(parseOpsConfigVersion)
     .filter((item): item is OpsConfigVersion => item !== null)
     .map((item) => ({ ...item, kind }));
@@ -296,51 +307,118 @@ export async function getOpsConfigVersion(
   };
 }
 
-export async function compareOpsConfig(
+export async function selectOpsConfig(
   identity: DevIdentity,
   kind: OpsConfigKind,
   resourceId: string,
-  left: CompareConfigRef,
-  right: CompareConfigRef,
-): Promise<CompareSuccess | OpsConfigClientFailure> {
-  const path = comparePath(kind, resourceId);
+  versionId?: string,
+): Promise<SelectSuccess | OpsConfigClientFailure> {
+  const path = selectPath(kind, resourceId);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
-    body: buildCompareBody(left, right),
+    body: buildSelectBody(versionId),
   });
   if (!result.ok) {
     return failure(result);
   }
-  const compare = parseCompareResult(result.data);
-  if (!compare) {
+  const pin = parseOpsConfigPin(result.data);
+  if (!pin) {
     return malformed(
       result.requestId,
       result.statusCode,
       path,
-      "Compare returned a payload without equal/digestMatch.",
+      "Select returned a payload without resourceId and versionId.",
     );
   }
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    compare,
+    pin: { ...pin, kind },
   };
 }
 
-export async function restoreOpsConfigVersion(
+export async function selectOpsConfigBatch(
+  identity: DevIdentity,
+  refs: SelectRef[],
+): Promise<PinsSuccess | OpsConfigClientFailure> {
+  const path = batchSelectPath();
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildBatchSelectBody(refs),
+  });
+  if (!result.ok) {
+    return failure(result);
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseAuthorizedPins(result.data),
+  };
+}
+
+export async function disableOpsConfig(
   identity: DevIdentity,
   kind: OpsConfigKind,
   resourceId: string,
+): Promise<RecordSuccess | OpsConfigClientFailure> {
+  return mutateHead(identity, disablePath(kind, resourceId), kind);
+}
+
+export async function enableOpsConfig(
+  identity: DevIdentity,
+  kind: OpsConfigKind,
+  resourceId: string,
+): Promise<RecordSuccess | OpsConfigClientFailure> {
+  return mutateHead(identity, enablePath(kind, resourceId), kind);
+}
+
+export async function listWorkflowVersionPins(
+  identity: DevIdentity,
+  workflowId: string,
   versionId: string,
-  expectedRevision?: number,
-): Promise<DraftSuccess | OpsConfigClientFailure> {
-  const path = restorePath(kind, resourceId, versionId);
+): Promise<PinsSuccess | OpsConfigClientFailure> {
+  const path = workflowVersionPinsPath(workflowId, versionId);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseAuthorizedPins(result.data),
+  };
+}
+
+async function mutateHead(
+  identity: DevIdentity,
+  path: string,
+  kind: OpsConfigKind,
+): Promise<RecordSuccess | OpsConfigClientFailure> {
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
-    body: buildRestoreBody(expectedRevision),
+    body: {},
   });
-  return draftResult(result, path, kind);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const resource = parseOpsConfigRecord(result.data);
+  if (!resource) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Response was missing a resource head.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    resource: { ...resource, kind },
+  };
 }
 
 function draftResult(
@@ -358,7 +436,7 @@ function draftResult(
       result.requestId,
       result.statusCode,
       instance,
-      "Response was missing a draft with revision and name.",
+      "Response was missing a draft with revision.",
     );
   }
   const resource = parseOpsConfigRecord(payload.resource);
@@ -386,7 +464,7 @@ function draftOnlyResult(
       result.requestId,
       result.statusCode,
       instance,
-      "Draft payload was missing revision or name.",
+      "Draft payload was missing revision.",
     );
   }
   return {

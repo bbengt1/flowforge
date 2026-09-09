@@ -140,7 +140,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       isResourceId(s[1]) &&
       s[2] === "versions" &&
       isResourceId(s[3]) &&
-      s[4] === "export",
+      (s[4] === "export" || s[4] === "pins"),
   },
   {
     methods: ["POST"],
@@ -190,13 +190,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       isResourceId(s[1]) &&
       (s[2] === "usage" || s[2] === "events" || s[2] === "deletion-impact"),
   },
-  // E4.2 ops config UI (#36). Collection names live in ops-config-contract.ts
-  // so they can be retargeted when jonny's route map lands on main.
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 2 && isOpsConfigCollection(s[0]) && s[1] === "authorized",
-  },
+  // E4.2 ops config UI aligned to #41 on main.
+  { methods: ["GET"], match: (s) => eq(s, ["ops-config", "catalog"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["ops-config", "select"]) },
   {
     methods: ["GET", "POST"],
     match: (s) => s.length === 1 && isOpsConfigCollection(s[0]),
@@ -207,7 +203,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s.length === 2 && isOpsConfigCollection(s[0]) && isResourceId(s[1]),
   },
   {
-    methods: ["GET", "PATCH", "PUT"],
+    methods: ["GET", "PUT"],
     match: (s) =>
       s.length === 3 &&
       isOpsConfigCollection(s[0]) &&
@@ -220,7 +216,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s.length === 3 &&
       isOpsConfigCollection(s[0]) &&
       isResourceId(s[1]) &&
-      (s[2] === "publish" || s[2] === "compare"),
+      (s[2] === "publish" ||
+        s[2] === "select" ||
+        s[2] === "disable" ||
+        s[2] === "enable"),
   },
   {
     methods: ["GET"],
@@ -238,16 +237,6 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       isResourceId(s[1]) &&
       s[2] === "versions" &&
       isResourceId(s[3]),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 5 &&
-      isOpsConfigCollection(s[0]) &&
-      isResourceId(s[1]) &&
-      s[2] === "versions" &&
-      isResourceId(s[3]) &&
-      s[4] === "restore",
   },
 ];
 

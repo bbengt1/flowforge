@@ -19,10 +19,9 @@ export default async function ConfigPage({ searchParams }: PageProps) {
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Workspace-scoped targets, profiles, connections, templates, schemas,
-          and policies. Drafts are editable; publish creates an immutable
-          revision that workflows pin by display name + version. Credentials
-          stay in the E4.1 vault. The typed client is a #36 contract adapter
-          until jonny&apos;s route map lands on main.
+          and policies against the #41 map on main. Drafts save with body{" "}
+          <code className="font-mono text-xs">revision</code>; publish creates
+          an immutable pin. Select is POST. Credentials stay in the E4.1 vault.
         </p>
       </header>
       <ConfigHub group={group} />

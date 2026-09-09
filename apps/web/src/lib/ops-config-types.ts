@@ -1,10 +1,6 @@
 /**
- * Safe E4.2 operational-config types (Chloe UI, #36).
- *
- * Jonny's route map is still in flight. Shapes follow documented
- * drafts/publish/versions plus database.md operational tables.
- * Retarget field names in ops-config-contract.ts — do not invent
- * encryption or secret-bearing fields.
+ * E4.2 operational-config types aligned to jonny's #41 contract on main.
+ * JSON camelCase. Specs are secret-free; credentials stay in the E4.1 vault.
  */
 
 export const OPS_CONFIG_KINDS = [
@@ -27,7 +23,7 @@ export type OpsConfigStatus = (typeof OPS_CONFIG_STATUSES)[number];
 export const OPS_CONFIG_GROUPS = ["targets", "profiles", "config"] as const;
 export type OpsConfigGroup = (typeof OPS_CONFIG_GROUPS)[number];
 
-export const CONNECTION_TYPES = ["http", "webhook", "email"] as const;
+export const CONNECTION_TYPES = ["http", "webhook", "smtp"] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 export const RUNTIME_LANGUAGES = ["python", "go"] as const;
@@ -37,19 +33,31 @@ export const POLICY_KINDS = [
   "kubernetes",
   "ssh",
   "script",
-  "connection",
+  "http",
   "notification",
+  "approval",
 ] as const;
 export type PolicyKind = (typeof POLICY_KINDS)[number];
 
-/** Secret-free spec. Credential refs are vault ids only. */
+export const CONTENT_CLASSIFICATIONS = [
+  "public",
+  "internal",
+  "confidential",
+] as const;
+
+/** Secret-free spec. Unknown fields are rejected by the API. */
 export type OpsConfigSpec = {
   credentialId?: string;
-  credentialDisplayName?: string;
-  endpointMetadata?: Record<string, string | number | boolean>;
+  endpoint?: {
+    apiServer?: string;
+    tlsServerName?: string;
+    skipTLSVerify?: boolean;
+  };
+  allowedNamespaces?: string[];
   hostname?: string;
   port?: number;
   hostKeyFingerprint?: string;
+  allowedAddresses?: string[];
   policyId?: string;
   parameterSchema?: Record<string, unknown>;
   template?: string;
@@ -57,40 +65,46 @@ export type OpsConfigSpec = {
   language?: RuntimeLanguage | string;
   imageDigest?: string;
   dependencyLockDigest?: string;
-  limits?: Record<string, string | number>;
-  connectionType?: ConnectionType | string;
+  limits?: {
+    cpuMillis?: number;
+    memoryMib?: number;
+    timeoutSeconds?: number;
+    processes?: number;
+  };
+  type?: ConnectionType | string;
   endpointPolicy?: Record<string, unknown>;
   recipientPolicy?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
   contentClassification?: string;
+  subject?: string;
   body?: string;
   schema?: Record<string, unknown>;
   maxBytes?: number;
-  policyKind?: PolicyKind | string;
-  policyJson?: Record<string, unknown>;
+  kind?: PolicyKind | string;
+  policy?: Record<string, unknown>;
 };
 
 export type OpsConfigSummary = {
   id: string;
   kind: OpsConfigKind;
+  slug?: string;
   name: string;
   status: OpsConfigStatus;
-  draftRevision?: number;
+  draftRevision: number;
+  draftDigest?: string;
   latestVersionId?: string;
   latestVersionNumber?: number;
-  latestDigest?: string;
+  latestVersionDigest?: string;
+  credentialId?: string;
+  policyId?: string;
   updatedAt?: string;
 };
 
-export type OpsConfigRecord = OpsConfigSummary & {
-  spec: OpsConfigSpec;
-  draftRevision: number;
-};
+export type OpsConfigRecord = OpsConfigSummary;
 
 export type OpsConfigDraft = {
   resourceId: string;
   kind: OpsConfigKind;
-  name: string;
   revision: number;
   spec: OpsConfigSpec;
   digest?: string;
@@ -100,7 +114,6 @@ export type OpsConfigVersion = {
   id: string;
   resourceId: string;
   kind: OpsConfigKind;
-  name: string;
   versionNumber: number;
   digest: string;
   spec: OpsConfigSpec;
@@ -109,78 +122,28 @@ export type OpsConfigVersion = {
   publishedBy?: string;
 };
 
+/** Server-authorized pin from POST …/select. */
 export type OpsConfigPin = {
-  id: string;
   kind: OpsConfigKind;
-  displayName: string;
+  resourceId: string;
   versionId: string;
   versionNumber: number;
   digest: string;
-};
-
-export type OpsConfigList = {
-  items: OpsConfigSummary[];
-};
-
-export type OpsConfigDetail = {
-  resource?: OpsConfigRecord;
-  draft?: OpsConfigDraft;
-};
-
-export type PublishConfigBody = {
-  revision?: number;
-  note?: string;
-};
-
-export type PublishConfigResult = {
-  resource: OpsConfigRecord;
-  version: OpsConfigVersion;
-};
-
-export type CreateConfigBody = {
-  name: string;
-  spec: OpsConfigSpec;
-};
-
-export type SaveDraftBody = {
-  revision: number;
   name?: string;
-  spec: OpsConfigSpec;
+  slug?: string;
+  spec?: OpsConfigSpec;
 };
 
-export type RestoreDraftBody = {
-  expectedRevision?: number;
+export type OpsConfigCatalogKind = {
+  kind: OpsConfigKind;
+  collection: string;
+  displayName: string;
+  yamlFields: string[];
+  usePermission: string;
 };
 
-export type CompareConfigRef =
-  | { kind: "draft" }
-  | { kind: "version"; versionId?: string; versionNumber?: number };
-
-export type CompareConfigBody = {
-  left: CompareConfigRef;
-  right: CompareConfigRef;
-};
-
-export type CompareConfigChange = {
-  path: string;
-  code?: string;
-  message?: string;
-};
-
-export type CompareConfigResult = {
-  equal: boolean;
-  digestMatch: boolean;
-  leftDigest?: string;
-  rightDigest?: string;
-  changes: CompareConfigChange[];
-};
-
-export type OpsConfigVersionList = {
-  items: OpsConfigVersion[];
-};
-
-export type AuthorizedPinList = {
-  items: OpsConfigPin[];
+export type OpsConfigCatalog = {
+  kinds: OpsConfigCatalogKind[];
 };
 
 export type KindDescriptor = {
@@ -190,4 +153,40 @@ export type KindDescriptor = {
   title: string;
   summary: string;
   yamlRef: string;
+};
+
+export type CreateConfigBody = {
+  name: string;
+  slug?: string;
+  spec: OpsConfigSpec;
+};
+
+export type SaveDraftBody = {
+  revision: number;
+  spec: OpsConfigSpec;
+  name?: string;
+};
+
+export type PublishConfigBody = {
+  revision?: number;
+  note?: string;
+};
+
+export type SelectConfigBody = {
+  versionId?: string;
+};
+
+export type SelectRef = {
+  kind: OpsConfigKind;
+  resourceId: string;
+  versionId?: string;
+};
+
+export type BatchSelectBody = {
+  refs: SelectRef[];
+};
+
+export type PublishConfigResult = {
+  resource: OpsConfigRecord;
+  version: OpsConfigVersion;
 };
