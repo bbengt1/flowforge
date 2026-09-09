@@ -6,7 +6,20 @@ import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { listCredentials } from "@/lib/credential-client";
 import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
+import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
+import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { authorizedClusterTargets } from "@/lib/kubernetes";
+import {
+  KUBERNETES_FIELD_MANAGER,
+  KUBERNETES_NODE_POLICY_NOTES,
+  KUBERNETES_ROLLOUT_STUB_MESSAGE,
+  applyRulesFromCatalog,
+  engineErrorShapes,
+  isKubernetesConfigurableType,
+  isKubernetesRolloutStubType,
+  waitReadyMessage,
+} from "@/lib/kubernetes-node-contract";
+import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { listOpsConfig, selectOpsConfig } from "@/lib/ops-config-client";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -32,6 +45,7 @@ import {
   publishedPinsFromList,
   recommendActions,
   redactedYamlPreview,
+  namespacesForWizardTarget,
   validateWizardDraft,
   wizardConfigFields,
   wizardNeedsTargetStep,
@@ -100,9 +114,12 @@ export function ActionWizard({
   const [pinProblems, setPinProblems] = useState<Partial<Record<OpsConfigKind, ProblemDetails>>>({});
   const [pinStatus, setPinStatus] = useState<Partial<Record<OpsConfigKind, number>>>({});
   const [localErrors, setLocalErrors] = useState<string[]>([]);
+  const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
+    null,
+  );
 
   const entry = entries.find((item) => item.type === draft.type);
-  const fields = wizardConfigFields(entry, draft.type);
+  const fields = wizardConfigFields(entry, draft.type, engineCatalog);
   const targetKinds = opsConfigKindsForAction(draft.type);
   const enabledTargetKinds = (Object.entries(pins) as [OpsConfigKind, OpsConfigPin[]][])
     .filter(([, items]) => items.length > 0)
@@ -120,7 +137,22 @@ export function ActionWizard({
     statusCode: credentialStatus,
     allowedTypes: credentialTypesForAction(draft.type),
   });
-  const validation = validateWizardDraft(draft, catalog, entry);
+  const selectedClusterTarget = (pins.cluster_target ?? []).find(
+    (pin) => pin.resourceId === draft.with.clusterTargetId,
+  );
+  const clusterTargetsLoaded = pinStatus.cluster_target !== undefined;
+  const targetSelectorClosed =
+    isKubernetesConfigurableType(draft.type) &&
+    clusterTargetsLoaded &&
+    ((pins.cluster_target ?? []).length === 0 || Boolean(pinProblems.cluster_target));
+  const wizardContext = {
+    allowedNamespaces: namespacesForWizardTarget(selectedClusterTarget),
+    targetSelectorClosed,
+    engineCatalog,
+  };
+  const applyRules = applyRulesFromCatalog(engineCatalog);
+  const engineErrors = engineErrorShapes(engineCatalog);
+  const validation = validateWizardDraft(draft, catalog, entry, wizardContext);
   const policy = wizardPolicyPreview({ entry, evaluation });
   const preview = redactedYamlPreview(draft, "new-action");
 
@@ -132,6 +164,12 @@ export function ActionWizard({
       return;
     }
     let cancelled = false;
+    void getKubernetesCatalog(identity).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setEngineCatalog(result.ok ? result.catalog : null);
+    });
     void listCredentials(identity).then((result) => {
       if (cancelled) {
         return;
@@ -217,7 +255,7 @@ export function ActionWizard({
   }
 
   function submit() {
-    const result = applyWizardToYaml(yaml, draft, catalog, entry);
+    const result = applyWizardToYaml(yaml, draft, catalog, entry, wizardContext);
     setLocalErrors(result.errors.length ? result.errors : validation.errors);
     if (result.errors.length > 0 || !result.node.id) {
       return;
@@ -304,6 +342,7 @@ export function ActionWizard({
               pinProblems={pinProblems}
               pinStatus={pinStatus}
               credentialOptions={credentialOptions}
+              hideCredentialSelect={isKubernetesConfigurableType(draft.type)}
               onPin={choosePin}
               onCredential={(id) => {
                 const next = credentialOptions.options.find((item) => item.id === id) ?? null;
@@ -315,6 +354,10 @@ export function ActionWizard({
             <ConfigureStep
               draft={draft}
               fields={fields}
+              allowedNamespaces={wizardContext.allowedNamespaces}
+              applyRules={applyRules}
+              engineErrors={engineErrors}
+              waitReadyCopy={waitReadyMessage(engineCatalog)}
               onChange={setDraft}
             />
           ) : null}
@@ -335,6 +378,8 @@ export function ActionWizard({
               localErrors={localErrors}
               policy={policy}
               preview={preview}
+              applyRules={applyRules}
+              engineErrors={engineErrors}
               evaluation={evaluation ?? null}
               evaluationPending={Boolean(evaluationPending)}
               evaluationProblem={evaluationProblem ?? null}
@@ -485,6 +530,9 @@ function TypeCard({
       >
         <span className="font-medium">{entry.name}</span>
         <span className="ml-2 font-mono text-xs text-zinc-600">{entry.type}</span>
+        {entry.source === "contract-fallback" ? (
+          <span className="ml-2 text-xs text-zinc-500">contract-fallback</span>
+        ) : null}
         {reason ? <span className="mt-1 block text-xs text-zinc-600">{reason}</span> : null}
       </button>
     </li>
@@ -498,6 +546,7 @@ function TargetStep({
   pinProblems,
   pinStatus,
   credentialOptions,
+  hideCredentialSelect,
   onPin,
   onCredential,
 }: {
@@ -507,6 +556,7 @@ function TargetStep({
   pinProblems: Partial<Record<OpsConfigKind, ProblemDetails>>;
   pinStatus: Partial<Record<OpsConfigKind, number>>;
   credentialOptions: ReturnType<typeof authorizedCredentialOptions>;
+  hideCredentialSelect?: boolean;
   onPin: (kind: OpsConfigKind, pin: OpsConfigPin | null) => void;
   onCredential: (id: string) => void;
 }) {
@@ -551,7 +601,11 @@ function TargetStep({
           <AuthorizedResourceSelect
             key={kind}
             kind={kind}
-            label={kind.replaceAll("_", " ")}
+            label={
+              kind === "cluster_target"
+                ? "Published kubernetes cluster target"
+                : kind.replaceAll("_", " ")
+            }
             value={selected?.versionId ?? ""}
             pins={pins[kind] ?? []}
             problem={pinProblems[kind] ?? null}
@@ -560,7 +614,14 @@ function TargetStep({
           />
         );
       })}
-      {credentialTypesForAction(draft.type).length > 0 ? (
+      {isKubernetesConfigurableType(draft.type) ? (
+        <p className="text-xs text-zinc-500">
+          Display name + id only. Workspace <code className="font-mono">type=kubernetes</code>{" "}
+          targets; the target binds a vault credential. The UI never receives kubeconfig
+          or plaintext.
+        </p>
+      ) : null}
+      {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
         <label className="block text-sm">
           <span className="font-medium">Credential (display name)</span>
           <select
@@ -600,13 +661,31 @@ function TargetStep({
 function ConfigureStep({
   draft,
   fields,
+  allowedNamespaces,
+  applyRules,
+  engineErrors,
+  waitReadyCopy,
   onChange,
 }: {
   draft: ActionWizardDraft;
   fields: ReturnType<typeof wizardConfigFields>;
+  allowedNamespaces: readonly string[];
+  applyRules: ReturnType<typeof applyRulesFromCatalog>;
+  engineErrors: ReturnType<typeof engineErrorShapes>;
+  waitReadyCopy: string;
   onChange: (draft: ActionWizardDraft) => void;
 }) {
   const inferred = fields.some((field) => field.inferred);
+  const kubernetes = isKubernetesConfigurableType(draft.type);
+  const visible = fields.filter((field) => !field.selectorKind);
+  const primary = visible.filter((field) => !field.advanced);
+  const advanced = visible.filter((field) => field.advanced);
+  function patchWith(name: string, value: unknown) {
+    onChange({
+      ...draft,
+      with: { ...draft.with, [name]: value },
+    });
+  }
   return (
     <div className="space-y-4">
       <label className="block text-sm">
@@ -617,28 +696,89 @@ function ConfigureStep({
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
       </label>
-      {inferred ? (
+      {inferred && !kubernetes ? (
         <p className="text-xs text-zinc-500">
           Configure fields are inferred from phase/ports and the YAML schema
           until catalog <code className="font-mono">allowedWith</code> is
           richer (jonny follow-up).
         </p>
       ) : null}
-      {fields
-        .filter((field) => !field.selectorKind)
-        .map((field) => (
-          <ConfigField
-            key={field.name}
-            field={field}
-            value={draft.with[field.name]}
-            onChange={(value) =>
-              onChange({
-                ...draft,
-                with: { ...draft.with, [field.name]: value },
-              })
-            }
-          />
-        ))}
+      {inferred && kubernetes ? (
+        <p className="text-xs text-zinc-500">
+          Kubernetes <code className="font-mono">with</code> fields prefer{" "}
+          <code className="font-mono">GET /kubernetes/catalog</code>{" "}
+          <code className="font-mono">nodes[]</code> from #78, then{" "}
+          <code className="font-mono">GET /workflows/catalog</code>, then the
+          marked contract fallback.
+        </p>
+      ) : null}
+      {isKubernetesRolloutStubType(draft.type) ? (
+        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+          {KUBERNETES_ROLLOUT_STUB_MESSAGE}
+        </p>
+      ) : null}
+      {kubernetes ? (
+        <details className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-teal-950">
+            Policy constraints (fail closed)
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-teal-950">
+            {KUBERNETES_NODE_POLICY_NOTES.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-teal-950">
+            Apply uses FieldManager={applyRules.fieldManager}, Force=
+            {String(applyRules.force)}, serverDryRunAlways=
+            {String(applyRules.serverDryRunAlways)}. wait=ready →{" "}
+            {applyRules.waitReady}.
+          </p>
+          {engineErrors.length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-teal-900">
+              {engineErrors.slice(0, 8).map((item) => (
+                <li key={item.code}>
+                  <code className="font-mono">{item.code}</code> ({item.status}):{" "}
+                  {item.meaning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="mt-3">
+            <KubernetesLeastPrivilegeNotes />
+          </div>
+        </details>
+      ) : null}
+      {kubernetes && draft.with.wait === "ready" ? (
+        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+          {waitReadyCopy}
+        </p>
+      ) : null}
+      {primary.map((field) => (
+        <ConfigField
+          key={field.name}
+          field={field}
+          value={draft.with[field.name]}
+          allowedNamespaces={field.name === "namespace" ? allowedNamespaces : undefined}
+          onChange={(value) => patchWith(field.name, value)}
+        />
+      ))}
+      {advanced.length > 0 ? (
+        <details className="rounded-xl border border-zinc-200 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Advanced
+          </summary>
+          <div className="mt-3 space-y-4">
+            {advanced.map((field) => (
+              <ConfigField
+                key={field.name}
+                field={field}
+                value={draft.with[field.name]}
+                onChange={(value) => patchWith(field.name, value)}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -646,17 +786,64 @@ function ConfigureStep({
 function ConfigField({
   field,
   value,
+  allowedNamespaces,
   onChange,
 }: {
   field: ReturnType<typeof wizardConfigFields>[number];
   value: unknown;
+  allowedNamespaces?: readonly string[];
   onChange: (value: unknown) => void;
 }) {
-  const text = value == null ? "" : String(value);
+  const text =
+    value == null || value === ""
+      ? field.readOnly
+        ? String(field.defaultValue ?? KUBERNETES_FIELD_MANAGER)
+        : ""
+      : String(value);
+  const label = field.label || field.name;
+  if (field.readOnly) {
+    return (
+      <label className="block text-sm">
+        <span className="font-medium">{label}</span>
+        <input
+          value={text}
+          readOnly
+          disabled
+          className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm"
+        />
+        <span className="mt-1 block text-xs text-zinc-500">
+          {field.description ||
+            "Service-owned. FieldManager is flowforge and Force=false."}
+        </span>
+      </label>
+    );
+  }
+  if (field.name === "namespace" && allowedNamespaces && allowedNamespaces.length > 0) {
+    return (
+      <label className="block text-sm">
+        <span className="font-medium">{label}</span>
+        <select
+          value={text}
+          onChange={(event) => onChange(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+        >
+          <option value="">Select an allowed namespace</option>
+          {allowedNamespaces.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-zinc-500">
+          Allowlisted on the selected cluster target. Empty allowlists fail closed.
+        </span>
+      </label>
+    );
+  }
   if (field.control === "enum") {
     return (
       <label className="block text-sm">
-        <span className="font-medium">{field.name}</span>
+        <span className="font-medium">{label}</span>
         <select
           value={text}
           onChange={(event) => onChange(event.target.value)}
@@ -668,13 +855,16 @@ function ConfigField({
             </option>
           ))}
         </select>
+        {field.description ? (
+          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
+        ) : null}
       </label>
     );
   }
   if (field.control === "textarea" || field.control === "object-lines") {
     return (
       <label className="block text-sm">
-        <span className="font-medium">{field.name}</span>
+        <span className="font-medium">{label}</span>
         <textarea
           value={
             field.control === "object-lines" && value && typeof value === "object"
@@ -698,7 +888,7 @@ function ConfigField({
             }
             onChange(event.target.value);
           }}
-          rows={6}
+          rows={field.name === "manifests" ? 12 : 6}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
         />
         {field.description ? (
@@ -710,19 +900,22 @@ function ConfigField({
   if (field.control === "number") {
     return (
       <label className="block text-sm">
-        <span className="font-medium">{field.name}</span>
+        <span className="font-medium">{label}</span>
         <input
           type="number"
           value={text}
           onChange={(event) => onChange(Number(event.target.value))}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
+        {field.description ? (
+          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
+        ) : null}
       </label>
     );
   }
   return (
     <label className="block text-sm">
-      <span className="font-medium">{field.name}</span>
+      <span className="font-medium">{label}</span>
       <input
         value={text}
         onChange={(event) => onChange(event.target.value)}
@@ -814,6 +1007,8 @@ function ReviewStep({
   evaluation,
   evaluationPending,
   evaluationProblem,
+  applyRules,
+  engineErrors,
 }: {
   draft: ActionWizardDraft;
   validation: ReturnType<typeof validateWizardDraft>;
@@ -823,6 +1018,8 @@ function ReviewStep({
   evaluation: PolicyEvaluation | null;
   evaluationPending: boolean;
   evaluationProblem: ProblemDetails | null;
+  applyRules: ReturnType<typeof applyRulesFromCatalog>;
+  engineErrors: ReturnType<typeof engineErrorShapes>;
 }) {
   const errors = [...validation.errors, ...localErrors];
   return (
@@ -852,6 +1049,15 @@ function ReviewStep({
             Policy metadata inferred from the catalog stub. Richer{" "}
             <code className="font-mono">allowedWith</code> / policy is a jonny
             follow-up.
+          </p>
+        ) : null}
+        {draft.type.startsWith("kubernetes.") ? (
+          <p className="mt-2 text-xs text-zinc-600">
+            SSA FieldManager={applyRules.fieldManager} Force={String(applyRules.force)}.
+            Server dry-run always runs before persist. wait=ready → {applyRules.waitReady}.
+            {engineErrors.some((item) => item.code === "ownership-conflict")
+              ? " Ownership conflicts return 409; force is never applied."
+              : ""}
           </p>
         ) : null}
       </section>

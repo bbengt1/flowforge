@@ -87,6 +87,47 @@ export type KubernetesEvaluationKey = {
   requiredForPublish?: boolean;
 };
 
+/** E7.2 node contract from GET /kubernetes/catalog `nodes[]` (#78). */
+export type KubernetesEngineNodeContract = {
+  type: string;
+  verb: string;
+  title: string;
+  description: string;
+  permissions: string[];
+  requiredWith: string[];
+  allowedWith: {
+    name: string;
+    kind: string;
+    required?: boolean;
+    enum?: string[];
+    description?: string;
+  }[];
+  outputs: string[];
+  sideEffects: boolean;
+  retrySafe: boolean;
+  idempotent: boolean;
+  fieldManager?: string;
+  force?: boolean;
+  serverDryRunAlways?: boolean;
+  waitReady?: string;
+};
+
+/** E7.2 engine error map from GET /kubernetes/catalog `errors[]` (#78). */
+export type KubernetesEngineErrorShape = {
+  code: string;
+  status: number;
+  meaning: string;
+};
+
+/** Fixed SSA rules from GET /kubernetes/catalog `apply` (#78). */
+export type KubernetesEngineApplyRules = {
+  fieldManager: string;
+  force: boolean;
+  serverDryRunAlways: boolean;
+  clientDryRunAddsLocalValidationOnly: boolean;
+  waitReady: string;
+};
+
 export type KubernetesEngineCatalog = {
   credentialType: string;
   credentialSecretField: string;
@@ -110,4 +151,7 @@ export type KubernetesEngineCatalog = {
     denyAllowsMissingAllowlist: boolean;
   };
   clusterRoles: boolean;
+  nodes: KubernetesEngineNodeContract[];
+  errors: KubernetesEngineErrorShape[];
+  apply: KubernetesEngineApplyRules;
 };

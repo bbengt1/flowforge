@@ -185,6 +185,68 @@ describe("kubernetes policy parse / write", () => {
     assert.equal(catalog?.serviceAccount.defaultName, "flowforge-runner");
     assert.equal(catalog?.publishRules.emptyAllowlistsRejected, true);
     assert.equal(catalog?.evaluationKeys[0]?.requiredForPublish, true);
+    assert.deepEqual(catalog?.nodes, []);
+    assert.deepEqual(catalog?.errors, []);
+    assert.equal(catalog?.apply.fieldManager, "flowforge");
+    assert.equal(catalog?.apply.force, false);
+    assert.equal(catalog?.apply.serverDryRunAlways, true);
+    assert.equal(catalog?.apply.waitReady, "deferred-e7.3");
+  });
+
+  it("parses GET /kubernetes/catalog nodes[] / errors[] / apply from #78", () => {
+    const catalog = parseKubernetesEngineCatalog({
+      credentialType: "kubernetes",
+      allowedKinds: ["ConfigMap", "Service"],
+      allowedVerbs: ["get", "list", "apply"],
+      nodes: [
+        {
+          type: "kubernetes.apply",
+          verb: "apply",
+          title: "Apply manifests",
+          permissions: ["workflow.execute", "kubernetes.apply", "clusterTarget.use"],
+          requiredWith: ["clusterTargetId", "namespace"],
+          allowedWith: [
+            { name: "clusterTargetId", kind: "uuid", required: true },
+            { name: "manifests", kind: "string" },
+          ],
+          outputs: ["result"],
+          sideEffects: true,
+          fieldManager: "flowforge",
+          force: false,
+          serverDryRunAlways: true,
+          waitReady: "deferred-e7.3",
+        },
+        {
+          type: "kubernetes.get",
+          verb: "get",
+          requiredWith: ["clusterTargetId", "namespace", "kind", "name"],
+        },
+        {
+          type: "kubernetes.list",
+          verb: "list",
+          requiredWith: ["clusterTargetId", "namespace", "kind"],
+        },
+      ],
+      errors: [
+        { code: "ownership-conflict", status: 409, meaning: "Force is never applied." },
+      ],
+      apply: {
+        fieldManager: "flowforge",
+        force: false,
+        serverDryRunAlways: true,
+        clientDryRunAddsLocalValidationOnly: true,
+        waitReady: "deferred-e7.3",
+      },
+    });
+    assert.ok(catalog);
+    assert.equal(catalog?.nodes.length, 3);
+    assert.equal(catalog?.nodes[0]?.type, "kubernetes.apply");
+    assert.equal(catalog?.nodes[0]?.verb, "apply");
+    assert.equal(catalog?.errors[0]?.code, "ownership-conflict");
+    assert.equal(catalog?.errors[0]?.status, 409);
+    assert.equal(catalog?.apply.fieldManager, "flowforge");
+    assert.equal(catalog?.apply.force, false);
+    assert.equal(catalog?.apply.waitReady, "deferred-e7.3");
   });
 });
 

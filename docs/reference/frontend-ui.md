@@ -139,7 +139,7 @@ E6.3 (Chloe) adds the **Add action** wizard as the primary canvas authoring path
 - **Optimistic feedback:** pending / success / error on Add. Library **Add** opens the wizard; drag-drop still inserts defaults (E6.2).
 - **Vault:** `/credentials` create / rotate / test clear secret fields from UI memory after submit and on unmount. Masked, paste-safe inputs never write `localStorage` / URL / analytics. Unexpected secret keys on responses stay stripped.
 - **Policy preview:** wizard review and pre-run both render evaluate + approval requirements. E4.3 decide (`POST /approvals/{id}/decide`) is unchanged.
-- **Catalog gap (jonny):** SSH / HTTP / scripts still have E3.1 stubs (`ports` + `requiredWith`). E7.2 fills `allowedWith` / `policy` / `bounds` / `redaction` on `kubernetes.apply`, `kubernetes.get`, and `kubernetes.list` (`GET /workflows/catalog` and `GET /kubernetes/catalog` `nodes[]`). The wizard infers configure fields from family + YAML schema when `allowedWith` is empty. No extra API routes were added.
+- **Catalog gap (jonny):** SSH / HTTP / scripts still have E3.1 stubs (`ports` + `requiredWith`). E7.2 (#78) fills `allowedWith` / `policy` / `bounds` / `redaction` on `kubernetes.apply`, `kubernetes.get`, and `kubernetes.list` (`GET /workflows/catalog` and `GET /kubernetes/catalog` `nodes[]` / `errors[]` / `apply`). The wizard infers configure fields from family + YAML schema when `allowedWith` is empty. No extra API routes were added.
 
 Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.tsx`.
 
@@ -169,6 +169,16 @@ E7.1 (Chloe) extends the E4.2 `/config` cluster-target and policy surfaces for e
 - **Proxies:** same-origin `/api/control-plane/{cluster-targets,policies,kubernetes/catalog,ops-config/{catalog,select}}/…`. `retargetKubernetesApiPath` matches the #74 collections. Do not invent routes.
 - **Operator routes:** existing `/config/cluster-targets` and `/config/policies` — not a duplicate Targets app.
 - **Typed client:** `apps/web/src/lib/kubernetes-client.ts`. Helpers: `kubernetes.ts`.
+
+## E7.2 Kubernetes read/apply node config (Chloe UI)
+
+E7.2 (Chloe) adds placeable `kubernetes.apply` / `kubernetes.get` / `kubernetes.list` configuration to the E6.2 library and E6.3 action wizard. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/kubernetes-node-contract.ts`, wired to jonny's **#78** map on `main` (`e72-#78`). Prefer `GET /workflows/catalog` plus `GET /kubernetes/catalog` `nodes[]` / `errors[]` / `apply` when listed; otherwise use marked `contract-fallback` entries (same pattern as E3.3/E6.3). Relates to #71 / Part of #69 — keep #71 open (jonny owns the engine). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Library:** apply / get / list are placeable when enabled in the catalog or via fallback. Overlay engine `nodes[]` titles / `allowedWith` when `GET /kubernetes/catalog` is available. `kubernetes.rolloutStatus` is an E7.3 stub only if the catalog already lists it — no full rollout UX.
+- **Wizard:** published workspace `type=kubernetes` cluster targets (display name + id, `POST …/select`). Namespace is required and constrained to the target allowlist when the pin reports one. Apply uses a multi-document YAML editor. get/list choose an MVP kind. Shared `with`: `clusterTargetId`, `namespace`, optional `dryRun` (`client`|`server` — client never replaces the mandatory server-side dry-run on apply), `wait` (`none`|`ready`; ready → `observation=deferred-e7.3`, not a rollout watch), `timeoutSeconds` (1–3600, default 60), read-only `fieldManager=flowforge`, optional `policyId`. Extra: apply → `manifests`; get → `kind`+`name`; list → `kind`.
+- **Apply rules:** surface catalog `apply` (`FieldManager=flowforge`, `Force=false`, server dry-run always) and engine `errors[]` (ownership conflict is 409). No force toggle.
+- **Fail closed:** no kubeconfig paste, no Secret `data` / `stringData` / `binaryData`. Cluster-scoped resources, namespaces, CRDs, RBAC, admission webhooks, privileged / hostPath / host namespaces, unsafe Ingress, and `:latest` tags are denied in local manifest checks. Target selectors fail closed on 403 / empty lists.
+- **Unchanged:** The UI never receives or stores kubeconfigs. E7.1 `/config` cluster-target and policy screens stay the source of allowlists. Rollout watch stays E7.3.
 
 ## Foundation operator shell
 

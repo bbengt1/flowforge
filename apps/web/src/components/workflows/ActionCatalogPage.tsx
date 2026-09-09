@@ -9,6 +9,8 @@ import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/li
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import { getKubernetesCatalog } from "@/lib/kubernetes-client";
+import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
 import { fetchWorkflowCatalog } from "@/lib/workflow-client";
 import type { WorkflowCatalog } from "@/lib/workflow-types";
@@ -31,6 +33,9 @@ export function ActionCatalogPage() {
     () => false,
   );
   const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
+  const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
+    null,
+  );
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -41,8 +46,12 @@ export function ActionCatalogPage() {
   async function loadCatalog() {
     setPending(true);
     setProblem(null);
-    const result = await fetchWorkflowCatalog(identity);
+    const [result, engine] = await Promise.all([
+      fetchWorkflowCatalog(identity),
+      getKubernetesCatalog(identity).catch(() => null),
+    ]);
     setPending(false);
+    setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -78,7 +87,7 @@ export function ActionCatalogPage() {
       {problem ? <ProblemBanner problem={problem} /> : null}
       <ActionLibrary
         catalog={catalog}
-        entries={adaptActionLibrary(catalog)}
+        entries={adaptActionLibrary(catalog, engineCatalog)}
         query={query}
         pending={pending}
         onQuery={setQuery}
