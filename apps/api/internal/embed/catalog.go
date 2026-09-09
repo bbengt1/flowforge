@@ -63,6 +63,7 @@ type CatalogRules struct {
 	AsymmetricSigned             bool `json:"asymmetricSigned"`
 	StandaloneDeepLinksOK        bool `json:"standaloneDeepLinksRemainValid"`
 	EmbedSessionsCannotBootstrap bool `json:"embedSessionsCannotBootstrap"`
+	PartitionedEmbedCookies      bool `json:"partitionedEmbedCookies"`
 }
 
 // NewCatalog builds the E11.1 + E11.2 contract document.
@@ -82,7 +83,7 @@ func NewCatalog() Catalog {
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then validate iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities/workspace, refuse expired/retired overlap (overlapUntil), atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then validate iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities/workspace, refuse expired/retired overlap (overlapUntil), atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403)."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap, or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the durable active env key. Verify refreshes overlap and refuses expired overlapUntil. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
@@ -97,6 +98,7 @@ func NewCatalog() Catalog {
 			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed; expired overlapUntil fails closed; overlap register of a non-prior-active key fails closed; workspace.administer cannot rotate; production missing EMBED_SIGNING_KEY is boot-fail", Note: "Durable active signing key (EMBED_SIGNING_KEY) plus explicit overlap verification keys (env + rotate API + store). Verify refreshes overlap from the store and refuses expired/retired keys. Rotate API accepts only the previous active public key and requires platform.administer."},
 			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed; embed sessions cannot bootstrap tenants or sibling workbenches", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit. POST /tenants and POST /workspaces from an embed session are 403 even if the principal is a platform-admin."},
 			{ID: "portal.adapter", Status: "ready", Fail: "empty or hostile issuer allowlist, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST is 403. FlowForge never shares its database or executor."},
+			{ID: "chips.embed-cookies", Status: "ready", Fail: "cross-site iframe without the partitioned cookie is 401 (cookie not sent) or 403 (CSRF cookie missing); SameSite=None without Partitioned is not used; top-level cookies stay Lax/Strict", Note: "Embed ff_session/ff_csrf after POST /embed/exchange are SameSite=None; Secure; Partitioned (CHIPS). Secure is never dropped. Standalone POST /session stays SameSite=Lax / Strict. HTTPS / a secure context is required. ADV-013 covers a full cross-origin host check."},
 		},
 		Rules: CatalogRules{
 			AssertionNotInURL:            true,
@@ -106,6 +108,7 @@ func NewCatalog() Catalog {
 			AsymmetricSigned:             true,
 			StandaloneDeepLinksOK:        true,
 			EmbedSessionsCannotBootstrap: true,
+			PartitionedEmbedCookies:      true,
 		},
 	}
 }

@@ -46,11 +46,22 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   queue payload, realtime subscription, artifact URL, and audit event carries the
   server-derived workspace ID. Database RLS is a backstop, not the only check.
 - Browser sessions use `Secure`, `HttpOnly`, and appropriately scoped `SameSite`
-  cookies (`ff_session` is `HttpOnly` + `SameSite=Lax`; `ff_csrf` is readable +
-  `SameSite=Strict`; both `Path=/api/v1`). State-changing browser requests
-  require CSRF protection (`X-CSRF-Token` paired with `ff_csrf` and the
-  server-side hash). Bearer tokens are never accepted from a URL or persisted
-  in browser local storage. Idle and absolute expiry fail closed.
+  cookies. Top-level / non-embed sessions keep the safer default:
+  `ff_session` is `HttpOnly` + `SameSite=Lax`; `ff_csrf` is readable +
+  `SameSite=Strict`; both `Path=/api/v1` and `Secure` on HTTPS. Embed
+  sessions issued by `POST /embed/exchange` (and later refresh of that
+  bound session) use **CHIPS** so they work in a cross-site iframe
+  without weakening first-party cookies: `SameSite=None; Secure;
+  Partitioned` on both `ff_session` and `ff_csrf`. `Secure` is never
+  dropped. `SameSite=None` is never used without `Partitioned`. Do not
+  fall back to unpartitioned `SameSite=None` or to `Lax`/`None` without
+  `Secure`. Browsers must be a secure context (HTTPS) and support
+  partitioned cookies; if the cookie is not stored or not sent, later
+  calls fail closed (`401` unauthenticated, or `403` CSRF on mutations).
+  State-changing browser requests require CSRF protection
+  (`X-CSRF-Token` paired with `ff_csrf` and the server-side hash).
+  Bearer tokens are never accepted from a URL or persisted in browser
+  local storage. Idle and absolute expiry fail closed.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
   audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`).
   Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /

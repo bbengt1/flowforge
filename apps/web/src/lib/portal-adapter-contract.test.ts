@@ -18,6 +18,7 @@ import {
   PORTAL_ENTRY_PATH,
   PORTAL_EPIC,
   PORTAL_EXCHANGE_PATH,
+  PORTAL_CHIPS_HELP,
   PORTAL_HELP,
   PORTAL_HOST_WIRING,
   PORTAL_MINT_PATH,
@@ -64,6 +65,7 @@ describe("portal adapter contract", () => {
     assert.equal(PORTAL_BOUNDARY.usesEmbedMint, true);
     assert.equal(PORTAL_BOUNDARY.usesEmbedExchange, true);
     assert.match(PORTAL_HELP, /not FlowForge authorization/);
+    assert.match(PORTAL_CHIPS_HELP, /Partitioned/);
     assert.match(PORTAL_NO_BOOTSTRAP_MESSAGE, /cannot create tenants/);
   });
 
@@ -92,6 +94,10 @@ describe("portal adapter contract", () => {
     assert.equal(
       PORTAL_HOST_WIRING.find((s) => s.id === "exchange")?.path,
       "/api/v1/embed/exchange",
+    );
+    assert.match(
+      PORTAL_HOST_WIRING.find((s) => s.id === "exchange")?.do ?? "",
+      /Partitioned/,
     );
     assert.equal(PORTAL_ADAPTER_PATH, "/portal/adapter");
     const body = portalMintBody({

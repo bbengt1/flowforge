@@ -316,7 +316,7 @@ The Go API now issues cookie sessions. Chloe owns the client UX; this is the con
 
 After create/refresh, send `X-CSRF-Token: <csrf_token>` on every `POST`/`PUT`/`PATCH`/`DELETE` to `/api/v1/*`. `GET`/`HEAD` do not need it. Idle expiry is 30 minutes (refresh before then); absolute expiry is 12 hours. Stale session → `401` `unauthenticated`. Hostile `Origin` → `403` with no CORS grant. Viewer session + admin identity headers → `403` (privilege escalation fail-closed).
 
-Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Secure` on HTTPS. `ff_csrf` is readable + `SameSite=Strict` + same path/Secure. Show expiry UX from `session.idle_expires_at` / `session.absolute_expires_at`.
+Cookie flags: top-level `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Secure` on HTTPS. Top-level `ff_csrf` is readable + `SameSite=Strict` + same path/Secure. Embed sessions after `POST /embed/exchange` use CHIPS (`SameSite=None; Secure; Partitioned`) on both cookies so a cross-site iframe can keep the session without weakening first-party SameSite. Show expiry UX from `session.idle_expires_at` / `session.absolute_expires_at`.
 
 ## E2.2 isolation exercise
 
@@ -337,7 +337,7 @@ Cookie flags: `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api/v1` + `Se
 - **Logout:** `POST /api/v1/session/logout` with CSRF (not `DELETE /session`).
 - **Audit:** `GET /api/v1/session/audit-events`.
 - **CSRF:** `X-CSRF-Token` on POST/PUT/PATCH/DELETE when `ff_session` is present. Header-only callers skip CSRF. Missing CSRF with a session cookie fails closed at the Next proxy before the Go API is called.
-- **Cookies:** `ff_session` HttpOnly `SameSite=Lax`; `ff_csrf` readable `SameSite=Strict`; both `Path=/api/v1`. Same-origin rewrite maps `/api/v1/*` → `/api/control-plane/*` so those cookies are sent. Domain is stripped; `Secure` is omitted on localhost HTTP.
+- **Cookies:** top-level `ff_session` HttpOnly `SameSite=Lax`; top-level `ff_csrf` readable `SameSite=Strict`; both `Path=/api/v1`. Embed exchange cookies are CHIPS (`SameSite=None; Secure; Partitioned`). Same-origin rewrite maps `/api/v1/*` → `/api/control-plane/*` so those cookies are sent. Domain is stripped; `Secure` is omitted on localhost HTTP for first-party cookies only — CHIPS cookies keep `Secure` + `Partitioned`.
 - **Headers:** when a cookie session is active, issuer/subject headers are not sent (conflicting headers are `403` on the API).
 - **Contract adapter:** `apps/web/src/lib/session-contract.ts`.
 

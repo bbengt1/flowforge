@@ -189,6 +189,63 @@ func TestEmbedMintHappyPath(t *testing.T) {
 	}
 }
 
+func TestEmbedExchangeIssuesCHIPSCookies(t *testing.T) {
+	env := newEmbedEnv(t)
+	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if mintedRec.Code != http.StatusCreated {
+		t.Fatalf("mint: %d %s", mintedRec.Code, mintedRec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(mintedRec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`,"sdk":"embed.v1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("exchange: %d %s", rec.Code, rec.Body.String())
+	}
+	assertRawCHIPSSetCookie(t, rec)
+
+	var token, csrf string
+	for _, c := range rec.Result().Cookies() {
+		switch c.Name {
+		case session.CookieName:
+			token = c.Value
+		case session.CSRFCookieName:
+			csrf = c.Value
+		}
+	}
+	if token == "" || csrf == "" {
+		t.Fatal("missing session pair")
+	}
+
+	refresh := httptest.NewRecorder()
+	req = sessionAPIRequest(http.MethodPost, "/api/v1/session/refresh", "", token, csrf)
+	env.h.ServeHTTP(refresh, req)
+	if refresh.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", refresh.Code, refresh.Body.String())
+	}
+	assertRawCHIPSSetCookie(t, refresh)
+
+	logout := httptest.NewRecorder()
+	req = sessionAPIRequest(http.MethodPost, "/api/v1/session/logout", "", token, csrf)
+	env.h.ServeHTTP(logout, req)
+	if logout.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d %s", logout.Code, logout.Body.String())
+	}
+	joined := strings.ToLower(strings.Join(logout.Header().Values("Set-Cookie"), "\n"))
+	if !strings.Contains(joined, "partitioned") || !strings.Contains(joined, "samesite=none") {
+		t.Fatalf("logout must expire the CHIPS pair: %v", logout.Header().Values("Set-Cookie"))
+	}
+	if !strings.Contains(joined, "samesite=lax") {
+		t.Fatalf("logout must also expire the first-party pair: %v", logout.Header().Values("Set-Cookie"))
+	}
+}
+
 func TestEmbedMintMissingClaims(t *testing.T) {
 	env := newEmbedEnv(t)
 	rec := env.mint(t, `{}`)

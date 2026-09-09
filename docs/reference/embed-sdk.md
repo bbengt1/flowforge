@@ -55,16 +55,23 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    (same-origin `/api/v1/embed/exchange` or `/api/control-plane/embed/exchange`).
    **Never** put the assertion in a URL, `localStorage`, or logs.
 4. Response sets `ff_session` / `ff_csrf` and returns workspace + capabilities.
-   The session record stores `(tenant_id, workbench_key, workspace_id, capabilities)`
-   as `session.embed`. That bind is the only workspace the session may use.
+   Those cookies are **CHIPS**: `SameSite=None; Secure; Partitioned`. That is
+   the only SameSite change for embed — top-level `POST /session` stays
+   `Lax` / `Strict` and is not Partitioned. `Secure` is never dropped;
+   `SameSite=None` is never used without `Partitioned`. The session record
+   stores `(tenant_id, workbench_key, workspace_id, capabilities)` as
+   `session.embed`. That bind is the only workspace the session may use.
    The session **cannot** `POST /tenants` or `POST /workspaces` (sibling
    workbenches included), even if the principal is a platform-admin.
    Navigate to the embed mount (`/embed/v1/…`).
 5. Subsequent API calls use the cookie session + `X-CSRF-Token` like standalone.
-   The UI **must** send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`
+   Fetch must use `credentials: "include"` (already the same-origin proxy
+   default). The UI **must** send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`
    from the **exchanged** workspace / `session.embed`, never from host query.
    A disagreeing host tenant/workbench is `403`. Host tenant is never
-   authorization.
+   authorization. If the partitioned cookie is not stored or not sent
+   (HTTP, no Partitioned support, blocked third-party storage), later
+   calls are `401` or CSRF `403` — do not weaken SameSite as a workaround.
 
 E11.3 CP Ops Portal host (`/portal/workflows`) follows this flow: map
 roles from `GET /api/v1/portal/adapter`, mint via
@@ -85,6 +92,8 @@ Portal entry RBAC is not FlowForge authorization. See
 | Capabilities cap | `session.embed.capabilities` is the minted set. Membership cannot escalate past it. Hide UI actions the session cannot perform. `platform.administer` is never in this set. |
 | No bootstrap | Do not offer create-tenant / create-workspace from embed chrome. Those routes return `403` for embed sessions. Standalone platform-admin bootstrap is unchanged. |
 | GET `/session` | When `session.embed` is present, treat it as the source of truth over host route state. |
+| CHIPS cookies | After exchange, `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Keep `credentials: "include"`. The Next rewrite must preserve `Partitioned` and must not drop `Secure` on that pair. Storage Access API is not required and must not request unpartitioned cookies. |
+| Cookie not sent | Missing partitioned cookie → `401` on `GET /session` and later reads; missing `ff_csrf` on a mutation → `403`. Treat as HTTPS / browser Partitioned / frame-ancestor misconfig. Manual two-host iframe check is ADV-013 — do not expand that epic here. |
 | Configuration / jobs / history | Lookups, job tickets, caches, realtime, history, and audit are scoped by the server-derived workspace that matches that pair. Do not send `X-FlowForge-Workspace-ID` as the lookup key. |
 
 ## Stable routes / deep links
@@ -129,7 +138,7 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 | `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then validate + atomic `jti` consume + bind tenancy onto `ff_session`. Bound sessions cannot create tenants or workspaces. |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then validate + atomic `jti` consume + bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. |
 | `POST` | `/api/v1/embed/keys/rotate` | session or identity headers + `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Register the previous active public JWK as overlap, or retire it. `workspace.administer` is `403`. |
 
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,capabilities,ttlSeconds?}`.
@@ -199,3 +208,4 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | `key.rotation` | ready | Durable active key + overlap verification. Unknown / expired `overlapUntil` `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` is boot-fail. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
+| `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Full two-host iframe check is ADV-013. |

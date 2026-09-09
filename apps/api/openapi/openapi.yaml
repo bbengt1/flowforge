@@ -454,10 +454,15 @@ paths:
         `nbf`/`exp`, `jti`, signature (active + live overlap kids),
         `tenant_id` + `workbench_key`, optional workspace binding, and
         capabilities. Atomically consumes `jti` with TTL (replay is 409).
-        Issues `ff_session` / `ff_csrf` bound to that pair. The bound
-        session cannot `POST /tenants` or `POST /workspaces`. The assertion
-        must be POSTed in the JSON body — never placed in a URL.
-        No CSRF (no session yet).
+        Issues `ff_session` / `ff_csrf` bound to that pair with CHIPS
+        attributes (`SameSite=None; Secure; Partitioned`). Top-level
+        `POST /session` cookies stay `SameSite=Lax` / `Strict` and are
+        not Partitioned. The bound session cannot `POST /tenants` or
+        `POST /workspaces`. The assertion must be POSTed in the JSON
+        body — never placed in a URL. No CSRF (no session yet). A
+        browser that does not store or send the partitioned cookie
+        fails closed (`401` unauthenticated, or `403` CSRF on later
+        mutations). HTTPS / a secure context is required.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       requestBody:
@@ -473,7 +478,7 @@ paths:
             X-Request-ID:
               $ref: "#/components/headers/XRequestID"
             Set-Cookie:
-              description: "ff_session (HttpOnly) and ff_csrf (readable) cookies."
+              description: "ff_session (HttpOnly) and ff_csrf (readable) with SameSite=None; Secure; Partitioned (CHIPS). Not used for top-level POST /session."
               schema:
                 type: string
           content:

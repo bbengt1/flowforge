@@ -21,6 +21,24 @@ describe("rewriteUpstreamSetCookie", () => {
     assert.doesNotMatch(rewritten ?? "", /Secure/i);
   });
 
+  it("keeps CHIPS Partitioned + Secure even on HTTP and never emits None without Partitioned", () => {
+    const rewritten = rewriteUpstreamSetCookie(
+      "ff_session=opaque; Path=/api/v1; Domain=api.example.test; HttpOnly; Secure; SameSite=None; Partitioned",
+      { requestSecure: false },
+    );
+    assert.ok(rewritten);
+    assert.match(rewritten ?? "", /SameSite=None/i);
+    assert.match(rewritten ?? "", /Partitioned/i);
+    assert.match(rewritten ?? "", /Secure/i);
+    assert.doesNotMatch(rewritten ?? "", /Domain=/i);
+    const noneOnly = rewriteUpstreamSetCookie("ff_csrf=token; SameSite=None", {
+      requestSecure: true,
+    });
+    assert.match(noneOnly ?? "", /SameSite=None/i);
+    assert.match(noneOnly ?? "", /Partitioned/i);
+    assert.match(noneOnly ?? "", /Secure/i);
+  });
+
   it("preserves SameSite=Strict on ff_csrf and defaults Path=/api/v1", () => {
     const rewritten = rewriteUpstreamSetCookie(
       "ff_csrf=token; SameSite=Strict",

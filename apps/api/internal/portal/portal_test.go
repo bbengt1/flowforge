@@ -2,6 +2,7 @@ package portal
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,7 +193,7 @@ func TestCatalogBoundaryNeverShares(t *testing.T) {
 	if c.Boundary.SharesDatabase || c.Boundary.SharesExecutor || c.Boundary.ParallelAuthPath {
 		t.Fatalf("boundary %+v", c.Boundary)
 	}
-	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin {
+	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin || !c.Rules.PartitionedEmbedCookies {
 		t.Fatalf("bootstrap rules %+v", c.Rules)
 	}
 	if c.Boundary.PortalEntryIsAuthorization || c.Boundary.HostTenantIsAuthorization {
@@ -217,6 +218,9 @@ func TestCatalogBoundaryNeverShares(t *testing.T) {
 		}
 		if step.ID == "exchange" && step.Path == "/api/v1/embed/exchange" {
 			foundExchange = true
+			if !strings.Contains(step.Do, "Partitioned") && !strings.Contains(step.Note, "Partitioned") {
+				t.Fatalf("exchange wiring %q %q", step.Do, step.Note)
+			}
 		}
 	}
 	if !foundMint || !foundExchange {

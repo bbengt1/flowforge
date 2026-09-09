@@ -14,6 +14,11 @@
  * ADV-004: mint subject/issuer bind to the authenticated caller.
  * A different subject requires embed.impersonate (PLATFORM_ADMINS).
  * A different issuer is 403. The embed shell does not mint. No UI rewrite.
+ *
+ * ADV-007: embed ff_session / ff_csrf after POST /embed/exchange are
+ * CHIPS (SameSite=None; Secure; Partitioned). Top-level cookies stay
+ * Lax/Strict. Keep credentials:include. Do not request Storage Access
+ * / unpartitioned cookies. Cookie not sent is 401/403.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -326,7 +331,63 @@ export const EMBED_PROBLEM_CODES = {
 } as const;
 
 export const EMBED_EXCHANGE_HELP =
-  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy. The compact JWS is body-only — never query, hash, path, or localStorage. Success sets ff_session + ff_csrf. Host identity is display context until this call succeeds.";
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds.";
+
+/** Embed session cookies after POST /embed/exchange. Not used for POST /session. */
+export const EMBED_SESSION_COOKIE = {
+  name: "ff_session",
+  httpOnly: true,
+  sameSite: "None",
+  secure: true,
+  partitioned: true,
+  path: "/api/v1",
+} as const;
+
+export const EMBED_CSRF_COOKIE = {
+  name: "ff_csrf",
+  httpOnly: false,
+  sameSite: "None",
+  secure: true,
+  partitioned: true,
+  path: "/api/v1",
+} as const;
+
+/** Top-level / non-embed cookies stay Lax/Strict and are not Partitioned. */
+export const TOPLEVEL_SESSION_COOKIE = {
+  name: "ff_session",
+  sameSite: "Lax",
+  partitioned: false,
+} as const;
+
+export const TOPLEVEL_CSRF_COOKIE = {
+  name: "ff_csrf",
+  sameSite: "Strict",
+  partitioned: false,
+} as const;
+
+export const EMBED_COOKIE_CREDENTIALS = "include" as const;
+
+/**
+ * CHIPS cookies are sent in a third-party iframe without Storage Access.
+ * Do not call requestStorageAccess to get an unpartitioned cookie, and
+ * do not fall back to SameSite=None without Partitioned.
+ */
+export const EMBED_STORAGE_ACCESS_API = {
+  required: false,
+  requestUnpartitioned: false,
+  reason:
+    "CHIPS Partitioned cookies are sent in the third-party iframe without unpartitioned storage access.",
+} as const;
+
+export const EMBED_CHIPS_SET_COOKIE =
+  "SameSite=None; Secure; Partitioned" as const;
+
+export const EMBED_COOKIE_REQUIREMENTS = {
+  secureContext: true,
+  https: true,
+  partitionedSupport: true,
+  storageAccessApi: false,
+} as const;
 
 export const EMBED_MINT_HELP =
   "Mint is POST /embed/assertions from the host backend (CSRF if ff_session). Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. This shell does not mint. E11.3 owns the Portal adapter.";
@@ -335,7 +396,7 @@ export const EMBED_URL_SECRET_MESSAGE =
   "Assertion tokens must not appear in the URL (query, hash, or path). Remove assertion/token/jws params and POST the compact JWS in the exchange body.";
 
 export const EMBED_EXCHANGED_MESSAGE =
-  "Assertion exchanged. FlowForge issued an ff_session / ff_csrf cookie session. Host identity is no longer the authority.";
+  "Assertion exchanged. FlowForge issued a CHIPS ff_session / ff_csrf cookie session (SameSite=None; Secure; Partitioned). Host identity is no longer the authority.";
 
 export const EMBED_SECRET_LEAK_MESSAGE =
   "The API unexpectedly included a compact JWS or private key field. It was discarded and not shown. This is a contract bug.";
@@ -344,7 +405,9 @@ export const EMBED_HOST_SUPPLIED_MESSAGE =
   "Do not send id or workspace_id on the exchange body. Workspace scope comes from the verified assertion. Host-supplied identity is HTTP 400.";
 
 export const EMBED_UNAUTHENTICATED_MESSAGE =
-  "Session is missing or stale (HTTP 401). Host identity is still display-only. Exchange a fresh assertion.";
+  "Session is missing or stale (HTTP 401). In a cross-site iframe this usually means the CHIPS cookie (SameSite=None; Secure; Partitioned) was not stored or sent — require HTTPS / a secure context and Partitioned support. Host identity is still display-only. Exchange a fresh assertion. Do not weaken SameSite.";
+
+export const EMBED_COOKIE_NOT_SENT_MESSAGE = EMBED_UNAUTHENTICATED_MESSAGE;
 
 export const EMBED_FORBIDDEN_MESSAGE =
   "Embed exchange was forbidden (HTTP 403). Host route, tenant, and workbench values do not authorize. The API rejected the assertion.";
@@ -403,6 +466,20 @@ export const EMBED_TENANCY_RULES = {
   headerMismatchFailsClosed: true,
   capabilitiesCapSession: true,
   sessionEmbedIsSourceOfTruth: true,
+} as const;
+
+/** ADV-007: embed cookies are CHIPS; top-level cookies stay Lax/Strict. */
+export const EMBED_CHIPS_RULES = {
+  partitioned: true,
+  secure: true,
+  sameSite: "None",
+  neverDropSecure: true,
+  neverSameSiteNoneWithoutPartitioned: true,
+  neverWeakenTopLevelSameSite: true,
+  credentialsInclude: true,
+  storageAccessApiRequired: false,
+  storageAccessUnpartitionedForbidden: true,
+  cookieNotSentIs401or403: true,
 } as const;
 
 export type EmbedExchangeResult = {
@@ -696,7 +773,7 @@ export function embedAuthFailureMessage(
     problem.code === "csrf-required" ||
     problem.code === "csrf-invalid"
   ) {
-    return "Mint and later mutations send X-CSRF-Token when ff_session is present. Exchange itself is CSRF-exempt.";
+    return "Mint and later mutations send X-CSRF-Token when ff_session is present. Exchange itself is CSRF-exempt. In a cross-site iframe both ff_session and ff_csrf must be CHIPS (SameSite=None; Secure; Partitioned) or the CSRF cookie is not sent (403).";
   }
   if (
     problem.status === 401 ||

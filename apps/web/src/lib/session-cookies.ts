@@ -1,9 +1,11 @@
 /**
  * Rewrite API Set-Cookie onto the UI origin (same-origin Next proxy).
  * Domain is stripped. Path and SameSite stay as the API set them
- * (`Path=/api/v1`, Lax for ff_session, Strict for ff_csrf). Secure is
- * kept only when the inbound browser request is TLS so localhost HTTP
- * still works.
+ * (`Path=/api/v1`, Lax/Strict for top-level, None+Partitioned for
+ * embed CHIPS). Secure is kept when the inbound browser request is TLS
+ * so localhost HTTP still works for first-party cookies. CHIPS cookies
+ * (`SameSite=None` / `Partitioned`) always keep Secure — never drop it
+ * and never emit SameSite=None without Partitioned.
  *
  * Cookie values are never logged.
  */
@@ -41,16 +43,18 @@ export function rewriteUpstreamSetCookie(
   const kept: string[] = [nameValue];
   let hasPath = false;
   let hasSameSite = false;
+  let sameSiteNone = false;
+  let partitioned = false;
 
   for (const attr of parts.slice(1)) {
     const key = attr.split("=")[0]?.trim().toLowerCase();
+    const value = attr.includes("=")
+      ? attr.slice(attr.indexOf("=") + 1).trim().toLowerCase()
+      : "";
     if (key === "domain") {
       continue;
     }
     if (key === "secure") {
-      if (options.requestSecure) {
-        kept.push("Secure");
-      }
       continue;
     }
     if (key === "path") {
@@ -60,20 +64,35 @@ export function rewriteUpstreamSetCookie(
     }
     if (key === "samesite") {
       hasSameSite = true;
+      sameSiteNone = value === "none";
       kept.push(attr);
+      continue;
+    }
+    if (key === "partitioned") {
+      partitioned = true;
+      kept.push("Partitioned");
       continue;
     }
     kept.push(attr);
   }
 
+  const chips = partitioned || sameSiteNone;
+  if (chips && !partitioned) {
+    kept.push("Partitioned");
+    partitioned = true;
+  }
   if (!hasPath) {
     kept.push("Path=/api/v1");
   }
   if (!hasSameSite) {
-    // API default for ff_session; ff_csrf is SameSite=Strict when present.
-    kept.push("SameSite=Lax");
+    // API default for first-party ff_session. Embed CHIPS is None.
+    kept.push(chips ? "SameSite=None" : "SameSite=Lax");
   }
-  if (options.requestSecure && !kept.some((item) => item.toLowerCase() === "secure")) {
+  // CHIPS requires Secure. Never drop it for Partitioned / SameSite=None.
+  if (
+    (options.requestSecure || chips) &&
+    !kept.some((item) => item.toLowerCase() === "secure")
+  ) {
     kept.push("Secure");
   }
   return kept.join("; ");

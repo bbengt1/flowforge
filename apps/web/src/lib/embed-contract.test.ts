@@ -21,6 +21,15 @@ import {
   EMBED_VALIDATION_STORY,
   EMBED_ROTATE_PATH,
   EMBED_TENANCY_RULES,
+  EMBED_CHIPS_RULES,
+  EMBED_CHIPS_SET_COOKIE,
+  EMBED_COOKIE_CREDENTIALS,
+  EMBED_COOKIE_REQUIREMENTS,
+  EMBED_CSRF_COOKIE,
+  EMBED_SESSION_COOKIE,
+  EMBED_STORAGE_ACCESS_API,
+  TOPLEVEL_CSRF_COOKIE,
+  TOPLEVEL_SESSION_COOKIE,
   assertionFromURL,
   embedHeadersMatchSession,
   embedWorkspaceHeaders,
@@ -248,5 +257,28 @@ describe("embed-contract", () => {
       tokenId: "jti-1",
     });
     assert.deepEqual(headers, { tenantId: "ten-1", workbenchKey: "ops" });
+  });
+
+  it("documents CHIPS embed cookies without weakening top-level SameSite", () => {
+    assert.equal(EMBED_SESSION_COOKIE.sameSite, "None");
+    assert.equal(EMBED_SESSION_COOKIE.secure, true);
+    assert.equal(EMBED_SESSION_COOKIE.partitioned, true);
+    assert.equal(EMBED_CSRF_COOKIE.sameSite, "None");
+    assert.equal(EMBED_CSRF_COOKIE.partitioned, true);
+    assert.equal(TOPLEVEL_SESSION_COOKIE.sameSite, "Lax");
+    assert.equal(TOPLEVEL_SESSION_COOKIE.partitioned, false);
+    assert.equal(TOPLEVEL_CSRF_COOKIE.sameSite, "Strict");
+    assert.equal(EMBED_COOKIE_CREDENTIALS, "include");
+    assert.equal(EMBED_STORAGE_ACCESS_API.required, false);
+    assert.equal(EMBED_STORAGE_ACCESS_API.requestUnpartitioned, false);
+    assert.equal(EMBED_COOKIE_REQUIREMENTS.https, true);
+    assert.equal(EMBED_CHIPS_SET_COOKIE, "SameSite=None; Secure; Partitioned");
+    assert.equal(EMBED_CHIPS_RULES.neverDropSecure, true);
+    assert.equal(EMBED_CHIPS_RULES.neverSameSiteNoneWithoutPartitioned, true);
+    assert.equal(EMBED_CHIPS_RULES.neverWeakenTopLevelSameSite, true);
+    assert.match(
+      embedAuthFailureMessage({ status: 401, code: "unauthenticated" }),
+      /Partitioned/,
+    );
   });
 });

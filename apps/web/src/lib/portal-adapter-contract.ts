@@ -13,6 +13,10 @@
  * ADV-004: mint subject binds to the Portal service caller unless
  * embed.impersonate (PLATFORM_ADMINS). A different issuer is 403.
  * No host chrome change — backend identity + allowlist only.
+ *
+ * ADV-007: embed exchange cookies are CHIPS (SameSite=None; Secure;
+ * Partitioned). Keep credentials:include. Do not request Storage
+ * Access / unpartitioned cookies. Cookie not sent is 401/403.
  */
 
 import {
@@ -181,7 +185,7 @@ export const PORTAL_HOST_WIRING = [
     id: "exchange",
     actor: "embed-shell",
     path: `/api/v1${PORTAL_EXCHANGE_PATH}`,
-    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange. Replay is 409.",
+    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange with credentials:include. Issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned). Replay is 409. Cookie not sent is 401/403.",
   },
 ] as const;
 
@@ -278,6 +282,9 @@ export function portalFrameAncestors(env: {
 
 export const PORTAL_HELP =
   "Portal entry is not FlowForge authorization. Mint via /portal/adapter/assertions, exchange via /embed/exchange, mount /embed/v1.";
+
+export const PORTAL_CHIPS_HELP =
+  "Exchange issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned) for the cross-site iframe. Keep credentials:include. Do not request Storage Access or unpartitioned cookies. Cookie not sent is 401/403. Top-level FlowForge sessions stay Lax/Strict.";
 
 export const PORTAL_DIRECT_MINT = EMBED_MINT_PATH;
 

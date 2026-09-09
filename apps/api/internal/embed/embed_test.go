@@ -234,10 +234,10 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies {
 		t.Fatal("rules")
 	}
-	foundRotate, foundMint := false, false
+	foundRotate, foundMint, foundExchange := false, false, false
 	for _, r := range c.API {
 		if r.Path == "/api/v1/embed/assertions" {
 			foundMint = true
@@ -251,12 +251,21 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("rotate auth %q", r.Auth)
 			}
 		}
+		if r.Path == "/api/v1/embed/exchange" {
+			foundExchange = true
+			if !strings.Contains(r.Note, "Partitioned") || !strings.Contains(r.Note, "SameSite=None") {
+				t.Fatalf("exchange note %q", r.Note)
+			}
+		}
 	}
 	if !foundRotate {
 		t.Fatal("catalog missing rotate route")
 	}
 	if !foundMint {
 		t.Fatal("catalog missing mint route")
+	}
+	if !foundExchange {
+		t.Fatal("catalog missing exchange route")
 	}
 	if DeniesBootstrap(false) {
 		t.Fatal("unbound session must allow the trusted bootstrap path")
@@ -267,10 +276,20 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
+	foundCHIPS := false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
 		}
+		if h.ID == "chips.embed-cookies" {
+			foundCHIPS = true
+			if !strings.Contains(h.Note, "Partitioned") {
+				t.Fatalf("chips hook %q", h.Note)
+			}
+		}
+	}
+	if !foundCHIPS {
+		t.Fatal("catalog missing chips.embed-cookies hook")
 	}
 }
 

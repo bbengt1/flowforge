@@ -355,46 +355,16 @@ func (s *Server) issueSessionCookies(w http.ResponseWriter, r *http.Request, iss
 	if maxAge < 1 {
 		maxAge = 1
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     session.CookieName,
-		Value:    issued.Token,
-		Path:     session.CookiePath,
-		HttpOnly: true,
-		Secure:   https,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   maxAge,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     session.CSRFCookieName,
-		Value:    issued.CSRF,
-		Path:     session.CookiePath,
-		HttpOnly: false,
-		Secure:   https,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   maxAge,
-	})
+	writeSessionCookiePair(w, issued.Token, issued.CSRF, maxAge, https, issued.Record.Binding.Bound())
 }
 
 func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 	https := s.sec.requestIsHTTPS(r)
-	http.SetCookie(w, &http.Cookie{
-		Name:     session.CookieName,
-		Value:    "",
-		Path:     session.CookiePath,
-		HttpOnly: true,
-		Secure:   https,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     session.CSRFCookieName,
-		Value:    "",
-		Path:     session.CookiePath,
-		HttpOnly: false,
-		Secure:   https,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-	})
+	// Expire both first-party and CHIPS pairs. Partitioned cookies live
+	// in a different jar; clearing only Lax/Strict would leave the
+	// embed session cookie in a cross-site iframe.
+	writeSessionCookiePair(w, "", "", -1, https, false)
+	writeSessionCookiePair(w, "", "", -1, true, true)
 }
 
 func (s *Server) auditSession(r *http.Request, rec session.Record, eventType, outcome, reason string) {
