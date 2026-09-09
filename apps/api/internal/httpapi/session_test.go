@@ -481,11 +481,18 @@ func assertSessionCookies(t *testing.T, rec *httptest.ResponseRecorder, secure b
 	if csrfCookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("csrf SameSite = %v", csrfCookie.SameSite)
 	}
+	if sessionCookie.Partitioned || csrfCookie.Partitioned {
+		t.Fatal("top-level session cookies must not be Partitioned")
+	}
 	if sessionCookie.Path != session.CookiePath || csrfCookie.Path != session.CookiePath {
 		t.Fatalf("cookie path session=%q csrf=%q", sessionCookie.Path, csrfCookie.Path)
 	}
 	if sessionCookie.Secure != secure || csrfCookie.Secure != secure {
 		t.Fatalf("Secure session=%v csrf=%v want %v", sessionCookie.Secure, csrfCookie.Secure, secure)
+	}
+	joined := strings.ToLower(strings.Join(rec.Header().Values("Set-Cookie"), "\n"))
+	if strings.Contains(joined, "samesite=none") || strings.Contains(joined, "partitioned") {
+		t.Fatalf("top-level Set-Cookie must stay Lax/Strict: %v", rec.Header().Values("Set-Cookie"))
 	}
 }
 

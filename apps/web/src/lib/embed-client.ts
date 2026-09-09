@@ -6,6 +6,11 @@
  * Relates to #122 / Part of #120. Keep #122 open. Do not change apps/api.
  * After exchange, persist FlowForge-verified (tenant_id, workbench_key)
  * only — host query values never become workspace lookup.
+ *
+ * ADV-007: fetchSameOriginProxy already sends credentials:include so
+ * CHIPS Set-Cookie (SameSite=None; Secure; Partitioned) is stored and
+ * sent in the iframe. Do not request Storage Access / unpartitioned
+ * cookies. Cookie not sent is 401/403.
  */
 
 import { persistVerifiedFromExchange } from "./embed-tenancy-client.ts";
