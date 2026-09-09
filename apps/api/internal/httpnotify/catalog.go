@@ -125,13 +125,13 @@ func Catalog() EngineCatalog {
 			SecretFieldsPolicyGated:           true,
 			ResultsRedactedAndAudited:         true,
 			EmailApprovedRevisionsOnly:        true,
-			MetadataAndLinkLocalDenied:        []string{"169.254.0.0/16", "fe80::/10"},
+			MetadataAndLinkLocalDenied:        []string{"169.254.0.0/16", "fe80::/10", "fd00:ec2::254"},
 			PrivateAndLoopbackDeniedByDefault: true,
 			AllowPrivateDestinationsOptIn: []string{
 				"endpointPolicy.allowPrivateDestinations",
 				"policy.allowPrivateDestinations",
 			},
-			Note: "Connections resolve hostnames through an approved resolver, then check every destination address (including redirects). Loopback, RFC1918, ULA, and CGNAT are denied unless endpointPolicy.allowPrivateDestinations or a kind=http/notification policy.allowPrivateDestinations is explicitly true (unset fails closed). Link-local and metadata addresses stay always denied. Problem details do not echo resolved private IPs.",
+			Note: "Connections resolve hostnames through an approved resolver, then check every destination address (including redirects). Loopback, RFC1918, ULA, and CGNAT are denied unless endpointPolicy.allowPrivateDestinations or a kind=http/notification policy.allowPrivateDestinations is explicitly true (unset fails closed; other policy kinds are ignored). Link-local and metadata addresses (including AWS IPv6 IMDS fd00:ec2::254) stay always denied. Problem details do not echo resolved private IPs.",
 		},
 		Retry: RetryRules{
 			DefaultMaxAttempts: DefaultMaxAttempts,

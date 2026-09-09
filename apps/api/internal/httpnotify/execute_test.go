@@ -470,6 +470,7 @@ func TestAllowPrivateDestinationsOptIn(t *testing.T) {
 
 	conn.Policy.AllowPrivateDestinations = false
 	req = baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Policy.Kind = "http"
 	req.Policy.AllowPrivateDestinations = true
 	req.Transport = srv.Client().Transport
 	res = Execute(context.Background(), req)
@@ -495,6 +496,31 @@ func TestMetadataStillDeniedWhenPrivateAllowed(t *testing.T) {
 	res := Execute(context.Background(), req)
 	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
 		t.Fatalf("metadata must stay denied: %+v", res.Error)
+	}
+
+	conn = httpConn([]string{"fd00:ec2::254"}, []string{"fd00:ec2::254"}, nil, nil)
+	conn.Policy.AllowPrivateDestinations = true
+	req = baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"fd00:ec2::254": []net.IP{net.ParseIP("fd00:ec2::254")}}
+	res = Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("IPv6 IMDS must stay denied: %+v", res.Error)
+	}
+	if strings.Contains(res.Error.Message, "fd00:ec2::254") {
+		t.Fatalf("IPv6 IMDS problem leaked address: %s", res.Error.Message)
+	}
+}
+
+func TestApprovalPolicyCannotOptInPrivate(t *testing.T) {
+	conn := httpConn([]string{"10.0.0.8"}, []string{"10.0.0.8"}, nil, nil)
+	conn.Policy.AllowPrivateDestinations = false
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Policy.Kind = "approval"
+	req.Policy.AllowPrivateDestinations = true
+	req.Resolver = mapResolver{"10.0.0.8": []net.IP{net.ParseIP("10.0.0.8")}}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("approval policy must not opt in private destinations: %+v", res.Error)
 	}
 }
 

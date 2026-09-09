@@ -196,13 +196,21 @@ func ssrfReason(ip net.IP, allowPrivate bool) (bool, string) {
 	return false, ""
 }
 
+// ipv6IMDS is AWS instance metadata over IPv6 (ULA, not link-local).
+var ipv6IMDS = net.ParseIP("fd00:ec2::254")
+
 func isLinkLocalOrMetadata(ip net.IP) bool {
 	if ip4 := ip.To4(); ip4 != nil {
 		if ip4[0] == 169 && ip4[1] == 254 {
 			return true
 		}
 	}
-	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	// AWS IPv6 IMDS is Unique Local (fd00::/8), so the private opt-in
+	// must not open it. Same address the script egress policy denies.
+	return ipv6IMDS != nil && ipv6IMDS.Equal(ip)
 }
 
 // isPrivateOrLoopback reports loopback, RFC1918, IPv6 ULA, and CGNAT.

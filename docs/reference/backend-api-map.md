@@ -925,7 +925,7 @@ HTTP/webhook delivery:
 1. Normalize host + relative path into an absolute URL. Full URLs, userinfo, and credentials in YAML are denied.
 2. Resolve through the approved resolver, then check every destination address (including redirects). DNS names without `endpointPolicy.allowedAddresses` are denied (anti DNS-rebinding).
 3. Loopback (`127.0.0.0/8`, `::1`, `localhost` after resolve), RFC1918 (`10/8`, `172.16/12`, `192.168/16`), IPv6 ULA, and CGNAT (`100.64/10`) are denied by default (`ssrf-denied`). Opt in only with explicit `endpointPolicy.allowPrivateDestinations=true` on the pinned connection, or `policy.allowPrivateDestinations=true` on a published `kind=http` / `kind=notification` policy. Unset is fail-closed. There is no global “allow all private” switch.
-4. Link-local and metadata addresses (`169.254.0.0/16`, `fe80::/10`, `169.254.169.254`) are always denied, even when private destinations are opted in.
+4. Link-local and metadata addresses (`169.254.0.0/16`, `fe80::/10`, `169.254.169.254`, AWS IPv6 IMDS `fd00:ec2::254`) are always denied, even when private destinations are opted in. Only `kind=http` / `kind=notification` policies may set `allowPrivateDestinations`; other kinds (including `approval`) are ignored.
 5. Denied problems use a redacted reason (`destination resolved to a non-public address` or `link-local and metadata addresses are denied`) and do not echo resolved private IPs.
 6. Connect only to the verified address. TLS verification cannot be skipped. `tlsRequired` defaults true.
 7. Redirects default deny. When `allowRedirects=true`, each hop is re-resolved and re-checked for host/method/path/TLS/address and private/loopback policy (max 5).
