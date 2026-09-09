@@ -8,6 +8,8 @@ import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
+import { ScriptIoFields } from "@/components/workflows/ScriptIoFields";
+import { ScriptRetryFields } from "@/components/workflows/ScriptRetryFields";
 import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { authorizedClusterTargets } from "@/lib/kubernetes";
@@ -58,6 +60,15 @@ import {
   scriptPublishRules,
   type ScriptNodeCatalog,
 } from "@/lib/script-contract";
+import {
+  SCRIPT_IO_INDETERMINATE_HELP,
+  SCRIPT_IO_ROUTE_MAP_SOURCE,
+  defaultScriptIoRetryPolicy,
+  isDedicatedScriptIoWithField,
+  parseScriptEvaluateRetry,
+  parseScriptIoCatalog,
+  scriptIoRetryPolicyHint,
+} from "@/lib/script-io-contract";
 import {
   SCRIPT_RUNTIME_ISOLATION_HELP,
   SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
@@ -911,7 +922,8 @@ function ConfigureStep({
     (field) =>
       !field.selectorKind &&
       !(ssh && field.name === "parameters") &&
-      !(ssh && field.name === "retryPolicy"),
+      !(ssh && field.name === "retryPolicy") &&
+      !(script && isDedicatedScriptIoWithField(field.name)),
   );
   const primary = visible.filter((field) => !field.advanced);
   const advanced = visible.filter((field) => field.advanced);
@@ -1098,6 +1110,40 @@ function ConfigureStep({
               : {}
           }
           onChange={(parameters) => patchWith("parameters", parameters)}
+        />
+      ) : null}
+      {script ? (
+        <ScriptIoFields
+          inputSchema={draft.with.inputSchema}
+          outputSchema={draft.with.outputSchema}
+          catalog={parseScriptIoCatalog(scriptCatalog)}
+          onChange={(patch) =>
+            onChange({
+              ...draft,
+              with: { ...draft.with, ...patch },
+            })
+          }
+        />
+      ) : null}
+      {script ? (
+        <ScriptRetryFields
+          retrySafe={draft.with.retrySafe}
+          idempotencyKey={draft.with.idempotencyKey}
+          verification={draft.with.verification}
+          retryPolicy={draft.with.retryPolicy ?? defaultScriptIoRetryPolicy()}
+          catalog={parseScriptIoCatalog(scriptCatalog)}
+          onChange={(patch) =>
+            onChange({
+              ...draft,
+              with: {
+                ...draft.with,
+                retrySafe: patch.retrySafe === true ? true : undefined,
+                idempotencyKey: patch.idempotencyKey || undefined,
+                verification: patch.verification,
+                retryPolicy: patch.retryPolicy ?? defaultScriptIoRetryPolicy(),
+              },
+            })
+          }
         />
       ) : null}
       {ssh ? (
@@ -1442,11 +1488,24 @@ function ReviewStep({
             {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
             {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}{" "}
             {SCRIPT_RUNTIME_ISOLATION_HELP} YAML
-            stores source, entrypoint, runtimeProfileId, timeoutSeconds, and
-            optional limits/schemas — never secrets, command/shell, or
-            package/storageRef. Map source #97 (
-            <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
-            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}).
+            stores source, entrypoint, runtimeProfileId, timeoutSeconds,
+            optional limits/schemas, and retrySafe / idempotencyKey /
+            verification / retryPolicy — never secrets, env, command/shell, or
+            package/storageRef.{" "}
+            {scriptIoRetryPolicyHint({
+              retrySafe: draft.with.retrySafe === true,
+              idempotencyKeyDeclared: Boolean(String(draft.with.idempotencyKey ?? "").trim()),
+              verificationDeclared:
+                draft.with.verification !== undefined && draft.with.verification !== null,
+              maxAttempts:
+                draft.with.retryPolicy && typeof draft.with.retryPolicy === "object"
+                  ? Number((draft.with.retryPolicy as { maxAttempts?: unknown }).maxAttempts)
+                  : 0,
+            })}{" "}
+            {SCRIPT_IO_INDETERMINATE_HELP} I/O + recovery map #101 (
+            <code className="font-mono">{SCRIPT_IO_ROUTE_MAP_SOURCE}</code>
+            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}). Publish
+            map #97 (<code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>).
           </p>
         ) : null}
       </section>
@@ -1458,6 +1517,19 @@ function ReviewStep({
       {parseSshEvaluateRetry(evaluation).map((item) => (
         <p
           key={`${item.nodeId}-${item.operation}`}
+          className="text-xs text-zinc-600"
+        >
+          Evaluate {item.operation}
+          {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
+          {String(item.retryAllowed)}, retrySafe={String(item.retrySafe)},
+          verificationDeclared={String(item.verificationDeclared)},
+          retryMaxAttempts={item.retryMaxAttempts}. POST …/retry is 409
+          retry-denied when closed.
+        </p>
+      ))}
+      {parseScriptEvaluateRetry(evaluation).map((item) => (
+        <p
+          key={`script-${item.nodeId}-${item.operation}`}
           className="text-xs text-zinc-600"
         >
           Evaluate {item.operation}

@@ -17,6 +17,7 @@
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
+import { validateScriptIoNodeExtras } from "./script-io-contract.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
@@ -158,8 +159,9 @@ export const SCRIPT_NODE_POLICY_NOTES = [
   "Draft save writes YAML only. Publish is the artifact creation boundary: package, scan, sign, and pin a digest on the workflow version.",
   "Execution uses the pinned digest, not mutable draft source. Drafts cannot run.",
   "Choose a published approved runtime/dependency profile. Arbitrary package install and arbitrary base images are denied.",
-  "Resource limits and timeout are bounded. Inputs arrive as validated JSON; outputs must meet the declared schema.",
-  "Credential handles are short-lived, scoped, and injected at runtime — never authored into source.",
+  "Resource limits and timeout are bounded. Inputs arrive as validated JSON against the declared schema and size bound; outputs must match too and are redacted.",
+  "Credential handles are short-lived, scoped, and injected at runtime — never authored into source, schema, YAML, or logs.",
+  "Retries default to zero. Retry-safe only with an idempotency key plus verification. Lease loss is indeterminate — never a blind re-run. Retry is shown only when result.retry.allowed is true.",
   "Selectors fail closed on HTTP 403. Only published workspace runtime profiles are listed.",
 ] as const;
 
@@ -200,7 +202,7 @@ export type ScriptNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
   readOnly?: boolean;
-  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "object-lines";
+  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "boolean" | "object-lines" | "json";
   defaultValue?: unknown;
 };
 
@@ -280,6 +282,9 @@ export type ScriptNodeCatalog = {
   isolation?: ScriptIsolationRules;
   hooks?: Record<string, string>;
   notes?: string;
+  /** Additive E9.3 overlay from GET /scripts/catalog. Parsed by script-io-contract. */
+  io?: Record<string, unknown>;
+  retry?: Record<string, unknown>;
 };
 
 export type ScriptArtifact = {
@@ -404,9 +409,14 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "docker-socket-denied", status: 403, meaning: "Host Docker socket is denied." },
   { code: "service-account-denied", status: 403, meaning: "Kubernetes service-account mounts are denied (MVP)." },
   { code: "resource-limit", status: 400, meaning: "CPU, memory, process, or time limit exceeded the pinned runtime profile." },
-  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch. The script is not retried (E9.3 recovery hook)." },
+  { code: "input-rejected", status: 400, meaning: "Execution input failed schema, size, or secret checks before inject." },
+  { code: "output-too-large", status: 400, meaning: "Runner output exceeded the 16 KiB persist cap." },
+  { code: "handle-forbidden", status: 403, meaning: "Credential handle missing, expired, unscoped, or contained plaintext. Handles only." },
+  { code: "env-denied", status: 403, meaning: "Runtime env key is outside the FLOWFORGE_* allowlist, or plaintext credentials were supplied as env." },
+  { code: "retry-denied", status: 400, meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied." },
+  { code: "invalid-verification", status: 400, meaning: "retrySafe=true without a valid idempotency key or verification.behavior." },
+  { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch, unknown outcome, or verification could not confirm state. Never a silent re-run." },
   { code: "runner-not-implemented", status: 501, meaning: "Live container runtime requested but only the CI harness is available." },
-  { code: "typed-io-not-implemented", status: 501, meaning: "E9.3 typed I/O execution is not enabled." },
   { code: "revocation-not-implemented", status: 501, meaning: "E9.4 revocation API is not enabled." },
 ];
 
@@ -467,6 +477,7 @@ export function defaultScriptWith(type: string): Record<string, unknown> {
     entrypoint: defaultScriptEntrypoint(type),
     timeoutSeconds: SCRIPT_DEFAULT_TIMEOUT_SECONDS,
     memoryMiB: SCRIPT_DEFAULT_MEMORY_MIB,
+    retryPolicy: { maxAttempts: 0 },
   };
 }
 
@@ -611,19 +622,51 @@ export function scriptNodeWithFields(
       name: "inputSchema",
       kind: "object",
       label: "Input schema",
-      controlHint: "object-lines",
-      advanced: true,
+      controlHint: "json",
       description:
-        "Optional declared input schema stub (name=type lines). Validated JSON only. No secrets.",
+        "Optional declared input JSON Schema subset. Validated JSON only — 16 KiB bound. No secrets or handles.",
     },
     {
       name: "outputSchema",
       kind: "object",
       label: "Output schema",
-      controlHint: "object-lines",
-      advanced: true,
+      controlHint: "json",
       description:
-        "Optional declared output schema stub (name=type lines). Outputs must meet schema and size limits.",
+        "Optional declared output JSON Schema subset. Outputs must meet schema and size limits. Redacted.",
+    },
+    {
+      name: "retrySafe",
+      kind: "boolean",
+      label: "Retry-safe",
+      controlHint: "boolean",
+      defaultValue: false,
+      description:
+        "Default false. When true, idempotencyKey and verification.behavior=declared-hook are required.",
+    },
+    {
+      name: "idempotencyKey",
+      kind: "string",
+      label: "Idempotency key",
+      controlHint: "text",
+      description:
+        "Required when retrySafe. 1–128 identifier starting with a letter (letters, digits, ._: -).",
+    },
+    {
+      name: "verification",
+      kind: "object",
+      label: "Verification hook",
+      controlHint: "json",
+      description:
+        "Required when retrySafe. {behavior:declared-hook, expect?, onMatch, onMismatch, onError}. Never a blind re-run.",
+    },
+    {
+      name: "retryPolicy",
+      kind: "object",
+      label: "Retry policy",
+      controlHint: "object-lines",
+      defaultValue: { maxAttempts: 0 },
+      description:
+        "Optional {maxAttempts:0-5}. Default 0. maxAttempts>0 requires retrySafe + idempotencyKey + verification.",
     },
     {
       name: "policyId",
@@ -653,8 +696,14 @@ export function overlayScriptFields(
           ? "uuid"
           : field.kind === "integer"
             ? "number"
-            : field.kind === "object"
-              ? "object-lines"
+            : field.kind === "boolean"
+              ? "boolean"
+              : field.kind === "object"
+              ? field.name === "inputSchema" ||
+                field.name === "outputSchema" ||
+                field.name === "verification"
+                ? "json"
+                : "object-lines"
               : field.enum?.length
                 ? "enum"
                 : field.name === "source"
@@ -668,8 +717,6 @@ export function overlayScriptFields(
         description: field.description || base?.description || "",
         label: base?.label || field.name,
         advanced:
-          field.name === "inputSchema" ||
-          field.name === "outputSchema" ||
           field.name === "policyId" ||
           field.name === "cpuMillis" ||
           field.name === "processes" ||
@@ -888,8 +935,7 @@ export function validateScriptNodeConfig(
     }
   }
 
-  errors.push(...validateSchemaStub("inputSchema", withValue.inputSchema));
-  errors.push(...validateSchemaStub("outputSchema", withValue.outputSchema));
+  errors.push(...validateScriptIoNodeExtras(withValue));
 
   return unique(errors);
 }
@@ -1137,6 +1183,18 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
       (nodes.length ? undefined : SCRIPT_CONTRACT_FALLBACK_HELP),
+    io:
+      nested.io && typeof nested.io === "object" && !Array.isArray(nested.io)
+        ? (nested.io as Record<string, unknown>)
+        : rec.io && typeof rec.io === "object" && !Array.isArray(rec.io)
+          ? (rec.io as Record<string, unknown>)
+          : undefined,
+    retry:
+      nested.retry && typeof nested.retry === "object" && !Array.isArray(nested.retry)
+        ? (nested.retry as Record<string, unknown>)
+        : rec.retry && typeof rec.retry === "object" && !Array.isArray(rec.retry)
+          ? (rec.retry as Record<string, unknown>)
+          : undefined,
   };
 }
 
@@ -1208,7 +1266,7 @@ function scriptPolicy(): CatalogNodePolicy {
     sideEffects: true,
     idempotent: false,
     cancellation: "abort-process",
-    verification: "e9.1-stub",
+    verification: "node-declared-idempotent-hook",
     defaultMaxAttempts: 0,
   };
 }
@@ -1216,7 +1274,7 @@ function scriptPolicy(): CatalogNodePolicy {
 function defaultBounds(): CatalogNodeBounds {
   return {
     maxInputBytes: 16 * 1024,
-    maxOutputBytes: 64 * 1024,
+    maxOutputBytes: 16 * 1024,
     maxWithBytes: 256 * 1024,
     maxAggregationItems: 32,
     maxDurationSeconds: SCRIPT_MAX_TIMEOUT_SECONDS,
@@ -1441,26 +1499,6 @@ function parseVersionArtifact(version: unknown): {
     reason,
     fromVersion,
   };
-}
-
-function validateSchemaStub(name: string, value: unknown): string[] {
-  if (value === undefined || value === "") {
-    return [];
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return [`${name} must be an object of name=type declarations.`];
-  }
-  const errors: string[] = [];
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    if (!key.trim() || isForbiddenYamlKey(key)) {
-      errors.push(`${name} must not declare secret field names.`);
-      continue;
-    }
-    if (typeof nested === "string" && looksLikeSecretValue(nested)) {
-      errors.push(SCRIPT_SECRET_WITH_MESSAGE);
-    }
-  }
-  return unique(errors);
 }
 
 function firstString(...values: unknown[]): string | undefined {

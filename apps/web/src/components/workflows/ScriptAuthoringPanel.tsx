@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { AuthorizedResourceSelect } from "@/components/config/AuthorizedResourceSelect";
 import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
+import { ScriptIoFields } from "@/components/workflows/ScriptIoFields";
+import { ScriptRetryFields } from "@/components/workflows/ScriptRetryFields";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { selectOpsConfig } from "@/lib/ops-config-client";
@@ -22,6 +24,10 @@ import {
   type ScriptNodeCatalog,
   type ScriptVersionPin,
 } from "@/lib/script-contract";
+import {
+  isDedicatedScriptIoWithField,
+  parseScriptIoCatalog,
+} from "@/lib/script-io-contract";
 import { loadPublishedScriptRuntimeProfiles } from "@/lib/script-runtime-client";
 import {
   SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
@@ -95,8 +101,11 @@ export function ScriptAuthoringPanel({
     scriptCatalog,
   });
   const fields = scriptNodeWithFields(node.type, scriptCatalog).filter(
-    (field) => field.name !== "runtimeProfileId",
+    (field) =>
+      field.name !== "runtimeProfileId" &&
+      !isDedicatedScriptIoWithField(field.name),
   );
+  const ioCatalog = parseScriptIoCatalog(scriptCatalog);
   const nodePins = (scriptArtifacts ?? []).filter(
     (pin) => pin.nodeId === node.id || !pin.nodeId,
   );
@@ -156,7 +165,11 @@ export function ScriptAuthoringPanel({
             : value == null
               ? ""
               : String(value);
-        if (field.controlHint === "textarea" || field.controlHint === "object-lines") {
+        if (
+          field.controlHint === "textarea" ||
+          field.controlHint === "object-lines" ||
+          field.controlHint === "json"
+        ) {
           return (
             <label key={field.name} className="mt-3 block text-sm">
               <span className="font-medium">{field.label}</span>
@@ -209,6 +222,35 @@ export function ScriptAuthoringPanel({
           </label>
         );
       })}
+      <div className="mt-4">
+        <ScriptIoFields
+          inputSchema={node.with.inputSchema}
+          outputSchema={node.with.outputSchema}
+          catalog={ioCatalog}
+          disabled={!onPatchNodeWith}
+          onChange={(patchValue) => {
+            onPatchNodeWith?.(node.id, patchValue);
+          }}
+        />
+      </div>
+      <div className="mt-4">
+        <ScriptRetryFields
+          retrySafe={node.with.retrySafe}
+          idempotencyKey={node.with.idempotencyKey}
+          verification={node.with.verification}
+          retryPolicy={node.with.retryPolicy}
+          catalog={ioCatalog}
+          disabled={!onPatchNodeWith}
+          onChange={(patchValue) => {
+            onPatchNodeWith?.(node.id, {
+              retrySafe: patchValue.retrySafe === true ? true : undefined,
+              idempotencyKey: patchValue.idempotencyKey || undefined,
+              verification: patchValue.verification,
+              retryPolicy: patchValue.retryPolicy ?? { maxAttempts: 0 },
+            });
+          }}
+        />
+      </div>
       {errors.length > 0 ? (
         <ul className="mt-3 space-y-1 text-sm text-rose-900">
           {errors.map((error) => (

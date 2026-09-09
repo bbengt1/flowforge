@@ -255,12 +255,13 @@ E9.2 (Chloe UI) authors and selects isolation-safe script runtime profiles. `app
 
 ## E9.3 typed script I/O and recovery (Chloe UI)
 
-E9.3 (Chloe) wires jonny's I/O + recovery map on `main`. `apps/api` is unchanged in the UI PR. Prefer `GET /scripts/catalog` (`io`, `retry.ui`, `retry.probe`, `errors[]`) plus `GET /workflows/catalog` `script.python` / `script.go` `allowedWith` / `policy.defaultMaxAttempts=0`. Relates to #94 / Part of #91 — **do not close #94**; keep epic #91 open until this UI PR merges. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+E9.3 (Chloe UI) authors declared input/output schemas and surfaces redacted results plus lease-loss recovery. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/script-io-contract.ts`, wired to jonny's **#101** map on `main` (`e93-#101`). Prefer existing `GET /scripts/catalog` (`io`, `retry.ui`, `retry.probe`, `errors[]`), `GET /workflows/catalog` `script.python` / `script.go` `allowedWith` / `policy.defaultMaxAttempts=0`, `POST /policy/evaluate` (`retrySafe` / `retryAllowed` / `verificationDeclared` for script nodes), and E5 `GET /executions/{id}` / `POST …/retry`. Do not invent routes. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #94 / Part of #91 — **Keep #94 open** (jonny owns typed I/O + recovery).
 
-- **Authoring:** optional `inputSchema` / `outputSchema` (16 KiB, no secrets). `retrySafe` (default false) requires `idempotencyKey` and `verification.behavior=declared-hook`. `retryPolicy.maxAttempts` defaults to 0; `maxAttempts>0` without those gates is `retry-denied` / `invalid-verification`.
-- **Handles / env:** never collect plaintext credentials into YAML, env, or the run form. Handles are `{id,scopes,expiresAt}` only. Runtime env is the catalog allowlist.
-- **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive hook — never imply the script did not run. Show **Retry** only when `result.retry.allowed` is true. Hide Retry for non-retrySafe indeterminate.
-- **Unchanged:** E9.1 source/publish; E9.2 runtime-profile isolation; no invented routes; `apps/api` untouched in the Chloe UI PR.
+- **Authoring:** `script.python` / `script.go` edit `inputSchema` / `outputSchema` as the documented JSON Schema subset (`type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `maxLength`, `maxItems`, `maxProperties`, `minimum`, `maximum`, `classification`). Size bounds are catalog 16 KiB plus schema `maxLength` / `maxItems` / `maxProperties`. Name=type stubs coerce to that subset. Secret / handle field names are rejected. `retrySafe` (default false) requires `idempotencyKey` and `verification.behavior=declared-hook`. `retryPolicy.maxAttempts` defaults to 0; `maxAttempts>0` without those gates is `retry-denied` / `invalid-verification`.
+- **Handles / env:** never collect plaintext credentials into YAML, env, or the run form. Handles are `{id,scopes,expiresAt}` only (TTL 60s, max 5m). Runtime env is the catalog `FLOWFORGE_*` allowlist.
+- **Execution / history:** redacted typed output, schema validation errors (path + code only), and loud `indeterminate` on lease loss / unknown / inconclusive hook — never imply the script did not run. Show **Retry** only when `result.retry.allowed` is true (same E8.3 pattern). Never a blind re-run. Scoped handles are stripped and never shown. Closed retry is HTTP 409 `retry-denied`.
+- **Fail closed:** HTTP 403 empties selectors as in E9.1/E9.2. Unexpected secret fields are stripped and treated as a contract bug.
+- **Unchanged:** E9.1 source/publish; E9.2 runtime-profile isolation; no invented routes; `apps/api` untouched.
 
 ## Foundation operator shell
 
