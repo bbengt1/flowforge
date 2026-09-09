@@ -216,6 +216,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // E4.2 ops config UI aligned to #41 on main.
   { methods: ["GET"], match: (s) => eq(s, ["ops-config", "catalog"]) },
   { methods: ["POST"], match: (s) => eq(s, ["ops-config", "select"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["kubernetes", "catalog"]) },
   {
     methods: ["GET", "POST"],
     match: (s) => s.length === 1 && isOpsConfigCollection(s[0]),

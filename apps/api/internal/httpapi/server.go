@@ -324,6 +324,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/credentials/{credentialId}", s.deleteCredential)
 	mux.HandleFunc("GET /api/v1/credentials/{credentialId}/events", s.listCredentialEvents)
 	mux.HandleFunc("GET /api/v1/ops-config/catalog", s.getOpsCatalog)
+	mux.HandleFunc("GET /api/v1/kubernetes/catalog", s.getKubernetesCatalog)
 	mux.HandleFunc("POST /api/v1/ops-config/select", s.selectOpsBatch)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}/versions/{versionId}/pins", s.listWorkflowVersionPins)
 	for _, info := range opsconfig.KindInfos() {

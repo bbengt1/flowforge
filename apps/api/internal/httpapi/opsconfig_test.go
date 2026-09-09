@@ -9,13 +9,15 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
 func TestOpsConfigDraftPublishPinAndIsolation(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	wsA, tenant := currentWorkspace(t, h, admin)
-	cred := createVaultCredential(t, h, admin, tenant, wsA, "token", "Cluster", map[string]string{"token": "abcdefghijklmnop"})
+	cred := createKubernetesCredential(t, h, admin, tenant, wsA, "Cluster")
 	target := createPublishedClusterTarget(t, h, admin, tenant, wsA, cred.ID, "prod-cluster")
 
 	if target.Resource.Status != opsconfig.StatusPublished || target.Version.VersionNumber != 1 {
@@ -231,6 +233,15 @@ func clusterSpec(credentialID, apiServer string) map[string]any {
 	}
 }
 
+func testKubeconfig() string {
+	return "apiVersion: v1\nkind: Config\nclusters: []\nusers: []\n"
+}
+
+func createKubernetesCredential(t *testing.T, h http.Handler, user identity.User, tenant identity.Tenant, ws identity.Workspace, name string) vault.Metadata {
+	t.Helper()
+	return createVaultCredential(t, h, user, tenant, ws, "kubernetes", name, map[string]string{"kubeconfig": testKubeconfig()})
+}
+
 func createOpsResource(t *testing.T, h http.Handler, user identity.User, tenant identity.Tenant, ws identity.Workspace, collection, name string, spec map[string]any) opsDetailResponse {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{"name": name, "spec": spec})
@@ -316,4 +327,145 @@ func TestOpsConfigCredentialMustBeWorkspaceScoped(t *testing.T) {
 	req := workspaceJSON(http.MethodPost, "/api/v1/cluster-targets", body, admin, tenant, ws)
 	h.ServeHTTP(rec, req)
 	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+}
+
+func TestClusterTargetKubernetesPolicyHardening(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	wsA, tenant := currentWorkspace(t, h, admin)
+	kube := createKubernetesCredential(t, h, admin, tenant, wsA, "Kube")
+	token := createVaultCredential(t, h, admin, tenant, wsA, "token", "Token", map[string]string{"token": "abcdefghijklmnop"})
+
+	t.Run("wrong credential type is 400", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{"name": "bad-type", "spec": clusterSpec(token.ID, "https://kube.example")})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/cluster-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("cross-workspace credential is 404", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_id":"`+tenant.ID+`","workbench_key":"k8s-b","name":"B"}`, admin)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("workspace B: %d %s", rec.Code, rec.Body.String())
+		}
+		var wsB identity.Workspace
+		if err := json.Unmarshal(rec.Body.Bytes(), &wsB); err != nil {
+			t.Fatal(err)
+		}
+		body, _ := json.Marshal(map[string]any{"name": "foreign-cred", "spec": clusterSpec(kube.ID, "https://kube.example")})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/cluster-targets", body, admin, tenant, wsB)
+		req.Header.Set(headerWorkbenchKey, wsB.WorkbenchKey)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	})
+
+	t.Run("empty allowlists are rejected", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{
+			"name": "empty-ns",
+			"spec": map[string]any{
+				"credentialId":      kube.ID,
+				"endpoint":          map[string]any{"apiServer": "https://kube.example"},
+				"allowedNamespaces": []string{},
+			},
+		})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/cluster-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+
+		body, _ = json.Marshal(map[string]any{
+			"name": "empty-policy",
+			"spec": map[string]any{"kind": "kubernetes", "policy": map[string]any{"allowedNamespaces": []string{}}},
+		})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/policies", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("publish kubernetes policy requires namespace allowlist", func(t *testing.T) {
+		created := createOpsResource(t, h, admin, tenant, wsA, "policies", "incomplete-k8s", map[string]any{
+			"kind":   "kubernetes",
+			"policy": map[string]any{"requireApproval": true},
+		})
+		body, _ := json.Marshal(map[string]any{"revision": 1, "note": "no-ns"})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/policies/"+created.Resource.ID+"/publish", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("allowedNamespaces must be a subset of bound policy", func(t *testing.T) {
+		pol := createOpsResource(t, h, admin, tenant, wsA, "policies", "ns-gate", map[string]any{
+			"kind":   "kubernetes",
+			"policy": map[string]any{"allowedNamespaces": []string{"prod"}},
+		})
+		publishOps(t, h, admin, tenant, wsA, "policies", pol.Resource.ID, 1, "v1")
+		body, _ := json.Marshal(map[string]any{
+			"name": "overlap-fail",
+			"spec": map[string]any{
+				"credentialId":      kube.ID,
+				"endpoint":          map[string]any{"apiServer": "https://kube.example"},
+				"allowedNamespaces": []string{"staging"},
+				"policyId":          pol.Resource.ID,
+			},
+		})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/cluster-targets", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+	})
+
+	t.Run("responses never include kubeconfig", func(t *testing.T) {
+		created := createOpsResource(t, h, admin, tenant, wsA, "cluster-targets", "safe-cluster", map[string]any{
+			"credentialId": kube.ID,
+			"endpoint":     map[string]any{"apiServer": "https://kube.example"},
+			"serviceAccount": map[string]any{
+				"name":         "flowforge-runner",
+				"namespace":    "cp-ops-nprd",
+				"roleTemplate": "namespace-scoped-runner",
+			},
+			"allowedNamespaces": []string{"cp-ops-nprd"},
+		})
+		raw := mustJSONObject(created)
+		if strings.Contains(raw, "kubeconfig") || strings.Contains(raw, "apiVersion: v1") {
+			t.Fatalf("kubeconfig leaked: %s", raw)
+		}
+		pub := publishOps(t, h, admin, tenant, wsA, "cluster-targets", created.Resource.ID, 1, "v1")
+		pin := selectOps(t, h, admin, tenant, wsA, "cluster-targets", created.Resource.ID, "")
+		if pin.VersionID != pub.Version.ID {
+			t.Fatalf("pin = %+v", pin)
+		}
+		if sa, _ := pin.Spec["serviceAccount"].(map[string]any); sa == nil || sa["name"] != "flowforge-runner" {
+			t.Fatalf("serviceAccount metadata missing: %+v", pin.Spec)
+		}
+	})
+
+	t.Run("catalog documents engine rules", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceRequest(http.MethodGet, "/api/v1/ops-config/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("ops catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"kubernetesEngine"`) || !strings.Contains(rec.Body.String(), kubernetes.CredentialType) {
+			t.Fatalf("ops catalog missing engine: %s", rec.Body.String())
+		}
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/kubernetes/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("k8s catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		var cat kubernetes.EngineCatalog
+		if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+			t.Fatal(err)
+		}
+		if cat.CredentialType != kubernetes.CredentialType || cat.ClusterRoles || len(cat.AllowedKinds) == 0 {
+			t.Fatalf("engine catalog = %+v", cat)
+		}
+	})
 }

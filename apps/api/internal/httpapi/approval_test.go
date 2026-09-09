@@ -22,7 +22,7 @@ import (
 func TestPolicyEvaluateAndApprovalBoundary(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
-	cred := createVaultCredential(t, h, admin, tenant, ws, "token", "Cluster", map[string]string{"token": "abcdefghijklmnop"})
+	cred := createKubernetesCredential(t, h, admin, tenant, ws, "Cluster")
 
 	pol := createOpsResource(t, h, admin, tenant, ws, "policies", "k8s-gate", map[string]any{
 		"kind": "kubernetes",

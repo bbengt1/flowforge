@@ -81,7 +81,7 @@ func TestOperationalAlertsRoutingAndAck(t *testing.T) {
 	})
 
 	t.Run("policy deny emits policy alert", func(t *testing.T) {
-		cred := createVaultCredential(t, h, admin, tenant, ws, "token", "E54 Cluster", map[string]string{"token": "abcdefghijklmnop"})
+		cred := createKubernetesCredential(t, h, admin, tenant, ws, "E54 Cluster")
 		pol := createOpsResource(t, h, admin, tenant, ws, "policies", "e54-deny", map[string]any{
 			"kind":   "kubernetes",
 			"policy": map[string]any{"deny": true},

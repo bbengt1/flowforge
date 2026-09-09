@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 )
 
 var (
@@ -123,7 +124,15 @@ func normalizeClusterTarget(spec map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if ns != nil {
+	if _, present := spec["allowedNamespaces"]; present {
+		if len(ns) == 0 {
+			return nil, fmt.Errorf("%w: allowedNamespaces must not be empty (deny-by-default)", ErrInvalid)
+		}
+		for _, name := range ns {
+			if !kubernetes.ValidNamespace(name) {
+				return nil, fmt.Errorf("%w: allowedNamespaces contains an invalid namespace", ErrInvalid)
+			}
+		}
 		out["allowedNamespaces"] = ns
 	}
 	policy, err := optionalUUID(spec, "policyId")
@@ -133,7 +142,64 @@ func normalizeClusterTarget(spec map[string]any) (map[string]any, error) {
 	if policy != "" {
 		out["policyId"] = policy
 	}
-	if err := rejectUnknown(spec, "credentialId", "endpoint", "allowedNamespaces", "policyId"); err != nil {
+	sa, err := normalizeServiceAccount(spec)
+	if err != nil {
+		return nil, err
+	}
+	if sa != nil {
+		if ns, ok := sa["namespace"].(string); ok && ns != "" {
+			if allowed, has := out["allowedNamespaces"].([]string); has && !containsFold(allowed, ns) {
+				return nil, fmt.Errorf("%w: serviceAccount.namespace must be in allowedNamespaces", ErrInvalid)
+			}
+		}
+		out["serviceAccount"] = sa
+	}
+	if err := rejectUnknown(spec, "credentialId", "endpoint", "allowedNamespaces", "policyId", "serviceAccount"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func normalizeServiceAccount(spec map[string]any) (map[string]any, error) {
+	raw, err := objectField(spec, "serviceAccount")
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	name, ok, err := optionalString(raw, "name", 1, 63)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("%w: serviceAccount.name is required", ErrInvalid)
+	}
+	if !kubernetes.ValidServiceAccountName(name) {
+		return nil, fmt.Errorf("%w: serviceAccount.name is not a valid service account", ErrInvalid)
+	}
+	tmpl, err := kubernetes.NormalizeRoleTemplate("")
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalid, err)
+	}
+	if v, ok, err := optionalString(raw, "roleTemplate", 1, 64); err != nil {
+		return nil, err
+	} else if ok {
+		tmpl, err = kubernetes.NormalizeRoleTemplate(v)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrInvalid, err)
+		}
+	}
+	out := map[string]any{
+		"name":         name,
+		"roleTemplate": tmpl,
+	}
+	if ns, ok, err := optionalString(raw, "namespace", 1, 63); err != nil {
+		return nil, err
+	} else if ok {
+		if !kubernetes.ValidNamespace(ns) {
+			return nil, fmt.Errorf("%w: serviceAccount.namespace is not a valid namespace", ErrInvalid)
+		}
+		out["namespace"] = ns
+	}
+	if err := rejectUnknown(raw, "name", "namespace", "roleTemplate"); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -520,10 +586,205 @@ func normalizePolicy(spec map[string]any) (map[string]any, error) {
 	if policy == nil {
 		return nil, fmt.Errorf("%w: policy is required", ErrInvalid)
 	}
+	if kind == "kubernetes" {
+		normalized, err := normalizeKubernetesPolicyObject(policy)
+		if err != nil {
+			return nil, err
+		}
+		policy = normalized
+	}
 	if err := rejectUnknown(spec, "kind", "policy"); err != nil {
 		return nil, err
 	}
 	return map[string]any{"kind": kind, "policy": policy}, nil
+}
+
+func normalizeKubernetesPolicyObject(policy map[string]any) (map[string]any, error) {
+	if err := rejectUnknown(policy, kubernetes.KubernetesPolicyKeys()...); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	if raw, ok := policy[kubernetes.KeyDeny]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.deny must be a boolean", ErrInvalid)
+		}
+		out[kubernetes.KeyDeny] = b
+	}
+	if raw, ok := policy[kubernetes.KeyRequireApproval]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.requireApproval must be a boolean", ErrInvalid)
+		}
+		out[kubernetes.KeyRequireApproval] = b
+	}
+	if v, ok, err := optionalString(policy, kubernetes.KeyApproverRole, 1, 64); err != nil {
+		return nil, err
+	} else if ok {
+		out[kubernetes.KeyApproverRole] = v
+	}
+	if v, ok, err := optionalString(policy, kubernetes.KeyExpiresIn, 2, 32); err != nil {
+		return nil, err
+	} else if ok {
+		out[kubernetes.KeyExpiresIn] = v
+	}
+	ops, err := stringList(policy, kubernetes.KeyOperations, 16, 64)
+	if err != nil {
+		return nil, err
+	}
+	if _, present := policy[kubernetes.KeyOperations]; present {
+		if len(ops) == 0 {
+			return nil, fmt.Errorf("%w: policy.operations must not be empty", ErrInvalid)
+		}
+		out[kubernetes.KeyOperations] = ops
+	}
+	ns, err := normalizeK8sAllowlist(policy, "namespace", kubernetes.KeyAllowedNamespaces, kubernetes.KeyNamespaces)
+	if err != nil {
+		return nil, err
+	}
+	if ns != nil {
+		out[kubernetes.KeyAllowedNamespaces] = ns
+	}
+	kinds, err := normalizeK8sAllowlist(policy, "kind", kubernetes.KeyAllowedKinds, kubernetes.KeyKinds)
+	if err != nil {
+		return nil, err
+	}
+	if kinds != nil {
+		out[kubernetes.KeyAllowedKinds] = kinds
+	}
+	verbs, err := normalizeK8sAllowlist(policy, "verb", kubernetes.KeyAllowedVerbs, kubernetes.KeyVerbs)
+	if err != nil {
+		return nil, err
+	}
+	if verbs != nil {
+		out[kubernetes.KeyAllowedVerbs] = verbs
+	}
+	return out, nil
+}
+
+func normalizeK8sAllowlist(policy map[string]any, kind string, canonical, alias string) ([]string, error) {
+	_, hasCanonical := policy[canonical]
+	_, hasAlias := policy[alias]
+	if hasCanonical && hasAlias {
+		return nil, fmt.Errorf("%w: use %s or %s, not both", ErrInvalid, canonical, alias)
+	}
+	key := ""
+	if hasCanonical {
+		key = canonical
+	} else if hasAlias {
+		key = alias
+	} else {
+		return nil, nil
+	}
+	items, err := stringList(policy, key, 32, 63)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: policy.%s must not be empty (deny-by-default)", ErrInvalid, key)
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		switch kind {
+		case "namespace":
+			if !kubernetes.ValidNamespace(item) {
+				return nil, fmt.Errorf("%w: policy.%s contains an invalid namespace", ErrInvalid, key)
+			}
+		case "kind":
+			if !kubernetes.ValidKind(item) || !kubernetes.KindAllowed(item) {
+				return nil, fmt.Errorf("%w: policy.%s contains a kind that is not on the engine allowlist", ErrInvalid, key)
+			}
+		case "verb":
+			if !kubernetes.VerbAllowed(item) {
+				return nil, fmt.Errorf("%w: policy.%s contains an unsupported verb", ErrInvalid, key)
+			}
+			item = strings.ToLower(item)
+		}
+		if _, dup := seen[item]; dup {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// ValidateReady enforces publish/select constraints that drafts may omit.
+func ValidateReady(kind string, spec map[string]any) error {
+	if spec == nil {
+		return fmt.Errorf("%w: spec is required", ErrInvalid)
+	}
+	switch kind {
+	case KindClusterTarget:
+		if credentialIDFromSpec(spec) == "" {
+			return fmt.Errorf("%w: credentialId is required", ErrInvalid)
+		}
+		endpoint, err := objectField(spec, "endpoint")
+		if err != nil || endpoint == nil {
+			return fmt.Errorf("%w: endpoint is required", ErrInvalid)
+		}
+		if _, hasAPI := endpoint["apiServer"]; !hasAPI {
+			if _, hasTLS := endpoint["tlsServerName"]; !hasTLS {
+				return fmt.Errorf("%w: endpoint.apiServer or endpoint.tlsServerName is required", ErrInvalid)
+			}
+		}
+		return nil
+	case KindPolicy:
+		policyKind, _ := spec["kind"].(string)
+		if policyKind != "kubernetes" {
+			return nil
+		}
+		rules, _ := spec["policy"].(map[string]any)
+		if rules == nil {
+			return fmt.Errorf("%w: policy is required", ErrInvalid)
+		}
+		if deny, _ := rules[kubernetes.KeyDeny].(bool); deny {
+			return nil
+		}
+		if ns, present := kubernetes.Namespaces(rules); !present || len(ns) == 0 {
+			return fmt.Errorf("%w: kubernetes policy requires a non-empty allowedNamespaces (or namespaces) allowlist", ErrInvalid)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// TargetNamespacesConsistent reports whether every target namespace is in the
+// bound Kubernetes policy allowlist. A missing policy allowlist is not a
+// constraint. An empty present target or policy list fails closed.
+func TargetNamespacesConsistent(targetSpec, policySpec map[string]any) error {
+	targetNS, targetPresent := kubernetes.Namespaces(targetSpec)
+	if targetPresent && len(targetNS) == 0 {
+		return fmt.Errorf("%w: allowedNamespaces must not be empty", ErrInvalid)
+	}
+	if policySpec == nil {
+		return nil
+	}
+	kind, _ := policySpec["kind"].(string)
+	rules, _ := policySpec["policy"].(map[string]any)
+	if kind != "" && kind != "kubernetes" {
+		return fmt.Errorf("%w: cluster targets must bind a kubernetes policy", ErrInvalid)
+	}
+	policyNS, policyPresent := kubernetes.Namespaces(rules)
+	if policyPresent && len(policyNS) == 0 {
+		return fmt.Errorf("%w: bound policy namespace allowlist must not be empty", ErrInvalid)
+	}
+	if !targetPresent || !policyPresent {
+		return nil
+	}
+	for _, ns := range targetNS {
+		if !kubernetes.Allowed(policyNS, ns) {
+			return fmt.Errorf("%w: allowedNamespaces must be a subset of the bound kubernetes policy", ErrInvalid)
+		}
+	}
+	return nil
+}
+
+// RedactSpec strips secret-shaped keys so kubeconfig/plaintext never leave the API.
+func RedactSpec(spec map[string]any) map[string]any {
+	return redactMap(spec)
 }
 
 func optionalUUID(spec map[string]any, key string) (string, error) {
@@ -691,4 +952,48 @@ func credentialIDFromSpec(spec map[string]any) string {
 func policyIDFromSpec(spec map[string]any) string {
 	raw, _ := spec["policyId"].(string)
 	return strings.TrimSpace(raw)
+}
+
+func containsFold(items []string, want string) bool {
+	want = strings.TrimSpace(want)
+	for _, item := range items {
+		if strings.EqualFold(item, want) {
+			return true
+		}
+	}
+	return false
+}
+
+var secretSpecKeys = map[string]struct{}{
+	"kubeconfig": {}, "privatekey": {}, "private_key": {}, "passphrase": {},
+	"token": {}, "secret": {}, "password": {}, "authorization": {},
+}
+
+func redactMap(in map[string]any) map[string]any {
+	if in == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if _, secret := secretSpecKeys[strings.ToLower(k)]; secret {
+			continue
+		}
+		out[k] = redactValue(v)
+	}
+	return out
+}
+
+func redactValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		return redactMap(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = redactValue(item)
+		}
+		return out
+	default:
+		return t
+	}
 }

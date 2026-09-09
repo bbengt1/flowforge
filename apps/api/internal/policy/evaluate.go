@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -159,6 +160,11 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 	}
 
 	if policyPin.VersionID == "" {
+		if reason := checkAllowlists(op, node, target, "", map[string]any{}); reason != "" {
+			item.Decision = DecisionDeny
+			item.Reason = reason
+			return item
+		}
 		return item
 	}
 	specKind, rules := policyRules(policyPin.Spec)
@@ -326,44 +332,62 @@ func operationListed(rules map[string]any, op string) bool {
 }
 
 func checkAllowlists(op string, node workflow.Node, target opsconfig.Pin, kind string, rules map[string]any) string {
-	ns := firstNonEmpty(stringSlice(rules, "allowedNamespaces"), stringSlice(rules, "namespaces"))
-	if len(ns) > 0 {
+	if ns, present := kubernetes.Namespaces(rules); present {
 		got := stringField(node.With, "namespace")
-		if got == "" || !containsFold(ns, got) {
+		if !kubernetes.Allowed(ns, got) {
 			return "namespace is not allowed by policy"
 		}
 	}
-	kinds := firstNonEmpty(stringSlice(rules, "allowedKinds"), stringSlice(rules, "kinds"))
-	if len(kinds) > 0 && strings.HasPrefix(op, "kubernetes.") {
-		if !manifestKindAllowed(stringField(node.With, "manifests"), kinds) {
+	if target.Spec != nil {
+		if ns, present := kubernetes.Namespaces(target.Spec); present {
+			got := stringField(node.With, "namespace")
+			if !kubernetes.Allowed(ns, got) {
+				return "namespace is not allowed by cluster target"
+			}
+		}
+	}
+	if kinds, present := kubernetes.Kinds(rules); present && strings.HasPrefix(op, "kubernetes.") {
+		nodeKind := stringField(node.With, "kind")
+		manifests := stringField(node.With, "manifests")
+		switch {
+		case nodeKind != "":
+			if !kubernetes.Allowed(kinds, nodeKind) {
+				return "resource kind is not allowed by policy"
+			}
+		case manifests != "":
+			if !manifestKindAllowed(manifests, kinds) {
+				return "resource kind is not allowed by policy"
+			}
+		default:
 			return "resource kind is not allowed by policy"
 		}
 	}
-	verbs := firstNonEmpty(stringSlice(rules, "allowedVerbs"), stringSlice(rules, "verbs"))
-	if len(verbs) > 0 {
-		if !containsFold(verbs, operationVerb(op)) {
+	if verbs, present := kubernetes.Verbs(rules); present {
+		if !kubernetes.Allowed(verbs, operationVerb(op)) {
 			return "verb is not allowed by policy"
 		}
 	}
-	hosts := firstNonEmpty(stringSlice(rules, "allowedHosts"), stringSlice(rules, "hosts"))
-	if len(hosts) > 0 {
+	if items, present := presentStringList(rules, "allowedHosts", "hosts"); present {
 		host := stringField(node.With, "hostname")
 		if host == "" && target.Spec != nil {
 			host = stringField(target.Spec, "hostname")
 		}
-		if host == "" || !containsFold(hosts, host) {
+		if host == "" || !containsFold(items, host) {
 			return "host is not allowed by policy"
 		}
 	}
-	addrs := firstNonEmpty(stringSlice(rules, "allowedAddresses"), stringSlice(rules, "addresses"))
-	if len(addrs) > 0 {
+	if items, present := presentStringList(rules, "allowedAddresses", "addresses"); present {
 		host := stringField(target.Spec, "hostname")
-		if host == "" || !containsFold(addrs, host) {
+		if host == "" || !containsFold(items, host) {
 			return "address is not allowed by policy"
 		}
 	}
 	_ = kind
 	return ""
+}
+
+func presentStringList(rules map[string]any, keys ...string) ([]string, bool) {
+	return kubernetes.Allowlist(rules, keys...)
 }
 
 func operationVerb(op string) string {
@@ -386,7 +410,7 @@ func operationVerb(op string) string {
 
 func manifestKindAllowed(manifests string, allowed []string) bool {
 	if strings.TrimSpace(manifests) == "" {
-		return true
+		return false
 	}
 	found := false
 	for _, line := range strings.Split(manifests, "\n") {
@@ -396,12 +420,11 @@ func manifestKindAllowed(manifests string, allowed []string) bool {
 		}
 		found = true
 		kind := strings.TrimSpace(strings.TrimPrefix(line, "kind:"))
-		if !containsFold(allowed, kind) {
+		if !kubernetes.Allowed(allowed, kind) {
 			return false
 		}
 	}
-	_ = found
-	return true
+	return found
 }
 
 func targetRef(node workflow.Node) (string, string) {
@@ -483,13 +506,6 @@ func stringSlice(m map[string]any, key string) []string {
 	default:
 		return nil
 	}
-}
-
-func firstNonEmpty(a, b []string) []string {
-	if len(a) > 0 {
-		return a
-	}
-	return b
 }
 
 func containsFold(items []string, want string) bool {

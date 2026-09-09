@@ -5,6 +5,7 @@ Thin control-plane defaults. This is not a full production platform.
 | Path | Role |
 | --- | --- |
 | [`k8s/`](k8s/) | Namespace, API Deployment/Service, default-deny NetworkPolicy, TLS Ingress |
+| [`kubernetes/`](kubernetes/) | Workspace least-privilege ServiceAccount / Role / RoleBinding templates for cluster targets (E7.1; ClusterRoles are not MVP) |
 | [`tls/`](tls/) | Local reverse-proxy TLS terminator (Caddy) |
 | [`supply-chain/`](supply-chain/) | Approved bases and vulnerability/provenance policy implemented in CI |
 

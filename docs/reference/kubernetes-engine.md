@@ -44,8 +44,9 @@ Manifests are parsed document by document, normalized to JSON, client-validated,
 FlowForge separates platform/workspace authorization from Kubernetes authorization:
 
 - FlowForge permissions: `workflow.execute`, `kubernetes.read`, `kubernetes.apply`, and `clusterTarget.use`.
-- Target policy narrows namespaces, kinds, verbs, and actions requiring approval.
-- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP.
+- Target policy narrows namespaces, kinds, verbs, and actions requiring approval. Evaluation keys (aliases in parentheses) fail closed when present: `allowedNamespaces` (`namespaces`), `allowedKinds` (`kinds`), `allowedVerbs` (`verbs`), `deny`, `requireApproval`, `approverRole`, `expiresIn`, `operations`.
+- Cluster targets bind only a workspace-scoped `kubernetes` credential (`secret.kubeconfig`). Cross-workspace credential refs are `404`; host-supplied `id` / `workspaceId` is `400`.
+- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP. Operators apply [`deploy/kubernetes/`](../../deploy/kubernetes/) templates; targets may record `serviceAccount.{name,namespace,roleTemplate}` for E7.2 workers.
 - The API and UI never receive kubeconfigs or plaintext credentials. Workers receive only ephemeral scoped material and redact secrets from all outputs.
 
 Kubernetes service accounts should receive only the minimum permissions required, preferably through namespace-scoped roles and bindings. [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) and [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/) support this model.
@@ -59,20 +60,15 @@ Audit events record the actor, host-embed context when present, target, policy r
 ## Initial implementation layout
 
 ```text
-cmd/flowforge-api/main.go
-internal/kubernetes/
-  model.go manifest.go validator.go policy.go client.go apply.go status.go
-internal/workflows/nodes/kubernetes.go
-internal/executions/kubernetes_runner.go
-internal/api/v1/kubernetes_handlers.go
-internal/store/cluster_targets.go
-internal/store/kubernetes_policies.go
-migrations/0001_kubernetes_targets.sql
-api/v1/openapi.yaml
+apps/api/internal/kubernetes/
+  model.go catalog.go policy.go          # E7.1 control-plane (this story)
+  manifest.go validator.go client.go apply.go status.go   # E7.2 / E7.3
+apps/api/internal/opsconfig/            # E4.2 store: cluster_target + policy kinds
+apps/api/internal/httpapi/opsconfig.go  # /cluster-targets, /policies, /kubernetes/catalog
 deploy/kubernetes/
-  runner-deployment.yaml
-  runner-networkpolicy.yaml
+  workspace-serviceaccount.yaml
   workspace-role-template.yaml
+  workspace-rolebinding-template.yaml
 ```
 
 ## Required validation

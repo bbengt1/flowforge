@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -142,10 +143,11 @@ type Store interface {
 
 // Catalog is the UI/operator vocabulary for ops-config resources.
 type Catalog struct {
-	Kinds []KindInfo `json:"kinds"`
+	Kinds      []KindInfo               `json:"kinds"`
+	Kubernetes kubernetes.EngineCatalog `json:"kubernetesEngine"`
 }
 
-// TypeCatalog returns kind/collection/YAML field shapes.
+// TypeCatalog returns kind/collection/YAML field shapes plus E7.1 engine rules.
 func TypeCatalog() Catalog {
-	return Catalog{Kinds: KindInfos()}
+	return Catalog{Kinds: KindInfos(), Kubernetes: kubernetes.Catalog()}
 }

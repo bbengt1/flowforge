@@ -140,10 +140,13 @@ export type OpsConfigCatalogKind = {
   displayName: string;
   yamlFields: string[];
   usePermission: string;
+  allowedCredentialTypes?: string[];
+  engine?: string;
 };
 
 export type OpsConfigCatalog = {
   kinds: OpsConfigCatalogKind[];
+  kubernetesEngine?: Record<string, unknown>;
 };
 
 export type KindDescriptor = {

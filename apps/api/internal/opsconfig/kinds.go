@@ -4,6 +4,7 @@ package opsconfig
 
 import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 )
 
 // Resource kinds. Stable API/DB vocabulary.
@@ -49,11 +50,13 @@ const (
 
 // KindInfo describes one operational configuration kind for the catalog.
 type KindInfo struct {
-	Kind          string   `json:"kind"`
-	Collection    string   `json:"collection"`
-	DisplayName   string   `json:"displayName"`
-	YAMLFields    []string `json:"yamlFields"`
-	UsePermission string   `json:"usePermission"`
+	Kind                   string   `json:"kind"`
+	Collection             string   `json:"collection"`
+	DisplayName            string   `json:"displayName"`
+	YAMLFields             []string `json:"yamlFields"`
+	UsePermission          string   `json:"usePermission"`
+	AllowedCredentialTypes []string `json:"allowedCredentialTypes,omitempty"`
+	Engine                 string   `json:"engine,omitempty"`
 }
 
 // Kinds is the closed set of operational configuration kinds.
@@ -67,7 +70,7 @@ func Kinds() []string {
 // KindInfos is the UI/OpenAPI catalog.
 func KindInfos() []KindInfo {
 	return []KindInfo{
-		{Kind: KindClusterTarget, Collection: "cluster-targets", DisplayName: "Cluster target", YAMLFields: []string{YAMLClusterTargetID}, UsePermission: authz.PermClusterTargetUse},
+		{Kind: KindClusterTarget, Collection: "cluster-targets", DisplayName: "Cluster target", YAMLFields: []string{YAMLClusterTargetID}, UsePermission: authz.PermClusterTargetUse, AllowedCredentialTypes: []string{kubernetes.CredentialType}, Engine: "kubernetes"},
 		{Kind: KindSSHTarget, Collection: "ssh-targets", DisplayName: "SSH target", YAMLFields: []string{YAMLSSHTargetID}, UsePermission: authz.PermSSHTargetUse},
 		{Kind: KindCommandProfile, Collection: "command-profiles", DisplayName: "Command profile", YAMLFields: []string{YAMLCommandProfileID}, UsePermission: authz.PermCommandProfileUse},
 		{Kind: KindRuntimeProfile, Collection: "runtime-profiles", DisplayName: "Runtime profile", YAMLFields: []string{YAMLRuntimeProfileID}, UsePermission: authz.PermRuntimeProfileUse},

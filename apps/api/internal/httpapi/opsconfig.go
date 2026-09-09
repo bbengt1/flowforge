@@ -7,7 +7,9 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
 type createOpsRequest struct {
@@ -117,7 +119,7 @@ func (s *Server) createOpsResource(kind string) http.HandlerFunc {
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Host-supplied workspace identity is not accepted.")
 			return
 		}
-		if !s.authorizeCredentialSpec(w, r, scope, req.Spec) {
+		if !s.authorizeOpsSpec(w, r, scope, kind, req.Spec, false) {
 			return
 		}
 		rec, draft, err := s.ops.Create(r.Context(), scope, opsconfig.CreateInput{
@@ -178,7 +180,7 @@ func (s *Server) putOpsDraft(kind string) http.HandlerFunc {
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Host-supplied workspace identity is not accepted.")
 			return
 		}
-		if !s.authorizeCredentialSpec(w, r, scope, req.Spec) {
+		if !s.authorizeOpsSpec(w, r, scope, kind, req.Spec, false) {
 			return
 		}
 		rec, draft, err := s.ops.SaveDraft(r.Context(), scope, kind, strings.TrimSpace(r.PathValue("resourceId")), opsconfig.SaveInput{
@@ -209,6 +211,14 @@ func (s *Server) publishOpsResource(kind string) http.HandlerFunc {
 				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Host-supplied workspace identity is not accepted.")
 				return
 			}
+		}
+		draft, err := s.ops.GetDraft(r.Context(), scope, kind, strings.TrimSpace(r.PathValue("resourceId")))
+		if err != nil {
+			writeOpsError(w, r, err)
+			return
+		}
+		if !s.authorizeOpsSpec(w, r, scope, kind, draft.Spec, true) {
+			return
 		}
 		rec, ver, err := s.ops.Publish(r.Context(), scope, kind, strings.TrimSpace(r.PathValue("resourceId")), opsconfig.PublishInput{
 			ExpectedRevision: req.Revision,
@@ -309,6 +319,9 @@ func (s *Server) selectOpsResource(kind string) http.HandlerFunc {
 			writeOpsError(w, r, err)
 			return
 		}
+		if !s.authorizeOpsSpec(w, r, scope, kind, pin.Spec, true) {
+			return
+		}
 		writeJSON(w, http.StatusOK, pin)
 	}
 }
@@ -334,6 +347,11 @@ func (s *Server) selectOpsBatch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeOpsError(w, r, err)
 		return
+	}
+	for _, pin := range pins {
+		if !s.authorizeOpsSpec(w, r, scope, pin.Kind, pin.Spec, true) {
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, listResponse[opsconfig.Pin]{Items: pins})
 }
@@ -361,7 +379,35 @@ func (s *Server) listWorkflowVersionPins(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, listResponse[opsconfig.Pin]{Items: pins})
 }
 
-func (s *Server) authorizeCredentialSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, spec map[string]any) bool {
+func (s *Server) getKubernetesCatalog(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.opsScope(w, r, authz.PermOpsConfigView)
+	if !ok {
+		return
+	}
+	_ = scope
+	writeJSON(w, http.StatusOK, kubernetes.Catalog())
+}
+
+func (s *Server) authorizeOpsSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, kind string, spec map[string]any, ready bool) bool {
+	if spec == nil {
+		spec = map[string]any{}
+	}
+	if !s.authorizeCredentialSpec(w, r, scope, kind, spec) {
+		return false
+	}
+	if kind == opsconfig.KindClusterTarget && !s.authorizeClusterTargetPolicy(w, r, scope, spec) {
+		return false
+	}
+	if ready {
+		if err := opsconfig.ValidateReady(kind, spec); err != nil {
+			writeOpsError(w, r, err)
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) authorizeCredentialSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, kind string, spec map[string]any) bool {
 	if spec == nil || s.vault == nil {
 		return true
 	}
@@ -370,11 +416,65 @@ func (s *Server) authorizeCredentialSpec(w http.ResponseWriter, r *http.Request,
 	if id == "" {
 		return true
 	}
-	if _, err := s.vault.Get(r.Context(), scope, id); err != nil {
+	meta, err := s.vault.Get(r.Context(), scope, id)
+	if err != nil {
 		writeVaultError(w, r, err)
 		return false
 	}
+	if kind == opsconfig.KindClusterTarget && meta.Type != vault.TypeKubernetes && meta.Type != kubernetes.CredentialType {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Cluster targets require a workspace kubernetes (kubeconfig) credential.")
+		return false
+	}
+	if meta.Status == vault.StatusDisabled {
+		writeVaultError(w, r, vault.ErrDisabled)
+		return false
+	}
 	return true
+}
+
+func (s *Server) authorizeClusterTargetPolicy(w http.ResponseWriter, r *http.Request, scope isolation.Scope, spec map[string]any) bool {
+	policyID := strings.TrimSpace(stringField(spec, "policyId"))
+	if policyID == "" {
+		return true
+	}
+	rec, err := s.ops.Get(r.Context(), scope, opsconfig.KindPolicy, policyID)
+	if err != nil {
+		writeOpsError(w, r, err)
+		return false
+	}
+	var policySpec map[string]any
+	if rec.Status == opsconfig.StatusPublished && rec.LatestVersionID != "" {
+		ver, verErr := s.ops.GetVersion(r.Context(), scope, opsconfig.KindPolicy, policyID, rec.LatestVersionID)
+		if verErr != nil {
+			writeOpsError(w, r, verErr)
+			return false
+		}
+		policySpec = ver.Spec
+	} else {
+		draft, draftErr := s.ops.GetDraft(r.Context(), scope, opsconfig.KindPolicy, policyID)
+		if draftErr != nil {
+			writeOpsError(w, r, draftErr)
+			return false
+		}
+		policySpec = draft.Spec
+	}
+	if kind, _ := policySpec["kind"].(string); kind != "" && kind != "kubernetes" {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Cluster targets must bind a kubernetes policy.")
+		return false
+	}
+	if err := opsconfig.TargetNamespacesConsistent(spec, policySpec); err != nil {
+		writeOpsError(w, r, err)
+		return false
+	}
+	return true
+}
+
+func stringField(spec map[string]any, key string) string {
+	if spec == nil {
+		return ""
+	}
+	s, _ := spec[key].(string)
+	return strings.TrimSpace(s)
 }
 
 func (s *Server) pinWorkflowRefs(w http.ResponseWriter, r *http.Request, scope isolation.Scope, yamlDoc, ownerKind, ownerID string) ([]opsconfig.Pin, bool) {
@@ -396,6 +496,11 @@ func (s *Server) pinWorkflowRefs(w http.ResponseWriter, r *http.Request, scope i
 	if err != nil {
 		writeOpsError(w, r, err)
 		return nil, false
+	}
+	for _, pin := range pins {
+		if !s.authorizeOpsSpec(w, r, scope, pin.Kind, pin.Spec, true) {
+			return nil, false
+		}
 	}
 	bound, err := s.ops.BindPins(r.Context(), scope, opsconfig.BindInput{OwnerKind: ownerKind, OwnerID: ownerID, Pins: pins})
 	if err != nil {

@@ -203,6 +203,9 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, kind, id stri
 	if in.ExpectedRevision > 0 && row.draft.Revision != in.ExpectedRevision {
 		return Resource{}, Version{}, ErrRevisionConflict
 	}
+	if err := ValidateReady(kind, row.draft.Spec); err != nil {
+		return Resource{}, Version{}, err
+	}
 	for _, ver := range row.versions {
 		if ver.Digest == row.draft.Digest {
 			return Resource{}, Version{}, ErrConflict
@@ -473,6 +476,9 @@ func (m *Memory) selectLocked(scope isolation.Scope, kind, id, versionID string,
 			return Pin{}, ErrNotFound
 		}
 	}
+	if err := ValidateReady(kind, ver.Spec); err != nil {
+		return Pin{}, err
+	}
 	return Pin{
 		Kind:          kind,
 		ResourceID:    row.record.ID,
@@ -536,14 +542,7 @@ func clonePin(in Pin) Pin {
 }
 
 func cloneMap(in map[string]any) map[string]any {
-	if in == nil {
-		return map[string]any{}
-	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
+	return RedactSpec(in)
 }
 
 func newID() string {
