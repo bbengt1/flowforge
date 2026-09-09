@@ -13,8 +13,12 @@ import {
   collectSetCookies,
   rewriteUpstreamSetCookies,
 } from "./session-cookies.ts";
+import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
+import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
+
+export { isResourceId } from "./identity-proxy-ids.ts";
 
 const API_PREFIX = "/api/v1";
 const PROXY_PREFIX = "/api/control-plane";
@@ -238,6 +242,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[2] === "versions" &&
       isResourceId(s[3]),
   },
+  // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
+  // approval-contract.ts.
+  ...APPROVAL_PROXY_ROUTES,
 ];
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
@@ -248,14 +255,6 @@ export function withRequestSearch(apiPath: string, requestUrl: string): string {
   } catch {
     return apiPath;
   }
-}
-
-const RESOURCE_ID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Workflow/version/execution path ids are UUIDs — never catalog/validate/normalize. */
-export function isResourceId(value: string | undefined): boolean {
-  return Boolean(value && RESOURCE_ID.test(value));
 }
 
 function eq(segments: string[], expected: string[]): boolean {

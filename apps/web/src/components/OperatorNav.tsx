@@ -8,6 +8,7 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { CurrentWorkspace } from "@/lib/identity-types";
+import { canSeeApprovalsNav } from "@/lib/approval";
 import { canSeeOpsConfigNav } from "@/lib/ops-config";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
@@ -65,6 +66,7 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
   }, [ready, identity]);
 
   const showConfig = canSeeOpsConfigNav(ready ? permissions : null);
+  const showApprovals = canSeeApprovalsNav(ready ? permissions : null);
 
   return (
     <nav aria-label="Operator" className="flex flex-wrap items-center gap-4">
@@ -87,6 +89,11 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
             Config
           </Link>
         </>
+      ) : null}
+      {showApprovals ? (
+        <Link href="/approvals" className={linkClass}>
+          Approvals
+        </Link>
       ) : null}
       <Link href="/membership" className={linkClass}>
         Membership

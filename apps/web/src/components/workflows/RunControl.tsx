@@ -1,6 +1,10 @@
 "use client";
 
+import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
+import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
+import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
+import type { ProblemDetails } from "@/lib/problem";
 import { shortDigest } from "@/lib/workflow";
 import type { WorkflowExecution, WorkflowVersion } from "@/lib/workflow-types";
 
@@ -10,6 +14,11 @@ type RunControlProps = {
   execution: WorkflowExecution | null;
   pending: boolean;
   dirty: boolean;
+  runBlocked: boolean;
+  evaluation: PolicyEvaluation | null;
+  evaluationPending: boolean;
+  evaluationProblem: ProblemDetails | null;
+  executionApprovals: ApprovalRequest[];
   onSelectVersion: (versionId: string) => void;
   onRun: () => void;
   onRefreshPin: () => void;
@@ -21,11 +30,16 @@ export function RunControl({
   execution,
   pending,
   dirty,
+  runBlocked,
+  evaluation,
+  evaluationPending,
+  evaluationProblem,
+  executionApprovals,
   onSelectVersion,
   onRun,
   onRefreshPin,
 }: RunControlProps) {
-  const canRun = Boolean(selectedVersionId) && !pending;
+  const canRun = Boolean(selectedVersionId) && !pending && !runBlocked;
 
   return (
     <section
@@ -83,6 +97,16 @@ export function RunControl({
         </p>
       ) : null}
 
+      {selectedVersionId ? (
+        <div className="mt-4">
+          <PreRunPolicyReview
+            evaluation={evaluation}
+            pending={evaluationPending}
+            problem={evaluationProblem}
+          />
+        </div>
+      ) : null}
+
       {execution ? (
         <div className="mt-4 space-y-2 rounded-lg bg-zinc-50 px-3 py-3 text-sm">
           <p className="font-medium">
@@ -109,6 +133,12 @@ export function RunControl({
           >
             Re-read pin
           </button>
+          <div className="pt-2">
+            <ExecutionApprovalState
+              executionStatus={execution.status}
+              approvals={executionApprovals}
+            />
+          </div>
         </div>
       ) : null}
     </section>

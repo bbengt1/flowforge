@@ -19,6 +19,7 @@ import {
   saveOpsConfigDraft,
 } from "@/lib/ops-config-client";
 import { descriptorForKind, emptySpecForKind } from "@/lib/ops-config-contract";
+import { publishInvalidatesApprovals } from "@/lib/approval";
 import { canPublishDraft, clientCompareSpecs, isDraftEditable } from "@/lib/ops-config";
 import type {
   OpsConfigDraft,
@@ -68,6 +69,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   const [compareLeft, setCompareLeft] = useState("draft");
   const [compareRight, setCompareRight] = useState("");
   const [compare, setCompare] = useState<ClientCompare | null>(null);
+  const [approvalsInvalidated, setApprovalsInvalidated] = useState(false);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -181,6 +183,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
     setVersions((current) => [result.version, ...current]);
     setCompareRight(result.version.id);
     setNote("");
+    setApprovalsInvalidated(publishInvalidatesApprovals(kind));
   }
 
   async function restore(version: OpsConfigVersion) {
@@ -225,6 +228,13 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
     <div className="space-y-6">
       <IsolationIdentityPanel />
       {problem ? <ProblemBanner problem={problem} /> : null}
+      {approvalsInvalidated ? (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Publishing this {kind === "policy" ? "policy" : "target"} invalidates
+          prior pending and approved rows bound to the previous revision.
+          Re-evaluate policy and request a new approval before dispatch.
+        </p>
+      ) : null}
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">
           last request_id {lastRequestId}

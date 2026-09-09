@@ -22,7 +22,8 @@ export default async function Home() {
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-8 px-6 py-16">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config
+          E1 foundation · E2 identity · E3 YAML · E4 vault · E4.2 config · E4.3
+          approvals
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
         <p className="max-w-xl text-base leading-7 text-zinc-600">
@@ -64,8 +65,15 @@ export default async function Home() {
             href="/config"
           >
             operational config
+          </Link>{" "}
+          operator, or review policy-bound approvals on the{" "}
+          <Link
+            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+            href="/approvals"
+          >
+            approvals queue
           </Link>
-          operator.
+          .
         </p>
       </header>
 
@@ -166,6 +174,24 @@ export default async function Home() {
             href="/config"
           >
             Open targets / profiles / config
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Approvals</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E4.3 UI for the #44 policy-eval / approvals map.
+          Pre-run evaluate + decide use CSRF. The requester cannot approve
+          their own request. Target or policy publish invalidates prior
+          approvals. Server recheck is authoritative.
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/approvals"
+          >
+            Open approvals
           </Link>
         </p>
       </section>
