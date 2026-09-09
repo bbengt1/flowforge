@@ -112,9 +112,12 @@ export function ScriptAuthoringPanel({
               patch("runtimeProfileId", "");
               return;
             }
-            void selectOpsConfig(identity, "runtime_profile", pin.resourceId, {
-              versionId: pin.versionId,
-            }).then(() => {
+            void selectOpsConfig(
+              identity,
+              "runtime_profile",
+              pin.resourceId,
+              pin.versionId,
+            ).then(() => {
               patch("runtimeProfileId", pin.resourceId);
             });
           }}
