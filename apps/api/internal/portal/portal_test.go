@@ -63,6 +63,12 @@ func TestMapRolesAliasesAndUnknownFailClosed(t *testing.T) {
 	if _, err := UnionCapabilities(nil, []string{"not.a.permission"}); err != ErrUnknownCapability {
 		t.Fatalf("unknown cap: %v", err)
 	}
+	if _, err := UnionCapabilities([]string{RoleAdmin}, []string{authz.PermPlatformAdminister}); err != ErrPlatformCapability {
+		t.Fatalf("platform.administer extra: %v", err)
+	}
+	if _, err := UnionCapabilities(nil, []string{authz.PermPlatformAdminister}); err != ErrPlatformCapability {
+		t.Fatalf("platform.administer only: %v", err)
+	}
 }
 
 func TestIssuerAllowlistFailsClosed(t *testing.T) {
@@ -140,6 +146,9 @@ func TestCatalogBoundaryNeverShares(t *testing.T) {
 	}
 	if c.Boundary.SharesDatabase || c.Boundary.SharesExecutor || c.Boundary.ParallelAuthPath {
 		t.Fatalf("boundary %+v", c.Boundary)
+	}
+	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin {
+		t.Fatalf("bootstrap rules %+v", c.Rules)
 	}
 	if c.Boundary.PortalEntryIsAuthorization || c.Boundary.HostTenantIsAuthorization {
 		t.Fatal("entry/host must not authorize")

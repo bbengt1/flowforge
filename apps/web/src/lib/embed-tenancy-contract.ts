@@ -102,7 +102,7 @@ export const EMBED_TENANCY_RETARGET = {
   keyRotation:
     "POST /embed/keys/rotate is ops-only (platform.administer / PLATFORM_ADMINS). workspace.administer is 403. publicJwk must be the previous active key. Proxied via EMBED_PROXY_ROUTES. Embed chrome does not rotate keys.",
   tenancyApis:
-    "session.embed is the bind. Hop GET /session + GET /workspace. Send embedWorkspaceHeaders on every later /api/v1 call.",
+    "session.embed is the bind. Hop GET /session + GET /workspace. Send embedWorkspaceHeaders on every later /api/v1 call. POST /tenants and POST /workspaces from an embed session are 403 — no UI change; Membership create is standalone / platform-admin only.",
   exchangeShape:
     "workspace.tenant_id + workspace.workbench_key or session.embed {tenantId,workbenchKey,workspaceId,capabilities}. workspace.id is binding/display only.",
   workspaceGet:

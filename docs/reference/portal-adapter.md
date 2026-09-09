@@ -25,9 +25,13 @@ Builds on [embed SDK](embed-sdk.md) (E11.1 mint/exchange + E11.2 validation).
 | Auth path | E11.1 `embed.Mint` + `POST /embed/exchange` only |
 
 A Portal “admin” who is not a FlowForge workspace member cannot administer
-FlowForge. Mapped capabilities are a **request**. Mint still requires a
-subset of the minting caller’s FlowForge permissions. After exchange,
-FlowForge membership ∩ minted capabilities is the grant.
+FlowForge and cannot become a member by creating a tenant or sibling
+workbench. Mapped capabilities are a **request**. Mint still requires a
+subset of the minting caller’s FlowForge permissions. `platform.administer`
+is never mapped and is rejected if requested as an extra capability.
+After exchange, FlowForge membership ∩ minted capabilities is the grant.
+The embed session is bound to the assertion’s `(tenant_id, workbench_key)`
+and cannot call `POST /tenants` or `POST /workspaces` (`403`).
 
 ## Host wiring map (Chloe)
 
@@ -39,7 +43,7 @@ Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 | 2. Map roles | Portal backend | Map Portal roles → FlowForge capabilities from `GET /api/v1/portal/adapter` `capabilityMap`. Unknown roles fail closed. |
 | 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer. |
 | 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame only when the Portal origin is in `WEB_PORTAL_FRAME_ANCESTORS` and/or `WEB_EMBED_FRAME_ANCESTORS`. Host query `tenant` / `workbench` is display-only. |
-| 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Issues `ff_session` bound to `(tenant_id, workbench_key)`. Replay is `409`. |
+| 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Issues `ff_session` bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. |
 | 6. Authorize | FlowForge | Later calls: cookie session + `X-CSRF-Token` + exchanged tenant/workbench headers. Disagreeing host tenant/workbench is `403`. |
 
 Do **not** invent a Portal-specific exchange, cookie, or audience. Do **not**
@@ -57,7 +61,7 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `portal.publisher` | `publisher` | Editor + publish |
 | `portal.operator` | `operator` | Run / cancel / use credentials and targets. No edit or administer |
 | `portal.approver` | `approver` | View + `approval.decide` |
-| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member. Does **not** include `platform.administer` (embed overlap rotate). |
+| `portal.admin` | `admin` | Full workspace administration **if** the subject is a FlowForge member. Does **not** include `platform.administer` (rotate / tenant-workspace bootstrap). Cannot bootstrap membership from the embed session. |
 
 ## API
 
@@ -66,7 +70,7 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `GET` | `/api/v1/portal/adapter` | none | no | Contract, capability map, host wiring |
 | `POST` | `/api/v1/portal/adapter/assertions` | session or identity headers + membership | yes if `ff_session` | Maps roles, checks portal issuer, signs with E11.1 mint |
 | `POST` | `/api/v1/embed/assertions` | same | yes if cookie | Same mint without role mapping |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific. Bound sessions cannot `POST /tenants` or `POST /workspaces`. |
 | `GET` | `/api/v1/embed/catalog` | none | no | Embed SDK |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only |
 | `POST` | `/api/v1/embed/keys/rotate` | `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Not a Portal host control. `portal.admin` / `workspace.administer` cannot register overlap keys. |
@@ -74,7 +78,8 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`.
 
 `portalRoles` and/or `capabilities` required. Unknown role or capability is
-`400`. Issuer not on `PORTAL_ISSUER_ALLOWLIST` (when set) is `403`.
+`400`. Explicit `platform.administer` is `400`. Issuer not on
+`PORTAL_ISSUER_ALLOWLIST` (when set) is `403`.
 Host-supplied `workspaceId` that does not match server resolution is
 forbidden. Success is the same minted assertion as E11.1 (`201`, compact
 JWS once). Problem details never echo the JWS or private keys.
@@ -103,6 +108,9 @@ These fail closed on the FlowForge adapter:
 - Credential plaintext and raw runner-log secrets absent from Portal-session
   reads, problem details, and logs
 - Portal entry (mint for a non-member) does not grant FlowForge membership
+- Portal `admin` / elevated capabilities do not include `platform.administer`
+- Embed session `POST /tenants` or `POST /workspaces` is `403` (no sibling
+  workbench / membership bootstrap)
 
 ## Out of scope
 

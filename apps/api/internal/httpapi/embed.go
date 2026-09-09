@@ -323,6 +323,8 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The embed assertion has already been used.")
 	case errors.Is(err, embed.ErrTenancyMismatch):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Host-supplied tenant or workbench does not match the embed session.")
+	case errors.Is(err, embed.ErrBootstrap):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Embed sessions cannot create tenants or workspaces.")
 	case errors.Is(err, embed.ErrOverlapNotPrior):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Overlap registration is locked to the previous active signing key.")
 	case errors.Is(err, embed.ErrKeyUnavailable), errors.Is(err, embed.ErrStoreUnavailable):
@@ -330,6 +332,22 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The embed request is not valid.")
 	}
+}
+
+func embedSessionBound(r *http.Request) bool {
+	pc := principalFromRequest(r)
+	return pc != nil && pc.session != nil && pc.session.Binding.Bound()
+}
+
+func (s *Server) requireBootstrapAdmin(w http.ResponseWriter, r *http.Request, user identity.User) bool {
+	if embed.DeniesBootstrap(embedSessionBound(r)) {
+		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "embed session cannot bootstrap")
+		}
+		writeEmbedError(w, r, embed.ErrBootstrap)
+		return false
+	}
+	return s.requirePlatformAdmin(w, r, user)
 }
 
 func (s *Server) requirePlatformAdmin(w http.ResponseWriter, r *http.Request, user identity.User) bool {

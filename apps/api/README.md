@@ -15,9 +15,9 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/permission-matrix` | Role/permission catalog (view, edit, publish, execute, credential, approval, administration). |
 | `GET` | `/api/v1/roles` | Role vocabulary. |
 | `GET` | `/api/v1/permissions` | Permission vocabulary. |
-| `POST` | `/api/v1/tenants` | Create tenant (`platform.administer` / `PLATFORM_ADMINS`). |
+| `POST` | `/api/v1/tenants` | Create tenant (`platform.administer` / `PLATFORM_ADMINS` on a non-embed session). Embed sessions are `403`. |
 | `GET` | `/api/v1/workspaces` | Workspaces the caller belongs to. |
-| `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. Requires `platform.administer`. |
+| `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. Requires `platform.administer` on a non-embed session. Embed sessions are `403`. |
 | `GET` | `/api/v1/workspace` | Server-derived current workspace + roles + permissions. |
 | `GET` | `/api/v1/workspace/members` | List members (`workspace.administer`). |
 | `PUT` | `/api/v1/workspace/members` | Bind member roles (`workspace.administer`). |

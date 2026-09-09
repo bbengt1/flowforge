@@ -30,9 +30,18 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   production (`APP_ENV` empty/production) or when `REQUIRE_TLS=true`, so
   it cannot stay on accidentally. See [deployment](../deployment.md).
 - Tenant and workspace bootstrap (`POST /tenants`, `POST /workspaces`)
-  requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
+  requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`)
+  on a **non-embed** session (or trusted-dev header identity).
   Unauthenticated callers are `401`; any other caller is `403`. Empty
   `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
+  After `POST /embed/exchange`, the session is bound to the assertion’s
+  `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
+  sessions cannot create tenants, workspaces, or sibling workbenches —
+  including when the principal is a platform-admin or the assertion
+  carried Portal `admin` capabilities. Response is `403` with a problem
+  detail that embed sessions cannot create tenants or workspaces.
+  Portal-minted `admin` / elevated capabilities never include
+  `platform.administer` and never bootstrap FlowForge membership.
 - Authorization is deny-by-default. Every workspace-owned query, cache key,
   queue payload, realtime subscription, artifact URL, and audit event carries the
   server-derived workspace ID. Database RLS is a backstop, not the only check.
@@ -50,10 +59,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   overlapping verification keys; unknown `kid` fails closed. The rotate API
   may register only the previous active public key and requires
   `platform.administer` (`PLATFORM_ADMINS`); `workspace.administer` is not
-  enough. After exchange, the
+  enough.   After exchange, the
   browser session is bound to `(tenant_id, workbench_key)`; that pair travels
   through API authorization, configuration lookups, jobs/workers, caches,
-  realtime, history, and audit. A host-supplied tenant is never authorization.
+  realtime, history, and audit. The bound session cannot call tenant or
+  workspace create (fail closed). A host-supplied tenant is never authorization.
   The UI treats host-provided identity as display context until
   `POST /embed/exchange` verifies it. The CP Ops Portal adapter mints those
   same assertions after Portal RBAC; Portal entry is never FlowForge

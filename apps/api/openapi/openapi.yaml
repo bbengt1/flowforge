@@ -27,7 +27,9 @@ info:
       `TRUSTED_DEV_IDENTITY_HEADERS` is explicitly enabled in a non-production
       `APP_ENV`. A session cookie wins; conflicting identity headers fail
       closed. `POST /tenants` and `POST /workspaces` require
-      `platform.administer` (`PLATFORM_ADMINS`).
+      `platform.administer` (`PLATFORM_ADMINS`) on a non-embed session.
+      Embed-origin sessions are `403` and cannot bootstrap tenants or
+      sibling workbenches.
     - Workspace identity is server-derived from `(tenant_id|tenant_slug,
       workbench_key)`. A host-supplied workspace UUID is never the lookup key
       and is rejected when it is the only identity or does not match resolution.
@@ -441,7 +443,8 @@ paths:
         `nbf`/`exp`, `jti`, signature (active + overlap kids),
         `tenant_id` + `workbench_key`, optional workspace binding, and
         capabilities. Atomically consumes `jti` with TTL (replay is 409).
-        Issues `ff_session` / `ff_csrf` bound to that pair. The assertion
+        Issues `ff_session` / `ff_csrf` bound to that pair. The bound
+        session cannot `POST /tenants` or `POST /workspaces`. The assertion
         must be POSTed in the JSON body — never placed in a URL.
         No CSRF (no session yet).
       parameters:
@@ -2609,8 +2612,9 @@ paths:
       operationId: createTenant
       summary: Create a tenant
       description: |
-        Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`).
-        Unauthenticated callers receive `401`. Any other caller is `403`.
+        Requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`)
+        on a non-embed session. Unauthenticated callers receive `401`.
+        Embed-origin sessions and any other caller are `403`.
         Empty `PLATFORM_ADMINS` is fail-closed.
       parameters:
         - $ref: "#/components/parameters/RequestID"
@@ -2672,8 +2676,9 @@ paths:
       summary: Create a workspace
       description: |
         Creates a workspace unique on `(tenant_id, workbench_key)` and binds the
-        caller as `admin`. Requires `platform.administer` via `PLATFORM_ADMINS`.
-        `id` and `workspace_id` in the body are rejected.
+        caller as `admin`. Requires `platform.administer` via `PLATFORM_ADMINS`
+        on a non-embed session. Embed-origin sessions cannot create a sibling
+        workbench (`403`). `id` and `workspace_id` in the body are rejected.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"

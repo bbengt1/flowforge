@@ -22,6 +22,7 @@ import {
   PORTAL_HOST_WIRING,
   PORTAL_MINT_PATH,
   PORTAL_MOUNT_PREFIX,
+  PORTAL_NO_BOOTSTRAP_MESSAGE,
   PORTAL_PROXY_ROUTES,
   PORTAL_ROLES,
   PORTAL_ROUTE_MAP_SOURCE,
@@ -63,6 +64,7 @@ describe("portal adapter contract", () => {
     assert.equal(PORTAL_BOUNDARY.usesEmbedMint, true);
     assert.equal(PORTAL_BOUNDARY.usesEmbedExchange, true);
     assert.match(PORTAL_HELP, /not FlowForge authorization/);
+    assert.match(PORTAL_NO_BOOTSTRAP_MESSAGE, /cannot create tenants/);
   });
 
   it("maps portal roles and rejects unknown roles", () => {
@@ -77,6 +79,7 @@ describe("portal adapter contract", () => {
     assert.equal(normalizePortalRole("nope"), "");
     assert.equal(PORTAL_ROLES.length, 6);
     assert.ok(PORTAL_CAPABILITY_MAP["portal.operator"].includes("workflow.execute"));
+    assert.ok(!PORTAL_CAPABILITY_MAP["portal.admin"].includes("platform.administer"));
   });
 
   it("documents host wiring for Chloe", () => {
