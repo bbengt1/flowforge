@@ -107,7 +107,9 @@ export function buildContentSecurityPolicy(
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    `frame-ancestors ${frameAncestorsForPath(options.pathname ?? "/", env)}`,
+    `frame-ancestors ${frameAncestorsForPath(options.pathname ?? "/", {
+      WEB_EMBED_FRAME_ANCESTORS: env.WEB_EMBED_FRAME_ANCESTORS,
+    })}`,
     "frame-src 'none'",
     "worker-src 'self'",
     "manifest-src 'self'",

@@ -14,6 +14,8 @@ import {
   EMBED_SDK,
   EMBED_API_PR,
   EMBED_EPIC,
+  EMBED_MOUNT_HEADER,
+  EMBED_REJECTED_ASSERTION_HEADER,
   EMBED_ROUTE_MAP_SOURCE,
   EMBED_STORY,
   assertionFromURL,
@@ -97,6 +99,8 @@ describe("embed-contract", () => {
     assert.equal(EMBED_EPIC, 120);
     assert.equal(EMBED_API_PR, 125);
     assert.equal(EMBED_ROUTE_MAP_SOURCE, "e111-#125");
+    assert.equal(EMBED_MOUNT_HEADER, "x-flowforge-embed");
+    assert.equal(EMBED_REJECTED_ASSERTION_HEADER, "x-flowforge-embed-rejected");
     assert.equal(isEmbedUiPath("/embed/v1/workflows"), true);
     assert.equal(isEmbedUiPath("/embed"), false);
     assert.equal(isEmbedUiPath(null), false);

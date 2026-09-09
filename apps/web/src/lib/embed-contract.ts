@@ -13,6 +13,11 @@ export const EMBED_AUDIENCE = "flowforge" as const;
 export const EMBED_ALGORITHM = "EdDSA" as const;
 export const EMBED_MOUNT_PREFIX = "/embed/v1";
 
+/** Set by src/proxy.ts so SSR sees the inbound /embed/v1 path after rewrite. */
+export const EMBED_MOUNT_HEADER = "x-flowforge-embed";
+/** Boolean flag only — never copies the assertion value. */
+export const EMBED_REJECTED_ASSERTION_HEADER = "x-flowforge-embed-rejected";
+
 export const EMBED_API_PREFIX = "/api/v1";
 export const EMBED_CATALOG_PATH = "/embed/catalog";
 export const EMBED_JWKS_PATH = "/embed/jwks";

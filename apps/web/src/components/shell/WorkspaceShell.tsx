@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+
+function subscribeBrowserLocation(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  window.addEventListener("hashchange", onChange);
+  return () => {
+    window.removeEventListener("popstate", onChange);
+    window.removeEventListener("hashchange", onChange);
+  };
+}
 import { EmbedExchangeGate } from "@/components/embed/EmbedExchangeGate";
 import { CommandPalette } from "@/components/shell/CommandPalette";
 import { GlobalSearch } from "@/components/shell/GlobalSearch";
@@ -24,9 +33,18 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 type WorkspaceShellProps = {
   swaggerUrl: string;
   children: ReactNode;
+  embedMount?: boolean;
+  rejectedAssertion?: boolean;
+  hasSessionCookie?: boolean;
 };
 
-export function WorkspaceShell({ swaggerUrl, children }: WorkspaceShellProps) {
+export function WorkspaceShell({
+  swaggerUrl,
+  children,
+  embedMount = false,
+  rejectedAssertion: rejectedAssertionProp = false,
+  hasSessionCookie = false,
+}: WorkspaceShellProps) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
   const session = useSyncExternalStore(
@@ -34,20 +52,37 @@ export function WorkspaceShell({ swaggerUrl, children }: WorkspaceShellProps) {
     getSessionSnapshot,
     getSessionSnapshot,
   );
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [search, setSearch] = useState("");
-  const [hash, setHash] = useState("");
-  const embed = isEmbedUiPath(pathname);
-  const rejectedAssertion = embed && urlRejectedAssertion(search, hash);
+  const [sessionChecked, setSessionChecked] = useState(
+    !(embedMount && hasSessionCookie),
+  );
+  const search = useSyncExternalStore(
+    subscribeBrowserLocation,
+    () => window.location.search,
+    () => "",
+  );
+  const hash = useSyncExternalStore(
+    subscribeBrowserLocation,
+    () => window.location.hash,
+    () => "",
+  );
+  const embed = embedMount || isEmbedUiPath(pathname);
+  const rejectedAssertion =
+    (embed && urlRejectedAssertion(search, hash)) || rejectedAssertionProp;
 
   useEffect(() => {
     if (!embed) {
       return;
     }
-    setSearch(window.location.search);
-    setHash(window.location.hash);
-    void loadCurrentSession().finally(() => setSessionChecked(true));
-  }, [embed, pathname]);
+    let cancelled = false;
+    void loadCurrentSession().finally(() => {
+      if (!cancelled) {
+        setSessionChecked(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [embed]);
 
   if (embed) {
     return (
