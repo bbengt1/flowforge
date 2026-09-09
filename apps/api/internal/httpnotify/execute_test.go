@@ -40,15 +40,16 @@ func httpConn(hosts []string, addrs []string, methods []string, prefixes []strin
 		Type:        ConnectionHTTP,
 		Published:   true,
 		Policy: EndpointPolicy{
-			Hosts:            hosts,
-			Methods:          methods,
-			PathPrefixes:     prefixes,
-			Ports:            []int{80, 443},
-			TLSRequired:      false,
-			AllowedAddresses: addrs,
-			AddressesPresent: len(addrs) > 0,
-			MaxRequestBytes:  DefaultMaxRequestBytes,
-			MaxResponseBytes: DefaultMaxResponseBytes,
+			Hosts:                    hosts,
+			Methods:                  methods,
+			PathPrefixes:             prefixes,
+			Ports:                    []int{80, 443},
+			TLSRequired:              false,
+			AllowedAddresses:         addrs,
+			AddressesPresent:         len(addrs) > 0,
+			AllowPrivateDestinations: true, // httptest binds loopback; ADV-010 default-deny is tested separately
+			MaxRequestBytes:          DefaultMaxRequestBytes,
+			MaxResponseBytes:         DefaultMaxResponseBytes,
 		},
 	}
 }
@@ -369,5 +370,183 @@ func TestCatalogDocumentsGateAndNodes(t *testing.T) {
 		if !n.Enabled || len(n.AllowedWith) == 0 || len(n.Permissions) == 0 {
 			t.Fatalf("node = %+v", n)
 		}
+	}
+	if !cat.Isolation.PrivateAndLoopbackDeniedByDefault || !cat.Isolation.SSRFDenied {
+		t.Fatalf("isolation = %+v", cat.Isolation)
+	}
+	if len(cat.Isolation.AllowPrivateDestinationsOptIn) == 0 {
+		t.Fatal("catalog must document allowPrivateDestinations opt-in")
+	}
+}
+
+func TestPrivateAndLoopbackDeniedByDefault(t *testing.T) {
+	cases := []struct {
+		name string
+		host string
+		ip   string
+	}{
+		{name: "localhost", host: "localhost", ip: "127.0.0.1"},
+		{name: "loopback-v4", host: "127.0.0.1", ip: "127.0.0.1"},
+		{name: "loopback-v6", host: "::1", ip: "::1"},
+		{name: "rfc1918-10", host: "10.0.0.1", ip: "10.0.0.1"},
+		{name: "rfc1918-172", host: "172.16.0.1", ip: "172.16.0.1"},
+		{name: "rfc1918-192", host: "192.168.1.10", ip: "192.168.1.10"},
+		{name: "link-local", host: "169.254.1.1", ip: "169.254.1.1"},
+		{name: "metadata", host: "169.254.169.254", ip: "169.254.169.254"},
+		{name: "ula", host: "fd12:3456:789a::1", ip: "fd12:3456:789a::1"},
+		{name: "cgnat", host: "100.64.0.1", ip: "100.64.0.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := httpConn([]string{tc.host}, []string{tc.ip}, nil, nil)
+			conn.Policy.AllowPrivateDestinations = false
+			req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+			req.Resolver = mapResolver{tc.host: []net.IP{net.ParseIP(tc.ip)}}
+			res := Execute(context.Background(), req)
+			if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+				t.Fatalf("default deny %s: %+v", tc.name, res.Error)
+			}
+			if strings.Contains(res.Error.Message, tc.ip) {
+				t.Fatalf("denied problem leaked address %s: %s", tc.ip, res.Error.Message)
+			}
+			raw, _ := jsonish(res)
+			if strings.Contains(raw, tc.ip) && tc.ip != tc.host {
+				t.Fatalf("result leaked resolved address %s: %s", tc.ip, raw)
+			}
+		})
+	}
+}
+
+type stubTripper struct {
+	status int
+	body   string
+}
+
+func (s stubTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	status := s.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	body := s.body
+	if body == "" {
+		body = `{"ok":true}`
+	}
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Request:    req,
+	}, nil
+}
+
+func TestPublicHTTPSAllowed(t *testing.T) {
+	conn := httpConn([]string{"status.example.com"}, []string{"8.8.8.8"}, []string{"GET"}, []string{"/"})
+	conn.Policy.AllowPrivateDestinations = false
+	conn.Policy.TLSRequired = true
+	conn.Policy.Ports = []int{443}
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"status.example.com": []net.IP{net.ParseIP("8.8.8.8")}}
+	req.Transport = stubTripper{}
+	res := Execute(context.Background(), req)
+	if !res.OK || res.Error != nil {
+		t.Fatalf("public destination: %+v", res.Error)
+	}
+}
+
+func TestAllowPrivateDestinationsOptIn(t *testing.T) {
+	srv, _, port := startHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+	conn := httpConn([]string{"127.0.0.1"}, []string{"127.0.0.1"}, []string{"GET"}, []string{"/"})
+	conn.Policy.Ports = []int{port}
+	conn.Policy.AllowPrivateDestinations = true
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Transport = srv.Client().Transport
+	res := Execute(context.Background(), req)
+	if !res.OK || res.Error != nil {
+		t.Fatalf("connection opt-in: %+v", res.Error)
+	}
+
+	conn.Policy.AllowPrivateDestinations = false
+	req = baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Policy.AllowPrivateDestinations = true
+	req.Transport = srv.Client().Transport
+	res = Execute(context.Background(), req)
+	if !res.OK || res.Error != nil {
+		t.Fatalf("workspace policy opt-in: %+v", res.Error)
+	}
+
+	conn.Policy.AllowPrivateDestinations = false
+	req = baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Policy.AllowPrivateDestinations = false
+	req.Transport = srv.Client().Transport
+	res = Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("unset opt-in must fail closed: %+v", res.Error)
+	}
+}
+
+func TestMetadataStillDeniedWhenPrivateAllowed(t *testing.T) {
+	conn := httpConn([]string{"169.254.169.254"}, []string{"169.254.169.254"}, nil, nil)
+	conn.Policy.AllowPrivateDestinations = true
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"169.254.169.254": []net.IP{net.ParseIP("169.254.169.254")}}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("metadata must stay denied: %+v", res.Error)
+	}
+}
+
+func TestDNSRebindingToPrivateDenied(t *testing.T) {
+	conn := httpConn([]string{"status.example.com"}, []string{"8.8.8.8", "10.0.0.1"}, nil, nil)
+	conn.Policy.AllowPrivateDestinations = false
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Resolver = mapResolver{"status.example.com": []net.IP{
+		net.ParseIP("8.8.8.8"),
+		net.ParseIP("10.0.0.1"),
+	}}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || res.Error.Code != CodeSSRFDenied {
+		t.Fatalf("rebinding to private: %+v", res.Error)
+	}
+	if strings.Contains(res.Error.Message, "10.0.0.1") {
+		t.Fatalf("rebinding problem leaked address: %s", res.Error.Message)
+	}
+}
+
+type redirectTripper struct {
+	location string
+}
+
+func (r redirectTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusFound,
+		Header:     http.Header{"Location": []string{r.location}},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+func TestRedirectToPrivateDenied(t *testing.T) {
+	conn := httpConn([]string{"status.example.com", "internal.example.com"}, []string{"8.8.8.8"}, []string{"GET"}, []string{"/"})
+	conn.Policy.Ports = []int{443, 80}
+	conn.Policy.TLSRequired = false
+	conn.Policy.AllowRedirects = true
+	conn.Policy.MaxRedirects = 2
+	conn.Policy.AllowPrivateDestinations = false
+	req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+	req.Host = "status.example.com"
+	req.Resolver = mapResolver{
+		"status.example.com":   []net.IP{net.ParseIP("8.8.8.8")},
+		"internal.example.com": []net.IP{net.ParseIP("10.1.2.3")},
+	}
+	req.Transport = redirectTripper{location: "http://internal.example.com/internal"}
+	res := Execute(context.Background(), req)
+	if res.OK || res.Error == nil || (res.Error.Code != CodeSSRFDenied && res.Error.Code != CodeRedirectDenied) {
+		t.Fatalf("redirect to private: %+v", res.Error)
+	}
+	if res.Error != nil && strings.Contains(res.Error.Message, "10.1.2.3") {
+		t.Fatalf("redirect problem leaked address: %s", res.Error.Message)
 	}
 }

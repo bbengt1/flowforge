@@ -147,16 +147,17 @@ func Execute(ctx context.Context, req Request) Result {
 	ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	resolved, resErr := ResolveHostname(ctx, req.Resolver, ep.Host)
+	allowPrivate := privateDestinationsAllowed(req)
+	resolved, resErr := ResolveHostname(ctx, req.Resolver, ep.Host, allowPrivate)
 	if resErr != nil {
 		out.Error = resErr
 		return finishHTTP(req, out)
 	}
-	out.ResolvedAddresses = addressStrings(resolved.Addresses)
-	if err := VerifyResolvedAddresses(ep.Host, resolved.Addresses, req.Connection.Policy.AllowedAddresses, req.Connection.Policy.AddressesPresent); err != nil {
+	if err := VerifyResolvedAddresses(ep.Host, resolved.Addresses, req.Connection.Policy.AllowedAddresses, req.Connection.Policy.AddressesPresent, allowPrivate); err != nil {
 		out.Error = err
 		return finishHTTP(req, out)
 	}
+	out.ResolvedAddresses = addressStrings(resolved.Addresses)
 	if err := ValidatePolicy(req.Policy, out.Operation, ep.Host, out.ResolvedAddresses); err != nil {
 		out.Error = err
 		return finishHTTP(req, out)
@@ -241,6 +242,10 @@ func Execute(ctx context.Context, req Request) Result {
 	}
 	out.OK = true
 	return finishHTTP(req, out)
+}
+
+func privateDestinationsAllowed(req Request) bool {
+	return req.Connection.Policy.AllowPrivateDestinations || req.Policy.AllowPrivateDestinations
 }
 
 func authorizeHTTP(req Request, op string) *EngineError {
@@ -328,11 +333,12 @@ func validateRedirect(ctx context.Context, req Request, next *http.Request, via 
 		e.Code = CodeRedirectDenied
 		return e
 	}
-	resolved, rerr := ResolveHostname(ctx, req.Resolver, ep.Host)
+	allowPrivate := privateDestinationsAllowed(req)
+	resolved, rerr := ResolveHostname(ctx, req.Resolver, ep.Host, allowPrivate)
 	if rerr != nil {
 		return rerr
 	}
-	if e := VerifyResolvedAddresses(ep.Host, resolved.Addresses, policy.AllowedAddresses, policy.AddressesPresent); e != nil {
+	if e := VerifyResolvedAddresses(ep.Host, resolved.Addresses, policy.AllowedAddresses, policy.AddressesPresent, allowPrivate); e != nil {
 		return e
 	}
 	if e := ValidatePolicy(req.Policy, normalizeOp(req.Operation), ep.Host, addressStrings(resolved.Addresses)); e != nil {

@@ -685,6 +685,8 @@ E10.4 (Chloe UI) is a thin adapter on jonny's squash-merged #118 map (`e104-#118
 
 YAML / UI store **resource UUIDs only** for pins (`connectionId`, `recipientListId`, `templateId`, `responseSchemaRef`, `policyId`). Forbidden in node config: raw `url`, `headers`, `to`, `body`, secrets, free-form destinations. `host` is an optional allowlisted hostname on the pinned connection — never a URL. SSRF, DNS-rebinding, redirect, and size failures stay closed and surface as validation errors.
 
+**ADV-010 / Chloe — no UI change.** Private/loopback destinations are denied by default after DNS (and on each redirect). Do **not** add an action-wizard or connection-form toggle unless a later story asks for one. Operators who need internal endpoints set `endpointPolicy.allowPrivateDestinations: true` on the published connection (or `policy.allowPrivateDestinations: true` on a published `kind=http` / `kind=notification` policy) via existing ops-config draft/publish. Unset remains fail-closed. Link-local and metadata stay always denied. Catalog `GET /http/catalog` `isolation.privateAndLoopbackDeniedByDefault` and `isolation.allowPrivateDestinationsOptIn` document the map. Existing connection edits that spread `endpointPolicy` preserve an already-set flag.
+
 When `INTEGRATION_ACTIONS_ENABLED=false`, catalog / validate / publish reject the three types. The UI respects catalog `enabled` / `integrationGate` / absence and does **not** invent an enable toggle.
 
 TLS is required on the pinned connection; this UI has no TLS-off toggle. Credentials stay in the vault. Delivery results on execution steps are redacted (`authorization`, cookies, tokens, `set-cookie`). Selectors fail closed on HTTP 403.

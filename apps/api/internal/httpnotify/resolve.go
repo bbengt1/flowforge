@@ -63,7 +63,8 @@ func NormalizeHostname(host string) (string, error) {
 }
 
 // ResolveHostname looks up host through resolver. IP literals skip DNS.
-func ResolveHostname(ctx context.Context, resolver Resolver, host string) (ResolveResult, *EngineError) {
+// Every resolved address is checked after lookup (anti DNS-rebinding).
+func ResolveHostname(ctx context.Context, resolver Resolver, host string, allowPrivate bool) (ResolveResult, *EngineError) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return ResolveResult{}, engineError(CodeInvalidEndpoint, "hostname is required", http.StatusBadRequest)
@@ -73,7 +74,7 @@ func ResolveHostname(ctx context.Context, resolver Resolver, host string) (Resol
 		return ResolveResult{}, engineError(CodeInvalidEndpoint, "hostname is not a valid host or IP", http.StatusBadRequest)
 	}
 	if ip := net.ParseIP(canon); ip != nil {
-		if denied, why := ssrfReason(ip); denied {
+		if denied, why := ssrfReason(ip, allowPrivate); denied {
 			return ResolveResult{}, engineError(CodeSSRFDenied, why, http.StatusForbidden)
 		}
 		return ResolveResult{Hostname: canon, Addresses: []net.IP{ip}, DialIP: ip}, nil
@@ -94,7 +95,7 @@ func ResolveHostname(ctx context.Context, resolver Resolver, host string) (Resol
 		if ip == nil || ip.IsUnspecified() {
 			return ResolveResult{}, engineError(CodeAddressDenied, "resolver returned an unspecified address", http.StatusForbidden)
 		}
-		if denied, why := ssrfReason(ip); denied {
+		if denied, why := ssrfReason(ip, allowPrivate); denied {
 			return ResolveResult{}, engineError(CodeSSRFDenied, why, http.StatusForbidden)
 		}
 		key := ip.String()
@@ -113,12 +114,13 @@ func ResolveHostname(ctx context.Context, resolver Resolver, host string) (Resol
 // VerifyResolvedAddresses fail-closes unless every resolved IP is allowlisted.
 // A DNS name without an allowlist is denied (anti DNS-rebinding / SSRF).
 // Link-local and metadata addresses are always denied, even if listed.
-func VerifyResolvedAddresses(host string, resolved []net.IP, allowlist []string, allowlistPresent bool) *EngineError {
+// Loopback, RFC1918, and ULA are denied unless allowPrivate is explicitly true.
+func VerifyResolvedAddresses(host string, resolved []net.IP, allowlist []string, allowlistPresent bool, allowPrivate bool) *EngineError {
 	if len(resolved) == 0 {
 		return engineError(CodeAddressDenied, "hostname resolved to no usable addresses", http.StatusForbidden)
 	}
 	for _, ip := range resolved {
-		if denied, why := ssrfReason(ip); denied {
+		if denied, why := ssrfReason(ip, allowPrivate); denied {
 			return engineError(CodeSSRFDenied, why, http.StatusForbidden)
 		}
 	}
@@ -178,22 +180,47 @@ func parseIP(s string) net.IP {
 	return net.ParseIP(strings.TrimSpace(s))
 }
 
-func ssrfReason(ip net.IP) (bool, string) {
+func ssrfReason(ip net.IP, allowPrivate bool) (bool, string) {
 	if ip == nil {
 		return true, "destination address is unusable"
 	}
 	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
 		return true, "destination address is unspecified or multicast"
 	}
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 169 && ip4[1] == 254 {
-			return true, "link-local and metadata addresses are denied"
-		}
-	}
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if isLinkLocalOrMetadata(ip) {
 		return true, "link-local and metadata addresses are denied"
 	}
+	if !allowPrivate && isPrivateOrLoopback(ip) {
+		return true, "destination resolved to a non-public address"
+	}
 	return false, ""
+}
+
+func isLinkLocalOrMetadata(ip net.IP) bool {
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 169 && ip4[1] == 254 {
+			return true
+		}
+	}
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+}
+
+// isPrivateOrLoopback reports loopback, RFC1918, IPv6 ULA, and CGNAT.
+// Link-local / metadata are handled separately and stay always-denied.
+func isPrivateOrLoopback(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		// RFC 6598 shared address space (CGNAT) 100.64.0.0/10
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
+	}
+	return false
 }
 
 func addressStrings(ips []net.IP) []string {

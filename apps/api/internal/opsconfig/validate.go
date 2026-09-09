@@ -562,6 +562,15 @@ func normalizeConnection(spec map[string]any) (map[string]any, error) {
 		maxRedirects = n
 	}
 	ep["maxRedirects"] = maxRedirects
+	allowPrivate := false
+	if raw, exists := policy[httpnotify.KeyAllowPrivateDestinations]; exists {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: endpointPolicy.allowPrivateDestinations must be a boolean", ErrInvalid)
+		}
+		allowPrivate = b
+	}
+	ep[httpnotify.KeyAllowPrivateDestinations] = allowPrivate
 	_, addrsPresent := policy["allowedAddresses"]
 	addrs, err := stringList(policy, "allowedAddresses", 32, 64)
 	if err != nil {
@@ -598,7 +607,7 @@ func normalizeConnection(spec map[string]any) (map[string]any, error) {
 		}
 		ep["maxResponseBytes"] = n
 	}
-	if err := rejectUnknown(policy, "hosts", "methods", "pathPrefixes", "ports", "tlsRequired", "allowRedirects", "maxRedirects", "allowedAddresses", "secretFields", "maxRequestBytes", "maxResponseBytes"); err != nil {
+	if err := rejectUnknown(policy, "hosts", "methods", "pathPrefixes", "ports", "tlsRequired", "allowRedirects", "maxRedirects", "allowedAddresses", httpnotify.KeyAllowPrivateDestinations, "secretFields", "maxRequestBytes", "maxResponseBytes"); err != nil {
 		return nil, err
 	}
 	out["endpointPolicy"] = ep
@@ -972,6 +981,13 @@ func normalizeHTTPPolicyObject(policy map[string]any) (map[string]any, error) {
 	}
 	if addrs != nil {
 		out[httpnotify.KeyAllowedAddresses] = addrs
+	}
+	if raw, ok := policy[httpnotify.KeyAllowPrivateDestinations]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.allowPrivateDestinations must be a boolean", ErrInvalid)
+		}
+		out[httpnotify.KeyAllowPrivateDestinations] = b
 	}
 	return out, nil
 }
