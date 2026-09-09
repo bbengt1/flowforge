@@ -116,7 +116,20 @@ E6.1 (Chloe) replaces the slim operator header with the product workspace shell.
 - **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings, Membership, and Isolation stay available so operators can bootstrap a workspace.
 - **Search / palette:** client-side index of workflow name/slug, core catalog action types, credential display name/tags, execution IDs, alerts (identifiers only), and docs. Unexpected secret fields are stripped and never searchable. Cmd/Ctrl+K opens the command palette. New workflow / import use existing `POST /workflows`.
 - **Workflow home (`/workflows`):** list + card views with client-side filters (folders/tags derived from slug/status, owner, trigger from draft summary, environment, status, last run, last modified). Validation health and pending approvals are joined from existing draft / `GET /approvals` / `GET /executions` responses. Create, import, duplicate, and template cards POST a draft; export uses `GET …/versions/{id}/export` when a published version exists. There is no archive or template API on main.
-- **Editor:** existing E3 operator moves to `/workflows/{id}`. `/actions` is an E6.2 placeholder. `/templates` and `/settings` are shell destinations.
+- **Editor:** E6.2 canvas + YAML editor is `/workflows/{id}`. `/actions` lists the enabled catalog library. `/templates` and `/settings` are shell destinations.
+
+## E6.2 synchronized YAML and canvas
+
+E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the E6.1 shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same.
+
+- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Cards show ports and policy/bounds hints.
+- **Canvas:** nodes and `nodeId.port` edges from a successful validate summary only. Invalid YAML never draws a guessed graph. Pan/zoom/select; incompatible ports are unavailable with text, not color alone. Node states use icon + label.
+- **Inspector:** selected workflow, node, or edge. Core-neutral `with` forms stay from E3.3. Credentials appear by display name only.
+- **YAML:** syntax highlighting, line/column jump, debounced `POST /workflows/validate`. Save serializes through `POST /workflows/normalize` then `PUT /workflows/{id}/draft` and replaces the buffer with the normalize YAML + digest.
+- **Validation:** errors grouped by workflow / node / edge and linked to a canvas node or YAML path. Save is disabled while YAML, ports, policy, or required config is invalid.
+- **Import / export:** import validates before `POST /workflows`. Export uses `GET …/versions/{id}/export` when a published version exists.
+
+Helpers: `apps/web/src/lib/workflow-graph.ts`, `workflow-action-library.ts`. Canvas is not a persisted UI format.
 
 ## Foundation operator shell
 

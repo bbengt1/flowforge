@@ -404,6 +404,69 @@ export async function saveWorkflowDraft(
   return detailResult(result, path);
 }
 
+export type CanonicalSaveSuccess = DraftClientSuccess & {
+  normalized: true;
+  normalizeDigest: string;
+};
+
+/**
+ * Save loop: serialize canonical YAML via POST /workflows/normalize, then
+ * PUT the draft. The editor buffer prefers the normalize YAML + digest.
+ */
+export async function saveCanonicalWorkflowDraft(
+  identity: DevIdentity,
+  workflowId: string,
+  yaml: string,
+  revision: number,
+): Promise<CanonicalSaveSuccess | WorkflowClientFailure> {
+  const normalized = await normalizeWorkflowYaml(identity, yaml);
+  if (!normalized.ok) {
+    return normalized;
+  }
+  const saved = await saveWorkflowDraft(
+    identity,
+    workflowId,
+    normalized.applied.yaml,
+    revision,
+  );
+  if (!saved.ok) {
+    return saved;
+  }
+  return {
+    ...saved,
+    normalized: true,
+    normalizeDigest: normalized.applied.digest,
+    applied: {
+      ...saved.applied,
+      yaml: normalized.applied.yaml,
+      digest: normalized.applied.digest,
+      summary: normalized.applied.summary,
+      warnings:
+        saved.applied.warnings.length > 0
+          ? saved.applied.warnings
+          : normalized.applied.warnings,
+    },
+  };
+}
+
+/**
+ * Import: validate before POST /workflows. Invalid YAML never creates a draft.
+ */
+export async function importValidatedWorkflow(
+  identity: DevIdentity,
+  yaml: string,
+  extras: { slug?: string; name?: string } = {},
+): Promise<DraftClientSuccess | WorkflowClientFailure> {
+  const validated = await validateWorkflowYaml(identity, yaml);
+  if (!validated.ok) {
+    return validated;
+  }
+  return createWorkflow(identity, {
+    definitionYaml: yaml,
+    ...extras,
+  });
+}
+
 export async function publishWorkflow(
   identity: DevIdentity,
   workflowId: string,

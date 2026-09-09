@@ -1,6 +1,11 @@
 "use client";
 
 import { formatFieldLocation } from "@/lib/workflow";
+import {
+  groupValidationErrors,
+  groupedValidationBuckets,
+  type GroupedValidationError,
+} from "@/lib/workflow-graph";
 import type { WorkflowFieldError, WorkflowSummary } from "@/lib/workflow-types";
 import { safeProblemDetail, type ProblemDetails } from "@/lib/problem";
 
@@ -11,9 +16,16 @@ type ValidationPanelProps = {
   summary: WorkflowSummary | null;
   digest: string | null;
   problem: ProblemDetails | null;
-  onJump: (line: number) => void;
+  onJump: (line: number, column?: number) => void;
   onSelectNode?: (id: string) => void;
+  onSelectEdge?: (from: string, to: string) => void;
 };
+
+const GROUP_LABEL = {
+  workflow: "Workflow",
+  node: "Nodes",
+  edge: "Edges",
+} as const;
 
 export function ValidationPanel({
   status,
@@ -24,8 +36,12 @@ export function ValidationPanel({
   problem,
   onJump,
   onSelectNode,
+  onSelectEdge,
 }: ValidationPanelProps) {
   const showSummary = status === "valid" && summary && errors.length === 0;
+  const grouped = groupedValidationBuckets(
+    groupValidationErrors(errors, summary?.nodes ?? [], summary?.edges ?? []),
+  );
 
   return (
     <section
@@ -39,7 +55,7 @@ export function ValidationPanel({
       <p className="mt-1 text-sm text-zinc-600">
         Debounced <code className="font-mono text-xs">POST /workflows/validate</code>.
         Invalid YAML shows <code className="font-mono text-xs">errors[]</code>{" "}
-        only — no guessed graph.
+        only — no guessed graph. Errors are grouped by workflow, node, and edge.
       </p>
 
       <p className="mt-3 text-sm font-medium">
@@ -53,30 +69,30 @@ export function ValidationPanel({
       </p>
 
       {status === "invalid" && errors.length > 0 ? (
-        <ol className="mt-3 space-y-2">
-          {errors.map((error, index) => (
-            <li
-              key={`${error.path}-${error.code}-${index}`}
-              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-            >
-              {error.line ? (
-                <button
-                  type="button"
-                  onClick={() => onJump(error.line ?? 1)}
-                  className="font-medium underline decoration-amber-300 underline-offset-2 hover:decoration-amber-700"
-                >
-                  {error.path || "document"} {formatFieldLocation(error)}
-                </button>
-              ) : (
-                <span className="font-medium">{error.path || "document"}</span>
-              )}
-              <p className="mt-1">{error.message}</p>
-              <p className="mt-1 font-mono text-xs text-amber-900/80">
-                {error.code}
-              </p>
-            </li>
-          ))}
-        </ol>
+        <div className="mt-3 space-y-4">
+          {(["workflow", "node", "edge"] as const).map((group) => {
+            const items = grouped[group];
+            if (items.length === 0) {
+              return null;
+            }
+            return (
+              <div key={group}>
+                <h3 className="text-sm font-medium text-zinc-800">{GROUP_LABEL[group]}</h3>
+                <ol className="mt-2 space-y-2">
+                  {items.map((error, index) => (
+                    <ValidationErrorItem
+                      key={`${error.path}-${error.code}-${index}`}
+                      error={error}
+                      onJump={onJump}
+                      onSelectNode={onSelectNode}
+                      onSelectEdge={onSelectEdge}
+                    />
+                  ))}
+                </ol>
+              </div>
+            );
+          })}
+        </div>
       ) : null}
 
       {status === "invalid" && errors.length === 0 && problem ? (
@@ -139,6 +155,60 @@ export function ValidationPanel({
         </ul>
       ) : null}
     </section>
+  );
+}
+
+function ValidationErrorItem({
+  error,
+  onJump,
+  onSelectNode,
+  onSelectEdge,
+}: {
+  error: GroupedValidationError;
+  onJump: (line: number, column?: number) => void;
+  onSelectNode?: (id: string) => void;
+  onSelectEdge?: (from: string, to: string) => void;
+}) {
+  const location = formatFieldLocation(error);
+  return (
+    <li className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+      {error.line ? (
+        <button
+          type="button"
+          onClick={() => onJump(error.line ?? 1, error.column)}
+          className="font-medium underline decoration-amber-300 underline-offset-2 hover:decoration-amber-700"
+        >
+          {error.path || "document"} {location}
+        </button>
+      ) : (
+        <span className="font-medium">{error.path || "document"}</span>
+      )}
+      <p className="mt-1">{error.message}</p>
+      <p className="mt-1 font-mono text-xs text-amber-900/80">{error.code}</p>
+      {error.nodeId && onSelectNode ? (
+        <button
+          type="button"
+          onClick={() => onSelectNode(error.nodeId ?? "")}
+          className="mt-2 text-xs underline decoration-amber-300"
+        >
+          Open canvas node {error.nodeId}
+        </button>
+      ) : null}
+      {error.edgeId && onSelectEdge ? (
+        <button
+          type="button"
+          onClick={() => {
+            const [from, to] = (error.edgeId ?? "").split("->");
+            if (from && to) {
+              onSelectEdge(from, to);
+            }
+          }}
+          className="mt-2 block text-xs underline decoration-amber-300"
+        >
+          Open canvas edge {error.edgeId}
+        </button>
+      ) : null}
+    </li>
   );
 }
 

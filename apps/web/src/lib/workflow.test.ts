@@ -8,6 +8,7 @@ import {
   coreCatalog,
   draftCompareRef,
   executionStartBody,
+  isCatalogImplementationEnabled,
   isConflictProblem,
   isWorkflowExecution,
   readExecutionPayload,
@@ -72,6 +73,11 @@ describe("coreCatalog", () => {
     assert.equal(isCorePhase("provider"), false);
     assert.equal(isCorePhase(undefined), false);
     assert.equal(isCorePhase(""), false);
+    assert.equal(isCatalogImplementationEnabled({ phase: "core" }), true);
+    assert.equal(isCatalogImplementationEnabled({ phase: "core", enabled: false }), false);
+    assert.equal(isCatalogImplementationEnabled({ phase: "next" }), false);
+    assert.equal(isCatalogImplementationEnabled({ phase: "next", enabled: true }), true);
+    assert.equal(isCatalogImplementationEnabled({ phase: "provider", enabled: true }), true);
   });
 });
 

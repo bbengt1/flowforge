@@ -71,13 +71,30 @@ export function isCorePhase(phase: unknown): boolean {
   return phase === CATALOG_PHASE_CORE;
 }
 
-/** Palette entries: `phase: core` only. Missing / next / provider fail closed. */
+/**
+ * Action registry: core is enabled by default; next/provider stay rejected
+ * unless the catalog marks them `enabled: true`. `enabled: false` always hides.
+ */
+export function isCatalogImplementationEnabled(item: {
+  phase?: unknown;
+  enabled?: boolean;
+}): boolean {
+  if (item.enabled === false) {
+    return false;
+  }
+  if (isCorePhase(item.phase)) {
+    return true;
+  }
+  return item.enabled === true;
+}
+
+/** Palette / catalog list: enabled implementations only. */
 export function coreCatalog(catalog: WorkflowCatalog): WorkflowCatalog {
   return {
     apiVersion: catalog.apiVersion,
     ...(catalog.rules ? { rules: catalog.rules } : {}),
-    triggers: (catalog.triggers ?? []).filter((item) => isCorePhase(item.phase)),
-    nodes: (catalog.nodes ?? []).filter((item) => isCorePhase(item.phase)),
+    triggers: (catalog.triggers ?? []).filter(isCatalogImplementationEnabled),
+    nodes: (catalog.nodes ?? []).filter(isCatalogImplementationEnabled),
   };
 }
 

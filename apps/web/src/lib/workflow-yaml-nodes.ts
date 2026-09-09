@@ -52,7 +52,7 @@ export type YamlWorkflowNode = {
 
 export type InsertedNode = {
   yaml: string;
-  node: { id: string; type: CoreNeutralNodeType; name: string };
+  node: { id: string; type: string; name: string };
 };
 
 const NODE_ID_RE = /^[a-z][a-z0-9-]*$/;
@@ -71,7 +71,7 @@ export function isValidNodeId(id: string): boolean {
 
 export function allocateNodeId(
   existingIds: Iterable<string>,
-  type: CoreNeutralNodeType,
+  type: string,
 ): string {
   const taken = new Set(existingIds);
   const base = type.slice(type.indexOf(".") + 1);
@@ -120,6 +120,85 @@ export function listYamlNodes(yaml: string): YamlWorkflowNode[] {
   return section.items.map((item) => parseNodeItem(yaml, item));
 }
 
+export type YamlWorkflowEdge = {
+  from: string;
+  to: string;
+  startLine: number;
+  endLine: number;
+};
+
+export type YamlWorkflowTrigger = {
+  id: string;
+  type: string;
+  with: Record<string, unknown>;
+  startLine: number;
+  endLine: number;
+};
+
+export type YamlWorkflowMeta = {
+  name: string;
+  description: string;
+};
+
+export function listYamlEdges(yaml: string): YamlWorkflowEdge[] {
+  const section = findListSection(yaml, "edges");
+  if (!section) {
+    return [];
+  }
+  return section.items.map((item) => parseEdgeItem(yaml, item));
+}
+
+export function listYamlTriggers(yaml: string): YamlWorkflowTrigger[] {
+  const section = findListSection(yaml, "triggers");
+  if (!section) {
+    return [];
+  }
+  return section.items.map((item) => parseTriggerItem(yaml, item));
+}
+
+export function readYamlWorkflowMeta(yaml: string): YamlWorkflowMeta {
+  const lines = yaml.split("\n");
+  let name = "";
+  let description = "";
+  let inMetadata = false;
+  let inSpec = false;
+  let metadataIndent = 0;
+  let specIndent = 0;
+  for (const line of lines) {
+    const indent = leadingSpaces(line);
+    const trimmed = line.trim();
+    if (trimmed === "metadata:" || trimmed.startsWith("metadata:")) {
+      inMetadata = true;
+      inSpec = false;
+      metadataIndent = indent;
+      continue;
+    }
+    if (trimmed === "spec:" || trimmed.startsWith("spec:")) {
+      inSpec = true;
+      inMetadata = false;
+      specIndent = indent;
+      continue;
+    }
+    if (inMetadata && indent > metadataIndent) {
+      const pair = parseInlinePair(trimmed);
+      if (pair?.key === "name" && typeof pair.value === "string") {
+        name = pair.value;
+      }
+      continue;
+    }
+    if (inSpec && indent > specIndent) {
+      const pair = parseInlinePair(trimmed);
+      if (pair?.key === "description" && typeof pair.value === "string") {
+        description = pair.value;
+      }
+      if (pair?.key === "triggers" || pair?.key === "nodes" || pair?.key === "edges") {
+        break;
+      }
+    }
+  }
+  return { name, description };
+}
+
 export function insertCoreNode(
   yaml: string,
   type: CoreNeutralNodeType,
@@ -135,6 +214,60 @@ export function insertCoreNode(
   const node = defaultCoreNode(type, id, options.name);
   const block = serializeNodeBlock(node, 4);
   return { yaml: insertNodeBlock(yaml, block), node };
+}
+
+export function insertCatalogNode(
+  yaml: string,
+  type: string,
+  options: { id?: string; name?: string; with?: Record<string, unknown> } = {},
+): InsertedNode {
+  if (isCoreNeutralNodeType(type)) {
+    return insertCoreNode(yaml, type, options);
+  }
+  const existing = listYamlNodes(yaml);
+  const id = options.id && isValidNodeId(options.id)
+    ? uniqueId(options.id, existing.map((node) => node.id))
+    : allocateNodeId(
+        existing.map((node) => node.id),
+        type,
+      );
+  const name = options.name?.trim() || type;
+  const node = { id, type, name, with: options.with ?? {} };
+  const block = serializeNodeBlock(node, 4);
+  return { yaml: insertNodeBlock(yaml, block), node: { id, type: type as CoreNeutralNodeType, name } };
+}
+
+export function insertYamlEdge(yaml: string, from: string, to: string): string {
+  const existing = listYamlEdges(yaml);
+  if (existing.some((edge) => edge.from === from && edge.to === to)) {
+    return yaml;
+  }
+  const block = serializeEdgeBlock(from, to, 4);
+  return insertListBlock(yaml, "edges", block);
+}
+
+export function removeYamlEdge(yaml: string, from: string, to: string): string {
+  const edge = listYamlEdges(yaml).find((item) => item.from === from && item.to === to);
+  if (!edge) {
+    return yaml;
+  }
+  return removeYamlRange(yaml, edge.startLine, edge.endLine);
+}
+
+export function removeYamlNode(yaml: string, id: string): string {
+  const node = listYamlNodes(yaml).find((item) => item.id === id);
+  if (!node) {
+    return yaml;
+  }
+  let next = removeYamlRange(yaml, node.startLine, node.endLine);
+  for (const edge of listYamlEdges(next)) {
+    const fromId = edge.from.split(".")[0];
+    const toId = edge.to.split(".")[0];
+    if (fromId === id || toId === id) {
+      next = removeYamlEdge(next, edge.from, edge.to);
+    }
+  }
+  return next;
 }
 
 export function updateYamlNode(
@@ -656,6 +789,84 @@ function collectListItems(
     insertLine: keyLine + 1,
     indent: keyIndent + 2,
   };
+}
+
+function parseEdgeItem(yaml: string, item: ListItemRange): YamlWorkflowEdge {
+  const mapping = parseListItemMap(yaml, item);
+  return {
+    from: stringField(mapping.from),
+    to: stringField(mapping.to),
+    startLine: item.startLine,
+    endLine: item.endLine,
+  };
+}
+
+function parseTriggerItem(yaml: string, item: ListItemRange): YamlWorkflowTrigger {
+  const mapping = parseListItemMap(yaml, item);
+  const withValue =
+    mapping.with && typeof mapping.with === "object" && !Array.isArray(mapping.with)
+      ? (mapping.with as Record<string, unknown>)
+      : {};
+  return {
+    id: stringField(mapping.id),
+    type: stringField(mapping.type),
+    with: withValue,
+    startLine: item.startLine,
+    endLine: item.endLine,
+  };
+}
+
+function parseListItemMap(yaml: string, item: ListItemRange): Record<string, unknown> {
+  const raw = yaml.split("\n").slice(item.startLine - 1, item.endLine);
+  const fieldIndent = item.indent + 2;
+  const lines = raw.map((line, index) => {
+    if (index !== 0) {
+      return line;
+    }
+    return `${" ".repeat(fieldIndent)}${line.trim().replace(/^-\s*/, "")}`;
+  });
+  return parseIndentedMap(lines, fieldIndent, 0);
+}
+
+function serializeEdgeBlock(from: string, to: string, indent = 4): string {
+  const pad = " ".repeat(indent);
+  const field = " ".repeat(indent + 2);
+  return `${pad}- from: ${formatScalar(from)}\n${field}to: ${formatScalar(to)}\n`;
+}
+
+function insertListBlock(yaml: string, key: string, block: string): string {
+  const section = findListSection(yaml, key);
+  const lines = yaml.split("\n");
+  const blockLines = block.replace(/\n$/, "").split("\n");
+  if (!section) {
+    return appendNamedListSection(yaml, key, blockLines);
+  }
+  if (section.emptyInline) {
+    const keyLine = lines[section.keyLine - 1] ?? `  ${key}: []`;
+    const replaced = keyLine.replace(/:\s*\[\]\s*$/, ":");
+    const next = [...lines];
+    next[section.keyLine - 1] = replaced;
+    next.splice(section.keyLine, 0, ...blockLines);
+    return next.join("\n");
+  }
+  nextInsert(lines, section.insertLine, blockLines);
+  return lines.join("\n");
+}
+
+function appendNamedListSection(yaml: string, key: string, blockLines: string[]): string {
+  const lines = yaml.split("\n");
+  const specIndex = lines.findIndex((line) => line.trim() === "spec:" || line.trim().startsWith("spec:"));
+  if (specIndex < 0) {
+    return `${yaml.replace(/\s*$/, "")}\nspec:\n  ${key}:\n${blockLines.join("\n")}\n`;
+  }
+  lines.splice(specIndex + 1, 0, `  ${key}:`, ...blockLines);
+  return lines.join("\n");
+}
+
+function removeYamlRange(yaml: string, startLine: number, endLine: number): string {
+  const lines = yaml.split("\n");
+  lines.splice(startLine - 1, endLine - startLine + 1);
+  return lines.join("\n");
 }
 
 function parseNodeItem(yaml: string, item: ListItemRange): YamlWorkflowNode {

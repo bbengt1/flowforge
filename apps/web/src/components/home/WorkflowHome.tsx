@@ -18,6 +18,7 @@ import {
   createWorkflow,
   exportWorkflowVersion,
   getWorkflowDraft,
+  importValidatedWorkflow,
   listWorkflows,
 } from "@/lib/workflow-client";
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
@@ -211,9 +212,34 @@ export function WorkflowHome() {
     const reader = new FileReader();
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
-      if (text.trim()) {
-        void createFromYaml(text, createName || file.name.replace(/\.ya?ml$/i, ""));
+      if (!text.trim()) {
+        return;
       }
+      void (async () => {
+        if (!canCreate) {
+          return;
+        }
+        setPending("import");
+        setProblem(null);
+        const result = await importValidatedWorkflow(identity, text, {
+          ...optionalCreateFields(createSlug, createName || file.name.replace(/\.ya?ml$/i, "")),
+        });
+        setPending(null);
+        if (!result.ok) {
+          setProblem(result.problem);
+          return;
+        }
+        const created = result.workflow;
+        pushNotification({
+          kind: "info",
+          title: "Draft imported",
+          detail: created?.name || "Validated YAML created a draft",
+          href: created ? `/workflows/${created.id}` : "/workflows",
+        });
+        if (created) {
+          router.push(`/workflows/${created.id}`);
+        }
+      })();
     };
     reader.readAsText(file);
   }
