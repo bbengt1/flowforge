@@ -13,31 +13,32 @@ import (
 
 // Persistence errors.
 var (
-	ErrNotFound              = errors.New("not found")
-	ErrConflict              = errors.New("conflict")
-	ErrRevisionConflict      = errors.New("draft revision conflict")
-	ErrInvalid               = errors.New("invalid")
-	ErrNoScope               = errors.New("workspace scope is not set")
-	ErrImmutable             = errors.New("published versions are immutable")
-	ErrDraftNotRunnable      = errors.New("drafts cannot be executed")
-	ErrDuplicateVersion      = errors.New("definition already published")
-	ErrStoreUnavailable      = errors.New("workflow store is unavailable")
-	ErrIdempotencyConflict   = errors.New("idempotency key reused with a different fingerprint")
-	ErrIdempotencyKeyInvalid = errors.New("idempotency key is invalid")
-	ErrEmptyClaim            = errors.New("no eligible job")
-	ErrFenceConflict         = errors.New("fencing token mismatch")
-	ErrLeaseExpired          = errors.New("lease expired")
-	ErrJobBinding            = errors.New("job binding rejected")
-	ErrJobExpired            = errors.New("authenticated job expired")
-	ErrNotClaimable          = errors.New("job is not in a claimable or writable state")
-	ErrAlreadyTerminal       = errors.New("execution is already terminal")
-	ErrRetryNotAllowed       = errors.New("retry is not allowed")
-	ErrRetryDenied           = errors.New("retry-denied")
-	ErrCanceled              = errors.New("execution or job was canceled")
-	ErrUnsafeArtifact        = errors.New("artifact content cannot be safely retained")
-	ErrArtifactExpired       = errors.New("artifact has expired")
-	ErrLegalHold             = errors.New("artifact is under legal hold")
-	ErrGrantExpired          = errors.New("download grant has expired")
+	ErrNotFound                   = errors.New("not found")
+	ErrConflict                   = errors.New("conflict")
+	ErrRevisionConflict           = errors.New("draft revision conflict")
+	ErrInvalid                    = errors.New("invalid")
+	ErrNoScope                    = errors.New("workspace scope is not set")
+	ErrImmutable                  = errors.New("published versions are immutable")
+	ErrDraftNotRunnable           = errors.New("drafts cannot be executed")
+	ErrDuplicateVersion           = errors.New("definition already published")
+	ErrStoreUnavailable           = errors.New("workflow store is unavailable")
+	ErrIdempotencyConflict        = errors.New("idempotency key reused with a different fingerprint")
+	ErrIdempotencyKeyInvalid      = errors.New("idempotency key is invalid")
+	ErrEmptyClaim                 = errors.New("no eligible job")
+	ErrFenceConflict              = errors.New("fencing token mismatch")
+	ErrLeaseExpired               = errors.New("lease expired")
+	ErrJobBinding                 = errors.New("job binding rejected")
+	ErrJobExpired                 = errors.New("authenticated job expired")
+	ErrNotClaimable               = errors.New("job is not in a claimable or writable state")
+	ErrAlreadyTerminal            = errors.New("execution is already terminal")
+	ErrRetryNotAllowed            = errors.New("retry is not allowed")
+	ErrRetryDenied                = errors.New("retry-denied")
+	ErrCanceled                   = errors.New("execution or job was canceled")
+	ErrEmergencyStopNotApplicable = errors.New("emergency stop applies only to an open script execution")
+	ErrUnsafeArtifact             = errors.New("artifact content cannot be safely retained")
+	ErrArtifactExpired            = errors.New("artifact has expired")
+	ErrLegalHold                  = errors.New("artifact is under legal hold")
+	ErrGrantExpired               = errors.New("download grant has expired")
 )
 
 // Validation states persisted with a draft.
@@ -161,19 +162,19 @@ type Execution struct {
 
 // ExecutionStep is one node attempt. Outputs are redacted before persist.
 type ExecutionStep struct {
-	ID             string         `json:"id"`
-	ExecutionID    string         `json:"executionId"`
-	NodeID         string         `json:"nodeId"`
-	NodeType       string         `json:"nodeType"`
-	Attempt        int            `json:"attempt"`
-	Status         string         `json:"status"`
-	LeaseID        string         `json:"leaseId,omitempty"`
-	FencingToken   int64          `json:"fencingToken"`
-	IdempotencyKey string         `json:"idempotencyKey,omitempty"`
-	PolicySnapshot map[string]any `json:"policySnapshot"`
-	TargetSnapshot map[string]any `json:"targetSnapshot"`
-	Input          map[string]any `json:"input"`
-	Output         map[string]any `json:"output"`
+	ID              string         `json:"id"`
+	ExecutionID     string         `json:"executionId"`
+	NodeID          string         `json:"nodeId"`
+	NodeType        string         `json:"nodeType"`
+	Attempt         int            `json:"attempt"`
+	Status          string         `json:"status"`
+	LeaseID         string         `json:"leaseId,omitempty"`
+	FencingToken    int64          `json:"fencingToken"`
+	IdempotencyKey  string         `json:"idempotencyKey,omitempty"`
+	PolicySnapshot  map[string]any `json:"policySnapshot"`
+	TargetSnapshot  map[string]any `json:"targetSnapshot"`
+	Input           map[string]any `json:"input"`
+	Output          map[string]any `json:"output"`
 	Error           map[string]any `json:"error"`
 	OutputTruncated bool           `json:"outputTruncated,omitempty"`
 	CreatedAt       time.Time      `json:"createdAt"`
@@ -431,6 +432,21 @@ type RetryResult struct {
 	Job       ExecutionJob
 }
 
+// EmergencyStopInput is an authorized halt of a running or queued script step.
+type EmergencyStopInput struct {
+	ExecutionID string
+	StepID      string
+	Uncertain   bool
+}
+
+// EmergencyStopResult is the durable outcome of an emergency stop.
+type EmergencyStopResult struct {
+	Execution Execution
+	Outcome   string
+	Uncertain bool
+	Stopped   int
+}
+
 // AuditWrite is a redacted append-only audit insert.
 type AuditWrite struct {
 	Action        string
@@ -469,6 +485,7 @@ type Store interface {
 	CompleteJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
 	FailJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error)
 	CancelExecution(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) (Execution, error)
+	EmergencyStop(ctx context.Context, scope isolation.Scope, now time.Time, in EmergencyStopInput) (EmergencyStopResult, error)
 	RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error)
 	RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error)
 	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)

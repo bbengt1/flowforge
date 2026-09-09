@@ -322,6 +322,265 @@ func seededWorkspaceWithScripts(t *testing.T, store scripts.Store, key []byte) (
 	return h, current.Principal
 }
 
+func TestScriptRevokeAndEmergencyStop(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	ws, tenant := currentWorkspace(t, h, admin)
+	profileID := createPublishedRuntimeProfile(t, h, admin, tenant, ws, "python-e94")
+	viewer := putMember(t, h, admin, tenant, ws, `{"issuer":"https://idp.example","external_subject":"e94-viewer","role_keys":["viewer"]}`)
+	operator := putMember(t, h, admin, tenant, ws, `{"issuer":"https://idp.example","external_subject":"e94-operator","role_keys":["operator"]}`)
+
+	denyPol := createOpsResource(t, h, admin, tenant, ws, "policies", "script-stop-deny", map[string]any{
+		"kind":   "script",
+		"policy": map[string]any{"allowEmergencyStop": false},
+	})
+	publishOps(t, h, admin, tenant, ws, "policies", denyPol.Resource.ID, 1, "v1")
+
+	created := createWorkflow(t, h, admin, tenant, ws, scriptWorkflowYAML(profileID))
+	pub := publishWorkflow(t, h, admin, tenant, ws, created.Workflow.ID, created.Draft.Revision, "e94")
+	if len(pub.ScriptArtifacts) != 1 {
+		t.Fatalf("pins = %+v", pub.ScriptArtifacts)
+	}
+	artifactID := pub.ScriptArtifacts[0].ArtifactID
+
+	t.Run("catalog documents revoke and emergency stop", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceRequest(http.MethodGet, "/api/v1/scripts/catalog", nil, admin, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		var cat scripts.EngineCatalog
+		if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+			t.Fatal(err)
+		}
+		if !cat.Revocation.FailClosed || cat.EmergencyStop.UncertainOutcome != "indeterminate" {
+			t.Fatalf("e94 catalog = %+v %+v", cat.Revocation, cat.EmergencyStop)
+		}
+	})
+
+	t.Run("viewer cannot revoke", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/scripts/"+artifactID+"/revoke", []byte(`{"reason":"incident-42"}`), viewer.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	})
+
+	t.Run("revoked cannot start", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/scripts/"+artifactID+"/revoke", []byte(`{"reason":"incident-42"}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("revoke: %d %s", rec.Code, rec.Body.String())
+		}
+		var art scripts.Artifact
+		if err := json.Unmarshal(rec.Body.Bytes(), &art); err != nil {
+			t.Fatal(err)
+		}
+		if art.RevokedAt == nil {
+			t.Fatal("expected revokedAt")
+		}
+		if strings.Contains(rec.Body.String(), "package") && strings.Contains(rec.Body.String(), "import json") {
+			t.Fatal("revoke leaked package blob")
+		}
+
+		rec = httptest.NewRecorder()
+		body, _ := json.Marshal(map[string]string{"workflowVersionId": pub.Version.ID})
+		req = workspaceJSON(http.MethodPost, "/api/v1/workflows/"+created.Workflow.ID+"/executions", body, admin, tenant, ws)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusConflict, CodeArtifactRevoked, "")
+
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/audit-events?resourceType=script_artifact&resourceId="+artifactID+"&action=script.artifact.revoke", nil, admin, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("audit: %d %s", rec.Code, rec.Body.String())
+		}
+		bodyStr := strings.ToLower(rec.Body.String())
+		for _, needle := range []string{"ghp_", "private key", "storage_ref", "package_blob"} {
+			if strings.Contains(bodyStr, needle) {
+				t.Fatalf("audit leaked %s: %s", needle, rec.Body.String())
+			}
+		}
+	})
+
+	freshYAML := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: summarize-script-fresh
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "fresh"}))
+        entrypoint: main.py
+        runtimeProfileId: ` + profileID + `
+        timeoutSeconds: 30
+        memoryMiB: 128
+  edges: []
+`
+	fresh := createWorkflow(t, h, admin, tenant, ws, freshYAML)
+	freshPub := publishWorkflow(t, h, admin, tenant, ws, fresh.Workflow.ID, fresh.Draft.Revision, "e94-fresh")
+	_ = startExecution(t, h, admin, tenant, ws, fresh.Workflow.ID, freshPub.Version.ID)
+
+	t.Run("dispatch rechecks revocation on claim", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/scripts/"+freshPub.ScriptArtifacts[0].ArtifactID+"/revoke", []byte(`{"reason":"after-queue"}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("revoke queued: %d %s", rec.Code, rec.Body.String())
+		}
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/jobs/claim", []byte(`{"workerId":"e94-worker"}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusConflict, CodeArtifactRevoked, "")
+	})
+
+	t.Run("emergency stop permission deny", func(t *testing.T) {
+		denyYAML := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: summarize-script-deny
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "deny"}))
+        entrypoint: main.py
+        runtimeProfileId: ` + profileID + `
+        timeoutSeconds: 30
+        memoryMiB: 128
+  edges: []
+`
+		openWF := createWorkflow(t, h, admin, tenant, ws, denyYAML)
+		openPub := publishWorkflow(t, h, admin, tenant, ws, openWF.Workflow.ID, openWF.Draft.Revision, "e94-deny")
+		open := startExecution(t, h, admin, tenant, ws, openWF.Workflow.ID, openPub.Version.ID)
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/executions/"+open.ID+"/emergency-stop", []byte(`{}`), viewer.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	})
+
+	t.Run("uncertain stop is indeterminate and audited", func(t *testing.T) {
+		open := createWorkflow(t, h, admin, tenant, ws, `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: summarize-script-stop
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "stop"}))
+        entrypoint: main.py
+        runtimeProfileId: `+profileID+`
+        timeoutSeconds: 30
+        memoryMiB: 128
+  edges: []
+`)
+		openPub := publishWorkflow(t, h, admin, tenant, ws, open.Workflow.ID, open.Draft.Revision, "e94-stop")
+		running := startExecution(t, h, admin, tenant, ws, open.Workflow.ID, openPub.Version.ID)
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/jobs/claim", []byte(`{"workerId":"e94-stop"}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("claim: %d %s", rec.Code, rec.Body.String())
+		}
+		var claimed claimJobResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &claimed); err != nil {
+			t.Fatal(err)
+		}
+		hb, _ := json.Marshal(map[string]any{
+			"jobToken": claimed.JobToken, "workerId": "e94-stop", "fencingToken": claimed.Job.FencingToken, "leaseSeconds": 30,
+		})
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/jobs/"+claimed.Job.ID+"/heartbeat", hb, operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("heartbeat: %d %s", rec.Code, rec.Body.String())
+		}
+
+		rec = httptest.NewRecorder()
+		req = workspaceJSON(http.MethodPost, "/api/v1/executions/"+running.ID+"/emergency-stop", []byte(`{"uncertain":true}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("emergency-stop: %d %s", rec.Code, rec.Body.String())
+		}
+		var detail executionResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail.Status != wfstore.ExecutionIndeterminate {
+			t.Fatalf("status = %s", detail.Status)
+		}
+		found := false
+		for _, ev := range detail.AuditEvents {
+			if ev.Action == "script.emergency_stop" {
+				found = true
+				raw, _ := json.Marshal(ev)
+				if strings.Contains(strings.ToLower(string(raw)), "package") || strings.Contains(string(raw), "ghp_") {
+					t.Fatalf("stop audit leaked secrets: %s", raw)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing emergency-stop audit: %+v", detail.AuditEvents)
+		}
+	})
+
+	t.Run("policy deny emergency stop", func(t *testing.T) {
+		gatedYAML := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: summarize-script-gated
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: summarize
+      type: script.python
+      name: Summarize
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "gated"}))
+        entrypoint: main.py
+        runtimeProfileId: ` + profileID + `
+        timeoutSeconds: 30
+        memoryMiB: 128
+        policyId: ` + denyPol.Resource.ID + `
+  edges: []
+`
+		gated := createWorkflow(t, h, admin, tenant, ws, gatedYAML)
+		gatedPub := publishWorkflow(t, h, admin, tenant, ws, gated.Workflow.ID, gated.Draft.Revision, "e94-gated")
+		gatedExec := startExecution(t, h, admin, tenant, ws, gated.Workflow.ID, gatedPub.Version.ID)
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/executions/"+gatedExec.ID+"/emergency-stop", []byte(`{}`), operator.User, tenant, ws)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	})
+}
+
 func TestScriptDraftExecuteRejected(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)

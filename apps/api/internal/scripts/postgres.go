@@ -36,7 +36,7 @@ const artifactColumns = `
 	a.id::text, a.language, a.entrypoint, a.digest, a.signature, a.scan_status, a.status,
 	COALESCE(a.runtime_profile_id::text, ''), COALESCE(a.runtime_profile_version_id::text, ''),
 	COALESCE(a.runtime_profile_digest, ''), a.source_bytes, a.metadata,
-	COALESCE(a.created_by::text, ''), a.created_at, a.revoked_at, a.storage_ref
+	COALESCE(a.created_by::text, ''), a.created_at, a.revoked_at, COALESCE(a.revoked_by::text, ''), a.storage_ref
 `
 
 func (p *Postgres) Put(ctx context.Context, scope isolation.Scope, art Artifact) (Artifact, error) {
@@ -87,7 +87,7 @@ func (p *Postgres) Put(ctx context.Context, scope isolation.Scope, art Artifact)
 			id::text, language, entrypoint, digest, signature, scan_status, status,
 			COALESCE(runtime_profile_id::text, ''), COALESCE(runtime_profile_version_id::text, ''),
 			COALESCE(runtime_profile_digest, ''), source_bytes, metadata,
-			COALESCE(created_by::text, ''), created_at, revoked_at, storage_ref
+			COALESCE(created_by::text, ''), created_at, revoked_at, COALESCE(revoked_by::text, ''), storage_ref
 	`, scope.WorkspaceID(), art.Language, art.Entrypoint, art.Digest, art.Signature, ScanClean,
 		art.RuntimeProfileID, art.RuntimeProfileVersionID, art.RuntimeProfileDigest,
 		art.SourceBytes, meta, createdBy, art.StorageRef, art.Package)
@@ -230,6 +230,53 @@ func (p *Postgres) ListVersionPins(ctx context.Context, scope isolation.Scope, w
 	return out, nil
 }
 
+func (p *Postgres) Revoke(ctx context.Context, scope isolation.Scope, id string, now time.Time, actorID, reason string) (Artifact, error) {
+	if scope.Zero() {
+		return Artifact{}, ErrNoScope
+	}
+	if !authz.ValidUUID(id) {
+		return Artifact{}, ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	patch := map[string]any{}
+	if reason != "" {
+		patch["revokeReason"] = reason
+	}
+	if actorID != "" {
+		patch["revokedBy"] = actorID
+	}
+	raw, err := json.Marshal(patch)
+	if err != nil || len(patch) == 0 {
+		raw = []byte("{}")
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return Artifact{}, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	art, err := scanArtifactBare(tx.QueryRow(ctx, `
+		UPDATE script_artifacts
+		   SET revoked_at = COALESCE(revoked_at, $2),
+		       revoked_by = COALESCE(revoked_by, NULLIF($3, '')::uuid),
+		       metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
+		 WHERE id = $1::uuid
+		 RETURNING
+			id::text, language, entrypoint, digest, signature, scan_status, status,
+			COALESCE(runtime_profile_id::text, ''), COALESCE(runtime_profile_version_id::text, ''),
+			COALESCE(runtime_profile_digest, ''), source_bytes, metadata,
+			COALESCE(created_by::text, ''), created_at, revoked_at, COALESCE(revoked_by::text, ''), storage_ref
+	`, id, now, nullUUID(actorID), raw))
+	if err != nil {
+		return Artifact{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Artifact{}, mapDBErr(err)
+	}
+	return art, nil
+}
+
 func scanArtifact(row pgx.Row) (Artifact, error) {
 	return scanArtifactBare(row)
 }
@@ -241,7 +288,7 @@ func scanArtifactBare(row pgx.Row) (Artifact, error) {
 	err := row.Scan(
 		&art.ID, &art.Language, &art.Entrypoint, &art.Digest, &art.Signature, &art.ScanStatus, &art.Status,
 		&art.RuntimeProfileID, &art.RuntimeProfileVersionID, &art.RuntimeProfileDigest,
-		&art.SourceBytes, &meta, &art.CreatedBy, &art.CreatedAt, &revoked, &art.StorageRef,
+		&art.SourceBytes, &meta, &art.CreatedBy, &art.CreatedAt, &revoked, &art.RevokedBy, &art.StorageRef,
 	)
 	if err != nil {
 		return Artifact{}, mapDBErr(err)

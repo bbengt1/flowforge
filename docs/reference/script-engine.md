@@ -26,7 +26,7 @@ Retries are zero by default. A node may be retry-safe only when it declares `ret
 
 ## Initial implementation layout
 
-E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 validates typed I/O, injects scoped handles, redacts outputs, and treats lease loss as indeterminate until a declared verification hook. E9.4 revocation/emergency-stop remain hooks (`revoked_at` is already fail-closed at dispatch).
+E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 validates typed I/O, injects scoped handles, redacts outputs, and treats lease loss as indeterminate until a declared verification hook. E9.4 revokes artifacts (`POST /scripts/{id}/revoke`) and emergency-stops running scripts (`POST /executions/{id}/emergency-stop`). `VerifyForDispatch` rechecks signature, scan, and `revoked_at` at start, claim, heartbeat-before-dispatch, and Execute. Uncertain stop stays `indeterminate`.
 
 ```text
 apps/api/internal/scripts/
@@ -34,10 +34,12 @@ apps/api/internal/scripts/
   policy.go runtime.go redaction.go catalog.go pipeline.go
   isolation.go egress.go execute.go harness.go builder.go
   io.go handle.go env.go retry.go
+  revoke.go stop.go
   store.go memory.go postgres.go
 apps/api/internal/workflow/script_contract.go
 apps/api/internal/httpapi/script.go
 apps/api/migrations/000013_script_artifacts.sql
+apps/api/migrations/000014_script_revocation.sql
 deploy/kubernetes/
   script-runner-deployment.yaml
   script-runner-networkpolicy.yaml

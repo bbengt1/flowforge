@@ -412,6 +412,15 @@ func TestCatalogDocumentsRunnerContract(t *testing.T) {
 	if cat.Retry.DefaultMaxAttempts != 0 || cat.Retry.BlindRetry || cat.Retry.LeaseLossOutcome != "indeterminate" {
 		t.Fatalf("retry = %+v", cat.Retry)
 	}
+	if !cat.PublishRules.RevokedRejected || !cat.Revocation.FailClosed || cat.Revocation.ErrorCode != CodeArtifactRevoked {
+		t.Fatalf("revocation = %+v", cat.Revocation)
+	}
+	if !cat.EmergencyStop.PolicyGated || cat.EmergencyStop.UncertainOutcome != "indeterminate" {
+		t.Fatalf("emergencyStop = %+v", cat.EmergencyStop)
+	}
+	if !seen[CodeArtifactRevoked] || !seen[CodeEmergencyStopped] || !seen[CodeEmergencyStopDenied] {
+		t.Fatal("catalog missing E9.4 error codes")
+	}
 }
 
 func TestScriptRunnerManifestsEncodeIsolation(t *testing.T) {

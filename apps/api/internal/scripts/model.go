@@ -1,7 +1,6 @@
 // Package scripts is the E9 script engine: publish/scan/sign/pin (E9.1),
-// isolated short-lived runners (E9.2), and typed I/O + recovery (E9.3).
-// Artifact revocation and emergency-stop remain E9.4 (revoked_at is already
-// fail-closed at dispatch).
+// isolated short-lived runners (E9.2), typed I/O + recovery (E9.3), and
+// artifact revocation + emergency stop (E9.4).
 package scripts
 
 import (
@@ -83,6 +82,12 @@ const (
 	VerifyAlreadyApplied = "already-applied"
 	VerifySafeToRetry    = "safe-to-retry"
 	VerifyIndeterminate  = "indeterminate"
+
+	MaxRevokeReasonBytes = 256
+	AuditRevoke          = "script.artifact.revoke"
+	AuditEmergencyStop   = "script.emergency_stop"
+	OutcomeCanceled      = "canceled"
+	OutcomeIndeterminate = "indeterminate"
 )
 
 // Artifact is an immutable content-addressed script package. JSON never
@@ -103,6 +108,7 @@ type Artifact struct {
 	CreatedBy               string         `json:"createdBy,omitempty"`
 	CreatedAt               time.Time      `json:"createdAt"`
 	RevokedAt               *time.Time     `json:"revokedAt,omitempty"`
+	RevokedBy               string         `json:"revokedBy,omitempty"`
 	StorageRef              string         `json:"-"`
 	Package                 []byte         `json:"-"`
 }

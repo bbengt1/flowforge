@@ -40,6 +40,7 @@ type Request struct {
 	LeaseLost          bool
 	UnknownOutcome     bool
 	PriorIndeterminate bool
+	EmergencyStop      bool
 	RequireLiveRuntime bool
 	Probes             []IsolationProbe
 }
@@ -73,10 +74,10 @@ type Result struct {
 	Error                *EngineError      `json:"error,omitempty"`
 }
 
-// Execute re-verifies the artifact, validates typed I/O, injects scoped
-// handles only, then runs the short-lived harness (CI) or a live runtime.
-// Retries default to zero. Lease loss is indeterminate and never a blind re-run.
-// Artifact revocation / emergency-stop remain E9.4.
+// Execute re-verifies the artifact (signature, scan, revocation), validates
+// typed I/O, injects scoped handles only, then runs the short-lived harness
+// (CI) or a live runtime. Retries default to zero. Lease loss and an
+// uncertain emergency stop are indeterminate and never a blind re-run.
 func Execute(ctx context.Context, req Request) Result {
 	out := Result{
 		Operation:            nodeTypeFor(req),
@@ -89,6 +90,12 @@ func Execute(ctx context.Context, req Request) Result {
 		RuntimeProfileDigest: req.Artifact.RuntimeProfileDigest,
 		CorrelationID:        strings.TrimSpace(req.CorrelationID),
 		Retry:                stubRetry(req),
+	}
+	if req.EmergencyStop && (req.UnknownOutcome || req.LeaseLost || req.PriorIndeterminate) {
+		return emergencyStopResult(req, out, true)
+	}
+	if req.EmergencyStop {
+		return emergencyStopResult(req, out, false)
 	}
 	if req.LeaseLost || req.UnknownOutcome {
 		return leaseLossResult(req, out)
@@ -243,6 +250,9 @@ func Execute(ctx context.Context, req Request) Result {
 	}
 	ran, runErr := runtime.Run(ctx, spec, job)
 	if runErr != nil {
+		if isContextStop(ctx, runErr) {
+			return emergencyStopResult(req, out, true)
+		}
 		if ee := asEngineError(runErr); ee != nil {
 			out.Error = ee
 		} else {
@@ -393,6 +403,13 @@ func runAudit(req Request, out Result) map[string]any {
 	}
 	if req.ActorID != "" {
 		audit["actorId"] = req.ActorID
+	}
+	if ArtifactIsRevoked(req.Artifact) {
+		audit["revoked"] = true
+	}
+	if req.EmergencyStop {
+		audit["emergencyStop"] = true
+		audit["uncertain"] = req.UnknownOutcome || req.LeaseLost || (out.Error != nil && out.Error.Code == CodeIndeterminate)
 	}
 	if out.Error != nil {
 		audit["errorCode"] = out.Error.Code
