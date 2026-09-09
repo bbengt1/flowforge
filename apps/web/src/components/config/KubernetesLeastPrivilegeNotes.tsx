@@ -1,6 +1,16 @@
 import { leastPrivilegeNotes } from "@/lib/kubernetes";
 
-export function KubernetesLeastPrivilegeNotes() {
+type KubernetesLeastPrivilegeNotesProps = {
+  extraNotes?: readonly string[];
+};
+
+export function KubernetesLeastPrivilegeNotes({
+  extraNotes,
+}: KubernetesLeastPrivilegeNotesProps) {
+  const notes = [
+    ...leastPrivilegeNotes(),
+    ...(extraNotes ?? []).filter((note) => note.trim()),
+  ];
   return (
     <aside
       aria-label="Kubernetes least-privilege notes"
@@ -8,7 +18,7 @@ export function KubernetesLeastPrivilegeNotes() {
     >
       <p className="font-medium">Least-privilege notes</p>
       <ul className="mt-2 list-disc space-y-1 pl-5">
-        {leastPrivilegeNotes().map((note) => (
+        {notes.map((note) => (
           <li key={note}>{note}</li>
         ))}
       </ul>

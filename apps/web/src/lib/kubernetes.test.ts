@@ -4,12 +4,18 @@ import {
   applyKubernetesPolicyToSpec,
   authorizedClusterTargets,
   authorizedKubernetesPolicies,
+  clusterTargetPublishGap,
   clusterTargetSelectorLabel,
+  hostSuppliedIdentityKeys,
+  hostSuppliedIdentityProblem,
   isKubernetesActionType,
   kubernetesPolicyGaps,
+  kubernetesPolicyPublishGap,
   kubernetesSecretKeysIn,
+  parseKubernetesEngineCatalog,
   parseKubernetesPolicy,
   sanitizeKubernetesSpec,
+  writeKubernetesPolicy,
 } from "./kubernetes.ts";
 import type { OpsConfigPin, OpsConfigSummary } from "./ops-config-types.ts";
 
@@ -85,6 +91,100 @@ describe("kubernetes policy parse / write", () => {
     assert.ok(gaps.some((gap) => /kinds/i.test(gap)));
     assert.ok(gaps.some((gap) => /verbs/i.test(gap)));
     assert.ok(gaps.some((gap) => /operations/i.test(gap)));
+    assert.ok(gaps.some((gap) => /Publish requires/i.test(gap)));
+  });
+
+  it("omits empty allowlists on write and requires namespaces unless deny", () => {
+    const empty = writeKubernetesPolicy({
+      allowedNamespaces: [],
+      allowedKinds: [],
+      allowedVerbs: [],
+      requireApproval: false,
+      operations: [],
+    });
+    assert.equal("allowedNamespaces" in empty, false);
+    assert.equal("allowedKinds" in empty, false);
+    assert.equal("allowedVerbs" in empty, false);
+    assert.equal("operations" in empty, false);
+    assert.match(
+      kubernetesPolicyPublishGap({
+        allowedNamespaces: [],
+        allowedKinds: [],
+        allowedVerbs: [],
+        requireApproval: false,
+        operations: [],
+      }) ?? "",
+      /allowedNamespaces/,
+    );
+    assert.equal(
+      kubernetesPolicyPublishGap({
+        allowedNamespaces: [],
+        allowedKinds: [],
+        allowedVerbs: [],
+        requireApproval: false,
+        operations: [],
+        deny: true,
+      }),
+      null,
+    );
+    assert.match(
+      clusterTargetPublishGap({ endpoint: { apiServer: "https://k8s.example" } }) ??
+        "",
+      /credentialId/,
+    );
+    assert.equal(
+      clusterTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        endpoint: { apiServer: "https://k8s.example" },
+      }),
+      null,
+    );
+  });
+
+  it("treats host-supplied id/workspaceId as 400 invalid-request UX", () => {
+    const keys = hostSuppliedIdentityKeys({
+      id: RESOURCE_ID,
+      workspaceId: VERSION_ID,
+      credentialId: CREDENTIAL_ID,
+    });
+    assert.deepEqual(keys, ["id", "workspaceId"]);
+    const problem = hostSuppliedIdentityProblem(keys);
+    assert.equal(problem.status, 400);
+    assert.equal(problem.code, "invalid-request");
+    assert.match(problem.detail, /id, workspaceId/);
+  });
+
+  it("parses the #74 kubernetes engine catalog", () => {
+    const catalog = parseKubernetesEngineCatalog({
+      credentialType: "kubernetes",
+      credentialSecretField: "kubeconfig",
+      allowedKinds: ["ConfigMap", "Deployment"],
+      allowedVerbs: ["get", "apply"],
+      evaluationKeys: [
+        {
+          canonical: "allowedNamespaces",
+          aliases: ["allowedNamespaces", "namespaces"],
+          failClosedWhenPresent: true,
+          requiredForPublish: true,
+        },
+      ],
+      serviceAccount: {
+        defaultName: "flowforge-runner",
+        roleTemplate: "namespace-scoped-runner",
+        notes: "Apply namespace-scoped Role templates.",
+      },
+      publishRules: {
+        emptyAllowlistsRejected: true,
+        denyAllowsMissingAllowlist: true,
+        credentialType: "kubernetes",
+      },
+    });
+    assert.ok(catalog);
+    assert.equal(catalog?.credentialType, "kubernetes");
+    assert.deepEqual(catalog?.allowedKinds, ["ConfigMap", "Deployment"]);
+    assert.equal(catalog?.serviceAccount.defaultName, "flowforge-runner");
+    assert.equal(catalog?.publishRules.emptyAllowlistsRejected, true);
+    assert.equal(catalog?.evaluationKeys[0]?.requiredForPublish, true);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   clusterTargetVersionPath,
   clusterTargetVersionsPath,
   kubernetesBatchSelectPath,
+  kubernetesCatalogPath,
   kubernetesPoliciesPath,
   kubernetesPolicyDraftPath,
   kubernetesPolicyPath,
@@ -23,7 +24,14 @@ import {
   kubernetesPolicyVersionPath,
   kubernetesPolicyVersionsPath,
 } from "./kubernetes-contract.ts";
-import { isKubernetesPolicySpec, sanitizeKubernetesSpec } from "./kubernetes.ts";
+import {
+  hostSuppliedIdentityKeys,
+  hostSuppliedIdentityProblem,
+  isKubernetesPolicySpec,
+  parseKubernetesEngineCatalog,
+  sanitizeKubernetesSpec,
+} from "./kubernetes.ts";
+import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import { problemFieldErrors, type ProblemDetails } from "./problem.ts";
 import {
   buildCreateBody,
@@ -126,10 +134,44 @@ export type KubernetesVersionSuccess = {
   strippedKeys: string[];
 };
 
+export type KubernetesCatalogSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  catalog: KubernetesEngineCatalog;
+  strippedKeys: string[];
+};
+
 export async function listClusterTargets(
   identity: DevIdentity,
 ): Promise<ClusterTargetListSuccess | KubernetesClientFailure> {
   return listCollection(identity, clusterTargetsPath(), "cluster_target");
+}
+
+export async function getKubernetesCatalog(
+  identity: DevIdentity,
+): Promise<KubernetesCatalogSuccess | KubernetesClientFailure> {
+  const path = kubernetesCatalogPath();
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const catalog = parseKubernetesEngineCatalog(result.data);
+  if (!catalog) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Kubernetes catalog was missing allowlists.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    catalog,
+    strippedKeys: [],
+  };
 }
 
 export async function createClusterTarget(
@@ -139,6 +181,10 @@ export async function createClusterTarget(
   slug?: string,
 ): Promise<KubernetesDraftSuccess | KubernetesClientFailure> {
   const path = clusterTargetsPath();
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
     body: buildCreateBody(name, sanitizeKubernetesSpec(spec), slug, "cluster_target"),
@@ -173,6 +219,10 @@ export async function saveClusterTargetDraft(
   name?: string,
 ): Promise<KubernetesDraftSuccess | KubernetesClientFailure> {
   const path = clusterTargetDraftPath(resourceId);
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "PUT",
     body: buildSaveDraftBody(
@@ -249,6 +299,10 @@ export async function createKubernetesPolicy(
   slug?: string,
 ): Promise<KubernetesDraftSuccess | KubernetesClientFailure> {
   const path = kubernetesPoliciesPath();
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const safe = sanitizeKubernetesSpec({
     ...spec,
     kind: spec.kind ?? "kubernetes",
@@ -287,6 +341,10 @@ export async function saveKubernetesPolicyDraft(
   name?: string,
 ): Promise<KubernetesDraftSuccess | KubernetesClientFailure> {
   const path = kubernetesPolicyDraftPath(resourceId);
+  const rejected = rejectHostIdentity(spec, path);
+  if (rejected) {
+    return rejected;
+  }
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "PUT",
     body: buildSaveDraftBody(
@@ -626,6 +684,24 @@ function draftResult(
     requestId: result.requestId,
     resource: resource ? { ...resource, kind } : undefined,
     draft: { ...draft, kind, spec: sanitizeKubernetesSpec(draft.spec) },
+    strippedKeys: [],
+  };
+}
+
+function rejectHostIdentity(
+  spec: OpsConfigSpec,
+  instance: string,
+): KubernetesClientFailure | null {
+  const keys = hostSuppliedIdentityKeys(spec);
+  if (keys.length === 0) {
+    return null;
+  }
+  return {
+    ok: false,
+    statusCode: 400,
+    requestId: "client",
+    problem: hostSuppliedIdentityProblem(keys, instance),
+    conflict: false,
     strippedKeys: [],
   };
 }

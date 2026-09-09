@@ -15,6 +15,7 @@ import {
   KUBERNETES_ALLOWED_KINDS,
   KUBERNETES_ALLOWED_VERBS,
   KUBERNETES_APPROVAL_OPERATIONS,
+  type KubernetesEngineCatalog,
   type KubernetesPolicyBody,
 } from "@/lib/kubernetes-types";
 import type { OpsConfigSpec } from "@/lib/ops-config-types";
@@ -22,16 +23,26 @@ import type { OpsConfigSpec } from "@/lib/ops-config-types";
 type KubernetesPolicyFormProps = {
   spec: OpsConfigSpec;
   readOnly: boolean;
+  engine?: KubernetesEngineCatalog | null;
+  extraNotes?: readonly string[];
   onChange: (spec: OpsConfigSpec) => void;
 };
 
 export function KubernetesPolicyForm({
   spec,
   readOnly,
+  engine,
+  extraNotes,
   onChange,
 }: KubernetesPolicyFormProps) {
   const policy = parseKubernetesPolicy(spec);
   const gaps = kubernetesPolicyGaps(policy);
+  const kinds = engine?.allowedKinds.length
+    ? engine.allowedKinds
+    : KUBERNETES_ALLOWED_KINDS;
+  const verbs = engine?.allowedVerbs.length
+    ? engine.allowedVerbs
+    : KUBERNETES_ALLOWED_VERBS;
   const inputClass =
     "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
 
@@ -41,7 +52,7 @@ export function KubernetesPolicyForm({
 
   return (
     <div className="grid gap-4">
-      <KubernetesLeastPrivilegeNotes />
+      <KubernetesLeastPrivilegeNotes extraNotes={extraNotes} />
 
       <label className="text-sm">
         <span className="font-medium">Allowed namespaces</span>
@@ -67,7 +78,7 @@ export function KubernetesPolicyForm({
         <legend className="font-medium">Allowed kinds</legend>
         <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_KIND_HELP}</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {KUBERNETES_ALLOWED_KINDS.map((kind) => (
+          {kinds.map((kind) => (
             <label key={kind} className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -94,7 +105,7 @@ export function KubernetesPolicyForm({
         <legend className="font-medium">Allowed verbs</legend>
         <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_VERB_HELP}</p>
         <div className="mt-2 flex flex-wrap gap-3">
-          {KUBERNETES_ALLOWED_VERBS.map((verb) => (
+          {verbs.map((verb) => (
             <label key={verb} className="flex items-center gap-2">
               <input
                 type="checkbox"

@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "node:test";
 import {
   createClusterTarget,
   createKubernetesPolicy,
+  getKubernetesCatalog,
   listClusterTargets,
   selectClusterTarget,
   selectKubernetesPolicy,
@@ -205,6 +206,48 @@ describe("kubernetes client", () => {
     assert.equal(selected.ok, false);
     if (!selected.ok) {
       assert.match(selected.problem.detail ?? "", /not a kubernetes policy/i);
+    }
+  });
+
+  it("loads GET /kubernetes/catalog and rejects host-supplied identity", async () => {
+    withSession();
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      seen.push(String(input));
+      return new Response(
+        JSON.stringify({
+          credentialType: "kubernetes",
+          allowedKinds: ["ConfigMap"],
+          allowedVerbs: ["get"],
+          evaluationKeys: [],
+          serviceAccount: { defaultName: "flowforge-runner", roleTemplate: "namespace-scoped-runner" },
+          publishRules: { emptyAllowlistsRejected: true, credentialType: "kubernetes" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const catalog = await getKubernetesCatalog(identity);
+    assert.equal(catalog.ok, true);
+    if (catalog.ok) {
+      assert.equal(catalog.catalog.credentialType, "kubernetes");
+    }
+    assert.match(seen[0] ?? "", /\/api\/v1\/kubernetes\/catalog$/);
+
+    globalThis.fetch = (async () => {
+      throw new Error("must not call upstream when host identity is present");
+    }) as typeof fetch;
+    const rejected = await createClusterTarget(identity, "prod-cluster", {
+      credentialId: CREDENTIAL_ID,
+      endpoint: { apiServer: "https://k8s.example" },
+      id: RESOURCE_ID,
+      workspaceId: VERSION_ID,
+    } as never);
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.equal(rejected.statusCode, 400);
+      assert.equal(rejected.problem.code, "invalid-request");
+      assert.match(rejected.problem.detail ?? "", /id, workspaceId/);
     }
   });
 });

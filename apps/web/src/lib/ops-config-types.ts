@@ -82,6 +82,11 @@ export type OpsConfigSpec = {
   maxBytes?: number;
   kind?: PolicyKind | string;
   policy?: Record<string, unknown>;
+  serviceAccount?: {
+    name?: string;
+    namespace?: string;
+    roleTemplate?: string;
+  };
 };
 
 export type OpsConfigSummary = {

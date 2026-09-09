@@ -252,8 +252,14 @@ describe("ops-config client", () => {
                 displayName: "Cluster targets",
                 yamlFields: ["clusterTargetId"],
                 usePermission: "clusterTarget.use",
+                allowedCredentialTypes: ["kubernetes"],
               },
             ],
+            kubernetesEngine: {
+              credentialType: "kubernetes",
+              allowedKinds: ["ConfigMap"],
+              kubeconfig: "should-be-stripped",
+            },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -271,6 +277,15 @@ describe("ops-config client", () => {
     assert.equal(catalog.ok, true);
     if (catalog.ok) {
       assert.equal(catalog.catalog.kinds[0]?.collection, "cluster-targets");
+      assert.deepEqual(
+        catalog.catalog.kinds[0]?.allowedCredentialTypes,
+        ["kubernetes"],
+      );
+      assert.equal(
+        catalog.catalog.kubernetesEngine?.credentialType,
+        "kubernetes",
+      );
+      assert.equal("kubeconfig" in (catalog.catalog.kubernetesEngine ?? {}), false);
     }
 
     const pins = await listWorkflowVersionPins(identity, WORKFLOW_ID, VERSION_ID);
@@ -288,5 +303,23 @@ describe("ops-config client", () => {
       `/api/v1/workflows/${WORKFLOW_ID}/versions/${VERSION_ID}/pins`,
       "/api/v1/ops-config/select",
     ]);
+  });
+
+  it("rejects host-supplied id/workspaceId on create without calling upstream", async () => {
+    withSession();
+    globalThis.fetch = (async () => {
+      throw new Error("must not call upstream when host identity is present");
+    }) as typeof fetch;
+    const result = await createOpsConfig(identity, "cluster_target", "prod", {
+      credentialId: RESOURCE_ID,
+      id: RESOURCE_ID,
+      workspaceId: VERSION_ID,
+    } as never);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 400);
+      assert.equal(result.problem.code, "invalid-request");
+      assert.match(result.problem.detail, /id, workspaceId/);
+    }
   });
 });

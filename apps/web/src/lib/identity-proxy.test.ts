@@ -481,6 +481,11 @@ describe("resolveIdentityProxyTarget", () => {
     if ("status" in authorized) {
       assert.equal(authorized.status, 404);
     }
+    const catalog = resolveIdentityProxyTarget("GET", ["kubernetes", "catalog"]);
+    assert.equal("apiPath" in catalog, true);
+    if ("apiPath" in catalog) {
+      assert.equal(catalog.apiPath, "/api/v1/kubernetes/catalog");
+    }
   });
 
   it("does not treat reserved ops-config actions as resource ids", () => {

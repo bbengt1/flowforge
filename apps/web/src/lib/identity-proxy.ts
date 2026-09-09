@@ -283,10 +283,10 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   // /audit-events/{id}. Do not allowlist audit mutations.
   // Isolation GET /workspace/audit-events stays above this block.
   ...ALERT_PROXY_ROUTES,
-  // E7.1 cluster-target + Kubernetes policy UI (#70). Paths live in
-  // kubernetes-contract.ts. Default upstream is E4.2 cluster-targets /
-  // policies until jonny publishes a dedicated map — retarget there.
-  // Duplicate ops-config allowlist matches are intentional.
+  // E7.1 cluster-target + Kubernetes policy UI (#70 / #74). Paths live
+  // in kubernetes-contract.ts. Upstream is ops-config collections plus
+  // GET /kubernetes/catalog. Duplicate ops-config allowlist matches
+  // are intentional.
   ...KUBERNETES_PROXY_ROUTES,
 ];
 

@@ -212,8 +212,8 @@ export default async function Home() {
           Cluster targets bind a workspace vault credential by display name.
           Kubernetes policy allowlists namespaces, kinds, and verbs and can
           require approval. Selectors fail closed on 403. The UI never
-          receives kubeconfigs. Relates to #70 / Part of #69 — retarget when
-          jonny publishes the route map.
+          receives kubeconfigs. Wired to the #74 map on main. Relates to
+          #70 (already closed) / Part of #69.
         </p>
         <p className="mt-4 flex flex-wrap gap-4">
           <Link

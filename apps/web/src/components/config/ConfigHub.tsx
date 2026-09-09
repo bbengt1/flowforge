@@ -58,6 +58,7 @@ export function ConfigHub({ group }: ConfigHubProps) {
     () => false,
   );
   const [catalogKinds, setCatalogKinds] = useState<OpsConfigCatalogKind[]>([]);
+  const [engineNote, setEngineNote] = useState<string | null>(null);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -73,6 +74,12 @@ export function ConfigHub({ group }: ConfigHubProps) {
         return;
       }
       setCatalogKinds(result.catalog.kinds);
+      const notes = result.catalog.kubernetesEngine?.serviceAccount;
+      const note =
+        notes && typeof notes === "object" && !Array.isArray(notes)
+          ? String((notes as { notes?: unknown }).notes ?? "").trim()
+          : "";
+      setEngineNote(note || null);
     });
     return () => {
       cancelled = true;
@@ -109,6 +116,9 @@ export function ConfigHub({ group }: ConfigHubProps) {
           <div>
             <h2 className="text-lg font-semibold">{item.title}</h2>
             <p className="mt-1 max-w-3xl text-sm text-zinc-600">{item.blurb}</p>
+            {item.id === "targets" && engineNote ? (
+              <p className="mt-2 max-w-3xl text-xs text-zinc-500">{engineNote}</p>
+            ) : null}
           </div>
           <ul className="grid gap-4 md:grid-cols-2">
             {OPS_CONFIG_KIND_CATALOG.filter((kind) => kind.group === item.id).map(

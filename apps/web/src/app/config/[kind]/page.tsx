@@ -31,9 +31,9 @@ export default async function ConfigKindPage({ params }: PageProps) {
           immutable pin. Select uses POST …/select. Foreign or empty lists fail
           closed with problem+json.
           {kind === "cluster_target"
-            ? " Cluster targets bind a workspace kubernetes credential by display name and an optional Kubernetes policy. The UI never receives kubeconfigs."
+            ? " Cluster targets bind a workspace type=kubernetes vault credential, endpoint.apiServer or tlsServerName, and optional policy/serviceAccount. The UI never receives kubeconfigs."
             : kind === "policy"
-              ? " Kubernetes policies allowlist namespaces, kinds, and verbs and can require approval for apply."
+              ? " Kubernetes policies omit empty allowlists. Publish needs namespaces unless deny=true."
               : ""}
         </p>
       </header>

@@ -5,16 +5,22 @@
  */
 
 import {
+  HOST_SUPPLIED_IDENTITY_DETAIL,
   KUBERNETES_FAIL_CLOSED_HELP,
   KUBERNETES_LEAST_PRIVILEGE_NOTES,
+  KUBERNETES_PROBLEM_CODES,
 } from "./kubernetes-contract.ts";
 import {
   KUBERNETES_ACTION_TYPES,
   KUBERNETES_ALLOWED_KINDS,
   KUBERNETES_ALLOWED_VERBS,
+  KUBERNETES_CREDENTIAL_TYPE,
   KUBERNETES_POLICY_KIND,
+  type KubernetesEngineCatalog,
+  type KubernetesEvaluationKey,
   type KubernetesPolicyBody,
 } from "./kubernetes-types.ts";
+import type { ProblemDetails } from "./problem.ts";
 import {
   authorizedSelectorOptions,
   failClosedReason,
@@ -29,7 +35,6 @@ import type {
   OpsConfigSpec,
   OpsConfigSummary,
 } from "./ops-config-types.ts";
-import type { ProblemDetails } from "./problem.ts";
 
 export type AuthorizedKubernetesResult<T> = {
   options: T[];
@@ -108,16 +113,26 @@ export function parseKubernetesPolicy(
   };
 }
 
+/** Omit empty allowlists so POST /policies does not 400 (fail-closed). */
 export function writeKubernetesPolicy(
   body: KubernetesPolicyBody,
 ): Record<string, unknown> {
-  const policy: Record<string, unknown> = {
-    allowedNamespaces: body.allowedNamespaces,
-    allowedKinds: body.allowedKinds,
-    allowedVerbs: body.allowedVerbs,
-    requireApproval: body.requireApproval,
-    operations: body.operations,
-  };
+  const policy: Record<string, unknown> = {};
+  if (body.allowedNamespaces.length > 0) {
+    policy.allowedNamespaces = [...body.allowedNamespaces];
+  }
+  if (body.allowedKinds.length > 0) {
+    policy.allowedKinds = [...body.allowedKinds];
+  }
+  if (body.allowedVerbs.length > 0) {
+    policy.allowedVerbs = [...body.allowedVerbs];
+  }
+  if (body.requireApproval) {
+    policy.requireApproval = true;
+  }
+  if (body.operations.length > 0) {
+    policy.operations = [...body.operations];
+  }
   if (body.approverRole?.trim()) {
     policy.approverRole = body.approverRole.trim();
   }
@@ -128,6 +143,138 @@ export function writeKubernetesPolicy(
     policy.deny = true;
   }
   return policy;
+}
+
+export function kubernetesPolicyPublishGap(
+  policy: KubernetesPolicyBody,
+): string | null {
+  if (policy.deny) {
+    return null;
+  }
+  if (policy.allowedNamespaces.length === 0) {
+    return "Publish requires a non-empty allowedNamespaces list unless deny=true.";
+  }
+  return null;
+}
+
+export function clusterTargetPublishGap(spec: OpsConfigSpec): string | null {
+  const cred = String(spec.credentialId ?? "").trim();
+  if (!cred) {
+    return "Publish requires spec.credentialId (workspace kubernetes vault).";
+  }
+  const endpoint = spec.endpoint;
+  const apiServer =
+    endpoint && typeof endpoint === "object"
+      ? String(endpoint.apiServer ?? "").trim()
+      : "";
+  const tlsName =
+    endpoint && typeof endpoint === "object"
+      ? String(endpoint.tlsServerName ?? "").trim()
+      : "";
+  if (!apiServer && !tlsName) {
+    return "Publish requires endpoint.apiServer or endpoint.tlsServerName.";
+  }
+  return null;
+}
+
+export function hostSuppliedIdentityKeys(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  const rec = value as Record<string, unknown>;
+  const hits: string[] = [];
+  if (rec.id !== undefined) {
+    hits.push("id");
+  }
+  if (rec.workspaceId !== undefined) {
+    hits.push("workspaceId");
+  }
+  return hits;
+}
+
+export function hostSuppliedIdentityProblem(
+  keys: string[],
+  instance = "",
+  requestId = "client",
+): ProblemDetails {
+  return {
+    type: "urn:flowforge:problem:invalid-request",
+    title: "Host-supplied identity is not allowed",
+    status: 400,
+    detail: `${HOST_SUPPLIED_IDENTITY_DETAIL} Found: ${keys.join(", ")}.`,
+    instance,
+    code: KUBERNETES_PROBLEM_CODES.invalidRequest,
+    request_id: requestId,
+  };
+}
+
+export function parseKubernetesEngineCatalog(
+  raw: unknown,
+): KubernetesEngineCatalog | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const rec = raw as Record<string, unknown>;
+  const kinds = stringList(rec.allowedKinds);
+  const verbs = stringList(rec.allowedVerbs);
+  const keysRaw = rec.evaluationKeys;
+  const evaluationKeys: KubernetesEvaluationKey[] = [];
+  if (Array.isArray(keysRaw)) {
+    for (const item of keysRaw) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        continue;
+      }
+      const row = item as Record<string, unknown>;
+      const canonical = String(row.canonical ?? "").trim();
+      if (!canonical) {
+        continue;
+      }
+      evaluationKeys.push({
+        canonical,
+        aliases: stringList(row.aliases),
+        failClosedWhenPresent: row.failClosedWhenPresent === true,
+        requiredForPublish: row.requiredForPublish === true,
+      });
+    }
+  }
+  const saRaw = rec.serviceAccount;
+  const sa =
+    saRaw && typeof saRaw === "object" && !Array.isArray(saRaw)
+      ? (saRaw as Record<string, unknown>)
+      : {};
+  const rulesRaw = rec.publishRules;
+  const rules =
+    rulesRaw && typeof rulesRaw === "object" && !Array.isArray(rulesRaw)
+      ? (rulesRaw as Record<string, unknown>)
+      : {};
+  return {
+    credentialType: String(rec.credentialType ?? KUBERNETES_CREDENTIAL_TYPE),
+    credentialSecretField:
+      String(rec.credentialSecretField ?? "kubeconfig").trim() || "kubeconfig",
+    allowedKinds: kinds.length > 0 ? kinds : [...KUBERNETES_ALLOWED_KINDS],
+    allowedVerbs: verbs.length > 0 ? verbs : [...KUBERNETES_ALLOWED_VERBS],
+    evaluationKeys,
+    serviceAccount: {
+      defaultName: String(sa.defaultName ?? "").trim(),
+      roleTemplate: String(sa.roleTemplate ?? "").trim(),
+      roleTemplatePath: String(sa.roleTemplatePath ?? "").trim() || undefined,
+      roleBindingTemplatePath:
+        String(sa.roleBindingTemplatePath ?? "").trim() || undefined,
+      serviceAccountPath: String(sa.serviceAccountPath ?? "").trim() || undefined,
+      clusterRoles: sa.clusterRoles === true,
+      notes: String(sa.notes ?? "").trim() || undefined,
+    },
+    publishRules: {
+      clusterTargetRequired: stringList(rules.clusterTargetRequired),
+      kubernetesPolicyRequired: stringList(rules.kubernetesPolicyRequired),
+      emptyAllowlistsRejected: rules.emptyAllowlistsRejected !== false,
+      credentialType: String(
+        rules.credentialType ?? KUBERNETES_CREDENTIAL_TYPE,
+      ),
+      denyAllowsMissingAllowlist: rules.denyAllowsMissingAllowlist === true,
+    },
+    clusterRoles: rec.clusterRoles === true,
+  };
 }
 
 export function applyKubernetesPolicyToSpec(
@@ -270,7 +417,10 @@ export function clusterTargetSelectorLabel(pin: OpsConfigPin): string {
 
 export function kubernetesPolicyGaps(body: KubernetesPolicyBody): string[] {
   const gaps: string[] = [];
-  if (body.allowedNamespaces.length === 0) {
+  const publishGap = kubernetesPolicyPublishGap(body);
+  if (publishGap) {
+    gaps.push(publishGap);
+  } else if (body.allowedNamespaces.length === 0) {
     gaps.push("No namespaces allowlisted — evaluation fails closed.");
   }
   if (body.allowedKinds.length === 0) {

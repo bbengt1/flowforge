@@ -19,9 +19,10 @@ export default async function ConfigPage({ searchParams }: PageProps) {
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Workspace-scoped targets, profiles, connections, templates, schemas,
-          and policies against the #41 map on main. E7.1 extends cluster
-          targets with vault credential binding and Kubernetes
-          namespace/kind/verb policy. Drafts save with body{" "}
+          and policies against the #41 / #74 maps on main. E7.1 cluster
+          targets bind workspace type=kubernetes credentials plus endpoint
+          and optional service-account metadata. Kubernetes policies use
+          fail-closed namespace/kind/verb allowlists. Drafts save with body{" "}
           <code className="font-mono text-xs">revision</code>; publish creates
           an immutable pin. Select is POST. Credentials stay in the E4.1 vault.
         </p>

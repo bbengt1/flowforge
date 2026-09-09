@@ -20,6 +20,14 @@ import {
 } from "@/lib/ops-config-client";
 import { descriptorForKind, emptySpecForKind } from "@/lib/ops-config-contract";
 import { publishInvalidatesApprovals } from "@/lib/approval";
+import {
+  clusterTargetPublishGap,
+  hostSuppliedIdentityKeys,
+  hostSuppliedIdentityProblem,
+  isKubernetesPolicySpec,
+  kubernetesPolicyPublishGap,
+  parseKubernetesPolicy,
+} from "@/lib/kubernetes";
 import { canPublishDraft, clientCompareSpecs, isDraftEditable } from "@/lib/ops-config";
 import type {
   OpsConfigDraft,
@@ -75,6 +83,15 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
     hasOperatorCaller(session.active, identity, headerFallback) &&
     hasWorkspaceLookup(identity);
   const id = resource?.id ?? draft?.resourceId ?? resourceId;
+  const hostKeys = hostSuppliedIdentityKeys(spec);
+  const hostProblem =
+    hostKeys.length > 0 ? hostSuppliedIdentityProblem(hostKeys) : null;
+  const publishGap =
+    kind === "cluster_target"
+      ? clusterTargetPublishGap(spec)
+      : kind === "policy" && isKubernetesPolicySpec(spec)
+        ? kubernetesPolicyPublishGap(parseKubernetesPolicy(spec))
+        : null;
   const readOnly = !isDraftEditable(resource?.status);
 
   const applyDraft = useCallback((next: OpsConfigDraft, nextName?: string) => {
@@ -125,6 +142,10 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
   }, [applyDraft, identity, kind, ready, resourceId]);
 
   async function createDraft() {
+    if (hostProblem) {
+      setProblem(hostProblem);
+      return;
+    }
     setPending("create");
     setProblem(null);
     const result = await createOpsConfig(identity, kind, name, spec);
@@ -142,6 +163,10 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
 
   async function saveDraft() {
     if (!id || !draft) {
+      return;
+    }
+    if (hostProblem) {
+      setProblem(hostProblem);
       return;
     }
     setPending("save");
@@ -228,6 +253,12 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
     <div className="space-y-6">
       <IsolationIdentityPanel />
       {problem ? <ProblemBanner problem={problem} /> : null}
+      {hostProblem && !problem ? <ProblemBanner problem={hostProblem} /> : null}
+      {publishGap ? (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          {publishGap}
+        </p>
+      ) : null}
       {approvalsInvalidated ? (
         <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           Publishing this {kind === "policy" ? "policy" : "target"} invalidates
@@ -310,7 +341,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
             <button
               type="button"
               onClick={() => void createDraft()}
-              disabled={!ready || pending !== null || !name.trim()}
+              disabled={!ready || pending !== null || !name.trim() || Boolean(hostProblem)}
               className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
             >
               {pending === "create" ? "Creating…" : "Create draft"}
@@ -319,7 +350,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
             <button
               type="button"
               onClick={() => void saveDraft()}
-              disabled={!ready || pending !== null || !draft || readOnly}
+              disabled={!ready || pending !== null || !draft || readOnly || Boolean(hostProblem)}
               className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
             >
               {pending === "save" ? "Saving…" : `Save draft${draft ? ` (rev ${draft.revision})` : ""}`}
@@ -341,6 +372,8 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               !ready ||
               pending !== null ||
               readOnly ||
+              Boolean(hostProblem) ||
+              Boolean(publishGap) ||
               !canPublishDraft(draft, name, dirty)
             }
             className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"

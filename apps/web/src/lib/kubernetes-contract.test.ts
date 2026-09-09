@@ -19,9 +19,11 @@ import {
   clusterTargetVersionPath,
   emptyKubernetesPolicy,
   isKubernetesProxySegments,
+  kubernetesCatalogPath,
   kubernetesPoliciesHref,
   kubernetesPoliciesPath,
   kubernetesPolicyDraftPath,
+  opsConfigCatalogPath,
   retargetCollectionPath,
   retargetKubernetesApiPath,
 } from "./kubernetes-contract.ts";
@@ -30,15 +32,17 @@ const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
 
 describe("kubernetes contract (#70 retarget adapter)", () => {
-  it("cites E7.1 / E7 and defaults to the E4.2 ops-config map", () => {
+  it("cites E7.1 / E7 and the #74 map on main", () => {
     assert.equal(KUBERNETES_STORY, 70);
     assert.equal(KUBERNETES_EPIC, 69);
-    assert.equal(KUBERNETES_API_PR, null);
-    assert.equal(KUBERNETES_ROUTE_MAP_SOURCE, "ops-config-e42");
+    assert.equal(KUBERNETES_API_PR, 74);
+    assert.equal(KUBERNETES_ROUTE_MAP_SOURCE, "e71-#74");
     assert.equal(CLUSTER_TARGET_UI_COLLECTION, "cluster-targets");
     assert.equal(CLUSTER_TARGET_UPSTREAM_COLLECTION, "cluster-targets");
     assert.equal(KUBERNETES_POLICY_UI_COLLECTION, "policies");
     assert.equal(KUBERNETES_POLICY_UPSTREAM_COLLECTION, "policies");
+    assert.equal(kubernetesCatalogPath(), "/kubernetes/catalog");
+    assert.equal(opsConfigCatalogPath(), "/ops-config/catalog");
   });
 
   it("builds REST paths consistent with ops-config draft/publish/versions", () => {
@@ -82,6 +86,10 @@ describe("kubernetes contract (#70 retarget adapter)", () => {
       `/api/v1/policies/${RESOURCE_ID}/draft`,
     );
     assert.equal(
+      retargetKubernetesApiPath("/api/v1/kubernetes/catalog"),
+      "/api/v1/kubernetes/catalog",
+    );
+    assert.equal(
       retargetCollectionPath(
         "/api/v1/cluster-targets",
         "cluster-targets",
@@ -102,7 +110,14 @@ describe("kubernetes contract (#70 retarget adapter)", () => {
   it("allowlists draft/publish/select/versions and rejects authorized", () => {
     assert.equal(isKubernetesProxySegments(["cluster-targets"]), true);
     assert.equal(isKubernetesProxySegments(["policies", RESOURCE_ID]), true);
+    assert.equal(isKubernetesProxySegments(["kubernetes", "catalog"]), true);
     assert.equal(isKubernetesProxySegments(["ssh-targets"]), false);
+    const catalog = KUBERNETES_PROXY_ROUTES.some(
+      (route) =>
+        route.methods.includes("GET") &&
+        route.match(["kubernetes", "catalog"]),
+    );
+    assert.equal(catalog, true);
     const list = KUBERNETES_PROXY_ROUTES.some(
       (route) =>
         route.methods.includes("GET") && route.match(["cluster-targets"]),

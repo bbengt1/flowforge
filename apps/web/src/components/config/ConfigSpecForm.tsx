@@ -1,11 +1,18 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { KubernetesPolicyForm } from "@/components/config/KubernetesPolicyForm";
 import { PolicyRefSelect } from "@/components/config/PolicyRefSelect";
 import type { DevIdentity } from "@/lib/identity-headers";
+import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { isKubernetesPolicySpec } from "@/lib/kubernetes";
+import {
+  KUBERNETES_CREDENTIAL_TYPE,
+  KUBERNETES_ROLE_TEMPLATE,
+  type KubernetesEngineCatalog,
+} from "@/lib/kubernetes-types";
 import { parseJsonObject, specJson } from "@/lib/ops-config";
 import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
@@ -35,6 +42,23 @@ export function ConfigSpecForm({
 }: ConfigSpecFormProps) {
   const inputClass =
     "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
+  const [engine, setEngine] = useState<KubernetesEngineCatalog | null>(null);
+
+  useEffect(() => {
+    if (!ready || (kind !== "cluster_target" && kind !== "policy")) {
+      return;
+    }
+    let cancelled = false;
+    void getKubernetesCatalog(identity).then((result) => {
+      if (cancelled || !result.ok) {
+        return;
+      }
+      setEngine(result.catalog);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity, kind, ready]);
 
   function patch(partial: Partial<OpsConfigSpec>) {
     onChange({ ...spec, ...partial });
@@ -44,6 +68,14 @@ export function ConfigSpecForm({
   const limits = spec.limits ?? {};
   const endpointPolicy = asRecord(spec.endpointPolicy);
   const recipientPolicy = asRecord(spec.recipientPolicy);
+  const serviceAccount = spec.serviceAccount ?? {};
+  const roleTemplate =
+    serviceAccount.roleTemplate ||
+    engine?.serviceAccount.roleTemplate ||
+    KUBERNETES_ROLE_TEMPLATE;
+  const catalogNotes = engine?.serviceAccount.notes
+    ? [engine.serviceAccount.notes]
+    : [];
 
   return (
     <div className="grid gap-3">
@@ -53,14 +85,16 @@ export function ConfigSpecForm({
           ready={ready}
           value={spec.credentialId ?? ""}
           disabled={readOnly}
-          allowedTypes={kind === "cluster_target" ? ["kubernetes"] : undefined}
+          allowedTypes={
+            kind === "cluster_target" ? [KUBERNETES_CREDENTIAL_TYPE] : undefined
+          }
           onChange={(credentialId) => patch({ credentialId })}
         />
       ) : null}
 
       {kind === "cluster_target" ? (
         <>
-          <KubernetesLeastPrivilegeNotes />
+          <KubernetesLeastPrivilegeNotes extraNotes={catalogNotes} />
           <TextField
             label="API server"
             value={String(endpoint.apiServer ?? "")}
@@ -108,6 +142,40 @@ export function ConfigSpecForm({
             disabled={readOnly}
             onChange={(policyId) => patch({ policyId })}
           />
+          <TextField
+            label="Service account name"
+            value={String(serviceAccount.name ?? "")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(name) =>
+              patch({ serviceAccount: { ...serviceAccount, name } })
+            }
+          />
+          <TextField
+            label="Service account namespace"
+            value={String(serviceAccount.namespace ?? "")}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(namespace) =>
+              patch({ serviceAccount: { ...serviceAccount, namespace } })
+            }
+          />
+          <TextField
+            label="Role template"
+            value={String(roleTemplate)}
+            disabled={readOnly}
+            className={inputClass}
+            onChange={(next) =>
+              patch({
+                serviceAccount: { ...serviceAccount, roleTemplate: next },
+              })
+            }
+          />
+          <p className="text-xs text-zinc-500">
+            Optional operator metadata for E7.2. Default template is{" "}
+            <code className="font-mono">{KUBERNETES_ROLE_TEMPLATE}</code>.
+            ClusterRoles are not MVP. Paths come from GET /kubernetes/catalog.
+          </p>
         </>
       ) : null}
 
@@ -446,6 +514,8 @@ export function ConfigSpecForm({
             <KubernetesPolicyForm
               spec={spec}
               readOnly={readOnly}
+              engine={engine}
+              extraNotes={catalogNotes}
               onChange={onChange}
             />
           ) : (

@@ -1,11 +1,13 @@
 /**
- * E7.1 cluster-target + Kubernetes policy types (Chloe UI, #70).
+ * E7.1 cluster-target + Kubernetes policy types (Chloe UI).
  * Secret-free. Credentials stay in the E4.1 vault by display name/id.
- * Jonny's route map is still in flight — shapes follow E4.2 ops-config
- * (`docs/reference/backend-api-map.md`) and kubernetes-engine.md.
+ * Aligned to jonny's #74 map on main (`docs/reference/backend-api-map.md`).
  */
 
 export const KUBERNETES_POLICY_KIND = "kubernetes" as const;
+export const KUBERNETES_CREDENTIAL_TYPE = "kubernetes" as const;
+export const KUBERNETES_CREDENTIAL_SECRET_FIELD = "kubeconfig" as const;
+export const KUBERNETES_ROLE_TEMPLATE = "namespace-scoped-runner" as const;
 
 export const KUBERNETES_ALLOWED_KINDS = [
   "ConfigMap",
@@ -60,6 +62,12 @@ export type KubernetesPolicyBody = {
   deny?: boolean;
 };
 
+export type KubernetesServiceAccount = {
+  name: string;
+  namespace?: string;
+  roleTemplate?: string;
+};
+
 export type KubernetesClusterTargetSpec = {
   credentialId: string;
   endpoint: {
@@ -69,4 +77,37 @@ export type KubernetesClusterTargetSpec = {
   };
   allowedNamespaces?: string[];
   policyId?: string;
+  serviceAccount?: KubernetesServiceAccount;
+};
+
+export type KubernetesEvaluationKey = {
+  canonical: string;
+  aliases: string[];
+  failClosedWhenPresent: boolean;
+  requiredForPublish?: boolean;
+};
+
+export type KubernetesEngineCatalog = {
+  credentialType: string;
+  credentialSecretField: string;
+  allowedKinds: string[];
+  allowedVerbs: string[];
+  evaluationKeys: KubernetesEvaluationKey[];
+  serviceAccount: {
+    defaultName: string;
+    roleTemplate: string;
+    roleTemplatePath?: string;
+    roleBindingTemplatePath?: string;
+    serviceAccountPath?: string;
+    clusterRoles: boolean;
+    notes?: string;
+  };
+  publishRules: {
+    clusterTargetRequired: string[];
+    kubernetesPolicyRequired: string[];
+    emptyAllowlistsRejected: boolean;
+    credentialType: string;
+    denyAllowsMissingAllowlist: boolean;
+  };
+  clusterRoles: boolean;
 };

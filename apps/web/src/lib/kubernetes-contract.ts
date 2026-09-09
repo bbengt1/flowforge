@@ -1,26 +1,23 @@
 /**
  * Single adapter for Chloe's E7.1 cluster-target + Kubernetes
- * policy UI (#70 / Part of #69).
+ * policy UI. Retargeted to jonny's #74 map on `main`.
  *
- * Jonny's dedicated route map is still in flight. Default upstream is
- * the E4.2 ops-config collections on `main`:
+ * Existing E4.2 ops-config paths plus one new catalog:
  *
+ *   GET      /ops-config/catalog          {kinds, kubernetesEngine}
+ *   GET      /kubernetes/catalog          engine allowlists + SA templates
  *   GET|POST /cluster-targets
  *   GET|PUT  /cluster-targets/{id}/draft
  *   POST     /cluster-targets/{id}/publish|select|disable|enable
  *   GET      /cluster-targets/{id}/versions[/{versionId}]
  *   GET|POST /policies  (kind=kubernetes)
- *   …same draft/publish/versions/select as cluster-targets
  *   POST     /ops-config/select
  *
  * Cookie session + `X-CSRF-Token` on mutations. JSON camelCase.
- * Host-supplied `id` / `workspaceId` are never sent on writes.
- * UI never receives kubeconfigs — strip unexpected secrets.
- *
- * When jonny publishes, change `CLUSTER_TARGET_UPSTREAM_COLLECTION`
- * / `KUBERNETES_POLICY_UPSTREAM_COLLECTION` (and action names if they
- * diverge). Do not scatter path strings. Do not change `apps/api`.
- * Do not close #70 alone.
+ * RFC 9457 problems. Host-supplied `id` / `workspaceId` → 400 UX.
+ * UI never receives kubeconfigs. Do not invent routes.
+ * Relates to #70 (already closed by #74) / Part of #69.
+ * Do not change `apps/api`. Do not re-close #70.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -33,9 +30,9 @@ import {
 
 export const KUBERNETES_STORY = 70;
 export const KUBERNETES_EPIC = 69;
-/** Jonny's E7.1 map is not published yet. Retarget when it lands. */
-export const KUBERNETES_API_PR: number | null = null;
-export const KUBERNETES_ROUTE_MAP_SOURCE = "ops-config-e42" as const;
+/** Jonny's E7.1 map on main. */
+export const KUBERNETES_API_PR = 74;
+export const KUBERNETES_ROUTE_MAP_SOURCE = "e71-#74" as const;
 
 export const CLUSTER_TARGET_UI_COLLECTION = "cluster-targets";
 export const CLUSTER_TARGET_UPSTREAM_COLLECTION = "cluster-targets";
@@ -43,6 +40,9 @@ export const KUBERNETES_POLICY_UI_COLLECTION = "policies";
 export const KUBERNETES_POLICY_UPSTREAM_COLLECTION = "policies";
 export const OPS_CONFIG_SELECT_UI_PATH = "/ops-config/select";
 export const OPS_CONFIG_SELECT_UPSTREAM_PATH = "/ops-config/select";
+export const KUBERNETES_CATALOG_UI_COLLECTION = "kubernetes";
+export const KUBERNETES_CATALOG_UPSTREAM_COLLECTION = "kubernetes";
+export const KUBERNETES_CATALOG_ACTION = "catalog";
 
 export const KUBERNETES_DRAFT_ACTION = "draft";
 export const KUBERNETES_PUBLISH_ACTION = "publish";
@@ -64,6 +64,12 @@ export const KUBERNETES_SECRET_FREE_HELP =
 
 export const KUBERNETES_FAIL_CLOSED_HELP =
   "Selectors fail closed on HTTP 403. Cross-workspace or unauthorized cluster targets are not listed.";
+
+export const HOST_SUPPLIED_IDENTITY_HELP =
+  "Host-supplied id or workspaceId is not accepted. The API returns 400 invalid-request.";
+
+export const HOST_SUPPLIED_IDENTITY_DETAIL =
+  "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers.";
 
 export const KUBERNETES_LEAST_PRIVILEGE_NOTES = [
   "Bind each cluster target to a workspace kubernetes credential — never paste a kubeconfig into this UI.",
@@ -157,6 +163,14 @@ export function kubernetesBatchSelectPath(): string {
   return OPS_CONFIG_SELECT_UI_PATH;
 }
 
+export function kubernetesCatalogPath(): string {
+  return `/${KUBERNETES_CATALOG_UI_COLLECTION}/${KUBERNETES_CATALOG_ACTION}`;
+}
+
+export function opsConfigCatalogPath(): string {
+  return "/ops-config/catalog";
+}
+
 export function clusterTargetsHref(): string {
   return `/config/${CLUSTER_TARGET_UI_COLLECTION}`;
 }
@@ -183,9 +197,8 @@ export function retargetCollectionPath(
 }
 
 /**
- * Rewrite UI `/api/v1/cluster-targets|policies…` onto the upstream
- * collections. Today this is identity (E4.2). Retarget here when
- * jonny publishes the E7.1 map.
+ * Rewrite UI `/api/v1/{cluster-targets,policies,kubernetes}…` onto
+ * the #74 upstream collections. Today this is identity.
  */
 export function retargetKubernetesApiPath(uiApiPath: string): string {
   let collected = retargetCollectionPath(
@@ -197,6 +210,11 @@ export function retargetKubernetesApiPath(uiApiPath: string): string {
     collected,
     KUBERNETES_POLICY_UI_COLLECTION,
     KUBERNETES_POLICY_UPSTREAM_COLLECTION,
+  );
+  collected = retargetCollectionPath(
+    collected,
+    KUBERNETES_CATALOG_UI_COLLECTION,
+    KUBERNETES_CATALOG_UPSTREAM_COLLECTION,
   );
   if (OPS_CONFIG_SELECT_UI_PATH === OPS_CONFIG_SELECT_UPSTREAM_PATH) {
     return collected;
@@ -212,7 +230,9 @@ export function retargetKubernetesApiPath(uiApiPath: string): string {
 export function isKubernetesProxySegments(segments: string[]): boolean {
   return (
     segments[0] === CLUSTER_TARGET_UI_COLLECTION ||
-    segments[0] === KUBERNETES_POLICY_UI_COLLECTION
+    segments[0] === KUBERNETES_POLICY_UI_COLLECTION ||
+    (segments[0] === KUBERNETES_CATALOG_UI_COLLECTION &&
+      segments[1] === KUBERNETES_CATALOG_ACTION)
   );
 }
 
@@ -231,9 +251,17 @@ function isE71Collection(value: string | undefined): boolean {
 /**
  * Allowlisted Next proxy routes. identity-proxy spreads this array so a
  * retarget only edits this file. Draft/publish/versions/select match
- * E4.2 until jonny's map lands. No GET …/authorized.
+ * the #74 map on main (ops-config collections + GET /kubernetes/catalog).
+ * No GET …/authorized.
  */
 export const KUBERNETES_PROXY_ROUTES: readonly KubernetesProxyRoute[] = [
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 &&
+      s[0] === KUBERNETES_CATALOG_UI_COLLECTION &&
+      s[1] === KUBERNETES_CATALOG_ACTION,
+  },
   {
     methods: ["GET", "POST"],
     match: (s) => s.length === 1 && isE71Collection(s[0]),
