@@ -1,5 +1,5 @@
 // Package wfstore persists workspace-scoped workflow drafts, immutable
-// published versions, and version-pinned execution stubs.
+// published versions, and durable executions, steps, jobs, and audit events.
 package wfstore
 
 import (
@@ -13,15 +13,17 @@ import (
 
 // Persistence errors.
 var (
-	ErrNotFound         = errors.New("not found")
-	ErrConflict         = errors.New("conflict")
-	ErrRevisionConflict = errors.New("draft revision conflict")
-	ErrInvalid          = errors.New("invalid")
-	ErrNoScope          = errors.New("workspace scope is not set")
-	ErrImmutable        = errors.New("published versions are immutable")
-	ErrDraftNotRunnable = errors.New("drafts cannot be executed")
-	ErrDuplicateVersion = errors.New("definition already published")
-	ErrStoreUnavailable = errors.New("workflow store is unavailable")
+	ErrNotFound              = errors.New("not found")
+	ErrConflict              = errors.New("conflict")
+	ErrRevisionConflict      = errors.New("draft revision conflict")
+	ErrInvalid               = errors.New("invalid")
+	ErrNoScope               = errors.New("workspace scope is not set")
+	ErrImmutable             = errors.New("published versions are immutable")
+	ErrDraftNotRunnable      = errors.New("drafts cannot be executed")
+	ErrDuplicateVersion      = errors.New("definition already published")
+	ErrStoreUnavailable      = errors.New("workflow store is unavailable")
+	ErrIdempotencyConflict   = errors.New("idempotency key reused with a different fingerprint")
+	ErrIdempotencyKeyInvalid = errors.New("idempotency key is invalid")
 )
 
 // Validation states persisted with a draft.
@@ -37,10 +39,35 @@ const (
 	StatusArchived  = "archived"
 )
 
-// Execution statuses for the E3.2 pin stub (not the E5 engine).
+// Execution and step statuses. pinned is retained for E3.2 stub rows.
 const (
-	ExecutionQueued = "queued"
-	ExecutionPinned = "pinned"
+	ExecutionQueued        = "queued"
+	ExecutionPinned        = "pinned"
+	ExecutionRunning       = "running"
+	ExecutionSucceeded     = "succeeded"
+	ExecutionFailed        = "failed"
+	ExecutionCanceled      = "canceled"
+	ExecutionIndeterminate = "indeterminate"
+)
+
+// Job statuses. claimed/running are reserved for E5.2 leases.
+const (
+	JobQueued        = "queued"
+	JobClaimed       = "claimed"
+	JobRunning       = "running"
+	JobSucceeded     = "succeeded"
+	JobFailed        = "failed"
+	JobCanceled      = "canceled"
+	JobIndeterminate = "indeterminate"
+)
+
+const (
+	DefaultExecutionRetention = 90 * 24 * time.Hour
+	DefaultAuditRetention     = 365 * 24 * time.Hour
+	MaxIdempotencyKeyLen      = 128
+	MaxExecutionInputBytes    = 16 * 1024
+	DefaultListLimit          = 50
+	MaxListLimit              = 100
 )
 
 // Workflow is the workspace-owned authoring record.
@@ -86,15 +113,97 @@ type Version struct {
 	PublishedAt    time.Time        `json:"publishedAt"`
 }
 
-// Execution is a stub run pinned to a published version and digest.
+// Execution is a durable run pinned to a published version and digest.
 type Execution struct {
-	ID                string    `json:"id"`
-	WorkflowID        string    `json:"workflowId"`
-	WorkflowVersionID string    `json:"workflowVersionId"`
-	WorkflowDigest    string    `json:"workflowDigest"`
-	Status            string    `json:"status"`
-	RequestedBy       string    `json:"requestedBy,omitempty"`
-	CreatedAt         time.Time `json:"createdAt"`
+	ID                string         `json:"id"`
+	WorkflowID        string         `json:"workflowId"`
+	WorkflowSlug      string         `json:"workflowSlug,omitempty"`
+	WorkflowName      string         `json:"workflowName,omitempty"`
+	WorkflowVersionID string         `json:"workflowVersionId"`
+	WorkflowDigest    string         `json:"workflowDigest"`
+	TriggerID         string         `json:"triggerId,omitempty"`
+	Status            string         `json:"status"`
+	IdempotencyKey    string         `json:"idempotencyKey,omitempty"`
+	Input             map[string]any `json:"input"`
+	PolicySnapshot    map[string]any `json:"policySnapshot"`
+	CorrelationID     string         `json:"correlationId,omitempty"`
+	RequestedBy       string         `json:"requestedBy,omitempty"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	StartedAt         *time.Time     `json:"startedAt,omitempty"`
+	FinishedAt        *time.Time     `json:"finishedAt,omitempty"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
+	RetentionUntil    time.Time      `json:"retentionUntil"`
+	Replayed          bool           `json:"replayed"`
+	fingerprint       string
+}
+
+// ExecutionStep is one node attempt. Outputs are redacted before persist.
+type ExecutionStep struct {
+	ID             string         `json:"id"`
+	ExecutionID    string         `json:"executionId"`
+	NodeID         string         `json:"nodeId"`
+	NodeType       string         `json:"nodeType"`
+	Attempt        int            `json:"attempt"`
+	Status         string         `json:"status"`
+	LeaseID        string         `json:"leaseId,omitempty"`
+	FencingToken   int64          `json:"fencingToken"`
+	IdempotencyKey string         `json:"idempotencyKey,omitempty"`
+	PolicySnapshot map[string]any `json:"policySnapshot"`
+	TargetSnapshot map[string]any `json:"targetSnapshot"`
+	Input          map[string]any `json:"input"`
+	Output         map[string]any `json:"output"`
+	Error          map[string]any `json:"error"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	StartedAt      *time.Time     `json:"startedAt,omitempty"`
+	FinishedAt     *time.Time     `json:"finishedAt,omitempty"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+}
+
+// ExecutionJob is the durable dispatch record for a step attempt.
+// Lease/fencing columns are present for E5.2 and unused in E5.1.
+type ExecutionJob struct {
+	ID              string     `json:"id"`
+	ExecutionID     string     `json:"executionId"`
+	ExecutionStepID string     `json:"executionStepId"`
+	Status          string     `json:"status"`
+	AvailableAt     time.Time  `json:"availableAt"`
+	LeaseExpiresAt  *time.Time `json:"leaseExpiresAt,omitempty"`
+	HeartbeatAt     *time.Time `json:"heartbeatAt,omitempty"`
+	WorkerID        string     `json:"workerId,omitempty"`
+	FencingToken    int64      `json:"fencingToken"`
+	Attempt         int        `json:"attempt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+// AuditEvent is an append-only, secret-free workspace audit row.
+type AuditEvent struct {
+	ID             string         `json:"id"`
+	ActorID        string         `json:"actorId,omitempty"`
+	HostContext    map[string]any `json:"hostContext"`
+	Action         string         `json:"action"`
+	ResourceType   string         `json:"resourceType"`
+	ResourceID     string         `json:"resourceId,omitempty"`
+	Outcome        string         `json:"outcome"`
+	CorrelationID  string         `json:"correlationId,omitempty"`
+	Details        map[string]any `json:"details"`
+	OccurredAt     time.Time      `json:"occurredAt"`
+	RetentionUntil time.Time      `json:"retentionUntil"`
+}
+
+// ExecutionListFilter selects workspace-scoped executions.
+type ExecutionListFilter struct {
+	WorkflowID string
+	Status     string
+	Limit      int
+}
+
+// AuditListFilter selects workspace-scoped audit events.
+type AuditListFilter struct {
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Limit        int
 }
 
 // CompareRef selects a draft or published version for comparison.
@@ -152,9 +261,26 @@ type RestoreInput struct {
 	ExpectedRevision int64
 }
 
-// StartInput starts a stub execution against a published version.
+// StartInput starts a durable execution against a published version.
 type StartInput struct {
-	VersionID string
+	VersionID      string
+	IdempotencyKey string
+	Input          map[string]any
+	CorrelationID  string
+	TriggerID      string
+	PolicySnapshot map[string]any
+	HostContext    map[string]any
+}
+
+// AuditWrite is a redacted append-only audit insert.
+type AuditWrite struct {
+	Action        string
+	ResourceType  string
+	ResourceID    string
+	Outcome       string
+	CorrelationID string
+	HostContext   map[string]any
+	Details       map[string]any
 }
 
 // Store persists drafts, versions, and pinned executions under a server scope.
@@ -170,7 +296,16 @@ type Store interface {
 	Compare(ctx context.Context, scope isolation.Scope, workflowID string, left, right CompareRef) (CompareResult, error)
 	Restore(ctx context.Context, scope isolation.Scope, workflowID string, in RestoreInput) (Workflow, Draft, error)
 	StartExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error)
+	PeekIdempotent(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error)
 	GetExecution(ctx context.Context, scope isolation.Scope, workflowID, executionID string) (Execution, error)
+	GetExecutionByID(ctx context.Context, scope isolation.Scope, executionID string) (Execution, error)
+	ListExecutions(ctx context.Context, scope isolation.Scope, filter ExecutionListFilter) ([]Execution, error)
+	ListSteps(ctx context.Context, scope isolation.Scope, executionID string) ([]ExecutionStep, error)
+	GetStep(ctx context.Context, scope isolation.Scope, executionID, stepID string) (ExecutionStep, error)
+	ListJobs(ctx context.Context, scope isolation.Scope, executionID string) ([]ExecutionJob, error)
+	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)
+	WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error)
+	PurgeExpired(ctx context.Context, scope isolation.Scope, now time.Time) (executions int, audits int, err error)
 	FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error)
 }
 

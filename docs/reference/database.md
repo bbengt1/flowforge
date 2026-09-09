@@ -107,7 +107,8 @@ Execution input/output data is schema-limited and redacted before persistence. L
 - Index all workspace foreign keys and common workspace views: `(workspace_id, updated_at DESC)` for workflows/configuration, `(workspace_id, status, started_at DESC)` for executions, and `(workspace_id, occurred_at DESC)` for audit events.
 - Index `execution_steps(execution_id, node_id)`, `execution_artifacts(execution_id, execution_step_id)`, and active-job lease fields with partial indexes.
 - Use GIN indexes only for bounded/queryable `parsed_definition`, label, and policy fields. Do not add blanket JSONB indexes.
-- Partition high-write `executions`, `execution_steps`, and `audit_events` by month. Maintain retention jobs that delete expired artifact references and object payloads; audit retention follows a separately governed policy.
+- Partition high-write `audit_events` by month (`RANGE (occurred_at)` plus `app.ensure_audit_month_partition`). `executions` and `execution_steps` stay unpartitioned in E5.1 so `UNIQUE (workspace_id, workflow_version_id, idempotency_key)` and composite FKs (including `approvals`) remain valid; `retention_until` (90 days executions, 365 days audit) plus scoped purge replace monthly drops for those tables. Maintain retention jobs that delete expired artifact references and object payloads; audit retention follows a separately governed policy.
+- E5.1 installs `execution_steps` and `execution_jobs` with lease/fencing columns and a partial unique active-claim index so E5.2 can add `SKIP LOCKED` without another table rewrite. Application roles may UPDATE execution status fields; version/digest/idempotency pins stay immutable. `audit_events` reject UPDATE and non-expired DELETE.
 - Use pooled connections, query timeouts, migration serialization, and measured connection/query/lock/vacuum headroom before increasing worker replicas. The initial capacity target is at least 2x observed peak for connection pool, write throughput, queue lag, and storage growth.
 
 ## Migration and validation plan
@@ -117,7 +118,7 @@ Migrations are forward-only, transaction-safe where PostgreSQL permits, and incl
 1. tenant/workspace/identity/RBAC and RLS helpers;
 2. workflows, drafts, immutable versions, triggers, and templates;
 3. credentials, target/profile/policy versioning, and artifact metadata;
-4. executions, steps, jobs/leases, artifacts, and audit partitions;
+4. E3.2 execution pin stubs (expanded by E5.1 `000009_executions.sql` with steps, jobs, and audit partitions);
 5. E4.3 `approvals` / `approval_events` (policy-bound requirements; E10 extends wait/resume).
 
 Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test ./...`, `go run ./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.

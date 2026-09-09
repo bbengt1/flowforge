@@ -115,8 +115,50 @@ func TestPostgresImmutabilityPinningAndIsolation(t *testing.T) {
 		}
 	})
 
+	t.Run("idempotent start redacts and does not repeat work", func(t *testing.T) {
+		first, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{
+			VersionID:      ver.ID,
+			IdempotencyKey: "pg-run-1",
+			Input:          map[string]any{"token": "super-secret-token", "env": "prod"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.Input["token"] != redactedMarker {
+			t.Fatalf("input = %#v", first.Input)
+		}
+		replay, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{
+			VersionID:      ver.ID,
+			IdempotencyKey: "pg-run-1",
+			Input:          map[string]any{"token": "super-secret-token", "env": "prod"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !replay.Replayed || replay.ID != first.ID {
+			t.Fatalf("replay = %+v", replay)
+		}
+		if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{
+			VersionID:      ver.ID,
+			IdempotencyKey: "pg-run-1",
+			Input:          map[string]any{"env": "other"},
+		}); !errors.Is(err, ErrIdempotencyConflict) {
+			t.Fatalf("mismatch: %v", err)
+		}
+		steps, err := store.ListSteps(ctx, scopeA, first.ID)
+		if err != nil || len(steps) == 0 {
+			t.Fatalf("steps: %v %+v", err, steps)
+		}
+		if _, err := store.GetExecutionByID(ctx, scopeB, first.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("cross-workspace get by id: %v", err)
+		}
+		if _, err := store.ListAuditEvents(ctx, scopeB, AuditListFilter{ResourceID: first.ID}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("force rls is enabled", func(t *testing.T) {
-		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions"} {
+		for _, table := range []string{"workflows", "workflow_drafts", "workflow_versions", "executions", "execution_steps", "execution_jobs", "audit_events"} {
 			var forced bool
 			err := admin.QueryRow(ctx, `
 				SELECT c.relforcerowsecurity

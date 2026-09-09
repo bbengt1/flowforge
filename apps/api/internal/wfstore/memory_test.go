@@ -147,6 +147,96 @@ func TestMemoryDraftPublishPinAndRestore(t *testing.T) {
 	}
 }
 
+func TestMemoryIdempotentStartAndRedaction(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := mustNormalize(t, fixtureYAML)
+	wf, draft, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := store.StartExecution(ctx, scope, wf.ID, StartInput{
+		VersionID:      ver.ID,
+		IdempotencyKey: "run-1",
+		Input:          map[string]any{"name": "api", "token": "super-secret-token"},
+		CorrelationID:  "caller-request-16",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Replayed || first.Status != ExecutionQueued {
+		t.Fatalf("first = %+v", first)
+	}
+	if first.Input["token"] != redactedMarker || first.Input["name"] != "api" {
+		t.Fatalf("input not redacted: %#v", first.Input)
+	}
+	steps, err := store.ListSteps(ctx, scope, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 1 || steps[0].NodeID != "restart" {
+		t.Fatalf("steps = %+v", steps)
+	}
+	jobs, err := store.ListJobs(ctx, scope, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].ExecutionStepID != steps[0].ID {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+
+	replay, err := store.StartExecution(ctx, scope, wf.ID, StartInput{
+		VersionID:      ver.ID,
+		IdempotencyKey: "run-1",
+		Input:          map[string]any{"name": "api", "token": "super-secret-token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay.Replayed || replay.ID != first.ID {
+		t.Fatalf("replay = %+v", replay)
+	}
+	listed, err := store.ListExecutions(ctx, scope, ExecutionListFilter{WorkflowID: wf.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("list repeated work: %+v", listed)
+	}
+
+	if _, err := store.StartExecution(ctx, scope, wf.ID, StartInput{
+		VersionID:      ver.ID,
+		IdempotencyKey: "run-1",
+		Input:          map[string]any{"name": "other"},
+	}); err != ErrIdempotencyConflict {
+		t.Fatalf("mismatch: %v", err)
+	}
+
+	audits, err := store.ListAuditEvents(ctx, scope, AuditListFilter{ResourceType: "execution", ResourceID: first.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) != 1 || audits[0].Action != "execution.start" {
+		t.Fatalf("audit = %+v", audits)
+	}
+	if _, ok := audits[0].Details["token"]; ok {
+		t.Fatalf("audit leaked token: %#v", audits[0].Details)
+	}
+}
+
 func mustNormalize(t *testing.T, src string) *workflow.Result {
 	t.Helper()
 	res, errs := workflow.ParseAndNormalize([]byte(src))

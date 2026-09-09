@@ -56,13 +56,17 @@ type restoreRequest struct {
 }
 
 type startExecutionRequest struct {
-	ID                string `json:"id"`
-	WorkspaceID       string `json:"workspace_id"`
-	WorkspaceIDAlt    string `json:"workspaceId"`
-	WorkflowVersionID string `json:"workflowVersionId"`
-	Draft             *bool  `json:"draft"`
-	Source            string `json:"source"`
-	WorkflowDraftID   string `json:"workflowDraftId"`
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	WorkspaceIDAlt    string         `json:"workspaceId"`
+	WorkflowVersionID string         `json:"workflowVersionId"`
+	Draft             *bool          `json:"draft"`
+	Source            string         `json:"source"`
+	WorkflowDraftID   string         `json:"workflowDraftId"`
+	IdempotencyKey    string         `json:"idempotencyKey"`
+	Input             map[string]any `json:"input"`
+	CorrelationID     string         `json:"correlationId"`
+	TriggerID         string         `json:"triggerId"`
 }
 
 type workflowDetailResponse struct {
@@ -78,7 +82,10 @@ type publishResponse struct {
 
 type executionResponse struct {
 	wfstore.Execution
-	Pins []opsconfig.Pin `json:"pins"`
+	Pins        []opsconfig.Pin         `json:"pins"`
+	Steps       []wfstore.ExecutionStep `json:"steps"`
+	Jobs        []wfstore.ExecutionJob  `json:"jobs"`
+	AuditEvents []wfstore.AuditEvent    `json:"auditEvents"`
 }
 
 type exportResponse struct {
@@ -427,10 +434,30 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Drafts cannot be executed. Select a published workflow version.")
 		return
 	}
-	ver, err := s.workflows.GetVersion(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), req.WorkflowVersionID)
+	workflowID := strings.TrimSpace(r.PathValue("workflowId"))
+	start := wfstore.StartInput{
+		VersionID:      req.WorkflowVersionID,
+		IdempotencyKey: firstNonEmpty(strings.TrimSpace(req.IdempotencyKey), strings.TrimSpace(r.Header.Get("Idempotency-Key"))),
+		Input:          req.Input,
+		CorrelationID:  firstNonEmpty(strings.TrimSpace(req.CorrelationID), RequestIDFromContext(r.Context())),
+		TriggerID:      strings.TrimSpace(req.TriggerID),
+		HostContext:    map[string]any{"requestId": RequestIDFromContext(r.Context())},
+	}
+	ver, err := s.workflows.GetVersion(r.Context(), scope, workflowID, req.WorkflowVersionID)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
+	}
+	if start.IdempotencyKey != "" {
+		existing, peekErr := s.workflows.PeekIdempotent(r.Context(), scope, workflowID, start)
+		if peekErr == nil {
+			s.writeExecutionDetail(w, r, scope, existing, http.StatusOK)
+			return
+		}
+		if !errors.Is(peekErr, wfstore.ErrNotFound) {
+			writeWorkflowStoreError(w, r, peekErr)
+			return
+		}
 	}
 	if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 && s.ops != nil {
 		if _, err := s.ops.Resolve(r.Context(), scope, refs); err != nil {
@@ -439,7 +466,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if s.approvals != nil {
-		eval, evalErr := s.evaluateVersion(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), req.WorkflowVersionID)
+		eval, evalErr := s.evaluateVersion(r.Context(), scope, workflowID, req.WorkflowVersionID)
 		if evalErr != nil {
 			writeApprovalEvalError(w, r, evalErr)
 			return
@@ -448,7 +475,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 			return
 		}
-		if _, gateErr := s.dispatchApprovalsOK(r.Context(), scope, eval, strings.TrimSpace(r.PathValue("workflowId")), ver.ID); gateErr != nil {
+		if _, gateErr := s.dispatchApprovalsOK(r.Context(), scope, eval, workflowID, ver.ID); gateErr != nil {
 			if errors.Is(gateErr, errPolicyDenied) {
 				WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", denyDetail(eval))
 				return
@@ -461,11 +488,13 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	exec, err := s.workflows.StartExecution(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), wfstore.StartInput{
-		VersionID: req.WorkflowVersionID,
-	})
+	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, start)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	if exec.Replayed {
+		s.writeExecutionDetail(w, r, scope, exec, http.StatusOK)
 		return
 	}
 	pins := []opsconfig.Pin{}
@@ -496,7 +525,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 	if !s.authorizeExecutionPins(w, r, perms, pins) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, executionResponse{Execution: exec, Pins: pins})
+	s.writeExecutionDetail(w, r, scope, exec, http.StatusCreated)
 }
 
 func (s *Server) getWorkflowExecution(w http.ResponseWriter, r *http.Request) {
@@ -512,15 +541,7 @@ func (s *Server) getWorkflowExecution(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	pins := []opsconfig.Pin{}
-	if s.ops != nil {
-		pins, err = s.ops.ListPins(r.Context(), scope, opsconfig.OwnerExecution, exec.ID)
-		if err != nil {
-			writeOpsError(w, r, err)
-			return
-		}
-	}
-	writeJSON(w, http.StatusOK, executionResponse{Execution: exec, Pins: pins})
+	s.writeExecutionDetail(w, r, scope, exec, http.StatusOK)
 }
 
 func (s *Server) workflowScope(w http.ResponseWriter, r *http.Request, perm string) (isolation.Scope, bool) {
@@ -623,6 +644,10 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Published versions are immutable.")
 	case errors.Is(err, wfstore.ErrDraftNotRunnable):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Drafts cannot be executed. Select a published workflow version.")
+	case errors.Is(err, wfstore.ErrIdempotencyKeyInvalid):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Idempotency key must be 1-128 URL-safe characters.")
+	case errors.Is(err, wfstore.ErrIdempotencyConflict):
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Idempotency key was reused with a different request fingerprint.")
 	case errors.Is(err, wfstore.ErrInvalid), errors.Is(err, wfstore.ErrNoScope):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The request is not valid.")
 	case errors.Is(err, wfstore.ErrStoreUnavailable):

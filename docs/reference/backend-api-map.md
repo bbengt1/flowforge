@@ -229,7 +229,7 @@ Digest format: `sha256:<hex>` of normalized YAML. Normalization sorts labels, tr
 
 ## Drafts, publish, and versions (E3.2)
 
-Server-derived workspace scope, FORCE RLS, and composite `(workspace_id, id)` FKs apply. Only **normalized** YAML is stored. Published `workflow_versions` rows are immutable (trigger + `flowforge_app` has INSERT/SELECT only). Execution start is a pin stub, not the E5 engine.
+Server-derived workspace scope, FORCE RLS, and composite `(workspace_id, id)` FKs apply. Only **normalized** YAML is stored. Published `workflow_versions` rows are immutable (trigger + `flowforge_app` has INSERT/SELECT only). Execution start pins a version/digest and, as of E5.1, persists redacted steps, jobs, and audit events.
 
 **UI route map (Chloe):** persist drafts through these shapes. `/workflows` and the Next proxies under `/api/control-plane/workflows/...` are in place. JSON field names are camelCase (`definitionYaml`, `draftRevision`, `workflowVersionId`). Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Cookie sessions send `X-CSRF-Token` on POST/PUT.
 
@@ -256,8 +256,39 @@ Suggested UI flow:
 | `GET /api/v1/workflows/{workflowId}/versions/{versionId}/export` | Immutable export. JSON `{filename,definitionYaml,digest,...}`; `Accept: application/yaml` returns raw YAML. | `200` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/compare` | Diff two refs. `{left:{kind:"draft"}, right:{kind:"version",versionId}}` (or `versionNumber`). | `200` `{equal,digestMatch,left,right,leftDigest,rightDigest,changes[]}` | `400` `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/versions/{versionId}/restore` | Restore version as a **new** draft revision. JSON `{expectedRevision?}`. Requires `workflow.edit`. Version is unchanged. | `200` `{workflow,draft}` | `409` stale draft / `401` `403` `404` |
-| `POST /api/v1/workflows/{workflowId}/executions` | Stub start. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. | `201` execution | `400` drafts cannot run / `401` `403` `404` `409` |
-| `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Read the pin. Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
+| `POST /api/v1/workflows/{workflowId}/executions` | Start a durable run. **Requires** `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute`. Pins `workflowVersionId` + `workflowDigest`. Optional `idempotencyKey` / `Idempotency-Key` is unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Inputs redacted before persist. E4.3 evaluates current target/action policy first: deny → `403`; approval required without a valid bound approval → `409`. | `201` / `200` execution | `400` drafts cannot run / `401` `403` `404` `409` |
+| `GET /api/v1/workflows/{workflowId}/executions` | List runs for one workflow. Requires `execution.view`. Query `status`, `limit`. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Execution detail (redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`). Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
+
+## Durable executions (E5.1)
+
+PostgreSQL model for executions, steps, jobs, and append-only `audit_events`. Lease/fencing columns exist on steps/jobs for E5.2 but are unused. Artifact downloads are E5.3.
+
+**UI route map (Chloe):** do **not** stack on another feature branch. These paths are stable against `main`. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. Do not rewrite `apps/web` in this API story. Suggested screens: `/executions` (workspace history) and `/executions/{id}` (detail with redacted steps). Next proxies can rewrite `/api/control-plane/executions` and `/api/control-plane/workflows/{id}/executions`.
+
+Suggested UI flow:
+
+1. Run: `POST /workflows/{workflowId}/executions` `{workflowVersionId, idempotencyKey?, input?}`. Keep `id`. Never send `draft: true`.
+2. Same `idempotencyKey` + same input/actor → `200` with the original `id` and `replayed: true`. Do not treat that as a second run.
+3. Same key + different `input` (or actor) → `409` `conflict`. Show a safe message; do not retry with a new key unless the operator intends a new run.
+4. Workspace history: `GET /executions?status=&workflowId=&limit=`. Per-workflow: `GET /workflows/{workflowId}/executions`.
+5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, `steps[]`, `jobs[]`, `pins[]`.
+6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
+7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
+
+Statuses: `queued`, `pinned` (legacy stub), `running`, `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). `fencingToken` / `leaseExpiresAt` / `workerId` are reserved; do not claim jobs from the UI.
+
+Retention: executions `retentionUntil` default 90 days; audit events 365 days. Monthly partitions apply to `audit_events` only.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/executions` | Workspace history. Query `workflowId`, `status`, `limit` (1–100, default 50). Requires `execution.view`. | `200` `{items}` | `401` `403` |
+| `GET /api/v1/executions/{executionId}` | Detail + redacted steps/jobs/pins/audit. | `200` | `401` `403` `404` |
+| `GET /api/v1/executions/{executionId}/steps` | Redacted step list. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/executions/{executionId}/steps/{stepId}` | One step. | `200` | `401` `403` `404` |
+| `GET /api/v1/executions/{executionId}/jobs` | Dispatch records. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/executions/{executionId}/audit-events` | Redacted start/replay audit for that run. | `200` `{items}` | `401` `403` `404` |
+| `GET /api/v1/audit-events` | Workspace audit log (`resourceType`, `resourceId`, `action`, `limit`). Distinct from E2.2 `GET /workspace/audit-events`. | `200` `{items}` | `401` `403` |
 
 RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
 
@@ -272,7 +303,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `unauthenticated` | 401 | Missing or invalid credentials |
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
-| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, or duplicate published digest |
+| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, or idempotency key reused with a different fingerprint |
 | `method-not-allowed` | 405 | Known path, unsupported method |
 | `request-too-large` | 413 | Body exceeds 1048576 bytes |
 | `internal-error` | 500 | Unexpected failure |
