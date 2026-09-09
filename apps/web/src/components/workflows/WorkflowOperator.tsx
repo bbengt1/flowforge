@@ -85,25 +85,7 @@ type WorkflowOperatorProps = {
   workflowId?: string;
 };
 
-function clientMountedSnapshot(): boolean {
-  return true;
-}
-
-function serverMountedSnapshot(): boolean {
-  return false;
-}
-
-function subscribeNever(onStoreChange: () => void): () => void {
-  const timer = setTimeout(onStoreChange, 0);
-  return () => clearTimeout(timer);
-}
-
 export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
-  const mounted = useSyncExternalStore(
-    subscribeNever,
-    clientMountedSnapshot,
-    serverMountedSnapshot,
-  );
   const router = useRouter();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
@@ -871,10 +853,6 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const errorLines = errors
     .map((error) => error.line)
     .filter((line): line is number => typeof line === "number");
-
-  if (!mounted) {
-    return <p className="text-sm text-zinc-600">Loading editor…</p>;
-  }
 
   return (
     <div className="space-y-6">
