@@ -219,6 +219,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 	for _, p := range []string{
 		"/health", "/readiness", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
 		"/session", "/session/refresh", "/session/logout", "/session/audit-events",
+		"/embed/catalog", "/embed/jwks", "/embed/assertions", "/embed/exchange",
 		"/permission-matrix", "/roles", "/permissions", "/tenants", "/workspaces", "/workspace",
 		"/workspace/members", "/workspace/records", "/workspace/credentials/{id}/use",
 		"/workspace/artifacts/{id}", "/workspace/jobs", "/workspace/cache/{key}",

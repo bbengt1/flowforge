@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -57,6 +58,12 @@ type Config struct {
 	// IntegrationActionsEnabled catalogs and executes http.request /
 	// notification.* when the negative suite is present (default true).
 	IntegrationActionsEnabled bool
+	// EmbedKeys is the Ed25519 material used to mint/verify embed
+	// assertions. Empty env yields an ephemeral process key.
+	EmbedKeys     embed.Material
+	EmbedAudience string
+	EmbedTTL      time.Duration
+	EmbedIssuer   string
 }
 
 // Load reads configuration from the process environment.
@@ -74,6 +81,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS: %w", err)
 	}
 	keys, err := vault.LoadKeys()
+	if err != nil {
+		return Config{}, err
+	}
+	embedKeys, err := embed.LoadMaterial()
 	if err != nil {
 		return Config{}, err
 	}
@@ -95,6 +106,10 @@ func Load() (Config, error) {
 		ArtifactDownloadTTL:       durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
 		ArtifactMaxBytes:          intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),
 		IntegrationActionsEnabled: boolEnv("INTEGRATION_ACTIONS_ENABLED", true),
+		EmbedKeys:                 embedKeys,
+		EmbedAudience:             firstNonEmpty(os.Getenv("EMBED_AUDIENCE"), embed.DefaultAudience),
+		EmbedTTL:                  durationEnv("EMBED_ASSERTION_TTL", embed.DefaultTTL),
+		EmbedIssuer:               strings.TrimSpace(os.Getenv("EMBED_ISSUER")),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")
@@ -104,6 +119,12 @@ func Load() (Config, error) {
 	}
 	if cfg.SessionIdleTimeout > cfg.SessionAbsoluteTimeout {
 		cfg.SessionIdleTimeout = cfg.SessionAbsoluteTimeout
+	}
+	if cfg.EmbedTTL < embed.MinTTL || cfg.EmbedTTL > embed.MaxTTL {
+		cfg.EmbedTTL = embed.DefaultTTL
+	}
+	if cfg.EmbedAudience != embed.DefaultAudience {
+		return Config{}, fmt.Errorf("EMBED_AUDIENCE must be %q", embed.DefaultAudience)
 	}
 	return cfg, nil
 }

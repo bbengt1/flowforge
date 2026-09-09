@@ -4,6 +4,7 @@ import {
   HSTS_VALUE,
   applySecurityHeaders,
   buildContentSecurityPolicy,
+  embedFramingAllowed,
   getApiConnectOrigins,
   sessionConnectSrc,
   shouldSendHsts,
@@ -99,6 +100,34 @@ describe("shouldSendHsts", () => {
     assert.equal(shouldSendHsts({ forwardedProto: "https" }), true);
     assert.equal(shouldSendHsts({ forwardedProto: "https,http" }), true);
     assert.equal(shouldSendHsts({ force: true, protocol: "http:" }), true);
+  });
+});
+
+describe("embed framing", () => {
+  it("keeps standalone clickjacking defaults and allowlists only /embed/v1", () => {
+    const standalone = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/workflows",
+      env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
+    });
+    assert.match(standalone, /frame-ancestors 'none'/);
+    const embedded = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/embed/v1/workflows",
+      env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
+    });
+    assert.match(embedded, /frame-ancestors https:\/\/portal\.example/);
+    assert.equal(
+      embedFramingAllowed("/embed/v1", {
+        WEB_EMBED_FRAME_ANCESTORS: "https://portal.example",
+      }),
+      true,
+    );
+    const headers = staticSecurityHeaders({
+      pathname: "/embed/v1/workflows",
+      env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
+    }).map((header) => header.key);
+    assert.equal(headers.includes("X-Frame-Options"), false);
   });
 });
 

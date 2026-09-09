@@ -5,3 +5,4 @@ The maintained technical reference starts with the [workflow model](workflow-mod
 Future implementation changes should add API, deployment, and runner references here, and update the security model when a trust boundary or control changes.
 
 - [Backend API map](backend-api-map.md): implemented control-plane routes and contracts.
+- [Embed SDK / contract](embed-sdk.md): E11.1 versioned assertion claims, mint/exchange, and standalone/embed deep links.

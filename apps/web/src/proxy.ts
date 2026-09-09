@@ -16,6 +16,7 @@ export function proxy(request: NextRequest) {
     nonce,
     protocol: request.nextUrl.protocol,
     forwardedProto: request.headers.get("x-forwarded-proto"),
+    pathname: request.nextUrl.pathname,
   };
 
   const requestHeaders = new Headers(request.headers);

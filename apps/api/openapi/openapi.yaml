@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.14.0
+  version: 0.15.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -335,6 +335,146 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+  /embed/catalog:
+    get:
+      operationId: getEmbedCatalog
+      summary: Versioned embed SDK/contract
+      description: |
+        E11.1 contract discovery for host backends and the embed shell.
+        Documents SDK `embed.v1`, assertion claims, stable standalone/embed
+        routes, mint/exchange, public JWKS, and E11.2 fail-closed hooks
+        (atomic jti consume, key rotation, tenancy propagation).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Embed contract
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedCatalog"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /embed/jwks:
+    get:
+      operationId: getEmbedJWKS
+      summary: Embed assertion public keys
+      description: |
+        JWKS for FlowForge-minted embed assertions (Ed25519 / EdDSA).
+        Never includes private keys, PEM, seed, or the `d` parameter.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Public keys
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedJWKS"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /embed/assertions:
+    post:
+      operationId: mintEmbedAssertion
+      summary: Mint a short-lived embed assertion
+      description: |
+        Host backends exchange an authenticated FlowForge principal for a
+        short-lived, asymmetric-signed, audience-bound, single-use assertion.
+        Workspace identity is resolved from tenant + workbench headers.
+        `capabilities` must be a known permission subset of the caller.
+        The compact JWS is returned once. Private keys are never returned.
+        Cookie callers need CSRF; header-only host backends skip CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/DisplayName"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MintEmbedAssertionRequest"
+      responses:
+        "201":
+          description: Assertion minted
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedEmbedAssertion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /embed/exchange:
+    post:
+      operationId: exchangeEmbedAssertion
+      summary: Exchange an embed assertion for a browser session
+      description: |
+        Validates issuer, audience (`flowforge`), `nbf`/`exp`, `jti`,
+        signature, `tenant_id` + `workbench_key`, optional workspace binding,
+        and capabilities. Consumes `jti` once (E11.1 in-process stub; E11.2
+        durable atomic consume). Issues `ff_session` / `ff_csrf`. The
+        assertion must be POSTed in the JSON body — never placed in a URL.
+        No CSRF (no session yet).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeEmbedAssertionRequest"
+      responses:
+        "201":
+          description: Session issued
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Set-Cookie:
+              description: "ff_session (HttpOnly) and ff_csrf (readable) cookies."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedExchangeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workflows/catalog:
     get:
       operationId: getWorkflowCatalog
@@ -6345,6 +6485,132 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SessionAuditEvent"
+    EmbedCatalog:
+      type: object
+      description: Versioned embed SDK/contract for Chloe and host backends.
+    EmbedJWKS:
+      type: object
+      required: [keys, signingReady]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, crv, x, kid, use, alg]
+            properties:
+              kty: {type: string, enum: [OKP]}
+              crv: {type: string, enum: [Ed25519]}
+              x: {type: string, description: Public key (base64url). Never `d`.}
+              kid: {type: string}
+              use: {type: string, enum: [sig]}
+              alg: {type: string, enum: [EdDSA]}
+              status: {type: string, enum: [active, overlap]}
+        signingReady:
+          type: boolean
+    MintEmbedAssertionRequest:
+      type: object
+      required: [capabilities]
+      properties:
+        subject:
+          type: string
+          description: End-user subject. Defaults to the minting caller.
+        displayName:
+          type: string
+        issuer:
+          type: string
+          description: Assertion iss. Defaults to the minting caller issuer.
+        tenantId:
+          type: string
+          format: uuid
+          description: Optional confirmation of the header-resolved tenant.
+        workbenchKey:
+          type: string
+          description: Optional confirmation of the header-resolved workbench.
+        workspaceId:
+          type: string
+          format: uuid
+          description: Optional binding. Must match server resolution. Never the lookup key.
+        capabilities:
+          type: array
+          items: {type: string}
+          minItems: 1
+        ttlSeconds:
+          type: integer
+          minimum: 15
+          maximum: 300
+    MintedEmbedAssertion:
+      type: object
+      required: [sdk, assertion, tokenId, audience, issuer, subject, tenantId, workbenchKey, capabilities, expiresAt, keyId, algorithm]
+      properties:
+        sdk: {type: string, example: embed.v1}
+        assertion:
+          type: string
+          description: Compact JWS. Returned once. Never log or put in a URL.
+        tokenId: {type: string, format: uuid}
+        audience: {type: string, example: flowforge}
+        issuer: {type: string}
+        subject: {type: string}
+        tenantId: {type: string, format: uuid}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        capabilities:
+          type: array
+          items: {type: string}
+        notBefore: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        keyId: {type: string}
+        algorithm: {type: string, example: EdDSA}
+        displayName: {type: string}
+    ExchangeEmbedAssertionRequest:
+      type: object
+      required: [assertion]
+      properties:
+        assertion:
+          type: string
+          description: Compact JWS from POST /embed/assertions. Body only — never a URL.
+        sdk:
+          type: string
+          example: embed.v1
+    EmbedExchangeResponse:
+      type: object
+      required: [session, principal, csrf_token, assertion, workspace, tenant, capabilities]
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        principal:
+          $ref: "#/components/schemas/User"
+        csrf_token:
+          type: string
+        assertion:
+          $ref: "#/components/schemas/EmbedAssertionPublic"
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+        capabilities:
+          type: array
+          items: {type: string}
+    EmbedAssertionPublic:
+      type: object
+      description: Secret-free assertion metadata. Never includes the compact JWS or private keys.
+      required: [sdk, tokenId, issuer, audience, subject, tenantId, workbenchKey, capabilities]
+      properties:
+        sdk: {type: string}
+        tokenId: {type: string, format: uuid}
+        issuer: {type: string}
+        audience: {type: string}
+        subject: {type: string}
+        tenantId: {type: string, format: uuid}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        capabilities:
+          type: array
+          items: {type: string}
+        notBefore: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        keyId: {type: string}
+        algorithm: {type: string}
+        displayName: {type: string}
     WorkflowFieldError:
       type: object
       required: [path, code, message]

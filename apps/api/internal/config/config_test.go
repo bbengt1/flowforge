@@ -127,6 +127,23 @@ func TestBoolEnv(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidEmbedSigningKey(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "not-an-ed25519-key")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid EMBED_SIGNING_KEY error")
+	}
+}
+
+func TestLoadRejectsNonFlowForgeEmbedAudience(t *testing.T) {
+	t.Setenv("EMBED_AUDIENCE", "someone-else")
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected EMBED_AUDIENCE fail-closed")
+	}
+}
+
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
 	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
 	t.Setenv("CREDENTIAL_KEK_FILE", "")

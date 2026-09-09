@@ -691,6 +691,41 @@ TLS is required on the pinned connection; this UI has no TLS-off toggle. Credent
 
 Operator surfaces: action library (HTTP / Notifications families), Add-action wizard target + configure, and the node inspector pin pickers. Helpers: `core-http-notification-contract.ts`, `core-http-notification-client.ts`.
 
+## E11.1 embed SDK/contract (API → UI)
+
+Jonny's mint/exchange + route map is on this PR (`e111-#121`). Relates to #121 / Part of #120 — **Keep #121 open**. Chloe owns the embed shell. `apps/web` ships only `src/lib/embed-contract.ts` plus `/embed/v1` rewrites so the canonical pages mount. Do not invent a second UI. Cookie session after exchange + `X-CSRF-Token` on later mutations. CamelCase mint JSON. RFC 9457.
+
+**Host flow**
+
+1. Host backend `POST /api/v1/embed/assertions` `{capabilities}` (identity headers + tenant/workbench). Receives compact JWS once.
+2. Host frontend `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` — **body only**, never a URL / `localStorage`.
+3. `201` sets `ff_session` / `ff_csrf` and returns `workspace` + `capabilities`. Navigate to `/embed/v1/…`.
+4. Treat host identity as display context until this exchange succeeds.
+
+**Stable mounts** — same hrefs standalone and embed (`GET /api/v1/embed/catalog` `routes[]`):
+
+| Standalone | Embed |
+| --- | --- |
+| `/workflows/{id}` | `/embed/v1/workflows/{id}` |
+| `/executions/{id}` | `/embed/v1/executions/{id}` |
+| `/credentials/{id}` | `/embed/v1/credentials/{id}` |
+| `/approvals/{id}` | `/embed/v1/approvals/{id}` |
+| `/config/{kind}/{id}` | `/embed/v1/config/{kind}/{id}` |
+| `/alerts/{id}` | `/embed/v1/alerts/{id}` |
+
+Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path*`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` stay the standalone default. `WEB_EMBED_FRAME_ANCESTORS` (exact origins) relaxes framing on `/embed/v1` only.
+
+**API**
+
+| Method | Path | CSRF | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/embed/catalog` | no | Contract. No auth |
+| `GET` | `/api/v1/embed/jwks` | no | Public keys only |
+| `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller |
+| `POST` | `/api/v1/embed/exchange` | no | Session issue |
+
+Do not implement E11.2 durable `jti` consume / key rotation / tenancy propagation, or E11.3 Portal adapter, in the embed-shell PR.
+
 ## Required validation
 
 - YAML import → canvas → no-edit save → export preserves normalized semantics and digest.

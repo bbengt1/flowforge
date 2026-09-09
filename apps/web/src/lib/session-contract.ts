@@ -123,6 +123,10 @@ export function csrfRequiredFor(method: string, proxyPath: string): boolean {
   if (method.toUpperCase() === "POST" && normalized === SESSION_PATH) {
     return false;
   }
+  // E11.1 exchange has no session yet — same bootstrap exemption as POST /session.
+  if (method.toUpperCase() === "POST" && normalized === "/embed/exchange") {
+    return false;
+  }
   return true;
 }
 

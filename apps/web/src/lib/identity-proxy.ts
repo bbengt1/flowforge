@@ -55,6 +55,7 @@ import {
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
+import { EMBED_PROXY_ROUTES } from "./embed-contract.ts";
 
 export { isResourceId } from "./identity-proxy-ids.ts";
 
@@ -133,6 +134,8 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },
   { methods: ["GET"], match: (s) => eq(s, ["session", "audit-events"]) },
+  // E11.1 embed catalog / JWKS / mint / exchange. Paths live in embed-contract.ts.
+  ...EMBED_PROXY_ROUTES,
   { methods: ["GET"], match: (s) => eq(s, ["workflows", "catalog"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },
