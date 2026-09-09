@@ -1,11 +1,9 @@
 /**
  * Single adapter for Chloe's E8.1 SSH target + command-profile UI.
+ * Retargeted to jonny's #86 map on `main`.
  *
- * Until jonny posts the engine route map, this is a clearly marked
- * **contract-fallback** on the E4.2 ops-config collections already
- * on main (`docs/reference/backend-api-map.md`):
- *
- *   GET      /ops-config/catalog          {kinds, sshEngine?}
+ *   GET      /ops-config/catalog          {kinds, kubernetesEngine, sshEngine}
+ *   GET      /ssh/catalog                 param types, render, retry schema, errors
  *   GET|POST /ssh-targets
  *   GET|PUT  /ssh-targets/{id}/draft
  *   POST     /ssh-targets/{id}/publish|select|disable|enable
@@ -16,11 +14,9 @@
  *   GET      /command-profiles/{id}/versions[/{versionId}]
  *   POST     /ops-config/select
  *
- * Prefer catalog `sshEngine` / kind rows when present. Do not invent
- * `/ssh/catalog` or other routes. Cookie session + `X-CSRF-Token` on
- * mutations. JSON camelCase. RFC 9457. Host-supplied `id` /
- * `workspaceId` → 400 UX. UI never receives keys, passwords, host
- * private material, or raw logs.
+ * Cookie session + `X-CSRF-Token` on mutations. JSON camelCase.
+ * RFC 9457. Host-supplied `id` / `workspaceId` → 400 UX. UI never
+ * receives privateKey, passphrase, host private material, or raw logs.
  *
  * Relates to #82 / Part of #81. Keep #82 open (jonny owns engine/APIs).
  * Do not change `apps/api`.
@@ -41,14 +37,17 @@ export { SSH_DENIED_FEATURES } from "./ssh-types.ts";
 
 export const SSH_STORY = 82;
 export const SSH_EPIC = 81;
-/** Jonny has not posted the E8.1 map yet. */
-export const SSH_API_PR = null;
-export const SSH_ROUTE_MAP_SOURCE = "e81-contract-fallback" as const;
+/** Jonny's E8.1 map on main. */
+export const SSH_API_PR = 86;
+export const SSH_ROUTE_MAP_SOURCE = "e81-#86" as const;
 
 export const SSH_TARGET_UI_COLLECTION = "ssh-targets";
 export const SSH_TARGET_UPSTREAM_COLLECTION = "ssh-targets";
 export const COMMAND_PROFILE_UI_COLLECTION = "command-profiles";
 export const COMMAND_PROFILE_UPSTREAM_COLLECTION = "command-profiles";
+export const SSH_CATALOG_UI_COLLECTION = "ssh";
+export const SSH_CATALOG_UPSTREAM_COLLECTION = "ssh";
+export const SSH_CATALOG_ACTION = "catalog";
 export const SSH_OPS_CONFIG_SELECT_UI_PATH = "/ops-config/select";
 export const SSH_OPS_CONFIG_SELECT_UPSTREAM_PATH = "/ops-config/select";
 export const SSH_OPS_CONFIG_CATALOG_UI_PATH = "/ops-config/catalog";
@@ -85,7 +84,7 @@ export const SSH_NOT_A_TERMINAL_HELP =
   "This is not an interactive terminal. Operators choose a published command profile with typed parameters. Arbitrary user shell commands are not accepted.";
 
 export const SSH_REVIEWED_RENDER_HELP =
-  "Parameter values are passed without shell interpolation. A reviewed profile renderer owns fixed quoting and rejects values outside the typed schema.";
+  "The reviewed profile renderer owns POSIX single-quote substitution for {name} placeholders. It rejects $(), backticks, ${, {{, and values outside the typed schema.";
 
 export const SSH_IMMUTABLE_PIN_HELP =
   "Command profiles are administrator-owned, versioned templates. A profile cannot be edited in place after a workflow version references it. Publication pins the exact target and profile revisions used at execution.";
@@ -93,11 +92,17 @@ export const SSH_IMMUTABLE_PIN_HELP =
 export const SSH_KEY_ONLY_HELP =
   "Key-only authentication. Bind a workspace ssh_private_key vault credential. Password authentication is denied in MVP.";
 
-export const SSH_RETRY_SAFE_STUB_HELP =
-  "Retry-safe marking is an E8.3 concern. Until the catalog exposes retrySafe, this field is read-only and defaults to false.";
+export const SSH_RETRY_SAFE_HELP =
+  "retrySafe is a schema flag only. Retries default to zero; verification and bounded retry are E8.3.";
 
 export const SSH_CONTRACT_FALLBACK_HELP =
-  "Using contract-fallback SSH catalog until jonny posts the E8.1 route map. Collections stay on E4.2 /ssh-targets and /command-profiles. GET /ops-config/catalog sshEngine is preferred when present.";
+  "Using local #86 catalog defaults because GET /ssh/catalog was unavailable. Collections stay on /ssh-targets and /command-profiles.";
+
+export const SSH_FINGERPRINT_HELP =
+  "sha256:<64 hex> or OpenSSH SHA256:<base64>. The API canonicalizes to sha256:<hex>.";
+
+export const SSH_ADDRESS_HELP =
+  "Optional IP/CIDR allowlist. A present empty list fails closed. 0.0.0.0/0 and unspecified addresses are rejected.";
 
 export const SSH_SAFETY_NOTES = [
   "SSH targets bind a workspace-scoped vault credential — never paste keys, passwords, or host private material into this UI.",
@@ -105,12 +110,12 @@ export const SSH_SAFETY_NOTES = [
   "Known-host fingerprints and host/port allowlists are required configuration. Connections use key-only auth.",
   "Password authentication, agent forwarding, port forwarding, proxy commands, and host-key auto-acceptance are MVP non-goals and stay denied.",
   "Command profiles are admin-owned versioned templates. Publish pins the exact target + profile revisions; later draft edits do not retarget a pin.",
-  "The reviewed renderer rejects shell interpolation ($(), backticks, ${, {{) and values outside the typed parameter schema.",
+  "The reviewed renderer quotes {name} placeholders with POSIX single quotes and rejects $(), backticks, ${, {{.",
 ] as const;
 
 /**
- * Marked contract-fallback. Overlay GET /ops-config/catalog `sshEngine`
- * or kind rows when jonny ships them.
+ * Local #86 defaults when GET /ssh/catalog is unavailable.
+ * Overlay catalog `sshEngine` / GET /ssh/catalog when present.
  */
 export const SSH_CONTRACT_FALLBACK_CATALOG: SshEngineCatalog = {
   source: "contract-fallback",
@@ -122,7 +127,11 @@ export const SSH_CONTRACT_FALLBACK_CATALOG: SshEngineCatalog = {
   denied: SSH_DENIED_FEATURES,
   templateForbidden: SSH_TEMPLATE_FORBIDDEN_TOKENS,
   parameterTypes: SSH_PARAMETER_TYPES,
-  retrySafeExposed: false,
+  retrySafeExposed: true,
+  retryNote: SSH_RETRY_SAFE_HELP,
+  renderOwner: "reviewed-profile-renderer",
+  quoting: "posix-single-quotes",
+  placeholderSyntax: "{name}",
   notes: SSH_CONTRACT_FALLBACK_HELP,
 };
 
@@ -204,6 +213,10 @@ export function sshOpsConfigCatalogPath(): string {
   return SSH_OPS_CONFIG_CATALOG_UI_PATH;
 }
 
+export function sshCatalogPath(): string {
+  return `/${SSH_CATALOG_UI_COLLECTION}/${SSH_CATALOG_ACTION}`;
+}
+
 export function sshTargetsHref(): string {
   return `/config/${SSH_TARGET_UI_COLLECTION}`;
 }
@@ -246,9 +259,8 @@ function retargetExactPath(
 }
 
 /**
- * Rewrite UI `/api/v1/{ssh-targets,command-profiles,ops-config}…`
- * onto the upstream collections. Today this is identity — the single
- * retarget point when jonny shares the map.
+ * Rewrite UI `/api/v1/{ssh-targets,command-profiles,ssh,ops-config}…`
+ * onto the #86 upstream collections. Today this is identity.
  */
 export function retargetSshApiPath(uiApiPath: string): string {
   let collected = retargetSshCollectionPath(
@@ -260,6 +272,11 @@ export function retargetSshApiPath(uiApiPath: string): string {
     collected,
     COMMAND_PROFILE_UI_COLLECTION,
     COMMAND_PROFILE_UPSTREAM_COLLECTION,
+  );
+  collected = retargetSshCollectionPath(
+    collected,
+    SSH_CATALOG_UI_COLLECTION,
+    SSH_CATALOG_UPSTREAM_COLLECTION,
   );
   collected = retargetExactPath(
     collected,
@@ -276,7 +293,9 @@ export function retargetSshApiPath(uiApiPath: string): string {
 export function isSshProxySegments(segments: string[]): boolean {
   return (
     segments[0] === SSH_TARGET_UI_COLLECTION ||
-    segments[0] === COMMAND_PROFILE_UI_COLLECTION
+    segments[0] === COMMAND_PROFILE_UI_COLLECTION ||
+    (segments[0] === SSH_CATALOG_UI_COLLECTION &&
+      segments[1] === SSH_CATALOG_ACTION)
   );
 }
 
@@ -295,9 +314,17 @@ function isE81Collection(value: string | undefined): boolean {
 /**
  * Allowlisted Next proxy routes. identity-proxy spreads this array so a
  * retarget only edits this file. Draft/publish/versions/select match
- * E4.2 ops-config collections (contract-fallback). No GET …/authorized.
+ * the #86 map (ops-config collections + GET /ssh/catalog).
+ * No GET …/authorized.
  */
 export const SSH_PROXY_ROUTES: readonly SshProxyRoute[] = [
+  {
+    methods: ["GET"],
+    match: (s) =>
+      s.length === 2 &&
+      s[0] === SSH_CATALOG_UI_COLLECTION &&
+      s[1] === SSH_CATALOG_ACTION,
+  },
   {
     methods: ["GET", "POST"],
     match: (s) => s.length === 1 && isE81Collection(s[0]),
@@ -363,5 +390,12 @@ export function emptyCommandProfileSpec(): {
   parameterSchema: Record<string, unknown>;
   template: string;
 } {
-  return { parameterSchema: {}, template: "" };
+  return {
+    parameterSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+    template: "",
+  };
 }

@@ -26,6 +26,13 @@ import { SSH_CONTRACT_FALLBACK_CATALOG } from "./ssh-contract.ts";
 const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
 const CREDENTIAL_ID = "33333333-3333-4333-8333-333333333333";
+const FINGERPRINT_HEX = `sha256:${"a".repeat(64)}`;
+const FINGERPRINT_B64 = `SHA256:${"A".repeat(43)}`;
+const EMPTY_PARAMETER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {},
+};
 
 function target(overrides: Partial<OpsConfigSummary> = {}): OpsConfigSummary {
   return {
@@ -50,7 +57,10 @@ function pin(overrides: Partial<OpsConfigPin> = {}): OpsConfigPin {
     versionNumber: 1,
     digest: "sha256:aa",
     name: "restart-unit",
-    spec: { template: "systemctl restart nginx", parameterSchema: {} },
+    spec: {
+      template: "systemctl restart nginx",
+      parameterSchema: EMPTY_PARAMETER_SCHEMA,
+    },
     ...overrides,
   };
 }
@@ -58,14 +68,16 @@ function pin(overrides: Partial<OpsConfigPin> = {}): OpsConfigPin {
 describe("ssh target / profile publish gaps", () => {
   it("requires credential, hostname, and known-host fingerprint", () => {
     assert.match(
-      sshTargetPublishGap({ hostname: "edge.example", hostKeyFingerprint: "sha256:aa" }) ??
-        "",
+      sshTargetPublishGap({
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_HEX,
+      }) ?? "",
       /credentialId/,
     );
     assert.match(
       sshTargetPublishGap({
         credentialId: CREDENTIAL_ID,
-        hostKeyFingerprint: "sha256:aa",
+        hostKeyFingerprint: FINGERPRINT_HEX,
       }) ?? "",
       /hostname/,
     );
@@ -76,12 +88,66 @@ describe("ssh target / profile publish gaps", () => {
       }) ?? "",
       /fingerprint/,
     );
-    assert.equal(
+    assert.match(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: "sha256:aa",
+      }) ?? "",
+      /sha256/,
+    );
+    assert.match(
       sshTargetPublishGap({
         credentialId: CREDENTIAL_ID,
         hostname: "edge.example",
         hostKeyFingerprint: "SHA256:abcd",
+      }) ?? "",
+      /sha256/,
+    );
+    assert.equal(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_HEX,
         port: 22,
+      }),
+      null,
+    );
+    assert.equal(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_B64,
+      }),
+      null,
+    );
+  });
+
+  it("rejects empty and default-route address allowlists", () => {
+    assert.match(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_HEX,
+        allowedAddresses: [],
+      }) ?? "",
+      /empty/,
+    );
+    assert.match(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_HEX,
+        allowedAddresses: ["0.0.0.0/0"],
+      }) ?? "",
+      /default-route/,
+    );
+    assert.equal(
+      sshTargetPublishGap({
+        credentialId: CREDENTIAL_ID,
+        hostname: "edge.example",
+        hostKeyFingerprint: FINGERPRINT_HEX,
+        allowedAddresses: ["10.0.0.0/8"],
       }),
       null,
     );
@@ -92,7 +158,7 @@ describe("ssh target / profile publish gaps", () => {
     assert.match(
       commandProfilePublishGap({
         template: "echo $(whoami)",
-        parameterSchema: {},
+        parameterSchema: EMPTY_PARAMETER_SCHEMA,
       }) ?? "",
       /interpolation/,
     );
@@ -111,7 +177,25 @@ describe("ssh target / profile publish gaps", () => {
     assert.equal(
       commandProfilePublishGap({
         template: "systemctl restart nginx",
-        parameterSchema: {},
+        parameterSchema: EMPTY_PARAMETER_SCHEMA,
+      }),
+      null,
+    );
+    assert.match(
+      commandProfilePublishGap({
+        template: "systemctl restart {unit}",
+        parameterSchema: EMPTY_PARAMETER_SCHEMA,
+      }) ?? "",
+      /\{unit\}/,
+    );
+    assert.equal(
+      commandProfilePublishGap({
+        template: "systemctl restart {unit}",
+        parameterSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { unit: { type: "string" } },
+        },
       }),
       null,
     );
@@ -137,17 +221,28 @@ describe("typed parameter schema", () => {
           pattern: "^[a-z0-9.-]+$",
         },
         count: { type: "integer", minimum: 1, maximum: 3 },
-        mode: { type: "enum", enum: ["start", "stop"] },
+        mode: { type: "string", enum: ["start", "stop"] },
       },
     });
     assert.equal(rows.length, 3);
     assert.equal(rows[0]?.name, "unit");
     assert.equal(rows[0]?.required, true);
+    assert.equal(rows[2]?.type, "string");
+    assert.deepEqual(rows[2]?.enum, ["start", "stop"]);
+    assert.equal(
+      parseParameterSchema({
+        type: "object",
+        properties: { mode: { type: "enum", enum: ["start", "stop"] } },
+      }).length,
+      0,
+    );
     const written = writeParameterSchema(rows);
     assert.equal(written.type, "object");
+    assert.equal(written.additionalProperties, false);
     const properties = written.properties as Record<string, Record<string, unknown>>;
     assert.equal(properties.unit?.type, "string");
     assert.deepEqual(written.required, ["unit"]);
+    assert.deepEqual(writeParameterSchema([]), EMPTY_PARAMETER_SCHEMA);
     const spec = applyParameterSchemaToSpec(
       { template: "systemctl restart nginx", privateKey: "LEAK" },
       rows,
@@ -175,7 +270,7 @@ describe("secret stripping", () => {
     const sanitized = sanitizeSshSpec({
       credentialId: CREDENTIAL_ID,
       hostname: "edge.example",
-      hostKeyFingerprint: "SHA256:abcd",
+      hostKeyFingerprint: FINGERPRINT_HEX,
       privateKey: "-----BEGIN FAKE-----",
       password: "hunter2",
       passphrase: "secret",
@@ -298,11 +393,11 @@ describe("authorized SSH selectors", () => {
   });
 });
 
-describe("ssh catalog fallback", () => {
-  it("uses marked contract-fallback until sshEngine is present", () => {
+describe("ssh catalog (#86)", () => {
+  it("uses marked contract-fallback until sshEngine or GET /ssh/catalog is present", () => {
     const fallback = parseSshEngineCatalog({ kinds: [] });
     assert.equal(fallback.source, "contract-fallback");
-    assert.equal(fallback.retrySafeExposed, false);
+    assert.equal(fallback.retrySafeExposed, true);
     assert.deepEqual(sshCredentialTypes(fallback), ["ssh_private_key"]);
     assert.equal(fallback.authMethods.includes("publickey"), true);
     assert.ok(fallback.denied.some((item) => /password/i.test(item)));
@@ -334,6 +429,44 @@ describe("ssh catalog fallback", () => {
     assert.equal(engine.retrySafeExposed, true);
     assert.equal(engine.notes, "from catalog");
     assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
+    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, true);
+  });
+
+  it("parses the #86 GET /ssh/catalog shape as ssh-catalog", () => {
+    const catalog = parseSshEngineCatalog({
+      credentialType: "ssh_private_key",
+      credentialSecretFields: ["privateKey", "passphrase"],
+      parameterTypes: [
+        { type: "string" },
+        { type: "integer" },
+        { type: "boolean" },
+      ],
+      render: {
+        owner: "reviewed-profile-renderer",
+        quoting: "posix-single-quotes",
+        placeholderSyntax: "{name}",
+        forbiddenTokens: ["$(", "`", "${", "{{"],
+        rawShellInterpolation: false,
+      },
+      retry: {
+        defaultMaxAttempts: 0,
+        retrySafeFlag: "retrySafe",
+        semantics: "E8.3",
+        note: "Retries default to zero.",
+      },
+    });
+    assert.equal(catalog.source, "ssh-catalog");
+    assert.equal(catalog.retrySafeExposed, true);
+    assert.deepEqual(catalog.parameterTypes, ["string", "integer", "boolean"]);
+    assert.equal(catalog.renderOwner, "reviewed-profile-renderer");
+    assert.equal(catalog.quoting, "posix-single-quotes");
+    assert.equal(catalog.placeholderSyntax, "{name}");
+    assert.equal(catalog.retryNote, "Retries default to zero.");
+    assert.deepEqual(catalog.credentialSecretFields, [
+      "privateKey",
+      "passphrase",
+    ]);
+    assert.deepEqual(sshCredentialTypes(catalog), ["ssh_private_key"]);
   });
 });
 

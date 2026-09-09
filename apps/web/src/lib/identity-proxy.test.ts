@@ -514,10 +514,10 @@ describe("resolveIdentityProxyTarget", () => {
     if ("status" in authorized) {
       assert.equal(authorized.status, 404);
     }
-    const inventedCatalog = resolveIdentityProxyTarget("GET", ["ssh", "catalog"]);
-    assert.equal("status" in inventedCatalog, true);
-    if ("status" in inventedCatalog) {
-      assert.equal(inventedCatalog.status, 404);
+    const catalog = resolveIdentityProxyTarget("GET", ["ssh", "catalog"]);
+    assert.equal("apiPath" in catalog, true);
+    if ("apiPath" in catalog) {
+      assert.equal(catalog.apiPath, "/api/v1/ssh/catalog");
     }
   });
 

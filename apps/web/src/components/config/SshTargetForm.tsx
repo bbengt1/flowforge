@@ -5,7 +5,9 @@ import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { OpsConfigSpec } from "@/lib/ops-config-types";
 import {
+  SSH_ADDRESS_HELP,
   SSH_DENIED_FEATURES,
+  SSH_FINGERPRINT_HELP,
   SSH_KEY_ONLY_HELP,
   SSH_NOT_A_TERMINAL_HELP,
   SSH_SECRET_FREE_HELP,
@@ -82,7 +84,7 @@ export function SshTargetForm({
           className={`${inputClass} font-mono`}
         />
         <span className="mt-1 block text-xs text-zinc-500">
-          Verified fingerprint only. Host-key auto-accept is denied.
+          {SSH_FINGERPRINT_HELP} Host-key auto-accept is denied.
         </span>
       </label>
 
@@ -119,7 +121,7 @@ export function SshTargetForm({
               className={inputClass}
             />
             <span className="mt-1 block text-xs text-zinc-500">
-              Comma-separated allowlist. Present empty lists fail closed.
+              {SSH_ADDRESS_HELP}
             </span>
           </label>
           <label className="text-sm">

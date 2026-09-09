@@ -227,7 +227,14 @@ export function emptySpecForKind(kind: OpsConfigKind): OpsConfigSpec {
         hostKeyFingerprint: "",
       };
     case "command_profile":
-      return { parameterSchema: {}, template: "", retrySafe: false };
+      return {
+        parameterSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {},
+        },
+        template: "",
+      };
     case "runtime_profile":
       return {
         language: "python",

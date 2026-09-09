@@ -17,6 +17,7 @@ import {
 } from "@/lib/kubernetes-types";
 import { parseJsonObject, specJson } from "@/lib/ops-config";
 import { getOpsConfigCatalog } from "@/lib/ops-config-client";
+import { getSshCatalog } from "@/lib/ssh-client";
 import { kindAcceptsPolicyId } from "@/lib/ops-config-contract";
 import {
   CONNECTION_TYPES,
@@ -71,14 +72,20 @@ export function ConfigSpecForm({
       return;
     }
     let cancelled = false;
-    void getOpsConfigCatalog(identity).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setSshEngine(
-        result.ok ? parseSshEngineCatalog(result.catalog) : parseSshEngineCatalog(null),
-      );
-    });
+    void Promise.all([getSshCatalog(identity), getOpsConfigCatalog(identity)]).then(
+      ([ssh, ops]) => {
+        if (cancelled) {
+          return;
+        }
+        if (ssh.ok) {
+          setSshEngine(ssh.catalog);
+          return;
+        }
+        setSshEngine(
+          ops.ok ? parseSshEngineCatalog(ops.catalog) : parseSshEngineCatalog(null),
+        );
+      },
+    );
     return () => {
       cancelled = true;
     };

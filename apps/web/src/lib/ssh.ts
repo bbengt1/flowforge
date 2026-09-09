@@ -34,7 +34,9 @@ import {
   SSH_CREDENTIAL_TYPE_ALIAS,
   SSH_DEFAULT_PORT,
   SSH_DENIED_FEATURES,
+  SSH_MAX_PARAMETERS,
   SSH_PARAMETER_TYPES,
+  SSH_PARAM_NAME_RE,
   SSH_TEMPLATE_FORBIDDEN_TOKENS,
   type SshEngineCatalog,
   type SshParameterConstraint,
@@ -126,30 +128,82 @@ export function hostSuppliedSshIdentityProblem(
 export function templateForbiddenHits(template: string): string[] {
   const hits: string[] = [];
   for (const token of SSH_TEMPLATE_FORBIDDEN_TOKENS) {
-    const needle = token === "$()" ? "$(" : token;
-    if (template.includes(needle)) {
-      hits.push(token);
+    if (template.includes(token)) {
+      hits.push(token === "$(" ? "$()" : token);
     }
   }
   return hits;
 }
 
+export function templatePlaceholders(template: string): string[] {
+  const names: string[] = [];
+  const re = /\{([A-Za-z][A-Za-z0-9_]{0,31})\}/g;
+  let match = re.exec(template);
+  while (match) {
+    const name = match[1];
+    if (name && !names.includes(name)) {
+      names.push(name);
+    }
+    match = re.exec(template);
+  }
+  return names;
+}
+
+export function fingerprintPublishGap(fingerprint: string): string | null {
+  const trimmed = fingerprint.trim();
+  if (!trimmed) {
+    return "Publish requires a known-host fingerprint.";
+  }
+  if (!/^sha256:/i.test(trimmed)) {
+    return "hostKeyFingerprint must be sha256:<64 hex> or SHA256:<base64>.";
+  }
+  const rest = trimmed.slice(trimmed.indexOf(":") + 1).replaceAll(":", "");
+  if (/^[0-9a-fA-F]{64}$/.test(rest)) {
+    return null;
+  }
+  const b64 = trimmed.slice(trimmed.indexOf(":") + 1);
+  if (/^[A-Za-z0-9+/]{43}$/.test(b64)) {
+    return null;
+  }
+  return "hostKeyFingerprint must be sha256:<64 hex> or SHA256:<base64>.";
+}
+
+export function addressPublishGap(
+  addresses: string[] | undefined,
+): string | null {
+  if (addresses === undefined) {
+    return null;
+  }
+  if (addresses.length === 0) {
+    return "allowedAddresses must not be empty when present (fail closed).";
+  }
+  for (const item of addresses) {
+    if (item === "0.0.0.0/0" || item === "::/0") {
+      return "allowedAddresses cannot include a default-route CIDR.";
+    }
+  }
+  return null;
+}
+
 export function sshTargetPublishGap(spec: OpsConfigSpec): string | null {
   const cred = String(spec.credentialId ?? "").trim();
   if (!cred) {
-    return "Publish requires spec.credentialId (workspace SSH vault).";
+    return "Publish requires spec.credentialId (workspace ssh_private_key vault).";
   }
   if (!String(spec.hostname ?? "").trim()) {
     return "Publish requires hostname.";
   }
-  if (!String(spec.hostKeyFingerprint ?? "").trim()) {
-    return "Publish requires a known-host fingerprint.";
+  const fingerprintGap = fingerprintPublishGap(
+    String(spec.hostKeyFingerprint ?? ""),
+  );
+  if (fingerprintGap) {
+    return fingerprintGap;
   }
   const port = spec.port ?? SSH_DEFAULT_PORT;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     return "Publish requires a port between 1 and 65535.";
   }
-  return null;
+  return addressPublishGap(spec.allowedAddresses);
 }
 
 export function commandProfilePublishGap(spec: OpsConfigSpec): string | null {
@@ -162,11 +216,18 @@ export function commandProfilePublishGap(spec: OpsConfigSpec): string | null {
     return `Template must not use raw shell interpolation (${hits.join(", ")}).`;
   }
   if (spec.parameterSchema === undefined || spec.parameterSchema === null) {
-    return "Publish requires a typed parameterSchema (empty object is allowed).";
+    return "Publish requires a typed parameterSchema.";
   }
-  const schemaGaps = parameterSchemaGaps(parseParameterSchema(spec.parameterSchema));
+  const rows = parseParameterSchema(spec.parameterSchema);
+  const schemaGaps = parameterSchemaGaps(rows);
   if (schemaGaps.length > 0) {
     return schemaGaps[0] ?? "Parameter schema is invalid.";
+  }
+  const names = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
+  for (const placeholder of templatePlaceholders(template)) {
+    if (!names.has(placeholder)) {
+      return `Template placeholder {${placeholder}} is not in parameterSchema.`;
+    }
   }
   return null;
 }
@@ -248,6 +309,9 @@ export function parseParameterSchema(
     if (enums.length > 0) {
       row.enum = enums;
     }
+    if (field.sensitive === true) {
+      row.sensitive = true;
+    }
     rows.push(row);
   }
   return rows;
@@ -285,16 +349,17 @@ export function writeParameterSchema(
     if (row.enum && row.enum.length > 0) {
       field.enum = [...row.enum];
     }
+    if (row.sensitive === true && row.type === "string") {
+      field.sensitive = true;
+    }
     properties[name] = field;
     if (row.required) {
       required.push(name);
     }
   }
-  if (Object.keys(properties).length === 0) {
-    return {};
-  }
   const schema: Record<string, unknown> = {
     type: "object",
+    additionalProperties: false,
     properties,
   };
   if (required.length > 0) {
@@ -316,19 +381,22 @@ export function applyParameterSchemaToSpec(
 export function parameterSchemaGaps(rows: SshParameterConstraint[]): string[] {
   const gaps: string[] = [];
   const seen = new Set<string>();
+  if (rows.length > SSH_MAX_PARAMETERS) {
+    gaps.push(`parameterSchema.properties exceeds ${SSH_MAX_PARAMETERS} items.`);
+  }
   for (const row of rows) {
     const name = row.name.trim();
     if (!name) {
       gaps.push("Every parameter needs a name.");
       continue;
     }
+    if (!SSH_PARAM_NAME_RE.test(name)) {
+      gaps.push(`${name} must match [A-Za-z][A-Za-z0-9_]{0,31}.`);
+    }
     if (seen.has(name)) {
       gaps.push(`Duplicate parameter name: ${name}.`);
     }
     seen.add(name);
-    if (row.type === "enum" && (!row.enum || row.enum.length === 0)) {
-      gaps.push(`${name} is an enum but has no allowed values.`);
-    }
     if (
       row.type === "string" &&
       typeof row.minLength === "number" &&
@@ -356,55 +424,82 @@ export function parseSshEngineCatalog(
     return { ...SSH_CONTRACT_FALLBACK_CATALOG };
   }
   const rec = catalog as Record<string, unknown>;
-  const engineRaw = rec.sshEngine;
+  const nested =
+    rec.sshEngine && typeof rec.sshEngine === "object" && !Array.isArray(rec.sshEngine)
+      ? (rec.sshEngine as Record<string, unknown>)
+      : null;
+  const engine = nested ?? rec;
   const kinds = Array.isArray((catalog as OpsConfigCatalog).kinds)
     ? (catalog as OpsConfigCatalog).kinds
     : [];
   const sshKind = kinds.find(
     (item) => item.kind === "ssh_target" || item.kind === "command_profile",
   );
-  const engine =
-    engineRaw && typeof engineRaw === "object" && !Array.isArray(engineRaw)
-      ? (engineRaw as Record<string, unknown>)
-      : {};
-  const hasEngine = Object.keys(engine).length > 0;
-  const allowedFromKind = sshKind?.allowedCredentialTypes ?? [];
-  const allowedFromEngine = stringList(engine.allowedCredentialTypes);
-  const allowed =
-    allowedFromEngine.length > 0
-      ? allowedFromEngine
-      : allowedFromKind.length > 0
-        ? allowedFromKind
-        : [...SSH_CONTRACT_FALLBACK_CATALOG.allowedCredentialTypes];
-  if (!hasEngine && allowedFromKind.length === 0) {
+  const looksLikeEngine =
+    typeof engine.credentialType === "string" ||
+    Array.isArray(engine.parameterTypes) ||
+    (engine.render && typeof engine.render === "object") ||
+    (engine.retry && typeof engine.retry === "object");
+  if (!looksLikeEngine && !sshKind) {
     return { ...SSH_CONTRACT_FALLBACK_CATALOG };
   }
+  const render =
+    engine.render && typeof engine.render === "object" && !Array.isArray(engine.render)
+      ? (engine.render as Record<string, unknown>)
+      : {};
+  const retry =
+    engine.retry && typeof engine.retry === "object" && !Array.isArray(engine.retry)
+      ? (engine.retry as Record<string, unknown>)
+      : {};
+  const forbidden = stringList(render.forbiddenTokens);
+  const paramTypes = parameterTypeNames(engine.parameterTypes);
+  const secrets = stringList(engine.credentialSecretFields);
+  const source = nested
+    ? "ops-config-catalog"
+    : looksLikeEngine
+      ? "ssh-catalog"
+      : "ops-config-catalog";
   return {
-    source: "ops-config-catalog",
-    credentialType: String(
-      engine.credentialType ?? allowed[0] ?? SSH_CREDENTIAL_TYPE,
-    ),
-    allowedCredentialTypes: allowed,
-    credentialSecretFields: stringList(engine.credentialSecretFields).length
-      ? stringList(engine.credentialSecretFields)
+    source,
+    credentialType: String(engine.credentialType ?? SSH_CREDENTIAL_TYPE),
+    allowedCredentialTypes: sshKind?.allowedCredentialTypes?.length
+      ? sshKind.allowedCredentialTypes
+      : [String(engine.credentialType ?? SSH_CREDENTIAL_TYPE)],
+    credentialSecretFields: secrets.length
+      ? secrets
       : [...SSH_CONTRACT_FALLBACK_CATALOG.credentialSecretFields],
-    defaultPort: asFiniteNumber(engine.defaultPort) ?? SSH_DEFAULT_PORT,
-    authMethods: stringList(engine.authMethods).length
-      ? stringList(engine.authMethods)
-      : SSH_CONTRACT_FALLBACK_CATALOG.authMethods,
-    denied: stringList(engine.denied).length
-      ? stringList(engine.denied)
-      : SSH_DENIED_FEATURES,
-    templateForbidden: stringList(engine.templateForbidden).length
-      ? stringList(engine.templateForbidden)
-      : SSH_TEMPLATE_FORBIDDEN_TOKENS,
-    parameterTypes: stringList(engine.parameterTypes).length
-      ? stringList(engine.parameterTypes)
-      : SSH_PARAMETER_TYPES,
-    retrySafeExposed: engine.retrySafeExposed === true,
-    allowedPorts: numberList(engine.allowedPorts),
+    defaultPort: SSH_DEFAULT_PORT,
+    authMethods: SSH_CONTRACT_FALLBACK_CATALOG.authMethods,
+    denied: SSH_DENIED_FEATURES,
+    templateForbidden: forbidden.length ? forbidden : SSH_TEMPLATE_FORBIDDEN_TOKENS,
+    parameterTypes: paramTypes.length ? paramTypes : SSH_PARAMETER_TYPES,
+    retrySafeExposed: true,
+    retryNote: String(retry.note ?? "").trim() || undefined,
+    renderOwner: String(render.owner ?? "").trim() || undefined,
+    quoting: String(render.quoting ?? "").trim() || undefined,
+    placeholderSyntax: String(render.placeholderSyntax ?? "").trim() || undefined,
     notes: String(engine.notes ?? "").trim() || undefined,
   };
+}
+
+function parameterTypeNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      names.push(item.trim());
+      continue;
+    }
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const type = String((item as { type?: unknown }).type ?? "").trim();
+      if (type) {
+        names.push(type);
+      }
+    }
+  }
+  return names;
 }
 
 /**
@@ -554,16 +649,6 @@ function stringList(value: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function numberList(value: unknown): number[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const numbers = value
-    .map((item) => asFiniteNumber(item))
-    .filter((item): item is number => item !== undefined);
-  return numbers.length > 0 ? numbers : undefined;
 }
 
 function asFiniteNumber(value: unknown): number | undefined {

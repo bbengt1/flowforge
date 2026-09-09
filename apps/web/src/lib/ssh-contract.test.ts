@@ -5,7 +5,6 @@ import {
   COMMAND_PROFILE_UPSTREAM_COLLECTION,
   SSH_API_PR,
   SSH_CONTRACT_FALLBACK_CATALOG,
-  SSH_CONTRACT_FALLBACK_HELP,
   SSH_DENIED_FEATURES,
   SSH_EPIC,
   SSH_PROXY_ROUTES,
@@ -22,6 +21,7 @@ import {
   isSshProxySegments,
   retargetSshApiPath,
   retargetSshCollectionPath,
+  sshCatalogPath,
   sshOpsConfigCatalogPath,
   sshTargetDraftPath,
   sshTargetPublishPath,
@@ -36,19 +36,20 @@ const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
 
 describe("ssh contract (#82 retarget adapter)", () => {
-  it("cites E8.1 / E8 and the contract-fallback map", () => {
+  it("cites E8.1 / E8 and the #86 map on main", () => {
     assert.equal(SSH_STORY, 82);
     assert.equal(SSH_EPIC, 81);
-    assert.equal(SSH_API_PR, null);
-    assert.equal(SSH_ROUTE_MAP_SOURCE, "e81-contract-fallback");
+    assert.equal(SSH_API_PR, 86);
+    assert.equal(SSH_ROUTE_MAP_SOURCE, "e81-#86");
     assert.equal(SSH_TARGET_UI_COLLECTION, "ssh-targets");
     assert.equal(SSH_TARGET_UPSTREAM_COLLECTION, "ssh-targets");
     assert.equal(COMMAND_PROFILE_UI_COLLECTION, "command-profiles");
     assert.equal(COMMAND_PROFILE_UPSTREAM_COLLECTION, "command-profiles");
     assert.equal(sshOpsConfigCatalogPath(), "/ops-config/catalog");
-    assert.match(SSH_CONTRACT_FALLBACK_HELP, /contract-fallback/i);
+    assert.equal(sshCatalogPath(), "/ssh/catalog");
     assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, false);
+    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, true);
+    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.quoting, "posix-single-quotes");
   });
 
   it("builds REST paths consistent with ops-config draft/publish/versions", () => {
@@ -95,6 +96,7 @@ describe("ssh contract (#82 retarget adapter)", () => {
       retargetSshApiPath("/api/v1/ops-config/catalog"),
       "/api/v1/ops-config/catalog",
     );
+    assert.equal(retargetSshApiPath("/api/v1/ssh/catalog"), "/api/v1/ssh/catalog");
     assert.equal(
       retargetSshCollectionPath(
         "/api/v1/ssh-targets",
@@ -116,6 +118,7 @@ describe("ssh contract (#82 retarget adapter)", () => {
   it("allowlists draft/publish/select/versions and rejects authorized", () => {
     assert.equal(isSshProxySegments(["ssh-targets"]), true);
     assert.equal(isSshProxySegments(["command-profiles", RESOURCE_ID]), true);
+    assert.equal(isSshProxySegments(["ssh", "catalog"]), true);
     assert.equal(isSshProxySegments(["cluster-targets"]), false);
     const list = SSH_PROXY_ROUTES.some(
       (route) =>
@@ -129,13 +132,14 @@ describe("ssh contract (#82 retarget adapter)", () => {
     const authorized = SSH_PROXY_ROUTES.some((route) =>
       route.match(["ssh-targets", "authorized"]),
     );
-    const inventedCatalog = SSH_PROXY_ROUTES.some((route) =>
-      route.match(["ssh", "catalog"]),
+    const catalog = SSH_PROXY_ROUTES.some(
+      (route) =>
+        route.methods.includes("GET") && route.match(["ssh", "catalog"]),
     );
     assert.equal(list, true);
     assert.equal(select, true);
     assert.equal(authorized, false);
-    assert.equal(inventedCatalog, false);
+    assert.equal(catalog, true);
   });
 
   it("empty specs are secret-free and do not enable denied features", () => {
@@ -150,7 +154,8 @@ describe("ssh contract (#82 retarget adapter)", () => {
     assert.equal("proxyCommand" in target, false);
     assert.equal("autoAcceptHostKey" in target, false);
     assert.equal("template" in profile, true);
-    assert.deepEqual(profile.parameterSchema, {});
+    assert.equal(profile.parameterSchema.type, "object");
+    assert.equal(profile.parameterSchema.additionalProperties, false);
     assert.equal("retrySafe" in profile, false);
     assert.deepEqual([...SSH_DENIED_FEATURES], [...DENIED_FROM_TYPES]);
     assert.ok(

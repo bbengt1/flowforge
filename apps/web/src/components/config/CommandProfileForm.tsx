@@ -5,7 +5,7 @@ import { parseJsonObject, specJson } from "@/lib/ops-config";
 import type { OpsConfigSpec } from "@/lib/ops-config-types";
 import {
   SSH_IMMUTABLE_PIN_HELP,
-  SSH_RETRY_SAFE_STUB_HELP,
+  SSH_RETRY_SAFE_HELP,
   SSH_REVIEWED_RENDER_HELP,
 } from "@/lib/ssh-contract";
 import {
@@ -68,8 +68,9 @@ export function CommandProfileForm({
           className={`${inputClass} font-mono`}
         />
         <span className="mt-1 block text-xs text-zinc-500">
-          Fixed argv/template owned by an administrator. No free-form shell.
-          Forbidden tokens: $(), backticks, dollar-brace, and double-brace.
+          Reviewed template with curly-brace name placeholders only. The
+          renderer applies POSIX single quotes. Forbidden tokens: $(),
+          backticks, dollar-brace, and double-brace.
         </span>
       </label>
       {interpolation.length > 0 ? (
@@ -143,19 +144,18 @@ export function CommandProfileForm({
               className={`${inputClass} font-mono`}
             />
           </label>
-          {retrySafeExposed ? (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={Boolean(spec.retrySafe)}
-                disabled={readOnly}
-                onChange={(event) => patch({ retrySafe: event.target.checked })}
-              />
-              Retry-safe (verification required)
-            </label>
-          ) : (
-            <p className="text-xs text-zinc-500">{SSH_RETRY_SAFE_STUB_HELP}</p>
-          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(spec.retrySafe)}
+              disabled={readOnly || !retrySafeExposed}
+              onChange={(event) => patch({ retrySafe: event.target.checked })}
+            />
+            Retry-safe schema flag
+          </label>
+          <p className="text-xs text-zinc-500">
+            {catalog?.retryNote || SSH_RETRY_SAFE_HELP}
+          </p>
           <label className="text-sm">
             <span className="font-medium">Optional policy pin (UUID)</span>
             <input
@@ -286,9 +286,9 @@ function ParameterRow({
           </label>
         </>
       ) : null}
-      {row.type === "enum" ? (
+      {row.type === "string" || row.type === "integer" ? (
         <label className="text-sm sm:col-span-2">
-          <span className="font-medium">Allowed values</span>
+          <span className="font-medium">Allowed values (optional enum)</span>
           <input
             value={(row.enum ?? []).join(", ")}
             disabled={disabled}
@@ -304,6 +304,19 @@ function ParameterRow({
             }
             className={className}
           />
+        </label>
+      ) : null}
+      {row.type === "string" ? (
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={Boolean(row.sensitive)}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ ...row, sensitive: event.target.checked })
+            }
+          />
+          Sensitive (redact values in audit)
         </label>
       ) : null}
       <button
