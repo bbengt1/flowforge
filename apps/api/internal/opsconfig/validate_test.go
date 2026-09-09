@@ -350,3 +350,70 @@ func TestCommandProfileRetrySafeRequiresVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNormalizeConnectionAllowPrivateDestinations(t *testing.T) {
+	base := map[string]any{
+		"type": "http",
+		"endpointPolicy": map[string]any{
+			"hosts":        []any{"status.example.com"},
+			"methods":      []any{"GET"},
+			"pathPrefixes": []any{"/"},
+		},
+	}
+	out, _, err := NormalizeSpec(KindConnection, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep, _ := out["endpointPolicy"].(map[string]any)
+	if ep["allowPrivateDestinations"] != false {
+		t.Fatalf("unset flag must persist as false, got %+v", ep["allowPrivateDestinations"])
+	}
+
+	on := cloneSpec(base)
+	on["endpointPolicy"] = map[string]any{
+		"hosts":                    []any{"10.0.0.8"},
+		"methods":                  []any{"GET"},
+		"pathPrefixes":             []any{"/"},
+		"allowPrivateDestinations": true,
+		"allowedAddresses":         []any{"10.0.0.8"},
+	}
+	out, _, err = NormalizeSpec(KindConnection, on)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep, _ = out["endpointPolicy"].(map[string]any)
+	if ep["allowPrivateDestinations"] != true {
+		t.Fatalf("explicit true = %+v", ep["allowPrivateDestinations"])
+	}
+
+	bad := cloneSpec(base)
+	bad["endpointPolicy"] = map[string]any{
+		"hosts":                    []any{"status.example.com"},
+		"methods":                  []any{"GET"},
+		"pathPrefixes":             []any{"/"},
+		"allowPrivateDestinations": "yes",
+	}
+	if _, _, err = NormalizeSpec(KindConnection, bad); err == nil {
+		t.Fatal("non-boolean allowPrivateDestinations must be rejected")
+	}
+
+	pol, _, err := NormalizeSpec(KindPolicy, map[string]any{
+		"kind": "http",
+		"policy": map[string]any{
+			"allowPrivateDestinations": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := pol["policy"].(map[string]any)
+	if rules["allowPrivateDestinations"] != true {
+		t.Fatalf("http policy opt-in = %+v", rules)
+	}
+	if _, _, err = NormalizeSpec(KindPolicy, map[string]any{
+		"kind":   "http",
+		"policy": map[string]any{"allowPrivateDestinations": "true"},
+	}); err == nil {
+		t.Fatal("non-boolean policy.allowPrivateDestinations must be rejected")
+	}
+}

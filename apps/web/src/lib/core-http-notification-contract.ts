@@ -32,7 +32,9 @@
  *
  * Forbidden in node config: raw url / headers / to / body / secrets /
  * free-form destinations. SSRF, DNS-rebinding, redirect, and size
- * failures stay closed (surface as validation errors). When
+ * failures stay closed (surface as validation errors). Loopback/private
+ * destinations are denied by default after resolve (ADV-010); opt-in is
+ * ops-config `allowPrivateDestinations`, not a wizard toggle. When
  * INTEGRATION_ACTIONS_ENABLED=false the catalogs set the gate off —
  * UI respects `enabled` / absence and does not invent an enable toggle.
  *
@@ -136,7 +138,7 @@ export const HTTP_NOTIFICATION_NODE_POLICY_NOTES = [
   "notification.webhook delivers to the pinned webhook connection. Idempotency and redirect policy are connection-owned.",
   "notification.email uses a pinned SMTP connection plus published recipient-list and message-template revisions. Recipients and body text are not free-form.",
   "Secret-bearing fields may cross the HTTP boundary only when the connection policy authorizes that exact field. Delivery results are redacted before display.",
-  "SSRF, DNS-rebinding, redirect, and size failures stay closed and surface as validation errors.",
+  "SSRF, DNS-rebinding, redirect, and size failures stay closed and surface as validation errors. Loopback and private destinations are denied by default after resolve; opt-in is endpointPolicy.allowPrivateDestinations or a published http/notification policy flag — this UI does not add a toggle.",
   "Selectors fail closed on HTTP 403. Only published workspace resources of the matching connection type are listed.",
 ] as const;
 
@@ -328,7 +330,7 @@ export const DEFAULT_HTTP_POLICY: HttpNotificationPolicyRules = {
   resolveThenAllowlist: true,
   connectVerifiedAddressOnly: true,
   secretFieldsPolicyAuthorized: true,
-  note: "Destination IPs, including redirects, must stay on the connection allowlist. TLS is required.",
+  note: "Destination IPs, including redirects, must stay on the connection allowlist. Loopback/private addresses are denied unless allowPrivateDestinations is explicitly true. TLS is required.",
 };
 
 export const HTTP_NOTIFICATION_PERMISSIONS = [

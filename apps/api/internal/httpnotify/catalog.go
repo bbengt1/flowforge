@@ -13,22 +13,24 @@ type PublishRules struct {
 
 // IsolationRules documents HTTP/webhook delivery guarantees for Chloe.
 type IsolationRules struct {
-	NormalizeEndpoint          bool     `json:"normalizeEndpoint"`
-	UserSuppliedURLDenied      bool     `json:"userSuppliedURLDenied"`
-	DestinationIPAllowlist     bool     `json:"destinationIPAllowlist"`
-	SSRFDenied                 bool     `json:"ssrfDenied"`
-	DNSRebindingDenied         bool     `json:"dnsRebindingDenied"`
-	ConnectVerifiedAddressOnly bool     `json:"connectVerifiedAddressOnly"`
-	RedirectsDefaultDenied     bool     `json:"redirectsDefaultDenied"`
-	RedirectsRevalidated       bool     `json:"redirectsRevalidated"`
-	TLSVerificationRequired    bool     `json:"tlsVerificationRequired"`
-	InsecureSkipVerifyDenied   bool     `json:"insecureSkipVerifyDenied"`
-	RequestResponseSizeLimited bool     `json:"requestResponseSizeLimited"`
-	SecretFieldsPolicyGated    bool     `json:"secretFieldsPolicyGated"`
-	ResultsRedactedAndAudited  bool     `json:"resultsRedactedAndAudited"`
-	EmailApprovedRevisionsOnly bool     `json:"emailApprovedRevisionsOnly"`
-	MetadataAndLinkLocalDenied []string `json:"metadataAndLinkLocalDenied"`
-	Note                       string   `json:"note"`
+	NormalizeEndpoint                 bool     `json:"normalizeEndpoint"`
+	UserSuppliedURLDenied             bool     `json:"userSuppliedURLDenied"`
+	DestinationIPAllowlist            bool     `json:"destinationIPAllowlist"`
+	SSRFDenied                        bool     `json:"ssrfDenied"`
+	DNSRebindingDenied                bool     `json:"dnsRebindingDenied"`
+	ConnectVerifiedAddressOnly        bool     `json:"connectVerifiedAddressOnly"`
+	RedirectsDefaultDenied            bool     `json:"redirectsDefaultDenied"`
+	RedirectsRevalidated              bool     `json:"redirectsRevalidated"`
+	TLSVerificationRequired           bool     `json:"tlsVerificationRequired"`
+	InsecureSkipVerifyDenied          bool     `json:"insecureSkipVerifyDenied"`
+	RequestResponseSizeLimited        bool     `json:"requestResponseSizeLimited"`
+	SecretFieldsPolicyGated           bool     `json:"secretFieldsPolicyGated"`
+	ResultsRedactedAndAudited         bool     `json:"resultsRedactedAndAudited"`
+	EmailApprovedRevisionsOnly        bool     `json:"emailApprovedRevisionsOnly"`
+	MetadataAndLinkLocalDenied        []string `json:"metadataAndLinkLocalDenied"`
+	PrivateAndLoopbackDeniedByDefault bool     `json:"privateAndLoopbackDeniedByDefault"`
+	AllowPrivateDestinationsOptIn     []string `json:"allowPrivateDestinationsOptIn"`
+	Note                              string   `json:"note"`
 }
 
 // RetryRules documents default-zero retries (delivery is not retry-safe).
@@ -109,22 +111,27 @@ func Catalog() EngineCatalog {
 			EmptyAllowlistsRejected:     true,
 		},
 		Isolation: IsolationRules{
-			NormalizeEndpoint:          true,
-			UserSuppliedURLDenied:      true,
-			DestinationIPAllowlist:     true,
-			SSRFDenied:                 true,
-			DNSRebindingDenied:         true,
-			ConnectVerifiedAddressOnly: true,
-			RedirectsDefaultDenied:     true,
-			RedirectsRevalidated:       true,
-			TLSVerificationRequired:    true,
-			InsecureSkipVerifyDenied:   true,
-			RequestResponseSizeLimited: true,
-			SecretFieldsPolicyGated:    true,
-			ResultsRedactedAndAudited:  true,
-			EmailApprovedRevisionsOnly: true,
-			MetadataAndLinkLocalDenied: []string{"169.254.0.0/16", "fe80::/10"},
-			Note:                       "Connections resolve hostnames through an approved resolver. Every destination address, including redirects, must remain allowlisted. Private/link-local/metadata addresses cannot turn a connection into SSRF.",
+			NormalizeEndpoint:                 true,
+			UserSuppliedURLDenied:             true,
+			DestinationIPAllowlist:            true,
+			SSRFDenied:                        true,
+			DNSRebindingDenied:                true,
+			ConnectVerifiedAddressOnly:        true,
+			RedirectsDefaultDenied:            true,
+			RedirectsRevalidated:              true,
+			TLSVerificationRequired:           true,
+			InsecureSkipVerifyDenied:          true,
+			RequestResponseSizeLimited:        true,
+			SecretFieldsPolicyGated:           true,
+			ResultsRedactedAndAudited:         true,
+			EmailApprovedRevisionsOnly:        true,
+			MetadataAndLinkLocalDenied:        []string{"169.254.0.0/16", "fe80::/10"},
+			PrivateAndLoopbackDeniedByDefault: true,
+			AllowPrivateDestinationsOptIn: []string{
+				"endpointPolicy.allowPrivateDestinations",
+				"policy.allowPrivateDestinations",
+			},
+			Note: "Connections resolve hostnames through an approved resolver, then check every destination address (including redirects). Loopback, RFC1918, ULA, and CGNAT are denied unless endpointPolicy.allowPrivateDestinations or a kind=http/notification policy.allowPrivateDestinations is explicitly true (unset fails closed). Link-local and metadata addresses stay always denied. Problem details do not echo resolved private IPs.",
 		},
 		Retry: RetryRules{
 			DefaultMaxAttempts: DefaultMaxAttempts,
@@ -231,7 +238,7 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeInvalidEndpoint, Status: 400, Meaning: "Host/path could not be normalized, or a full URL/userinfo was supplied."},
 		{Code: CodeEmptyAllowlist, Status: 400, Meaning: "A present destination-IP or host allowlist was empty (fail closed)."},
 		{Code: CodeAddressDenied, Status: 403, Meaning: "A resolved address was outside allowedAddresses, or a DNS name had no allowlist (anti DNS-rebinding)."},
-		{Code: CodeSSRFDenied, Status: 403, Meaning: "Destination resolved to a link-local, metadata, unspecified, or multicast address."},
+		{Code: CodeSSRFDenied, Status: 403, Meaning: "Destination resolved to loopback, private (RFC1918/ULA), CGNAT, link-local, metadata, unspecified, or multicast. Private/loopback require an explicit allowPrivateDestinations opt-in; link-local and metadata stay always denied. The problem does not echo the resolved address."},
 		{Code: CodeRedirectDenied, Status: 403, Meaning: "A redirect was returned when allowRedirects is false, or a hop failed host/IP/TLS/path policy."},
 		{Code: CodeMethodDenied, Status: 403, Meaning: "HTTP method is not on the connection allowlist."},
 		{Code: CodePathDenied, Status: 403, Meaning: "Path is a full URL or is outside endpointPolicy.pathPrefixes."},

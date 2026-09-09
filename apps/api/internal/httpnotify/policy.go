@@ -7,15 +7,16 @@ import (
 
 // Canonical evaluation keys for kind=http and kind=notification policies.
 const (
-	KeyAllowedHosts     = "allowedHosts"
-	KeyHosts            = "hosts"
-	KeyAllowedAddresses = "allowedAddresses"
-	KeyAddresses        = "addresses"
-	KeyDeny             = "deny"
-	KeyRequireApproval  = "requireApproval"
-	KeyApproverRole     = "approverRole"
-	KeyExpiresIn        = "expiresIn"
-	KeyOperations       = "operations"
+	KeyAllowedHosts             = "allowedHosts"
+	KeyHosts                    = "hosts"
+	KeyAllowedAddresses         = "allowedAddresses"
+	KeyAddresses                = "addresses"
+	KeyAllowPrivateDestinations = "allowPrivateDestinations"
+	KeyDeny                     = "deny"
+	KeyRequireApproval          = "requireApproval"
+	KeyApproverRole             = "approverRole"
+	KeyExpiresIn                = "expiresIn"
+	KeyOperations               = "operations"
 )
 
 // HTTPPolicyKeys is the closed set for kind=http and kind=notification.
@@ -23,6 +24,7 @@ func HTTPPolicyKeys() []string {
 	return []string{
 		KeyAllowedHosts, KeyHosts,
 		KeyAllowedAddresses, KeyAddresses,
+		KeyAllowPrivateDestinations,
 		KeyDeny, KeyRequireApproval, KeyApproverRole, KeyExpiresIn, KeyOperations,
 	}
 }
@@ -40,6 +42,7 @@ func EvaluationKeys() []EvaluationKey {
 	return []EvaluationKey{
 		{Canonical: KeyAllowedHosts, Aliases: []string{KeyAllowedHosts, KeyHosts}, FailClosedWhenPresent: true},
 		{Canonical: KeyAllowedAddresses, Aliases: []string{KeyAllowedAddresses, KeyAddresses}, FailClosedWhenPresent: true},
+		{Canonical: KeyAllowPrivateDestinations, Aliases: []string{KeyAllowPrivateDestinations}, FailClosedWhenPresent: true},
 		{Canonical: KeyDeny, Aliases: []string{KeyDeny}},
 		{Canonical: KeyRequireApproval, Aliases: []string{KeyRequireApproval}},
 		{Canonical: KeyApproverRole, Aliases: []string{KeyApproverRole}},
@@ -88,16 +91,17 @@ func Allowed(items []string, got string) bool {
 
 // PolicyContext is the authorization snapshot revalidated before delivery.
 type PolicyContext struct {
-	Kind              string
-	Deny              bool
-	Hosts             []string
-	HostsPresent      bool
-	Addresses         []string
-	AddressesPresent  bool
-	Operations        []string
-	OperationsPresent bool
-	Revision          string
-	Digest            string
+	Kind                     string
+	Deny                     bool
+	Hosts                    []string
+	HostsPresent             bool
+	Addresses                []string
+	AddressesPresent         bool
+	AllowPrivateDestinations bool
+	Operations               []string
+	OperationsPresent        bool
+	Revision                 string
+	Digest                   string
 }
 
 // PolicyContextFromRules builds a PolicyContext from a kind=http|notification object.
@@ -109,15 +113,17 @@ func PolicyContextFromRules(kind string, rules map[string]any) PolicyContext {
 	addrs, addrsPresent := Addresses(rules)
 	ops, opsPresent := allowlist(rules, KeyOperations)
 	deny, _ := rules[KeyDeny].(bool)
+	allowPrivate, _ := rules[KeyAllowPrivateDestinations].(bool)
 	return PolicyContext{
-		Kind:              strings.TrimSpace(kind),
-		Deny:              deny,
-		Hosts:             hosts,
-		HostsPresent:      hostsPresent,
-		Addresses:         addrs,
-		AddressesPresent:  addrsPresent,
-		Operations:        ops,
-		OperationsPresent: opsPresent,
+		Kind:                     strings.TrimSpace(kind),
+		Deny:                     deny,
+		Hosts:                    hosts,
+		HostsPresent:             hostsPresent,
+		Addresses:                addrs,
+		AddressesPresent:         addrsPresent,
+		AllowPrivateDestinations: allowPrivate,
+		Operations:               ops,
+		OperationsPresent:        opsPresent,
 	}
 }
 

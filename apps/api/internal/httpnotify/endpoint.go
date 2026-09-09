@@ -10,18 +10,19 @@ import (
 
 // EndpointPolicy is the pinned connection endpointPolicy snapshot.
 type EndpointPolicy struct {
-	Hosts            []string
-	Methods          []string
-	PathPrefixes     []string
-	Ports            []int
-	TLSRequired      bool
-	AllowRedirects   bool
-	MaxRedirects     int
-	AllowedAddresses []string
-	AddressesPresent bool
-	SecretFields     []string
-	MaxRequestBytes  int
-	MaxResponseBytes int
+	Hosts                    []string
+	Methods                  []string
+	PathPrefixes             []string
+	Ports                    []int
+	TLSRequired              bool
+	AllowRedirects           bool
+	MaxRedirects             int
+	AllowedAddresses         []string
+	AddressesPresent         bool
+	AllowPrivateDestinations bool
+	SecretFields             []string
+	MaxRequestBytes          int
+	MaxResponseBytes         int
 }
 
 // ConnectionContext is the pinned connection revision used at execute.
@@ -64,6 +65,7 @@ func ConnectionContextFromSpec(id string, spec map[string]any) ConnectionContext
 		maxRedirects = MaxRedirects
 	}
 	addrs, addrsPresent := allowlist(ep, KeyAllowedAddresses, "destinationAddresses")
+	allowPrivate, _ := ep[KeyAllowPrivateDestinations].(bool)
 	maxReq := DefaultMaxRequestBytes
 	if n, err := asInt(ep["maxRequestBytes"]); err == nil && n > 0 {
 		maxReq = n
@@ -83,18 +85,19 @@ func ConnectionContextFromSpec(id string, spec map[string]any) ConnectionContext
 		Type:         strings.ToLower(strings.TrimSpace(typ)),
 		CredentialID: strings.TrimSpace(cred),
 		Policy: EndpointPolicy{
-			Hosts:            stringSlice(ep, "hosts"),
-			Methods:          upperStrings(stringSlice(ep, "methods")),
-			PathPrefixes:     stringSlice(ep, "pathPrefixes"),
-			Ports:            ports,
-			TLSRequired:      tls,
-			AllowRedirects:   allowRedirects,
-			MaxRedirects:     maxRedirects,
-			AllowedAddresses: addrs,
-			AddressesPresent: addrsPresent,
-			SecretFields:     stringSlice(ep, "secretFields"),
-			MaxRequestBytes:  maxReq,
-			MaxResponseBytes: maxResp,
+			Hosts:                    stringSlice(ep, "hosts"),
+			Methods:                  upperStrings(stringSlice(ep, "methods")),
+			PathPrefixes:             stringSlice(ep, "pathPrefixes"),
+			Ports:                    ports,
+			TLSRequired:              tls,
+			AllowRedirects:           allowRedirects,
+			MaxRedirects:             maxRedirects,
+			AllowedAddresses:         addrs,
+			AddressesPresent:         addrsPresent,
+			AllowPrivateDestinations: allowPrivate,
+			SecretFields:             stringSlice(ep, "secretFields"),
+			MaxRequestBytes:          maxReq,
+			MaxResponseBytes:         maxResp,
 		},
 	}
 }
