@@ -20,6 +20,13 @@ const (
 	// farther-future values fail closed.
 	MaxOverlapTTL = 4 * time.Hour
 
+	// JTIRetention is how long a consumed assertion jti stays reserved
+	// after its JWT exp (ADV-009). Purge must not delete solely because
+	// exp elapsed — that would allow minting the same jti again. The
+	// separate PurgeExpired job deletes only where retain_until <= now
+	// (expires_at + JTIRetention).
+	JTIRetention = 24 * time.Hour
+
 	// MountPrefix is the stable embed mount of the canonical UI.
 	// Deep links under this prefix are the same routes as standalone.
 	MountPrefix = "/embed/v1"

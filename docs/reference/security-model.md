@@ -71,8 +71,9 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   capabilities, and workspace binding. An empty allowlist fails closed
   at request time (`403` on mint and exchange) — the process does not
   refuse to start, consistent with empty `PLATFORM_ADMINS`. Token IDs
-  are consumed atomically with
-  TTL (replay is conflict). The active signing key is durable
+  are consumed atomically in one
+  `INSERT … ON CONFLICT DO NOTHING RETURNING` and retained 24h past
+  JWT `exp` (replay is conflict). The active signing key is durable
   (`EMBED_SIGNING_KEY` / file). Production (empty/`production` `APP_ENV` or
   `REQUIRE_TLS`) **refuses to start** without it — no boot-only ephemeral
   key. An ephemeral process key is gated to explicit non-production

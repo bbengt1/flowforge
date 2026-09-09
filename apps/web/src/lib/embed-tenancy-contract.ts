@@ -98,7 +98,7 @@ export const EMBED_TENANCY_RETARGET = {
   catalogHooks:
     "GET /embed/catalog hooks[] on #127 — jti.consume / key.rotation / tenancy.propagation are ready",
   jtiConsume:
-    "Durable atomic jti consume is #127. UI maps HTTP 409 / code=replay and never resends or silently retries the compact JWS.",
+    "Durable atomic jti consume is #127 / ADV-009 (single-statement INSERT ON CONFLICT RETURNING; used ids retained 24h past exp). UI maps HTTP 409 / code=replay and never resends or silently retries the compact JWS. No UI change.",
   keyRotation:
     "POST /embed/keys/rotate is ops-only (platform.administer / PLATFORM_ADMINS). workspace.administer is 403. publicJwk must be the previous active key. Proxied via EMBED_PROXY_ROUTES. Embed chrome does not rotate keys.",
   tenancyApis:

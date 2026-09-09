@@ -484,6 +484,14 @@ export const EMBED_VERIFY_RULES = {
   jtiConsumeAfterVerify: true,
 } as const;
 
+/** ADV-009: atomic jti consume; used ids retained 24h past exp. No UI. */
+export const EMBED_JTI_RULES = {
+  atomicSingleStatementConsume: true,
+  retainUsedIdsPastExpiry: true,
+  retention: "24h",
+  replayIs409: true,
+} as const;
+
 /** ADV-007: embed cookies are CHIPS; top-level cookies stay Lax/Strict. */
 export const EMBED_CHIPS_RULES = {
   partitioned: true,
