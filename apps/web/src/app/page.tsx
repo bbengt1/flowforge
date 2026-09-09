@@ -181,10 +181,10 @@ export default async function Home() {
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Approvals</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Chloe&apos;s E4.3 UI for policy evaluation and approval bindings.
-          Requests show workflow version digest, target, policy revision,
-          operation, and expiry. Approve/reject use CSRF and fail closed on
-          expired or invalidated snapshots. Server recheck is authoritative.
+          Chloe&apos;s E4.3 UI for the #44 policy-eval / approvals map.
+          Pre-run evaluate + decide use CSRF. The requester cannot approve
+          their own request. Target or policy publish invalidates prior
+          approvals. Server recheck is authoritative.
         </p>
         <p className="mt-4">
           <Link

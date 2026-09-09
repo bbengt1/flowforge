@@ -57,6 +57,22 @@ export function ApprovalBindingSnapshot({
           <dt className="text-zinc-500">Expiry</dt>
           <dd className="font-mono text-xs">{binding.expiresAt || "—"}</dd>
         </div>
+        {binding.nodeId ? (
+          <div>
+            <dt className="text-zinc-500">Node</dt>
+            <dd className="font-mono text-xs">
+              {binding.nodeName || binding.nodeId}
+            </dd>
+          </div>
+        ) : null}
+        {binding.bindingFingerprint ? (
+          <div>
+            <dt className="text-zinc-500">Binding fingerprint</dt>
+            <dd className="break-all font-mono text-xs">
+              {binding.bindingFingerprint}
+            </dd>
+          </div>
+        ) : null}
       </dl>
     </section>
   );

@@ -18,9 +18,9 @@ export default async function ApprovalPage({ params }: ApprovalPageProps) {
           Approval request
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Binding snapshot is read-only. Approve and reject fail closed on
-          expired or invalidated responses. The UI never stores an approval
-          token in localStorage.
+          Binding snapshot is read-only. Decide is POST …/decide with CSRF.
+          Self-approval is forbidden. Expired or invalidated bindings fail
+          closed. The UI never stores an approval token in localStorage.
         </p>
       </header>
       <ApprovalDetail approvalId={id} />

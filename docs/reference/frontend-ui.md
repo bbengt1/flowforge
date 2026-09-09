@@ -316,16 +316,16 @@ Suggested operator routes: `/approvals` (inbox) and a pre-run review on the exis
 
 ## E4.3 policy evaluation / approvals (Chloe UI)
 
-`/approvals` is Chloe's operator for policy-eval and approval bindings. Jonny owns the APIs; his route map is still in flight. This UI does **not** close **#37** alone and does not change `apps/api`. Relates to #37 / Part of #34. Branch against `main` (do not stack on an API feature branch).
+`/approvals` is Chloe's operator for policy-eval and approval bindings stacked on the **#44** map now on `main` (`docs/reference/backend-api-map.md`). This UI does **not** change `apps/api`. Relates to #37 (already closed by #44) / Part of #34.
 
-- **Retarget adapter:** all paths and write bodies live in `apps/web/src/lib/approval-contract.ts`. When the API map lands, change that file only.
-- **Scaffold (provisional):** `GET /approvals`, `GET /approvals/{id}`, `POST /approvals/{id}/approve` / `reject` `{note?}`, `POST /policy/evaluate` `{workflowVersionId, operation?}`, `GET /workflows/{wf}/executions/{ex}/approvals`. List has no invented query params; filter pending in the browser.
-- **Binding snapshot (read-only):** workflow version id + digest, target, policy revision, operation, expiry. A changed policy/target/version invalidates the prior approval.
-- **Decide:** cookie session + `X-CSRF-Token` on POST. Expired (`approval-expired`) and invalidated (`approval-invalidated`) problem+json fail closed. Server recheck is authoritative — the UI never treats a stale local “approved” flag as sufficient to dispatch.
-- **RBAC nav:** Approvals appears when `GET /workspace` includes `approval.view`. Decide buttons require server `permittedActions`.
-- **Workflow hooks:** pre-run review calls `POST /policy/evaluate` for the selected published version. Execution waiting/approval state lists bound requests. E4.1 vault, E4.2 ops-config, and E3 workflows stay intact.
+- **Contract adapter:** all paths and write bodies live in `apps/web/src/lib/approval-contract.ts`.
+- **Routes:** `GET /approvals/catalog`; `POST /policy/evaluate` `{workflowId,workflowVersionId}` (CSRF); `GET /approvals` query `status`, `workflowId`, `workflowVersionId`, `executionId`; `POST /approvals` `{workflowId,workflowVersionId}` (CSRF); `GET /approvals/{id}`; `POST /approvals/{id}/decide` `{decision:"approved"|"rejected", note?}` (CSRF); `GET /approvals/{id}/events`. There is no `/approve`, `/reject`, or execution-nested approvals path.
+- **Binding snapshot (read-only):** workflow version + digest, target, policy revision, operation, node, expiry, fingerprint. Target or policy **publish** invalidates prior pending/approved rows — the config editor tells the operator to re-evaluate.
+- **Decide:** cookie session + `X-CSRF-Token` on POST. No self-approval (`403` `forbidden`). Expired / invalidated / not-pending are `409` `conflict` distinguished by detail text. Server recheck is authoritative — a stale local “approved” flag never dispatches.
+- **RBAC nav:** Approvals appears when `GET /workspace` includes `approval.view`. Decide is offered on current pending rows; the server is authoritative for `approval.decide` and requester identity (`requestedBy` is a user UUID).
+- **Workflow hooks:** pre-run review calls evaluate, materializes pending rows when `decision=approval-required`, and blocks Run unless `dispatchAllowed`. Execution waiting state lists `GET /approvals?executionId=`. E4.1 vault, E4.2 ops-config, and E3 workflows stay intact.
 - **Operator routes:** `/approvals`, `/approvals/{id}`.
-- **Proxies:** `/api/control-plane/approvals`, `/{id}`, `…/approve`, `…/reject`, `/policy/evaluate`, and `GET /workflows/{id}/executions/{id}/approvals`. Session cookies, CSRF, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Approval tokens are never stored in `localStorage`.
+- **Proxies:** `/api/control-plane/approvals`, `/catalog`, `/{id}`, `…/decide`, `…/events`, and `/policy/evaluate`. Session cookies, CSRF, tenant + workbench, and `X-Request-ID` are forwarded; `application/problem+json` is preserved. Approval tokens are never stored in `localStorage`.
 
 ## Initial implementation components
 

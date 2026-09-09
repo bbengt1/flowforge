@@ -15,8 +15,10 @@ import {
 import {
   approveApproval,
   getApproval,
+  getApprovalEvents,
   rejectApproval,
 } from "@/lib/approval-client";
+import type { ApprovalEvent } from "@/lib/approval-types";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -51,6 +53,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
+  const [events, setEvents] = useState<ApprovalEvent[]>([]);
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -69,6 +72,10 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
     }
     setApproval(result.approval);
     setStrippedKeys(result.strippedKeys);
+    const audit = await getApprovalEvents(identity, approvalId);
+    if (audit.ok) {
+      setEvents(audit.items);
+    }
   }
 
   useEffect(() => {
@@ -96,6 +103,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
       if (
         result.expired ||
         result.invalidated ||
+        result.selfApproval ||
         problemClosesApproval(result.problem)
       ) {
         const recheck = await getApproval(identity, approvalId);
@@ -227,10 +235,23 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             </button>
           </div>
           <p className="text-sm text-zinc-600">
-            Approve and reject send <code className="font-mono text-xs">X-CSRF-Token</code>.
-            Expired or invalidated responses fail closed. The UI never stores an
-            approval token or treats a previous local approve as sufficient.
+            Decide sends <code className="font-mono text-xs">POST …/decide</code>{" "}
+            with <code className="font-mono text-xs">X-CSRF-Token</code>. The
+            requester cannot approve their own request (server 403). Expired or
+            invalidated bindings fail closed. The UI never stores an approval
+            token or treats a previous local approve as sufficient.
           </p>
+          {events.length ? (
+            <ol className="space-y-1 text-sm text-zinc-600">
+              {events.map((event) => (
+                <li key={event.id} className="font-mono text-xs">
+                  {event.eventType}
+                  {event.occurredAt ? ` · ${event.occurredAt}` : ""}
+                  {event.actorId ? ` · ${event.actorId}` : ""}
+                </li>
+              ))}
+            </ol>
+          ) : null}
         </section>
       ) : null}
     </div>

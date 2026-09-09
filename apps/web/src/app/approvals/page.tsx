@@ -11,14 +11,13 @@ export default function ApprovalsPage() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Approvals</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Workspace pending approvals bound to workflow version, target, policy
+          Workspace approvals bound to workflow version, target, policy
           revision, operation, and expiry. List is RBAC-aware (
-          <code className="font-mono text-xs">approval.view</code>). Decide
-          uses cookie session + CSRF. A changed policy, target, or version
-          invalidates a prior approval; the server recheck is authoritative.
-          Paths live in{" "}
-          <code className="font-mono text-xs">approval-contract.ts</code> so
-          they can retarget when jonny publishes the route map.
+          <code className="font-mono text-xs">approval.view</code>). Decide is
+          <code className="font-mono text-xs">POST …/decide</code> with CSRF;
+          the requester cannot approve their own request. A later target or
+          policy publish invalidates a prior approval; the server recheck is
+          authoritative.
         </p>
       </header>
       <ApprovalList />

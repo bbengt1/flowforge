@@ -14,24 +14,33 @@ import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
 import {
   approvalDecidePath,
+  approvalEventsPath,
   approvalPath,
-  approvalsPath,
+  approvalsCatalogPath,
+  buildCreateApprovalsBody,
   buildDecideApprovalBody,
   buildEvaluatePolicyBody,
-  executionApprovalsPath,
-  isExpiredProblemCode,
-  isInvalidatedProblemCode,
+  listApprovalsPath,
   policyEvaluatePath,
 } from "./approval-contract.ts";
 import {
+  isExpiredApprovalProblem,
+  isInvalidatedApprovalProblem,
+  isSelfApprovalProblem,
+  parseApprovalCatalog,
+  parseApprovalEvents,
   parseApprovalList,
   parseApprovalRequest,
   parsePolicyEvaluation,
   stripSecretKeys,
 } from "./approval.ts";
 import type {
-  ApprovalAction,
+  ApprovalCatalog,
+  ApprovalEvent,
+  ApprovalListFilter,
   ApprovalRequest,
+  CreateApprovalsBody,
+  DecideDecision,
   EvaluatePolicyBody,
   PolicyEvaluation,
 } from "./approval-types.ts";
@@ -43,6 +52,7 @@ export type ApprovalClientFailure = {
   problem: ProblemDetails;
   expired: boolean;
   invalidated: boolean;
+  selfApproval: boolean;
   strippedKeys: string[];
 };
 
@@ -70,10 +80,28 @@ export type PolicyEvaluateSuccess = {
   strippedKeys: string[];
 };
 
+export type ApprovalCatalogSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  catalog: ApprovalCatalog;
+  strippedKeys: string[];
+};
+
+export type ApprovalEventsSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  items: ApprovalEvent[];
+  strippedKeys: string[];
+};
+
 export async function listApprovals(
   identity: DevIdentity,
+  filter: ApprovalListFilter = {},
 ): Promise<ApprovalListSuccess | ApprovalClientFailure> {
-  const result = await callIdentityProxy<unknown>(approvalsPath(), identity);
+  const path = listApprovalsPath(filter);
+  const result = await callIdentityProxy<unknown>(path, identity);
   if (!result.ok) {
     return failure(result);
   }
@@ -88,6 +116,36 @@ export async function listApprovals(
   };
 }
 
+export async function getApprovalCatalog(
+  identity: DevIdentity,
+): Promise<ApprovalCatalogSuccess | ApprovalClientFailure> {
+  const result = await callIdentityProxy<unknown>(
+    approvalsCatalogPath(),
+    identity,
+  );
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretKeys(result.data, strippedKeys);
+  const catalog = parseApprovalCatalog(result.data);
+  if (!catalog) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      approvalsCatalogPath(),
+      "Approval catalog was missing statuses or decisions.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    catalog,
+    strippedKeys,
+  };
+}
+
 export async function getApproval(
   identity: DevIdentity,
   approvalId: string,
@@ -97,16 +155,59 @@ export async function getApproval(
   return recordResult(result, path);
 }
 
+export async function getApprovalEvents(
+  identity: DevIdentity,
+  approvalId: string,
+): Promise<ApprovalEventsSuccess | ApprovalClientFailure> {
+  const path = approvalEventsPath(approvalId);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretKeys(result.data, strippedKeys);
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseApprovalEvents(result.data),
+    strippedKeys,
+  };
+}
+
+export async function createApprovals(
+  identity: DevIdentity,
+  input: CreateApprovalsBody,
+): Promise<ApprovalListSuccess | ApprovalClientFailure> {
+  const path = listApprovalsPath();
+  const result = await callIdentityProxy<unknown>(path, identity, {
+    method: "POST",
+    body: buildCreateApprovalsBody(input),
+  });
+  if (!result.ok) {
+    return failure(result);
+  }
+  const strippedKeys: string[] = [];
+  stripSecretKeys(result.data, strippedKeys);
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    items: parseApprovalList(result.data),
+    strippedKeys,
+  };
+}
+
 export async function decideApproval(
   identity: DevIdentity,
   approvalId: string,
-  action: ApprovalAction,
+  decision: DecideDecision,
   note?: string,
 ): Promise<ApprovalRecordSuccess | ApprovalClientFailure> {
-  const path = approvalDecidePath(approvalId, action);
+  const path = approvalDecidePath(approvalId);
   const result = await callIdentityProxy<unknown>(path, identity, {
     method: "POST",
-    body: buildDecideApprovalBody(note),
+    body: buildDecideApprovalBody(decision, note),
   });
   return recordResult(result, path);
 }
@@ -116,7 +217,7 @@ export async function approveApproval(
   approvalId: string,
   note?: string,
 ): Promise<ApprovalRecordSuccess | ApprovalClientFailure> {
-  return decideApproval(identity, approvalId, "approve", note);
+  return decideApproval(identity, approvalId, "approved", note);
 }
 
 export async function rejectApproval(
@@ -124,7 +225,7 @@ export async function rejectApproval(
   approvalId: string,
   note?: string,
 ): Promise<ApprovalRecordSuccess | ApprovalClientFailure> {
-  return decideApproval(identity, approvalId, "reject", note);
+  return decideApproval(identity, approvalId, "rejected", note);
 }
 
 export async function evaluatePolicy(
@@ -159,25 +260,45 @@ export async function evaluatePolicy(
   };
 }
 
+/**
+ * Pre-run: evaluate, then materialize pending rows when the server
+ * requires approval and has not already bound records.
+ */
+export async function evaluatePolicyForRun(
+  identity: DevIdentity,
+  input: EvaluatePolicyBody,
+): Promise<PolicyEvaluateSuccess | ApprovalClientFailure> {
+  const evaluated = await evaluatePolicy(identity, input);
+  if (!evaluated.ok) {
+    return evaluated;
+  }
+  if (
+    evaluated.evaluation.decision !== "approval-required" ||
+    evaluated.evaluation.approvals.length > 0 ||
+    evaluated.evaluation.requirements.length === 0
+  ) {
+    return evaluated;
+  }
+  const created = await createApprovals(identity, input);
+  if (!created.ok) {
+    return evaluated;
+  }
+  return {
+    ...evaluated,
+    evaluation: {
+      ...evaluated.evaluation,
+      approvals: created.items,
+    },
+    strippedKeys: [...evaluated.strippedKeys, ...created.strippedKeys],
+  };
+}
+
 export async function listExecutionApprovals(
   identity: DevIdentity,
-  workflowId: string,
+  _workflowId: string,
   executionId: string,
 ): Promise<ApprovalListSuccess | ApprovalClientFailure> {
-  const path = executionApprovalsPath(workflowId, executionId);
-  const result = await callIdentityProxy<unknown>(path, identity);
-  if (!result.ok) {
-    return failure(result);
-  }
-  const strippedKeys: string[] = [];
-  stripSecretKeys(result.data, strippedKeys);
-  return {
-    ok: true,
-    statusCode: result.statusCode,
-    requestId: result.requestId,
-    items: parseApprovalList(result.data),
-    strippedKeys,
-  };
+  return listApprovals(identity, { executionId });
 }
 
 function recordResult(
@@ -207,6 +328,18 @@ function recordResult(
   };
 }
 
+function classifyProblem(problem: ProblemDetails): {
+  expired: boolean;
+  invalidated: boolean;
+  selfApproval: boolean;
+} {
+  return {
+    expired: isExpiredApprovalProblem(problem),
+    invalidated: isInvalidatedApprovalProblem(problem),
+    selfApproval: isSelfApprovalProblem(problem),
+  };
+}
+
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
 ): ApprovalClientFailure {
@@ -215,8 +348,7 @@ function failure(
     statusCode: result.statusCode,
     requestId: result.requestId,
     problem: result.problem,
-    expired: isExpiredProblemCode(result.problem.code),
-    invalidated: isInvalidatedProblemCode(result.problem.code),
+    ...classifyProblem(result.problem),
     strippedKeys: [],
   };
 }
@@ -242,6 +374,7 @@ function malformed(
     },
     expired: false,
     invalidated: false,
+    selfApproval: false,
     strippedKeys: [],
   };
 }

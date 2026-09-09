@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { evaluatePolicy, listExecutionApprovals } from "@/lib/approval-client";
-import { DEFAULT_PRE_RUN_OPERATION } from "@/lib/approval-types";
+import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
 import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
@@ -548,9 +547,14 @@ export function WorkflowOperator() {
     }
     setPolicyEvalPending(true);
     setPolicyEvalProblem(null);
-    const result = await evaluatePolicy(identity, {
+    if (!workflow) {
+      setPolicyEval(null);
+      setPolicyEvalProblem(null);
+      return;
+    }
+    const result = await evaluatePolicyForRun(identity, {
+      workflowId: workflow.id,
       workflowVersionId: versionId,
-      operation: DEFAULT_PRE_RUN_OPERATION,
     });
     setPolicyEvalPending(false);
     setLastRequestId(result.requestId);
@@ -568,9 +572,9 @@ export function WorkflowOperator() {
     }
     setPending("run");
     setProblem(null);
-    const evaluation = await evaluatePolicy(identity, {
+    const evaluation = await evaluatePolicyForRun(identity, {
+      workflowId: workflow.id,
       workflowVersionId: runVersionId,
-      operation: DEFAULT_PRE_RUN_OPERATION,
     });
     setLastRequestId(evaluation.requestId);
     if (!evaluation.ok) {

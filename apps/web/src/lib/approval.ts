@@ -7,12 +7,17 @@
  */
 
 import {
+  EXPIRED_APPROVAL_DETAIL,
+  INVALIDATED_APPROVAL_DETAIL,
+  SELF_APPROVAL_DETAIL,
   isDeniedProblemCode,
   isExpiredProblemCode,
   isInvalidatedProblemCode,
+  problemDetailMatches,
 } from "./approval-contract.ts";
 import {
   APPROVAL_ACTIONS,
+  APPROVAL_INVALIDATING_KINDS,
   APPROVAL_STATUSES,
   BINDING_CHANGE_FIELDS,
   EXECUTION_WAITING_STATUSES,
@@ -20,12 +25,16 @@ import {
   VALIDITY_REASONS,
   type ApprovalAction,
   type ApprovalBinding,
+  type ApprovalCatalog,
+  type ApprovalEvent,
   type ApprovalRequest,
   type ApprovalStatus,
   type ApprovalValidity,
   type BindingChangeField,
   type PolicyDecision,
+  type PolicyDenied,
   type PolicyEvaluation,
+  type PolicyRequirement,
   type ValidityReason,
 } from "./approval-types.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -127,6 +136,13 @@ function isPolicyDecision(value: string): value is PolicyDecision {
   return (POLICY_DECISIONS as readonly string[]).includes(value);
 }
 
+function normalizePolicyDecision(value: string): PolicyDecision | "" {
+  if (value === "approval_required") {
+    return "approval-required";
+  }
+  return isPolicyDecision(value) ? value : "";
+}
+
 function isApprovalAction(value: string): value is ApprovalAction {
   return (APPROVAL_ACTIONS as readonly string[]).includes(value);
 }
@@ -163,20 +179,31 @@ export function parseApprovalBinding(raw: unknown): ApprovalBinding | null {
     targetId: readString(row.targetId, row.target_id),
     targetKind: readString(row.targetKind, row.target_kind),
     targetName: readString(row.targetName, row.target_name),
+    targetVersionId: readString(row.targetVersionId, row.target_version_id),
+    targetDigest: readString(row.targetDigest, row.target_digest),
+    policyResourceId: readString(row.policyResourceId, row.policy_resource_id),
     policyRevisionId: readString(
       row.policyRevisionId,
       row.policy_revision_id,
       row.policyVersionId,
       row.policy_version_id,
+      row.policyResourceId,
     ),
     policyRevisionNumber: readNumber(
       row.policyRevisionNumber,
       row.policy_revision_number,
+      row.policyRevision,
       row.policyVersionNumber,
     ),
     policyDigest: readString(row.policyDigest, row.policy_digest),
     operation,
+    nodeId: readString(row.nodeId, row.node_id),
+    nodeName: readString(row.nodeName, row.node_name),
     expiresAt: readString(row.expiresAt, row.expires_at),
+    bindingFingerprint: readString(
+      row.bindingFingerprint,
+      row.binding_fingerprint,
+    ),
   };
 }
 
@@ -308,7 +335,10 @@ export function parseApprovalRequest(raw: unknown): ApprovalRequest | null {
   const row = cleaned as Record<string, unknown>;
   const id = readString(row.id);
   const statusRaw = readString(row.status);
-  const binding = parseApprovalBinding(row.binding);
+  const nested = row.binding;
+  const binding = parseApprovalBinding(
+    nested && typeof nested === "object" ? nested : row,
+  );
   if (!isUuid(id) || !isApprovalStatus(statusRaw) || !binding) {
     return null;
   }
@@ -318,14 +348,15 @@ export function parseApprovalRequest(raw: unknown): ApprovalRequest | null {
     binding,
     validity: parseValidity(row.validity, statusRaw, binding),
     requestedBy: readString(row.requestedBy, row.requested_by),
-    requestedAt: readString(row.requestedAt, row.requested_at),
+    requestedAt: readString(row.requestedAt, row.requested_at, row.createdAt),
     decidedBy: readString(row.decidedBy, row.decided_by),
     decidedAt: readString(row.decidedAt, row.decided_at),
-    note: readString(row.note),
+    note: readString(row.decisionNote, row.note),
     workflowId: readString(row.workflowId, row.workflow_id),
     workflowName: readString(row.workflowName, row.workflow_name),
     executionId: readString(row.executionId, row.execution_id),
     executionStatus: readString(row.executionStatus, row.execution_status),
+    approverRole: readString(row.approverRole, row.approver_role),
     permittedActions: parseActions(
       row.permittedActions ?? row.permitted_actions,
     ),
@@ -354,6 +385,50 @@ export function parseApprovalList(raw: unknown): ApprovalRequest[] {
   return out;
 }
 
+export function parsePolicyRequirement(raw: unknown): PolicyRequirement | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const operation = readString(row.operation);
+  if (!operation) {
+    return null;
+  }
+  return {
+    nodeId: readString(row.nodeId, row.node_id),
+    nodeName: readString(row.nodeName, row.node_name),
+    operation,
+    targetKind: readString(row.targetKind, row.target_kind),
+    targetId: readString(row.targetId, row.target_id),
+    targetVersionId: readString(row.targetVersionId, row.target_version_id),
+    policyResourceId: readString(row.policyResourceId, row.policy_resource_id),
+    policyVersionId: readString(row.policyVersionId, row.policy_version_id),
+    policyRevision: readNumber(row.policyRevision, row.policy_revision),
+    approverRole: readString(row.approverRole, row.approver_role),
+    expiresIn: readString(row.expiresIn, row.expires_in),
+    expiresAt: readString(row.expiresAt, row.expires_at),
+    reason: readString(row.reason),
+  };
+}
+
+function parseDenied(raw: unknown): PolicyDenied | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const operation = readString(row.operation);
+  const reason = readString(row.reason);
+  if (!operation && !reason) {
+    return null;
+  }
+  return {
+    nodeId: readString(row.nodeId, row.node_id),
+    operation,
+    decision: readString(row.decision) || "deny",
+    reason,
+  };
+}
+
 export function parsePolicyEvaluation(raw: unknown): PolicyEvaluation | null {
   const stripped: string[] = [];
   const cleaned = stripSecretKeys(raw, stripped);
@@ -361,23 +436,113 @@ export function parsePolicyEvaluation(raw: unknown): PolicyEvaluation | null {
     return null;
   }
   const row = cleaned as Record<string, unknown>;
-  const decisionRaw = readString(row.decision);
-  const workflowVersionId = readString(
-    row.workflowVersionId,
-    row.workflow_version_id,
-  );
-  if (!isPolicyDecision(decisionRaw)) {
+  const decision = normalizePolicyDecision(readString(row.decision));
+  if (!decision) {
+    return null;
+  }
+  const requirementsRaw = Array.isArray(row.requirements) ? row.requirements : [];
+  const requirements: PolicyRequirement[] = [];
+  for (const item of requirementsRaw) {
+    const asRequest = parseApprovalRequest(item);
+    if (asRequest) {
+      requirements.push({
+        nodeId: asRequest.binding.nodeId,
+        nodeName: asRequest.binding.nodeName,
+        operation: asRequest.binding.operation,
+        targetKind: asRequest.binding.targetKind,
+        targetId: asRequest.binding.targetId,
+        targetVersionId: asRequest.binding.targetVersionId,
+        policyResourceId: asRequest.binding.policyResourceId,
+        policyVersionId: asRequest.binding.policyRevisionId,
+        policyRevision: asRequest.binding.policyRevisionNumber,
+        approverRole: asRequest.approverRole,
+        expiresIn: "",
+        expiresAt: asRequest.binding.expiresAt,
+        reason: asRequest.note,
+      });
+      continue;
+    }
+    const parsed = parsePolicyRequirement(item);
+    if (parsed) {
+      requirements.push(parsed);
+    }
+  }
+  const denied = Array.isArray(row.denied)
+    ? row.denied
+        .map((item) => parseDenied(item))
+        .filter((item): item is PolicyDenied => item !== null)
+    : [];
+  const dispatchAllowed =
+    typeof row.dispatchAllowed === "boolean"
+      ? row.dispatchAllowed
+      : decision === "allow" && denied.length === 0;
+  return {
+    decision,
+    dispatchAllowed,
+    evaluationId: readString(row.evaluationId, row.evaluation_id),
+    workflowVersionId: readString(
+      row.workflowVersionId,
+      row.workflow_version_id,
+    ),
+    workflowDigest: readString(row.workflowDigest, row.workflow_digest),
+    operation: readString(row.operation),
+    requirements,
+    approvals: parseApprovalList(row.approvals ?? { items: [] }),
+    denied,
+  };
+}
+
+export function parseApprovalCatalog(raw: unknown): ApprovalCatalog | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const statuses = Array.isArray(row.statuses)
+    ? row.statuses.filter((item): item is string => typeof item === "string")
+    : [];
+  const decisions = Array.isArray(row.decisions)
+    ? row.decisions.filter((item): item is string => typeof item === "string")
+    : [];
+  return {
+    statuses,
+    decisions,
+    defaultExpiresIn: readString(row.defaultExpiresIn, row.default_expires_in),
+  };
+}
+
+export function parseApprovalEvent(raw: unknown): ApprovalEvent | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const id = readString(row.id);
+  const eventType = readString(row.eventType, row.event_type, row.type);
+  if (!id || !eventType) {
     return null;
   }
   return {
-    decision: decisionRaw,
-    evaluationId: readString(row.evaluationId, row.evaluation_id),
-    workflowVersionId,
-    operation: readString(row.operation),
-    requirements: parseApprovalList(
-      row.requirements ?? row.items ?? row.approvals,
-    ),
+    id,
+    approvalId: readString(row.approvalId, row.approval_id),
+    eventType,
+    actorId: readString(row.actorId, row.actor_id),
+    occurredAt: readString(row.occurredAt, row.occurred_at, row.createdAt),
   };
+}
+
+export function parseApprovalEvents(raw: unknown): ApprovalEvent[] {
+  const cleaned = stripSecretKeys(raw);
+  if (!cleaned || typeof cleaned !== "object") {
+    return [];
+  }
+  const items = Array.isArray(cleaned)
+    ? cleaned
+    : (cleaned as { items?: unknown }).items;
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item) => parseApprovalEvent(item))
+    .filter((item): item is ApprovalEvent => item !== null);
 }
 
 export function isExpiryElapsed(
@@ -444,14 +609,23 @@ export function diffBinding(
     (bound.targetId && current.targetId && bound.targetId !== current.targetId) ||
     (bound.targetKind &&
       current.targetKind &&
-      bound.targetKind !== current.targetKind)
+      bound.targetKind !== current.targetKind) ||
+    (bound.targetVersionId &&
+      current.targetVersionId &&
+      bound.targetVersionId !== current.targetVersionId)
   ) {
     changed.push("target");
   }
   if (
-    bound.policyRevisionId &&
-    current.policyRevisionId &&
-    bound.policyRevisionId !== current.policyRevisionId
+    (bound.policyRevisionId &&
+      current.policyRevisionId &&
+      bound.policyRevisionId !== current.policyRevisionId) ||
+    (bound.policyResourceId &&
+      current.policyResourceId &&
+      bound.policyResourceId !== current.policyResourceId) ||
+    (typeof bound.policyRevisionNumber === "number" &&
+      typeof current.policyRevisionNumber === "number" &&
+      bound.policyRevisionNumber !== current.policyRevisionNumber)
   ) {
     changed.push("policyRevision");
   }
@@ -476,9 +650,9 @@ export function invalidationSummary(approval: ApprovalRequest): string {
 }
 
 /**
- * Decide is allowed only when the server says the snapshot is still
- * current and pending. Expiry and invalidation fail closed in the UI;
- * the POST is still the authority.
+ * Decide is allowed only when the snapshot is still current and pending.
+ * The API does not send permittedActions — empty means "UI may offer
+ * decide"; a 403 self-approval or missing role fails closed on POST.
  */
 export function canDecideApproval(
   approval: ApprovalRequest,
@@ -493,10 +667,13 @@ export function canDecideApproval(
   if (isApprovalExpired(approval, now) || isApprovalInvalidated(approval)) {
     return false;
   }
-  return (
-    approval.permittedActions.includes("approve") ||
-    approval.permittedActions.includes("reject")
-  );
+  if (approval.permittedActions.length > 0) {
+    return (
+      approval.permittedActions.includes("approve") ||
+      approval.permittedActions.includes("reject")
+    );
+  }
+  return true;
 }
 
 export function canSeeApprovalsNav(
@@ -518,6 +695,13 @@ export function isExecutionAwaitingApproval(status: string | undefined): boolean
   return Boolean(
     status &&
       (EXECUTION_WAITING_STATUSES as readonly string[]).includes(status),
+  );
+}
+
+export function publishInvalidatesApprovals(kind: string | undefined): boolean {
+  return Boolean(
+    kind &&
+      (APPROVAL_INVALIDATING_KINDS as readonly string[]).includes(kind),
   );
 }
 
@@ -553,13 +737,17 @@ export function filterApprovalList(
 }
 
 /**
- * Dispatch is allowed only when the latest server evaluation is `allow`.
- * A local/stale "approved" flag is ignored on purpose.
+ * Dispatch is allowed only when the latest server evaluation sets
+ * dispatchAllowed. A local/stale "approved" flag is ignored on purpose.
  */
 export function canDispatchFromEvaluation(
   evaluation: PolicyEvaluation | null,
 ): boolean {
-  return evaluation?.decision === "allow";
+  return Boolean(
+    evaluation &&
+      evaluation.dispatchAllowed &&
+      evaluation.decision !== "deny",
+  );
 }
 
 export function shouldBlockRun(options: {
@@ -601,24 +789,54 @@ export function policyDecisionLabel(decision: PolicyDecision): string {
       return "Allowed";
     case "deny":
       return "Denied";
-    case "approval_required":
+    case "approval-required":
       return "Approval required";
   }
 }
 
+export function isExpiredApprovalProblem(problem: ProblemDetails): boolean {
+  if (isExpiredProblemCode(problem.code)) {
+    return true;
+  }
+  return (
+    problem.code === "conflict" &&
+    problemDetailMatches(problem.detail, EXPIRED_APPROVAL_DETAIL)
+  );
+}
+
+export function isInvalidatedApprovalProblem(problem: ProblemDetails): boolean {
+  if (isInvalidatedProblemCode(problem.code)) {
+    return true;
+  }
+  return (
+    problem.code === "conflict" &&
+    problemDetailMatches(problem.detail, INVALIDATED_APPROVAL_DETAIL)
+  );
+}
+
+export function isSelfApprovalProblem(problem: ProblemDetails): boolean {
+  return (
+    problem.code === "forbidden" &&
+    problemDetailMatches(problem.detail, SELF_APPROVAL_DETAIL)
+  );
+}
+
 export function problemClosesApproval(problem: ProblemDetails): boolean {
   return (
-    isExpiredProblemCode(problem.code) ||
-    isInvalidatedProblemCode(problem.code) ||
+    isExpiredApprovalProblem(problem) ||
+    isInvalidatedApprovalProblem(problem) ||
     isDeniedProblemCode(problem.code)
   );
 }
 
 export function failClosedProblemTitle(problem: ProblemDetails): string {
-  if (isExpiredProblemCode(problem.code)) {
+  if (isSelfApprovalProblem(problem)) {
+    return "Requester cannot decide";
+  }
+  if (isExpiredApprovalProblem(problem)) {
     return "Approval expired";
   }
-  if (isInvalidatedProblemCode(problem.code)) {
+  if (isInvalidatedApprovalProblem(problem)) {
     return "Approval invalidated";
   }
   if (isDeniedProblemCode(problem.code)) {

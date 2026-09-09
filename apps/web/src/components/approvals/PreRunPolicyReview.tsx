@@ -30,7 +30,9 @@ export function PreRunPolicyReview({
       </h3>
       <p className="mt-1 text-sm text-zinc-600">
         Policy is evaluated on the server before dispatch. A stale local
-        &quot;approved&quot; flag never starts a run.
+        &quot;approved&quot; flag never starts a run.{" "}
+        <code className="font-mono text-xs">dispatchAllowed</code> is
+        authoritative.
       </p>
       {pending ? (
         <p className="mt-3 text-sm text-zinc-600">Evaluating policy…</p>
@@ -57,19 +59,41 @@ export function PreRunPolicyReview({
           ) : (
             <p className="text-sm text-zinc-600">
               Run stays blocked until the server returns{" "}
-              <code className="font-mono text-xs">allow</code>.
+              <code className="font-mono text-xs">dispatchAllowed</code>.
             </p>
           )}
-          {evaluation.requirements.map((requirement) => (
-            <div key={requirement.id} className="space-y-2">
-              <ApprovalValidityBanner approval={requirement} />
-              <ApprovalBindingSnapshot binding={requirement.binding} />
+          {evaluation.denied.map((item, index) => (
+            <p
+              key={`${item.nodeId}-${item.operation}-${index}`}
+              className="text-sm text-rose-900"
+            >
+              Denied {item.operation || "operation"}
+              {item.nodeId ? ` (${item.nodeId})` : ""}: {item.reason || "policy deny"}
+            </p>
+          ))}
+          {evaluation.requirements.map((requirement, index) => (
+            <p
+              key={`${requirement.nodeId}-${requirement.operation}-${index}`}
+              className="text-sm text-zinc-700"
+            >
+              Requires approval for{" "}
+              <code className="font-mono text-xs">{requirement.operation}</code>
+              {requirement.approverRole
+                ? ` · role ${requirement.approverRole}`
+                : ""}
+              {requirement.reason ? ` — ${requirement.reason}` : ""}
+            </p>
+          ))}
+          {evaluation.approvals.map((item) => (
+            <div key={item.id} className="space-y-2">
+              <ApprovalValidityBanner approval={item} />
+              <ApprovalBindingSnapshot binding={item.binding} />
               <p className="text-sm">
                 <Link
-                  href={`/approvals/${requirement.id}`}
+                  href={`/approvals/${item.id}`}
                   className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
-                  Open approval {requirement.id}
+                  Open approval {item.id}
                 </Link>
               </p>
             </div>

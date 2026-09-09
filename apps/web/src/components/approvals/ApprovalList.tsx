@@ -57,7 +57,9 @@ export function ApprovalList() {
     setPending(true);
     setProblem(null);
     const [list, workspace] = await Promise.all([
-      listApprovals(identity),
+      listApprovals(identity, {
+        status: query.status.trim() || undefined,
+      }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
     ]);
     setLastRequestId(list.requestId);
@@ -80,9 +82,9 @@ export function ApprovalList() {
       void refresh();
     }, 0);
     return () => window.clearTimeout(timer);
-    // Load once when the session + workspace lookup become ready.
+    // Reload when session, workspace, or documented status filter changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
-  }, [ready, identity]);
+  }, [ready, identity, query.status]);
 
   const denied = ready && permissions != null && !canSeeApprovalsNav(permissions);
 
@@ -145,8 +147,8 @@ export function ApprovalList() {
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       <p className="text-sm text-zinc-600">
-        {pendingApprovals(items).length} pending in the last list · filter is
-        client-side (no invented query params)
+        {pendingApprovals(items).length} pending in the last list · status
+        uses documented <code className="font-mono text-xs">?status=</code>
         {lastRequestId ? (
           <span className="font-mono text-xs"> · {lastRequestId}</span>
         ) : null}

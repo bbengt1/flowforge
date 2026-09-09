@@ -11,15 +11,24 @@ import {
   isApprovalExpired,
   isApprovalInvalidated,
   isExecutionAwaitingApproval,
+  isExpiredApprovalProblem,
+  isInvalidatedApprovalProblem,
   isSecretKey,
+  isSelfApprovalProblem,
   parseApprovalRequest,
   parsePolicyEvaluation,
   pendingApprovals,
   problemClosesApproval,
+  publishInvalidatesApprovals,
   shouldBlockRun,
   stripSecretKeys,
 } from "./approval.ts";
-import { APPROVAL_PROBLEM_CODES } from "./approval-contract.ts";
+import {
+  APPROVAL_PROBLEM_CODES,
+  EXPIRED_APPROVAL_DETAIL,
+  INVALIDATED_APPROVAL_DETAIL,
+  SELF_APPROVAL_DETAIL,
+} from "./approval-contract.ts";
 import type { ApprovalBinding, ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
 import { PROBLEM_JSON } from "./problem.ts";
 
@@ -37,11 +46,17 @@ function binding(overrides: Partial<ApprovalBinding> = {}): ApprovalBinding {
     targetId: TARGET_ID,
     targetKind: "cluster_target",
     targetName: "prod",
+    targetVersionId: "",
+    targetDigest: "",
+    policyResourceId: POLICY_ID,
     policyRevisionId: POLICY_ID,
     policyRevisionNumber: 1,
     policyDigest: "sha256:policy1",
     operation: "workflow.execute",
+    nodeId: "",
+    nodeName: "",
     expiresAt: "2099-01-01T00:00:00Z",
+    bindingFingerprint: "fp-1",
     ...overrides,
   };
 }
@@ -67,6 +82,7 @@ function approval(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
     workflowName: "rollout",
     executionId: "",
     executionStatus: "",
+    approverRole: "approver",
     permittedActions: ["approve", "reject"],
     ...overrides,
   };
@@ -133,6 +149,33 @@ describe("approval binding invalidation", () => {
     assert.equal(isApprovalInvalidated(parsed), true);
     assert.equal(canDecideApproval(parsed), false);
   });
+
+  it("parses a flat #44 record into the nested binding view", () => {
+    const parsed = parseApprovalRequest({
+      id: APPROVAL_ID,
+      status: "pending",
+      workflowId: "77777777-7777-4777-8777-777777777777",
+      workflowVersionId: VERSION_ID,
+      workflowDigest: "sha256:aaaa",
+      targetId: TARGET_ID,
+      targetKind: "cluster_target",
+      policyResourceId: POLICY_ID,
+      policyVersionId: POLICY_ID,
+      policyRevision: 2,
+      operation: "k8s.apply",
+      nodeId: "deploy",
+      expiresAt: "2099-01-01T00:00:00Z",
+      bindingFingerprint: "fp-flat",
+      requestedBy: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      approverRole: "approver",
+    });
+    assert.ok(parsed);
+    assert.equal(parsed.binding.workflowVersionDigest, "sha256:aaaa");
+    assert.equal(parsed.binding.policyRevisionNumber, 2);
+    assert.equal(parsed.binding.operation, "k8s.apply");
+    assert.equal(parsed.binding.nodeId, "deploy");
+    assert.equal(canDecideApproval(parsed), true);
+  });
 });
 
 describe("approval expiry fail-closed", () => {
@@ -157,37 +200,62 @@ describe("approval expiry fail-closed", () => {
     assert.equal(canDecideApproval(statusExpired), false);
   });
 
-  it("maps expired/invalidated problem+json to fail-closed", () => {
+  it("maps conflict+detail and aliases to fail-closed", () => {
     const expired = {
-      type: "urn:flowforge:problem:approval-expired",
-      title: "Expired",
+      type: "urn:flowforge:problem:conflict",
+      title: "Conflict",
       status: 409,
-      detail: "Approval expiry elapsed.",
-      instance: "/api/v1/approvals/" + APPROVAL_ID + "/approve",
-      code: APPROVAL_PROBLEM_CODES.expired,
+      detail: EXPIRED_APPROVAL_DETAIL,
+      instance: "/api/v1/approvals/" + APPROVAL_ID + "/decide",
+      code: APPROVAL_PROBLEM_CODES.conflict,
       request_id: "req-expired",
     };
     const invalidated = {
       ...expired,
-      code: APPROVAL_PROBLEM_CODES.invalidated,
-      title: "Invalidated",
-      detail: "Binding no longer matches.",
+      detail: INVALIDATED_APPROVAL_DETAIL,
     };
+    const aliased = {
+      ...expired,
+      code: APPROVAL_PROBLEM_CODES.expired,
+      detail: "Approval expiry elapsed.",
+    };
+    assert.equal(isExpiredApprovalProblem(expired), true);
+    assert.equal(isInvalidatedApprovalProblem(invalidated), true);
     assert.equal(problemClosesApproval(expired), true);
     assert.equal(problemClosesApproval(invalidated), true);
+    assert.equal(problemClosesApproval(aliased), true);
     assert.equal(expired.status, 409);
     assert.equal(typeof PROBLEM_JSON, "string");
+  });
+
+  it("surfaces self-approval as 403 without treating it as expired", () => {
+    const self = {
+      type: "urn:flowforge:problem:forbidden",
+      title: "Forbidden",
+      status: 403,
+      detail: SELF_APPROVAL_DETAIL,
+      instance: "/api/v1/approvals/" + APPROVAL_ID + "/decide",
+      code: APPROVAL_PROBLEM_CODES.forbidden,
+      request_id: "req-self",
+    };
+    assert.equal(isSelfApprovalProblem(self), true);
+    assert.equal(isExpiredApprovalProblem(self), false);
+    assert.equal(isInvalidatedApprovalProblem(self), false);
   });
 });
 
 describe("server recheck is authoritative", () => {
   it("never treats a stale local approved flag as sufficient to dispatch", () => {
     const required: PolicyEvaluation = {
-      decision: "approval_required",
+      decision: "approval-required",
+      dispatchAllowed: false,
       evaluationId: "eval-1",
       workflowVersionId: VERSION_ID,
+      workflowDigest: "sha256:aaaa",
       operation: "workflow.execute",
-      requirements: [approval()],
+      requirements: [],
+      approvals: [approval()],
+      denied: [],
     };
     assert.equal(canDispatchFromEvaluation(required), false);
     assert.equal(
@@ -200,23 +268,28 @@ describe("server recheck is authoritative", () => {
     );
     assert.equal(
       shouldBlockRun({
-        evaluation: { ...required, decision: "allow", requirements: [] },
+        evaluation: {
+          ...required,
+          decision: "allow",
+          dispatchAllowed: true,
+          approvals: [],
+        },
         staleLocalApproved: false,
       }),
       false,
     );
   });
 
-  it("requires a current pending snapshot plus server permittedActions", () => {
+  it("allows decide when the API omits permittedActions", () => {
     const noActions = approval({ permittedActions: [] });
-    assert.equal(canDecideApproval(noActions), false);
+    assert.equal(canDecideApproval(noActions), true);
     const rejected = approval({ status: "rejected" });
     assert.equal(canDecideApproval(rejected), false);
   });
 });
 
 describe("approval list and RBAC", () => {
-  it("filters pending in the browser and does not invent query params", () => {
+  it("filters pending in the browser", () => {
     const items = [
       approval(),
       approval({
@@ -238,7 +311,15 @@ describe("approval list and RBAC", () => {
 
   it("recognizes execution waiting/approval states", () => {
     assert.equal(isExecutionAwaitingApproval("awaiting_approval"), true);
+    assert.equal(isExecutionAwaitingApproval("approval-required"), true);
     assert.equal(isExecutionAwaitingApproval("pinned"), false);
+  });
+
+  it("invalidates prior approvals after target or policy publish", () => {
+    assert.equal(publishInvalidatesApprovals("policy"), true);
+    assert.equal(publishInvalidatesApprovals("cluster_target"), true);
+    assert.equal(publishInvalidatesApprovals("ssh_target"), true);
+    assert.equal(publishInvalidatesApprovals("command_profile"), false);
   });
 });
 
@@ -265,23 +346,36 @@ describe("secret-free approval payloads", () => {
     ]);
   });
 
-  it("parses evaluate requirements without secret fields", () => {
+  it("parses evaluate requirements and dispatchAllowed from #44", () => {
     const evaluation = parsePolicyEvaluation({
-      decision: "approval_required",
+      decision: "approval-required",
+      dispatchAllowed: false,
       workflowVersionId: VERSION_ID,
-      operation: "workflow.execute",
+      workflowDigest: "sha256:aaaa",
       requirements: [
+        {
+          operation: "workflow.execute",
+          nodeId: "gate",
+          reason: "policy.requireApproval",
+          approverRole: "approver",
+        },
+      ],
+      approvals: [
         {
           id: APPROVAL_ID,
           status: "pending",
-          binding: binding(),
-          secret: "nope",
-          permittedActions: ["approve"],
+          workflowVersionId: VERSION_ID,
+          workflowDigest: "sha256:aaaa",
+          operation: "workflow.execute",
+          expiresAt: "2099-01-01T00:00:00Z",
         },
       ],
+      denied: [],
     });
     assert.ok(evaluation);
-    assert.equal(evaluation.decision, "approval_required");
-    assert.equal(evaluation.requirements[0]?.id, APPROVAL_ID);
+    assert.equal(evaluation.decision, "approval-required");
+    assert.equal(evaluation.dispatchAllowed, false);
+    assert.equal(evaluation.requirements[0]?.operation, "workflow.execute");
+    assert.equal(evaluation.approvals[0]?.id, APPROVAL_ID);
   });
 });

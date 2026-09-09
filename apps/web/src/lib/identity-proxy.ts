@@ -242,8 +242,8 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       s[2] === "versions" &&
       isResourceId(s[3]),
   },
-  // E4.3 policy-eval / approvals UI. Paths live in approval-contract.ts
-  // so a jonny retarget is a single-file change.
+  // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
+  // approval-contract.ts.
   ...APPROVAL_PROXY_ROUTES,
 ];
 

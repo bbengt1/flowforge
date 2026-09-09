@@ -281,6 +281,8 @@ describe("resolveIdentityProxyTarget", () => {
         "/api/v1/workflows/11111111-1111-4111-8111-111111111111/versions/22222222-2222-4222-8222-222222222222/pins",
       ],
       ["GET", ["approvals"], "/api/v1/approvals"],
+      ["POST", ["approvals"], "/api/v1/approvals"],
+      ["GET", ["approvals", "catalog"], "/api/v1/approvals/catalog"],
       [
         "GET",
         ["approvals", "11111111-1111-4111-8111-111111111111"],
@@ -288,26 +290,15 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       [
         "POST",
-        ["approvals", "11111111-1111-4111-8111-111111111111", "approve"],
-        "/api/v1/approvals/11111111-1111-4111-8111-111111111111/approve",
+        ["approvals", "11111111-1111-4111-8111-111111111111", "decide"],
+        "/api/v1/approvals/11111111-1111-4111-8111-111111111111/decide",
       ],
-      [
-        "POST",
-        ["approvals", "11111111-1111-4111-8111-111111111111", "reject"],
-        "/api/v1/approvals/11111111-1111-4111-8111-111111111111/reject",
-      ],
-      ["POST", ["policy", "evaluate"], "/api/v1/policy/evaluate"],
       [
         "GET",
-        [
-          "workflows",
-          "11111111-1111-4111-8111-111111111111",
-          "executions",
-          "22222222-2222-4222-8222-222222222222",
-          "approvals",
-        ],
-        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/22222222-2222-4222-8222-222222222222/approvals",
+        ["approvals", "11111111-1111-4111-8111-111111111111", "events"],
+        "/api/v1/approvals/11111111-1111-4111-8111-111111111111/events",
       ],
+      ["POST", ["policy", "evaluate"], "/api/v1/policy/evaluate"],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -390,24 +381,44 @@ describe("resolveIdentityProxyTarget", () => {
     }
   });
 
-  it("allowlists E4.3 approval routes and rejects invented decide paths", () => {
-    const getApprove = resolveIdentityProxyTarget("GET", [
-      "approvals",
-      "11111111-1111-4111-8111-111111111111",
-      "approve",
-    ]);
-    assert.equal("status" in getApprove, true);
-    if ("status" in getApprove) {
-      assert.equal(getApprove.status, 405);
-    }
-    const inventedDecide = resolveIdentityProxyTarget("POST", [
+  it("allowlists E4.3 approval routes and rejects retired approve/reject paths", () => {
+    const getDecide = resolveIdentityProxyTarget("GET", [
       "approvals",
       "11111111-1111-4111-8111-111111111111",
       "decide",
     ]);
-    assert.equal("status" in inventedDecide, true);
-    if ("status" in inventedDecide) {
-      assert.equal(inventedDecide.status, 404);
+    assert.equal("status" in getDecide, true);
+    if ("status" in getDecide) {
+      assert.equal(getDecide.status, 405);
+    }
+    const retiredApprove = resolveIdentityProxyTarget("POST", [
+      "approvals",
+      "11111111-1111-4111-8111-111111111111",
+      "approve",
+    ]);
+    assert.equal("status" in retiredApprove, true);
+    if ("status" in retiredApprove) {
+      assert.equal(retiredApprove.status, 404);
+    }
+    const retiredReject = resolveIdentityProxyTarget("POST", [
+      "approvals",
+      "11111111-1111-4111-8111-111111111111",
+      "reject",
+    ]);
+    assert.equal("status" in retiredReject, true);
+    if ("status" in retiredReject) {
+      assert.equal(retiredReject.status, 404);
+    }
+    const executionApprovals = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "executions",
+      "22222222-2222-4222-8222-222222222222",
+      "approvals",
+    ]);
+    assert.equal("status" in executionApprovals, true);
+    if ("status" in executionApprovals) {
+      assert.equal(executionApprovals.status, 404);
     }
     const getEvaluate = resolveIdentityProxyTarget("GET", ["policy", "evaluate"]);
     assert.equal("status" in getEvaluate, true);
