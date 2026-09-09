@@ -58,9 +58,9 @@ Embed sessions propagate `(tenant_id, workbench_key)` through API authorization 
 
 ## CP Ops Portal adapter (E11.3)
 
-Replace/adapt Portal’s protected workflow surface without sharing the FlowForge database or executor. Portal entry RBAC is not FlowForge authorization. After Portal RBAC, the Portal backend mints via E11.1 (`aud=flowforge`, portal issuer, mapped capabilities, tenant, workbench). Exchange stays `POST /embed/exchange`. Full host wiring: [portal adapter](portal-adapter.md). UI adapter: `apps/web/src/lib/portal-adapter-contract.ts`. Relates to #123 / Part of #120 — **Keep #123 open** (Chloe still has host wiring pending).
+Replace/adapt Portal’s protected workflow surface without sharing the FlowForge database or executor. Portal entry RBAC is not FlowForge authorization. After Portal RBAC, the Portal backend mints via E11.1 (`aud=flowforge`, portal issuer, mapped capabilities, tenant, workbench). Exchange stays `POST /embed/exchange`. Full host wiring: [portal adapter](portal-adapter.md). UI adapter: `apps/web/src/lib/portal-adapter-contract.ts`. Relates to #123 / Part of #120 — **Keep #123 open**.
 
-**Host wiring (Chloe):** Portal entry → map Portal roles → `POST /api/v1/portal/adapter/assertions` → mount `/embed/v1` → `POST /api/v1/embed/exchange`. Persist tenant + workbench from the exchanged session, not from host query. `WEB_PORTAL_FRAME_ANCESTORS` (merged with `WEB_EMBED_FRAME_ANCESTORS`) relaxes framing on `/embed/v1` only.
+**Host wiring (Chloe):** Portal entry (`/portal/workflows`) → map Portal roles (`GET /portal/adapter`) → `POST /api/v1/portal/adapter/assertions` `{portalRoles}` → iframe `/embed/v1` → `POST /api/v1/embed/exchange`. Persist tenant + workbench from the exchanged session, not from host query. `WEB_PORTAL_FRAME_ANCESTORS` (merged with `WEB_EMBED_FRAME_ANCESTORS`) relaxes framing on `/embed/v1` only.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |

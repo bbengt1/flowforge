@@ -228,6 +228,13 @@ export function paletteCommands(
     keywords: ["settings", "session", "membership"],
     action: { type: "navigate", href: "/settings" },
   });
+  commands.push({
+    id: "nav-portal",
+    label: "Open CP Ops Portal host",
+    hint: "E11.3 embed host wiring",
+    keywords: ["portal", "embed", "host", "e11"],
+    action: { type: "navigate", href: "/portal/workflows" },
+  });
   return commands;
 }
 

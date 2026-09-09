@@ -28,6 +28,7 @@ import {
   isEmbedUiPath,
   urlRejectedAssertion,
 } from "@/lib/embed-contract";
+import { isPortalHostPath } from "@/lib/portal-adapter-contract";
 import {
   emptyEmbedVerified,
   loadEmbedVerified,
@@ -76,6 +77,7 @@ export function WorkspaceShell({
     () => "",
   );
   const embed = embedMount || isEmbedUiPath(pathname);
+  const portalHost = isPortalHostPath(pathname);
   const rejectedAssertion =
     (embed && urlRejectedAssertion(search, hash)) || rejectedAssertionProp;
   const verified = useSyncExternalStore(
@@ -99,6 +101,10 @@ export function WorkspaceShell({
       cancelled = true;
     };
   }, [embed]);
+
+  if (portalHost) {
+    return <>{children}</>;
+  }
 
   const shell = embed ? (
     <WorkspaceProvider>

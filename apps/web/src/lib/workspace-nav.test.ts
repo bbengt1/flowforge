@@ -32,7 +32,7 @@ describe("visibleWorkspaceNav", () => {
     const items = visibleWorkspaceNav(null);
     assert.deepEqual(
       items.map((item) => item.id),
-      ["settings", "membership", "isolation"],
+      ["settings", "membership", "isolation", "portal"],
     );
   });
 

@@ -31,7 +31,8 @@ export type WorkspaceNavId =
   | "audit"
   | "settings"
   | "membership"
-  | "isolation";
+  | "isolation"
+  | "portal";
 
 export type WorkspaceNavItem = {
   id: WorkspaceNavId;
@@ -139,6 +140,13 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
     id: "isolation",
     label: "Isolation",
     href: "/isolation",
+    permission: null,
+    group: "foundation",
+  },
+  {
+    id: "portal",
+    label: "Portal host",
+    href: "/portal/workflows",
     permission: null,
     group: "foundation",
   },

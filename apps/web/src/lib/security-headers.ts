@@ -15,6 +15,7 @@ import {
   isEmbedMountPath,
   parseEmbedFrameAncestors,
 } from "./embed-contract.ts";
+import { frameSrcForPath } from "./portal-adapter-contract.ts";
 
 export const HSTS_VALUE = "max-age=31536000; includeSubDomains";
 
@@ -113,7 +114,7 @@ export function buildContentSecurityPolicy(
       WEB_EMBED_FRAME_ANCESTORS: env.WEB_EMBED_FRAME_ANCESTORS,
       WEB_PORTAL_FRAME_ANCESTORS: env.WEB_PORTAL_FRAME_ANCESTORS,
     })}`,
-    "frame-src 'none'",
+    `frame-src ${frameSrcForPath(options.pathname ?? "/")}`,
     "worker-src 'self'",
     "manifest-src 'self'",
   ].join("; ");

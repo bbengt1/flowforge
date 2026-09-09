@@ -208,6 +208,13 @@ export function parseEmbedFrameAncestors(raw: string | undefined): string[] {
     if (!origin || origin === "*" || origin.toLowerCase() === "null") {
       continue;
     }
+    if (origin === "'self'" || origin === "self") {
+      if (!seen.has("'self'")) {
+        seen.add("'self'");
+        out.push("'self'");
+      }
+      continue;
+    }
     try {
       const u = new URL(origin);
       if ((u.protocol !== "https:" && u.protocol !== "http:") || u.username) {
@@ -226,7 +233,7 @@ export function parseEmbedFrameAncestors(raw: string | undefined): string[] {
   return out;
 }
 
-type EmbedProxyRoute = {
+export type EmbedProxyRoute = {
   methods: readonly string[];
   match: (segments: string[]) => boolean;
 };

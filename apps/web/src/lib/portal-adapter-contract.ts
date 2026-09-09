@@ -9,19 +9,36 @@
  */
 
 import {
+  EMBED_ASSERTION_MESSAGE_TYPE,
+  EMBED_ASSERTION_MESSAGE_VERSION,
   EMBED_AUDIENCE,
   EMBED_EXCHANGE_PATH,
+  EMBED_HOST_DISPLAY_KEYS,
+  EMBED_MAX_ASSERTION_BYTES,
   EMBED_MINT_PATH,
   EMBED_MOUNT_PREFIX,
+  EMBED_ROUTES,
   EMBED_SDK,
+  assertionFromURL,
+  embedMountPath,
   frameAncestorsForPath,
+  isCompactJws,
+  isEmbedMountPath,
+  parseEmbedHostDisplay,
+  stripAssertionParams,
+  type EmbedAssertionMessage,
+  type EmbedHostDisplay,
   type EmbedProxyRoute,
+  type EmbedRouteId,
 } from "./embed-contract.ts";
 
 export const PORTAL_ADAPTER = "portal.v1" as const;
 export const PORTAL_STORY = 123;
 export const PORTAL_EPIC = 120;
+export const PORTAL_API_PR = 129;
+export const PORTAL_ROUTE_MAP_SOURCE = "e113-#129" as const;
 export const PORTAL_ENTRY_PATH = "/portal/workflows";
+export const PORTAL_HOST_NAME = "CP Ops Portal";
 export const PORTAL_ADAPTER_PATH = "/portal/adapter";
 export const PORTAL_MINT_PATH = "/portal/adapter/assertions";
 export const PORTAL_EXCHANGE_PATH = EMBED_EXCHANGE_PATH;
@@ -257,3 +274,217 @@ export const PORTAL_HELP =
   "Portal entry is not FlowForge authorization. Mint via /portal/adapter/assertions, exchange via /embed/exchange, mount /embed/v1.";
 
 export const PORTAL_DIRECT_MINT = EMBED_MINT_PATH;
+
+export const PORTAL_RBAC_HELP =
+  "Portal entry RBAC decides whether this host may mint/mount. It is not FlowForge authorization and is never sent as a capability.";
+
+export const PORTAL_TENANCY_HELP =
+  "Tenant and workbench on this host are display context for the iframe query. After exchange the embed uses FlowForge-verified session.embed headers. Host values are not retried on 403.";
+
+export const PORTAL_ASSERTION_HELP =
+  "Mint through POST /portal/adapter/assertions {portalRoles}, then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange. Never put the JWS in the URL, hash, path, or localStorage.";
+
+export const PORTAL_BOUNDARY_HELP =
+  "This host replaces Portal's protected workflow surface by embedding FlowForge. FlowForge keeps its own database, executor, and authorization. Portal RBAC stays on the Portal side of the iframe.";
+
+export const PORTAL_DENIED_MESSAGE =
+  "Portal entry is denied. FlowForge was not contacted. Granting Portal RBAC later still does not authorize FlowForge — a verified assertion exchange is required.";
+
+export const PORTAL_HOSTILE_ISSUER_MESSAGE =
+  "Hostile Portal issuer (HTTP 403). The issuer is not on PORTAL_ISSUER_ALLOWLIST. Portal admin is not FlowForge membership.";
+
+export const PORTAL_REPLAY_MESSAGE =
+  "This assertion was already used (HTTP 409). Exchange is POST /embed/exchange only. Request a new mint.";
+
+export type PortalEntryRole = "granted" | "denied";
+
+export type PortalEntryRbac = {
+  role: PortalEntryRole;
+  surface: "portal-entry";
+  authorizesFlowForge: false;
+};
+
+export function portalRbacIsFlowForgeAuthorization(
+  _rbac?: PortalEntryRbac | unknown,
+): false {
+  void _rbac;
+  return false;
+}
+
+export function portalEntryAllowsMount(rbac: PortalEntryRbac): boolean {
+  return rbac.surface === "portal-entry" && rbac.role === "granted";
+}
+
+export function portalEntryRbac(role: PortalEntryRole): PortalEntryRbac {
+  return {
+    role,
+    surface: "portal-entry",
+    authorizesFlowForge: false,
+  };
+}
+
+export function isPortalHostPath(pathname: string | null | undefined): boolean {
+  if (!pathname) {
+    return false;
+  }
+  return pathname === "/portal" || pathname.startsWith("/portal/");
+}
+
+/** Portal host may iframe same-origin /embed/v1. Standalone stays frame-src none. */
+export function frameSrcForPath(pathname: string): string {
+  return isPortalHostPath(pathname) ? "'self'" : "'none'";
+}
+
+export type PortalHostDisplay = EmbedHostDisplay & {
+  host: string;
+};
+
+export function portalHostDisplay(input: {
+  host?: string;
+  tenant?: string;
+  tenantId?: string;
+  workbench?: string;
+  displayName?: string;
+}): PortalHostDisplay {
+  return {
+    host: input.host?.trim() || PORTAL_HOST_NAME,
+    tenant: input.tenant?.trim() ?? "",
+    tenantId: input.tenantId?.trim() ?? "",
+    workbench: input.workbench?.trim() ?? "",
+    displayName: input.displayName?.trim() ?? "",
+    unverified: true,
+  };
+}
+
+export function portalDisplayQuery(display: PortalHostDisplay): string {
+  const params = new URLSearchParams();
+  const pairs: Array<[string, string]> = [
+    ["host", display.host],
+    ["tenant", display.tenant],
+    ["tenantId", display.tenantId],
+    ["workbench", display.workbench],
+    ["displayName", display.displayName],
+  ];
+  for (const [key, value] of pairs) {
+    if (value && (EMBED_HOST_DISPLAY_KEYS as readonly string[]).includes(key)) {
+      params.set(key, value);
+    }
+  }
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+function fillRouteTemplate(
+  template: string,
+  params: Record<string, string> | undefined,
+): string {
+  return template.replace(/\{([a-zA-Z]+)\}/g, (_, key: string) => {
+    const value = params?.[key]?.trim() ?? "";
+    return value || `{${key}}`;
+  });
+}
+
+export type PortalEmbedSrc = {
+  src: string;
+  rejectedAssertion: boolean;
+  displayOnly: true;
+};
+
+/** iframe src: /embed/v1 deep link + display query. Assertion never attached. */
+export function buildPortalEmbedSrc(input: {
+  routeId?: EmbedRouteId;
+  standalone?: string;
+  params?: Record<string, string>;
+  display: PortalHostDisplay;
+  leakedSearch?: string;
+}): PortalEmbedSrc {
+  const route = EMBED_ROUTES.find((item) => item.id === (input.routeId ?? "workflows"));
+  const standalone = input.standalone?.trim() || route?.standalone || "/workflows";
+  const path = fillRouteTemplate(
+    isEmbedMountPath(standalone) ? standalone : embedMountPath(standalone),
+    input.params,
+  );
+  const display = portalDisplayQuery(input.display);
+  const leaked = stripAssertionParams(input.leakedSearch ?? "");
+  return {
+    src: `${path}${display}`,
+    rejectedAssertion: leaked.rejected,
+    displayOnly: true,
+  };
+}
+
+export function portalUrlContainsAssertion(url: string): boolean {
+  if (assertionFromURL(url) !== null) {
+    return true;
+  }
+  try {
+    const parsed = new URL(url, "http://portal.invalid");
+    if (stripAssertionParams(parsed.search).rejected) {
+      return true;
+    }
+    const hash = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    if (stripAssertionParams(hash).rejected) {
+      return true;
+    }
+    const path = parsed.pathname.toLowerCase();
+    return path.includes("/assertion/") || path.includes("/token/") || path.includes("/jws/");
+  } catch {
+    return stripAssertionParams(url).rejected;
+  }
+}
+
+export function parsePortalMintAssertion(payload: unknown):
+  | { ok: true; assertion: string; tokenId: string }
+  | { ok: false; errors: string[] } {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { ok: false, errors: ["Mint response is missing."] };
+  }
+  const raw = payload as Record<string, unknown>;
+  const assertion = typeof raw.assertion === "string" ? raw.assertion.trim() : "";
+  if (!isCompactJws(assertion) || assertion.length > EMBED_MAX_ASSERTION_BYTES) {
+    return {
+      ok: false,
+      errors: ["Mint did not return a compact JWS. Do not invent one on the host."],
+    };
+  }
+  const tokenId =
+    typeof raw.tokenId === "string"
+      ? raw.tokenId.trim()
+      : typeof raw.jti === "string"
+        ? raw.jti.trim()
+        : "";
+  return { ok: true, assertion, tokenId };
+}
+
+export function buildPortalAssertionMessage(
+  assertion: string,
+): EmbedAssertionMessage | null {
+  const trimmed = assertion.trim();
+  if (!isCompactJws(trimmed)) {
+    return null;
+  }
+  return {
+    type: EMBED_ASSERTION_MESSAGE_TYPE,
+    version: EMBED_ASSERTION_MESSAGE_VERSION,
+    assertion: trimmed,
+  };
+}
+
+export function validatePortalRoles(roles: readonly string[]):
+  | { ok: true; portalRoles: string[] }
+  | { ok: false; errors: string[] } {
+  if (roles.length === 0) {
+    return {
+      ok: false,
+      errors: ["Mint requires portalRoles. Portal RBAC is not a FlowForge capability."],
+    };
+  }
+  const mapped = mapPortalRoles(roles);
+  if (mapped.unknown.length > 0) {
+    return {
+      ok: false,
+      errors: [`Unknown Portal roles fail closed: ${mapped.unknown.join(", ")}`],
+    };
+  }
+  return { ok: true, portalRoles: roles.map((role) => role.trim()).filter(Boolean) };
+}
