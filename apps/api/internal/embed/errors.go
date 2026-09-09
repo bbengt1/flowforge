@@ -22,6 +22,7 @@ var (
 	ErrTTL              = errors.New("embed assertion ttl is not valid")
 	ErrStoreUnavailable = errors.New("embed assertion store is unavailable")
 	ErrUnknownKey       = errors.New("embed assertion key id is not active or overlapping")
+	ErrOverlapNotPrior  = errors.New("embed overlap key must be the previous active signing key")
 	ErrRotationUnready  = errors.New("embed key rotation overlap is not enabled")
 	ErrTenancyUnready   = errors.New("embed tenancy propagation is not enabled")
 	ErrTenancyMismatch  = errors.New("embed session tenant/workbench does not match host context")

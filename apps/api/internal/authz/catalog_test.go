@@ -43,6 +43,9 @@ func TestAllowsDenyByDefault(t *testing.T) {
 	if Allows(granted, PermWorkspaceAdminister) {
 		t.Fatal("ungranted administer must be denied")
 	}
+	if Allows(granted, PermPlatformAdminister) {
+		t.Fatal("ungranted platform administer must be denied")
+	}
 	if Allows(nil, PermWorkflowView) {
 		t.Fatal("empty grants must deny")
 	}
@@ -62,7 +65,7 @@ func TestViewerCannotPerformPrivilegedActions(t *testing.T) {
 	for _, action := range []string{
 		PermWorkflowEdit, PermWorkflowPublish, PermWorkflowExecute,
 		PermCredentialUse, PermCredentialManage, PermApprovalDecide,
-		PermWorkspaceAdminister, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermScriptRun,
+		PermWorkspaceAdminister, PermPlatformAdminister, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermScriptRun,
 		PermScriptRevoke, PermScriptEmergencyStop, PermAlertAck,
 	} {
 		if Allows(granted, action) {
@@ -74,12 +77,33 @@ func TestViewerCannotPerformPrivilegedActions(t *testing.T) {
 	}
 }
 
-func TestAdminHasEveryCatalogPermission(t *testing.T) {
+func TestAdminHasEveryWorkspacePermission(t *testing.T) {
 	granted := ExpandRoles([]string{RoleAdmin})
-	for _, p := range Permissions() {
-		if !Allows(granted, p.Key) {
-			t.Fatalf("admin missing %s", p.Key)
+	for _, key := range WorkspacePermissionKeys() {
+		if !Allows(granted, key) {
+			t.Fatalf("admin missing %s", key)
 		}
+	}
+	if Allows(granted, PermPlatformAdminister) {
+		t.Fatal("workspace admin must not have platform.administer")
+	}
+}
+
+func TestPlatformAdminRoleIsNotWorkspaceAssignable(t *testing.T) {
+	if !Known(PermPlatformAdminister) || !KnownRole(RolePlatformAdmin) {
+		t.Fatal("platform-admin must be in the catalog")
+	}
+	if WorkspaceAssignableRole(RolePlatformAdmin) {
+		t.Fatal("platform-admin must not be workspace-assignable")
+	}
+	if !WorkspaceAssignableRole(RoleAdmin) {
+		t.Fatal("workspace admin remains assignable")
+	}
+	if got := ExpandWorkspaceRoles([]string{RolePlatformAdmin, RoleAdmin}); Allows(got, PermPlatformAdminister) {
+		t.Fatal("workspace expansion must ignore platform-admin")
+	}
+	if !Allows(ExpandRoles([]string{RolePlatformAdmin}), PermPlatformAdminister) {
+		t.Fatal("ExpandRoles(platform-admin) should grant platform.administer")
 	}
 }
 

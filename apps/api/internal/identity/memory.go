@@ -211,7 +211,7 @@ func (m *Memory) ListWorkspacesForUser(_ context.Context, userID string) ([]Memb
 			Workspace:   ws,
 			Tenant:      tenant,
 			Roles:       append([]string(nil), roles...),
-			Permissions: authz.ExpandRoles(roles),
+			Permissions: authz.ExpandWorkspaceRoles(roles),
 		})
 	}
 	return out, nil
@@ -243,7 +243,7 @@ func (m *Memory) EffectiveAccess(_ context.Context, workspaceID, userID string) 
 		return nil, nil, ErrDisabled
 	}
 	roles = append([]string(nil), m.bindings[bindKey(workspaceID, userID)]...)
-	return roles, authz.ExpandRoles(roles), nil
+	return roles, authz.ExpandWorkspaceRoles(roles), nil
 }
 
 func (m *Memory) ListMembers(_ context.Context, workspaceID string) ([]Member, error) {
@@ -261,7 +261,7 @@ func (m *Memory) ListMembers(_ context.Context, workspaceID string) ([]Member, e
 		out = append(out, Member{
 			User:        m.users[uid],
 			Roles:       append([]string(nil), roles...),
-			Permissions: authz.ExpandRoles(roles),
+			Permissions: authz.ExpandWorkspaceRoles(roles),
 		})
 	}
 	return out, nil
@@ -321,7 +321,7 @@ func (m *Memory) ensureAdminLocked(workspaceID string) error {
 		if wsID != workspaceID {
 			continue
 		}
-		if slices.Contains(authz.ExpandRoles(roles), authz.PermWorkspaceAdminister) {
+		if slices.Contains(authz.ExpandWorkspaceRoles(roles), authz.PermWorkspaceAdminister) {
 			return nil
 		}
 	}
@@ -355,7 +355,7 @@ func validateRoleKeys(roleKeys []string) error {
 		return ErrInvalid
 	}
 	for _, k := range roleKeys {
-		if !authz.KnownRole(k) {
+		if !authz.WorkspaceAssignableRole(k) {
 			return ErrInvalid
 		}
 	}

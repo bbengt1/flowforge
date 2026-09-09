@@ -77,7 +77,7 @@ func (s *Server) rotateEmbedKeys(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, _, _, _, ok := s.requireAccess(w, r, user, authz.PermWorkspaceAdminister); !ok {
+	if !s.requirePlatformAdmin(w, r, user) {
 		return
 	}
 	var req rotateEmbedKeyRequest
@@ -323,11 +323,24 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "The embed assertion has already been used.")
 	case errors.Is(err, embed.ErrTenancyMismatch):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Host-supplied tenant or workbench does not match the embed session.")
+	case errors.Is(err, embed.ErrOverlapNotPrior):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Overlap registration is locked to the previous active signing key.")
 	case errors.Is(err, embed.ErrKeyUnavailable), errors.Is(err, embed.ErrStoreUnavailable):
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Embed signing is not available.")
 	default:
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The embed request is not valid.")
 	}
+}
+
+func (s *Server) requirePlatformAdmin(w http.ResponseWriter, r *http.Request, user identity.User) bool {
+	if authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) {
+		return true
+	}
+	if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+		s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing platform.administer")
+	}
+	WriteForbidden(w, r)
+	return false
 }
 
 func embedDenyReason(err error) string {

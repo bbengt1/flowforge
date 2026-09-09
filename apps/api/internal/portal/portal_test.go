@@ -41,6 +41,9 @@ func TestCapabilityMapCoversPortalRoles(t *testing.T) {
 	if !slices.Contains(byRole[RoleAdmin].Capabilities, authz.PermWorkspaceAdminister) {
 		t.Fatal("admin must administer")
 	}
+	if slices.Contains(byRole[RoleAdmin].Capabilities, authz.PermPlatformAdminister) {
+		t.Fatal("portal admin must not receive platform.administer")
+	}
 }
 
 func TestMapRolesAliasesAndUnknownFailClosed(t *testing.T) {

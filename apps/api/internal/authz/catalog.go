@@ -32,6 +32,7 @@ const (
 	PermAlertView           = "alert.view"
 	PermAlertAck            = "alert.ack"
 	PermWorkspaceAdminister = "workspace.administer"
+	PermPlatformAdminister  = "platform.administer"
 	PermKubernetesApply     = "kubernetes.apply"
 	PermKubernetesRead      = "kubernetes.read"
 	PermSSHRun              = "ssh.run"
@@ -59,8 +60,9 @@ const (
 	RoleEditor    = "editor"
 	RolePublisher = "publisher"
 	RoleOperator  = "operator"
-	RoleApprover  = "approver"
-	RoleAdmin     = "admin"
+	RoleApprover      = "approver"
+	RoleAdmin         = "admin"
+	RolePlatformAdmin = "platform-admin"
 )
 
 // Permission is a catalog entry.
@@ -93,6 +95,7 @@ func Permissions() []Permission {
 		{Key: PermAlertView, Family: FamilyView},
 		{Key: PermAlertAck, Family: FamilyExecute},
 		{Key: PermWorkspaceAdminister, Family: FamilyAdministration},
+		{Key: PermPlatformAdminister, Family: FamilyAdministration},
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermKubernetesRead, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
@@ -153,8 +156,13 @@ func Roles() []Role {
 		},
 		{
 			Key:         RoleAdmin,
-			Description: "Full workspace administration including membership, credentials, and all workflow actions.",
-			Permissions: PermissionKeys(),
+			Description: "Full workspace administration including membership, credentials, and all workspace actions. Does not grant platform.administer.",
+			Permissions: WorkspacePermissionKeys(),
+		},
+		{
+			Key:         RolePlatformAdmin,
+			Description: "Platform-scoped operations (global embed overlap key rotation). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
+			Permissions: []string{PermPlatformAdminister},
 		},
 	}
 }
@@ -167,6 +175,30 @@ func PermissionKeys() []string {
 		out = append(out, p.Key)
 	}
 	return out
+}
+
+// PlatformScopedPermission reports whether key is granted only by the
+// platform-admin allowlist, never by a workspace role binding.
+func PlatformScopedPermission(key string) bool {
+	return key == PermPlatformAdminister
+}
+
+// WorkspacePermissionKeys is every catalog permission except platform-scoped ones.
+func WorkspacePermissionKeys() []string {
+	all := Permissions()
+	out := make([]string, 0, len(all))
+	for _, p := range all {
+		if PlatformScopedPermission(p.Key) {
+			continue
+		}
+		out = append(out, p.Key)
+	}
+	return out
+}
+
+// WorkspaceAssignableRole reports whether role may be bound via workspace membership.
+func WorkspaceAssignableRole(role string) bool {
+	return KnownRole(role) && role != RolePlatformAdmin
 }
 
 // RequiredFamilies is the E2.1 acceptance set.
@@ -222,4 +254,16 @@ func ExpandRoles(roleKeys []string) []string {
 		}
 	}
 	return out
+}
+
+// ExpandWorkspaceRoles expands only workspace-assignable roles. A
+// platform-admin binding in workspace_role_bindings grants nothing.
+func ExpandWorkspaceRoles(roleKeys []string) []string {
+	filtered := make([]string, 0, len(roleKeys))
+	for _, role := range roleKeys {
+		if WorkspaceAssignableRole(role) {
+			filtered = append(filtered, role)
+		}
+	}
+	return ExpandRoles(filtered)
 }

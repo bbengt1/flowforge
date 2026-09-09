@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -22,11 +23,13 @@ import (
 )
 
 type embedEnv struct {
-	h     http.Handler
-	keys  embed.Material
-	now   *time.Time
-	admin identity.User
-	logs  *bytes.Buffer
+	h      http.Handler
+	keys   embed.Material
+	ring   *embed.Ring
+	now    *time.Time
+	admin  identity.User
+	ops    identity.User
+	logs   *bytes.Buffer
 }
 
 func newEmbedEnv(t *testing.T) embedEnv {
@@ -34,9 +37,11 @@ func newEmbedEnv(t *testing.T) embedEnv {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
 	keys := embed.TestMaterial()
+	ring := embed.NewRing(keys, embed.NewMemoryKeys())
 	store := identity.NewMemory()
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
+	ops := identity.User{Issuer: "https://idp.example", ExternalSubject: "platform-ops-1", DisplayName: "Platform Ops"}
 	h := NewWithDeps(Deps{
 		Store:     store,
 		Scoped:    isolation.NewMemory(),
@@ -47,9 +52,14 @@ func newEmbedEnv(t *testing.T) embedEnv {
 		Vault:     vault.NewMemory(vault.TestKeys(), nil),
 		Keys:      vault.TestKeys(),
 		EmbedKeys: keys,
+		EmbedRing: ring,
 		EmbedJTI:  embed.NewMemoryJTI(),
-		Now:       func() time.Time { return *clock },
-		Log:       log,
+		PlatformAdmins: []authz.PrincipalRef{{
+			Issuer:  ops.Issuer,
+			Subject: ops.ExternalSubject,
+		}},
+		Now: func() time.Time { return *clock },
+		Log: log,
 	})
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 	rec := httptest.NewRecorder()
@@ -78,7 +88,7 @@ func newEmbedEnv(t *testing.T) embedEnv {
 	if err := json.Unmarshal(rec.Body.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	return embedEnv{h: h, keys: keys, now: clock, admin: current.Principal, logs: &buf}
+	return embedEnv{h: h, keys: keys, ring: ring, now: clock, admin: current.Principal, ops: ops, logs: &buf}
 }
 
 func (e embedEnv) advance(d time.Duration) {
@@ -384,35 +394,80 @@ func TestEmbedExchangeCrossTenantWorkbenchRejected(t *testing.T) {
 	}
 }
 
-func TestEmbedKeyRotationOverlapAndUnknownKid(t *testing.T) {
+func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 	env := newEmbedEnv(t)
-	old := embed.NewEphemeralMaterial()
-	old.KeyID = "retired-kid"
-	jwk := embed.PublicJWK{
-		Kty: embed.KeyType, Crv: embed.Curve, Kid: old.KeyID,
-		X: encodeEmbedPub(old), Use: "sig", Alg: embed.Algorithm, Status: embed.KeyStatusOverlap,
+	active := env.keys.PublicJWKS().Keys[0]
+	foreign := embed.NewEphemeralMaterial()
+	foreign.KeyID = "attacker-kid"
+	attackerJWK := embed.PublicJWK{
+		Kty: embed.KeyType, Crv: embed.Curve, Kid: foreign.KeyID,
+		X: encodeEmbedPub(foreign), Use: "sig", Alg: embed.Algorithm,
 	}
-	body, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": jwk})
+
+	wsAdminBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(wsAdminBody), env.admin)
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "ops")
+	env.h.ServeHTTP(denied, req)
+	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
+
+	foreignBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK})
+	if err != nil {
+		t.Fatal(err)
+	}
+	badKey := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(foreignBody), env.ops)
+	env.h.ServeHTTP(badKey, req)
+	assertProblem(t, badKey, http.StatusBadRequest, CodeInvalidRequest, "")
+	if !strings.Contains(badKey.Body.String(), "previous active") {
+		t.Fatalf("detail should mention previous active key: %s", badKey.Body.String())
+	}
+
+	wrongX := active
+	wrongX.X = encodeEmbedPub(foreign)
+	wrongBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": wrongX})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(wrongBody), env.ops)
+	env.h.ServeHTTP(wrong, req)
+	assertProblem(t, wrong, http.StatusBadRequest, CodeInvalidRequest, "")
+
+	handoff, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": active})
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(body), env.admin)
-	req.Header.Set(headerTenantSlug, "acme")
-	req.Header.Set(headerWorkbenchKey, "ops")
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(handoff), env.ops)
 	env.h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("rotate %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("platform-admin rotate %d %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), old.KeyID) {
-		t.Fatal("jwks should publish overlap kid")
-	}
-	if strings.Contains(rec.Body.String(), `"d"`) || strings.Contains(rec.Body.String(), embed.EncodeSeedB64(old.Private)) {
+	if strings.Contains(rec.Body.String(), `"d"`) || strings.Contains(rec.Body.String(), embed.EncodeSeedB64(env.keys.Private)) {
 		t.Fatal("private key leaked from rotate")
+	}
+	if !strings.Contains(env.logs.String(), "embed.key.overlap_registered") {
+		t.Fatalf("expected rotation audit: %s", env.logs.String())
+	}
+
+	next := embed.NewEphemeralMaterial()
+	next.KeyID = "next-active"
+	if err := env.ring.InstallActive(next); err != nil {
+		t.Fatal(err)
+	}
+	jwks := httptest.NewRecorder()
+	env.h.ServeHTTP(jwks, httptest.NewRequest(http.MethodGet, "/api/v1/embed/jwks", nil))
+	if !strings.Contains(jwks.Body.String(), env.keys.KeyID) || !strings.Contains(jwks.Body.String(), next.KeyID) {
+		t.Fatalf("jwks should publish active + overlap: %s", jwks.Body.String())
 	}
 
 	now := *env.now
-	token, _, err := embed.Mint(old, embed.MintInput{
+	token, _, err := embed.Mint(env.keys, embed.MintInput{
 		Issuer:       "https://idp.example",
 		Subject:      "admin-1",
 		TenantID:     tenantID(t, env),
@@ -433,9 +488,7 @@ func TestEmbedKeyRotationOverlapAndUnknownKid(t *testing.T) {
 		t.Fatalf("overlap exchange %d %s", ex.Code, ex.Body.String())
 	}
 
-	foreign := embed.NewEphemeralMaterial()
-	foreign.KeyID = "unknown-kid"
-	bad, _, err := embed.Mint(foreign, embed.MintInput{
+	forged, _, err := embed.Mint(foreign, embed.MintInput{
 		Issuer:       "https://idp.example",
 		Subject:      "admin-1",
 		TenantID:     tenantID(t, env),
@@ -449,10 +502,31 @@ func TestEmbedKeyRotationOverlapAndUnknownKid(t *testing.T) {
 		t.Fatal(err)
 	}
 	rej := httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, bad.Assertion)+`}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, forged.Assertion)+`}`))
 	req.Header.Set("Content-Type", "application/json")
 	env.h.ServeHTTP(rej, req)
 	assertProblem(t, rej, http.StatusUnauthorized, CodeUnauthenticated, "")
+
+	retire, err := json.Marshal(map[string]any{"action": "retire", "kid": env.keys.KeyID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminRetire := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(retire), env.admin)
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "ops")
+	env.h.ServeHTTP(adminRetire, req)
+	assertProblem(t, adminRetire, http.StatusForbidden, CodeForbidden, "")
+
+	okRetire := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(retire), env.ops)
+	env.h.ServeHTTP(okRetire, req)
+	if okRetire.Code != http.StatusOK {
+		t.Fatalf("retire %d %s", okRetire.Code, okRetire.Body.String())
+	}
+	if strings.Contains(okRetire.Body.String(), env.keys.KeyID) {
+		t.Fatal("retired overlap kid should leave JWKS")
+	}
 }
 
 func encodeEmbedPub(m embed.Material) string {

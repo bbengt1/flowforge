@@ -763,7 +763,7 @@ After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `
 - **Capabilities:** hide chrome/nav the minted `session.embed.capabilities` set cannot perform.
 - **Fail closed:** no verified pair → no `GET /workspace`. Mismatch vs `GET /workspace` closes the surface. Durable `jti` replay is HTTP `409` (no silent retry).
 - **Deep links:** same standalone hrefs under `/embed/v1`. Chrome nav, session chip, command palette, and search remap hrefs. In-app `<a>` / `Link` clicks stay on the mount.
-- **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `workspace.administer`) and is not an embed-shell control. Do not send `X-FlowForge-Workspace-ID` as the lookup key.
+- **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `platform.administer` via `PLATFORM_ADMINS`) and is not an embed-shell control. `workspace.administer` is `403`. The body `publicJwk` must be the current active key. Do not send `X-FlowForge-Workspace-ID` as the lookup key. No embed-shell UI change.
 - **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops. E11.3 adds `/api/v1/portal/adapter` and `/api/v1/portal/adapter/assertions` for the Portal host (Chloe).
 
 ## E11.3 CP Ops Portal embed host (Chloe UI)

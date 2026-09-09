@@ -92,6 +92,48 @@ func TestPostgresCatalogMatchesAuthz(t *testing.T) {
 	}
 }
 
+func TestMemoryRejectsPlatformAdminWorkspaceBinding(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	tenant, err := store.CreateTenant(ctx, "acme", "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := store.UpsertUser(ctx, "https://idp.example", "admin-1", "Admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.CreateWorkspace(ctx, tenant.ID, "ops", "Ops", admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RolePlatformAdmin}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("platform-admin assignment: %v", err)
+	}
+	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RoleAdmin, authz.RolePlatformAdmin}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("mixed platform-admin assignment: %v", err)
+	}
+	roles, perms, err := store.EffectiveAccess(ctx, ws.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(roles, authz.RoleAdmin) {
+		t.Fatalf("roles %v", roles)
+	}
+	if containsString(perms, authz.PermPlatformAdminister) {
+		t.Fatalf("workspace admin must not receive platform.administer: %v", perms)
+	}
+}
+
+func containsString(in []string, want string) bool {
+	for _, v := range in {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestMemoryUniqueTenantWorkbench(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -68,6 +69,7 @@ type Config struct {
 	EmbedIssuers         []string
 	PortalIssuers        []string
 	PortalFrameAncestors []string
+	PlatformAdmins       []authz.PrincipalRef
 }
 
 // Load reads configuration from the process environment.
@@ -117,6 +119,7 @@ func Load() (Config, error) {
 		EmbedIssuers:              embed.ParseIssuerAllowlist(os.Getenv(embed.EnvIssuerAllow), os.Getenv(embed.EnvIssuer)),
 		PortalIssuers:             portal.ParseIssuers(os.Getenv(portal.EnvIssuerAllow), os.Getenv(portal.EnvIssuer)),
 		PortalFrameAncestors:      portal.ParseFrameAncestors(os.Getenv(portal.EnvFrameAllow)),
+		PlatformAdmins:            authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

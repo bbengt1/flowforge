@@ -33,7 +33,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   Exchange validates issuer (optional allowlist), audience, `nbf`/`exp`, `jti`,
   capabilities, and workspace binding. Token IDs are consumed atomically with
   TTL (replay is conflict). Key rotation accepts only active and explicitly
-  overlapping verification keys; unknown `kid` fails closed. After exchange the
+  overlapping verification keys; unknown `kid` fails closed. The rotate API
+  may register only the previous active public key and requires
+  `platform.administer` (`PLATFORM_ADMINS`); `workspace.administer` is not
+  enough. After exchange, the
   browser session is bound to `(tenant_id, workbench_key)`; that pair travels
   through API authorization, configuration lookups, jobs/workers, caches,
   realtime, history, and audit. A host-supplied tenant is never authorization.
