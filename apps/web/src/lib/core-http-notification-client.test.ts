@@ -42,15 +42,51 @@ function withSession() {
 }
 
 describe("core HTTP/notification client", () => {
-  it("reads GET /ops-config/catalog httpEngine and stays on existing collections", async () => {
+  it("reads GET /http/catalog first", async () => {
     withSession();
     const seen: string[] = [];
     globalThis.fetch = (async (input) => {
       seen.push(String(input));
       return new Response(
         JSON.stringify({
+          isolation: { tlsVerificationRequired: true, ssrfDenied: true },
+          integrationGate: { enabled: true, nodes: ["http.request"] },
+          nodes: [
+            {
+              type: "http.request",
+              title: "HTTP request",
+              requiredWith: ["connectionId"],
+              enabled: true,
+              allowedWith: [{ name: "connectionId", kind: "uuid", required: true }],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await getHttpNotificationCatalog(identity);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.catalog.source, "http-catalog");
+      assert.equal(result.catalog.nodes[0]?.title, "HTTP request");
+    }
+    assert.equal(seen[0], "/api/v1/http/catalog");
+  });
+
+  it("falls back to GET /ops-config/catalog httpNotificationEngine", async () => {
+    withSession();
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      seen.push(String(input));
+      const url = String(input);
+      if (url.includes("/http/catalog")) {
+        return new Response("missing", { status: 404 });
+      }
+      return new Response(
+        JSON.stringify({
           kinds: [{ kind: "connection", collection: "connections" }],
-          httpEngine: {
+          httpNotificationEngine: {
             nodes: [
               {
                 type: "http.request",
@@ -59,7 +95,7 @@ describe("core HTTP/notification client", () => {
                 allowedWith: [{ name: "connectionId", kind: "uuid", required: true }],
               },
             ],
-            policy: { tlsRequired: true },
+            integrationGate: { enabled: true },
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -72,14 +108,19 @@ describe("core HTTP/notification client", () => {
       assert.equal(result.catalog.source, "ops-config-catalog");
       assert.equal(result.catalog.nodes[0]?.title, "Call API");
     }
-    assert.equal(seen[0], "/api/v1/ops-config/catalog");
+    assert.equal(seen[0], "/api/v1/http/catalog");
+    assert.equal(seen[1], "/api/v1/ops-config/catalog");
   });
 
-  it("falls back to the marked e104-draft map when catalogs are thin", async () => {
+  it("falls back to the marked e104-#118 map when catalogs are thin", async () => {
     withSession();
     globalThis.fetch = (async (input) => {
       const url = String(input);
-      if (url.includes("/ops-config/catalog") || url.includes("/workflows/catalog")) {
+      if (
+        url.includes("/http/catalog") ||
+        url.includes("/ops-config/catalog") ||
+        url.includes("/workflows/catalog")
+      ) {
         return new Response(JSON.stringify({ kinds: [], nodes: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -92,7 +133,7 @@ describe("core HTTP/notification client", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.catalog.source, "contract-fallback");
-      assert.match(result.catalog.notes ?? "", /e104-draft/);
+      assert.match(result.catalog.notes ?? "", /e104-#118/);
       assert.equal(result.catalog.nodes.some((item) => item.type === "http.request"), true);
     }
   });

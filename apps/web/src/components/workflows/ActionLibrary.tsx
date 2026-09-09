@@ -94,8 +94,8 @@ export function ActionLibrary({
 
       <p className="mt-2 text-xs text-zinc-500">
         {fromCatalog
-          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry.ui / retry.probe (#90). Scripts prefer GET /scripts/catalog io / retry.ui / retry.probe (#101) plus revocation / emergencyStop (#103). Retry defaults to zero; maxAttempts>0 needs retrySafe + idempotencyKey + verification. Retry is gated on result.retry.allowed; POST …/retry is 409 when closed. Revoked artifacts cannot start; emergency stop is distinct from cancel."
-          : "Showing the published core-neutral, Kubernetes read/apply, ssh.run, and script contract fallback until catalogs load. Script typed I/O uses the marked e93-#101 map. Revoke/stop uses the marked e94-#103 map (GET /scripts/catalog revocation / emergencyStop)."}
+          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry.ui / retry.probe (#90). Scripts prefer GET /scripts/catalog io / retry.ui / retry.probe (#101) plus revocation / emergencyStop (#103). HTTP/notification prefer GET /http/catalog + httpNotificationEngine (#118) and hide when the integration gate is off. Retry defaults to zero; maxAttempts>0 needs retrySafe + idempotencyKey + verification. Retry is gated on result.retry.allowed; POST …/retry is 409 when closed. Revoked artifacts cannot start; emergency stop is distinct from cancel."
+          : "Showing the published core-neutral, Kubernetes read/apply, ssh.run, script, and HTTP/notification contract fallback until catalogs load. Script typed I/O uses the marked e93-#101 map. Revoke/stop uses the marked e94-#103 map (GET /scripts/catalog revocation / emergencyStop). HTTP/notification uses the marked e104-#118 map."}
       </p>
 
       <div className="mt-4 max-h-[36rem] space-y-4 overflow-auto pr-1">

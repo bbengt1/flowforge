@@ -3,10 +3,10 @@
  * credential selectors, configure safe defaults, map ports, preview
  * policy + redacted YAML, then insert a canonical graph node.
  *
- * Catalog gap (jonny follow-up): HTTP / notification `allowedWith`
- * may still be E3.1 stubs until the E10.4 map lands. The wizard uses
- * `core-http-notification-contract.ts` (`e104-draft`) and never
- * invents free-form URL or credential fields. No extra API routes.
+ * HTTP / notification `allowedWith` comes from GET /workflows/catalog
+ * + GET /http/catalog / ops-config `httpNotificationEngine` (`e104-#118`).
+ * The wizard never invents free-form URL, header, recipient, or
+ * credential fields and does not offer an integration-gate toggle.
  */
 
 import {
@@ -697,6 +697,7 @@ export function validateWizardDraft(
         connectionType: context.connectionType,
         endpointPolicy: context.endpointPolicy,
         httpCatalog: context.httpCatalog,
+        workflowCatalog: catalog,
       }),
     );
   }
@@ -1078,43 +1079,14 @@ function inferredFieldsForType(type: string, requiredWith: string[]): WizardConf
     ];
   }
   if (type === "http.request") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-      field("method", "string", "enum", {
-        enumValues: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        defaultValue: "GET",
-      }),
-      field("path", "string", "text", { required: true, defaultValue: "/v1/status" }),
-      field("timeoutSeconds", "integer", "number", { defaultValue: 15 }),
-      field("responseSchemaRef", "uuid", "uuid", { selectorKind: "response_schema" }),
-    ];
+    return httpNotificationNodeWithFields(type).map((item) =>
+      fromHttpNotificationWithField(item, true),
+    );
   }
-  if (type === "notification.email") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-      field("recipientListId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "recipient_list",
-      }),
-      field("templateId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "message_template",
-      }),
-    ];
-  }
-  if (type === "notification.webhook") {
-    return [
-      field("connectionId", "uuid", "uuid", {
-        required: true,
-        selectorKind: "connection",
-      }),
-    ];
+  if (type === "notification.email" || type === "notification.webhook") {
+    return httpNotificationNodeWithFields(type).map((item) =>
+      fromHttpNotificationWithField(item, true),
+    );
   }
   if (type === "flow.approval") {
     return [

@@ -175,9 +175,11 @@ export type OpsConfigCatalog = {
   sshEngine?: Record<string, unknown>;
   /** Present when jonny ships E9.1+ scriptEngine catalog fields. */
   scriptEngine?: Record<string, unknown>;
-  /** Present when jonny ships E10.4 httpEngine catalog fields. */
+  /** E10.4 (#118) engine catalog on GET /ops-config/catalog. */
+  httpNotificationEngine?: Record<string, unknown>;
+  /** Legacy alias; prefer httpNotificationEngine. */
   httpEngine?: Record<string, unknown>;
-  /** Present when jonny ships E10.4 notificationEngine catalog fields. */
+  /** Legacy alias; prefer httpNotificationEngine. */
   notificationEngine?: Record<string, unknown>;
 };
 

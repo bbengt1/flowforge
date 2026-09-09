@@ -152,6 +152,13 @@ export async function getOpsConfigCatalog(
     !Array.isArray(scriptEngineRaw)
       ? stripSecrets(scriptEngineRaw as Record<string, unknown>)
       : undefined;
+  const httpNotificationEngineRaw = payload.httpNotificationEngine;
+  const httpNotificationEngine =
+    httpNotificationEngineRaw &&
+    typeof httpNotificationEngineRaw === "object" &&
+    !Array.isArray(httpNotificationEngineRaw)
+      ? stripSecrets(httpNotificationEngineRaw as Record<string, unknown>)
+      : undefined;
   const httpEngineRaw = payload.httpEngine;
   const httpEngine =
     httpEngineRaw && typeof httpEngineRaw === "object" && !Array.isArray(httpEngineRaw)
@@ -173,6 +180,7 @@ export async function getOpsConfigCatalog(
       kubernetesEngine,
       sshEngine,
       scriptEngine,
+      httpNotificationEngine,
       httpEngine,
       notificationEngine,
     },

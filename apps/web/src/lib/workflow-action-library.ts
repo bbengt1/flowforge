@@ -28,11 +28,13 @@ import {
   type ScriptNodeCatalog,
 } from "./script-contract.ts";
 import {
+  HTTP_NOTIFICATION_ACTION_TYPES,
   adaptHttpNotificationEntries,
   hasHttpNotificationContract,
   httpNotificationFallbackNode,
   httpNotificationLibraryTypes,
   isHttpConfigurableType,
+  isHttpNotificationNodeEnabled,
   type HttpNotificationCatalog,
 } from "./core-http-notification-contract.ts";
 import {
@@ -150,6 +152,12 @@ export function rejectDisabledActionType(
     };
   }
   const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
+  if (isHttpConfigurableType(type) && catalog && !isHttpNotificationNodeEnabled(type, null, catalog)) {
+    return {
+      ok: false,
+      reason: `${type} is disabled by the catalog integration gate.`,
+    };
+  }
   if (!listed) {
     if (
       isCoreNeutralNodeType(type) ||
@@ -274,7 +282,11 @@ export function adaptActionLibrary(
             ? ("catalog" as const)
             : ("contract-fallback" as const),
       })),
-    ]);
+    ]).filter(
+      (entry) =>
+        !isHttpConfigurableType(entry.type) ||
+        isHttpNotificationNodeEnabled(entry.type, httpCatalog, null),
+    );
   }
   for (const type of CORE_NEUTRAL_NODE_TYPES) {
     if (!byType.has(type)) {
@@ -307,6 +319,11 @@ export function adaptActionLibrary(
         ? "catalog"
         : "contract-fallback";
     mergeLibraryNode(byType, node, source);
+  }
+  for (const type of HTTP_NOTIFICATION_ACTION_TYPES) {
+    if (!isHttpNotificationNodeEnabled(type, httpCatalog, catalog)) {
+      byType.delete(type);
+    }
   }
   return sortLibraryEntries([...byType.values()]);
 }

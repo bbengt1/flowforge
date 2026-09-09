@@ -167,6 +167,16 @@ describe("action library catalog filter", () => {
     );
     assert.equal(rejectDisabledActionType("http.request", null).ok, true);
     assert.equal(rejectDisabledActionType("notification.email", null).ok, true);
+    assert.equal(
+      rejectDisabledActionType("http.request", {
+        apiVersion: "flowforge/v1",
+        rules: { integrationActionsEnabled: false },
+        integrationGate: { enabled: false },
+        triggers: [],
+        nodes: [{ type: "http.request", phase: "core" }],
+      }).ok,
+      false,
+    );
   });
 });
 

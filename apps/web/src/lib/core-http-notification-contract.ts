@@ -2,15 +2,13 @@
  * Single retarget adapter for Chloe's E10.4 HTTP / notification
  * action config (library + wizard + inspector).
  *
- * Jonny has **not** posted the E10.4 route/catalog map yet. This
- * file is the only place to retarget when it lands. Until then,
- * consume existing E4.2 ops-config + GET /workflows/catalog.
- *
- * Draft assumptions (expect retarget — do **not** invent resume-style
- * routes or a local URL store):
- *   GET  /workflows/catalog                 nodes[] for the three types
- *   GET  /ops-config/catalog                kinds[] + optional
- *                                           httpEngine / notificationEngine
+ * Wired to jonny's squash-merged #118 map (`e104-#118`):
+ *   GET  /workflows/catalog                 allowedWith / policy / bounds /
+ *                                           redaction / integrationGate /
+ *                                           rules.integrationActionsEnabled
+ *   GET  /http/catalog                      nodes[] / isolation / errors /
+ *                                           integrationGate
+ *   GET  /ops-config/catalog                httpNotificationEngine
  *   GET  /connections                       type=http|webhook|smtp
  *   GET  /recipient-lists
  *   GET  /message-templates
@@ -20,18 +18,26 @@
  *   POST /ops-config/select
  *   GET  /workflows/{id}/versions/{v}/pins
  *
- * YAML `with` follows docs/reference/action-catalog.md:
- *   http.request          connectionId, method, path, timeoutSeconds,
- *                         responseSchemaRef
+ * Required `with` (resource UUIDs only at publish/execute):
+ *   http.request          connectionId
  *   notification.webhook  connectionId
- *   notification.email    connectionId, recipientListId, templateId
+ *   notification.email    connectionId + recipientListId + templateId
  *
- * Never free-form unrestricted URLs, never credentials in YAML, never
- * a TLS-off toggle. Operators pick pinned resource UUIDs only.
+ * Optional `with` is overlaid from the live catalog — not invented:
+ *   http.request          method, path, host, timeoutSeconds,
+ *                         responseSchemaRef, policyId
+ *   notification.webhook  path, host, timeoutSeconds, idempotencyKey,
+ *                         policyId
+ *   notification.email    policyId
+ *
+ * Forbidden in node config: raw url / headers / to / body / secrets /
+ * free-form destinations. SSRF, DNS-rebinding, redirect, and size
+ * failures stay closed (surface as validation errors). When
+ * INTEGRATION_ACTIONS_ENABLED=false the catalogs set the gate off —
+ * UI respects `enabled` / absence and does not invent an enable toggle.
  *
  * Cookie session + `X-CSRF-Token` on POST select. camelCase. RFC 9457.
- * Relates to #109 / Part of #105. Keep #109 open — jonny owns the
- * engine + policy. Do not change `apps/api`.
+ * Relates to #109 / Part of #105. Keep #109 open. Do not change `apps/api`.
  */
 
 import { isSecretFieldName } from "./credential.ts";
@@ -51,9 +57,8 @@ import { isCatalogImplementationEnabled } from "./workflow.ts";
 
 export const HTTP_NOTIFICATION_STORY = 109;
 export const HTTP_NOTIFICATION_EPIC = 105;
-/** Placeholder until Jonny posts the E10.4 engine map. */
-export const HTTP_NOTIFICATION_API_PR = 0;
-export const HTTP_NOTIFICATION_ROUTE_MAP_SOURCE = "e104-draft" as const;
+export const HTTP_NOTIFICATION_API_PR = 118;
+export const HTTP_NOTIFICATION_ROUTE_MAP_SOURCE = "e104-#118" as const;
 
 export const HTTP_REQUEST_TYPE = "http.request" as const;
 export const NOTIFICATION_WEBHOOK_TYPE = "notification.webhook" as const;
@@ -68,14 +73,14 @@ export const HTTP_NOTIFICATION_ACTION_TYPES = [
 export type HttpNotificationActionType =
   (typeof HTTP_NOTIFICATION_ACTION_TYPES)[number];
 
-export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 export const HTTP_DEFAULT_TIMEOUT_SECONDS = 15;
 export const HTTP_MIN_TIMEOUT_SECONDS = 1;
 export const HTTP_MAX_TIMEOUT_SECONDS = 60;
-export const HTTP_DEFAULT_PATH = "/v1/status";
 export const HTTP_DEFAULT_METHOD: HttpMethod = "GET";
+export const HTTP_WEBHOOK_DEFAULT_PATH = "/";
 
 export const HTTP_CONNECTION_TYPE: ConnectionType = "http";
 export const WEBHOOK_CONNECTION_TYPE: ConnectionType = "webhook";
@@ -90,8 +95,9 @@ export const HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS = [
   "uri",
   "href",
   "endpoint",
-  "host",
   "hostname",
+  "headers",
+  "header",
   "webhookUrl",
   "requestUrl",
   "baseUrl",
@@ -115,20 +121,22 @@ export const HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS = [
   "recipient",
   "recipients",
   "subject",
+  "body",
   "html",
   "kubeconfig",
   "privateKey",
 ] as const;
 
 export const HTTP_NOTIFICATION_NODE_POLICY_NOTES = [
-  "Pick a published workspace connection. The connection pins host, method, path prefix, TLS, redirect, destination-IP, and size policy. YAML stores the connection UUID only.",
-  "Free-form unrestricted URLs are denied. path is a relative allowlisted prefix on the pinned connection — never a scheme, host, or credential.",
-  "TLS is required on the connection. This UI has no toggle that disables verification.",
+  "Pick a published workspace connection. The connection pins host, method, path prefix, TLS, redirect, destination-IP, and size policy. YAML stores resource UUIDs only.",
+  "Free-form unrestricted URLs, headers, and destinations are denied. path is a relative allowlisted prefix on the pinned connection. host is an optional allowlisted host on that connection — never a scheme or credential.",
+  "TLS is required on the connection. This UI has no toggle that disables verification and no toggle that enables integration actions.",
   "Credentials stay in the vault and bind through the connection. They are never written to node with, YAML, or logs.",
   "http.request may pin an optional published response schema. Request/response bodies are bounded and redacted.",
   "notification.webhook delivers to the pinned webhook connection. Idempotency and redirect policy are connection-owned.",
   "notification.email uses a pinned SMTP connection plus published recipient-list and message-template revisions. Recipients and body text are not free-form.",
   "Secret-bearing fields may cross the HTTP boundary only when the connection policy authorizes that exact field. Delivery results are redacted before display.",
+  "SSRF, DNS-rebinding, redirect, and size failures stay closed and surface as validation errors.",
   "Selectors fail closed on HTTP 403. Only published workspace resources of the matching connection type are listed.",
 ] as const;
 
@@ -142,7 +150,13 @@ export const HTTP_CONNECTION_TYPE_MESSAGE =
   "The selected connection type must match the node (http.request → http, notification.webhook → webhook, notification.email → smtp).";
 
 export const HTTP_PATH_REQUIRED_MESSAGE =
-  "path is required and must be a relative allowlisted path on the pinned connection — never a URL.";
+  "path must be a relative allowlisted path on the pinned connection — never a URL.";
+
+export const HTTP_HOST_MESSAGE =
+  "host must be an allowlisted hostname on the pinned connection — never a URL, scheme, or free-form destination.";
+
+export const HTTP_INTEGRATION_GATE_MESSAGE =
+  "HTTP and notification actions are disabled by the catalog integration gate. This UI does not offer an enable toggle.";
 
 export const HTTP_UNRESTRICTED_URL_MESSAGE =
   "Free-form unrestricted URLs are denied. Choose a pinned connection and a relative path that stays on that connection's host/path allowlist.";
@@ -153,7 +167,8 @@ export const HTTP_TLS_REQUIRED_MESSAGE =
 export const HTTP_SECRET_WITH_MESSAGE =
   "Credentials, tokens, Authorization headers, and secret-shaped values cannot be stored in HTTP or notification YAML.";
 
-export const HTTP_METHOD_MESSAGE = "method must be GET, POST, PUT, PATCH, or DELETE.";
+export const HTTP_METHOD_MESSAGE =
+  "method must be GET, POST, PUT, PATCH, DELETE, or HEAD.";
 
 export const HTTP_RECIPIENT_REQUIRED_MESSAGE =
   "recipientListId is required. Choose a published recipient list revision.";
@@ -171,7 +186,7 @@ export const HTTP_SCHEMA_FAIL_CLOSED_MESSAGE =
   "Response schema selector failed closed. Only published workspace response schemas are listed.";
 
 export const HTTP_CONTRACT_FALLBACK_HELP =
-  "Using the marked e104-draft HTTP/notification map because GET /workflows/catalog allowedWith and GET /ops-config/catalog httpEngine/notificationEngine were unavailable. Collections stay on /connections, /recipient-lists, /message-templates, and /response-schemas. Retarget this adapter when jonny's E10.4 map lands. Relates to #109. Keep #109 open.";
+  "Using the marked e104-#118 HTTP/notification map because GET /http/catalog, GET /ops-config/catalog httpNotificationEngine, and GET /workflows/catalog allowedWith were unavailable. Collections stay on /connections, /recipient-lists, /message-templates, and /response-schemas. Relates to #109. Keep #109 open.";
 
 export const HTTP_PIN_ONLY_HELP =
   "Operators pick pinned authorized ops-config resources. The UI never offers a free-form URL, recipient address, or credential field.";
@@ -180,6 +195,7 @@ export const HTTP_REDACTION_HELP =
   "Delivery results are redacted before display. Authorization, cookies, tokens, and secret-shaped bodies are dropped. Audit fields are connection/template/recipient UUIDs, status, and size — never credentials.";
 
 export const HTTP_EXISTING_API_PATHS = {
+  httpCatalog: "/http/catalog",
   workflowCatalog: "/workflows/catalog",
   opsConfigCatalog: "/ops-config/catalog",
   connections: "/connections",
@@ -192,10 +208,55 @@ export const HTTP_EXISTING_API_PATHS = {
     `/workflows/${workflowId}/versions/${versionId}/pins`,
 } as const;
 
+export const HTTP_CATALOG_UI_COLLECTION = "http";
+export const HTTP_CATALOG_ACTION = "catalog";
+
+export function httpCatalogPath(): string {
+  return HTTP_EXISTING_API_PATHS.httpCatalog;
+}
+
+export function retargetHttpNotificationApiPath(uiApiPath: string): string {
+  return uiApiPath;
+}
+
+export function isHttpNotificationProxySegments(segments: string[]): boolean {
+  return (
+    segments.length === 2 &&
+    segments[0] === HTTP_CATALOG_UI_COLLECTION &&
+    segments[1] === HTTP_CATALOG_ACTION
+  );
+}
+
+export type HttpNotificationProxyRoute = {
+  methods: readonly string[];
+  match: (segments: string[]) => boolean;
+};
+
+/** Allowlisted Next proxy route. identity-proxy spreads this so a retarget only edits this file. */
+export const HTTP_NOTIFICATION_PROXY_ROUTES: readonly HttpNotificationProxyRoute[] =
+  [
+    {
+      methods: ["GET"],
+      match: (s) =>
+        s.length === 2 &&
+        s[0] === HTTP_CATALOG_UI_COLLECTION &&
+        s[1] === HTTP_CATALOG_ACTION,
+    },
+  ];
+
 export type HttpNotificationCatalogSource =
+  | "http-catalog"
   | "workflow-catalog"
   | "ops-config-catalog"
   | "contract-fallback";
+
+export type HttpNotificationIntegrationGate = {
+  name?: string;
+  enabled?: boolean;
+  nodes?: string[];
+  suites?: string[];
+  note?: string;
+};
 
 export type HttpNotificationEngineNode = {
   type: string;
@@ -207,6 +268,9 @@ export type HttpNotificationEngineNode = {
   outputs: string[];
   sideEffects: boolean;
   retrySafe: boolean;
+  idempotent?: boolean;
+  connectionType?: string;
+  enabled?: boolean;
   defaultMaxAttempts: number;
 };
 
@@ -233,6 +297,7 @@ export type HttpNotificationCatalog = {
   errors: HttpNotificationErrorShape[];
   policy: HttpNotificationPolicyRules;
   permissions: string[];
+  integrationGate?: HttpNotificationIntegrationGate;
   notes?: string;
 };
 
@@ -252,6 +317,7 @@ export type HttpNotificationConfigContext = {
   connectionType?: string | null;
   endpointPolicy?: Record<string, unknown> | null;
   httpCatalog?: HttpNotificationCatalog | null;
+  workflowCatalog?: WorkflowCatalog | null;
 };
 
 export const DEFAULT_HTTP_POLICY: HttpNotificationPolicyRules = {
@@ -315,11 +381,56 @@ export function isHttpConfigurableType(type: string): boolean {
   return isHttpNotificationType(type);
 }
 
+export function httpNotificationActionsEnabled(
+  catalog?: WorkflowCatalog | null,
+  httpCatalog?: HttpNotificationCatalog | null,
+): boolean {
+  if (catalog?.rules?.integrationActionsEnabled === false) {
+    return false;
+  }
+  if (catalog?.integrationGate?.enabled === false) {
+    return false;
+  }
+  if (httpCatalog?.integrationGate?.enabled === false) {
+    return false;
+  }
+  return true;
+}
+
+export function isHttpNotificationNodeEnabled(
+  type: string,
+  httpCatalog?: HttpNotificationCatalog | null,
+  catalog?: WorkflowCatalog | null,
+): boolean {
+  if (!isHttpNotificationType(type)) {
+    return false;
+  }
+  if (!httpNotificationActionsEnabled(catalog, httpCatalog)) {
+    return false;
+  }
+  if (
+    httpCatalog &&
+    (httpCatalog.source === "http-catalog" ||
+      httpCatalog.source === "ops-config-catalog")
+  ) {
+    const node = httpCatalog.nodes.find((item) => item.type === type);
+    if (!node || node.enabled === false) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function httpNotificationLibraryTypes(
   catalog?: WorkflowCatalog | null,
+  httpCatalog?: HttpNotificationCatalog | null,
 ): readonly string[] {
-  void catalog;
-  return [...HTTP_NOTIFICATION_ACTION_TYPES];
+  if (!httpNotificationActionsEnabled(catalog, httpCatalog)) {
+    return [];
+  }
+  return HTTP_NOTIFICATION_ACTION_TYPES.filter((type) =>
+    isHttpNotificationNodeEnabled(type, httpCatalog, catalog),
+  );
 }
 
 export function catalogListsHttpNotificationType(
@@ -364,7 +475,6 @@ export function defaultHttpNotificationWith(
   if (type === HTTP_REQUEST_TYPE) {
     return {
       method: HTTP_DEFAULT_METHOD,
-      path: HTTP_DEFAULT_PATH,
       timeoutSeconds: HTTP_DEFAULT_TIMEOUT_SECONDS,
     };
   }
@@ -431,23 +541,29 @@ export function httpNotificationNodeWithFields(
       {
         name: "method",
         kind: "enum",
-        required: true,
         enum: [...HTTP_METHODS],
         label: "Method",
         controlHint: "enum",
         defaultValue: HTTP_DEFAULT_METHOD,
         description:
-          "Must be allowlisted on the pinned connection. Default GET.",
+          "Must be on the pinned connection endpointPolicy.methods. Default GET.",
       },
       {
         name: "path",
         kind: "string",
-        required: true,
         label: "Path",
         controlHint: "text",
-        defaultValue: HTTP_DEFAULT_PATH,
         description:
-          "Relative path on the pinned connection (must start with /). Never a scheme, host, or credential.",
+          "Relative URL path. Must match endpointPolicy.pathPrefixes. Full URLs are denied.",
+      },
+      {
+        name: "host",
+        kind: "string",
+        label: "Host",
+        controlHint: "text",
+        advanced: true,
+        description:
+          "Optional host from the pinned connection allowlist when the connection has more than one host.",
       },
       {
         name: "timeoutSeconds",
@@ -455,7 +571,7 @@ export function httpNotificationNodeWithFields(
         label: "Timeout (seconds)",
         controlHint: "number",
         defaultValue: HTTP_DEFAULT_TIMEOUT_SECONDS,
-        description: `Bounded timeout (${HTTP_MIN_TIMEOUT_SECONDS}–${HTTP_MAX_TIMEOUT_SECONDS}). Default ${HTTP_DEFAULT_TIMEOUT_SECONDS}.`,
+        description: `Bounded 1–${HTTP_MAX_TIMEOUT_SECONDS}. Default ${HTTP_DEFAULT_TIMEOUT_SECONDS}.`,
       },
       {
         name: "responseSchemaRef",
@@ -495,13 +611,39 @@ export function httpNotificationNodeWithFields(
   return [
     connection,
     {
+      name: "path",
+      kind: "string",
+      label: "Path",
+      controlHint: "text",
+      defaultValue: HTTP_WEBHOOK_DEFAULT_PATH,
+      description:
+        "Relative path under the pinned webhook host. Default /.",
+    },
+    {
+      name: "host",
+      kind: "string",
+      label: "Host",
+      controlHint: "text",
+      advanced: true,
+      description: "Optional host from the pinned connection allowlist.",
+    },
+    {
       name: "timeoutSeconds",
       kind: "integer",
       label: "Timeout (seconds)",
       controlHint: "number",
       defaultValue: HTTP_DEFAULT_TIMEOUT_SECONDS,
       advanced: true,
-      description: `Bounded delivery timeout (${HTTP_MIN_TIMEOUT_SECONDS}–${HTTP_MAX_TIMEOUT_SECONDS}).`,
+      description: `Bounded 1–${HTTP_MAX_TIMEOUT_SECONDS}. Default ${HTTP_DEFAULT_TIMEOUT_SECONDS}.`,
+    },
+    {
+      name: "idempotencyKey",
+      kind: "string",
+      label: "Idempotency key",
+      controlHint: "text",
+      advanced: true,
+      description:
+        "Optional Idempotency-Key value. Default is the execution correlation id.",
     },
     policyId,
   ];
@@ -536,7 +678,11 @@ export function overlayHttpNotificationFields(
         enum: field.enum?.length ? field.enum : base?.enum,
         description: field.description || base?.description || "",
         label: base?.label || field.name,
-        advanced: field.name === "policyId" || base?.advanced,
+        advanced:
+          field.name === "policyId" ||
+          field.name === "host" ||
+          field.name === "idempotencyKey" ||
+          base?.advanced,
         readOnly: base?.readOnly,
         controlHint,
         defaultValue: base?.defaultValue,
@@ -728,6 +874,11 @@ export function validateHttpNotificationConfig(
     return [];
   }
   const errors: string[] = [];
+  if (
+    !isHttpNotificationNodeEnabled(type, context.httpCatalog, context.workflowCatalog)
+  ) {
+    errors.push(HTTP_INTEGRATION_GATE_MESSAGE);
+  }
   if (context.connectionSelectorClosed) {
     errors.push(HTTP_CONNECTION_FAIL_CLOSED_MESSAGE);
   }
@@ -750,8 +901,9 @@ export function validateHttpNotificationConfig(
           "uri",
           "href",
           "endpoint",
-          "host",
           "hostname",
+          "headers",
+          "header",
           "webhookUrl",
           "requestUrl",
           "baseUrl",
@@ -794,9 +946,17 @@ export function validateHttpNotificationConfig(
     if (
       type === NOTIFICATION_EMAIL_TYPE &&
       forbidden.some((key) =>
-        ["email", "to", "cc", "bcc", "recipient", "recipients", "subject", "html"].includes(
-          key,
-        ),
+        [
+          "email",
+          "to",
+          "cc",
+          "bcc",
+          "recipient",
+          "recipients",
+          "subject",
+          "body",
+          "html",
+        ].includes(key),
       )
     ) {
       errors.push(HTTP_RECIPIENT_REQUIRED_MESSAGE);
@@ -825,14 +985,9 @@ export function validateHttpNotificationConfig(
     errors.push(HTTP_TLS_REQUIRED_MESSAGE);
   }
 
-  if (type === HTTP_REQUEST_TYPE) {
-    const method =
-      typeof withValue.method === "string"
-        ? withValue.method.trim().toUpperCase()
-        : "";
-    if (!method) {
-      errors.push(HTTP_METHOD_MESSAGE);
-    } else if (!(HTTP_METHODS as readonly string[]).includes(method)) {
+  if (typeof withValue.method === "string" && withValue.method.trim()) {
+    const method = withValue.method.trim().toUpperCase();
+    if (!(HTTP_METHODS as readonly string[]).includes(method)) {
       errors.push(HTTP_METHOD_MESSAGE);
     } else {
       const allowed = methodsFromPolicy(context.endpointPolicy);
@@ -842,12 +997,11 @@ export function validateHttpNotificationConfig(
         );
       }
     }
+  }
 
-    const path =
-      typeof withValue.path === "string" ? withValue.path.trim() : "";
-    if (!path) {
-      errors.push(HTTP_PATH_REQUIRED_MESSAGE);
-    } else if (!isRelativeHttpPath(path)) {
+  if (typeof withValue.path === "string" && withValue.path.trim()) {
+    const path = withValue.path.trim();
+    if (!isRelativeHttpPath(path) || looksLikeUnrestrictedUrl(path)) {
       errors.push(HTTP_UNRESTRICTED_URL_MESSAGE);
     } else {
       const prefixes = pathPrefixesFromPolicy(context.endpointPolicy);
@@ -857,9 +1011,19 @@ export function validateHttpNotificationConfig(
         );
       }
     }
-  } else if (typeof withValue.path === "string" && withValue.path.trim()) {
-    if (!isRelativeHttpPath(withValue.path) || looksLikeUnrestrictedUrl(withValue.path)) {
-      errors.push(HTTP_UNRESTRICTED_URL_MESSAGE);
+  }
+
+  if (typeof withValue.host === "string" && withValue.host.trim()) {
+    const host = withValue.host.trim();
+    if (looksLikeUnrestrictedUrl(host) || host.includes("/") || host.includes("@")) {
+      errors.push(HTTP_HOST_MESSAGE);
+    } else {
+      const allowedHosts = hostsFromPolicy(context.endpointPolicy);
+      if (allowedHosts.length > 0 && !allowedHosts.includes(host)) {
+        errors.push(
+          `host must stay on the pinned connection allowlist (${allowedHosts.join(", ")}).`,
+        );
+      }
     }
   }
 
@@ -910,7 +1074,12 @@ export function validateHttpNotificationConfig(
   }
 
   for (const [key, value] of Object.entries(withValue)) {
-    if (typeof value === "string" && looksLikeUnrestrictedUrl(value) && key !== "path") {
+    if (
+      typeof value === "string" &&
+      looksLikeUnrestrictedUrl(value) &&
+      key !== "path" &&
+      key !== "host"
+    ) {
       errors.push(HTTP_UNRESTRICTED_URL_MESSAGE);
     }
     if (typeof value === "string" && isSecretFieldName(key)) {
@@ -929,7 +1098,7 @@ export function adaptHttpNotificationEntries(
   catalog: WorkflowCatalog | null | undefined,
   httpCatalog?: HttpNotificationCatalog | null,
 ): CatalogNode[] {
-  return httpNotificationLibraryTypes(catalog).map((type) => {
+  return httpNotificationLibraryTypes(catalog, httpCatalog).map((type) => {
     const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
     const fallback = httpNotificationFallbackNode(type);
     const engine = httpNotificationNodeContract(type, httpCatalog);
@@ -980,7 +1149,12 @@ export function parseHttpNotificationCatalog(
     return { ...HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
+  const hasHttpNotificationEngine = Boolean(firstRecord(rec.httpNotificationEngine));
+  const hasLegacyEngine = Boolean(
+    rec.httpEngine || rec.notificationEngine || rec.http || rec.notifications,
+  );
   const engineBlob =
+    firstRecord(rec.httpNotificationEngine) ??
     firstRecord(rec.httpEngine) ??
     firstRecord(rec.notificationEngine) ??
     firstRecord(rec.http) ??
@@ -1002,19 +1176,36 @@ export function parseHttpNotificationCatalog(
   const errors = errorsRaw
     .map(parseEngineError)
     .filter((item): item is HttpNotificationErrorShape => item !== null);
-  const policy = parsePolicy(engineBlob.policy ?? rec.policy);
+  const policy =
+    parsePolicy(engineBlob.policy ?? rec.policy) ??
+    parseIsolationAsPolicy(engineBlob.isolation ?? rec.isolation);
   const permissions = stringList(engineBlob.permissions ?? rec.permissions);
-  const hasEngineBlob = Boolean(
-    rec.httpEngine || rec.notificationEngine || rec.http || rec.notifications,
+  const integrationGate = parseIntegrationGate(
+    engineBlob.integrationGate ?? rec.integrationGate ?? engineBlob.gate ?? rec.gate,
   );
-  if (nodes.length === 0 && errors.length === 0 && !policy && permissions.length === 0) {
+  const looksLikeHttpCatalog = Boolean(
+    engineBlob.isolation ||
+      rec.isolation ||
+      engineBlob.publishRules ||
+      rec.publishRules ||
+      integrationGate,
+  );
+  if (
+    nodes.length === 0 &&
+    errors.length === 0 &&
+    !policy &&
+    permissions.length === 0 &&
+    !integrationGate
+  ) {
     return { ...HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG };
   }
-  const source: HttpNotificationCatalogSource = hasEngineBlob
+  const source: HttpNotificationCatalogSource = hasHttpNotificationEngine || hasLegacyEngine
     ? "ops-config-catalog"
-    : nodes.length > 0
-      ? "workflow-catalog"
-      : "contract-fallback";
+    : looksLikeHttpCatalog
+      ? "http-catalog"
+      : nodes.length > 0
+        ? "workflow-catalog"
+        : "contract-fallback";
   return {
     source,
     nodes: nodes.length
@@ -1025,6 +1216,7 @@ export function parseHttpNotificationCatalog(
     permissions: permissions.length
       ? permissions
       : [...HTTP_NOTIFICATION_PERMISSIONS],
+    integrationGate,
     notes:
       String(engineBlob.notes ?? rec.notes ?? "").trim() ||
       (source === "contract-fallback"
@@ -1048,16 +1240,16 @@ export const HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG: HttpNotificationCatalo
           "connection.use",
           "responseSchema.use",
         ],
-        requiredWith: ["connectionId", "method", "path"],
+        requiredWith: ["connectionId"],
         allowedWith: [],
-        outputs: ["result", "status"],
+        outputs: ["result"],
         sideEffects: true,
         retrySafe: false,
         defaultMaxAttempts: 1,
       },
       {
         type: NOTIFICATION_WEBHOOK_TYPE,
-        title: "Webhook notification",
+        title: "Notification webhook",
         description:
           "Deliver a safe event to a pinned webhook connection. No free-form URL.",
         permissions: [
@@ -1074,7 +1266,7 @@ export const HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG: HttpNotificationCatalo
       },
       {
         type: NOTIFICATION_EMAIL_TYPE,
-        title: "Email notification",
+        title: "Notification email",
         description:
           "Send mail through a pinned SMTP connection using approved recipient-list and template revisions.",
         permissions: [
@@ -1299,7 +1491,7 @@ const HTTP_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
       resultPort,
       inherit("status", "integer", false, "HTTP status code."),
     ],
-    requiredWith: ["connectionId", "method", "path"],
+    requiredWith: ["connectionId"],
     allowedWith: fieldsToAllowed(HTTP_REQUEST_TYPE),
     policy: httpPolicy(),
     bounds: defaultBounds(),
@@ -1315,7 +1507,7 @@ const HTTP_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
   "notification.webhook": {
     type: NOTIFICATION_WEBHOOK_TYPE,
     phase: CATALOG_PHASE_CORE,
-    title: "Webhook notification",
+    title: "Notification webhook",
     description:
       "Deliver a safe event to a pinned webhook connection. No free-form URL.",
     inputs: [
@@ -1336,7 +1528,7 @@ const HTTP_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
   "notification.email": {
     type: NOTIFICATION_EMAIL_TYPE,
     phase: CATALOG_PHASE_CORE,
-    title: "Email notification",
+    title: "Notification email",
     description:
       "Send mail through a pinned SMTP connection using approved recipient-list and template revisions.",
     inputs: [
@@ -1386,6 +1578,9 @@ function parseEngineNode(raw: unknown): HttpNotificationEngineNode | null {
     outputs: stringList(rec.outputs),
     sideEffects: rec.sideEffects !== false,
     retrySafe: rec.retrySafe === true,
+    idempotent: rec.idempotent === true,
+    connectionType: String(rec.connectionType ?? rec.connection ?? "").trim() || undefined,
+    enabled: rec.enabled !== false,
     defaultMaxAttempts: Number.isFinite(Number(rec.defaultMaxAttempts))
       ? Number(rec.defaultMaxAttempts)
       : 1,
@@ -1465,6 +1660,65 @@ function pathPrefixesFromPolicy(
   policy: Record<string, unknown> | null | undefined,
 ): string[] {
   return stringList(policy?.pathPrefixes);
+}
+
+function hostsFromPolicy(
+  policy: Record<string, unknown> | null | undefined,
+): string[] {
+  return stringList(
+    policy?.hosts ?? policy?.allowedHosts ?? policy?.allowedHostnames,
+  );
+}
+
+function parseIsolationAsPolicy(
+  raw: unknown,
+): HttpNotificationPolicyRules | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const rec = raw as Record<string, unknown>;
+  const looksLike =
+    rec.tlsVerificationRequired !== undefined ||
+    rec.connectVerifiedAddressOnly !== undefined ||
+    rec.ssrfDenied !== undefined ||
+    rec.dnsRebindingDenied !== undefined ||
+    rec.userSuppliedURLDenied !== undefined;
+  if (!looksLike) {
+    return undefined;
+  }
+  return {
+    tlsRequired: rec.tlsVerificationRequired !== false,
+    allowRedirectsDefault: rec.redirectsDefaultDenied === false,
+    maxRequestBytes: DEFAULT_HTTP_POLICY.maxRequestBytes,
+    maxResponseBytes: DEFAULT_HTTP_POLICY.maxResponseBytes,
+    resolveThenAllowlist: rec.dnsRebindingDenied !== false,
+    connectVerifiedAddressOnly: rec.connectVerifiedAddressOnly !== false,
+    secretFieldsPolicyAuthorized: rec.secretFieldsPolicyGated !== false,
+    note: String(rec.note ?? "").trim() || DEFAULT_HTTP_POLICY.note,
+  };
+}
+
+function parseIntegrationGate(
+  raw: unknown,
+): HttpNotificationIntegrationGate | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const rec = raw as Record<string, unknown>;
+  if (
+    rec.enabled === undefined &&
+    rec.name === undefined &&
+    rec.nodes === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    name: String(rec.name ?? "").trim() || undefined,
+    enabled: rec.enabled !== false,
+    nodes: stringList(rec.nodes),
+    suites: stringList(rec.suites),
+    note: String(rec.note ?? "").trim() || undefined,
+  };
 }
 
 function firstRecord(value: unknown): Record<string, unknown> | null {

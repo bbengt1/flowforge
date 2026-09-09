@@ -1088,11 +1088,12 @@ function ConfigureStep({
       {inferred && http ? (
         <p className="text-xs text-zinc-500">
           HTTP / notification <code className="font-mono">with</code> fields
-          prefer <code className="font-mono">GET /workflows/catalog</code>{" "}
-          <code className="font-mono">allowedWith</code>, then{" "}
+          prefer <code className="font-mono">GET /http/catalog</code>, then{" "}
           <code className="font-mono">GET /ops-config/catalog</code>{" "}
-          <code className="font-mono">httpEngine</code> /{" "}
-          <code className="font-mono">notificationEngine</code> (
+          <code className="font-mono">httpNotificationEngine</code>, then{" "}
+          <code className="font-mono">GET /workflows/catalog</code>{" "}
+          <code className="font-mono">allowedWith</code> /{" "}
+          <code className="font-mono">integrationGate</code> (
           <code className="font-mono">{HTTP_NOTIFICATION_ROUTE_MAP_SOURCE}</code>
           ). {httpCatalog && httpCatalog.source !== "contract-fallback"
             ? `Using ${httpCatalog.source}.`
@@ -1635,14 +1636,14 @@ function ReviewStep({
         {isHttpConfigurableType(draft.type) ? (
           <p className="mt-2 text-xs text-zinc-600">
             HTTP and notification actions pin authorized ops-config resources
-            only. YAML stores connectionId
+            only. YAML stores resource UUIDs
             {draft.type === "http.request"
-              ? ", method, path, timeoutSeconds, and optional responseSchemaRef"
+              ? " (required connectionId; optional method, path, host, timeoutSeconds, responseSchemaRef, policyId)"
               : draft.type === "notification.email"
-                ? ", recipientListId, and templateId"
-                : " only"}
-            — never a URL, credential, or TLS-off flag. Delivery results are
-            redacted. Map{" "}
+                ? " (connectionId, recipientListId, templateId; optional policyId)"
+                : " (required connectionId; optional path, host, timeoutSeconds, idempotencyKey, policyId)"}
+            — never a URL, headers, destination, credential, or TLS-off flag.
+            Delivery results are redacted. Map{" "}
             <code className="font-mono">{HTTP_NOTIFICATION_ROUTE_MAP_SOURCE}</code>
             {httpCatalog?.source ? `; ${httpCatalog.source}` : ""}.{" "}
             {HTTP_REDACTION_HELP}

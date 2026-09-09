@@ -308,8 +308,9 @@ describe("action wizard catalog inference and recommendations", () => {
       httpFields.some((field) => field.name === "connectionId" && field.required),
       true,
     );
-    assert.equal(httpFields.some((field) => field.name === "method"), true);
-    assert.equal(httpFields.some((field) => field.name === "path" && field.required), true);
+    assert.equal(httpFields.some((field) => field.name === "method" && field.required), false);
+    assert.equal(httpFields.some((field) => field.name === "path" && field.required), false);
+    assert.equal(httpFields.some((field) => field.name === "host"), true);
     assert.equal(httpFields.some((field) => field.name === "url"), false);
     assert.equal(httpFields.some((field) => field.name === "token"), false);
     const emailFields = wizardConfigFields(

@@ -1,10 +1,10 @@
 /**
  * Typed E10.4 HTTP / notification catalog client. Paths come from
  * core-http-notification-contract.ts so a retarget only edits that
- * adapter. Prefer GET /ops-config/catalog (httpEngine /
- * notificationEngine when Jonny lands them) then fall back to the
- * marked e104-draft map. Cookie session. Specs are secret-stripped.
- * POST select stays on the existing ops-config client (CSRF).
+ * adapter. Prefer GET /http/catalog (#118), then GET /ops-config/catalog
+ * `httpNotificationEngine`, then GET /workflows/catalog. Cookie session.
+ * Specs are secret-stripped. POST select stays on the existing
+ * ops-config client (CSRF).
  */
 
 import { callIdentityProxy } from "./identity-client.ts";
@@ -65,10 +65,25 @@ function failure(result: {
 export async function getHttpNotificationCatalog(
   identity: DevIdentity,
 ): Promise<HttpNotificationCatalogSuccess | HttpNotificationClientFailure> {
+  const http = await callIdentityProxy<unknown>(
+    HTTP_EXISTING_API_PATHS.httpCatalog,
+    identity,
+  );
+  if (http.ok) {
+    const catalog = parseHttpNotificationCatalog(http.data);
+    if (catalog.source !== "contract-fallback") {
+      return {
+        ok: true,
+        statusCode: http.statusCode,
+        requestId: http.requestId,
+        catalog: { ...catalog, source: "http-catalog" },
+      };
+    }
+  }
   const ops = await getOpsConfigCatalog(identity);
   if (ops.ok) {
     const catalog = parseHttpNotificationCatalog({
-      ...ops.catalog,
+      httpNotificationEngine: ops.catalog.httpNotificationEngine,
       httpEngine: ops.catalog.httpEngine,
       notificationEngine: ops.catalog.notificationEngine,
     });
@@ -105,6 +120,14 @@ export async function getHttpNotificationCatalog(
       },
     };
   }
+  if (http.ok) {
+    return {
+      ok: true,
+      statusCode: http.statusCode,
+      requestId: http.requestId,
+      catalog: parseHttpNotificationCatalog(http.data),
+    };
+  }
   if (ops.ok) {
     return {
       ok: true,
@@ -113,7 +136,7 @@ export async function getHttpNotificationCatalog(
       catalog: parseHttpNotificationCatalog(ops.catalog),
     };
   }
-  return failure(ops);
+  return failure(ops.ok === false ? ops : http);
 }
 
 export async function listHttpNotificationPins(

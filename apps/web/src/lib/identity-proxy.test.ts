@@ -558,6 +558,11 @@ describe("resolveIdentityProxyTarget", () => {
     if ("apiPath" in catalog) {
       assert.equal(catalog.apiPath, "/api/v1/ssh/catalog");
     }
+    const httpCatalog = resolveIdentityProxyTarget("GET", ["http", "catalog"]);
+    assert.equal("apiPath" in httpCatalog, true);
+    if ("apiPath" in httpCatalog) {
+      assert.equal(httpCatalog.apiPath, "/api/v1/http/catalog");
+    }
   });
 
   it("retargets E9.1 script catalog and artifact paths through the adapter", () => {
