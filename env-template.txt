@@ -73,6 +73,7 @@ API_INTERNAL_URL=http://api:8080
 #
 # E11.1 embed framing (exact origins, space or comma separated). Empty keeps
 # frame-ancestors 'none' / X-Frame-Options DENY. Ignored on non-/embed/v1 paths.
+# E11.3 same-origin Portal host demo (/portal/workflows) may set 'self'.
 # WEB_EMBED_FRAME_ANCESTORS=
 # Exact Portal origins (merged with WEB_EMBED_FRAME_ANCESTORS on /embed/v1).
 # WEB_PORTAL_FRAME_ANCESTORS=

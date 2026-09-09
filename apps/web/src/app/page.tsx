@@ -274,6 +274,35 @@ export default async function Home() {
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">CP Ops Portal host</h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          Chloe&apos;s E11.3 host wiring on jonny&apos;s #129 map. Portal
+          entry RBAC stays on this side of the iframe and is never
+          FlowForge authorization. Map roles via{" "}
+          <code className="font-mono text-xs">GET /portal/adapter</code>,
+          mint{" "}
+          <code className="font-mono text-xs">
+            POST /portal/adapter/assertions
+          </code>{" "}
+          <code className="font-mono text-xs">{"{portalRoles}"}</code>,
+          iframe <code className="font-mono text-xs">/embed/v1</code> with
+          display-only tenant/workbench, then postMessage so the embed
+          shell exchanges via{" "}
+          <code className="font-mono text-xs">POST /embed/exchange</code>.
+          No shared database or executor. Relates to #123 / Part of #120 —
+          keep #123 open.
+        </p>
+        <p className="mt-4">
+          <Link
+            className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            href="/portal/workflows"
+          >
+            Open Portal host
+          </Link>
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Alerts and audit</h2>
         <p className="mt-1 text-sm text-zinc-600">
           Chloe&apos;s E5.4 operator on jonny&apos;s #58 map: authorization,

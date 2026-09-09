@@ -93,6 +93,10 @@ describe("embed-contract", () => {
     assert.deepEqual(parseEmbedFrameAncestors("* https://portal.example"), [
       "https://portal.example",
     ]);
+    assert.deepEqual(parseEmbedFrameAncestors("'self' https://portal.example"), [
+      "'self'",
+      "https://portal.example",
+    ]);
     assert.equal(frameAncestorsForPath("/workflows", { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" }), "'none'");
     assert.equal(
       frameAncestorsForPath("/embed/v1/workflows", {

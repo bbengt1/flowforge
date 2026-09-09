@@ -63,6 +63,14 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    A disagreeing host tenant/workbench is `403`. Host tenant is never
    authorization.
 
+E11.3 CP Ops Portal host (`/portal/workflows`) follows this flow: map
+roles from `GET /api/v1/portal/adapter`, mint via
+`POST /api/v1/portal/adapter/assertions` `{portalRoles}`, iframe-mount
+`/embed/v1` with display-only tenant/workbench query, then `postMessage`
+the assertion so the embed shell can `POST /api/v1/embed/exchange`.
+Portal entry RBAC is not FlowForge authorization. See
+[portal-adapter.md](portal-adapter.md).
+
 ## How the UI must honor workbench/tenant (Chloe)
 
 | Rule | Behavior |
@@ -171,4 +179,4 @@ and `workspace_id` only.
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
 | `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. |
-| Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). |
+| Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |

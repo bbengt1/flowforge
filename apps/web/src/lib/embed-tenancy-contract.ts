@@ -272,7 +272,8 @@ export function shouldAttachEmbedTenancyHeaders(instance: string): boolean {
   if (
     path.endsWith("/embed/catalog") ||
     path.endsWith("/embed/jwks") ||
-    path.endsWith("/embed/exchange")
+    path.endsWith("/embed/exchange") ||
+    path.endsWith("/portal/adapter")
   ) {
     return false;
   }

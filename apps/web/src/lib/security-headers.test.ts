@@ -117,6 +117,20 @@ describe("embed framing", () => {
       env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
     });
     assert.match(embedded, /frame-ancestors https:\/\/portal\.example/);
+    const portalHost = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/portal",
+      env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
+    });
+    assert.match(portalHost, /frame-src 'self'/);
+    assert.match(portalHost, /frame-ancestors 'none'/);
+    const portalEntry = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/portal/workflows",
+      env: { WEB_EMBED_FRAME_ANCESTORS: "https://portal.example" },
+    });
+    assert.match(portalEntry, /frame-src 'self'/);
+    assert.match(embedded, /frame-src 'none'/);
     assert.equal(
       embedFramingAllowed("/embed/v1", {
         WEB_EMBED_FRAME_ANCESTORS: "https://portal.example",

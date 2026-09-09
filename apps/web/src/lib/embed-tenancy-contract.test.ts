@@ -309,6 +309,11 @@ describe("embed-tenancy-contract", () => {
     assert.deepEqual(fromSession?.capabilities, ["workflow.view"]);
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/workspace"), true);
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/exchange"), false);
+    assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/portal/adapter"), false);
+    assert.equal(
+      shouldAttachEmbedTenancyHeaders("/api/v1/portal/adapter/assertions"),
+      true,
+    );
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/catalog"), false);
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/keys/rotate"), true);
   });

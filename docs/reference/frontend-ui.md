@@ -766,6 +766,22 @@ After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `
 - **Rotate:** `POST /embed/keys/rotate` is proxied (ops / `workspace.administer`) and is not an embed-shell control. Do not send `X-FlowForge-Workspace-ID` as the lookup key.
 - **Proxies:** `/api/v1/embed/{catalog,jwks,assertions,exchange,keys/rotate}` plus existing workspace hops. E11.3 adds `/api/v1/portal/adapter` and `/api/v1/portal/adapter/assertions` for the Portal host (Chloe).
 
+## E11.3 CP Ops Portal embed host (Chloe UI)
+
+Thin host wiring on jonny's **#129** map (`e113-#129`). `apps/api` is unchanged. Relates to #123 / Part of #120 — **Keep #123 open**. Adapter: `apps/web/src/lib/portal-adapter-contract.ts`. Demo host: `/portal/workflows` (`/portal` redirects). Wire exactly as `docs/reference/portal-adapter.md`.
+
+| Step | Actor | Path |
+| --- | --- | --- |
+| 1. Entry | Portal RBAC | Host-owned (`/portal/workflows`). Not FlowForge authz. |
+| 2. Map roles | Portal backend | `GET /api/v1/portal/adapter` → `capabilityMap` |
+| 3. Mint | Portal backend | `POST /api/v1/portal/adapter/assertions` `{portalRoles}` — same Ed25519 mint as embed |
+| 4. Mount | Embed shell | `/embed/v1/…` — frame only if Portal origin in `WEB_PORTAL_FRAME_ANCESTORS` / `WEB_EMBED_FRAME_ANCESTORS` |
+| 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Replay → `409`. |
+
+- **Never:** assertion in query/hash/path/`localStorage`; Portal RBAC as FlowForge auth; shared DB/executor; retry a 403 with host tenant/workbench; Portal “admin” as FlowForge membership.
+- **CSP:** `/portal` and `/portal/workflows` set `frame-src 'self'` so the host can iframe same-origin `/embed/v1`. Production Portal origin must be in `WEB_PORTAL_FRAME_ANCESTORS` and/or `WEB_EMBED_FRAME_ANCESTORS` (`'self'` is accepted for the in-repo demo). Standalone stays `frame-ancestors 'none'` / `frame-src 'none'`.
+- **Proxies:** `GET /api/v1/portal/adapter` (no auth) and `POST /api/v1/portal/adapter/assertions` (CSRF if cookie). Exchange is not a Portal hop.
+
 ## Required validation
 
 - YAML import → canvas → no-edit save → export preserves normalized semantics and digest.

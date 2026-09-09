@@ -296,6 +296,14 @@ function docHits(swaggerUrl: string): TokenizedHit[] {
       href: "/credentials",
       tokens: ["docs", "security", "vault", "credentials"],
     },
+    {
+      kind: "doc",
+      id: "doc-portal",
+      title: "CP Ops Portal host",
+      subtitle: "Embed FlowForge via embed.v1 — Portal RBAC is not FlowForge auth",
+      href: "/portal/workflows",
+      tokens: ["docs", "portal", "embed", "host", "e11"],
+    },
   ];
 }
 
