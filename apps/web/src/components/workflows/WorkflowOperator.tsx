@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { evaluatePolicy, listExecutionApprovals } from "@/lib/approval-client";
+import { DEFAULT_PRE_RUN_OPERATION } from "@/lib/approval-types";
+import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
+import { shouldBlockRun } from "@/lib/approval";
 import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { CatalogPanel } from "@/components/workflows/CatalogPanel";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
@@ -116,6 +120,13 @@ export function WorkflowOperator() {
   const [compare, setCompare] = useState<CompareWorkflowResult | null>(null);
   const [runVersionId, setRunVersionId] = useState("");
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
+  const [policyEval, setPolicyEval] = useState<PolicyEvaluation | null>(null);
+  const [policyEvalProblem, setPolicyEvalProblem] =
+    useState<ProblemDetails | null>(null);
+  const [policyEvalPending, setPolicyEvalPending] = useState(false);
+  const [executionApprovals, setExecutionApprovals] = useState<
+    ApprovalRequest[]
+  >([]);
   const [versionPins, setVersionPins] = useState<Record<string, OpsConfigPin[]>>(
     {},
   );
@@ -509,12 +520,83 @@ export function WorkflowOperator() {
     applyEditor({ ...result.applied, revision: result.applied.revision });
   }
 
+  async function loadExecutionApprovals(
+    workflowId: string,
+    next: WorkflowExecution,
+  ) {
+    if (!next.id) {
+      setExecutionApprovals([]);
+      return;
+    }
+    const waiting = await listExecutionApprovals(
+      identity,
+      workflowId,
+      next.id,
+    );
+    if (waiting.ok) {
+      setExecutionApprovals(waiting.items);
+      return;
+    }
+    setExecutionApprovals([]);
+  }
+
+  async function evaluateSelectedVersion(versionId: string) {
+    if (!versionId) {
+      setPolicyEval(null);
+      setPolicyEvalProblem(null);
+      return;
+    }
+    setPolicyEvalPending(true);
+    setPolicyEvalProblem(null);
+    const result = await evaluatePolicy(identity, {
+      workflowVersionId: versionId,
+      operation: DEFAULT_PRE_RUN_OPERATION,
+    });
+    setPolicyEvalPending(false);
+    setLastRequestId(result.requestId);
+    if (!result.ok) {
+      setPolicyEval(null);
+      setPolicyEvalProblem(result.problem);
+      return;
+    }
+    setPolicyEval(result.evaluation);
+  }
+
   async function runPublished() {
     if (!workflow || !runVersionId) {
       return;
     }
     setPending("run");
     setProblem(null);
+    const evaluation = await evaluatePolicy(identity, {
+      workflowVersionId: runVersionId,
+      operation: DEFAULT_PRE_RUN_OPERATION,
+    });
+    setLastRequestId(evaluation.requestId);
+    if (!evaluation.ok) {
+      setPolicyEval(null);
+      setPolicyEvalProblem(evaluation.problem);
+      if (shouldBlockRun({
+        evaluation: null,
+        evaluationProblem: evaluation.problem,
+        staleLocalApproved: true,
+      })) {
+        setPending(null);
+        return;
+      }
+    } else {
+      setPolicyEval(evaluation.evaluation);
+      setPolicyEvalProblem(null);
+      if (
+        shouldBlockRun({
+          evaluation: evaluation.evaluation,
+          staleLocalApproved: true,
+        })
+      ) {
+        setPending(null);
+        return;
+      }
+    }
     const result = await startWorkflowExecution(identity, workflow.id, runVersionId);
     setLastRequestId(result.requestId);
     setPending(null);
@@ -523,6 +605,7 @@ export function WorkflowOperator() {
       return;
     }
     setExecution(result.execution);
+    await loadExecutionApprovals(workflow.id, result.execution);
   }
 
   async function refreshPin() {
@@ -539,6 +622,7 @@ export function WorkflowOperator() {
       return;
     }
     setExecution(result.execution);
+    await loadExecutionApprovals(workflow.id, result.execution);
   }
 
   function insertPaletteNode(entry: CoreNeutralPaletteEntry) {
@@ -790,7 +874,19 @@ export function WorkflowOperator() {
             execution={execution}
             pending={pending === "run" || pending === "pin"}
             dirty={dirty}
-            onSelectVersion={setRunVersionId}
+            runBlocked={shouldBlockRun({
+              evaluation: policyEval,
+              evaluationProblem: policyEvalProblem,
+              staleLocalApproved: true,
+            })}
+            evaluation={policyEval}
+            evaluationPending={policyEvalPending}
+            evaluationProblem={policyEvalProblem}
+            executionApprovals={executionApprovals}
+            onSelectVersion={(versionId) => {
+              setRunVersionId(versionId);
+              void evaluateSelectedVersion(versionId);
+            }}
             onRun={() => void runPublished()}
             onRefreshPin={() => void refreshPin()}
           />
