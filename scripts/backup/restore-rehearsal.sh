@@ -18,6 +18,7 @@ cd "$ROOT"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 : "${BACKUP_ENCRYPTION_KEY:?BACKUP_ENCRYPTION_KEY is required}"
 : "${BACKUP_SOURCE_SERVICE:=postgres}"
+: "${BACKUP_SOURCE_API_URL:=http://127.0.0.1:8080}"
 : "${BACKUP_VERIFY_API:=1}"
 : "${BACKUP_API_IMAGE:=flowforge-api:local}"
 
@@ -35,6 +36,24 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+# Compose --wait returns when /health is 200. Migrate can still be running,
+# so a dump taken then can miss later schema_migrations rows. Isolated restore
+# then re-applies those files (GRANT … TO flowforge_app) without the role.
+# Wait for source /readiness before dumping.
+source_ready=0
+for _ in $(seq 1 60); do
+  ready_code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "${BACKUP_SOURCE_API_URL}/api/v1/readiness" 2>/dev/null || true)"
+  if [[ "$ready_code" == "200" ]]; then
+    source_ready=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$source_ready" -ne 1 ]]; then
+  echo "source API at ${BACKUP_SOURCE_API_URL} did not become ready before dump" >&2
+  exit 1
+fi
 
 echo "encrypting dump from compose service ${BACKUP_SOURCE_SERVICE}"
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" "$BACKUP_SOURCE_SERVICE" \
@@ -77,7 +96,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY -in "$ENC" \
 
 row="$(docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$ISOLATED" \
   psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c \
-  "SELECT version FROM schema_migrations ORDER BY version LIMIT 1")"
+    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations")"
 row="$(echo "$row" | tr -d '[:space:]')"
 if [[ -z "$row" ]]; then
   echo "restore rehearsal failed: schema_migrations is empty" >&2
