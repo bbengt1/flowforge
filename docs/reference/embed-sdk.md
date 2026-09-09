@@ -31,7 +31,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 
 | Claim | Required | Notes |
 | --- | --- | --- |
-| `iss` | yes | Host issuer. Optional `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` fail closed |
+| `iss` | yes | Host issuer. Must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (merged with Portal issuers on exchange). Empty allowlist fails closed (`403`) |
 | `aud` | yes | Must be `flowforge` |
 | `sub` | yes | End-user external subject |
 | `nbf` | yes | Unix seconds. Not-yet-valid fails closed |
@@ -165,17 +165,25 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys **and** create tenants/workspaces. Empty is fail-closed (`403`). |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
-| `EMBED_ISSUER` | empty | Optional single allowed `iss` |
-| `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty accepts any `ValidIssuer` |
+| `EMBED_ISSUER` | empty | Single allowed `iss` for embed mint. Empty (with an empty allowlist) fails closed at mint (`403`) |
+| `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty is fail-closed: mint and (when Portal is also empty) exchange return `403`. Compose seeds `https://idp.example` for local/dev. |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Space/comma exact origins allowed to frame `/embed/v1` only. `*` / `null` ignored. Standalone stays `frame-ancestors 'none'` |
-| `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Merged into embed exchange verification |
+| `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Empty fails closed at Portal mint (`403`). Merged into embed exchange verification. Compose seeds `https://portal.cp-ops.example`. |
 | `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on `GET /api/v1/portal/adapter` |
 | `WEB_PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins merged into `/embed/v1` `frame-ancestors` |
 
-Production must set a stable `EMBED_SIGNING_KEY`. Public JWKS never includes
-`d`, PEM, or seed. Logs redact `assertion`, `token`, and `private_key`. Audit
-events record `jti`, `kid`, `issuer`, `subject`, `tenant_id`, `workbench_key`,
-and `workspace_id` only.
+Production must set a stable `EMBED_SIGNING_KEY` and explicit issuer
+allowlists. Empty `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` and empty
+`PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` fail closed at **request
+time** (`403` on mint and exchange), not at process start — the rest of
+the API stays up, consistent with empty `PLATFORM_ADMINS`. Local compose
+seeds `https://idp.example` and `https://portal.cp-ops.example` so
+development does not fail open. Production ConfigMaps must set their own
+lists; do not copy the compose seeds.
+
+Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
+`token`, and `private_key`. Audit events record `jti`, `kid`, `issuer`,
+`subject`, `tenant_id`, `workbench_key`, and `workspace_id` only.
 
 ## Completed E11.2 hooks
 
@@ -184,4 +192,4 @@ and `workspace_id` only.
 | `jti.consume` | ready | Atomic Postgres `INSERT … ON CONFLICT DO NOTHING` with TTL. Replay `409`. Store down `503`. |
 | `key.rotation` | ready | Active + overlap verification. Unknown `kid` `401`. Rotate API is platform-admin only and accepts only the previous active public key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
-| Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
+| Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |

@@ -394,6 +394,8 @@ paths:
         short-lived, asymmetric-signed, audience-bound, single-use assertion.
         Workspace identity is resolved from tenant + workbench headers.
         `capabilities` must be a known permission subset of the caller.
+        The assertion `iss` must be on a non-empty `EMBED_ISSUER` /
+        `EMBED_ISSUER_ALLOWLIST` (empty fails closed with 403).
         The compact JWS is returned once. Private keys are never returned.
         Cookie callers need CSRF; header-only host backends skip CSRF.
       parameters:
@@ -439,7 +441,8 @@ paths:
       operationId: exchangeEmbedAssertion
       summary: Exchange an embed assertion for a browser session
       description: |
-        Validates issuer (optional allowlist), audience (`flowforge`),
+        Validates issuer (required `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST`
+        merged with Portal issuers; empty fails closed with 403), audience (`flowforge`),
         `nbf`/`exp`, `jti`, signature (active + overlap kids),
         `tenant_id` + `workbench_key`, optional workspace binding, and
         capabilities. Atomically consumes `jti` with TTL (replay is 409).
@@ -567,7 +570,9 @@ paths:
         FlowForge capabilities and mints via E11.1 `embed.Mint`
         (`aud=flowforge`, portal issuer, tenant, workbench). Not a
         parallel auth path. `capabilities` must remain a subset of the
-        minting caller. Compact JWS is returned once. Cookie callers
+        minting caller. The portal `iss` must be on a non-empty
+        `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` (empty fails closed
+        with 403). Compact JWS is returned once. Cookie callers
         need CSRF; header-only Portal backends skip CSRF.
       parameters:
         - $ref: "#/components/parameters/RequestID"
@@ -6658,7 +6663,7 @@ components:
           type: string
         issuer:
           type: string
-          description: Assertion iss. Must be on PORTAL_ISSUER_ALLOWLIST when set.
+          description: Assertion iss. Must be on a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed).
         tenantId:
           type: string
           format: uuid

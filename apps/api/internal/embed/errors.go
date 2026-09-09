@@ -15,6 +15,7 @@ var (
 	ErrWorkspaceBinding = errors.New("embed assertion workspace binding does not match server resolution")
 	ErrKeyUnavailable   = errors.New("embed signing key is not available")
 	ErrIssuer           = errors.New("embed assertion issuer is not valid")
+	ErrIssuerNotAllowed = errors.New("embed assertion issuer is not on the allowlist")
 	ErrSubject          = errors.New("embed assertion subject is not valid")
 	ErrTokenID          = errors.New("embed assertion token id is not valid")
 	ErrTenant           = errors.New("embed assertion tenant_id is not valid")

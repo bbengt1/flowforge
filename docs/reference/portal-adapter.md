@@ -78,8 +78,10 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,portalRoles?,capabilities?,ttlSeconds?}`.
 
 `portalRoles` and/or `capabilities` required. Unknown role or capability is
-`400`. Explicit `platform.administer` is `400`. Issuer not on
-`PORTAL_ISSUER_ALLOWLIST` (when set) is `403`.
+`400`. Explicit `platform.administer` is `400`. Issuer not on a
+non-empty `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` is `403`. An
+empty/unset Portal allowlist fails closed at mint (`403`); it does not
+accept any issuer.
 Host-supplied `workspaceId` that does not match server resolution is
 forbidden. Success is the same minted assertion as E11.1 (`201`, compact
 JWS once). Problem details never echo the JWS or private keys.
@@ -88,20 +90,24 @@ JWS once). Problem details never echo the JWS or private keys.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORTAL_ISSUER` | empty | Default / single allowed Portal `iss` |
-| `PORTAL_ISSUER_ALLOWLIST` | empty | Comma-separated Portal issuers. Empty adds no extra mint constraint |
+| `PORTAL_ISSUER` | empty | Single allowed Portal `iss`. Empty (with an empty allowlist) fails closed at Portal mint (`403`) |
+| `PORTAL_ISSUER_ALLOWLIST` | empty | Comma-separated Portal issuers. Empty fails closed — mint returns `403`. Compose seeds `https://portal.cp-ops.example` for local/dev. |
 | `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on the adapter catalog |
 | `WEB_PORTAL_FRAME_ANCESTORS` | empty | Exact origins allowed to frame `/embed/v1` (merged with `WEB_EMBED_FRAME_ANCESTORS`) |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Existing embed frame allowlist |
-| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed exchange allowlist. Portal issuers are merged in |
+| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed mint allowlist. Empty fails closed at embed mint. Portal issuers are merged in for exchange only. |
 
-Production must set a stable `EMBED_SIGNING_KEY` and an explicit Portal
-issuer allowlist. `*` / `null` frame ancestors are ignored.
+Production must set a stable `EMBED_SIGNING_KEY` and explicit Portal and
+embed issuer allowlists. Empty allowlists fail closed at request time
+(`403` on mint/exchange); the process still starts so other API routes
+stay up. Local compose seeds the lists — it does not fail open. `*` /
+`null` frame ancestors are ignored.
 
 ## Negative tests (epic #120)
 
 These fail closed on the FlowForge adapter:
 
+- Empty Portal issuer allowlist (mint/exchange `403`)
 - Hostile host issuer (not on the Portal allowlist)
 - Replayed assertion (`409` on `POST /embed/exchange`)
 - Cross-tenant / cross-workbench headers after exchange (`403`)

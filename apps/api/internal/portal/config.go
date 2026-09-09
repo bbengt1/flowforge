@@ -14,29 +14,16 @@ type Config struct {
 }
 
 // ParseIssuers builds the Portal issuer allowlist from PORTAL_ISSUER and
-// PORTAL_ISSUER_ALLOWLIST. Empty means portal mint does not add an extra
-// issuer constraint (embed issuer rules still apply on exchange).
+// PORTAL_ISSUER_ALLOWLIST. Empty is fail-closed at Portal mint (request-time
+// 403). Compose seeds a local issuer; production must set an explicit list.
 func ParseIssuers(allowlist, single string) []string {
 	return embed.ParseIssuerAllowlist(allowlist, single)
 }
 
 // IssuerAllowed reports whether iss may mint through the Portal adapter.
-// An empty allowlist accepts any non-empty issuer (embed.ValidIssuer is
-// still enforced at mint time).
+// An empty allowlist is fail-closed.
 func IssuerAllowed(iss string, allow []string) bool {
-	iss = strings.TrimSpace(iss)
-	if iss == "" {
-		return false
-	}
-	if len(allow) == 0 {
-		return true
-	}
-	for _, a := range allow {
-		if a == iss {
-			return true
-		}
-	}
-	return false
+	return embed.IssuerAllowed(iss, allow)
 }
 
 // ParseFrameAncestors parses exact http(s) origins. "*" and "null" are ignored.

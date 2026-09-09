@@ -50,7 +50,7 @@ type CatalogRules struct {
 }
 
 // NewCatalog builds the E11.3 contract. Issuers and frame ancestors are
-// the configured allowlists (may be empty).
+// the configured allowlists (empty issuer lists fail closed at mint).
 func NewCatalog(issuers, frames []string) Catalog {
 	return Catalog{
 		Adapter:        AdapterVersion,
@@ -87,7 +87,7 @@ func NewCatalog(issuers, frames []string) Catalog {
 func adapterAPI() []APIRoute {
 	return []APIRoute{
 		{Method: "GET", Path: "/api/v1/portal/adapter", Auth: "none", CSRF: "no", Note: "Versioned Portal adapter contract, capability map, and host wiring for Chloe."},
-		{Method: "POST", Path: "/api/v1/portal/adapter/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Portal-backend mint after Portal RBAC. Maps portalRoles → FlowForge capabilities, requires portal issuer allowlist when set, then signs with E11.1 embed.Mint (aud=flowforge)."},
+		{Method: "POST", Path: "/api/v1/portal/adapter/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Portal-backend mint after Portal RBAC. Maps portalRoles → FlowForge capabilities, requires a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed, 403), then signs with E11.1 embed.Mint (aud=flowforge)."},
 		{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Same mint without role mapping. Portal may call this directly after mapping roles client-side."},
 		{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "E11.1/E11.2 exchange. Not a Portal-specific path. Replay 409. Binds (tenant_id, workbench_key). Bound sessions cannot create tenants or sibling workbenches."},
 		{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Embed SDK/contract. Portal adapter builds on this."},
