@@ -397,12 +397,18 @@ func stubRetry(req Request) RetryState {
 	return state
 }
 
+// hasPersistedPriorOutput treats a non-nil map — including {} — as a
+// successful persist. Nil without HasPriorOutput means no prior output.
+func hasPersistedPriorOutput(req Request) bool {
+	return req.HasPriorOutput || req.PriorOutput != nil
+}
+
 func runVerification(req Request, spec VerificationSpec) VerificationResult {
 	out := VerificationResult{Ran: true, Outcome: spec.OnError, Note: "verification hook failed; outcome stays indeterminate"}
 	if spec.OnError == "" {
 		out.Outcome = VerifyIndeterminate
 	}
-	if len(req.PriorOutput) == 0 {
+	if !hasPersistedPriorOutput(req) {
 		out.Outcome = VerifyIndeterminate
 		out.Note = "verification has no prior output to confirm; the script is not re-run"
 		return out

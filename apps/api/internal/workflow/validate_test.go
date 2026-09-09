@@ -363,6 +363,36 @@ spec:
 		_, errs := Parse([]byte(src))
 		assertHasCode(t, errs, CodeInvalidSchema)
 	})
+	t.Run("outputSchema without type rejected", func(t *testing.T) {
+		src := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: typeless-out
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: script.python
+      name: Run
+      with:
+        source: |
+          import json
+          print(json.dumps({"status": "ok"}))
+        entrypoint: main.py
+        runtimeProfileId: 66666666-6666-4666-8666-666666666666
+        timeoutSeconds: 30
+        outputSchema:
+          properties:
+            status:
+              type: string
+  edges: []
+`
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeInvalidSchema)
+	})
 	t.Run("retrySafe without verification", func(t *testing.T) {
 		src := `
 apiVersion: flowforge/v1

@@ -199,6 +199,17 @@ func TestExecuteTypedIOAndRecovery(t *testing.T) {
 		if !out.OK || out.Error != nil || out.Retry.Verification == nil || out.Retry.Verification.Outcome != VerifyAlreadyApplied {
 			t.Fatalf("already-applied: %+v", out)
 		}
+		req.PriorOutput = map[string]any{}
+		req.HasPriorOutput = true
+		ran = false
+		req.Runtime = runProbeRuntime{ran: &ran}
+		out = Execute(context.Background(), req)
+		if out.Error != nil && out.Error.Code == CodeIndeterminate && !ran {
+			t.Fatalf("persisted empty object must use onMismatch, not forced indeterminate: %+v", out)
+		}
+		if out.Retry.Verification == nil || out.Retry.Verification.Outcome != VerifySafeToRetry || !ran {
+			t.Fatalf("empty-object prior output: %+v ran=%v", out, ran)
+		}
 	})
 }
 
@@ -224,6 +235,15 @@ func TestOutputSchemaPreservesObjectShape(t *testing.T) {
 	}
 	if err := RequireObjectRoot(map[string]any{"type": "string"}, "outputSchema"); err == nil {
 		t.Fatal("string root must fail")
+	}
+	if err := RequireObjectRoot(map[string]any{}, "outputSchema"); err == nil {
+		t.Fatal("omitted root type must fail")
+	}
+	if err := RequireObjectRoot(map[string]any{"properties": map[string]any{"status": map[string]any{"type": "string"}}}, "outputSchema"); err == nil {
+		t.Fatal("properties without root type must fail")
+	}
+	if err := RequireObjectRoot(nil, "outputSchema"); err != nil {
+		t.Fatalf("nil schema is optional: %v", err)
 	}
 	obj, _, err := ValidateExecutionOutput(`{"status":"ok"}`, map[string]any{"type": "object"})
 	if err != nil || obj["status"] != "ok" || obj["value"] != nil {
