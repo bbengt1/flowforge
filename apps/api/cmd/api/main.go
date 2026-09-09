@@ -57,6 +57,7 @@ func main() {
 			PortalIssuers:        cfg.PortalIssuers,
 			PortalFrameAncestors: cfg.PortalFrameAncestors,
 			PlatformAdmins:       cfg.PlatformAdmins,
+			EmbedLimits:          cfg.EmbedLimits,
 			Security: httpapi.Security{
 				TrustedProxies:       cfg.TrustedProxies,
 				RequireTLS:           cfg.RequireTLS,

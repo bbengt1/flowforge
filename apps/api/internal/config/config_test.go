@@ -215,6 +215,28 @@ func TestLoadProductionMissingSigningKeyFails(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("EMBED_EXCHANGE_RATE_LIMIT_IP", "7")
+	t.Setenv("EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL", "4")
+	t.Setenv("EMBED_MINT_RATE_LIMIT_PRINCIPAL", "9")
+	t.Setenv("EMBED_RATE_LIMIT_WINDOW", "30s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmbedLimits.ExchangeIP != 7 || cfg.EmbedLimits.ExchangePrincipal != 4 {
+		t.Fatalf("exchange limits %+v", cfg.EmbedLimits)
+	}
+	if cfg.EmbedLimits.MintPrincipal != 9 || cfg.EmbedLimits.Window != 30*time.Second {
+		t.Fatalf("mint/window %+v", cfg.EmbedLimits)
+	}
+}
+
 func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

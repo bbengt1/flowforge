@@ -103,8 +103,14 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   authorization, and FlowForge does not share its database or executor.
   After exchange, embed chrome and deep
   links use the FlowForge-verified `(tenant_id, workbench_key)` /
-  `session.embed` only. Assertions are never accepted from a URL. See
-  [embed SDK](embed-sdk.md).
+  `session.embed` only. Assertions are never accepted from a URL.
+  Embed authorization decisions (mint, exchange, rotate, capability
+  and tenancy bind, impersonation) emit secret-free audit events;
+  assertion plaintext, signing keys, and session secrets are never
+  logged. `POST /embed/exchange` is rate-limited by IP and
+  issuer/subject (defaults 120/min and 30/min, configurable) and
+  returns `429` on burst so forged assertions cannot exhaust verify
+  or `jti` store capacity. See [embed SDK](embed-sdk.md).
 - Privileged actions and approval decisions require fresh authorization at the
   server. Approval records bind the exact execution step, workflow version,
   target/policy snapshot, requested operation, and expiry; a decision cannot be

@@ -25,14 +25,16 @@ import (
 )
 
 type embedEnv struct {
-	h     http.Handler
-	store identity.Store
-	keys  embed.Material
-	ring  *embed.Ring
-	now   *time.Time
-	admin identity.User
-	ops   identity.User
-	logs  *bytes.Buffer
+	h        http.Handler
+	store    identity.Store
+	keys     embed.Material
+	ring     *embed.Ring
+	now      *time.Time
+	admin    identity.User
+	ops      identity.User
+	logs     *bytes.Buffer
+	auditor  *embed.MemoryAuditor
+	sessions session.Store
 }
 
 func newEmbedEnv(t *testing.T) embedEnv {
@@ -47,6 +49,11 @@ func newEmbedEnvWithIssuers(t *testing.T, embedIssuers, portalIssuers []string) 
 
 func newEmbedEnvWithStore(t *testing.T, embedIssuers, portalIssuers []string, store identity.Store) embedEnv {
 	t.Helper()
+	return newEmbedEnvWithLimits(t, embedIssuers, portalIssuers, store, embed.Limits{})
+}
+
+func newEmbedEnvWithLimits(t *testing.T, embedIssuers, portalIssuers []string, store identity.Store, limits embed.Limits) embedEnv {
+	t.Helper()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
 	keys := embed.TestMaterial()
@@ -54,10 +61,12 @@ func newEmbedEnvWithStore(t *testing.T, embedIssuers, portalIssuers []string, st
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	ops := identity.User{Issuer: "https://idp.example", ExternalSubject: "platform-ops-1", DisplayName: "Platform Ops"}
+	auditor := embed.NewMemoryAuditor()
+	sessions := session.NewMemory()
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:         store,
 		Scoped:        isolation.NewMemory(),
-		Sessions:      session.NewMemory(),
+		Sessions:      sessions,
 		Workflows:     wfstore.NewMemory(),
 		Ops:           opsconfig.NewMemory(),
 		Hooks:         webhook.NewMemory(),
@@ -68,6 +77,8 @@ func newEmbedEnvWithStore(t *testing.T, embedIssuers, portalIssuers []string, st
 		EmbedJTI:      embed.NewMemoryJTI(),
 		EmbedIssuers:  embedIssuers,
 		PortalIssuers: portalIssuers,
+		EmbedLimits:   limits,
+		EmbedAuditor:  auditor,
 		PlatformAdmins: []authz.PrincipalRef{{
 			Issuer:  ops.Issuer,
 			Subject: ops.ExternalSubject,
@@ -91,7 +102,7 @@ func newEmbedEnvWithStore(t *testing.T, embedIssuers, portalIssuers []string, st
 	if err := json.Unmarshal(rec.Body.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	return embedEnv{h: h, store: store, keys: keys, ring: ring, now: clock, admin: current.Principal, ops: ops, logs: &buf}
+	return embedEnv{h: h, store: store, keys: keys, ring: ring, now: clock, admin: current.Principal, ops: ops, logs: &buf, auditor: auditor, sessions: sessions}
 }
 
 func (e embedEnv) advance(d time.Duration) {
@@ -354,6 +365,12 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"jtiRetainPastExpiry":true`) {
 		t.Fatal("catalog must retain used jtis past assertion exp")
+	}
+	if !strings.Contains(rec.Body.String(), `"authzAudited":true`) {
+		t.Fatal("catalog must document authz audit")
+	}
+	if !strings.Contains(rec.Body.String(), `"exchangeRateLimited":true`) {
+		t.Fatal("catalog must document exchange rate-limit")
 	}
 	if !strings.Contains(rec.Body.String(), `"jtiRetention":"24h0m0s"`) {
 		t.Fatal("catalog must document the 24h jti retention window")
@@ -1179,4 +1196,197 @@ func signClaims(t *testing.T, m embed.Material, c embed.Claims) string {
 		t.Fatal(err)
 	}
 	return token
+}
+
+func assertNoSecretsInAudit(t *testing.T, env embedEnv, assertion string) {
+	t.Helper()
+	out := env.logs.String()
+	if assertion != "" && strings.Contains(out, assertion) {
+		t.Fatal("assertion leaked into audit logs")
+	}
+	if strings.Contains(out, embed.EncodeSeedB64(env.keys.Private)) {
+		t.Fatal("signing seed leaked into audit logs")
+	}
+	for _, ev := range env.auditor.Events() {
+		blob, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := string(blob)
+		if assertion != "" && strings.Contains(raw, assertion) {
+			t.Fatalf("assertion leaked into audit event %+v", ev)
+		}
+		if strings.Contains(raw, embed.EncodeSeedB64(env.keys.Private)) {
+			t.Fatalf("signing seed leaked into audit event %+v", ev)
+		}
+		for _, leak := range []string{"private_key", "ff_session", "BEGIN PRIVATE"} {
+			if strings.Contains(raw, leak) {
+				t.Fatalf("secret-shaped %q in audit event %+v", leak, ev)
+			}
+		}
+	}
+}
+
+func TestEmbedAuthzAuditAllowAndDenyPaths(t *testing.T) {
+	env := newEmbedEnv(t)
+
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint allow %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	if !env.auditor.Contains(embed.EventMinted, session.OutcomeAllowed, embed.ReasonIssued) {
+		t.Fatalf("missing mint allow audit: %+v", env.auditor.Events())
+	}
+
+	ex := postEmbedExchange(t, env, minted.Assertion)
+	if ex.Code != http.StatusCreated {
+		t.Fatalf("exchange allow %d %s", ex.Code, ex.Body.String())
+	}
+	if !env.auditor.Contains(embed.EventExchanged, session.OutcomeAllowed, embed.ReasonIssued) {
+		t.Fatalf("missing exchange allow audit: %+v", env.auditor.Events())
+	}
+
+	capDeny := env.mint(t, `{"capabilities":["not.a.permission"]}`)
+	assertProblem(t, capDeny, http.StatusBadRequest, CodeInvalidRequest, "")
+	if !env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability) {
+		t.Fatalf("missing capability deny audit: %+v", env.auditor.Events())
+	}
+
+	imp := env.mint(t, `{"capabilities":["workflow.view"],"subject":"other-user"}`)
+	assertProblem(t, imp, http.StatusForbidden, CodeForbidden, "")
+	if !env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonImpersonation) {
+		t.Fatalf("missing impersonation deny audit: %+v", env.auditor.Events())
+	}
+
+	tenancy := env.mint(t, `{"capabilities":["workflow.view"],"tenantId":"99999999-9999-4999-8999-999999999999"}`)
+	if tenancy.Code == http.StatusCreated {
+		t.Fatal("foreign tenant bind must fail")
+	}
+	if !env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonTenancy) {
+		t.Fatalf("missing tenancy deny audit: %+v", env.auditor.Events())
+	}
+
+	now := *env.now
+	forged := signClaims(t, embed.NewEphemeralMaterial(), embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	bad := postEmbedExchange(t, env, forged)
+	assertProblem(t, bad, http.StatusUnauthorized, CodeUnauthenticated, "")
+	if !env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonSignature) {
+		t.Fatalf("missing exchange signature deny audit: %+v", env.auditor.Events())
+	}
+
+	rotateDeny := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", `{"action":"retire","kid":"x"}`, env.admin)
+	req.Header.Set(headerTenantSlug, "acme")
+	req.Header.Set(headerWorkbenchKey, "ops")
+	env.h.ServeHTTP(rotateDeny, req)
+	assertProblem(t, rotateDeny, http.StatusForbidden, CodeForbidden, "")
+	if !env.auditor.Contains(embed.EventRotateDenied, session.OutcomeDenied, embed.ReasonPrivilege) {
+		t.Fatalf("missing rotate deny audit: %+v", env.auditor.Events())
+	}
+
+	ops := env.addWorkspaceAdmin(t, env.ops)
+	until := env.now.Add(30 * time.Minute).Format(time.RFC3339)
+	body, err := json.Marshal(map[string]any{
+		"action":       "register-overlap",
+		"publicJwk":    env.keys.PublicJWKS().Keys[0],
+		"overlapUntil": until,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotateOK := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(body), ops)
+	env.h.ServeHTTP(rotateOK, req)
+	if rotateOK.Code != http.StatusOK {
+		t.Fatalf("rotate allow %d %s", rotateOK.Code, rotateOK.Body.String())
+	}
+	if !env.auditor.Contains(embed.EventOverlapRegister, session.OutcomeAllowed, embed.ReasonOverlapReg) {
+		t.Fatalf("missing rotate allow audit: %+v", env.auditor.Events())
+	}
+
+	assertNoSecretsInAudit(t, env, minted.Assertion)
+}
+
+func TestEmbedExchangeRateLimitedOnBurst(t *testing.T) {
+	env := newEmbedEnvWithLimits(t, []string{"https://idp.example"}, nil, identity.NewMemory(), embed.Limits{
+		Window:            time.Minute,
+		ExchangeIP:        2,
+		ExchangePrincipal: 100,
+		MintPrincipal:     -1,
+	})
+	now := *env.now
+	tid := tenantID(t, env)
+	forged := func(n byte) string {
+		return signClaims(t, embed.NewEphemeralMaterial(), embed.Claims{
+			Issuer:       "https://idp.example",
+			Audience:     embed.DefaultAudience,
+			Subject:      "burst-user",
+			NotBefore:    now.Unix(),
+			ExpiresAt:    now.Add(time.Minute).Unix(),
+			TokenID:      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb0" + string(rune('0'+n)),
+			TenantID:     tid,
+			WorkbenchKey: "ops",
+			Capabilities: []string{"workflow.view"},
+			SDK:          embed.SDKVersion,
+		})
+	}
+	first := postEmbedExchange(t, env, forged(1))
+	second := postEmbedExchange(t, env, forged(2))
+	assertProblem(t, first, http.StatusUnauthorized, CodeUnauthenticated, "")
+	assertProblem(t, second, http.StatusUnauthorized, CodeUnauthenticated, "")
+	burst := postEmbedExchange(t, env, forged(3))
+	prob := assertProblem(t, burst, http.StatusTooManyRequests, CodeRateLimited, "")
+	if burst.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After")
+	}
+	if !strings.Contains(prob.Detail, "rate limit") {
+		t.Fatalf("detail %q", prob.Detail)
+	}
+	if !env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited) {
+		t.Fatalf("missing rate-limit audit: %+v", env.auditor.Events())
+	}
+	assertNoSecretsInAudit(t, env, first.Body.String())
+}
+
+func TestEmbedExchangeSucceedsUnderRateLimit(t *testing.T) {
+	env := newEmbedEnvWithLimits(t, []string{"https://idp.example"}, nil, identity.NewMemory(), embed.Limits{
+		Window:            time.Minute,
+		ExchangeIP:        5,
+		ExchangePrincipal: 5,
+		MintPrincipal:     -1,
+	})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	ex := postEmbedExchange(t, env, minted.Assertion)
+	if ex.Code != http.StatusCreated {
+		t.Fatalf("valid exchange under limit %d %s", ex.Code, ex.Body.String())
+	}
+	if env.auditor.Contains(embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited) {
+		t.Fatal("must not rate-limit a single valid exchange")
+	}
+	if !env.auditor.Contains(embed.EventExchanged, session.OutcomeAllowed, embed.ReasonIssued) {
+		t.Fatalf("expected exchange allow: %+v", env.auditor.Events())
+	}
+	assertNoSecretsInAudit(t, env, minted.Assertion)
 }

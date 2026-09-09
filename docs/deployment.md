@@ -66,6 +66,10 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity requires `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403` on mint; exchange also `403` when Portal is empty). Compose seeds `https://idp.example`. Production ConfigMap must set an explicit list. |
+| `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` per client IP per window. Raise if a Portal shared egress IP remounts many iframes. Negative is unlimited. |
+| `EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL` | `30` | Max exchange per peekable `iss\|sub` per window. |
+| `EMBED_MINT_RATE_LIMIT_PRINCIPAL` | `60` | Max mint per authenticated principal per window (`/embed/assertions` and Portal adapter mint). |
+| `EMBED_RATE_LIMIT_WINDOW` | `1m` | Window for the embed rate-limit counters. |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint `iss` allowlist. Empty fails closed (`403`). Merged into embed exchange. Compose seeds `https://portal.cp-ops.example`. |
 | `WEB_EMBED_FRAME_ANCESTORS` | unset | Exact origins allowed to frame `/embed/v1` only. Empty keeps `frame-ancestors 'none'`. `*` / `null` are ignored. |
 

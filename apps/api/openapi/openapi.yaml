@@ -466,6 +466,10 @@ paths:
         browser that does not store or send the partitioned cookie
         fails closed (`401` unauthenticated, or `403` CSRF on later
         mutations). HTTPS / a secure context is required.
+        Rate-limited by client IP (default 120/min) and issuer|subject
+        (default 30/min) before verify. Burst returns `429`
+        `rate-limited` with `Retry-After`. Authorization decisions
+        emit secret-free `embed_audit` events.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       requestBody:
@@ -496,6 +500,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":

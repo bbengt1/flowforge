@@ -23,6 +23,11 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.allowEmbedMint(r, user.Issuer, user.ExternalSubject) {
+		s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonRateLimited, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+		s.writeEmbedRateLimited(w, r, "Embed mint rate limit exceeded. Retry after the configured window.")
+		return
+	}
 	ws, tenant, _, perms, ok := s.requireAccess(w, r, user, "")
 	if !ok {
 		return
@@ -33,37 +38,46 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.WorkspaceID) != "" {
 		if err := authz.ConfirmResolvedID(ws.ID, req.WorkspaceID); err != nil {
+			s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonTenancy, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 			writeIdentityError(w, r, err)
 			return
 		}
 	}
 	if id := strings.TrimSpace(req.TenantID); id != "" && !strings.EqualFold(id, tenant.ID) {
+		s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonTenancy, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		writeIdentityError(w, r, authz.ErrWorkspaceIdentityMismatch)
 		return
 	}
 	if key := strings.TrimSpace(req.WorkbenchKey); key != "" && key != ws.WorkbenchKey {
+		s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonTenancy, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		writeIdentityError(w, r, authz.ErrWorkspaceIdentityMismatch)
 		return
 	}
 	in, caps, impersonating, err := portal.PrepareMint(req, user.Issuer, user.ExternalSubject, user.DisplayName, tenant.ID, ws.WorkbenchKey, ws.ID, s.portalIssuers, s.clockNow(), authz.CanEmbedImpersonate(user.Issuer, user.ExternalSubject, s.platformAdmins))
 	if err != nil {
 		if errors.Is(err, authz.ErrMintImpersonation) || errors.Is(err, authz.ErrMintIssuerSpoof) {
-			reason := "impersonation"
+			reason := embed.ReasonImpersonation
 			if errors.Is(err, authz.ErrMintIssuerSpoof) {
-				reason = "issuer"
+				reason = embed.ReasonIssuer
 			}
-			s.auditEmbed(r, "portal.rejected", session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
+			s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 			if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 				s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing embed.impersonate")
 			}
 			WriteForbidden(w, r)
 			return
 		}
+		reason := embed.ReasonRejected
+		if errors.Is(err, portal.ErrIssuer) || errors.Is(err, portal.ErrHostileHost) {
+			reason = embed.ReasonIssuer
+		}
+		s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, reason, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 		writePortalError(w, r, err)
 		return
 	}
 	for _, c := range caps {
 		if !authz.Allows(perms, c) {
+			s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonCapability, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
 			WriteForbidden(w, r)
 			return
 		}
@@ -73,11 +87,11 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 		writeEmbedError(w, r, err)
 		return
 	}
-	reason := "issued"
+	reason := embed.ReasonIssued
 	if impersonating {
-		reason = "impersonated"
+		reason = embed.ReasonImpersonated
 	}
-	s.auditEmbed(r, "portal.minted", session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, minted.Issuer, minted.Subject)
+	s.auditEmbed(r, embed.EventPortalMinted, session.OutcomeAllowed, reason, minted.TokenID, minted.KeyID, minted.Issuer, minted.Subject)
 	writeJSON(w, http.StatusCreated, minted)
 }
 

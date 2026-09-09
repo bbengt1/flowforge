@@ -171,6 +171,35 @@ describe("embed client", () => {
     assert.equal(getSessionSnapshot().active, false);
   });
 
+  it("treats 429 rate-limited as backoff, not forbidden", async () => {
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:rate-limited",
+          title: "Rate Limited",
+          status: 429,
+          detail: "Embed exchange rate limit exceeded.",
+          instance: "/embed/exchange",
+          code: "rate-limited",
+          request_id: "r-429",
+        }),
+        {
+          status: 429,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      );
+    }) as typeof fetch;
+    const holder = { assertion: SAMPLE_JWS };
+    const result = await exchangeEmbedAssertion(holder);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 429);
+      assert.equal(result.forbidden, false);
+      assert.match(result.problem.detail, /Back off/);
+    }
+    assert.equal(holder.assertion, "");
+  });
+
   it("GETs catalog and strips private JWKS fields", async () => {
     globalThis.fetch = (async (input) => {
       const url = String(input);

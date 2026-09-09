@@ -121,6 +121,7 @@ func (s *Server) resolveWorkspace(w http.ResponseWriter, r *http.Request) (ident
 			Capabilities: pc.session.Binding.Capabilities,
 		}, claim)
 		if err != nil {
+			s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonTenancy, "", "", pc.user.Issuer, pc.user.ExternalSubject)
 			writeEmbedError(w, r, err)
 			return identity.Workspace{}, identity.Tenant{}, false
 		}
@@ -178,6 +179,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 		if len(perms) == 0 {
 			if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 				s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "no workspace membership")
+				if pc.session.Binding.Bound() {
+					s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability, "", "", user.Issuer, user.ExternalSubject)
+				}
 			}
 			WriteForbidden(w, r)
 			return identity.Workspace{}, identity.Tenant{}, nil, nil, false
@@ -187,6 +191,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 	if !authz.Allows(perms, action) {
 		if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 			s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing permission")
+			if pc.session.Binding.Bound() {
+				s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonCapability, "", "", user.Issuer, user.ExternalSubject)
+			}
 		}
 		s.emitAuthorizationDenied(r, user, ws, action)
 		WriteForbidden(w, r)

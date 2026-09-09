@@ -63,6 +63,8 @@ type Server struct {
 	portalIssuers    []string
 	portalFrames     []string
 	platformAdmins   []authz.PrincipalRef
+	embedLimiter     *embed.Limiter
+	embedAuditor     embed.Auditor
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -97,6 +99,8 @@ type Deps struct {
 	PortalIssuers        []string
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef
+	EmbedLimits          embed.Limits
+	EmbedAuditor         embed.Auditor
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -328,6 +332,8 @@ func newServer(d Deps) http.Handler {
 		embedIssuers:     mergeIssuers(d.EmbedIssuers, d.PortalIssuers),
 		portalIssuers:    append([]string(nil), d.PortalIssuers...),
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
+		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
+		embedAuditor:     d.EmbedAuditor,
 	}
 	if d.PlatformAdmins != nil {
 		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
