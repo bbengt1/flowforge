@@ -668,6 +668,20 @@ func normalizeKubernetesPolicyObject(policy map[string]any) (map[string]any, err
 	if verbs != nil {
 		out[kubernetes.KeyAllowedVerbs] = verbs
 	}
+	images, err := normalizeK8sAllowlist(policy, "image", kubernetes.KeyAllowedImages, kubernetes.KeyImages)
+	if err != nil {
+		return nil, err
+	}
+	if images != nil {
+		out[kubernetes.KeyAllowedImages] = images
+	}
+	hosts, err := normalizeK8sAllowlist(policy, "ingressHost", kubernetes.KeyAllowedIngressHosts, kubernetes.KeyIngressHosts)
+	if err != nil {
+		return nil, err
+	}
+	if hosts != nil {
+		out[kubernetes.KeyAllowedIngressHosts] = hosts
+	}
 	return out, nil
 }
 
@@ -685,7 +699,14 @@ func normalizeK8sAllowlist(policy map[string]any, kind string, canonical, alias 
 	} else {
 		return nil, nil
 	}
-	items, err := stringList(policy, key, 32, 63)
+	maxLen := 63
+	if kind == "image" {
+		maxLen = 256
+	}
+	if kind == "ingressHost" {
+		maxLen = 253
+	}
+	items, err := stringList(policy, key, 32, maxLen)
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +728,15 @@ func normalizeK8sAllowlist(policy map[string]any, kind string, canonical, alias 
 		case "verb":
 			if !kubernetes.VerbAllowed(item) {
 				return nil, fmt.Errorf("%w: policy.%s contains an unsupported verb", ErrInvalid, key)
+			}
+			item = strings.ToLower(item)
+		case "image":
+			if !strings.Contains(item, "/") && !strings.Contains(item, ".") && !strings.Contains(item, "@") {
+				return nil, fmt.Errorf("%w: policy.%s contains an invalid image reference", ErrInvalid, key)
+			}
+		case "ingressHost":
+			if !hostnameRE.MatchString(item) {
+				return nil, fmt.Errorf("%w: policy.%s contains an invalid host", ErrInvalid, key)
 			}
 			item = strings.ToLower(item)
 		}

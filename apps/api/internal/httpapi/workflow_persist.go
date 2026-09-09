@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	k8sengine "github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
@@ -547,7 +548,33 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 	if !s.authorizeExecutionPins(w, r, perms, pins) {
 		return
 	}
+	if !s.authorizeKubernetesNodes(w, r, perms, ver.DefinitionYAML) {
+		return
+	}
 	s.writeExecutionDetail(w, r, scope, exec, http.StatusCreated)
+}
+
+func (s *Server) authorizeKubernetesNodes(w http.ResponseWriter, r *http.Request, perms []string, yamlDoc string) bool {
+	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return true
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		needed := k8sengine.RequiredPermissions(node.Type)
+		if len(needed) == 1 && needed[0] == authz.PermWorkflowExecute {
+			continue
+		}
+		if !strings.HasPrefix(node.Type, "kubernetes.") {
+			continue
+		}
+		for _, perm := range needed {
+			if !authz.Allows(perms, perm) {
+				WriteForbidden(w, r)
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *Server) getWorkflowExecution(w http.ResponseWriter, r *http.Request) {

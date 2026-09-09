@@ -42,6 +42,14 @@ func TestKindAndVerbAllowlists(t *testing.T) {
 	if !VerbAllowed("apply") || VerbAllowed("delete") {
 		t.Fatal("engine verb allowlist")
 	}
+	images, ok := Images(map[string]any{"allowedImages": []string{"registry.example.com/api"}})
+	if !ok || !imageAllowed(images, "registry.example.com/api@sha256:"+stringsRepeat("a", 64)) {
+		t.Fatalf("images = %v", images)
+	}
+	hosts, ok := IngressHosts(map[string]any{"ingressHosts": []string{"app.example.com"}})
+	if !ok || !Allowed(hosts, "app.example.com") {
+		t.Fatalf("hosts = %v", hosts)
+	}
 	if !ValidNamespace("cp-ops-nprd") || ValidNamespace("kube_system") || ValidNamespace("") {
 		t.Fatal("namespace format")
 	}

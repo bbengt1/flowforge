@@ -1,6 +1,6 @@
-// Package kubernetes is the control-plane model for cluster targets and
-// Kubernetes policy. E7.1 does not contact clusters; E7.2 workers consume
-// this metadata when they resolve scoped credential handles.
+// Package kubernetes is the control-plane model and E7.2 read/apply engine
+// for cluster targets and Kubernetes policy. Workers consume scoped
+// credential handles and never serialize kubeconfig.
 package kubernetes
 
 import (

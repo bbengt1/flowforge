@@ -81,7 +81,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.25**). Listens on **80
 | `GET` | `/api/v1/credentials/{credentialId}/deletion-impact` | Deletion impact. |
 | `GET` | `/api/v1/credentials/{credentialId}/events` | Redacted vault audit. |
 | `GET` | `/api/v1/ops-config/catalog` | Ops-config kinds, YAML field map, and `kubernetesEngine` (`opsconfig.view`). |
-| `GET` | `/api/v1/kubernetes/catalog` | Kubernetes allowlists, evaluation keys, and service-account templates (`opsconfig.view`). |
+| `GET` | `/api/v1/kubernetes/catalog` | Kubernetes allowlists, evaluation keys, SA templates, and E7.2 apply/get/list node contracts (`opsconfig.view`). |
 | `POST` | `/api/v1/ops-config/select` | Batch server-authorized pins. |
 | `GET` / `POST` | `/api/v1/{collection}` | List / create draft for `cluster-targets`, `ssh-targets`, `command-profiles`, `runtime-profiles`, `connections`, `recipient-lists`, `message-templates`, `response-schemas`, `policies`. |
 | `GET` / `PUT` | `/api/v1/{collection}/{resourceId}/draft` | Read or conflict-safe save. |

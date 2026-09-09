@@ -467,5 +467,8 @@ func TestClusterTargetKubernetesPolicyHardening(t *testing.T) {
 		if cat.CredentialType != kubernetes.CredentialType || cat.ClusterRoles || len(cat.AllowedKinds) == 0 {
 			t.Fatalf("engine catalog = %+v", cat)
 		}
+		if len(cat.Nodes) < 3 || cat.Apply.FieldManager != kubernetes.FieldManager || cat.Apply.Force {
+			t.Fatalf("e72 catalog = %+v", cat)
+		}
 	})
 }

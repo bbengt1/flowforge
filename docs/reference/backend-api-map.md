@@ -206,7 +206,7 @@ Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding f
 
 ## Kubernetes target and policy management (E7.1)
 
-Control-plane hardening on the existing E4.2 collections. No `kubernetes.apply` / `get` / `list` / `rolloutStatus` runners yet (E7.2 / E7.3).
+Control-plane hardening on the existing E4.2 collections. E7.2 adds the apply/get/list engine; `kubernetes.rolloutStatus` bounded watch remains E7.3.
 
 **UI route map (Chloe):** same cookie session + `X-CSRF-Token` + camelCase JSON as E4.2. Use `GET /ops-config/catalog` (`kubernetesEngine`) or `GET /kubernetes/catalog` for allowlists, evaluation-key aliases, and service-account template paths. Cluster-target credential pickers must list only workspace `type=kubernetes` credentials (secret field `kubeconfig`, never shown). Host-supplied `id` / `workspaceId` is `400`. Cross-workspace credential or resource UUIDs are `404`. Next can proxy `/api/control-plane/kubernetes/catalog` the same way as ops-config. Do not rewrite `apps/web` in this API story.
 
@@ -219,6 +219,44 @@ Suggested UI flow:
 5. Apply `deploy/kubernetes/workspace-*.yaml` in each allowed namespace (operator, not FlowForge). E7.2 workers will read `serviceAccount` metadata.
 
 Least-privilege SA templates (no ClusterRoles): [`deploy/kubernetes/`](../../deploy/kubernetes/). Default name `flowforge-runner`, `roleTemplate=namespace-scoped-runner`.
+
+## Kubernetes read/apply nodes (E7.2)
+
+Engine path for `kubernetes.apply`, `kubernetes.get`, and `kubernetes.list`. No new browser routes. Workers claim E5.2 jobs and call the engine; kubeconfig never appears on job JSON, outputs, or audit details. `GET /kubernetes/catalog` now includes `nodes[]`, `errors[]`, and `apply` (fieldManager/`Force=false`/always server dry-run). The live workflow catalog is `GET /workflows/catalog` (`allowedWith`, `policy`, `bounds`, `redaction`).
+
+**UI route map (Chloe):** do **not** stack on another feature branch. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspaceId` is `400`. Do not rewrite `apps/web` in this API story. Wizard/library should read `allowedWith` on the three nodes instead of inferring fields.
+
+### Node contracts
+
+Shared fields: `clusterTargetId` (UUID), `namespace` (DNS-1123), `dryRun` (`client`|`server`), `wait` (`none`|`ready`), `timeoutSeconds` (1–3600, default 60), optional `fieldManager` (`flowforge` only), optional `policyId` (UUID). `client` dry-run adds local validation and **never** replaces the mandatory server-side dry-run on apply. `wait=ready` is accepted; observation is `deferred-e7.3` (no rolloutStatus claim).
+
+| Node | Extra `with` | Verb | Permissions | Outputs |
+| --- | --- | --- | --- | --- |
+| `kubernetes.apply` | `manifests` (YAML string) | `apply` | `workflow.execute`, `kubernetes.apply`, `clusterTarget.use` | `result`, `resources`, `status` |
+| `kubernetes.get` | `kind` (allowlisted), `name` | `get` | `workflow.execute`, `kubernetes.read`, `clusterTarget.use` | `result`, `items` |
+| `kubernetes.list` | `kind` (allowlisted) | `list` | `workflow.execute`, `kubernetes.read`, `clusterTarget.use` | `result`, `items` |
+
+Apply flow: parse YAML docs → validate kind/namespace/secret/workload/image/ingress policy → revalidate policy → SSA dry-run (`dryRun=All`) → SSA apply `FieldManager=flowforge` `Force=false`. Ownership conflicts are `409` `ownership-conflict` and are never forced. Get/list contact only the node namespace.
+
+Allowlisted kinds: ConfigMap, Service, Deployment, StatefulSet, DaemonSet, Job, CronJob, Ingress, NetworkPolicy. Denied: Secret `data`/`stringData`/`binaryData`, cluster-scoped, Namespace, CRDs, RBAC, admission webhooks, privileged/hostPath/host namespaces, capability escalation, mutable tags including `:latest`, images not on `allowedImages`/`images`, Ingress hosts/TLS/backends/annotations outside `allowedIngressHosts`/`ingressHosts`.
+
+### Result / error shapes
+
+Success `result`: `{ok, operation, clusterTargetId, namespace, manifestDigest?, fieldManager:"flowforge", force:false, serverDryRun, applied, wait, observation?, resources[], items?, status, policyRevision?, policyDigest?, correlationId?}`. Outputs are redacted (`kubeconfig`, secret keys, PEM).
+
+| `error.code` | HTTP-ish | When |
+| --- | --- | --- |
+| `invalid-manifest` | 400 | Parse/required field |
+| `secret-forbidden` | 400 | Secret kind or secret data fields |
+| `kind-denied` / `namespace-denied` / `verb-denied` / `policy-denied` / `forbidden` / `rbac-denied` | 403 | Allowlist, RBAC, or FlowForge permission |
+| `image-denied` / `ingress-denied` / `workload-denied` | 403 | Manifest security policy |
+| `ownership-conflict` | 409 | Another field manager owns applied fields (`Force=false`) |
+| `dry-run-failed` | 400 | Server-side dry-run rejected the object |
+| `apply-failed` / `read-failed` / `timeout` | 502 / 404 / 408 | Cluster or bound timeout |
+
+Job binding still includes workspace, workflow version, cluster target, policy revision, correlation ID, and normalized-manifest SHA-256. Workers revalidate policy before cluster contact.
+
+Out of scope: E7.3 `kubernetes.rolloutStatus` watch, `apps/web` rewrite, SSH/script engines.
 
 Out of scope: E10 webhook/schedule triggers, durable wait/resume across worker loss, provider engines.
 
@@ -234,7 +272,7 @@ The Next UI proxies E3.1 routes under `/api/control-plane/workflows/{catalog,val
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
+| `GET /api/v1/workflows/catalog` | Core trigger/node types, ports, and required `with` fields. E3.3 adds `rules` plus per-node `allowedWith`, `policy`, `bounds`, `redaction`, and port `classification` / `maxBytes` for the seven core neutral nodes. E7.2 adds the same metadata on `kubernetes.apply` / `get` / `list`. Requires `workflow.view`. | `200` `{apiVersion,rules,triggers,nodes}` | `401` `403` |
 | `POST /api/v1/workflows/validate` | Parse + graph validation. Body `application/yaml` or JSON `{definitionYaml}`. Requires `workflow.edit`. | `200` `{valid,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 | `POST /api/v1/workflows/normalize` | Validate, emit deterministic YAML, SHA-256 digest. Same body as validate. Requires `workflow.edit`. | `200` `{definitionYaml,digest,summary,warnings}` | `400` `invalid-workflow` (with `errors`) / `401` `403` `413` |
 

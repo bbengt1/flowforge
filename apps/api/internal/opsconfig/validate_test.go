@@ -74,6 +74,8 @@ func TestNormalizeClusterTargetAndKubernetesPolicy(t *testing.T) {
 			"namespaces":      []any{"prod"},
 			"kinds":           []any{"Deployment"},
 			"verbs":           []any{"apply"},
+			"allowedImages":   []any{"registry.example.com/api"},
+			"allowedIngressHosts": []any{"app.example.com"},
 			"deny":            false,
 			"requireApproval": true,
 		},

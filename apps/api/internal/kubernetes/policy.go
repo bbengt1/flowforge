@@ -5,17 +5,21 @@ import "strings"
 // Canonical evaluation keys accepted on policy.policy for kind=kubernetes.
 // Aliases match E4.3 so existing drafts keep working.
 const (
-	KeyAllowedNamespaces = "allowedNamespaces"
-	KeyNamespaces        = "namespaces"
-	KeyAllowedKinds      = "allowedKinds"
-	KeyKinds             = "kinds"
-	KeyAllowedVerbs      = "allowedVerbs"
-	KeyVerbs             = "verbs"
-	KeyDeny              = "deny"
-	KeyRequireApproval   = "requireApproval"
-	KeyApproverRole      = "approverRole"
-	KeyExpiresIn         = "expiresIn"
-	KeyOperations        = "operations"
+	KeyAllowedNamespaces   = "allowedNamespaces"
+	KeyNamespaces          = "namespaces"
+	KeyAllowedKinds        = "allowedKinds"
+	KeyKinds               = "kinds"
+	KeyAllowedVerbs        = "allowedVerbs"
+	KeyVerbs               = "verbs"
+	KeyAllowedImages       = "allowedImages"
+	KeyImages              = "images"
+	KeyAllowedIngressHosts = "allowedIngressHosts"
+	KeyIngressHosts        = "ingressHosts"
+	KeyDeny                = "deny"
+	KeyRequireApproval     = "requireApproval"
+	KeyApproverRole        = "approverRole"
+	KeyExpiresIn           = "expiresIn"
+	KeyOperations          = "operations"
 )
 
 // KubernetesPolicyKeys is the closed set of keys for kind=kubernetes.
@@ -24,6 +28,8 @@ func KubernetesPolicyKeys() []string {
 		KeyAllowedNamespaces, KeyNamespaces,
 		KeyAllowedKinds, KeyKinds,
 		KeyAllowedVerbs, KeyVerbs,
+		KeyAllowedImages, KeyImages,
+		KeyAllowedIngressHosts, KeyIngressHosts,
 		KeyDeny, KeyRequireApproval, KeyApproverRole, KeyExpiresIn, KeyOperations,
 	}
 }
@@ -42,6 +48,8 @@ func EvaluationKeys() []EvaluationKey {
 		{Canonical: KeyAllowedNamespaces, Aliases: []string{KeyAllowedNamespaces, KeyNamespaces}, FailClosedWhenPresent: true, RequiredForPublish: true},
 		{Canonical: KeyAllowedKinds, Aliases: []string{KeyAllowedKinds, KeyKinds}, FailClosedWhenPresent: true},
 		{Canonical: KeyAllowedVerbs, Aliases: []string{KeyAllowedVerbs, KeyVerbs}, FailClosedWhenPresent: true},
+		{Canonical: KeyAllowedImages, Aliases: []string{KeyAllowedImages, KeyImages}, FailClosedWhenPresent: true},
+		{Canonical: KeyAllowedIngressHosts, Aliases: []string{KeyAllowedIngressHosts, KeyIngressHosts}, FailClosedWhenPresent: true},
 		{Canonical: KeyDeny, Aliases: []string{KeyDeny}},
 		{Canonical: KeyRequireApproval, Aliases: []string{KeyRequireApproval}},
 		{Canonical: KeyApproverRole, Aliases: []string{KeyApproverRole}},
@@ -79,6 +87,16 @@ func Kinds(rules map[string]any) ([]string, bool) {
 // Verbs is the verb allowlist (canonical or alias).
 func Verbs(rules map[string]any) ([]string, bool) {
 	return Allowlist(rules, KeyAllowedVerbs, KeyVerbs)
+}
+
+// Images is the digest-pinned image allowlist (canonical or alias).
+func Images(rules map[string]any) ([]string, bool) {
+	return Allowlist(rules, KeyAllowedImages, KeyImages)
+}
+
+// IngressHosts is the Ingress host allowlist (canonical or alias).
+func IngressHosts(rules map[string]any) ([]string, bool) {
+	return Allowlist(rules, KeyAllowedIngressHosts, KeyIngressHosts)
 }
 
 // Allowed reports whether got is in items. An empty present list denies.

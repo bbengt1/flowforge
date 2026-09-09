@@ -3417,8 +3417,9 @@ paths:
       description: |
         Requires `opsconfig.view`. Documents cluster-target credential type
         (`kubernetes` / kubeconfig), namespace/kind/verb evaluation keys,
-        fail-closed empty allowlists, and least-privilege service-account
-        templates. Does not contact a cluster (E7.2 apply/get/list).
+        fail-closed empty allowlists, least-privilege service-account
+        templates, and E7.2 apply/get/list node contracts (`nodes`, `errors`,
+        `apply`). Does not contact a cluster.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4458,6 +4459,51 @@ components:
             credentialType: {type: string}
             denyAllowsMissingAllowlist: {type: boolean}
         clusterRoles: {type: boolean}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              verb: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+              allowedWith:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    kind: {type: string}
+                    required: {type: boolean}
+                    enum:
+                      type: array
+                      items: {type: string}
+                    description: {type: string}
+              fieldManager: {type: string}
+              force: {type: boolean}
+              serverDryRunAlways: {type: boolean}
+              waitReady: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        apply:
+          type: object
+          properties:
+            fieldManager: {type: string}
+            force: {type: boolean}
+            serverDryRunAlways: {type: boolean}
+            clientDryRunAddsLocalValidationOnly: {type: boolean}
+            waitReady: {type: string}
     OpsResource:
       type: object
       required: [id, kind, slug, name, status, draftRevision]

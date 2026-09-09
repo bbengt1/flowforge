@@ -367,13 +367,15 @@ func checkAllowlists(op string, node workflow.Node, target opsconfig.Pin, kind s
 			return "verb is not allowed by policy"
 		}
 	}
-	if items, present := presentStringList(rules, "allowedHosts", "hosts"); present {
-		host := stringField(node.With, "hostname")
-		if host == "" && target.Spec != nil {
-			host = stringField(target.Spec, "hostname")
-		}
-		if host == "" || !containsFold(items, host) {
-			return "host is not allowed by policy"
+	if !strings.HasPrefix(op, "kubernetes.") {
+		if items, present := presentStringList(rules, "allowedHosts", "hosts"); present {
+			host := stringField(node.With, "hostname")
+			if host == "" && target.Spec != nil {
+				host = stringField(target.Spec, "hostname")
+			}
+			if host == "" || !containsFold(items, host) {
+				return "host is not allowed by policy"
+			}
 		}
 	}
 	if items, present := presentStringList(rules, "allowedAddresses", "addresses"); present {
@@ -411,22 +413,16 @@ func operationVerb(op string) string {
 }
 
 func manifestKindAllowed(manifests string, allowed []string) bool {
-	if strings.TrimSpace(manifests) == "" {
+	docs, err := kubernetes.ParseDocuments(manifests)
+	if err != nil || len(docs) == 0 {
 		return false
 	}
-	found := false
-	for _, line := range strings.Split(manifests, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "kind:") {
-			continue
-		}
-		found = true
-		kind := strings.TrimSpace(strings.TrimPrefix(line, "kind:"))
-		if !kubernetes.Allowed(allowed, kind) {
+	for _, doc := range docs {
+		if !kubernetes.Allowed(allowed, doc.Kind) {
 			return false
 		}
 	}
-	return found
+	return true
 }
 
 func targetRef(node workflow.Node) (string, string) {
