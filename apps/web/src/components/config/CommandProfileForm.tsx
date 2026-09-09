@@ -8,6 +8,7 @@ import {
   SSH_RETRY_SAFE_HELP,
   SSH_REVIEWED_RENDER_HELP,
 } from "@/lib/ssh-contract";
+import { SSH_RETRY_ZERO_MESSAGE } from "@/lib/ssh-retry-contract";
 import {
   applyParameterSchemaToSpec,
   parameterSchemaGaps,
@@ -124,9 +125,42 @@ export function CommandProfileForm({
         ) : null}
       </fieldset>
 
+      <fieldset className="grid gap-3 rounded-xl border border-teal-200 bg-teal-50/50 px-4 py-3">
+        <legend className="px-1 text-sm font-medium text-teal-950">
+          Retry safety
+        </legend>
+        <label className="flex items-start gap-2 text-sm text-teal-950">
+          <input
+            type="checkbox"
+            checked={Boolean(spec.retrySafe)}
+            disabled={readOnly || !retrySafeExposed}
+            onChange={(event) => patch({ retrySafe: event.target.checked })}
+            className="mt-1"
+          />
+          <span>
+            <span className="font-medium">Retry-safe (idempotent verification path)</span>
+            <span className="mt-1 block text-xs text-teal-900/90">
+              Default is off. Enable only when this profile can verify remote
+              state without repeating the command. ssh.run{" "}
+              <code className="font-mono">maxAttempts&gt;0</code> requires this
+              flag. {SSH_RETRY_ZERO_MESSAGE}
+            </span>
+          </span>
+        </label>
+        <p className="text-xs text-teal-900/80">
+          {catalog?.retryNote || SSH_RETRY_SAFE_HELP}
+        </p>
+        {!retrySafeExposed ? (
+          <p role="status" className="text-xs text-amber-950">
+            Catalog did not expose <code className="font-mono">retrySafe</code>.
+            Using the marked E8.3 contract-fallback — the flag stays off.
+          </p>
+        ) : null}
+      </fieldset>
+
       <details className="rounded-xl border border-zinc-200 bg-zinc-50/70 px-4 py-3">
         <summary className="cursor-pointer text-sm font-medium text-zinc-800">
-          Schema JSON and retry note
+          Schema JSON and optional policy
         </summary>
         <div className="mt-3 grid gap-3">
           <label className="text-sm">
@@ -144,18 +178,6 @@ export function CommandProfileForm({
               className={`${inputClass} font-mono`}
             />
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={Boolean(spec.retrySafe)}
-              disabled={readOnly || !retrySafeExposed}
-              onChange={(event) => patch({ retrySafe: event.target.checked })}
-            />
-            Retry-safe schema flag
-          </label>
-          <p className="text-xs text-zinc-500">
-            {catalog?.retryNote || SSH_RETRY_SAFE_HELP}
-          </p>
           <label className="text-sm">
             <span className="font-medium">Optional policy pin (UUID)</span>
             <input

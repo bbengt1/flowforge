@@ -8,6 +8,10 @@ import {
   INDETERMINATE_STATUS_HELP,
 } from "@/lib/execution-contract";
 import {
+  isSshRunType,
+  sshIndeterminateCopy,
+} from "@/lib/ssh-retry-contract";
+import {
   currentReplayNodeId,
   overlayExecutionOnGraph,
   projectPinnedVersionGraph,
@@ -121,7 +125,12 @@ export function ExecutionReplay({
           </div>
           {selected.presentation.indeterminate ? (
             <p className="mt-3 text-sm text-amber-950">
-              {INDETERMINATE_STATUS_HELP}
+              {isSshRunType(selected.step.nodeType)
+                ? sshIndeterminateCopy({
+                    status: selected.status,
+                    nodeType: selected.step.nodeType,
+                  })
+                : INDETERMINATE_STATUS_HELP}
             </p>
           ) : null}
           {selected.waiting ? (

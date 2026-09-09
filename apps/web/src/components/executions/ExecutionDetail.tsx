@@ -81,6 +81,14 @@ import {
   collectRolloutObservations,
   executionHasRolloutObservation,
 } from "@/lib/kubernetes-rollout-contract";
+import {
+  SSH_NO_BLIND_RETRY_HELP,
+  executionHasSshIndeterminate,
+  executionHasSshRun,
+  isSshRunType,
+  sshIndeterminateCopy,
+  sshRetryBlockedMessage,
+} from "@/lib/ssh-retry-contract";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -523,7 +531,15 @@ export function ExecutionDetail({
             </div>
             {view.header.indeterminate ? (
               <p className="mt-3 text-sm text-amber-950">
-                {INDETERMINATE_STATUS_HELP}
+                {executionHasSshRun(view.steps) ||
+                executionHasSshIndeterminate(view.steps)
+                  ? sshIndeterminateCopy({
+                      status: view.header.status,
+                      nodeType: view.steps.find((step) =>
+                        isSshRunType(step.nodeType),
+                      )?.nodeType,
+                    })
+                  : INDETERMINATE_STATUS_HELP}
               </p>
             ) : null}
             {view.legalHold ? (
@@ -573,8 +589,16 @@ export function ExecutionDetail({
                 </button>
               ) : indeterminate ? (
                 <p className="text-sm font-medium text-amber-950">
-                  {RETRY_INDETERMINATE_MESSAGE}
+                  {executionHasSshRun(view.steps) ||
+                  executionHasSshIndeterminate(view.steps)
+                    ? sshRetryBlockedMessage({
+                        status: view.header.status,
+                        steps: view.steps,
+                      })
+                    : RETRY_INDETERMINATE_MESSAGE}
                 </p>
+              ) : executionHasSshRun(view.steps) ? (
+                <p className="text-xs text-zinc-500">{SSH_NO_BLIND_RETRY_HELP}</p>
               ) : (
                 <p className="text-xs text-zinc-500">
                   {retryAffordanceMessage(view.header.status)}
@@ -816,7 +840,16 @@ export function ExecutionDetail({
                     ) : isIndeterminateStatus(step.status) ||
                       isIndeterminateStatus(view.header.status) ? (
                       <p className="mt-3 text-sm font-medium text-amber-950">
-                        {RETRY_INDETERMINATE_MESSAGE}
+                        {isSshRunType(step.nodeType)
+                          ? sshRetryBlockedMessage({
+                              status: step.status,
+                              nodeType: step.nodeType,
+                            })
+                          : RETRY_INDETERMINATE_MESSAGE}
+                      </p>
+                    ) : isSshRunType(step.nodeType) ? (
+                      <p className="mt-3 text-xs text-zinc-500">
+                        {SSH_NO_BLIND_RETRY_HELP}
                       </p>
                     ) : null}
                     {(() => {

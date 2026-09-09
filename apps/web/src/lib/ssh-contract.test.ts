@@ -156,7 +156,7 @@ describe("ssh contract (#82 retarget adapter)", () => {
     assert.equal("template" in profile, true);
     assert.equal(profile.parameterSchema.type, "object");
     assert.equal(profile.parameterSchema.additionalProperties, false);
-    assert.equal("retrySafe" in profile, false);
+    assert.equal(profile.retrySafe, false);
     assert.deepEqual([...SSH_DENIED_FEATURES], [...DENIED_FROM_TYPES]);
     assert.ok(
       SSH_SAFETY_NOTES.some((note) => /not an interactive terminal/i.test(note)),

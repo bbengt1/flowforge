@@ -195,7 +195,7 @@ E7.3 (Chloe) promotes `kubernetes.rolloutStatus` from the E7.2 stub to a placeab
 E8.1 (Chloe) extends the E4.2 `/config` SSH-target and command-profile surfaces for epic #81. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-contract.ts`, wired to jonny's **#86** map on `main` (`e81-#86`). Prefer `GET /ssh/catalog` plus `GET /ops-config/catalog` `sshEngine` for parameter types, render rules, retry schema, and errors. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457. Relates to #82 / Part of #81 — **Keep #82 open** (jonny owns engine/APIs).
 
 - **SSH targets:** `spec.credentialId` is a workspace `type=ssh_private_key` vault credential only — never `privateKey` / `passphrase`. Require `hostname` and `hostKeyFingerprint` (`sha256:<hex>` or OpenSSH `SHA256:<base64>`). Optional `port` (default 22), `allowedAddresses` (IP/CIDR; present empty list and `0.0.0.0/0` are rejected), published `policyId` (`kind=ssh`). Key-only auth is a read-only expectation.
-- **Command profiles:** admin-owned versioned templates. `parameterSchema` is a restricted object schema (`string` / `integer` / `boolean`, ≤16 properties, `{name}` placeholders). The reviewed renderer owns POSIX single-quote substitution and rejects `$()`, backticks, `${`, and `{{`. A profile cannot be edited in place after a workflow version pins it; publication pins the exact target + profile revisions. `retrySafe=true` requires a `verification` probe (E8.3).
+- **Command profiles:** admin-owned versioned templates. `parameterSchema` is a restricted object schema (`string` / `integer` / `boolean`, ≤16 properties, `{name}` placeholders). The reviewed renderer owns POSIX single-quote substitution and rejects `$()`, backticks, `${`, and `{{`. A profile cannot be edited in place after a workflow version pins it; publication pins the exact target + profile revisions. `retrySafe` (default false) plus `spec.verification` are edited in E8.3.
 - **Denied MVP:** password authentication, agent forwarding, port forwarding, proxy commands, and host-key auto-acceptance. The UI does not offer toggles that enable them. This is not an interactive terminal.
 - **Selectors:** action wizard lists only authorized published SSH targets (credential-bound when the API reports `credentialId`) and command profiles. `POST …/select` remains the authorize step. HTTP 403 fails closed — no leftover rows.
 - **Session:** cookie session + `X-CSRF-Token` on POST/PUT. Host-supplied `id` / `workspaceId` is error UX (API 400). Unexpected secret fields are stripped and treated as a contract bug.
@@ -210,9 +210,19 @@ E8.2 (Chloe) adds a placeable `ssh.run` configuration to the E6.2 library and E6
 - **Library / wizard:** `ssh.run` is always placeable. Configure workspace-scoped `sshTargetId`, `commandProfileId`, optional typed `parameters` from the pinned profile schema, bounded `timeoutSeconds` (1–3600, default 60), explicit `retryPolicy` (`maxAttempts` 0–5, default 0), and optional `policyId`.
 - **Selectors:** reuse E8.1 published SSH target + command profile selectors (display name + id). `POST …/select` remains the authorize step. HTTP 403 / empty lists fail closed — no leftover rows. Never show `privateKey` / `passphrase`.
 - **Hard guarantees (copy only — no violating toggles):** ephemeral credential handle; known-host fingerprint match; every resolved IP in `allowedAddresses`; dial verified IP only; key-only / no forwarding / proxy / interactive shell; non-root (default `flowforge`).
-- **Retry:** default `maxAttempts=0`. `maxAttempts>0` requires profile `retrySafe` **and** `verification`. Lease loss / unknown outcome is `indeterminate`. Enable Retry only when `result.retry.allowed` is true; never blindly re-run. See E8.3 in the backend API map.
+- **Retry:** default `maxAttempts=0`. `maxAttempts>0` requires profile `retrySafe` **and** `verification`. Lease loss / unknown outcome is `indeterminate`. Enable Retry only when `result.retry.allowed` is true; never blindly re-run. See E8.3.
+
 - **YAML:** references and typed values only — never SSH keys, passwords, host fingerprints as secrets, connection settings as secrets, or raw logs.
 - **Unchanged:** E8.1 `/config` SSH targets and command profiles; no invented routes; `apps/api` untouched.
+
+## E8.3 SSH indeterminate / retry semantics (Chloe UI)
+
+E8.3 (Chloe) wires jonny's **#90** map on `main` (`e83-#90`). `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/ssh-retry-contract.ts`. Prefer `GET /ssh/catalog` (`retry.ui` / `retry.probe` / `errors[]`) plus `GET /workflows/catalog` `ssh.run.policy` and `POST /policy/evaluate` (`retryMaxAttempts`, `retrySafe`, `retryAllowed`, `verificationDeclared`). Relates to #84 (already closed by #90) / Part of #81 — **do not re-close #84**; keep epic #81 open until this UI PR merges. Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Command profiles:** first-class `retrySafe` (default false) plus `spec.verification` (required when retrySafe). Probe is an idempotent read-only `{name}` template — never the mutating command. `onMatch=already-applied`, `onMismatch=safe-to-retry`, `onError=indeterminate`.
+- **ssh.run wizard:** `retryPolicy.maxAttempts` defaults to 0. `maxAttempts>0` requires profile `retrySafe` **and** a declared verification probe (`retry-denied` / `invalid-verification`). No affordance that implies a blind repeat.
+- **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive probe — never imply the command did not run. Show **Retry** only when `result.retry.allowed` is true (same rule on `POST …/retry`; `409 retry-denied` when closed). Hide Retry for non-retrySafe indeterminate.
+- **Unchanged:** E8.1 `/config` collections; E8.2 node fields; no invented routes; `apps/api` untouched.
 
 ## Foundation operator shell
 

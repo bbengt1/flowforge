@@ -4,6 +4,9 @@
  * GET /workflows/catalog (`allowedWith` / `policy` / `redaction`)
  * + GET /ssh/catalog (`nodes[]` / `retry` / `errors[]` / `isolation`).
  *
+ * E8.3 retry / indeterminate semantics live in `ssh-retry-contract.ts`
+ * (the single retarget point when jonny posts the #84 map).
+ *
  * Consume existing SSH-target + command-profile list + POST …/select
  * (E8.1). Do not invent routes. Do not change `apps/api`.
  *
@@ -13,6 +16,15 @@
 
 import { parseParameterSchema } from "./ssh.ts";
 import { SSH_NOT_A_TERMINAL_HELP } from "./ssh-contract.ts";
+import {
+  SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+  SSH_INDETERMINATE_HELP,
+  SSH_MAX_RETRY_ATTEMPTS,
+  SSH_RETRY_DENIED_MESSAGE,
+  SSH_RETRY_ZERO_MESSAGE,
+  defaultSshRetryPolicy,
+  validateSshRetryPolicy,
+} from "./ssh-retry-contract.ts";
 import {
   SSH_ACTION_TYPES,
   SSH_MAX_PARAMETERS,
@@ -32,6 +44,16 @@ import type {
 } from "./workflow-types.ts";
 import { isCatalogImplementationEnabled } from "./workflow.ts";
 
+export {
+  SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+  SSH_INDETERMINATE_HELP,
+  SSH_MAX_RETRY_ATTEMPTS,
+  SSH_RETRY_DENIED_MESSAGE,
+  SSH_RETRY_ZERO_MESSAGE,
+  commandProfileRetrySafe,
+  defaultSshRetryPolicy,
+} from "./ssh-retry-contract.ts";
+
 export const SSH_NODE_STORY = 83;
 export const SSH_NODE_EPIC = 81;
 /** Jonny's isolated ssh.run map on main. */
@@ -43,8 +65,6 @@ export const SSH_RUN_NODE_TYPE = "ssh.run" as const;
 export const SSH_DEFAULT_TIMEOUT_SECONDS = 60;
 export const SSH_MIN_TIMEOUT_SECONDS = 1;
 export const SSH_MAX_TIMEOUT_SECONDS = 3600;
-export const SSH_DEFAULT_RETRY_MAX_ATTEMPTS = 0;
-export const SSH_MAX_RETRY_ATTEMPTS = 5;
 export const SSH_DEFAULT_USERNAME = "flowforge";
 
 /** Never user-controlled. Stripped from wizard `with` before YAML insert. */
@@ -73,7 +93,7 @@ export const SSH_NODE_POLICY_NOTES = [
   "Non-root remote account (default flowforge). root / toor / administrator are denied.",
   "This is not an interactive terminal. Choose a published command profile with typed parameters — no arbitrary user shell.",
   "YAML stores sshTargetId, commandProfileId, parameter values, timeoutSeconds, retryPolicy, and optional policyId only. Never keys, passwords, host fingerprints, connection settings, or raw logs.",
-  "Retries default to zero. maxAttempts>0 requires a retrySafe profile and is still not auto-retried in E8.2. Lease loss is indeterminate (E8.3 stub) — never a blind retry.",
+  "Retries default to zero. maxAttempts>0 requires a retrySafe profile with an idempotent verification path. Lease loss is indeterminate — never a blind retry.",
   "Selectors fail closed on HTTP 403. Only published workspace SSH targets and command profiles are listed.",
 ] as const;
 
@@ -94,15 +114,6 @@ export const SSH_SECRET_WITH_MESSAGE =
 
 export const SSH_FREEFORM_SHELL_MESSAGE =
   "ssh.run is not a free-form shell. Use a published command profile with typed parameters.";
-
-export const SSH_RETRY_ZERO_MESSAGE =
-  "Retries default to zero. E8.2 never blindly re-runs a command.";
-
-export const SSH_RETRY_DENIED_MESSAGE =
-  "retryPolicy.maxAttempts>0 requires a retrySafe command profile. E8.2 still does not automatically retry; lease loss is indeterminate.";
-
-export const SSH_INDETERMINATE_HELP =
-  "Lease loss after dispatch is indeterminate (E8.3 stub). The engine never blindly repeats the command.";
 
 export const SSH_CONTRACT_FALLBACK_NODE_HELP =
   "Using the marked e82-#88 ssh.run map because GET /ssh/catalog isolation/nodes[] was unavailable. Collections stay on /ssh-targets and /command-profiles.";
@@ -185,7 +196,7 @@ export const DEFAULT_SSH_RETRY_RULES: SshNodeRetryRules = {
   defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   retrySafeFlag: true,
   semantics: "E8.3",
-  note: "Retries default to zero. E8.2 never blindly re-runs. A profile may set retrySafe=true and retryPolicy.maxAttempts>0; E8.3 implements verification before any retry. Lease loss is indeterminate.",
+  note: SSH_RETRY_ZERO_MESSAGE,
 };
 
 export const DEFAULT_SSH_ISOLATION: SshIsolationRules = {
@@ -226,7 +237,7 @@ export const DEFAULT_SSH_NODE_ERRORS: SshNodeErrorShape[] = [
   {
     code: "retry-denied",
     status: 400,
-    meaning: "retryPolicy.maxAttempts>0 requires retrySafe. E8.2 still does not retry.",
+    meaning: SSH_RETRY_DENIED_MESSAGE,
   },
   {
     code: "forbidden",
@@ -266,7 +277,7 @@ export const DEFAULT_SSH_NODE_ERRORS: SshNodeErrorShape[] = [
   {
     code: "indeterminate",
     status: 409,
-    meaning: "Lease was lost after dispatch. E8.2 does not retry; E8.3 adds profile verification.",
+    meaning: SSH_INDETERMINATE_HELP,
   },
 ];
 
@@ -314,9 +325,6 @@ export function defaultSshWith(type: string): Record<string, unknown> {
   };
 }
 
-export function defaultSshRetryPolicy(): { maxAttempts: number } {
-  return { maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS };
-}
 
 export function sshNodeContract(
   type: string,
@@ -397,7 +405,7 @@ export function sshNodeWithFields(
       controlHint: "text",
       defaultValue: defaultSshRetryPolicy(),
       advanced: true,
-      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe and is still not auto-retried. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
+      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
     },
     {
       name: "policyId",
@@ -479,11 +487,6 @@ export function commandProfileParameterConstraints(
   return parseParameterSchema(spec?.parameterSchema);
 }
 
-export function commandProfileRetrySafe(
-  spec: { retrySafe?: unknown } | null | undefined,
-): boolean {
-  return spec?.retrySafe === true;
-}
 
 export function pruneSshParameters(
   parameters: Record<string, unknown> | undefined,
@@ -566,15 +569,11 @@ export function validateSshNodeConfig(
     }
   }
 
-  const retryPolicy = retryPolicyFromWith(withValue);
-  if (retryPolicy.error) {
-    errors.push(retryPolicy.error);
-  } else if (
-    retryPolicy.maxAttempts > SSH_DEFAULT_RETRY_MAX_ATTEMPTS &&
-    !context.profileRetrySafe
-  ) {
-    errors.push(SSH_RETRY_DENIED_MESSAGE);
-  }
+  const retryPolicy = validateSshRetryPolicy({
+    withValue,
+    profileRetrySafe: context.profileRetrySafe,
+  });
+  errors.push(...retryPolicy.errors);
 
   if (withValue.policyId !== undefined && withValue.policyId !== "") {
     const policyId = String(withValue.policyId).trim();
@@ -965,38 +964,6 @@ function parseEngineError(raw: unknown): SshNodeErrorShape | null {
     status: Number.isFinite(Number(rec.status)) ? Number(rec.status) : 400,
     meaning: String(rec.meaning ?? rec.detail ?? "").trim(),
   };
-}
-
-function retryPolicyFromWith(withValue: Record<string, unknown>): {
-  maxAttempts: number;
-  error?: string;
-} {
-  if (withValue.retryPolicy === undefined || withValue.retryPolicy === "") {
-    return { maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS };
-  }
-  if (
-    !withValue.retryPolicy ||
-    typeof withValue.retryPolicy !== "object" ||
-    Array.isArray(withValue.retryPolicy)
-  ) {
-    return { maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS, error: "retryPolicy must be an object." };
-  }
-  const rec = withValue.retryPolicy as Record<string, unknown>;
-  if (rec.maxAttempts === undefined || rec.maxAttempts === "") {
-    return { maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS };
-  }
-  const maxAttempts = Number(rec.maxAttempts);
-  if (
-    !Number.isInteger(maxAttempts) ||
-    maxAttempts < SSH_DEFAULT_RETRY_MAX_ATTEMPTS ||
-    maxAttempts > SSH_MAX_RETRY_ATTEMPTS
-  ) {
-    return {
-      maxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
-      error: `retryPolicy.maxAttempts must be between ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS} and ${SSH_MAX_RETRY_ATTEMPTS}.`,
-    };
-  }
-  return { maxAttempts };
 }
 
 function parseIsolation(raw: unknown): SshIsolationRules | undefined {

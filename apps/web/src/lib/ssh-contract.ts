@@ -23,6 +23,7 @@
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
+import { SSH_RETRY_SAFE_HELP } from "./ssh-retry-contract.ts";
 import {
   SSH_CREDENTIAL_TYPE,
   SSH_DEFAULT_PORT,
@@ -32,6 +33,8 @@ import {
   SSH_TEMPLATE_FORBIDDEN_TOKENS,
   type SshEngineCatalog,
 } from "./ssh-types.ts";
+
+export { SSH_RETRY_SAFE_HELP } from "./ssh-retry-contract.ts";
 
 export { SSH_DENIED_FEATURES } from "./ssh-types.ts";
 
@@ -91,9 +94,6 @@ export const SSH_IMMUTABLE_PIN_HELP =
 
 export const SSH_KEY_ONLY_HELP =
   "Key-only authentication. Bind a workspace ssh_private_key vault credential. Password authentication is denied in MVP.";
-
-export const SSH_RETRY_SAFE_HELP =
-  "retrySafe is a schema flag only. Retries default to zero; verification and bounded retry are E8.3.";
 
 export const SSH_CONTRACT_FALLBACK_HELP =
   "Using local #86 catalog defaults because GET /ssh/catalog was unavailable. Collections stay on /ssh-targets and /command-profiles.";
@@ -389,6 +389,7 @@ export function emptySshTargetSpec(): {
 export function emptyCommandProfileSpec(): {
   parameterSchema: Record<string, unknown>;
   template: string;
+  retrySafe: false;
 } {
   return {
     parameterSchema: {
@@ -397,5 +398,6 @@ export function emptyCommandProfileSpec(): {
       properties: {},
     },
     template: "",
+    retrySafe: false,
   };
 }
