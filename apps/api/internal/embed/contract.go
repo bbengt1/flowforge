@@ -15,6 +15,11 @@ const (
 	MinTTL     = 15 * time.Second
 	MaxTTL     = 5 * time.Minute
 
+	// MaxOverlapTTL is the longest overlapUntil a verify key may carry
+	// (ADV-014). Minutes–hours, not days/weeks. Missing, zero, or
+	// farther-future values fail closed.
+	MaxOverlapTTL = 4 * time.Hour
+
 	// MountPrefix is the stable embed mount of the canonical UI.
 	// Deep links under this prefix are the same routes as standalone.
 	MountPrefix = "/embed/v1"

@@ -37,7 +37,7 @@ func (p *PostgresKeys) ListOverlap(ctx context.Context, now time.Time) ([]Public
 	rows, err := p.db.Query(ctx, `
 		SELECT kid, kty, crv, x, use, alg, expires_at
 		  FROM embed_overlap_keys
-		 WHERE expires_at IS NULL OR expires_at > $1
+		 WHERE expires_at IS NOT NULL AND expires_at > $1
 		 ORDER BY created_at ASC
 	`, now.UTC())
 	if err != nil {
@@ -52,8 +52,12 @@ func (p *PostgresKeys) ListOverlap(ctx context.Context, now time.Time) ([]Public
 			return nil, ErrStoreUnavailable
 		}
 		k.Status = KeyStatusOverlap
-		if exp != nil {
-			k.OverlapUntil = exp.UTC()
+		if exp == nil {
+			continue
+		}
+		k.OverlapUntil = exp.UTC()
+		if !OverlapStillValid(k.OverlapUntil, now) {
+			continue
 		}
 		out = append(out, k)
 	}
@@ -75,10 +79,10 @@ func (p *PostgresKeys) RegisterOverlap(ctx context.Context, key PublicJWK, expir
 	if err != nil {
 		return err
 	}
-	var exp any
-	if !expiresAt.IsZero() {
-		exp = expiresAt.UTC()
+	if expiresAt.IsZero() {
+		return ErrOverlapUntilRequired
 	}
+	exp := expiresAt.UTC()
 	_, err = p.db.Exec(ctx, `
 		INSERT INTO embed_overlap_keys (kid, kty, crv, x, use, alg, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)

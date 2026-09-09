@@ -340,6 +340,9 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"/embed/v1/workflows/{id}"`) {
 		t.Fatal("missing embed deep link")
 	}
+	if !strings.Contains(rec.Body.String(), `"maxOverlapTtl":"4h0m0s"`) {
+		t.Fatal("catalog must document the overlapUntil cap")
+	}
 
 	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
 	if mintedRec.Code != http.StatusCreated {
@@ -473,7 +476,8 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 		X: encodeEmbedPub(foreign), Use: "sig", Alg: embed.Algorithm,
 	}
 
-	wsAdminBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK})
+	until := env.now.Add(2 * time.Minute).Format(time.RFC3339)
+	wsAdminBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK, "overlapUntil": until})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +488,7 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 	env.h.ServeHTTP(denied, req)
 	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
 
-	foreignBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK})
+	foreignBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": attackerJWK, "overlapUntil": until})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +502,7 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 
 	wrongX := active
 	wrongX.X = encodeEmbedPub(foreign)
-	wrongBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": wrongX})
+	wrongBody, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": wrongX, "overlapUntil": until})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +511,7 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 	env.h.ServeHTTP(wrong, req)
 	assertProblem(t, wrong, http.StatusBadRequest, CodeInvalidRequest, "")
 
-	handoff, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": active})
+	handoff, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": active, "overlapUntil": until})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,6 +666,57 @@ func TestEmbedExchangeExpiredOverlapRejected(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	env.h.ServeHTTP(rej, req)
 	assertProblem(t, rej, http.StatusUnauthorized, CodeUnauthenticated, "")
+}
+
+func TestEmbedRotateRequiresShortOverlapUntil(t *testing.T) {
+	env := newEmbedEnv(t)
+	active := env.keys.PublicJWKS().Keys[0]
+
+	missing, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": active})
+	if err != nil {
+		t.Fatal(err)
+	}
+	miss := httptest.NewRecorder()
+	req := identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(missing), env.ops)
+	env.h.ServeHTTP(miss, req)
+	assertProblem(t, miss, http.StatusBadRequest, CodeInvalidRequest, "")
+	if !strings.Contains(miss.Body.String(), "overlapUntil") {
+		t.Fatalf("missing overlapUntil: %s", miss.Body.String())
+	}
+
+	tooLong, err := json.Marshal(map[string]any{
+		"action":       "register-overlap",
+		"publicJwk":    active,
+		"overlapUntil": env.now.Add(48 * time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(tooLong), env.ops)
+	env.h.ServeHTTP(long, req)
+	assertProblem(t, long, http.StatusBadRequest, CodeInvalidRequest, "")
+	if !strings.Contains(long.Body.String(), "4h") {
+		t.Fatalf("too-long overlapUntil: %s", long.Body.String())
+	}
+
+	okBody, err := json.Marshal(map[string]any{
+		"action":       "register-overlap",
+		"publicJwk":    active,
+		"overlapUntil": env.now.Add(30 * time.Minute).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := httptest.NewRecorder()
+	req = identifiedJSON(http.MethodPost, "/api/v1/embed/keys/rotate", string(okBody), env.ops)
+	env.h.ServeHTTP(ok, req)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("valid short overlapUntil %d %s", ok.Code, ok.Body.String())
+	}
+	if !strings.Contains(ok.Body.String(), env.keys.KeyID) {
+		t.Fatalf("JWKS should list overlap kid: %s", ok.Body.String())
+	}
 }
 
 func TestEmbedMintEmptyAllowlistDenied(t *testing.T) {

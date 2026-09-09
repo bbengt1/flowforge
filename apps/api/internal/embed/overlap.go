@@ -42,6 +42,9 @@ func parseOverlapKeys(raw string) ([]PublicJWK, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", EnvOverlapKeys, err)
 		}
+		if err := validateOverlapUntil(norm.OverlapUntil, time.Now().UTC(), false); err != nil {
+			return nil, fmt.Errorf("%s kid %q: %w", EnvOverlapKeys, norm.Kid, err)
+		}
 		if _, ok := seen[norm.Kid]; ok {
 			return nil, fmt.Errorf("%s: duplicate kid %q", EnvOverlapKeys, norm.Kid)
 		}
@@ -118,15 +121,50 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// OverlapStillValid reports whether an optional overlap expiry is still open.
-func OverlapStillValid(expiresAt time.Time, now time.Time) bool {
-	if expiresAt.IsZero() {
-		return true
+// ValidateOverlapUntil checks that until is a finite, short overlap
+// window: required, in the future, and no longer than MaxOverlapTTL.
+func ValidateOverlapUntil(until, now time.Time) error {
+	return validateOverlapUntil(until, now, true)
+}
+
+func validateOverlapUntil(until, now time.Time, requireFuture bool) error {
+	if until.IsZero() {
+		return ErrOverlapUntilRequired
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	return expiresAt.After(now.UTC())
+	until = until.UTC()
+	now = now.UTC()
+	if requireFuture && !until.After(now) {
+		return ErrOverlapUntilRequired
+	}
+	if until.After(now.Add(MaxOverlapTTL)) {
+		return ErrOverlapUntilTooLong
+	}
+	return nil
+}
+
+// OverlapStillValid reports whether a required overlap expiry is still
+// open. Zero (missing) and far-future windows are refused — they are
+// not treated as forever. The active signing key is checked separately
+// and does not use this helper.
+func OverlapStillValid(expiresAt time.Time, now time.Time) bool {
+	if expiresAt.IsZero() {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	expiresAt = expiresAt.UTC()
+	if !expiresAt.After(now) {
+		return false
+	}
+	if expiresAt.After(now.Add(MaxOverlapTTL)) {
+		return false
+	}
+	return true
 }
 
 // ParseIssuerAllowlist builds the iss allowlist from EMBED_ISSUER and

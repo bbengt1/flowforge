@@ -23,8 +23,13 @@ const (
 )
 
 // PublicJWK is a JWKS OKP/Ed25519 public key. The private parameter `d`
-// is never populated. OverlapUntil is the optional verify-path expiry
-// (overlapUntil / retire). Zero means no expiry (until retire or restart).
+// is never populated.
+//
+// OverlapUntil is required on overlap verification keys (status=overlap).
+// Missing or zero is refused on the verify path — it is not treated as
+// forever. The active signing key is not an overlap key and does not
+// carry overlapUntil; it stays valid until a new EMBED_SIGNING_KEY
+// replaces it.
 type PublicJWK struct {
 	Kty          string    `json:"kty"`
 	Crv          string    `json:"crv"`

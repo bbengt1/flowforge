@@ -19,6 +19,9 @@
  * CHIPS (SameSite=None; Secure; Partitioned). Top-level cookies stay
  * Lax/Strict. Keep credentials:include. Do not request Storage Access
  * / unpartitioned cookies. Cookie not sent is 401/403.
+ *
+ * ADV-014: register-overlap requires short overlapUntil (max 4h).
+ * The embed shell does not rotate keys. No UI rewrite.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -41,6 +44,8 @@ export const EMBED_ROTATE_PATH = "/embed/keys/rotate";
 export const EMBED_DEFAULT_TTL_SECONDS = 60;
 export const EMBED_MIN_TTL_SECONDS = 15;
 export const EMBED_MAX_TTL_SECONDS = 300;
+/** Max overlapUntil window for overlap verify keys (ADV-014). Not assertion TTL. */
+export const EMBED_MAX_OVERLAP_TTL_SECONDS = 4 * 60 * 60;
 
 /** JWT / assertion claim names (payload). workspace_id is binding only. */
 export const EMBED_CLAIM_NAMES = [
@@ -422,7 +427,7 @@ export const EMBED_TENANCY_HELP =
   "After exchange, persist tenantId + workbenchKey from the API workspace/session.embed — never from host query. Send X-FlowForge-Tenant-ID + X-FlowForge-Workbench-Key on every later call. A disagreeing host tenant/workbench is HTTP 403. Host tenant is never authorization.";
 
 export const EMBED_ROTATE_HELP =
-  "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil?} with platform.administer (PLATFORM_ADMINS). publicJwk must be the previous active signing key. workspace.administer is 403. Exchange/JWKS refresh overlap from the store and drop expired overlapUntil kids. Production requires a durable EMBED_SIGNING_KEY (boot-fail if missing). The embed shell does not rotate keys.";
+  "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil} with platform.administer (PLATFORM_ADMINS). overlapUntil is required RFC3339 and must be a short future window (max 4h). publicJwk must be the previous active signing key. The active signing key is not an overlap key and does not use overlapUntil. workspace.administer is 403. Exchange/JWKS refresh overlap from the store and drop missing/expired/far-future overlapUntil kids. Production requires a durable EMBED_SIGNING_KEY (boot-fail if missing). Bad EMBED_OVERLAP_KEYS is boot-fail. The embed shell does not rotate keys.";
 
 export type EmbedExchangeBody = {
   assertion: string;

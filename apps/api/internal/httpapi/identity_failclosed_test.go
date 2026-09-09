@@ -248,7 +248,11 @@ func TestFailClosedRotateStillRequiresPlatformAdmin(t *testing.T) {
 	})
 
 	active := keys.PublicJWKS().Keys[0]
-	body, err := json.Marshal(map[string]any{"action": "register-overlap", "publicJwk": active})
+	body, err := json.Marshal(map[string]any{
+		"action":       "register-overlap",
+		"publicJwk":    active,
+		"overlapUntil": time.Now().UTC().Add(2 * time.Minute).Format(time.RFC3339),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

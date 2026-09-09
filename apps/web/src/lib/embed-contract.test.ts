@@ -6,6 +6,7 @@ import {
   EMBED_AUDIENCE,
   EMBED_CLAIM_NAMES,
   EMBED_DEFAULT_TTL_SECONDS,
+  EMBED_MAX_OVERLAP_TTL_SECONDS,
   EMBED_EXCHANGE_PATH,
   EMBED_MINT_PATH,
   EMBED_MOUNT_PREFIX,
@@ -19,6 +20,7 @@ import {
   EMBED_ROUTE_MAP_SOURCE,
   EMBED_STORY,
   EMBED_VALIDATION_STORY,
+  EMBED_ROTATE_HELP,
   EMBED_ROTATE_PATH,
   EMBED_TENANCY_RULES,
   EMBED_CHIPS_RULES,
@@ -68,6 +70,9 @@ describe("embed-contract", () => {
     assert.equal(embedApiPath(EMBED_ROTATE_PATH), "/api/v1/embed/keys/rotate");
     assert.equal(EMBED_API_PREFIX, "/api/v1");
     assert.equal(EMBED_DEFAULT_TTL_SECONDS, 60);
+    assert.equal(EMBED_MAX_OVERLAP_TTL_SECONDS, 4 * 60 * 60);
+    assert.match(EMBED_ROTATE_HELP, /overlapUntil is required/);
+    assert.match(EMBED_ROTATE_HELP, /max 4h/);
     assert.ok(EMBED_REQUIRED_CLAIMS.includes("jti"));
     assert.ok(EMBED_REQUIRED_CLAIMS.includes("aud"));
     assert.ok(EMBED_CLAIM_NAMES.includes("workspace_id"));
