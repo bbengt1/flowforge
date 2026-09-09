@@ -279,7 +279,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		"/credentials/{credentialId}/deletion-impact",
 		"/credentials/{credentialId}/events",
 		"/ops-config/catalog", "/ops-config/select", "/kubernetes/catalog", "/ssh/catalog",
-		"/scripts/catalog", "/scripts", "/scripts/{artifactId}", "/scripts/{artifactId}/revoke",
+		"/scripts/catalog", "/http/catalog", "/scripts", "/scripts/{artifactId}", "/scripts/{artifactId}/revoke",
 		"/workflows/{workflowId}/versions/{versionId}/script-artifacts",
 		"/cluster-targets", "/cluster-targets/{resourceId}",
 		"/cluster-targets/{resourceId}/draft", "/cluster-targets/{resourceId}/publish",

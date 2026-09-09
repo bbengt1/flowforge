@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
@@ -399,6 +400,15 @@ func (s *Server) getSSHCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ssheng.Catalog())
 }
 
+func (s *Server) getHTTPCatalog(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.opsScope(w, r, authz.PermOpsConfigView)
+	if !ok {
+		return
+	}
+	_ = scope
+	writeJSON(w, http.StatusOK, httpnotify.Catalog())
+}
+
 func (s *Server) authorizeOpsSpec(w http.ResponseWriter, r *http.Request, scope isolation.Scope, kind string, spec map[string]any, ready bool) bool {
 	if spec == nil {
 		spec = map[string]any{}
@@ -562,6 +572,9 @@ func (s *Server) pinWorkflowRefs(w http.ResponseWriter, r *http.Request, scope i
 	if !s.validateSSHRunPins(w, r, yamlDoc, pins) {
 		return nil, false
 	}
+	if !s.validateHTTPPins(w, r, yamlDoc, pins) {
+		return nil, false
+	}
 	bound, err := s.ops.BindPins(r.Context(), scope, opsconfig.BindInput{OwnerKind: ownerKind, OwnerID: ownerID, Pins: pins})
 	if err != nil {
 		if errors.Is(err, opsconfig.ErrImmutable) {
@@ -647,6 +660,64 @@ func (s *Server) validateSSHRunPins(w http.ResponseWriter, r *http.Request, yaml
 		}
 		if err := opsconfig.ValidateSSHRunRetry(pin.Spec, node.With); err != nil {
 			WriteProblem(w, r, http.StatusBadRequest, CodeRetryDenied, "Retry Denied", "retryPolicy.maxAttempts>0 requires a retrySafe command profile with a verification probe.")
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) authorizeHTTPNodes(w http.ResponseWriter, r *http.Request, perms []string, yamlDoc string) bool {
+	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return true
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		needed := httpnotify.RequiredPermissions(node.Type)
+		if len(needed) == 0 || httpnotify.ExpectedConnectionType(node.Type) == "" {
+			continue
+		}
+		if node.Type == httpnotify.NodeHTTPRequest && strings.TrimSpace(stringField(node.With, "responseSchemaRef")) == "" {
+			filtered := needed[:0]
+			for _, perm := range needed {
+				if perm == authz.PermResponseSchemaUse {
+					continue
+				}
+				filtered = append(filtered, perm)
+			}
+			needed = filtered
+		}
+		for _, perm := range needed {
+			if !authz.Allows(perms, perm) {
+				WriteForbidden(w, r)
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *Server) validateHTTPPins(w http.ResponseWriter, r *http.Request, yamlDoc string, pins []opsconfig.Pin) bool {
+	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
+	if len(errs) > 0 || res == nil || res.Document == nil {
+		return true
+	}
+	byID := map[string]opsconfig.Pin{}
+	for _, pin := range pins {
+		byID[pin.ResourceID] = pin
+	}
+	for _, node := range res.Document.Spec.Nodes {
+		want := httpnotify.ExpectedConnectionType(node.Type)
+		if want == "" {
+			continue
+		}
+		connID := strings.TrimSpace(stringField(node.With, "connectionId"))
+		pin, ok := byID[connID]
+		if !ok || pin.Kind != opsconfig.KindConnection {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", node.Type+" requires a pinned connection revision.")
+			return false
+		}
+		if err := opsconfig.ValidateHTTPConnectionType(node.Type, pin.Spec); err != nil {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Pinned connection type does not match "+node.Type+".")
 			return false
 		}
 	}

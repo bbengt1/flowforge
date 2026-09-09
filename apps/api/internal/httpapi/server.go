@@ -23,6 +23,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/bbengt1/flowforge/apps/api/openapi"
 	"gopkg.in/yaml.v3"
 )
@@ -225,6 +226,9 @@ func newServer(d Deps) http.Handler {
 	if clock == nil {
 		clock = time.Now
 	}
+	if v := strings.TrimSpace(os.Getenv("INTEGRATION_ACTIONS_ENABLED")); v == "0" || strings.EqualFold(v, "false") {
+		workflow.IntegrationActionsEnabled = false
+	}
 	jobKey := d.JobBindingKey
 	if len(jobKey) == 0 {
 		jobKey = d.Security.JobBindingKey
@@ -399,6 +403,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/kubernetes/catalog", s.getKubernetesCatalog)
 	mux.HandleFunc("GET /api/v1/ssh/catalog", s.getSSHCatalog)
 	mux.HandleFunc("GET /api/v1/scripts/catalog", s.getScriptCatalog)
+	mux.HandleFunc("GET /api/v1/http/catalog", s.getHTTPCatalog)
 	mux.HandleFunc("POST /api/v1/scripts", s.publishScript)
 	mux.HandleFunc("GET /api/v1/scripts/{artifactId}", s.getScriptArtifact)
 	mux.HandleFunc("POST /api/v1/scripts/{artifactId}/revoke", s.revokeScriptArtifact)

@@ -252,6 +252,10 @@ func validateNode(n Node, path string) ErrorList {
 		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnsupportedNode, fmt.Sprintf("Node type %q is not enabled in MVP.", n.Type)))
 		return errs
 	}
+	if isIntegrationNode(n.Type) && !IntegrationActionsEnabled {
+		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnsupportedNode, fmt.Sprintf("Node type %q is disabled until the integration gate is enabled.", n.Type)))
+		return errs
+	}
 	if n.With == nil {
 		n.With = map[string]any{}
 	}
@@ -401,7 +405,7 @@ func validateNodeWith(n Node, path string) ErrorList {
 	case "script.python", "script.go":
 		errs = append(errs, validateTimeout(n.With, path)...)
 		errs = append(errs, validateScriptNode(n, path)...)
-	case "http.request":
+	case "http.request", "notification.webhook":
 		if v, ok := n.With["method"]; ok {
 			s, ok := v.(string)
 			if !ok || !oneOf(strings.ToUpper(s), "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") {
@@ -414,7 +418,17 @@ func validateNodeWith(n Node, path string) ErrorList {
 				errs = append(errs, fieldError(path+".with.path", n.pos.Line, n.pos.Column, CodeUnsafeReference, "path must be a relative URL path, not a full URL."))
 			}
 		}
-		errs = append(errs, validateTimeout(n.With, path)...)
+		if v, ok := n.With["host"]; ok {
+			s, ok := v.(string)
+			if !ok || strings.TrimSpace(s) == "" || strings.Contains(s, "://") || strings.Contains(s, "/") {
+				errs = append(errs, fieldError(path+".with.host", n.pos.Line, n.pos.Column, CodeUnsafeReference, "host must be a hostname from the pinned connection, not a URL."))
+			}
+		}
+		if v, ok := n.With["timeoutSeconds"]; ok && !isBoundedInt(v, 1, 60) {
+			errs = append(errs, fieldError(path+".with.timeoutSeconds", n.pos.Line, n.pos.Column, CodeInvalidWith, "timeoutSeconds must be between 1 and 60."))
+		}
+	case "notification.email":
+		// Recipients and body live on pinned resources, never YAML.
 	case "flow.approval":
 		if v, ok := n.With["expiresIn"]; ok {
 			s, ok := v.(string)

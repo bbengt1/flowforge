@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -561,7 +562,43 @@ func normalizeConnection(spec map[string]any) (map[string]any, error) {
 		maxRedirects = n
 	}
 	ep["maxRedirects"] = maxRedirects
-	if err := rejectUnknown(policy, "hosts", "methods", "pathPrefixes", "ports", "tlsRequired", "allowRedirects", "maxRedirects"); err != nil {
+	_, addrsPresent := policy["allowedAddresses"]
+	addrs, err := stringList(policy, "allowedAddresses", 32, 64)
+	if err != nil {
+		return nil, err
+	}
+	if addrsPresent {
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("%w: endpointPolicy.allowedAddresses must not be empty (deny-by-default)", ErrInvalid)
+		}
+		canonAddrs, err := ssheng.NormalizeAddresses(addrs, true)
+		if err != nil {
+			return nil, mapSSHErr(err)
+		}
+		ep["allowedAddresses"] = canonAddrs
+	}
+	secrets, err := stringList(policy, "secretFields", 32, 64)
+	if err != nil {
+		return nil, err
+	}
+	if secrets != nil {
+		ep["secretFields"] = secrets
+	}
+	if raw, exists := policy["maxRequestBytes"]; exists {
+		n, err := asInt(raw)
+		if err != nil || n < 1 || n > 1_048_576 {
+			return nil, fmt.Errorf("%w: endpointPolicy.maxRequestBytes must be 1-1048576", ErrInvalid)
+		}
+		ep["maxRequestBytes"] = n
+	}
+	if raw, exists := policy["maxResponseBytes"]; exists {
+		n, err := asInt(raw)
+		if err != nil || n < 1 || n > 1_048_576 {
+			return nil, fmt.Errorf("%w: endpointPolicy.maxResponseBytes must be 1-1048576", ErrInvalid)
+		}
+		ep["maxResponseBytes"] = n
+	}
+	if err := rejectUnknown(policy, "hosts", "methods", "pathPrefixes", "ports", "tlsRequired", "allowRedirects", "maxRedirects", "allowedAddresses", "secretFields", "maxRequestBytes", "maxResponseBytes"); err != nil {
 		return nil, err
 	}
 	out["endpointPolicy"] = ep
@@ -716,6 +753,13 @@ func normalizePolicy(spec map[string]any) (map[string]any, error) {
 		}
 		policy = normalized
 	}
+	if kind == "http" || kind == "notification" {
+		normalized, err := normalizeHTTPPolicyObject(policy)
+		if err != nil {
+			return nil, err
+		}
+		policy = normalized
+	}
 	if err := rejectUnknown(spec, "kind", "policy"); err != nil {
 		return nil, err
 	}
@@ -865,6 +909,69 @@ func normalizeSSHPolicyObject(policy map[string]any) (map[string]any, error) {
 	}
 	if addrs != nil {
 		out[ssheng.KeyAllowedAddresses] = addrs
+	}
+	return out, nil
+}
+
+func normalizeHTTPPolicyObject(policy map[string]any) (map[string]any, error) {
+	if err := rejectUnknown(policy, httpnotify.HTTPPolicyKeys()...); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	if raw, ok := policy[httpnotify.KeyDeny]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.deny must be a boolean", ErrInvalid)
+		}
+		out[httpnotify.KeyDeny] = b
+	}
+	if raw, ok := policy[httpnotify.KeyRequireApproval]; ok {
+		b, ok := raw.(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: policy.requireApproval must be a boolean", ErrInvalid)
+		}
+		out[httpnotify.KeyRequireApproval] = b
+	}
+	if v, ok, err := optionalString(policy, httpnotify.KeyApproverRole, 1, 64); err != nil {
+		return nil, err
+	} else if ok {
+		out[httpnotify.KeyApproverRole] = v
+	}
+	if v, ok, err := optionalString(policy, httpnotify.KeyExpiresIn, 2, 32); err != nil {
+		return nil, err
+	} else if ok {
+		exp, parseErr := workflow.ParseISODuration(v)
+		if parseErr != nil || exp <= 0 {
+			return nil, fmt.Errorf("%w: policy.expiresIn must be an ISO-8601 duration", ErrInvalid)
+		}
+		if exp > 7*24*time.Hour {
+			return nil, fmt.Errorf("%w: policy.expiresIn cannot exceed P7D", ErrInvalid)
+		}
+		out[httpnotify.KeyExpiresIn] = v
+	}
+	ops, err := stringList(policy, httpnotify.KeyOperations, 16, 64)
+	if err != nil {
+		return nil, err
+	}
+	if _, present := policy[httpnotify.KeyOperations]; present {
+		if len(ops) == 0 {
+			return nil, fmt.Errorf("%w: policy.operations must not be empty", ErrInvalid)
+		}
+		out[httpnotify.KeyOperations] = ops
+	}
+	hosts, err := normalizeSSHAllowlist(policy, "host", httpnotify.KeyAllowedHosts, httpnotify.KeyHosts)
+	if err != nil {
+		return nil, err
+	}
+	if hosts != nil {
+		out[httpnotify.KeyAllowedHosts] = hosts
+	}
+	addrs, err := normalizeSSHAllowlist(policy, "address", httpnotify.KeyAllowedAddresses, httpnotify.KeyAddresses)
+	if err != nil {
+		return nil, err
+	}
+	if addrs != nil {
+		out[httpnotify.KeyAllowedAddresses] = addrs
 	}
 	return out, nil
 }
@@ -1170,6 +1277,21 @@ func targetAddressList(spec map[string]any) ([]string, bool) {
 	default:
 		return nil, true
 	}
+}
+
+// ValidateHTTPConnectionType reports whether a pinned connection may be used
+// by the named integration node.
+func ValidateHTTPConnectionType(nodeType string, spec map[string]any) error {
+	want := httpnotify.ExpectedConnectionType(nodeType)
+	if want == "" {
+		return nil
+	}
+	got, _ := spec["type"].(string)
+	got = strings.ToLower(strings.TrimSpace(got))
+	if got != want {
+		return fmt.Errorf("%w: connection type %q cannot be used by %s (want %s)", ErrInvalid, got, nodeType, want)
+	}
+	return nil
 }
 
 // ValidateSSHRunParameters checks ssh.run values against a pinned profile spec.

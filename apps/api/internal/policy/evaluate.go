@@ -401,23 +401,69 @@ func checkAllowlists(op string, node workflow.Node, target opsconfig.Pin, kind s
 	}
 	if !strings.HasPrefix(op, "kubernetes.") {
 		if items, present := presentStringList(rules, "allowedHosts", "hosts"); present {
-			host := stringField(node.With, "hostname")
+			hosts := connectionHosts(target.Spec)
+			host := stringField(node.With, "host")
+			if host == "" {
+				host = stringField(node.With, "hostname")
+			}
 			if host == "" && target.Spec != nil {
 				host = stringField(target.Spec, "hostname")
 			}
-			if host == "" || !containsFold(items, host) {
+			if host == "" && len(hosts) == 1 {
+				host = hosts[0]
+			}
+			if host != "" {
+				if !containsFold(items, host) {
+					return "host is not allowed by policy"
+				}
+			} else if len(hosts) > 0 {
+				for _, h := range hosts {
+					if !containsFold(items, h) {
+						return "host is not allowed by policy"
+					}
+				}
+			} else {
 				return "host is not allowed by policy"
 			}
 		}
 	}
 	if items, present := presentStringList(rules, "allowedAddresses", "addresses"); present {
-		host := stringField(target.Spec, "hostname")
-		if host == "" || !containsFold(items, host) {
-			return "address is not allowed by policy"
+		if addrs := connectionAddresses(target.Spec); len(addrs) > 0 {
+			for _, addr := range addrs {
+				if !containsFold(items, addr) {
+					return "address is not allowed by policy"
+				}
+			}
+		} else {
+			host := stringField(target.Spec, "hostname")
+			if host == "" || !containsFold(items, host) {
+				return "address is not allowed by policy"
+			}
+		}
+	}
+	if target.Kind == opsconfig.KindConnection || (target.Spec != nil && stringField(target.Spec, "type") != "") {
+		if err := opsconfig.ValidateHTTPConnectionType(op, target.Spec); err != nil {
+			return "connection type does not match the requested operation"
 		}
 	}
 	_ = kind
 	return ""
+}
+
+func connectionHosts(spec map[string]any) []string {
+	if spec == nil {
+		return nil
+	}
+	ep, _ := spec["endpointPolicy"].(map[string]any)
+	return stringSlice(ep, "hosts")
+}
+
+func connectionAddresses(spec map[string]any) []string {
+	if spec == nil {
+		return nil
+	}
+	ep, _ := spec["endpointPolicy"].(map[string]any)
+	return stringSlice(ep, "allowedAddresses")
 }
 
 func presentStringList(rules map[string]any, keys ...string) ([]string, bool) {

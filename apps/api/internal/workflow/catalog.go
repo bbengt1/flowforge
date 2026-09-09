@@ -11,9 +11,11 @@ func CoreCatalog() Catalog {
 			TriggersAreWorkflowLevel:  true,
 			GraphNodesExcludeTriggers: true,
 			UnsupportedPhasesRejected: true,
+			IntegrationActionsEnabled: IntegrationActionsEnabled,
 		},
-		Triggers: triggerTypes(),
-		Nodes:    coreNodeTypes(),
+		IntegrationGate: httpnotifyGate(),
+		Triggers:        triggerTypes(),
+		Nodes:           coreNodeTypes(),
 	}
 }
 
@@ -166,7 +168,6 @@ func triggerTypes() []TriggerType {
 }
 
 func coreNodeTypes() []NodeType {
-	result := Port{Name: "result", Kind: PortObject}
 	neutral := coreNeutralTypes()
 	return []NodeType{
 		neutral["flow.stop"],
@@ -177,24 +178,9 @@ func coreNodeTypes() []NodeType {
 		neutral["data.set"],
 		neutral["data.map"],
 		neutral["data.validate"],
-		{
-			Type: "http.request", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "payload", Kind: PortObject}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"connectionId"},
-		},
-		{
-			Type: "notification.webhook", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "payload", Kind: PortObject}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"connectionId"},
-		},
-		{
-			Type: "notification.email", Phase: PhaseCore,
-			Inputs:       []Port{{Name: "payload", Kind: PortObject}},
-			Outputs:      []Port{result},
-			RequiredWith: []string{"connectionId", "recipientListId", "templateId"},
-		},
+		httpRequestContract(),
+		notificationWebhookContract(),
+		notificationEmailContract(),
 		kubernetesApplyContract(),
 		kubernetesGetContract(),
 		kubernetesListContract(),

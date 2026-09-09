@@ -4121,7 +4121,7 @@ paths:
     get:
       operationId: getOpsConfigCatalog
       summary: Operational configuration kinds
-      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, use permissions, `kubernetesEngine` (E7.1), `sshEngine` (E8.1), and `scriptEngine` (E9.1).
+      description: Requires `opsconfig.view`. Returns kinds, collections, YAML ref fields, use permissions, `kubernetesEngine` (E7.1), `sshEngine` (E8.1), `scriptEngine` (E9.1), and `httpNotificationEngine` (E10.4).
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4239,6 +4239,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScriptEngineCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /http/catalog:
+    get:
+      operationId: getHTTPNotificationCatalog
+      summary: HTTP and notification engine catalog
+      description: |
+        Requires `opsconfig.view`. Documents `http.request`,
+        `notification.webhook`, and `notification.email` node fields,
+        pinned connection/recipient/template/schema UUIDs, SSRF and
+        destination-IP allowlists, redirect/TLS/size/secret-field
+        policies, and the integration gate. Does not make a remote call.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: HTTP and notification engine catalog
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPNotificationEngineCatalog"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -5381,6 +5413,32 @@ components:
           $ref: "#/components/schemas/SSHEngineCatalog"
         scriptEngine:
           $ref: "#/components/schemas/ScriptEngineCatalog"
+        httpNotificationEngine:
+          $ref: "#/components/schemas/HTTPNotificationEngineCatalog"
+    HTTPNotificationEngineCatalog:
+      type: object
+      additionalProperties: true
+      required: [credentialType, publishRules, isolation, nodes, integrationGate]
+      properties:
+        credentialType: {type: string, enum: [token]}
+        publishRules: {type: object, additionalProperties: true}
+        isolation: {type: object, additionalProperties: true}
+        retry: {type: object, additionalProperties: true}
+        evaluationKeys:
+          type: array
+          items: {type: object, additionalProperties: true}
+        nodes:
+          type: array
+          items: {type: object, additionalProperties: true}
+        errors:
+          type: array
+          items: {type: object, additionalProperties: true}
+        permissions:
+          type: array
+          items: {type: string}
+        integrationGate:
+          type: object
+          additionalProperties: true
     KubernetesEngineCatalog:
       type: object
       required: [credentialType, allowedKinds, allowedVerbs, evaluationKeys, serviceAccount, publishRules]
