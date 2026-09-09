@@ -6,12 +6,14 @@ import {
   evaluatePolicy,
   evaluatePolicyForRun,
   getApproval,
+  getApprovalCatalog,
   listApprovals,
   listExecutionApprovals,
   rejectApproval,
 } from "./approval-client.ts";
 import {
   approvalDecidePath,
+  approvalsCatalogPath,
   approvalsPath,
   buildDecideApprovalBody,
   buildEvaluatePolicyBody,
@@ -95,6 +97,32 @@ function problem(detail: string, status = 409, code = "conflict") {
 }
 
 describe("approval client", () => {
+  it("loads the #44 catalog over GET without CSRF", async () => {
+    withSession();
+    const seen: { url?: string; method?: string; csrf?: string | null } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.method = init?.method ?? "GET";
+      seen.csrf = new Headers(init?.headers).get(CSRF_HEADER);
+      return new Response(
+        JSON.stringify({
+          statuses: ["pending", "approved"],
+          decisions: ["approved", "rejected"],
+          defaultExpiresIn: "PT1H",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await getApprovalCatalog(identity);
+    assert.equal(result.ok, true);
+    assert.equal(seen.url, `/api/v1${approvalsCatalogPath()}`);
+    assert.equal(seen.method, "GET");
+    if (result.ok) {
+      assert.equal(result.catalog.defaultExpiresIn, "PT1H");
+    }
+  });
+
   it("lists approvals with documented status query only", async () => {
     withSession();
     const seen: { url?: string; init?: RequestInit } = {};

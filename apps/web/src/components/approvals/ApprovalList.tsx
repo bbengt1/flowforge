@@ -8,10 +8,16 @@ import {
   approvalStatusLabel,
   canSeeApprovalsNav,
   filterApprovalList,
+  isRequesterActor,
   pendingApprovals,
 } from "@/lib/approval";
-import { listApprovals } from "@/lib/approval-client";
-import { APPROVAL_STATUSES, type ApprovalRequest } from "@/lib/approval-types";
+import { getApprovalCatalog, listApprovals } from "@/lib/approval-client";
+import {
+  APPROVAL_STATUSES,
+  type ApprovalCatalog,
+  type ApprovalRequest,
+  type ApprovalStatus,
+} from "@/lib/approval-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -43,6 +49,8 @@ export function ApprovalList() {
   const [pending, setPending] = useState(false);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [catalog, setCatalog] = useState<ApprovalCatalog | null>(null);
+  const [actorUserId, setActorUserId] = useState("");
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -56,16 +64,21 @@ export function ApprovalList() {
   async function refresh() {
     setPending(true);
     setProblem(null);
-    const [list, workspace] = await Promise.all([
+    const [list, workspace, types] = await Promise.all([
       listApprovals(identity, {
         status: query.status.trim() || undefined,
       }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
+      getApprovalCatalog(identity),
     ]);
     setLastRequestId(list.requestId);
     setPending(false);
     if (workspace.ok) {
       setPermissions(workspace.data.permissions ?? []);
+      setActorUserId(workspace.data.principal?.id ?? "");
+    }
+    if (types.ok) {
+      setCatalog(types.catalog);
     }
     if (!list.ok) {
       setProblem(list.problem);
@@ -127,11 +140,15 @@ export function ApprovalList() {
             className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
-            {APPROVAL_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {approvalStatusLabel(status)}
-              </option>
-            ))}
+            {(catalog?.statuses.length ? catalog.statuses : APPROVAL_STATUSES).map(
+              (status) => (
+                <option key={status} value={status}>
+                  {(APPROVAL_STATUSES as readonly string[]).includes(status)
+                    ? approvalStatusLabel(status as ApprovalStatus)
+                    : status}
+                </option>
+              ),
+            )}
           </select>
         </label>
         <button
@@ -181,6 +198,9 @@ export function ApprovalList() {
                 </div>
                 <p className="text-sm font-medium">
                   {approvalStatusLabel(item.status)}
+                  {isRequesterActor(item.requestedBy, actorUserId)
+                    ? " · you requested"
+                    : ""}
                 </p>
               </div>
               <p className="mt-2 break-all font-mono text-xs text-zinc-500">

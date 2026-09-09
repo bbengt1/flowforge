@@ -58,8 +58,9 @@ export function PreRunPolicyReview({
             </p>
           ) : (
             <p className="text-sm text-zinc-600">
-              Run stays blocked until the server returns{" "}
-              <code className="font-mono text-xs">dispatchAllowed</code>.
+              Run stays blocked until evaluate allows dispatch or every
+              bound approval is a current <code className="font-mono text-xs">approved</code>{" "}
+              row. Start execution still rechecks on the server.
             </p>
           )}
           {evaluation.denied.map((item, index) => (

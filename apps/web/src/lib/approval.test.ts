@@ -278,6 +278,13 @@ describe("server recheck is authoritative", () => {
       }),
       false,
     );
+    assert.equal(
+      canDispatchFromEvaluation({
+        ...required,
+        approvals: [approval({ status: "approved" })],
+      }),
+      true,
+    );
   });
 
   it("allows decide when the API omits permittedActions", () => {
@@ -285,6 +292,14 @@ describe("server recheck is authoritative", () => {
     assert.equal(canDecideApproval(noActions), true);
     const rejected = approval({ status: "rejected" });
     assert.equal(canDecideApproval(rejected), false);
+  });
+
+  it("hides decide when the workspace principal is the requester", () => {
+    const actor = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const own = approval({ requestedBy: actor });
+    assert.equal(canDecideApproval(own, Date.now(), actor), false);
+    assert.equal(canDecideApproval(own, Date.now(), "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), true);
+    assert.equal(canDecideApproval(own, Date.now(), "approver-chloe"), true);
   });
 });
 

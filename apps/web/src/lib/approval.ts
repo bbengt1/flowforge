@@ -650,21 +650,44 @@ export function invalidationSummary(approval: ApprovalRequest): string {
 }
 
 /**
- * Decide is allowed only when the snapshot is still current and pending.
- * The API does not send permittedActions — empty means "UI may offer
- * decide"; a 403 self-approval or missing role fails closed on POST.
+ * requestedBy is a user UUID. Compare only to GET /workspace principal.id —
+ * never to session.subject (external_subject). Unknown actor stays undecided
+ * so the server 403 remains the authority.
+ */
+export function isRequesterActor(
+  requestedBy: string | undefined,
+  actorUserId: string | undefined,
+): boolean {
+  const requester = requestedBy?.trim().toLowerCase() ?? "";
+  const actor = actorUserId?.trim().toLowerCase() ?? "";
+  if (!requester || !actor || !isUuid(requester) || !isUuid(actor)) {
+    return false;
+  }
+  return requester === actor;
+}
+
+/**
+ * Decide is allowed only when the snapshot is still current and pending
+ * and the actor is not the requester. The API does not send
+ * permittedActions — empty means "UI may offer decide"; a 403
+ * self-approval or missing role fails closed on POST.
  */
 export function canDecideApproval(
   approval: ApprovalRequest,
-  now = Date.now(),
+  now?: number,
+  actorUserId?: string,
 ): boolean {
+  const at = now ?? Date.now();
+  if (isRequesterActor(approval.requestedBy, actorUserId)) {
+    return false;
+  }
   if (approval.status !== "pending") {
     return false;
   }
   if (!approval.validity.current) {
     return false;
   }
-  if (isApprovalExpired(approval, now) || isApprovalInvalidated(approval)) {
+  if (isApprovalExpired(approval, at) || isApprovalInvalidated(approval)) {
     return false;
   }
   if (approval.permittedActions.length > 0) {
@@ -736,18 +759,42 @@ export function filterApprovalList(
   });
 }
 
+export function approvalsReadyForDispatch(
+  approvals: readonly ApprovalRequest[],
+  now = Date.now(),
+): boolean {
+  if (approvals.length === 0) {
+    return false;
+  }
+  return approvals.every(
+    (item) =>
+      item.status === "approved" &&
+      item.validity.current &&
+      !isApprovalExpired(item, now) &&
+      !isApprovalInvalidated(item),
+  );
+}
+
 /**
- * Dispatch is allowed only when the latest server evaluation sets
- * dispatchAllowed. A local/stale "approved" flag is ignored on purpose.
+ * Dispatch preview: `dispatchAllowed` from evaluate, or every bound
+ * approval is a current approved row after decide. A stale local
+ * "approved" flag is ignored — callers must re-evaluate first. Start
+ * execution is still the server authority.
  */
 export function canDispatchFromEvaluation(
   evaluation: PolicyEvaluation | null,
+  now = Date.now(),
 ): boolean {
-  return Boolean(
-    evaluation &&
-      evaluation.dispatchAllowed &&
-      evaluation.decision !== "deny",
-  );
+  if (!evaluation || evaluation.decision === "deny" || evaluation.denied.length > 0) {
+    return false;
+  }
+  if (evaluation.dispatchAllowed) {
+    return true;
+  }
+  if (evaluation.decision === "approval-required") {
+    return approvalsReadyForDispatch(evaluation.approvals, now);
+  }
+  return false;
 }
 
 export function shouldBlockRun(options: {

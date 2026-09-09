@@ -10,6 +10,7 @@ import {
   approvalStatusLabel,
   canDecideApproval,
   failClosedProblemTitle,
+  isRequesterActor,
   problemClosesApproval,
 } from "@/lib/approval";
 import {
@@ -23,6 +24,8 @@ import type { ApprovalRequest } from "@/lib/approval-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
+import { callIdentityProxy } from "@/lib/identity-client";
+import type { CurrentWorkspace } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
@@ -54,18 +57,30 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [events, setEvents] = useState<ApprovalEvent[]>([]);
+  const [actorUserId, setActorUserId] = useState("");
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
     hasWorkspaceLookup(identity);
-  const canDecide = approval ? canDecideApproval(approval) : false;
+  const selfRequested = approval
+    ? isRequesterActor(approval.requestedBy, actorUserId)
+    : false;
+  const canDecide = approval
+    ? canDecideApproval(approval, undefined, actorUserId)
+    : false;
 
   async function refresh() {
     setPending("load");
     setProblem(null);
-    const result = await getApproval(identity, approvalId);
+    const [result, workspace] = await Promise.all([
+      getApproval(identity, approvalId),
+      callIdentityProxy<CurrentWorkspace>("/workspace", identity),
+    ]);
     setLastRequestId(result.requestId);
     setPending(null);
+    if (workspace.ok) {
+      setActorUserId(workspace.data.principal?.id ?? "");
+    }
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -198,33 +213,45 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             </div>
           </dl>
 
-          <label className="block text-sm">
-            <span className="text-zinc-600">Decision note</span>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              rows={3}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-            />
-          </label>
+          {selfRequested ? (
+            <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              You requested this approval. Another operator with{" "}
+              <code className="font-mono text-xs">approval.decide</code> must
+              approve or reject it. Self-approval is forbidden.
+            </p>
+          ) : (
+            <label className="block text-sm">
+              <span className="text-zinc-600">Decision note</span>
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                rows={3}
+                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+              />
+            </label>
+          )}
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void decide("approve")}
-              disabled={!canDecide || pending !== null}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-            >
-              {pending === "approve" ? "Approving…" : "Approve"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void decide("reject")}
-              disabled={!canDecide || pending !== null}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-            >
-              {pending === "reject" ? "Rejecting…" : "Reject"}
-            </button>
+            {selfRequested ? null : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void decide("approve")}
+                  disabled={!canDecide || pending !== null}
+                  className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                >
+                  {pending === "approve" ? "Approving…" : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void decide("reject")}
+                  disabled={!canDecide || pending !== null}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  {pending === "reject" ? "Rejecting…" : "Reject"}
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => void refresh()}
