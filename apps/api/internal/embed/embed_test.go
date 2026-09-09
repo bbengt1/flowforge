@@ -377,12 +377,11 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	if err := ring.InstallActive(next); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	minted, _, err := Mint(old, testMintInput(now))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Verify(ring.Material(), minted.Assertion, VerifyOptions{
+	got, err := Verify(ring.MaterialAt(now.Add(time.Second)), minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
 		AllowedIssuers: []string{"https://portal.example"},
 	})
