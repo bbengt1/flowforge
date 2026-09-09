@@ -14,7 +14,7 @@ import {
   replayStepViews,
   waitingApprovalNodeIds,
 } from "@/lib/execution-replay";
-import { boundRedactedDisplay, isIndeterminateStatus } from "@/lib/execution";
+import { boundRedactedDisplay } from "@/lib/execution";
 import type { ExecutionArtifact, ExecutionDetail } from "@/lib/execution-types";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";

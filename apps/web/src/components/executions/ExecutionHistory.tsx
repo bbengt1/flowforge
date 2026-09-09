@@ -294,8 +294,12 @@ export function ExecutionHistory() {
                   loadExecutionHistory(identity, compareLeftId),
                   loadExecutionHistory(identity, compareRightId),
                 ]);
-                if (!left.ok || !right.ok) {
-                  setProblem((left.ok ? right : left).problem);
+                if (!left.ok) {
+                  setProblem(left.problem);
+                  return;
+                }
+                if (!right.ok) {
+                  setProblem(right.problem);
                   return;
                 }
                 setCompareResult(
