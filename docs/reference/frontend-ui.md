@@ -647,7 +647,7 @@ Admin fields:
 | Published version picker | `GET /workflows/{id}/versions` | Drafts never listed or sent |
 | Secret | vault `webhook_secret` picker **or** `{secret:{secret}}` on create/rotate | Never shown after submit. PATCH rejects `secret` |
 | Ingress URL | response `ingressPath` + `publicId` | `/api/v1/hooks/{publicId}`. Copyable. Secret is never in the URL |
-| Field mapping | `fieldMapping` map | Destination identifier → dotted source path. Empty copies root |
+| Field mapping | `fieldMapping` map | Single destination identifier → dotted source path (`alertId: payload.id`). Empty copies root |
 | Limits | `maxBodyBytes` / `clockSkewSeconds` / `replayRetentionSeconds` / rate / concurrency | Defaults from catalog `ingress` (64 KiB, 300s, 600s, 60/min, 5) |
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 

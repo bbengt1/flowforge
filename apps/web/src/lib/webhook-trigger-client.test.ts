@@ -73,7 +73,7 @@ function validDraft() {
     workflowVersionId: VERSION_ID,
     secretMode: "vault",
     secretCredentialId: CREDENTIAL_ID,
-    fieldMappingText: "alert.id: payload.id",
+    fieldMappingText: "alertId: payload.id",
   });
 }
 
@@ -142,7 +142,7 @@ describe("webhook trigger client", () => {
     assert.equal(body.contentType, "application/json");
     assert.equal(body.clockSkewSeconds, 300);
     assert.equal(body.maxConcurrency, 5);
-    assert.deepEqual(body.fieldMapping, { "alert.id": "payload.id" });
+    assert.deepEqual(body.fieldMapping, { alertId: "payload.id" });
     assert.equal("id" in body, false);
     assert.equal("workspaceId" in body, false);
     assert.equal("secret" in body, false);

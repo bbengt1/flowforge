@@ -29,10 +29,12 @@ import {
   emptyWebhookTriggerDraft,
   hostSuppliedWebhookIdentityKeys,
   isWebhookCatalogFallback,
+  isWebhookIngressProxySegments,
   isWebhookPublicId,
   isWebhookTriggerAuthFailure,
   isWebhookTriggerProxySegments,
   isWebhookTriggerRef,
+  WEBHOOK_TRIGGER_PROXY_ROUTES,
   parseFieldMappingText,
   parseWebhookTriggerList,
   parseWebhookTriggerRecord,
@@ -123,7 +125,7 @@ function validDraft() {
     workflowVersionId: VERSION_ID,
     secretMode: "vault",
     secretCredentialId: CREDENTIAL_ID,
-    fieldMappingText: "alert.id: payload.id\n",
+    fieldMappingText: "alertId: payload.id\n",
   });
 }
 
@@ -228,6 +230,25 @@ describe("webhook-trigger contract adapter", () => {
     assert.equal(isWebhookTriggerRef(PUBLIC_ID), true);
     assert.equal(isWebhookTriggerRef(TRIGGER_ID), true);
     assert.equal(isWebhookTriggerRef("not-an-id"), false);
+    assert.equal(
+      isWebhookTriggerProxySegments(["workflows", WORKFLOW_ID, "triggers"]),
+      true,
+    );
+    assert.equal(
+      WEBHOOK_TRIGGER_PROXY_ROUTES.some(
+        (route) =>
+          route.methods.includes("POST") &&
+          route.match(["triggers", TRIGGER_ID, "rotate"]),
+      ),
+      true,
+    );
+    assert.equal(isWebhookIngressProxySegments(["hooks", PUBLIC_ID]), true);
+    assert.equal(
+      WEBHOOK_TRIGGER_PROXY_ROUTES.some((route) =>
+        route.match(["hooks", PUBLIC_ID]),
+      ),
+      false,
+    );
   });
 
   it("fails closed on permissions and never treats viewers as managers", () => {
@@ -248,7 +269,11 @@ describe("webhook-trigger contract adapter", () => {
       assert.equal(valid.settings.signatureRequired, true);
       assert.equal(valid.settings.replayRequired, true);
       assert.equal(valid.settings.rawBodyBeforeParse, true);
-      assert.equal(valid.settings.fieldMapping["alert.id"], "payload.id");
+      assert.equal(valid.settings.fieldMapping.alertId, "payload.id");
+      const dottedDest = parseFieldMappingText("alert.id: payload.id");
+      assert.ok(
+        dottedDest.errors.some((error) => /single identifier/.test(error)),
+      );
       assert.equal(valid.body.type, "webhook");
       assert.equal(valid.body.workflowVersionId, VERSION_ID);
       assert.equal(valid.body.secretCredentialId, CREDENTIAL_ID);
@@ -336,6 +361,20 @@ describe("webhook-trigger contract adapter", () => {
     assert.equal(leaked.leaked, true);
     assert.equal("secret" in leaked.record, false);
     assert.ok(leaked.strippedKeys.includes("secret"));
+
+    const listedLeak = stripUnexpectedWebhookSecret({
+      items: [
+        {
+          id: TRIGGER_ID,
+          publicId: PUBLIC_ID,
+          secret: "whsec_in_list",
+        },
+      ],
+    });
+    assert.equal(listedLeak.leaked, true);
+    assert.ok(
+      listedLeak.strippedKeys.some((key) => key.endsWith("secret") || key.includes(".secret")),
+    );
 
     const listed = parseWebhookTriggerRecord({
       id: TRIGGER_ID,
