@@ -170,6 +170,15 @@ E7.1 (Chloe) extends the E4.2 `/config` cluster-target and policy surfaces for e
 - **Operator routes:** existing `/config/cluster-targets` and `/config/policies` — not a duplicate Targets app.
 - **Typed client:** `apps/web/src/lib/kubernetes-client.ts`. Helpers: `kubernetes.ts`.
 
+## E7.2 Kubernetes read/apply node config (Chloe UI)
+
+E7.2 (Chloe) adds placeable `kubernetes.apply` / `kubernetes.get` / `kubernetes.list` configuration to the E6.2 library and E6.3 action wizard. `apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/kubernetes-node-contract.ts`. Prefer `GET /workflows/catalog` when it lists the type; until jonny's node/contract map lands, catalog stubs use marked `contract-fallback` entries (same pattern as E3.3/E6.3). Relates to #71 / Part of #69 — do **not** close #71 (jonny owns the engine). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Library:** apply / get / list are placeable when enabled in the catalog or via fallback. `kubernetes.rolloutStatus` is an E7.3 stub only if the catalog already lists it — no full rollout UX.
+- **Wizard:** published workspace `type=kubernetes` cluster targets (display name + id, `POST …/select`). Namespace is required and constrained to the target allowlist when the pin reports one. Apply uses a multi-document YAML editor. get/list choose an MVP kind. `dryRun` is `client` or `server` (client never replaces the mandatory server-side dry-run on apply). `wait` is `none` or `ready`. `timeoutSeconds` is bounded.
+- **Fail closed:** no force toggle, no kubeconfig paste, no Secret `data` / `stringData` / `binaryData`. Cluster-scoped resources, namespaces, CRDs, RBAC, admission webhooks, privileged / hostPath / host namespaces, and `:latest` tags are denied in local manifest checks. Target selectors fail closed on 403 / empty lists.
+- **Unchanged:** FieldManager is service-owned (`flowforge`) with `Force=false`. The UI never receives or stores kubeconfigs. E7.1 `/config` cluster-target and policy screens stay the source of allowlists.
+
 ## Foundation operator shell
 
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:

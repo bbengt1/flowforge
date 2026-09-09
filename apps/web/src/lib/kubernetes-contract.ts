@@ -18,6 +18,10 @@
  * UI never receives kubeconfigs. Do not invent routes.
  * Relates to #70 (already closed by #74) / Part of #69.
  * Do not change `apps/api`. Do not re-close #70.
+ *
+ * E7.2 node `with` schema / catalog fallback lives in
+ * `kubernetes-node-contract.ts` — retarget that file when jonny
+ * posts the read/apply node map. Relates to #71 / Part of #69.
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -334,3 +338,9 @@ export function emptyKubernetesPolicy(): {
 export const KUBERNETES_CATALOG_KINDS = KUBERNETES_ALLOWED_KINDS;
 export const KUBERNETES_CATALOG_VERBS = KUBERNETES_ALLOWED_VERBS;
 export const KUBERNETES_CATALOG_OPERATIONS = KUBERNETES_APPROVAL_OPERATIONS;
+
+export {
+  KUBERNETES_NODE_EPIC,
+  KUBERNETES_NODE_ROUTE_MAP_SOURCE,
+  KUBERNETES_NODE_STORY,
+} from "./kubernetes-node-contract.ts";

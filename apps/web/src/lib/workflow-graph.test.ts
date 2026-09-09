@@ -137,6 +137,13 @@ describe("action library catalog filter", () => {
     assert.equal(rejectDisabledActionType("workflow.call", catalog).ok, false);
     assert.equal(rejectDisabledActionType("data.set", catalog).ok, true);
     assert.equal(rejectDisabledActionType("flow.switch", catalog).ok, true);
+    assert.equal(rejectDisabledActionType("kubernetes.apply", catalog).ok, true);
+    const fallback = adaptActionLibrary(null);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.apply"), true);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.get"), true);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.list"), true);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.rolloutStatus"), false);
+    assert.equal(rejectDisabledActionType("kubernetes.apply", null).ok, true);
   });
 });
 

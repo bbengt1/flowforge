@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { adaptActionLibrary } from "./workflow-action-library.ts";
 import {
+  KUBERNETES_FORCE_DENIED_MESSAGE,
+  KUBERNETES_NAMESPACE_REQUIRED_MESSAGE,
+  KUBERNETES_SECRET_MANIFEST_MESSAGE,
+  KUBERNETES_TARGET_FAIL_CLOSED_MESSAGE,
+} from "./kubernetes-node-contract.ts";
+import {
   applyTargetPin,
   applyWizardToYaml,
   authorizedCredentialOptions,
@@ -164,16 +170,30 @@ describe("action wizard selectors", () => {
 });
 
 describe("action wizard catalog inference and recommendations", () => {
-  it("infers k8s/SSH configure fields when allowedWith is missing", () => {
+  it("uses the E7.2 k8s contract for configure fields and never exposes force", () => {
     const apply = palette.find((item) => item.type === "kubernetes.apply");
     const fields = wizardConfigFields(apply, "kubernetes.apply");
-    assert.equal(fields.some((field) => field.name === "clusterTargetId" && field.inferred), true);
+    assert.equal(fields.some((field) => field.name === "clusterTargetId"), true);
+    assert.equal(fields.some((field) => field.name === "namespace" && field.required), true);
+    assert.equal(fields.some((field) => field.name === "manifests"), true);
     assert.equal(fields.some((field) => field.name === "dryRun"), true);
+    assert.equal(fields.some((field) => field.name === "force"), false);
+    assert.equal(fields.some((field) => field.name === "kubeconfig"), false);
     assert.deepEqual(credentialTypesForAction("kubernetes.apply"), ["kubernetes"]);
     assert.deepEqual(opsConfigKindsForAction("ssh.run"), ["ssh_target", "command_profile"]);
     assert.equal(wizardNeedsTargetStep("flow.delay"), false);
     assert.equal(wizardNeedsTargetStep("kubernetes.apply"), true);
     assert.equal(defaultWithForType("kubernetes.apply").dryRun, "server");
+
+    const fallbackLibrary = adaptActionLibrary(null);
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.apply"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.get"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.list"), true);
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.rolloutStatus"), false);
+    assert.equal(
+      fallbackLibrary.find((item) => item.type === "kubernetes.apply")?.source,
+      "contract-fallback",
+    );
   });
 
   it("recommends compatible enabled actions from upstream port and targets", () => {
@@ -200,6 +220,7 @@ describe("action wizard insert + redaction", () => {
       clusterTargetId: "11111111-1111-4111-8111-111111111111",
       namespace: "cp-ops-nprd",
       dryRun: "server",
+      manifests: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: api\ndata:\n  k: v\n",
       token: "must-not-persist",
     };
     draft.mappings = [{ from: "seed.result", toPort: "parameters" }];
@@ -292,5 +313,52 @@ describe("action wizard insert + redaction", () => {
     assert.equal(preview.sideEffects, true);
     assert.match(preview.retryHint, /Not retry-safe/);
     assert.equal(preview.dispatchAllowed, false);
+  });
+
+  it("requires namespace and fails closed without an authorized cluster target", () => {
+    const entry = palette.find((item) => item.type === "kubernetes.apply");
+    const missing = emptyActionWizardDraft("kubernetes.apply", "Apply");
+    missing.with = { dryRun: "server", manifests: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n" };
+    const required = validateWizardDraft(missing, catalog, entry);
+    assert.equal(required.ok, false);
+    assert.ok(required.errors.includes(KUBERNETES_NAMESPACE_REQUIRED_MESSAGE));
+
+    const closed = validateWizardDraft(
+      {
+        ...emptyActionWizardDraft("kubernetes.get", "Read"),
+        with: {
+          clusterTargetId: "11111111-1111-4111-8111-111111111111",
+          namespace: "app",
+          kind: "ConfigMap",
+          name: "settings",
+        },
+      },
+      catalog,
+      palette.find((item) => item.type === "kubernetes.get"),
+      { targetSelectorClosed: true },
+    );
+    assert.equal(closed.ok, false);
+    assert.ok(closed.errors.includes(KUBERNETES_TARGET_FAIL_CLOSED_MESSAGE));
+  });
+
+  it("denies Secret manifests and strips force from kubernetes.apply", () => {
+    const entry = palette.find((item) => item.type === "kubernetes.apply");
+    const draft = emptyActionWizardDraft("kubernetes.apply", "Apply");
+    draft.with = {
+      clusterTargetId: "11111111-1111-4111-8111-111111111111",
+      namespace: "app",
+      manifests: "apiVersion: v1\nkind: Secret\nmetadata:\n  name: leak\nstringData:\n  token: x\n",
+      force: true,
+    };
+    const rejected = validateWizardDraft(draft, catalog, entry);
+    assert.equal(rejected.ok, false);
+    assert.ok(rejected.errors.includes(KUBERNETES_SECRET_MANIFEST_MESSAGE));
+    assert.ok(rejected.errors.includes(KUBERNETES_FORCE_DENIED_MESSAGE));
+    const sanitized = sanitizeWizardWith(draft.with, "kubernetes.apply");
+    assert.equal("force" in sanitized, false);
+    assert.equal(
+      wizardConfigFields(entry, "kubernetes.apply").some((field) => field.name === "force"),
+      false,
+    );
   });
 });
