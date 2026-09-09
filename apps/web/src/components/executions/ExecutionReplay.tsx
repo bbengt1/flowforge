@@ -14,6 +14,14 @@ import {
   sshVerificationOutcomeCopy,
 } from "@/lib/ssh-retry-contract";
 import {
+  SCRIPT_IO_NO_BLIND_RETRY_HELP,
+  SCRIPT_IO_VALIDATION_HELP,
+  isScriptIoActionType,
+  parseScriptIoResult,
+  parseScriptIoRetryResult,
+  scriptIndeterminateCopy,
+} from "@/lib/script-io-contract";
+import {
   currentReplayNodeId,
   overlayExecutionOnGraph,
   projectPinnedVersionGraph,
@@ -137,7 +145,17 @@ export function ExecutionReplay({
                       selected.step.input,
                     )?.verificationOutcome,
                   })
-                : INDETERMINATE_STATUS_HELP}
+                : isScriptIoActionType(selected.step.nodeType)
+                  ? scriptIndeterminateCopy({
+                      status: selected.status,
+                      nodeType: selected.step.nodeType,
+                      errorCode: parseScriptIoRetryResult(
+                        selected.step.output,
+                        selected.step.error,
+                        selected.step.input,
+                      )?.verificationOutcome,
+                    })
+                  : INDETERMINATE_STATUS_HELP}
             </p>
           ) : null}
           {isSshRunType(selected.step.nodeType)
@@ -152,6 +170,43 @@ export function ExecutionReplay({
                     {sshVerificationOutcomeCopy(retry.verificationOutcome)}
                   </p>
                 ) : null;
+              })()
+            : null}
+          {isScriptIoActionType(selected.step.nodeType)
+            ? (() => {
+                const parsed = parseScriptIoResult(
+                  selected.step.output,
+                  selected.step.error,
+                  selected.step.input,
+                );
+                if (!parsed) {
+                  return (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      {SCRIPT_IO_NO_BLIND_RETRY_HELP}
+                    </p>
+                  );
+                }
+                return (
+                  <div className="mt-2 space-y-2">
+                    {parsed.validationErrors.length > 0 ? (
+                      <ul className="space-y-1 text-sm text-rose-950">
+                        {parsed.validationErrors.map((error) => (
+                          <li key={`${error.code}-${error.path}-${error.message}`}>
+                            <span className="font-mono text-xs">{error.code}</span>
+                            {error.path ? ` · ${error.path}` : ""} — {error.message}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-zinc-500">{SCRIPT_IO_VALIDATION_HELP}</p>
+                    )}
+                    <p className="text-xs text-zinc-600">
+                      {parsed.retry?.allowed
+                        ? `result.retry.allowed is true · maxAttempts=${parsed.retry.maxAttempts}`
+                        : SCRIPT_IO_NO_BLIND_RETRY_HELP}
+                    </p>
+                  </div>
+                );
               })()
             : null}
           {selected.waiting ? (

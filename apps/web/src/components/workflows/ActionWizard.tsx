@@ -8,6 +8,7 @@ import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
+import { ScriptIoFields } from "@/components/workflows/ScriptIoFields";
 import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { authorizedClusterTargets } from "@/lib/kubernetes";
@@ -58,6 +59,13 @@ import {
   scriptPublishRules,
   type ScriptNodeCatalog,
 } from "@/lib/script-contract";
+import {
+  SCRIPT_IO_INDETERMINATE_HELP,
+  SCRIPT_IO_NO_BLIND_RETRY_HELP,
+  SCRIPT_IO_RETRY_ZERO_MESSAGE,
+  SCRIPT_IO_ROUTE_MAP_SOURCE,
+  parseScriptIoCatalog,
+} from "@/lib/script-io-contract";
 import {
   SCRIPT_RUNTIME_ISOLATION_HELP,
   SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP,
@@ -911,7 +919,8 @@ function ConfigureStep({
     (field) =>
       !field.selectorKind &&
       !(ssh && field.name === "parameters") &&
-      !(ssh && field.name === "retryPolicy"),
+      !(ssh && field.name === "retryPolicy") &&
+      !(script && (field.name === "inputSchema" || field.name === "outputSchema")),
   );
   const primary = visible.filter((field) => !field.advanced);
   const advanced = visible.filter((field) => field.advanced);
@@ -1098,6 +1107,19 @@ function ConfigureStep({
               : {}
           }
           onChange={(parameters) => patchWith("parameters", parameters)}
+        />
+      ) : null}
+      {script ? (
+        <ScriptIoFields
+          inputSchema={draft.with.inputSchema}
+          outputSchema={draft.with.outputSchema}
+          catalog={parseScriptIoCatalog(scriptCatalog)}
+          onChange={(patch) =>
+            onChange({
+              ...draft,
+              with: { ...draft.with, ...patch },
+            })
+          }
         />
       ) : null}
       {ssh ? (
@@ -1444,9 +1466,12 @@ function ReviewStep({
             {SCRIPT_RUNTIME_ISOLATION_HELP} YAML
             stores source, entrypoint, runtimeProfileId, timeoutSeconds, and
             optional limits/schemas — never secrets, command/shell, or
-            package/storageRef. Map source #97 (
+            package/storageRef. {SCRIPT_IO_RETRY_ZERO_MESSAGE}{" "}
+            {SCRIPT_IO_NO_BLIND_RETRY_HELP} {SCRIPT_IO_INDETERMINATE_HELP} Map
+            source #97 (
             <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
-            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}).
+            {scriptCatalog?.source ? `; ${scriptCatalog.source}` : ""}) · I/O{" "}
+            <code className="font-mono">{SCRIPT_IO_ROUTE_MAP_SOURCE}</code>.
           </p>
         ) : null}
       </section>

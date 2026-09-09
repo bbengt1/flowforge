@@ -93,6 +93,17 @@ import {
   sshRetryBlockedMessage,
   sshVerificationOutcomeCopy,
 } from "@/lib/ssh-retry-contract";
+import { ScriptIoResultPanel } from "@/components/executions/ScriptIoResultPanel";
+import {
+  SCRIPT_IO_NO_BLIND_RETRY_HELP,
+  canOfferScriptRetry,
+  executionHasScriptIndeterminate,
+  executionHasScriptRun,
+  isScriptIoActionType,
+  parseScriptIoRetryResult,
+  scriptIndeterminateCopy,
+  scriptRetryBlockedMessage,
+} from "@/lib/script-io-contract";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -171,8 +182,21 @@ export function ExecutionDetail({
       }),
     ),
   );
+  const scriptRetryAllowed = Boolean(
+    view?.steps.some((step) =>
+      canOfferScriptRetry({
+        permissions,
+        nodeType: step.nodeType,
+        status: step.status,
+        output: step.output,
+        error: step.error,
+        input: step.input,
+      }),
+    ),
+  );
   const showRetry =
     sshRetryAllowed ||
+    scriptRetryAllowed ||
     canRetryExecution({
       permissions,
       permittedActions: view?.permittedActions,
@@ -292,8 +316,17 @@ export function ExecutionDetail({
         error: step?.error,
         input: step?.input,
       });
+      const scriptOffer = canOfferScriptRetry({
+        permissions,
+        nodeType: step?.nodeType,
+        status: step?.status,
+        output: step?.output,
+        error: step?.error,
+        input: step?.input,
+      });
       if (
         !sshOffer &&
+        !scriptOffer &&
         !canRetryExecutionStep({
           permissions,
           permittedActions: view?.permittedActions,
@@ -577,7 +610,23 @@ export function ExecutionDetail({
                           ?.error,
                       )?.verificationOutcome,
                     })
-                  : INDETERMINATE_STATUS_HELP}
+                  : executionHasScriptRun(view.steps) ||
+                      executionHasScriptIndeterminate(view.steps)
+                    ? scriptIndeterminateCopy({
+                        status: view.header.status,
+                        nodeType: view.steps.find((step) =>
+                          isScriptIoActionType(step.nodeType),
+                        )?.nodeType,
+                        errorCode: parseScriptIoRetryResult(
+                          view.steps.find((step) =>
+                            isScriptIoActionType(step.nodeType),
+                          )?.output,
+                          view.steps.find((step) =>
+                            isScriptIoActionType(step.nodeType),
+                          )?.error,
+                        )?.verificationOutcome,
+                      })
+                    : INDETERMINATE_STATUS_HELP}
               </p>
             ) : null}
             {view.legalHold ? (
@@ -639,10 +688,26 @@ export function ExecutionDetail({
                           isSshRunType(step.nodeType),
                         )?.error,
                       })
-                    : RETRY_INDETERMINATE_MESSAGE}
+                    : executionHasScriptRun(view.steps) ||
+                        executionHasScriptIndeterminate(view.steps)
+                      ? scriptRetryBlockedMessage({
+                          status: view.header.status,
+                          nodeType: view.steps.find((step) =>
+                            isScriptIoActionType(step.nodeType),
+                          )?.nodeType,
+                          output: view.steps.find((step) =>
+                            isScriptIoActionType(step.nodeType),
+                          )?.output,
+                          error: view.steps.find((step) =>
+                            isScriptIoActionType(step.nodeType),
+                          )?.error,
+                        })
+                      : RETRY_INDETERMINATE_MESSAGE}
                 </p>
               ) : executionHasSshRun(view.steps) ? (
                 <p className="text-xs text-zinc-500">{SSH_NO_BLIND_RETRY_HELP}</p>
+              ) : executionHasScriptRun(view.steps) ? (
+                <p className="text-xs text-zinc-500">{SCRIPT_IO_NO_BLIND_RETRY_HELP}</p>
               ) : (
                 <p className="text-xs text-zinc-500">
                   {retryAffordanceMessage(view.header.status)}
@@ -874,6 +939,14 @@ export function ExecutionDetail({
                       error: step.error,
                       input: step.input,
                     }) ||
+                    canOfferScriptRetry({
+                      permissions,
+                      nodeType: step.nodeType,
+                      status: step.status,
+                      output: step.output,
+                      error: step.error,
+                      input: step.input,
+                    }) ||
                     canRetryExecutionStep({
                       permissions,
                       permittedActions: view.permittedActions,
@@ -899,11 +972,22 @@ export function ExecutionDetail({
                               output: step.output,
                               error: step.error,
                             })
-                          : RETRY_INDETERMINATE_MESSAGE}
+                          : isScriptIoActionType(step.nodeType)
+                            ? scriptRetryBlockedMessage({
+                                status: step.status,
+                                nodeType: step.nodeType,
+                                output: step.output,
+                                error: step.error,
+                              })
+                            : RETRY_INDETERMINATE_MESSAGE}
                       </p>
                     ) : isSshRunType(step.nodeType) ? (
                       <p className="mt-3 text-xs text-zinc-500">
                         {SSH_NO_BLIND_RETRY_HELP}
+                      </p>
+                    ) : isScriptIoActionType(step.nodeType) ? (
+                      <p className="mt-3 text-xs text-zinc-500">
+                        {SCRIPT_IO_NO_BLIND_RETRY_HELP}
                       </p>
                     ) : null}
                     {isSshRunType(step.nodeType)
@@ -947,6 +1031,8 @@ export function ExecutionDetail({
               </ul>
             )}
           </section>
+
+          <ScriptIoResultPanel steps={view.steps} />
 
           <RolloutObservationPanel
             observations={collectRolloutObservations({

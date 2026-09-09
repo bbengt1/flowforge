@@ -24,8 +24,10 @@ export default async function ExecutionDetailPage({
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Graph replay overlays step status on the E6.2 canvas from the
-          pinned published version YAML. Cancel stays idempotent. Retry is
-          never offered for{" "}
+          pinned published version YAML. Cancel stays idempotent. Script and
+          SSH retry appear only when{" "}
+          <code className="font-mono text-sm">result.retry.allowed</code> is
+          true — never for unverified{" "}
           <code className="font-mono text-sm">indeterminate</code>. Approval
           wait/resume stay disabled until E10. Error links jump to the
           failed or indeterminate node. Secrets appear as{" "}

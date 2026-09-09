@@ -119,7 +119,8 @@ export type WizardFieldControl =
   | "enum"
   | "uuid"
   | "boolean"
-  | "object-lines";
+  | "object-lines"
+  | "json";
 
 export type WizardConfigField = {
   name: string;

@@ -257,9 +257,25 @@ describe("script contract adapter", () => {
       timeoutSeconds: 30,
       memoryMiB: 128,
       inputSchema: { payload: "object" },
-      outputSchema: { status: "string" },
+      outputSchema: {
+        type: "object",
+        properties: { status: { type: "string" } },
+        additionalProperties: false,
+      },
     });
     assert.deepEqual(ok, []);
+
+    const secretSchema = validateScriptNodeConfig("script.python", {
+      runtimeProfileId: PROFILE_ID,
+      source: "print('ok')\n",
+      entrypoint: "main.py",
+      timeoutSeconds: 30,
+      inputSchema: {
+        type: "object",
+        properties: { token: { type: "string" } },
+      },
+    });
+    assert.ok(secretSchema.some((error) => /secret|handle/i.test(error)));
   });
 
   it("treats host-supplied id/workspaceId as 400 invalid-request UX", () => {

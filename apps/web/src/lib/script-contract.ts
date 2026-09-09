@@ -17,6 +17,7 @@
  */
 
 import { isResourceId } from "./identity-proxy-ids.ts";
+import { validateScriptIoNodeExtras } from "./script-io-contract.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
@@ -158,8 +159,9 @@ export const SCRIPT_NODE_POLICY_NOTES = [
   "Draft save writes YAML only. Publish is the artifact creation boundary: package, scan, sign, and pin a digest on the workflow version.",
   "Execution uses the pinned digest, not mutable draft source. Drafts cannot run.",
   "Choose a published approved runtime/dependency profile. Arbitrary package install and arbitrary base images are denied.",
-  "Resource limits and timeout are bounded. Inputs arrive as validated JSON; outputs must meet the declared schema.",
-  "Credential handles are short-lived, scoped, and injected at runtime — never authored into source.",
+  "Resource limits and timeout are bounded. Inputs arrive as validated JSON against the declared schema and size bound; outputs must match too and are redacted.",
+  "Credential handles are short-lived, scoped, and injected at runtime — never authored into source, schema, YAML, or logs.",
+  "Retries default to zero. Retry-safe only with an idempotency key plus verification. Lease loss is indeterminate — never a blind re-run. Retry is shown only when result.retry.allowed is true.",
   "Selectors fail closed on HTTP 403. Only published workspace runtime profiles are listed.",
 ] as const;
 
@@ -200,7 +202,7 @@ export type ScriptNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
   readOnly?: boolean;
-  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "object-lines";
+  controlHint: "text" | "textarea" | "enum" | "uuid" | "number" | "object-lines" | "json";
   defaultValue?: unknown;
 };
 
@@ -280,6 +282,9 @@ export type ScriptNodeCatalog = {
   isolation?: ScriptIsolationRules;
   hooks?: Record<string, string>;
   notes?: string;
+  /** Additive E9.3 overlay from GET /scripts/catalog. Parsed by script-io-contract. */
+  io?: Record<string, unknown>;
+  retry?: Record<string, unknown>;
 };
 
 export type ScriptArtifact = {
@@ -611,19 +616,17 @@ export function scriptNodeWithFields(
       name: "inputSchema",
       kind: "object",
       label: "Input schema",
-      controlHint: "object-lines",
-      advanced: true,
+      controlHint: "json",
       description:
-        "Optional declared input schema stub (name=type lines). Validated JSON only. No secrets.",
+        "Optional declared input JSON Schema subset. Validated JSON only — 16 KiB bound. No secrets or handles.",
     },
     {
       name: "outputSchema",
       kind: "object",
       label: "Output schema",
-      controlHint: "object-lines",
-      advanced: true,
+      controlHint: "json",
       description:
-        "Optional declared output schema stub (name=type lines). Outputs must meet schema and size limits.",
+        "Optional declared output JSON Schema subset. Outputs must meet schema and size limits. Redacted.",
     },
     {
       name: "policyId",
@@ -654,7 +657,9 @@ export function overlayScriptFields(
           : field.kind === "integer"
             ? "number"
             : field.kind === "object"
-              ? "object-lines"
+              ? field.name === "inputSchema" || field.name === "outputSchema"
+                ? "json"
+                : "object-lines"
               : field.enum?.length
                 ? "enum"
                 : field.name === "source"
@@ -668,8 +673,6 @@ export function overlayScriptFields(
         description: field.description || base?.description || "",
         label: base?.label || field.name,
         advanced:
-          field.name === "inputSchema" ||
-          field.name === "outputSchema" ||
           field.name === "policyId" ||
           field.name === "cpuMillis" ||
           field.name === "processes" ||
@@ -888,8 +891,7 @@ export function validateScriptNodeConfig(
     }
   }
 
-  errors.push(...validateSchemaStub("inputSchema", withValue.inputSchema));
-  errors.push(...validateSchemaStub("outputSchema", withValue.outputSchema));
+  errors.push(...validateScriptIoNodeExtras(withValue));
 
   return unique(errors);
 }
@@ -1137,6 +1139,18 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
       (nodes.length ? undefined : SCRIPT_CONTRACT_FALLBACK_HELP),
+    io:
+      nested.io && typeof nested.io === "object" && !Array.isArray(nested.io)
+        ? (nested.io as Record<string, unknown>)
+        : rec.io && typeof rec.io === "object" && !Array.isArray(rec.io)
+          ? (rec.io as Record<string, unknown>)
+          : undefined,
+    retry:
+      nested.retry && typeof nested.retry === "object" && !Array.isArray(nested.retry)
+        ? (nested.retry as Record<string, unknown>)
+        : rec.retry && typeof rec.retry === "object" && !Array.isArray(rec.retry)
+          ? (rec.retry as Record<string, unknown>)
+          : undefined,
   };
 }
 
@@ -1441,26 +1455,6 @@ function parseVersionArtifact(version: unknown): {
     reason,
     fromVersion,
   };
-}
-
-function validateSchemaStub(name: string, value: unknown): string[] {
-  if (value === undefined || value === "") {
-    return [];
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return [`${name} must be an object of name=type declarations.`];
-  }
-  const errors: string[] = [];
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    if (!key.trim() || isForbiddenYamlKey(key)) {
-      errors.push(`${name} must not declare secret field names.`);
-      continue;
-    }
-    if (typeof nested === "string" && looksLikeSecretValue(nested)) {
-      errors.push(SCRIPT_SECRET_WITH_MESSAGE);
-    }
-  }
-  return unique(errors);
 }
 
 function firstString(...values: unknown[]): string | undefined {
