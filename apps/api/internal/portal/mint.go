@@ -33,10 +33,7 @@ func PrepareMint(req MintRequest, callerIssuer, callerSubject, display, tenantID
 		issuer = strings.TrimSpace(callerIssuer)
 	}
 	if !IssuerAllowed(issuer, allow) {
-		if len(allow) > 0 {
-			return embed.MintInput{}, nil, ErrIssuer
-		}
-		return embed.MintInput{}, nil, ErrHostileHost
+		return embed.MintInput{}, nil, ErrIssuer
 	}
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" {

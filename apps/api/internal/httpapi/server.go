@@ -58,6 +58,7 @@ type Server struct {
 	embedKeys        embed.Material
 	embedRing        *embed.Ring
 	embedJTI         embed.JTIConsumer
+	embedMintIssuers []string
 	embedIssuers     []string
 	portalIssuers    []string
 	portalFrames     []string
@@ -323,6 +324,7 @@ func newServer(d Deps) http.Handler {
 		embedKeys:        d.EmbedKeys,
 		embedRing:        d.EmbedRing,
 		embedJTI:         d.EmbedJTI,
+		embedMintIssuers: append([]string(nil), d.EmbedIssuers...),
 		embedIssuers:     mergeIssuers(d.EmbedIssuers, d.PortalIssuers),
 		portalIssuers:    append([]string(nil), d.PortalIssuers...),
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),

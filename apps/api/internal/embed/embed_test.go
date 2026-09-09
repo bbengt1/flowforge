@@ -51,10 +51,11 @@ func TestMintHappyPath(t *testing.T) {
 		t.Fatalf("time bounds %+v", claims)
 	}
 	got, err := Verify(m, minted.Assertion, VerifyOptions{
-		Audience:   DefaultAudience,
-		Now:        now.Add(time.Second),
-		Consumer:   NewMemoryJTI(),
-		ResolvedWS: claims.WorkspaceID,
+		Audience:       DefaultAudience,
+		Now:            now.Add(time.Second),
+		Consumer:       NewMemoryJTI(),
+		ResolvedWS:     claims.WorkspaceID,
+		AllowedIssuers: []string{claims.Issuer},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +123,7 @@ func TestVerifyMissingClaims(t *testing.T) {
 		c := base
 		tc.mut(&c)
 		token := mustSignRaw(t, m, c)
-		_, err := Verify(m, token, VerifyOptions{Now: now.Add(time.Second), SkipJTI: true})
+		_, err := Verify(m, token, VerifyOptions{Now: now.Add(time.Second), SkipJTI: true, AllowedIssuers: []string{"https://portal.example"}})
 		if err != ErrMissingClaim && err != ErrSDK && err != ErrCapability {
 			t.Fatalf("%s: err=%v", tc.name, err)
 		}
@@ -167,10 +168,10 @@ func TestVerifyExpiredAndNBF(t *testing.T) {
 		SDK:          SDKVersion,
 	}
 	token := mustSignRaw(t, m, c)
-	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(31 * time.Second), SkipJTI: true}); err != ErrExpired {
+	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(31 * time.Second), SkipJTI: true, AllowedIssuers: []string{c.Issuer}}); err != ErrExpired {
 		t.Fatalf("expired: %v", err)
 	}
-	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(-time.Second), SkipJTI: true}); err != ErrNotYetValid {
+	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(-time.Second), SkipJTI: true, AllowedIssuers: []string{c.Issuer}}); err != ErrNotYetValid {
 		t.Fatalf("nbf: %v", err)
 	}
 }
@@ -183,7 +184,7 @@ func TestJTIReplayRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	jti := NewMemoryJTI()
-	opt := VerifyOptions{Now: now.Add(time.Second), Consumer: jti, ResolvedWS: "22222222-2222-2222-2222-222222222222"}
+	opt := VerifyOptions{Now: now.Add(time.Second), Consumer: jti, ResolvedWS: "22222222-2222-2222-2222-222222222222", AllowedIssuers: []string{"https://portal.example"}}
 	if _, err := Verify(m, minted.Assertion, opt); err != nil {
 		t.Fatal(err)
 	}
@@ -348,6 +349,7 @@ func TestAddOverlapLockedToActiveKey(t *testing.T) {
 	}
 	got, err := Verify(ring.Material(), minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -385,6 +387,7 @@ func TestVerifyOverlapKeyAcceptedUnknownKidRejected(t *testing.T) {
 	}
 	got, err := Verify(active, minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{"https://portal.example"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -414,8 +417,19 @@ func TestIssuerAllowlistFailsClosed(t *testing.T) {
 	if _, err := Verify(m, minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
 		AllowedIssuers: []string{"https://other.example"},
-	}); err != ErrIssuer {
-		t.Fatalf("allowlist: %v", err)
+	}); err != ErrIssuerNotAllowed {
+		t.Fatalf("unknown issuer: %v", err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+	}); err != ErrIssuerNotAllowed {
+		t.Fatalf("empty allowlist: %v", err)
+	}
+	if _, err := Verify(m, minted.Assertion, VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",
+		AllowedIssuers: []string{},
+	}); err != ErrIssuerNotAllowed {
+		t.Fatalf("empty slice: %v", err)
 	}
 	if _, err := Verify(m, minted.Assertion, VerifyOptions{
 		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: "22222222-2222-2222-2222-222222222222",

@@ -191,6 +191,7 @@ func TestFailClosedEmbedExchangeStillIssuesSession(t *testing.T) {
 		Sessions:       sessions,
 		EmbedKeys:      keys,
 		EmbedJTI:       embed.NewMemoryJTI(),
+		EmbedIssuers:   []string{admin.Issuer},
 		Security:       Security{},
 		PlatformAdmins: []authz.PrincipalRef{},
 	})

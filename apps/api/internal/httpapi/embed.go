@@ -168,6 +168,11 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 	if issuer == "" {
 		issuer = user.Issuer
 	}
+	if !embed.IssuerAllowed(issuer, s.embedMintIssuers) {
+		s.auditEmbed(r, "embed.rejected", session.OutcomeDenied, "issuer", "", s.embedMaterial().KeyID, issuer, subject)
+		writeEmbedError(w, r, embed.ErrIssuerNotAllowed)
+		return
+	}
 	display := strings.TrimSpace(req.DisplayName)
 	if display == "" && subject == user.ExternalSubject {
 		display = user.DisplayName
@@ -313,6 +318,8 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		errors.Is(err, embed.ErrTenant), errors.Is(err, embed.ErrWorkbench),
 		errors.Is(err, embed.ErrTokenID), errors.Is(err, embed.ErrWorkspaceBinding):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The embed assertion is missing or has invalid claims.")
+	case errors.Is(err, embed.ErrIssuerNotAllowed):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The embed assertion issuer is not on the allowlist. Empty EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST fails closed.")
 	case errors.Is(err, embed.ErrAudience):
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion audience is not bound to FlowForge.")
 	case errors.Is(err, embed.ErrExpired), errors.Is(err, embed.ErrNotYetValid):
@@ -375,6 +382,8 @@ func embedDenyReason(err error) string {
 		return "signature"
 	case errors.Is(err, embed.ErrTenancyMismatch):
 		return "tenancy"
+	case errors.Is(err, embed.ErrIssuerNotAllowed), errors.Is(err, embed.ErrIssuer):
+		return "issuer"
 	case errors.Is(err, embed.ErrMissingClaim):
 		return "claims"
 	default:

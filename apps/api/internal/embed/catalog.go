@@ -81,8 +81,8 @@ func NewCatalog() Catalog {
 		API: []APIRoute{
 			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
-			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL."},
+			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Validate iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities/workspace, atomically consume jti (Postgres TTL), bind (tenant_id, workbench_key) onto ff_session. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap, or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the active env key. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
@@ -96,7 +96,7 @@ func NewCatalog() Catalog {
 			{ID: "jti.consume", Status: "ready", Fail: "replayed jti is 409; store failure is 503", Note: "Atomic Postgres INSERT ON CONFLICT with TTL. MemoryJTI remains for process-local tests."},
 			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed; overlap register of a non-prior-active key fails closed; workspace.administer cannot rotate", Note: "Active signing key plus explicit overlap verification keys (env + rotate API). Rotate API accepts only the previous active public key and requires platform.administer."},
 			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed; embed sessions cannot bootstrap tenants or sibling workbenches", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit. POST /tenants and POST /workspaces from an embed session are 403 even if the principal is a platform-admin."},
-			{ID: "portal.adapter", Status: "ready", Fail: "hostile host, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). FlowForge never shares its database or executor."},
+			{ID: "portal.adapter", Status: "ready", Fail: "empty or hostile issuer allowlist, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST is 403. FlowForge never shares its database or executor."},
 		},
 		Rules: CatalogRules{
 			AssertionNotInURL:            true,
@@ -112,7 +112,7 @@ func NewCatalog() Catalog {
 
 func claimDocs() []ClaimDoc {
 	return []ClaimDoc{
-		{Name: "iss", Required: true, JSON: "iss", Note: "Host issuer that minted via FlowForge (caller issuer)."},
+		{Name: "iss", Required: true, JSON: "iss", Note: "Host issuer that minted via FlowForge (caller issuer). Must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (merged with Portal issuers on exchange). Empty allowlist fails closed."},
 		{Name: "aud", Required: true, JSON: "aud", Note: "Must be flowforge. Wrong audience fails closed."},
 		{Name: "sub", Required: true, JSON: "sub", Note: "End-user external subject."},
 		{Name: "nbf", Required: true, JSON: "nbf", Note: "Unix seconds. Not-yet-valid fails closed."},

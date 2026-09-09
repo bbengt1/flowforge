@@ -96,8 +96,8 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if !authz.ValidIssuer(c.Issuer) {
 		return Verified{}, ErrIssuer
 	}
-	if !issuerAllowed(c.Issuer, opt.AllowedIssuers) {
-		return Verified{}, ErrIssuer
+	if !IssuerAllowed(c.Issuer, opt.AllowedIssuers) {
+		return Verified{}, ErrIssuerNotAllowed
 	}
 	if !authz.ValidSubject(c.Subject) {
 		return Verified{}, ErrSubject

@@ -6,6 +6,9 @@
  * so Chloe can wire the Portal add-in without rewriting product pages.
  *
  * Relates to #123 / Part of #120. Keep #123 open.
+ *
+ * ADV-005: empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed
+ * (HTTP 403) the same as an unknown issuer. No UI rewrite.
  */
 
 import {
@@ -290,7 +293,7 @@ export const PORTAL_DENIED_MESSAGE =
   "Portal entry is denied. FlowForge was not contacted. Granting Portal RBAC later still does not authorize FlowForge — a verified assertion exchange is required.";
 
 export const PORTAL_HOSTILE_ISSUER_MESSAGE =
-  "Hostile Portal issuer (HTTP 403). The issuer is not on PORTAL_ISSUER_ALLOWLIST. Portal admin is not FlowForge membership.";
+  "Hostile or missing Portal issuer (HTTP 403). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed; unknown issuers are denied. Portal admin is not FlowForge membership.";
 
 export const PORTAL_NO_BOOTSTRAP_MESSAGE =
   "Embed sessions cannot create tenants or sibling workbenches (HTTP 403). Portal admin does not grant platform.administer or FlowForge membership bootstrap.";

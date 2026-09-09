@@ -35,6 +35,11 @@ type embedEnv struct {
 
 func newEmbedEnv(t *testing.T) embedEnv {
 	t.Helper()
+	return newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, nil)
+}
+
+func newEmbedEnvWithIssuers(t *testing.T, embedIssuers, portalIssuers []string) embedEnv {
+	t.Helper()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
 	keys := embed.TestMaterial()
@@ -44,17 +49,19 @@ func newEmbedEnv(t *testing.T) embedEnv {
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	ops := identity.User{Issuer: "https://idp.example", ExternalSubject: "platform-ops-1", DisplayName: "Platform Ops"}
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
-		Store:     store,
-		Scoped:    isolation.NewMemory(),
-		Sessions:  session.NewMemory(),
-		Workflows: wfstore.NewMemory(),
-		Ops:       opsconfig.NewMemory(),
-		Hooks:     webhook.NewMemory(),
-		Vault:     vault.NewMemory(vault.TestKeys(), nil),
-		Keys:      vault.TestKeys(),
-		EmbedKeys: keys,
-		EmbedRing: ring,
-		EmbedJTI:  embed.NewMemoryJTI(),
+		Store:         store,
+		Scoped:        isolation.NewMemory(),
+		Sessions:      session.NewMemory(),
+		Workflows:     wfstore.NewMemory(),
+		Ops:           opsconfig.NewMemory(),
+		Hooks:         webhook.NewMemory(),
+		Vault:         vault.NewMemory(vault.TestKeys(), nil),
+		Keys:          vault.TestKeys(),
+		EmbedKeys:     keys,
+		EmbedRing:     ring,
+		EmbedJTI:      embed.NewMemoryJTI(),
+		EmbedIssuers:  embedIssuers,
+		PortalIssuers: portalIssuers,
 		PlatformAdmins: []authz.PrincipalRef{{
 			Issuer:  ops.Issuer,
 			Subject: ops.ExternalSubject,
@@ -511,6 +518,103 @@ func TestEmbedKeyRotationRequiresPlatformAdminAndPriorActiveKey(t *testing.T) {
 	}
 	if strings.Contains(okRetire.Body.String(), env.keys.KeyID) {
 		t.Fatal("retired overlap kid should leave JWKS")
+	}
+}
+
+func TestEmbedMintEmptyAllowlistDenied(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, nil, nil)
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	if !strings.Contains(rec.Body.String(), "allowlist") {
+		t.Fatalf("detail should mention allowlist: %s", rec.Body.String())
+	}
+}
+
+func TestEmbedExchangeEmptyAllowlistDenied(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, nil, nil)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedMintUnknownIssuerDenied(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.view"],"issuer":"https://hostile.example"}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangeUnknownIssuerDenied(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://hostile.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedMintEmptyAllowlistDeniedWhenPortalSet(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, nil, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangeAcceptsPortalIssuerWhenEmbedEmpty(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, nil, []string{"https://portal.cp-ops.example"})
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://portal.cp-ops.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("portal issuer exchange %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEmbedMintAllowlistedIssuerSucceeds(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.view"],"issuer":"https://idp.example"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("allowlisted mint %d %s", rec.Code, rec.Body.String())
 	}
 }
 

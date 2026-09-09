@@ -85,8 +85,11 @@ func TestIssuerAllowlistFailsClosed(t *testing.T) {
 	if IssuerAllowed("", allow) {
 		t.Fatal("empty issuer allowed")
 	}
-	if IssuerAllowed("", nil) {
-		t.Fatal("empty issuer allowed with open list")
+	if IssuerAllowed("https://portal.cp-ops.example", nil) {
+		t.Fatal("empty allowlist must fail closed")
+	}
+	if IssuerAllowed("https://portal.cp-ops.example", []string{}) {
+		t.Fatal("empty slice must fail closed")
 	}
 }
 
@@ -125,6 +128,17 @@ func TestPrepareMintUsesEmbedAudienceAndPortalIssuer(t *testing.T) {
 	}
 	if in.Host != "https://portal.cp-ops.example" || in.WorkbenchKey != "ops" {
 		t.Fatalf("mint input %+v", in)
+	}
+}
+
+func TestPrepareMintEmptyAllowlistFailsClosed(t *testing.T) {
+	_, _, err := PrepareMint(MintRequest{
+		PortalRoles: []string{RoleViewer},
+		Issuer:      "https://portal.cp-ops.example",
+	}, "https://portal.cp-ops.example", "svc-portal", "Portal", "11111111-1111-4111-8111-111111111111", "ops", "",
+		nil, time.Now().UTC())
+	if err != ErrIssuer {
+		t.Fatalf("empty allowlist: %v", err)
 	}
 }
 

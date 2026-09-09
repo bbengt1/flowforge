@@ -15,6 +15,11 @@ data:
   POSTGRES_SSLMODE: "require"
   # Exact UI origins only. Empty = fail-closed for foreign Origin.
   # CORS_ALLOWED_ORIGINS: "https://app.example.com"
+  # Required issuer allowlists. Empty = fail-closed (403 on embed/Portal mint and exchange).
+  # EMBED_ISSUER: "https://idp.example"
+  # EMBED_ISSUER_ALLOWLIST: "https://host-a.example,https://host-b.example"
+  # PORTAL_ISSUER: "https://portal.example"
+  # PORTAL_ISSUER_ALLOWLIST: "https://portal.example"
   SESSION_IDLE_TIMEOUT: "30m"
   SESSION_ABSOLUTE_TIMEOUT: "12h"
   # Encrypted artifact objects on the container /tmp emptyDir (read-only root).

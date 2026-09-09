@@ -31,6 +31,11 @@ type portalEnv struct {
 
 func newPortalEnv(t *testing.T) portalEnv {
 	t.Helper()
+	return newPortalEnvWithIssuers(t, []string{portalIssuer})
+}
+
+func newPortalEnvWithIssuers(t *testing.T, issuers []string) portalEnv {
+	t.Helper()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	clock := &now
 	keys := embed.TestMaterial()
@@ -48,7 +53,7 @@ func newPortalEnv(t *testing.T) portalEnv {
 		Keys:          vault.TestKeys(),
 		EmbedKeys:     keys,
 		EmbedJTI:      embed.NewMemoryJTI(),
-		PortalIssuers: []string{portalIssuer},
+		PortalIssuers: issuers,
 		Now:           func() time.Time { return *clock },
 		Log:           log,
 	}))
@@ -159,6 +164,34 @@ func TestPortalMintMapsRolesAndExchanges(t *testing.T) {
 	if exchanged.Session.Embed == nil || exchanged.Session.Embed.WorkbenchKey != "ops" {
 		t.Fatalf("session embed %+v", exchanged.Session.Embed)
 	}
+}
+
+func TestPortalMintEmptyAllowlistDenied(t *testing.T) {
+	env := newPortalEnvWithIssuers(t, nil)
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"]}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+	if !strings.Contains(rec.Body.String(), "allowlist") {
+		t.Fatalf("detail should mention allowlist: %s", rec.Body.String())
+	}
+}
+
+func TestPortalExchangeEmptyAllowlistDenied(t *testing.T) {
+	env := newPortalEnvWithIssuers(t, nil)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       portalIssuer,
+		Audience:     embed.DefaultAudience,
+		Subject:      "portal-svc",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env.embedEnv),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	ex := env.exchange(t, token)
+	assertProblem(t, ex, http.StatusForbidden, CodeForbidden, "")
 }
 
 func TestPortalHostileIssuerFailsClosed(t *testing.T) {

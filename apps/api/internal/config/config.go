@@ -66,7 +66,11 @@ type Config struct {
 	EmbedAudience        string
 	EmbedTTL             time.Duration
 	EmbedIssuer          string
-	EmbedIssuers         []string
+	// EmbedIssuers is EMBED_ISSUER + EMBED_ISSUER_ALLOWLIST. Empty is
+	// fail-closed at embed mint and (when Portal is also empty) exchange.
+	EmbedIssuers []string
+	// PortalIssuers is PORTAL_ISSUER + PORTAL_ISSUER_ALLOWLIST. Empty is
+	// fail-closed at Portal mint. Merged into embed exchange verification.
 	PortalIssuers        []string
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef

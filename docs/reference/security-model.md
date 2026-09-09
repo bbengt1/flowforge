@@ -53,8 +53,12 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   in browser local storage. Idle and absolute expiry fail closed.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
   audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`).
-  Exchange validates issuer (optional allowlist), audience, `nbf`/`exp`, `jti`,
-  capabilities, and workspace binding. Token IDs are consumed atomically with
+  Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /
+  `EMBED_ISSUER_ALLOWLIST` merged with `PORTAL_ISSUER` /
+  `PORTAL_ISSUER_ALLOWLIST`), audience, `nbf`/`exp`, `jti`,
+  capabilities, and workspace binding. An empty allowlist fails closed
+  at request time (`403` on mint and exchange) — the process does not
+  refuse to start, consistent with empty `PLATFORM_ADMINS`. Token IDs are consumed atomically with
   TTL (replay is conflict). Key rotation accepts only active and explicitly
   overlapping verification keys; unknown `kid` fails closed. The rotate API
   may register only the previous active public key and requires

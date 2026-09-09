@@ -73,7 +73,7 @@ func writePortalError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, portal.ErrPlatformCapability):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Portal capabilities must not include platform.administer.")
 	case errors.Is(err, portal.ErrIssuer), errors.Is(err, portal.ErrHostileHost):
-		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Portal issuer is not on the allowlist.")
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Portal issuer is not on the allowlist. Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed.")
 	default:
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The portal adapter request is not valid.")
 	}
