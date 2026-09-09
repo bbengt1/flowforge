@@ -547,7 +547,7 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 		)
 		RETURNING `+executionInsertReturning+`
 	`, scope.WorkspaceID(), workflowID, ver.ID, ver.Digest, strings.TrimSpace(in.TriggerID),
-		prepared.key, prepared.fingerprint, inputRaw, policyRaw, strings.TrimSpace(in.CorrelationID), actorArg(scope)))
+		prepared.key, prepared.fingerprint, inputRaw, policyRaw, strings.TrimSpace(in.CorrelationID), requestedByArg(scope, in.RequestedBy)))
 	if err != nil {
 		if errors.Is(err, ErrConflict) && prepared.key != "" {
 			existing, found, ferr := lookupIdempotentTx(ctx, tx, workflowID, ver.ID, prepared.key)
@@ -850,6 +850,14 @@ func actorArg(scope isolation.Scope) any {
 		return nil
 	}
 	return scope.ActorID()
+}
+
+func requestedByArg(scope isolation.Scope, requestedBy string) any {
+	requestedBy = strings.TrimSpace(requestedBy)
+	if requestedBy != "" {
+		return requestedBy
+	}
+	return actorArg(scope)
 }
 
 func mapDBErr(err error) error {

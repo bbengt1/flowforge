@@ -287,11 +287,31 @@ func emergencyStopStepStatus(jobStatus string) string {
 
 func jobIsOpen(status string) bool {
 	switch status {
-	case JobQueued, JobClaimed, JobRunning:
+	case JobQueued, JobClaimed, JobRunning, JobWaiting:
 		return true
 	default:
 		return false
 	}
+}
+
+func executionIsActive(status string) bool {
+	switch status {
+	case ExecutionQueued, ExecutionRunning, ExecutionWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitOutput(port string, extra map[string]any) map[string]any {
+	out := map[string]any{"port": port, "decision": port}
+	for k, v := range extra {
+		if k == "port" || k == "decision" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func jobIsWritable(status string) bool {
@@ -302,7 +322,7 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 	if len(jobs) == 0 {
 		return ExecutionQueued
 	}
-	var sawIndet, sawFailed, sawCanceled, sawClaimed, sawQueued, sawSuccess bool
+	var sawIndet, sawFailed, sawCanceled, sawClaimed, sawQueued, sawWaiting, sawSuccess bool
 	for _, job := range jobs {
 		switch job.Status {
 		case JobIndeterminate:
@@ -313,6 +333,8 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 			sawCanceled = true
 		case JobClaimed, JobRunning:
 			sawClaimed = true
+		case JobWaiting:
+			sawWaiting = true
 		case JobQueued:
 			sawQueued = true
 		case JobSucceeded:
@@ -324,6 +346,9 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 	}
 	if sawClaimed {
 		return ExecutionRunning
+	}
+	if sawWaiting && !sawQueued {
+		return ExecutionWaiting
 	}
 	if sawQueued {
 		if sawSuccess || sawFailed || sawCanceled {
@@ -346,7 +371,7 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 func applyExecutionStatus(exec *Execution, status string, now time.Time) {
 	exec.Status = status
 	exec.UpdatedAt = now
-	if status == ExecutionRunning && exec.StartedAt == nil {
+	if (status == ExecutionRunning || status == ExecutionWaiting) && exec.StartedAt == nil {
 		started := now
 		exec.StartedAt = &started
 	}
@@ -372,7 +397,7 @@ func applyStepStatus(step *ExecutionStep, status string, now time.Time) {
 		step.FinishedAt = &finished
 		return
 	}
-	if status == ExecutionQueued || status == ExecutionRunning {
+	if status == ExecutionQueued || status == ExecutionRunning || status == ExecutionWaiting {
 		step.FinishedAt = nil
 	}
 }

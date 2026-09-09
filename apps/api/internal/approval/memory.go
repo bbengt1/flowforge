@@ -246,10 +246,14 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if req.ExpiresAt.IsZero() {
 		return Record{}, ErrInvalid
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID)
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, in.ExecutionID)
 	role := strings.TrimSpace(req.ApproverRole)
 	if role == "" {
 		role = "approver"
+	}
+	requestedBy := strings.TrimSpace(in.RequestedBy)
+	if requestedBy == "" {
+		requestedBy = scope.ActorID()
 	}
 	return Record{
 		WorkflowID:         in.WorkflowID,
@@ -271,7 +275,7 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 		ApproverRole:       role,
 		Status:             StatusPending,
 		ExpiresAt:          req.ExpiresAt.UTC(),
-		RequestedBy:        scope.ActorID(),
+		RequestedBy:        requestedBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}, nil

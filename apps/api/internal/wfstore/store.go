@@ -59,6 +59,7 @@ const (
 	ExecutionQueued        = "queued"
 	ExecutionPinned        = "pinned"
 	ExecutionRunning       = "running"
+	ExecutionWaiting       = "waiting"
 	ExecutionSucceeded     = "succeeded"
 	ExecutionFailed        = "failed"
 	ExecutionCanceled      = "canceled"
@@ -70,6 +71,7 @@ const (
 	JobQueued        = "queued"
 	JobClaimed       = "claimed"
 	JobRunning       = "running"
+	JobWaiting       = "waiting"
 	JobSucceeded     = "succeeded"
 	JobFailed        = "failed"
 	JobCanceled      = "canceled"
@@ -378,6 +380,7 @@ type StartInput struct {
 	CorrelationID  string
 	TriggerID      string
 	TriggerType    string
+	RequestedBy    string
 	PolicySnapshot map[string]any
 	HostContext    map[string]any
 }
@@ -424,6 +427,19 @@ type DispatchResult struct {
 	Job       ExecutionJob
 	Binding   JobBinding
 	Recovered int
+}
+
+// WaitJobInput parks a claimed or queued job without a worker lease.
+type WaitJobInput struct {
+	JobID       string
+	AvailableAt time.Time
+}
+
+// ResumeWaitInput completes a waiting job onto an output port.
+type ResumeWaitInput struct {
+	JobID  string
+	Port   string
+	Output map[string]any
 }
 
 // RetryResult is a newly queued attempt after an authorized retry.
@@ -488,6 +504,8 @@ type Store interface {
 	CancelExecution(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) (Execution, error)
 	EmergencyStop(ctx context.Context, scope isolation.Scope, now time.Time, in EmergencyStopInput) (EmergencyStopResult, error)
 	RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error)
+	WaitJob(ctx context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error)
+	ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error)
 	RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error)
 	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)
 	WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error)

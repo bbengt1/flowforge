@@ -12,7 +12,7 @@ This catalog distinguishes **core** nodes (first implementation target), **next*
 | --- | --- | --- | --- |
 | `manual` | Core | User starts a published workflow. | Captures actor, optional input schema (`schema` / `inputSchema`), idempotency key, and version digest. Start is `POST /workflows/{id}/executions` with `workflow.execute`, CSRF, and a published `workflowVersionId`. |
 | `webhook` | Core | Authenticated external event starts a workflow. | Opaque `publicId` (`wh_`+64 hex); rotatable vault `webhook_secret` (never returned); `POST /hooks/{publicId}` reads the raw body and verifies `v1` HMAC over `v1.{timestamp}.{raw}` before JSON parse; timestamp/replay, size/rate/concurrency limits; allowlisted field mapping into 16 KiB typed input; E10.1 idempotency/fingerprint start. Fail closed on bad sig, replay, skew, oversize, rate, unpublished/disabled. YAML may declare only `schema` / `inputSchema` / `contentType`. |
-| `schedule` | Core | Cron/timezone schedule starts a workflow. | The scheduler is server-owned; configuration is version-pinned, timezone-explicit, and has bounded missed-run, catch-up, and overlap behavior. |
+| `schedule` | Core | Cron/timezone schedule starts a workflow. | Admin CRUD `POST /schedules` pins a published version. Timezone is a required IANA name. Safe defaults: `overlapPolicy=skip`, `misfirePolicy=ignore`, `catchUp=0`. Dispatcher `POST /schedules/dispatch` starts with E10.1 idempotency/authz/policy and fails closed when disabled/unpublished. |
 | `event` | Next | Provider/event bus event starts a workflow. | Explicit subscription, source verification, and dedupe. |
 
 ### Workflow lifecycle actions
@@ -35,7 +35,7 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 | `flow.forEach` | Next | `items` → item results | Maximum item count/concurrency and bounded aggregation. |
 | `flow.delay` | Core | `input` → `result` | ISO-8601 `duration` (weeks/days/time only, max `P7D`). Durable wake-up time; no worker sleeps or in-memory timers. |
 | `flow.waitForEvent` | Next | correlation input → event/timeout | Durable subscription, timeout, and source verification. |
-| `flow.approval` | Core | request → `approved`, `rejected`, `expired` | Workspace role, approver separation (no requester self-approval), policy/version/target pinning, expiry, and audit. |
+| `flow.approval` | Core | `request` → `approved`, `rejected`, `expired` | Required `approverRole` + `expiresIn` (max `P7D`). Durable mid-run wait (no worker lease). Binding includes version/target/policy/operation/execution. Decide is resume; self-approval denied; changed state invalidates; expiry emits `expired`. |
 
 ## Data and artifacts
 

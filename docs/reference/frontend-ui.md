@@ -122,7 +122,7 @@ E6.1 (Chloe) replaces the slim operator header with the product workspace shell.
 
 E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the E6.1 shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same.
 
-- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Cards show ports and policy/bounds hints.
+- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Schedule admin is `triggers[type=schedule].admin`. `flow.approval` ships full ports/`allowedWith`/policy/bounds. Cards show ports and policy/bounds hints.
 - **Canvas:** nodes and `nodeId.port` edges from a successful validate summary only. Invalid YAML never draws a guessed graph. Pan/zoom/select; incompatible ports are unavailable with text, not color alone. Node states use icon + label.
 - **Inspector:** selected workflow, node, or edge. Core-neutral `with` forms stay from E3.3. Credentials appear by display name only.
 - **YAML:** syntax highlighting, line/column jump, debounced `POST /workflows/validate`. Save serializes through `POST /workflows/normalize` then `PUT /workflows/{id}/draft` and replaces the buffer with the normalize YAML + digest.
@@ -151,12 +151,12 @@ E6.4 (Chloe) extends E5.1–E5.3 `/executions` and the E6.2/E6.3 editor run cont
 - **Graph replay:** `/executions/{id}` overlays step status on the E6.2 canvas projection of the pinned version YAML (`GET /workflows/{id}/versions/{versionId}`). Invalid YAML is never guessed. Current node, duration, attempts, waiting/approval, safe outputs, artifacts, correlation ID, and redacted logs are shown. Status uses icon + text — `indeterminate` is unmistakable.
 - **Cancel / retry:** E5.2 rules unchanged. Cancel is idempotent. Retry is hidden for `indeterminate` and provider nodes.
 - **Compare:** two executions on `/executions` or detail — client-side diff of redacted summaries (status, inputs, outcomes, policy, pins). Same-workflow YAML can still use `POST /workflows/{id}/compare`. Secrets are stripped; plaintext never appears in the diff.
-- **Approvals:** waiting state lists `GET /approvals?executionId=`. Decide links go to `/approvals/{id}`. **Wait / resume controls stay disabled until E10** — no invented wait APIs.
+- **Approvals:** waiting state lists `GET /approvals?executionId=`. Decide links go to `/approvals/{id}`. E10.3 enables wait/resume: job/step/execution become `waiting` with no worker lease; resume is `POST /approvals/{id}/decide` (fresh `approval.decide`, no self-approval). Do not invent a separate resume route.
 - **Accessibility:** history list is a keyboard listbox (arrows / Home / End / Enter). Detail has skip links and error navigation to failed or indeterminate nodes. Status is never color alone.
 
 Helpers: `apps/web/src/lib/execution-replay.ts`. Components: `ExecutionReplay.tsx`, `ExecutionCompare.tsx`.
 
-**API gaps (jonny, not blocking):** no execution-vs-execution compare route; no replay projection endpoint (client uses version YAML + steps); wait/resume remain E10.
+**API gaps (jonny, not blocking):** no execution-vs-execution compare route; no replay projection endpoint (client uses version YAML + steps). Wait/resume is E10.3 (`waiting` + decide).
 
 ## E7.1 cluster target and Kubernetes policy (Chloe UI)
 
@@ -282,7 +282,7 @@ E10.1 (Chloe UI) wires jonny's **#111** map on `main` (`e10-#111`). `apps/api` i
 - **Authorization:** `workflow.execute` is required. Unknown permissions, HTTP 401, HTTP 403 (authz **or** policy deny), and missing CSRF fail closed — the UI does not treat a run as started.
 - **Audit confirmation:** pre-start review shows version digest, redacted input, and the idempotency key. Audit action `execution.start` is secret-free.
 - **Catalog fallback:** if `GET /workflows/catalog` `triggers[type=manual].start` is missing, the adapter uses marked **e10-#111** defaults (`catalog-fallback`). Route stays `POST /workflows/{id}/executions`.
-- **Unchanged:** E5 start route, E6.4 wait/resume still disabled, `apps/api` untouched.
+- **Unchanged:** E5 start route. E10.3 enables wait/resume via approval decide (Chloe turns on UX). `apps/api` schedule + durable approval routes are on `main`.
 
 ## Foundation operator shell
 
@@ -447,7 +447,7 @@ Masked, paste-safe secret fields; clear them from component state after `201`/`2
 
 ## E4.3 policy evaluation and approvals contract (API → UI)
 
-The Go API evaluates current published target/action policy before dispatch and stores approval requirements bound to workflow version + target revision + policy revision + operation + expiry. Chloe owns approval UX; **do not stack on an API feature branch** — these routes are on `main`. Full table: `docs/reference/backend-api-map.md` (E4.3). JSON is camelCase. Durable wait/resume is E10; keep wait-state controls disabled until then.
+The Go API evaluates current published target/action policy before dispatch and stores approval requirements bound to workflow version + target revision + policy revision + operation + expiry. Chloe owns approval UX; **do not stack on an API feature branch** — these routes are on `main`. Full table: `docs/reference/backend-api-map.md` (E4.3 + E10.3). JSON is camelCase. Durable `flow.approval` wait/resume is enabled: `GET /approvals/catalog` has `waitResumeEnabled: true`; resume is `POST /approvals/{id}/decide` (fresh `approval.decide`, no self-approval). Show `waiting` execution/step status and enable decide on pending mid-run rows.
 
 Suggested Next proxies: `/api/control-plane/policy/evaluate`, `/api/control-plane/approvals`, `/approvals/catalog`, `/approvals/{approvalId}`, `.../decide`, `.../events`. Forward session cookies, CSRF on POST, tenant + workbench headers, and `X-Request-ID`; preserve `application/problem+json`.
 
@@ -630,7 +630,7 @@ Run dialog fields:
 | Idempotency key | generated or operator-entered | Required in body + `Idempotency-Key`. `201` / `200` / `409` |
 | CSRF | `X-CSRF-Token` | Fail closed |
 
-`201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Schedule and wait/resume stay E10.3. Webhook admin/ingress is E10.2 below.
+`201` new / `200` replayed / `400` draft or bad input / `403` authz or policy deny / `409` fingerprint mismatch or approval-required. `workflow.execute` 403 and stale-session 401 fail closed. Audit `execution.start` is secret-free. Schedule + durable `flow.approval` wait/resume are E10.3 below. Webhook admin/ingress is E10.2 below.
 
 ## E10.2 replay-safe webhook trigger config (Chloe UI)
 
@@ -651,7 +651,13 @@ Admin fields:
 | Limits | `maxBodyBytes` / `clockSkewSeconds` / `replayRetentionSeconds` / rate / concurrency | Defaults from catalog `ingress` (64 KiB, 300s, 600s, 60/min, 5) |
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
-Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. Schedule + durable `flow.approval` wait/resume stay E10.3. HTTP/notification actions stay E10.4.
+Operator surfaces: `/workflows` (Webhooks / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. YAML may declare only `schema` / `inputSchema` / `contentType`. HTTP/notification actions stay E10.4.
+
+## E10.3 schedules + durable flow.approval (API → UI)
+
+Enable schedule admin and approval decide UX against `docs/reference/backend-api-map.md` (E10.3). Do **not** rewrite `apps/web` in the API story — Chloe owns the surfaces. Cookie session + CSRF. Catalog: `GET /workflows/catalog` `triggers[type=schedule].admin` and `GET /schedules/catalog` (safe defaults: skip overlap, ignore misfire, `catchUp=0`, required IANA timezone). Approvals: `GET /approvals/catalog` `waitResumeEnabled: true`; resume is decide.
+
+Suggested operator surfaces: `/workflows/{id}#schedules` (timezone, cron XOR interval, overlap/catch-up, enable/disable) and `/approvals` decide on waiting runs. `POST /schedules/dispatch` is a tick, not a public ingress. Waiting jobs hold no worker lease — do not claim them from the browser.
 
 ## Required validation
 

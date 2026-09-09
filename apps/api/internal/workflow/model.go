@@ -152,6 +152,8 @@ type TriggerAdmin struct {
 	DeleteRoute         string `json:"deleteRoute"`
 	Permission          string `json:"permission"`
 	ViewPermission      string `json:"viewPermission"`
+	DispatchRoute       string `json:"dispatchRoute,omitempty"`
+	DispatchPermission  string `json:"dispatchPermission,omitempty"`
 	CSRF                bool   `json:"csrf"`
 	SecretNeverReturned bool   `json:"secretNeverReturned"`
 	Help                string `json:"help"`

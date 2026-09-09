@@ -122,10 +122,10 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Decision != DecisionApprovalRequired || len(out.Requirements) != 1 {
+	if out.Decision != DecisionAllow || !out.DispatchAllowed || len(out.Requirements) != 1 {
 		t.Fatalf("eval = %+v", out)
 	}
-	if out.Requirements[0].ExpiresIn != "PT15M" || out.Requirements[0].Operation != "flow.approval" {
+	if !out.Requirements[0].Wait || out.Requirements[0].ExpiresIn != "PT15M" || out.Requirements[0].Operation != "flow.approval" {
 		t.Fatalf("req = %+v", out.Requirements[0])
 	}
 }

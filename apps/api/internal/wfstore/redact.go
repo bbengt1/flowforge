@@ -234,7 +234,7 @@ func planNodes(yamlDoc string, summary workflow.Summary) []plannedNode {
 
 func isActiveExecution(status string) bool {
 	switch status {
-	case ExecutionQueued, ExecutionPinned, ExecutionRunning:
+	case ExecutionQueued, ExecutionPinned, ExecutionRunning, ExecutionWaiting:
 		return true
 	default:
 		return false

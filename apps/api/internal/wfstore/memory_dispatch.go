@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -49,7 +50,7 @@ func (m *Memory) ClaimJob(_ context.Context, scope isolation.Scope, now time.Tim
 		if exec.workspaceID != scope.WorkspaceID() {
 			continue
 		}
-		if exec.record.Status != ExecutionQueued && exec.record.Status != ExecutionRunning {
+		if !executionIsActive(exec.record.Status) {
 			continue
 		}
 		for i, job := range exec.jobs {
@@ -250,7 +251,7 @@ func (m *Memory) CancelExecution(_ context.Context, scope isolation.Scope, now t
 		}
 	}
 	for i := range exec.steps {
-		if exec.steps[i].Status == ExecutionQueued || exec.steps[i].Status == ExecutionRunning {
+		if exec.steps[i].Status == ExecutionQueued || exec.steps[i].Status == ExecutionRunning || exec.steps[i].Status == ExecutionWaiting {
 			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
 		}
 	}
@@ -460,6 +461,109 @@ func (m *Memory) RecoverExpiredLeases(_ context.Context, scope isolation.Scope, 
 	return m.recoverExpiredLocked(scope, now), nil
 }
 
+func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return m.mutateWait(scope, now, in.JobID, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
+		if job.Status == JobWaiting {
+			return nil
+		}
+		if job.Status != JobClaimed && job.Status != JobRunning && job.Status != JobQueued {
+			return ErrNotClaimable
+		}
+		if exec.record.Status == ExecutionCanceled {
+			return ErrCanceled
+		}
+		job.Status = JobWaiting
+		job.WorkerID = ""
+		job.LeaseExpiresAt = nil
+		job.HeartbeatAt = nil
+		if !in.AvailableAt.IsZero() {
+			job.AvailableAt = in.AvailableAt.UTC()
+		}
+		job.UpdatedAt = now
+		step.LeaseID = ""
+		applyStepStatus(step, ExecutionWaiting, now)
+		return nil
+	}, "job.wait", "waiting")
+}
+
+func (m *Memory) ResumeWait(_ context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	port := strings.TrimSpace(in.Port)
+	if port == "" {
+		port = "expired"
+	}
+	return m.mutateWait(scope, now, in.JobID, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
+		if job.Status == JobSucceeded {
+			return nil
+		}
+		if job.Status != JobWaiting {
+			return ErrNotClaimable
+		}
+		job.Status = JobSucceeded
+		job.UpdatedAt = now
+		step.Output = redactObject(waitOutput(port, in.Output))
+		if step.Output == nil {
+			step.Output = waitOutput(port, nil)
+		}
+		applyStepStatus(step, ExecutionSucceeded, now)
+		return nil
+	}, "job.resume", port)
+}
+
+func (m *Memory) mutateWait(scope isolation.Scope, now time.Time, jobID string, fn func(*memExecution, *ExecutionJob, *ExecutionStep) error, action, outcome string) (DispatchResult, error) {
+	if scope.Zero() {
+		return DispatchResult{}, ErrNoScope
+	}
+	if !authz.ValidUUID(jobID) {
+		return DispatchResult{}, ErrNotFound
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	execID, job, ok := m.lookupJobLocked(scope.WorkspaceID(), jobID)
+	if !ok {
+		return DispatchResult{}, ErrNotFound
+	}
+	exec := m.executions[execID]
+	jobIdx := indexJob(exec.jobs, jobID)
+	stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+	if jobIdx < 0 || stepIdx < 0 {
+		return DispatchResult{}, ErrNotFound
+	}
+	job = exec.jobs[jobIdx]
+	step := exec.steps[stepIdx]
+	if err := fn(&exec, &job, &step); err != nil {
+		return DispatchResult{}, err
+	}
+	exec.jobs[jobIdx] = job
+	exec.steps[stepIdx] = step
+	m.rollupLocked(&exec, now)
+	m.executions[execID] = exec
+	m.appendAuditLocked(scope, AuditWrite{
+		Action:        action,
+		ResourceType:  "execution",
+		ResourceID:    exec.record.ID,
+		Outcome:       outcome,
+		CorrelationID: exec.record.CorrelationID,
+		Details:       map[string]any{"jobId": job.ID, "nodeId": step.NodeID},
+	}, now)
+	wf := m.workflows[exec.record.WorkflowID]
+	leaseExp := now
+	if job.LeaseExpiresAt != nil {
+		leaseExp = *job.LeaseExpiresAt
+	}
+	return DispatchResult{
+		Execution: cloneExecution(exec.record, wf.record),
+		Step:      cloneStep(step),
+		Job:       cloneJob(job),
+		Binding:   buildBinding(scope.WorkspaceID(), exec.record, step, job, now.Add(DefaultJobBindingTTL), leaseExp),
+	}, nil
+}
+
 func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInput, fn func(*memExecution, *ExecutionJob, *ExecutionStep) error, action, outcome string) (DispatchResult, error) {
 	if scope.Zero() {
 		return DispatchResult{}, ErrNoScope
@@ -516,20 +620,48 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 
 func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int {
 	n := 0
-	affected := map[string]struct{}{}
 	for id, exec := range m.executions {
 		if exec.workspaceID != scope.WorkspaceID() {
 			continue
 		}
 		changed := false
+		outcome := "indeterminate"
 		for i, job := range exec.jobs {
+			stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+			if job.Status == JobWaiting && !job.AvailableAt.After(now) {
+				job.Status = JobSucceeded
+				job.UpdatedAt = now
+				exec.jobs[i] = job
+				if stepIdx >= 0 {
+					exec.steps[stepIdx].Output = waitOutput("expired", nil)
+					applyStepStatus(&exec.steps[stepIdx], ExecutionSucceeded, now)
+				}
+				changed = true
+				outcome = "expired"
+				n++
+				continue
+			}
 			if !jobIsWritable(job.Status) || job.LeaseExpiresAt == nil || now.Before(*job.LeaseExpiresAt) {
+				continue
+			}
+			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
+				job.Status = JobWaiting
+				job.WorkerID = ""
+				job.LeaseExpiresAt = nil
+				job.HeartbeatAt = nil
+				job.UpdatedAt = now
+				exec.jobs[i] = job
+				applyStepStatus(&exec.steps[stepIdx], ExecutionWaiting, now)
+				exec.steps[stepIdx].LeaseID = ""
+				changed = true
+				outcome = "waiting"
+				n++
 				continue
 			}
 			job.Status = JobIndeterminate
 			job.UpdatedAt = now
 			exec.jobs[i] = job
-			if stepIdx := indexStep(exec.steps, job.ExecutionStepID); stepIdx >= 0 {
+			if stepIdx >= 0 {
 				applyStepStatus(&exec.steps[stepIdx], ExecutionIndeterminate, now)
 			}
 			changed = true
@@ -538,12 +670,11 @@ func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int 
 		if changed {
 			m.rollupLocked(&exec, now)
 			m.executions[id] = exec
-			affected[id] = struct{}{}
 			m.appendAuditLocked(scope, AuditWrite{
 				Action:        "job.recover",
 				ResourceType:  "execution",
 				ResourceID:    exec.record.ID,
-				Outcome:       "indeterminate",
+				Outcome:       outcome,
 				CorrelationID: exec.record.CorrelationID,
 				Details:       map[string]any{"reason": "lease-expired"},
 			}, now)

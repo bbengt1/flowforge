@@ -44,6 +44,7 @@ type Requirement struct {
 	ExpiresIn        string    `json:"expiresIn"`
 	ExpiresAt        time.Time `json:"expiresAt"`
 	Reason           string    `json:"reason,omitempty"`
+	Wait             bool      `json:"wait,omitempty"`
 }
 
 // OperationResult is the per-node evaluation outcome.
@@ -126,10 +127,28 @@ func Evaluate(in Input) (Result, error) {
 		return out, nil
 	}
 	if len(out.Requirements) > 0 {
-		out.Decision = DecisionApprovalRequired
-		out.DispatchAllowed = false
+		if onlyWaitRequirements(out.Requirements) {
+			// Mid-run flow.approval waits do not block start.
+			out.Decision = DecisionAllow
+			out.DispatchAllowed = true
+		} else {
+			out.Decision = DecisionApprovalRequired
+			out.DispatchAllowed = false
+		}
 	}
 	return out, nil
+}
+
+func onlyWaitRequirements(reqs []Requirement) bool {
+	if len(reqs) == 0 {
+		return false
+	}
+	for _, req := range reqs {
+		if !req.Wait {
+			return false
+		}
+	}
+	return true
 }
 
 func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Time) OperationResult {
@@ -165,6 +184,7 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 
 	if op == "flow.approval" {
 		req := requirementFromNode(node, target, policyPin, now, "flow.approval node requires a bound approval")
+		req.Wait = true
 		item.Decision = DecisionApprovalRequired
 		item.Reason = req.Reason
 		item.Requirement = &req

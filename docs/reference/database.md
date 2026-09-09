@@ -125,6 +125,6 @@ Migrations are forward-only, transaction-safe where PostgreSQL permits, and incl
 2. workflows, drafts, immutable versions, triggers, and templates;
 3. credentials, target/profile/policy versioning, and artifact metadata;
 4. E3.2 execution pin stubs (expanded by E5.1 `000009_executions.sql` with steps, jobs, and audit partitions);
-5. E4.3 `approvals` / `approval_events` (policy-bound requirements; E10 extends wait/resume).
+5. E4.3 `approvals` / `approval_events` (policy-bound requirements; E10.3 `000016_schedules_and_wait.sql` adds `workflow_schedules` and `waiting` execution/step/job status).
 
 Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test ./...`, `go run ./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.
