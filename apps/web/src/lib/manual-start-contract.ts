@@ -177,7 +177,10 @@ export function resolveManualStartContract(
   if (!listed) {
     return {
       source: "catalog-fallback",
-      start: { ...MANUAL_START_DEFAULT_START },
+      start: {
+        ...MANUAL_START_DEFAULT_START,
+        schemaFields: [...MANUAL_START_DEFAULT_START.schemaFields],
+      },
     };
   }
   return {

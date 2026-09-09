@@ -75,6 +75,36 @@ export type CatalogTriggerStart = {
   help?: string;
 };
 
+/** Additive E10.2 catalog map on `triggers[type=webhook]` when jonny posts it. */
+export type CatalogTriggerWebhookRoutes = {
+  list?: string;
+  create?: string;
+  get?: string;
+  update?: string;
+  rotate?: string;
+  disable?: string;
+  enable?: string;
+};
+
+export type CatalogTriggerWebhook = {
+  routes?: CatalogTriggerWebhookRoutes;
+  collection?: string;
+  permission?: string;
+  managePermission?: string;
+  csrf?: boolean;
+  secretRevealOnce?: boolean;
+  signatureRequired?: boolean;
+  replayRequired?: boolean;
+  rawBodyBeforeParse?: boolean;
+  maxBodyBytes?: number;
+  defaultTimestampSkewSeconds?: number;
+  defaultReplayWindowSeconds?: number;
+  defaultRateLimitPerMinute?: number;
+  defaultMaxConcurrent?: number;
+  contentTypes?: string[];
+  help?: string;
+};
+
 export type CatalogTrigger = {
   type: string;
   phase: CatalogPhase;
@@ -86,6 +116,7 @@ export type CatalogTrigger = {
   bounds?: CatalogNodeBounds;
   redaction?: CatalogRedaction;
   start?: CatalogTriggerStart;
+  webhook?: CatalogTriggerWebhook;
 };
 
 export type CatalogRules = {

@@ -653,6 +653,18 @@ Public delivery is server-to-server: `X-FlowForge-Timestamp` + `X-FlowForge-Sign
 
 Schedule + durable `flow.approval` wait/resume stay E10.3. HTTP/notification actions stay E10.4.
 
+## E10.2 replay-safe webhook trigger config (Chloe UI)
+
+`apps/api` is unchanged. The single retarget adapter is `apps/web/src/lib/webhook-trigger-contract.ts`. Prefer `GET /workflows/catalog` `triggers[type=webhook]` when jonny posts a route/field map. Until then, use marked **contract-fallback**. Relates to #107 / Part of #105 — **Keep #107 open** (jonny owns webhook ingress + security). Cookie session + `X-CSRF-Token`, camelCase JSON, RFC 9457.
+
+- **Operator surfaces:** `/workflows` (Webhooks action / `?webhooks=`) and `/workflows/{id}#webhook-triggers`. Create, list, rotate, disable, enable. Opaque id + fingerprint + `secretRef` only after create.
+- **Secrets:** shown once if create/rotate returns plaintext, then discarded. Never written to YAML, URL, `localStorage`, or later GET display. Rotate is rotate-only — no re-display.
+- **Fail closed:** signature-before-parse, timestamp, and replay protection have no off switch. Rate/concurrency/body limits are bounded. HTTP 403 empties leftover rows. Host-supplied `id` / `workspaceId` is 400 UX.
+- **YAML:** `type=webhook` may declare only `inputSchema` and `contentType`. Opaque trigger ids and secret refs stay outside YAML.
+- **Unchanged:** E10.1 manual start; no invented ingress URLs; `apps/api` untouched.
+
+**Retarget assumptions (pending jonny's map):** nested `GET|POST /workflows/{workflowId}/triggers`, `GET|PATCH /workflows/{workflowId}/triggers/{triggerId}`, `POST …/rotate|disable|enable`. Rewrite only `retargetWebhookTriggerApiPath` / catalog `webhook.routes`.
+
 ## Required validation
 
 - YAML import → canvas → no-edit save → export preserves normalized semantics and digest.

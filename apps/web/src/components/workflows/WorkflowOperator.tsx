@@ -14,6 +14,7 @@ import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { RunControl } from "@/components/workflows/RunControl";
+import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
@@ -1427,6 +1428,16 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
           />
         </div>
       </div>
+
+      {workflow ? (
+        <WebhookTriggerPanel
+          identity={identity}
+          workflowId={workflow.id}
+          workflowName={workflow.name}
+          yaml={yaml}
+          permissions={permissions}
+        />
+      ) : null}
 
       {workflow ? (
         <div className="grid gap-6 lg:grid-cols-2">
