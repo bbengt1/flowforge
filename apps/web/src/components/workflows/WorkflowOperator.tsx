@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
@@ -12,16 +10,24 @@ import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { ActionLibrary } from "@/components/workflows/ActionLibrary";
 import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
+import { EditorChrome } from "@/components/workflows/EditorChrome";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
+import { EditorStartDialog } from "@/components/workflows/EditorStartDialog";
+import { EditorTopBar } from "@/components/workflows/EditorTopBar";
+import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
 import { RunControl } from "@/components/workflows/RunControl";
 import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
 import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
-import { WorkflowList } from "@/components/workflows/WorkflowList";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
+import {
+  EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
+  EDITOR_YAML_OPEN_ON_FIRST_PAINT,
+  canPublishLastSavedDraft,
+} from "@/lib/editor-chrome";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
@@ -68,7 +74,6 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
   draftCompareRef,
   INVALID_WORKFLOW_YAML,
-  optionalCreateFields,
   STARTER_WORKFLOW_YAML,
   VALIDATE_DEBOUNCE_MS,
   versionCompareRef,
@@ -88,7 +93,6 @@ import {
 import { canExecuteWorkflows } from "@/lib/workspace-nav";
 import {
   compareWorkflow,
-  createWorkflow,
   exportWorkflowVersion,
   fetchWorkflowCatalog,
   getWorkflow,
@@ -97,7 +101,6 @@ import {
   getWorkflowVersion,
   listWorkflows,
   listWorkflowVersions,
-  importValidatedWorkflow,
   normalizeWorkflowYaml,
   publishWorkflow,
   restoreWorkflowVersion,
@@ -125,7 +128,6 @@ type WorkflowOperatorProps = {
 };
 
 export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
-  const router = useRouter();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -174,12 +176,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   const [focusToken, setFocusToken] = useState(0);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
 
-  const [items, setItems] = useState<WorkflowRecord[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowRecord | null>(null);
   const [revision, setRevision] = useState<number | null>(null);
-  const [createSlug, setCreateSlug] = useState("");
-  const [createName, setCreateName] = useState("");
   const [publishNote, setPublishNote] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT);
+  const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
+  const [startOpen, setStartOpen] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<WorkflowVersion | null>(
     null,
   );
@@ -378,22 +380,6 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     applyEditor(result.applied);
   }
 
-  async function refreshList() {
-    if (pending !== null) {
-      return;
-    }
-    setPending("list");
-    setProblem(null);
-    const result = await listWorkflows(identity);
-    setLastRequestId(result.requestId);
-    setPending(null);
-    if (!result.ok) {
-      setProblem(result.problem);
-      return;
-    }
-    setItems(result.items);
-  }
-
   function resetWorkflowScopedState() {
     setConflictDraft(null);
     setConflictProblem(null);
@@ -476,7 +462,6 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     void (async () => {
       const listed = await listWorkflows(identity);
       if (listed.ok) {
-        setItems(listed.items);
         const match = listed.items.find((item) => item.id === workflowId);
         if (match) {
           await openWorkflow(match);
@@ -530,47 +515,6 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     applyEditor({ ...draft.applied, revision: draft.applied.revision });
     await refreshVersions(record.id);
     setPending(null);
-  }
-
-  async function createFromEditor() {
-    if (pending !== null) {
-      return;
-    }
-    setPending("create");
-    setProblem(null);
-    const result = await createWorkflow(identity, {
-      definitionYaml: yaml,
-      ...optionalCreateFields(createSlug, createName),
-    });
-    setLastRequestId(result.requestId);
-    if (!result.ok) {
-      setPending(null);
-      setStatus("invalid");
-      setErrors(result.errors);
-      if (result.errors.length > 0) {
-        clearGraph();
-      }
-      setProblem(result.problem);
-      return;
-    }
-    resetWorkflowScopedState();
-    const created = result.workflow;
-    if (created) {
-      setWorkflow(created);
-      setItems((current) => [
-        created,
-        ...current.filter((item) => item.id !== created.id),
-      ]);
-      router.replace(`/workflows/${created.id}`);
-    }
-    applyEditor({ ...result.applied, revision: result.applied.revision });
-    setPending(null);
-    pushNotification({
-      kind: "info",
-      title: "Draft created",
-      detail: created?.name || "Editable draft ready",
-      href: created ? `/workflows/${created.id}` : undefined,
-    });
   }
 
   async function handleConflict(workflowId: string, problemDetails: ProblemDetails) {
@@ -1046,295 +990,151 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     }
   }
 
-  function importFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : "";
-      void (async () => {
-        setPending("import");
-        setProblem(null);
-        const result = await importValidatedWorkflow(identity, text, {
-          ...optionalCreateFields(createSlug, createName || file.name.replace(/\.ya?ml$/i, "")),
-        });
-        setLastRequestId(result.requestId);
-        setPending(null);
-        if (!result.ok) {
-          setStatus("invalid");
-          setErrors(result.errors);
-          clearGraph();
-          setProblem(result.problem);
-          skipDebounce.current = false;
-          setDigest(null);
-          setYaml(text);
-          return;
-        }
-        resetWorkflowScopedState();
-        const created = result.workflow;
-        if (created) {
-          setWorkflow(created);
-          setItems((current) => [
-            created,
-            ...current.filter((item) => item.id !== created.id),
-          ]);
-          router.replace(`/workflows/${created.id}`);
-        }
-        applyEditor({ ...result.applied, revision: result.applied.revision });
-      })();
-    };
-    reader.readAsText(file);
-  }
-
-  async function exportPublished() {
-    const version = publishedVersion ?? versions[0];
-    if (!workflow || !version) {
-      return;
-    }
-    await exportVersion(version);
-  }
-
   const errorLines = errors
     .map((error) => error.line)
     .filter((line): line is number => typeof line === "number");
 
+  const canPublish = canPublishLastSavedDraft({
+    dirty,
+    hasWorkflow: Boolean(workflow),
+    revision,
+  });
+
+  function jumpToYaml(line: number, column?: number) {
+    setYamlOpen(true);
+    setFocusLine(line);
+    setFocusColumn(column ?? null);
+    setFocusToken((token) => token + 1);
+  }
+
+  const bannerConflict = conflictDraft || conflictProblem;
+  const bannerProblem = problem && errors.length === 0 && !conflictDraft;
+  const hasBanners = Boolean(
+    bannerConflict ||
+      bannerProblem ||
+      (dirty && workflow) ||
+      publishedVersion ||
+      wizardFeedback !== "idle",
+  );
+
+  const runControl = workflow ? (
+    <RunControl
+      versions={versions}
+      selectedVersionId={runVersionId}
+      selectedVersion={runVersion}
+      catalog={catalog}
+      versionPins={versionPins[runVersionId]}
+      triggerInput={runTriggerInput}
+      onTriggerInput={setRunTriggerInput}
+      execution={execution}
+      pending={pending === "run" || pending === "pin"}
+      dirty={dirty}
+      runBlocked={
+        shouldBlockRun({
+          evaluation: policyEval,
+          evaluationProblem: policyEvalProblem,
+          staleLocalApproved: true,
+        }) ||
+        hasRevokedScriptPin({
+          pins: scriptArtifacts[runVersionId] ?? [],
+          artifacts: Object.values(scriptArtifactRecords),
+        })
+      }
+      runBlockReason={
+        hasRevokedScriptPin({
+          pins: scriptArtifacts[runVersionId] ?? [],
+          artifacts: Object.values(scriptArtifactRecords),
+        })
+          ? SCRIPT_REVOKED_RUN_BLOCK_HELP
+          : undefined
+      }
+      evaluation={policyEval}
+      evaluationPending={policyEvalPending}
+      evaluationProblem={policyEvalProblem}
+      executionApprovals={executionApprovals}
+      lastStartStatus={lastStartStatus}
+      runProblem={problem}
+      idempotencyKey={runIdempotencyKey}
+      onIdempotencyKey={setRunIdempotencyKey}
+      fieldValues={runFieldValues}
+      onFieldValues={setRunFieldValues}
+      permissions={permissions}
+      identity={identity}
+      onSelectVersion={(versionId) => {
+        setRunVersionId(versionId);
+        setRunFieldValues({});
+        void evaluateSelectedVersion(versionId);
+      }}
+      onRun={() => void runPublished()}
+      onRefreshPin={() => void refreshPin()}
+    />
+  ) : null;
+
   return (
-    <div className="space-y-6">
-      <IsolationIdentityPanel />
-
-      {conflictDraft || conflictProblem ? (
-        <DraftConflictBanner
-          problem={conflictProblem}
-          serverDraft={conflictDraft}
-          onReload={reloadConflictDraft}
+    <EditorChrome
+      identityGate={!canCall ? <IsolationIdentityPanel /> : null}
+      topBar={
+        <EditorTopBar
+          workflow={workflow}
+          revision={revision}
+          dirty={dirty}
+          canCall={canCall}
+          pending={pending}
+          canSave={canSave}
+          canPublish={canPublish}
+          yamlOpen={yamlOpen}
+          publishNote={publishNote}
+          onPublishNote={setPublishNote}
+          onSave={() => void saveDraft()}
+          onPublish={() => void publishDraft()}
+          onStart={() => setStartOpen(true)}
+          onToggleYaml={() => setYamlOpen((open) => !open)}
         />
-      ) : null}
-      {problem && errors.length === 0 && !conflictDraft ? (
-        <ProblemBanner problem={problem} />
-      ) : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
-
-      <WorkflowList
-        items={items}
-        selectedId={workflow?.id ?? null}
-        pending={pending !== null}
-        slug={createSlug}
-        name={createName}
-        onSlug={setCreateSlug}
-        onName={setCreateName}
-        onRefresh={() => void refreshList()}
-        onCreate={() => void createFromEditor()}
-        onSelect={(record) => void openWorkflow(record)}
-      />
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            skipDebounce.current = false;
-            setDigest(null);
-            setStatus("idle");
-            setErrors([]);
-            setYaml(STARTER_WORKFLOW_YAML);
-          }}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
-        >
-          Load starter YAML
-        </button>
-        <button
-          type="button"
-          id="load-invalid-yaml"
-          onClick={() => {
-            skipDebounce.current = false;
-            setDigest(null);
-            setYaml(INVALID_WORKFLOW_YAML);
-            setStatus("invalid");
-            setErrors([
-              {
-                path: "spec.nodes[0].id",
-                line: 9,
-                column: 7,
-                code: "invalid-id",
-                message: "Node IDs must be DNS labels.",
-              },
-              {
-                path: "spec.nodes[0].type",
-                line: 10,
-                column: 7,
-                code: "unsupported-node",
-                message: "workflow.call is not enabled.",
-              },
-            ]);
-            clearGraph();
-          }}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
-        >
-          Load invalid YAML
-        </button>
-        <label className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50">
-          Import YAML
-          <input
-            type="file"
-            accept=".yaml,.yml,text/yaml,application/yaml,text/plain"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                importFile(file);
-              }
-              event.target.value = "";
-            }}
-          />
-        </label>
-        <Link
-          href="/workflows"
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
-        >
-          Workflow home
-        </Link>
-        <button
-          type="button"
-          onClick={() => {
-            void runValidate(yaml).then(() => {
-              pushNotification({
-                kind: "validation",
-                title: "Validation requested",
-                detail: "See the validation panel for safe status.",
-                href: workflow ? `/workflows/${workflow.id}` : "/workflows",
-              });
-            });
-          }}
-          disabled={!canCall || pending !== null}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-        >
-          Validate now
-        </button>
-        <button
-          type="button"
-          onClick={() => void runNormalize()}
-          disabled={!canCall || pending !== null}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-        >
-          {pending === "normalize" ? "Normalizing…" : "Normalize"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void saveDraft()}
-          disabled={
-            !canCall ||
-            pending !== null ||
-            !workflow ||
-            revision === null ||
-            !canSave
-          }
-          className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-        >
-          {pending === "save" ? "Saving…" : "Save draft"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void exportPublished()}
-          disabled={!canCall || pending !== null || !workflow || versions.length === 0}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
-        >
-          {pending === "export" ? "Exporting…" : "Export published"}
-        </button>
-      </div>
-      {!canSave ? (
-        <p className="text-sm text-zinc-600">
-          Save is disabled until YAML, graph ports, policy, and required
-          configuration are valid.
-        </p>
-      ) : null}
-
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <p className="text-sm text-zinc-700">
-            {workflow ? (
-              <>
-                <span className="font-medium">{workflow.name}</span>
-                {" · "}
-                <span className="font-mono text-xs">{workflow.slug}</span>
-                {" · "}
-                {workflow.status}
-                {" · revision "}
-                {revision ?? "—"}
-                {dirty ? " · unsaved" : " · saved"}
-              </>
-            ) : (
-              "No persisted workflow selected. Validate/normalize still work (E3.1)."
-            )}
-          </p>
-          <label className="ml-auto block text-sm">
-            <span className="text-zinc-600">Publish note</span>
-            <input
-              value={publishNote}
-              onChange={(event) => setPublishNote(event.target.value)}
-              className="mt-1 w-64 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void publishDraft()}
-            disabled={
-              !canCall ||
-              pending !== null ||
-              !workflow ||
-              revision === null ||
-              dirty
-            }
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-          >
-            {pending === "publish" ? "Publishing…" : "Publish"}
-          </button>
-        </div>
-        {dirty ? (
-          <p className="mt-2 text-sm text-zinc-600">
-            Publish uses the last saved draft. Save before publishing.
-          </p>
-        ) : null}
-        {publishedVersion ? (
-          <p className="mt-3 text-sm">
-            Published v{publishedVersion.versionNumber}{" "}
-            <code className="break-all font-mono text-xs">
-              {publishedVersion.digest}
-            </code>
-          </p>
-        ) : null}
-        {yamlHasScriptNodes(yaml) ? (
-          <ScriptPublishStatus
-            status={scriptArtifactStatus({
-              dirty,
-              hasPublishedVersion: Boolean(publishedVersion || versions[0]),
-              version: publishedVersion ?? versions[0] ?? null,
-              scriptArtifacts:
-                scriptArtifacts[
-                  publishedVersion?.id ?? versions[0]?.id ?? ""
-                ] ?? [],
-              artifacts: Object.values(scriptArtifactRecords),
-            })}
-            pins={
-              scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
-              []
-            }
-            artifacts={Object.values(scriptArtifactRecords)}
-            identity={identity}
-            permissions={permissions}
-            scriptCatalog={scriptCatalog}
-            onArtifactChange={(artifact) =>
-              setScriptArtifactRecords((current) => ({
-                ...current,
-                [artifact.id]: artifact,
-              }))
-            }
-          />
-        ) : null}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
+      }
+      banners={
+        hasBanners ? (
+          <>
+            {bannerConflict ? (
+              <DraftConflictBanner
+                problem={conflictProblem}
+                serverDraft={conflictDraft}
+                onReload={reloadConflictDraft}
+              />
+            ) : null}
+            {bannerProblem ? <ProblemBanner problem={problem} /> : null}
+            {dirty && workflow ? (
+              <p className="text-xs text-zinc-600">
+                Publish uses the last saved draft. Save before publishing.
+              </p>
+            ) : null}
+            {publishedVersion ? (
+              <p className="text-xs text-zinc-700">
+                Published v{publishedVersion.versionNumber}{" "}
+                <code className="break-all font-mono">
+                  {publishedVersion.digest}
+                </code>
+              </p>
+            ) : null}
+            {wizardFeedback !== "idle" ? (
+              <p
+                role="status"
+                className={`text-xs ${wizardFeedback === "error" ? "text-rose-900" : "text-teal-900"}`}
+              >
+                {wizardFeedback === "pending"
+                  ? "Adding action…"
+                  : wizardFeedback === "success"
+                    ? "Action added to the canvas and YAML."
+                    : "Action was not added."}
+              </p>
+            ) : null}
+          </>
+        ) : null
+      }
+      libraryOpen={libraryOpen}
+      onToggleLibrary={() => setLibraryOpen((open) => !open)}
+      library={
         <ActionLibrary
+          compact
           catalog={catalog}
           entries={library}
           query={paletteQuery}
@@ -1344,46 +1144,101 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
           onInsert={insertLibraryNode}
           onOpenWizard={openWizard}
         />
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-zinc-600">
-              Add action is the guided path. Drag from the library still inserts defaults.
-            </p>
-            <button
-              type="button"
-              onClick={() => openWizard()}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900"
-            >
-              Add action
-            </button>
-          </div>
-          {wizardFeedback !== "idle" ? (
-            <p
-              role="status"
-              className={`text-sm ${wizardFeedback === "error" ? "text-rose-900" : "text-teal-900"}`}
-            >
-              {wizardFeedback === "pending"
-                ? "Adding action…"
-                : wizardFeedback === "success"
-                  ? "Action added to the canvas and YAML."
-                  : "Action was not added."}
-            </p>
-          ) : null}
-          <WorkflowCanvas
-            graph={graph}
-            invalid={status === "invalid" && errors.length > 0}
-            pending={status === "pending"}
-            selection={selection}
-            entries={library}
-            onSelect={setSelection}
-            onInsertType={(type) => {
-              const entry = library.find((item) => item.type === type);
-              if (entry) {
-                insertLibraryNode(entry);
-              }
-            }}
-            onConnect={connectPorts}
-          />
+      }
+      canvas={
+        <WorkflowCanvas
+          fill
+          graph={graph}
+          invalid={status === "invalid" && errors.length > 0}
+          pending={status === "pending"}
+          selection={selection}
+          entries={library}
+          onSelect={setSelection}
+          onInsertType={(type) => {
+            const entry = library.find((item) => item.type === type);
+            if (entry) {
+              insertLibraryNode(entry);
+            }
+          }}
+          onConnect={connectPorts}
+        />
+      }
+      yaml={
+        <EditorYamlDrawer
+          open={yamlOpen}
+          tools={
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  skipDebounce.current = false;
+                  setDigest(null);
+                  setStatus("idle");
+                  setErrors([]);
+                  setYaml(STARTER_WORKFLOW_YAML);
+                }}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
+              >
+                Load starter YAML
+              </button>
+              <button
+                type="button"
+                id="load-invalid-yaml"
+                onClick={() => {
+                  skipDebounce.current = false;
+                  setDigest(null);
+                  setYaml(INVALID_WORKFLOW_YAML);
+                  setStatus("invalid");
+                  setErrors([
+                    {
+                      path: "spec.nodes[0].id",
+                      line: 9,
+                      column: 7,
+                      code: "invalid-id",
+                      message: "Node IDs must be DNS labels.",
+                    },
+                    {
+                      path: "spec.nodes[0].type",
+                      line: 10,
+                      column: 7,
+                      code: "unsupported-node",
+                      message: "workflow.call is not enabled.",
+                    },
+                  ]);
+                  clearGraph();
+                }}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
+              >
+                Load invalid YAML
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void runValidate(yaml).then(() => {
+                    pushNotification({
+                      kind: "validation",
+                      title: "Validation requested",
+                      detail: "See the validation panel for safe status.",
+                      href: workflow ? `/workflows/${workflow.id}` : "/workflows",
+                    });
+                  });
+                }}
+                disabled={!canCall || pending !== null}
+                className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                Validate now
+              </button>
+              <button
+                type="button"
+                onClick={() => void runNormalize()}
+                disabled={!canCall || pending !== null}
+                className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              >
+                {pending === "normalize" ? "Normalizing…" : "Normalize"}
+              </button>
+            </>
+          }
+        >
           <YamlEditor
             value={yaml}
             onChange={(next) => {
@@ -1395,8 +1250,10 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             focusToken={focusToken}
             errorLines={errorLines}
           />
-        </div>
-        <div className="space-y-6">
+        </EditorYamlDrawer>
+      }
+      inspector={
+        <div className="space-y-4 p-3">
           <EditorInspector
             yaml={yaml}
             graph={graph}
@@ -1432,132 +1289,121 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             summary={summary}
             digest={digest}
             problem={problem}
-            onJump={(line, column) => {
-              setFocusLine(line);
-              setFocusColumn(column ?? null);
-              setFocusToken((token) => token + 1);
-            }}
+            onJump={jumpToYaml}
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onSelectEdge={(from, to) => setSelection({ kind: "edge", from, to })}
           />
+          {yamlHasScriptNodes(yaml) ? (
+            <ScriptPublishStatus
+              status={scriptArtifactStatus({
+                dirty,
+                hasPublishedVersion: Boolean(publishedVersion || versions[0]),
+                version: publishedVersion ?? versions[0] ?? null,
+                scriptArtifacts:
+                  scriptArtifacts[
+                    publishedVersion?.id ?? versions[0]?.id ?? ""
+                  ] ?? [],
+                artifacts: Object.values(scriptArtifactRecords),
+              })}
+              pins={
+                scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
+                []
+              }
+              artifacts={Object.values(scriptArtifactRecords)}
+              identity={identity}
+              permissions={permissions}
+              scriptCatalog={scriptCatalog}
+              onArtifactChange={(artifact) =>
+                setScriptArtifactRecords((current) => ({
+                  ...current,
+                  [artifact.id]: artifact,
+                }))
+              }
+            />
+          ) : null}
+          {workflow ? (
+            <details className="rounded-xl border border-zinc-200 bg-white p-3">
+              <summary className="cursor-pointer text-sm font-medium text-zinc-800">
+                Triggers &amp; versions
+              </summary>
+              <div className="mt-3 space-y-4">
+                <WebhookTriggerPanel
+                  identity={identity}
+                  workflowId={workflow.id}
+                  workflowName={workflow.name}
+                  yaml={yaml}
+                  permissions={permissions}
+                />
+                <ScheduleTriggerPanel
+                  identity={identity}
+                  workflowId={workflow.id}
+                  workflowName={workflow.name}
+                  yaml={yaml}
+                  permissions={permissions}
+                />
+                <VersionHistory
+                  versions={versions}
+                  pending={pending}
+                  dirty={dirty}
+                  compareLeft={compareLeft}
+                  compareRight={compareRight}
+                  compare={compare}
+                  onCompareLeft={setCompareLeft}
+                  onCompareRight={setCompareRight}
+                  onCompare={() => void runCompare()}
+                  onExport={(version) => void exportVersion(version)}
+                  onRestore={(version) => void restoreVersion(version)}
+                  versionPins={versionPins}
+                />
+              </div>
+            </details>
+          ) : null}
+          <details className="rounded-xl border border-zinc-200 bg-white p-3">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-800">
+              Config pins
+            </summary>
+            <div className="mt-3">
+              <WorkflowConfigPins identity={identity} ready={canCall} />
+            </div>
+          </details>
+          {lastRequestId && !problem ? (
+            <p className="font-mono text-[11px] text-zinc-400">
+              last request_id {lastRequestId}
+            </p>
+          ) : null}
         </div>
-      </div>
-
-      {workflow ? (
-        <WebhookTriggerPanel
-          identity={identity}
-          workflowId={workflow.id}
-          workflowName={workflow.name}
-          yaml={yaml}
-          permissions={permissions}
-        />
-      ) : null}
-
-      {workflow ? (
-        <ScheduleTriggerPanel
-          identity={identity}
-          workflowId={workflow.id}
-          workflowName={workflow.name}
-          yaml={yaml}
-          permissions={permissions}
-        />
-      ) : null}
-
-      {workflow ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <VersionHistory
-            versions={versions}
-            pending={pending}
-            dirty={dirty}
-            compareLeft={compareLeft}
-            compareRight={compareRight}
-            compare={compare}
-            onCompareLeft={setCompareLeft}
-            onCompareRight={setCompareRight}
-            onCompare={() => void runCompare()}
-            onExport={(version) => void exportVersion(version)}
-            onRestore={(version) => void restoreVersion(version)}
-            versionPins={versionPins}
-          />
-          <RunControl
-            versions={versions}
-            selectedVersionId={runVersionId}
-            selectedVersion={runVersion}
+      }
+      overlays={
+        <>
+          <EditorStartDialog open={startOpen} onClose={() => setStartOpen(false)}>
+            {runControl}
+          </EditorStartDialog>
+          <ActionWizard
+            key={`${wizardOpen ? "open" : "closed"}:${wizardType ?? "any"}`}
+            open={wizardOpen}
+            identity={identity}
+            ready={canCall}
             catalog={catalog}
-            versionPins={versionPins[runVersionId]}
-            triggerInput={runTriggerInput}
-            onTriggerInput={setRunTriggerInput}
-            execution={execution}
-            pending={pending === "run" || pending === "pin"}
-            dirty={dirty}
-            runBlocked={
-              shouldBlockRun({
-                evaluation: policyEval,
-                evaluationProblem: policyEvalProblem,
-                staleLocalApproved: true,
-              }) ||
-              hasRevokedScriptPin({
-                pins: scriptArtifacts[runVersionId] ?? [],
-                artifacts: Object.values(scriptArtifactRecords),
-              })
-            }
-            runBlockReason={
-              hasRevokedScriptPin({
-                pins: scriptArtifacts[runVersionId] ?? [],
-                artifacts: Object.values(scriptArtifactRecords),
-              })
-                ? SCRIPT_REVOKED_RUN_BLOCK_HELP
-                : undefined
-            }
+            scriptCatalog={scriptCatalog}
+            entries={library}
+            yaml={yaml}
+            nodes={yamlNodes}
+            initialType={wizardType}
+            upstream={wizardUpstream(selection, yamlNodes, library)}
+            permissions={permissions}
             evaluation={policyEval}
             evaluationPending={policyEvalPending}
             evaluationProblem={policyEvalProblem}
-            executionApprovals={executionApprovals}
-            lastStartStatus={lastStartStatus}
-            runProblem={problem}
-            idempotencyKey={runIdempotencyKey}
-            onIdempotencyKey={setRunIdempotencyKey}
-            fieldValues={runFieldValues}
-            onFieldValues={setRunFieldValues}
-            permissions={permissions}
-            identity={identity}
-            onSelectVersion={(versionId) => {
-              setRunVersionId(versionId);
-              setRunFieldValues({});
-              void evaluateSelectedVersion(versionId);
+            feedback={wizardFeedback}
+            onClose={() => {
+              setWizardOpen(false);
+              setWizardFeedback("idle");
             }}
-            onRun={() => void runPublished()}
-            onRefreshPin={() => void refreshPin()}
+            onAdd={addFromWizard}
           />
-        </div>
-      ) : null}
-
-      <WorkflowConfigPins identity={identity} ready={canCall} />
-
-      <ActionWizard
-        key={`${wizardOpen ? "open" : "closed"}:${wizardType ?? "any"}`}
-        open={wizardOpen}
-        identity={identity}
-        ready={canCall}
-        catalog={catalog}
-        scriptCatalog={scriptCatalog}
-        entries={library}
-        yaml={yaml}
-        nodes={yamlNodes}
-        initialType={wizardType}
-        upstream={wizardUpstream(selection, yamlNodes, library)}
-        permissions={permissions}
-        evaluation={policyEval}
-        evaluationPending={policyEvalPending}
-        evaluationProblem={policyEvalProblem}
-        feedback={wizardFeedback}
-        onClose={() => {
-          setWizardOpen(false);
-          setWizardFeedback("idle");
-        }}
-        onAdd={addFromWizard}
-      />
-    </div>
+        </>
+      }
+    />
   );
 }
 

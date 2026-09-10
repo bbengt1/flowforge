@@ -32,6 +32,7 @@ type WorkflowCanvasProps = {
   readOnly?: boolean;
   currentNodeId?: string;
   heading?: string;
+  fill?: boolean;
 };
 
 const NODE_W = 188;
@@ -49,6 +50,7 @@ export function WorkflowCanvas({
   readOnly = false,
   currentNodeId,
   heading,
+  fill = false,
 }: WorkflowCanvasProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0, scale: 1 });
@@ -114,11 +116,15 @@ export function WorkflowCanvas({
     setLinkFrom(null);
   }
 
+  const frameClass = fill
+    ? "flex h-full min-h-0 flex-col"
+    : "flex min-h-[28rem] flex-col";
+
   if (invalid) {
     return (
       <section
         aria-labelledby="canvas-heading"
-        className="flex min-h-[28rem] flex-col rounded-2xl border border-amber-200 bg-amber-50 p-5"
+        className={`${frameClass} rounded-2xl border border-amber-200 bg-amber-50 p-5`}
       >
         <h2 id="canvas-heading" className="text-base font-semibold text-amber-950">
           Canvas
@@ -134,7 +140,7 @@ export function WorkflowCanvas({
     return (
       <section
         aria-labelledby="canvas-heading"
-        className="flex min-h-[28rem] flex-col rounded-2xl border border-zinc-200 bg-white p-5"
+        className={`${frameClass} rounded-2xl border border-zinc-200 bg-white p-5`}
       >
         <h2 id="canvas-heading" className="text-base font-semibold">
           Canvas
@@ -151,7 +157,11 @@ export function WorkflowCanvas({
   return (
     <section
       aria-labelledby="canvas-heading"
-      className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+      className={
+        fill
+          ? "flex h-full min-h-0 flex-col overflow-hidden bg-white"
+          : "overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+      }
     >
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
         <div>
@@ -246,7 +256,11 @@ export function WorkflowCanvas({
             setPan((current) => ({ ...current, y: current.y - 24 }));
           }
         }}
-        className="relative h-[28rem] cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+        className={
+          fill
+            ? "relative min-h-0 flex-1 cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+            : "relative h-[28rem] cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+        }
       >
         <div
           className="absolute inset-0 origin-top-left"

@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   });
   return (
     <html lang="en" className="h-full">
-      <body className="min-h-full antialiased">
+      <body className="h-full min-h-full antialiased">
         <WorkspaceShell
           swaggerUrl={getPublicSwaggerUrl()}
           embedMount={headerList.get(EMBED_MOUNT_HEADER) === "1"}

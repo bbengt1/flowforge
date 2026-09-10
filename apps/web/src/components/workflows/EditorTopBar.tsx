@@ -1,0 +1,128 @@
+"use client";
+
+import Link from "next/link";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
+import {
+  EDITOR_WORKFLOWS_HREF,
+  editorDirtyLabel,
+  editorHeading,
+  editorRevisionLabel,
+} from "@/lib/editor-chrome";
+import { embedDeepLink } from "@/lib/embed-tenancy-contract";
+import type { WorkflowRecord } from "@/lib/workflow-types";
+
+type EditorTopBarProps = {
+  workflow: WorkflowRecord | null;
+  revision: number | null;
+  dirty: boolean;
+  canCall: boolean;
+  pending: string | null;
+  canSave: boolean;
+  canPublish: boolean;
+  yamlOpen: boolean;
+  publishNote: string;
+  onPublishNote: (value: string) => void;
+  onSave: () => void;
+  onPublish: () => void;
+  onStart: () => void;
+  onToggleYaml: () => void;
+};
+
+export function EditorTopBar({
+  workflow,
+  revision,
+  dirty,
+  canCall,
+  pending,
+  canSave,
+  canPublish,
+  yamlOpen,
+  publishNote,
+  onPublishNote,
+  onSave,
+  onPublish,
+  onStart,
+  onToggleYaml,
+}: EditorTopBarProps) {
+  const embed = useEmbedMode();
+  const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
+  const heading = editorHeading(workflow?.name);
+  const dirtyLabel = editorDirtyLabel(dirty);
+
+  return (
+    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2">
+      <Link
+        href={backHref}
+        className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
+      >
+        ← Workflows
+      </Link>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-base font-semibold tracking-tight">{heading}</h1>
+        {workflow ? (
+          <p className="truncate font-mono text-xs text-zinc-500">{workflow.slug}</p>
+        ) : (
+          <p className="text-xs text-zinc-500">Open a workflow from Workflows to edit a draft.</p>
+        )}
+      </div>
+      <p className="text-xs text-zinc-600" role="status">
+        {workflow ? (
+          <>
+            <span className="capitalize">{workflow.status}</span>
+            {" · "}
+            {editorRevisionLabel(revision)}
+            {" · "}
+            <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
+              {dirtyLabel}
+            </span>
+          </>
+        ) : (
+          "No draft selected"
+        )}
+      </p>
+      <label className="hidden text-xs sm:block">
+        <span className="sr-only">Publish note</span>
+        <input
+          value={publishNote}
+          onChange={(event) => onPublishNote(event.target.value)}
+          placeholder="Publish note"
+          className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={onToggleYaml}
+        aria-pressed={yamlOpen}
+        aria-expanded={yamlOpen}
+        aria-controls="editor-yaml-drawer"
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
+      >
+        {yamlOpen ? "Hide YAML" : "YAML"}
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
+        className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+      >
+        {pending === "save" ? "Saving…" : "Save draft"}
+      </button>
+      <button
+        type="button"
+        onClick={onPublish}
+        disabled={!canCall || pending !== null || !canPublish}
+        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+      >
+        {pending === "publish" ? "Publishing…" : "Publish"}
+      </button>
+      <button
+        type="button"
+        onClick={onStart}
+        disabled={!workflow}
+        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+      >
+        Start published
+      </button>
+    </header>
+  );
+}
