@@ -14,11 +14,17 @@ import type { ExecutionListRow } from "@/lib/execution-types";
 type ExecutionHistoryListboxProps = {
   rows: ExecutionListRow[];
   compact?: boolean;
+  selectedId?: string;
+  keyboardHelp?: string;
+  onActivate?: (row: ExecutionListRow) => void;
 };
 
 export function ExecutionHistoryListbox({
   rows,
   compact = false,
+  selectedId,
+  keyboardHelp = KEYBOARD_HISTORY_HELP,
+  onActivate,
 }: ExecutionHistoryListboxProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const router = useRouter();
@@ -28,7 +34,7 @@ export function ExecutionHistoryListbox({
   return (
     <div>
       <p className={compact ? "mb-2 text-xs text-zinc-500" : "mb-3 text-xs text-zinc-500"}>
-        {KEYBOARD_HISTORY_HELP}
+        {keyboardHelp}
       </p>
       <ul
         role="listbox"
@@ -42,9 +48,11 @@ export function ExecutionHistoryListbox({
           }
           if (next.activate) {
             event.preventDefault();
-            const href = rows[next.index]?.href;
-            if (href) {
-              router.push(href);
+            const row = rows[next.index];
+            if (onActivate && row) {
+              onActivate(row);
+            } else if (row?.href) {
+              router.push(row.href);
             }
           }
         }}
@@ -54,24 +62,37 @@ export function ExecutionHistoryListbox({
           <li
             key={row.id}
             role="option"
-            aria-selected={index === safeIndex}
+            aria-selected={selectedId ? row.id === selectedId : index === safeIndex}
+            onClick={onActivate ? () => onActivate(row) : undefined}
             className={
               row.indeterminate
                 ? `rounded-xl border-2 border-amber-700 bg-amber-50 ${pad} shadow-sm`
-                : index === safeIndex
-                  ? `rounded-xl border border-teal-800 bg-white ${pad} shadow-sm ring-2 ring-teal-700/20`
-                  : `rounded-xl border border-zinc-200 bg-white ${pad} shadow-sm`
+                : row.id === selectedId
+                  ? `rounded-xl border border-teal-800 bg-teal-50 ${pad} shadow-sm ring-2 ring-teal-700/20`
+                  : index === safeIndex
+                    ? `rounded-xl border border-teal-800 bg-white ${pad} shadow-sm ring-2 ring-teal-700/20`
+                    : `rounded-xl border border-zinc-200 bg-white ${pad} shadow-sm`
             }
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className={compact ? "text-sm font-semibold" : "text-base font-semibold"}>
-                  <Link
-                    href={row.href}
-                    className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
-                  >
-                    {row.workflowLabel}
-                  </Link>
+                  {onActivate ? (
+                    <button
+                      type="button"
+                      onClick={() => onActivate(row)}
+                      className="text-left underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                    >
+                      {row.workflowLabel}
+                    </button>
+                  ) : (
+                    <Link
+                      href={row.href}
+                      className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                    >
+                      {row.workflowLabel}
+                    </Link>
+                  )}
                 </h3>
                 <p className="mt-1 font-mono text-xs break-all text-zinc-600">{row.id}</p>
               </div>
@@ -101,6 +122,18 @@ export function ExecutionHistoryListbox({
             </dl>
             {row.replayed ? (
               <p className="mt-3 text-sm text-zinc-700">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
+            ) : null}
+            {onActivate ? (
+              <p className="mt-3 text-xs">
+                <Link
+                  href={row.href}
+                  onClick={(event) => event.stopPropagation()}
+                  className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                >
+                  Open execution
+                </Link>
+                <span className="text-zinc-500"> — workspace replay</span>
+              </p>
             ) : null}
           </li>
         ))}

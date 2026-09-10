@@ -7,6 +7,7 @@ import {
   EDITOR_RUNS_OPEN_ON_FIRST_PAINT,
   EDITOR_RUNS_PANEL_ID,
   EDITOR_RUNS_SOURCES,
+  EDITOR_RUN_OVERLAY_KEYBOARD_HELP,
   EDITOR_WORKSPACE_EXECUTIONS_HREF,
   UX6_EPIC,
   UX6_KEEP_STORY_OPEN,
@@ -24,7 +25,6 @@ import {
   editorRunsWorkspaceHref,
   workspaceExecutionsRemainsOpsView,
 } from "./editor-runs.ts";
-import { KEYBOARD_HISTORY_HELP } from "./execution-contract.ts";
 import { historyKeyAction } from "./execution-replay.ts";
 import type { ExecutionRecord } from "./execution-types.ts";
 import { WORKSPACE_NAV_ITEMS } from "./workspace-nav.ts";
@@ -81,9 +81,9 @@ describe("UX.6 editor runs drawer", () => {
     assert.equal(EDITOR_RUNS_LIST_LIMIT, 50);
   });
 
-  it("reuses the /executions listbox keys and opens the existing replay route", () => {
+  it("reuses the /executions listbox keys and overlays the same canvas", () => {
     assert.equal(EDITOR_RUNS.keyboardMatchesHistory, true);
-    assert.equal(editorRunsKeyboardHelp(), KEYBOARD_HISTORY_HELP);
+    assert.equal(editorRunsKeyboardHelp(), EDITOR_RUN_OVERLAY_KEYBOARD_HELP);
     assert.deepEqual(editorRunsKeyAction("ArrowDown", 0, 3), historyKeyAction("ArrowDown", 0, 3));
     assert.deepEqual(editorRunsKeyAction("Enter", 1, 3), { index: 1, activate: true });
     assert.deepEqual(editorRunsKeyAction(" ", 1, 3), { index: 1, activate: true });
@@ -95,7 +95,9 @@ describe("UX.6 editor runs drawer", () => {
       editorRunOpenHref(EXECUTION_ID, WORKFLOW_ID, true),
       `/embed/v1/executions/${EXECUTION_ID}?workflowId=${WORKFLOW_ID}`,
     );
-    assert.equal(EDITOR_RUNS.openGoesToExistingReplayRoute, true);
+    assert.equal(EDITOR_RUNS.openGoesToExistingReplayRoute, false);
+    assert.equal(EDITOR_RUNS.openOverlaysSameCanvas, true);
+    assert.equal(EDITOR_RUNS.opsDeepLinkRemainsAvailable, true);
     assert.equal(EDITOR_RUNS.noSecondReplayCanvas, true);
     assert.equal(
       EDITOR_RUNS_SOURCES.includes("src/components/executions/ExecutionReplay.tsx"),
@@ -122,7 +124,7 @@ describe("UX.6 editor runs drawer", () => {
     );
     assert.equal(EDITOR_RUNS.startPublishedUsesExistingRunControl, true);
     assert.equal(EDITOR_RUNS.noDraftExecute, true);
-    assert.equal(EDITOR_RUNS.noRedactedRunIoInInspector, true);
+    assert.equal(EDITOR_RUNS.noRedactedRunIoInInspector, false);
   });
 
   it("fails closed without execution.view and does not add embed routes", () => {

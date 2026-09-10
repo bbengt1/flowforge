@@ -35,6 +35,7 @@ type WorkflowCanvasProps = {
   readOnly?: boolean;
   currentNodeId?: string;
   heading?: string;
+  help?: string;
   fill?: boolean;
 };
 
@@ -55,6 +56,7 @@ export function WorkflowCanvas({
   readOnly = false,
   currentNodeId,
   heading,
+  help,
   fill = false,
 }: WorkflowCanvasProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -201,9 +203,10 @@ export function WorkflowCanvas({
             {heading ?? (readOnly ? "Graph replay" : "Canvas")}
           </h2>
           <p className="text-xs text-zinc-500">
-            {readOnly
-              ? "Read-only overlay of step status on the pinned published version. Pan, zoom, and select with the keyboard."
-              : "Pan, zoom (Ctrl+wheel), select. Connect output → compatible input."}
+            {help
+              ?? (readOnly
+                ? "Read-only overlay of step status on the pinned published version. Pan, zoom, and select with the keyboard."
+                : "Pan, zoom (Ctrl+wheel), select. Connect output → compatible input.")}
             {pending ? " Validating…" : ""}
           </p>
         </div>

@@ -39,6 +39,22 @@ import {
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
 import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
+import {
+  EDITOR_RUN_OVERLAY_HELP,
+  editorRunCurrentNodeId,
+  editorRunOverlayAnnouncement,
+  editorRunOverlayGraph,
+  editorRunIoForNode,
+  editorRunShouldPoll,
+  editorRunWaitingNodeIds,
+} from "@/lib/editor-run-io";
+import {
+  getExecutionStepLogs,
+  loadExecutionHistory,
+  pollExecutionStatus,
+} from "@/lib/execution-client";
+import { EXECUTION_STATUS_POLL_MS } from "@/lib/execution-contract";
+import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
@@ -270,6 +286,20 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [pendingCredentials, setPendingCredentials] = useState<
     Record<string, InspectorPendingCredential>
   >({});
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRun, setSelectedRun] = useState<ExecutionDetail | null>(null);
+  const [selectedRunLogs, setSelectedRunLogs] = useState<
+    Record<string, ExecutionLogSlice>
+  >({});
+  const [selectedRunPending, setSelectedRunPending] = useState(false);
+  const [selectedRunProblem, setSelectedRunProblem] =
+    useState<ProblemDetails | null>(null);
+  const [selectedRunStrippedKeys, setSelectedRunStrippedKeys] = useState<
+    string[]
+  >([]);
+  const [selectedRunApprovals, setSelectedRunApprovals] = useState<
+    ApprovalRequest[]
+  >([]);
   const { permissions } = useWorkspace();
   const inspectorFirst = useSyncExternalStore(
     subscribeInspectorFirstBreakpoint,
@@ -290,14 +320,25 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   function announceSelection(next: EditorSelection) {
     if (next.kind === "node") {
       const node = yamlNodes.find((item) => item.id === next.id);
-      setSelectionAnnouncement(
-        editorSelectionAnnouncement({
-          kind: "node",
-          id: next.id,
-          name: node?.name,
-          type: node?.type,
-        }),
-      );
+      if (selectedRun) {
+        setSelectionAnnouncement(
+          editorRunOverlayAnnouncement({
+            nodeId: next.id,
+            nodeName: node?.name,
+            nodeType: node?.type,
+            io: editorRunIoForNode(selectedRun, next.id),
+          }),
+        );
+      } else {
+        setSelectionAnnouncement(
+          editorSelectionAnnouncement({
+            kind: "node",
+            id: next.id,
+            name: node?.name,
+            type: node?.type,
+          }),
+        );
+      }
       setInspectorOpen(true);
       return;
     }
@@ -318,6 +359,86 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   function applySelection(next: EditorSelection) {
     setSelection(next);
     announceSelection(next);
+  }
+
+  function clearSelectedRun() {
+    setSelectedRunId(null);
+    setSelectedRun(null);
+    setSelectedRunLogs({});
+    setSelectedRunProblem(null);
+    setSelectedRunStrippedKeys([]);
+    setSelectedRunApprovals([]);
+    setSelectedRunPending(false);
+  }
+
+  async function loadSelectedRunLogs(
+    executionId: string,
+    steps: ExecutionDetail["steps"],
+  ) {
+    const next: Record<string, ExecutionLogSlice> = {};
+    await Promise.all(
+      steps.map(async (step) => {
+        const logs = await getExecutionStepLogs(identity, executionId, step.id);
+        if (logs.ok) {
+          next[step.id] = logs.logs;
+        }
+      }),
+    );
+    if (Object.keys(next).length > 0) {
+      setSelectedRunLogs((current) => ({ ...current, ...next }));
+    }
+  }
+
+  async function selectRun(executionId: string) {
+    const scopedId = workflow?.id ?? workflowId ?? "";
+    setSelectedRunId(executionId);
+    setSelectedRunPending(true);
+    setSelectedRunProblem(null);
+    const result = await loadExecutionHistory(identity, executionId, scopedId);
+    setSelectedRunPending(false);
+    if (!result.ok) {
+      setSelectedRunProblem(result.problem);
+      if (result.forbidden) {
+        setSelectedRun(null);
+        setSelectedRunLogs({});
+        setSelectedRunApprovals([]);
+      }
+      return;
+    }
+    setSelectedRun(result.execution);
+    setSelectedRunStrippedKeys(result.strippedKeys);
+    void loadSelectedRunLogs(result.execution.id, result.execution.steps);
+    let waitingIds: string[] = [];
+    if (scopedId) {
+      const approvals = await listExecutionApprovals(
+        identity,
+        scopedId,
+        result.execution.id,
+      );
+      if (approvals.ok) {
+        setSelectedRunApprovals(approvals.items);
+        waitingIds = editorRunWaitingNodeIds(approvals.items);
+      }
+    }
+    const currentId = editorRunCurrentNodeId(
+      result.execution.steps,
+      waitingIds,
+    );
+    if (currentId && yamlNodes.some((node) => node.id === currentId)) {
+      const node = yamlNodes.find((item) => item.id === currentId);
+      setSelection({ kind: "node", id: currentId });
+      setSelectionAnnouncement(
+        editorRunOverlayAnnouncement({
+          nodeId: currentId,
+          nodeName: node?.name,
+          nodeType: node?.type,
+          io: editorRunIoForNode(result.execution, currentId),
+        }),
+      );
+      setInspectorOpen(true);
+    } else {
+      setInspectorOpen(true);
+    }
   }
 
   function setDrawerOpen(id: EditorDrawerId, open: boolean) {
@@ -392,6 +513,30 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     yamlOpen,
   ]);
 
+  useEffect(() => {
+    if (!selectedRunId || !editorRunShouldPoll(selectedRun?.status)) {
+      return;
+    }
+    const scopedId = workflow?.id ?? workflowId ?? "";
+    const timer = window.setInterval(() => {
+      void (async () => {
+        const result = await pollExecutionStatus(
+          identity,
+          selectedRunId,
+          scopedId,
+        );
+        if (!result.ok) {
+          return;
+        }
+        setSelectedRun(result.execution);
+        setSelectedRunStrippedKeys(result.strippedKeys);
+        void loadSelectedRunLogs(result.execution.id, result.execution.steps);
+      })();
+    }, EXECUTION_STATUS_POLL_MS);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poll closes over identity
+  }, [selectedRunId, selectedRun?.status, identity, workflow?.id, workflowId]);
+
   if (
     createdCredentialReturn.current === undefined &&
     typeof window !== "undefined"
@@ -441,6 +586,14 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     palette: library,
     warnings,
   });
+  const runWaitingIds = editorRunWaitingNodeIds(selectedRunApprovals);
+  const canvasGraph =
+    graph && selectedRun
+      ? editorRunOverlayGraph(graph, selectedRun.steps, runWaitingIds)
+      : graph;
+  const runCurrentNodeId = selectedRun
+    ? editorRunCurrentNodeId(selectedRun.steps, runWaitingIds) ?? undefined
+    : undefined;
   const canSave = canSaveWorkflowEditor({ status, errors, localErrors });
 
   const canCall = hasOperatorCaller(
@@ -1453,11 +1606,14 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       canvas={
         <WorkflowCanvas
           fill
-          graph={graph}
+          graph={canvasGraph}
           invalid={status === "invalid" && errors.length > 0}
           pending={status === "pending"}
           selection={selection}
           entries={library}
+          currentNodeId={runCurrentNodeId}
+          heading={selectedRun ? "Canvas · last run" : undefined}
+          help={selectedRun ? EDITOR_RUN_OVERLAY_HELP : undefined}
           onSelect={applySelection}
           onInsertType={(type) => {
             const entry = library.find((item) => item.type === type);
@@ -1510,7 +1666,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         <div className="space-y-4 p-3">
           <EditorInspector
             yaml={yaml}
-            graph={graph}
+            graph={canvasGraph}
             nodes={yamlNodes}
             entries={library}
             selection={selection}
@@ -1543,6 +1699,18 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             credentialRefreshNonce={credentialRefreshNonce}
             pendingCredentials={pendingCredentials}
             onAddCredential={setAddCredential}
+            lastRun={
+              selectedRunId
+                ? {
+                    detail: selectedRun,
+                    logsByStepId: selectedRunLogs,
+                    pending: selectedRunPending,
+                    problem: selectedRunProblem,
+                    strippedKeys: selectedRunStrippedKeys,
+                    onClear: clearSelectedRun,
+                  }
+                : null
+            }
             workflowAdmin={{
               workflowId: workflow?.id ?? workflowId,
               workflowName: workflow?.name,
@@ -1615,8 +1783,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           identity={identity}
           permissions={permissions}
           canCall={canCall}
+          selectedExecutionId={selectedRunId ?? undefined}
           onClose={() => setDrawerOpen("runs", false)}
           onStart={() => setStartOpen(true)}
+          onSelectRun={(executionId) => void selectRun(executionId)}
         />
       }
       overlays={

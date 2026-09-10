@@ -11,9 +11,11 @@ import {
   EDITOR_RUNS_PANEL_ID,
   editorRunsCanList,
   editorRunsDisplay,
+  editorRunsKeyboardHelp,
   editorRunsStatuses,
   editorRunsWorkspaceHref,
 } from "@/lib/editor-runs";
+import { EDITOR_RUN_OVERLAY_HELP } from "@/lib/editor-run-io";
 import { listWorkflowExecutions } from "@/lib/execution-client";
 import { isExecutionForbidden } from "@/lib/execution";
 import type { ExecutionRecord } from "@/lib/execution-types";
@@ -27,8 +29,10 @@ type EditorRunsDrawerProps = {
   identity: DevIdentity;
   permissions: readonly string[] | null | undefined;
   canCall: boolean;
+  selectedExecutionId?: string;
   onClose: () => void;
   onStart: () => void;
+  onSelectRun?: (executionId: string) => void;
 };
 
 export function EditorRunsDrawer({
@@ -38,8 +42,10 @@ export function EditorRunsDrawer({
   identity,
   permissions,
   canCall,
+  selectedExecutionId,
   onClose,
   onStart,
+  onSelectRun,
 }: EditorRunsDrawerProps) {
   const embed = useEmbedMode();
   const [items, setItems] = useState<ExecutionRecord[]>([]);
@@ -131,7 +137,7 @@ export function EditorRunsDrawer({
               for <span className="font-medium text-zinc-800">{workflowName}</span>
             </>
           ) : null}
-          . Open uses the existing replay page.
+          . {EDITOR_RUN_OVERLAY_HELP}
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="min-w-0 flex-1 text-xs">
@@ -211,7 +217,17 @@ export function EditorRunsDrawer({
           </div>
         ) : (
           <div className="mt-4">
-            <ExecutionHistoryListbox rows={visible} compact />
+            <ExecutionHistoryListbox
+              rows={visible}
+              compact
+              selectedId={selectedExecutionId}
+              keyboardHelp={editorRunsKeyboardHelp()}
+              onActivate={
+                onSelectRun
+                  ? (row) => onSelectRun(row.id)
+                  : undefined
+              }
+            />
           </div>
         )}
       </div>

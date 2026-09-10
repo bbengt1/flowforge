@@ -1,5 +1,6 @@
 "use client";
 
+import { LastRunIoPanel } from "@/components/workflows/LastRunIoPanel";
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { HttpNotificationPinsPanel } from "@/components/config/HttpNotificationPinSelect";
@@ -58,7 +59,19 @@ import {
   type WorkflowInspectorAdmin,
 } from "@/components/workflows/EditorWorkflowTabs";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
+import { latestStepsByNode } from "@/lib/execution-replay";
+import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
+import type { ProblemDetails } from "@/lib/problem";
 import Link from "next/link";
+
+export type EditorLastRunOverlay = {
+  detail: ExecutionDetail | null;
+  logsByStepId?: Readonly<Record<string, ExecutionLogSlice>>;
+  pending?: boolean;
+  problem?: ProblemDetails | null;
+  strippedKeys?: readonly string[];
+  onClear?: () => void;
+};
 
 type EditorInspectorProps = {
   yaml: string;
@@ -88,6 +101,7 @@ type EditorInspectorProps = {
   pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
   onAddCredential?: (request: InspectorAddCredentialRequest) => void;
   workflowAdmin?: WorkflowInspectorAdmin;
+  lastRun?: EditorLastRunOverlay | null;
 };
 
 export function EditorInspector({
@@ -118,6 +132,7 @@ export function EditorInspector({
   pendingCredentials,
   onAddCredential,
   workflowAdmin,
+  lastRun,
 }: EditorInspectorProps) {
   const focus = inspectorFocus(selection);
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
@@ -132,9 +147,25 @@ export function EditorInspector({
   ) as CoreNeutralPaletteEntry[];
   const canEdit = canEditInspector(permissions, canCall);
   const constraint = inspectorEditConstraint(permissions, canCall);
+  const selectedStepId =
+    selectedNodeId && lastRun?.detail
+      ? latestStepsByNode(lastRun.detail.steps).get(selectedNodeId)?.id
+      : undefined;
+  const lastRunPanel = lastRun?.detail || lastRun?.pending || lastRun?.problem ? (
+    <LastRunIoPanel
+      detail={lastRun.detail}
+      nodeId={selectedNodeId}
+      logs={selectedStepId ? lastRun.logsByStepId?.[selectedStepId] : null}
+      pending={lastRun.pending}
+      problem={lastRun.problem}
+      strippedKeys={lastRun.strippedKeys}
+      onClear={lastRun.onClear}
+    />
+  ) : null;
 
   return (
     <div className="space-y-6">
+      {lastRunPanel}
       {focus === "workflow" ? (
         <>
           <WorkflowInspect yaml={yaml} graph={graph} />
