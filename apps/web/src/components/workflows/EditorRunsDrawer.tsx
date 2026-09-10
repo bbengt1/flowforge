@@ -89,20 +89,6 @@ export function EditorRunsDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
   }, [open, scopedId, canCall, denied, identity, status]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) {
     return null;
   }
