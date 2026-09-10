@@ -35,7 +35,7 @@ func TestCatalogViewMinimize(t *testing.T) {
 }
 
 func TestNewCatalogForHidesMembershipIsolationWithoutGrant(t *testing.T) {
-	public := NewCatalogFor([]string{"https://portal.example"}, CatalogView{})
+	public := NewCatalogFor([]string{"https://portal.example"}, []string{"https://idp.example"}, CatalogView{})
 	if CatalogDisclosesMembershipIsolation(public) {
 		t.Fatal("public catalog leaked membership/isolation")
 	}
@@ -44,6 +44,9 @@ func TestNewCatalogForHidesMembershipIsolationWithoutGrant(t *testing.T) {
 	}
 	if len(public.FrameAncestors) != 1 || public.FrameAncestors[0] != "https://portal.example" {
 		t.Fatalf("ADV-011 frameAncestors must stay published: %v", public.FrameAncestors)
+	}
+	if len(public.Issuers) != 1 || public.Issuers[0] != "https://idp.example" {
+		t.Fatalf("ADV-023 issuers must stay published: %v", public.Issuers)
 	}
 	if !public.Rules.ChromeFromSession || !public.Rules.SharedHostAllowlist || !public.Rules.EmbedSessionsCannotBootstrap {
 		t.Fatalf("essentials rules %+v", public.Rules)
@@ -65,7 +68,7 @@ func TestNewCatalogForHidesMembershipIsolationWithoutGrant(t *testing.T) {
 		}
 	}
 
-	viewer := NewCatalogFor(nil, CatalogView{
+	viewer := NewCatalogFor(nil, nil, CatalogView{
 		Authenticated: true,
 		EmbedBound:    true,
 		Capabilities:  []string{authz.PermWorkflowView},
@@ -92,7 +95,7 @@ func TestNewCatalogForHidesMembershipIsolationWithoutGrant(t *testing.T) {
 		t.Fatalf("viewer capabilities leaked admin: %v", viewer.Capabilities)
 	}
 
-	granted := NewCatalogFor(nil, CatalogView{
+	granted := NewCatalogFor(nil, nil, CatalogView{
 		Authenticated: true,
 		EmbedBound:    true,
 		Capabilities:  []string{authz.PermWorkspaceAdminister},

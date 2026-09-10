@@ -83,6 +83,7 @@ type Claims struct {
 	SDK          string   `json:"sdk"`
 	DisplayName  string   `json:"display_name,omitempty"`
 	Host         string   `json:"host,omitempty"`
+	Ctx          string   `json:"ctx,omitempty"`
 }
 
 // PublicView is the secret-free assertion metadata returned to callers.

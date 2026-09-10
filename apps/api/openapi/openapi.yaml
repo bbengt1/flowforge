@@ -395,11 +395,14 @@ paths:
         (atomic jti consume, key rotation, tenancy propagation).
         `frameAncestors` is the shared host allowlist (ADV-011) used for
         CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks.
-        Empty fails closed. ADV-024: unauthenticated or capability-less
-        embed sessions receive exchange/session/chrome essentials only.
-        Membership/isolation routes and `workspace.administer` /
-        `platform.administer` capabilities are omitted unless the peeked
-        session grants one of those caps. `frameAncestors` stays published.
+        Empty fails closed. `issuers` is the configured
+        `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` for standalone
+        exchange host binding and is always published. ADV-024:
+        unauthenticated or capability-less embed sessions receive
+        exchange/session/chrome essentials only. Membership/isolation
+        routes and `workspace.administer` / `platform.administer`
+        capabilities are omitted unless the peeked session grants one
+        of those caps. `frameAncestors` stays published.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -500,17 +503,23 @@ paths:
       summary: Exchange an embed assertion for a browser session
       description: |
         Refreshes overlap from the durable store and refuses expired
-        `overlapUntil` / retired kids. Validates issuer (required
-        `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` merged with Portal issuers;
-        empty fails closed with 403), audience (`flowforge`),
-        `nbf`/`exp`, `jti`, signature (active + live overlap kids),
-        and capabilities **before any workspace lookup**. `nbf` allows
-        a short clock-skew leeway only (default 30s, `EMBED_NBF_LEEWAY`,
-        hard max 60s); `exp` has no leeway. Atomically
-        consumes `jti` with TTL only after verify succeeds (replay is
-        409). Then resolves `tenant_id` + `workbench_key` and confirms
-        optional workspace binding. Invalid assertions fail closed
-        without probing whether the tenant or workbench exists.
+        `overlapUntil` / retired kids. Validates issuer against the
+        path allowlist selected by the signed `ctx` claim (`embed` →
+        `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST`, `portal` →
+        `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST`; missing `ctx`
+        merges both; empty fails closed with 403). `host` must equal
+        `iss` when present. Optional `X-FlowForge-Host-Issuer` /
+        `hostIssuer` and `X-FlowForge-Host-Context` / `hostContext`
+        must agree with those signed claims when sent. Also validates
+        audience (`flowforge`), `nbf`/`exp`, `jti`, signature (active
+        + live overlap kids), and capabilities **before any workspace
+        lookup**. `nbf` allows a short clock-skew leeway only (default
+        30s, `EMBED_NBF_LEEWAY`, hard max 60s); `exp` has no leeway.
+        Atomically consumes `jti` with TTL only after verify succeeds
+        (replay is 409). Then resolves `tenant_id` + `workbench_key`
+        and confirms optional workspace binding. Invalid assertions
+        fail closed without probing whether the tenant or workbench
+        exists.
         Issues `ff_session` / `ff_csrf` bound to that pair with CHIPS
         attributes (`SameSite=None; Secure; Partitioned`). Top-level
         `POST /session` cookies stay `SameSite=Lax` / `Strict` and are
@@ -526,6 +535,22 @@ paths:
         emit secret-free `embed_audit` events.
       parameters:
         - $ref: "#/components/parameters/RequestID"
+        - name: X-FlowForge-Host-Issuer
+          in: header
+          required: false
+          schema: {type: string}
+          description: |
+            Optional configured host issuer for this frame (from
+            GET /embed/catalog issuers or GET /portal/adapter issuers).
+            Must equal assertion `iss` when sent. Never peek `iss` from
+            the assertion. Path allowlist comes from signed `ctx`.
+        - name: X-FlowForge-Host-Context
+          in: header
+          required: false
+          schema: {type: string, enum: [embed, portal]}
+          description: |
+            Optional path declaration. Must agree with signed `ctx` when
+            both are present.
       requestBody:
         required: true
         content:
@@ -6789,6 +6814,8 @@ components:
         session has `workspace.administer` or `platform.administer`.
         Public catalogs omit membership/isolation routes and those
         capabilities. `frameAncestors` is always present (ADV-011).
+        `issuers` is the configured embed host issuer list and is
+        always published.
     PortalAdapterCatalog:
       type: object
       description: Versioned CP Ops Portal adapter contract and host wiring map.
@@ -6946,6 +6973,18 @@ components:
         sdk:
           type: string
           example: embed.v1
+        hostIssuer:
+          type: string
+          description: |
+            Optional configured host issuer (same as X-FlowForge-Host-Issuer).
+            Must equal assertion iss when sent. Must agree with the header
+            when both are present.
+        hostContext:
+          type: string
+          enum: [embed, portal]
+          description: |
+            Optional path declaration (same as X-FlowForge-Host-Context).
+            Must agree with signed ctx when both are present.
     EmbedExchangeResponse:
       type: object
       required: [session, principal, csrf_token, assertion, workspace, tenant, capabilities]

@@ -29,6 +29,7 @@ type Catalog struct {
 	KeyManagement  KeyManagement `json:"keyManagement"`
 	Hooks          []HookStatus  `json:"hooks"`
 	FrameAncestors []string      `json:"frameAncestors"`
+	Issuers        []string      `json:"issuers"`
 	Rules          CatalogRules  `json:"rules"`
 }
 
@@ -85,8 +86,8 @@ type CatalogRules struct {
 // NewCatalog builds the full granted contract document (host/docs
 // and unit tests). HTTP handlers must use NewCatalogFor so
 // unauthenticated embed clients do not see membership/isolation.
-func NewCatalog(frames []string) Catalog {
-	return NewCatalogFor(frames, CatalogView{
+func NewCatalog(frames, issuers []string) Catalog {
+	return NewCatalogFor(frames, issuers, CatalogView{
 		Authenticated: true,
 		Capabilities:  []string{authz.PermWorkspaceAdminister},
 	})
@@ -95,12 +96,14 @@ func NewCatalog(frames []string) Catalog {
 // NewCatalogFor builds the E11.1 + E11.2 contract for a caller.
 // frames is the shared host allowlist (ADV-011) published for CSP
 // frame-ancestors and embed-shell postMessage origin checks — always
-// present, including on the minimized public catalog.
-func NewCatalogFor(frames []string, view CatalogView) Catalog {
-	return applyCatalogView(fullCatalog(frames), view)
+// present, including on the minimized public catalog. issuers is the
+// configured EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST for standalone
+// exchange host binding and is also always published.
+func NewCatalogFor(frames, issuers []string, view CatalogView) Catalog {
+	return applyCatalogView(fullCatalog(frames, issuers), view)
 }
 
-func fullCatalog(frames []string) Catalog {
+func fullCatalog(frames, issuers []string) Catalog {
 	return Catalog{
 		SDK:          SDKVersion,
 		Algorithm:    Algorithm,
@@ -116,11 +119,11 @@ func fullCatalog(frames []string) Catalog {
 		Capabilities: authz.PermissionKeys(),
 		Routes:       CanonicalRoutes(),
 		API: []APIRoute{
-			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none (disclosure follows peeked ff_session)", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. Unauthenticated or capability-less embed sessions receive exchange/session/chrome essentials only. Membership/isolation routes and workspace.administer / platform.administer capabilities appear only when the session grants one of those caps (ADV-024). frameAncestors is always published (ADV-011). Catalog capabilities are not embed chrome authority (ADV-021)."},
+			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none (disclosure follows peeked ff_session)", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. Unauthenticated or capability-less embed sessions receive exchange/session/chrome essentials only. Membership/isolation routes and workspace.administer / platform.administer capabilities appear only when the session grants one of those caps (ADV-024). frameAncestors is always published (ADV-011). issuers is the configured EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST for standalone exchange host binding and is always published. Catalog capabilities are not embed chrome authority (ADV-021)."},
 			{Method: "GET", Path: "/api/v1/session", Auth: "ff_session cookie", CSRF: "no", Note: "ADV-021. Authoritative embed chrome after exchange. Bound sessions return session.embed {mode,sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities} plus principal.display_name. Standalone omits session.embed. No secrets, no raw assertion. Chloe retargets chrome from this payload; fail closed on /embed/v1 if session.embed is missing."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
-			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Production requires https issuers (ADV-018; boot-fail on allowlist load, 403 at mint). Capabilities must be a subset of the caller. Audience is FlowForge."},
-			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (path allowlist + minting host issuer bind; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. iss must equal the minting host: claim host (when present) and X-FlowForge-Host-Issuer or body hostIssuer when more than one issuer is configured. X-FlowForge-Host-Context / hostContext portal|embed selects PORTAL_* vs EMBED_* allowlist. nbf allows a short clock-skew leeway only (default 30s, EMBED_NBF_LEEWAY, hard max 60s); exp has no leeway. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403). Rate-limited by IP (default 120/min) and issuer|subject (default 30/min); burst is 429 rate-limited. Authz decisions emit secret-free audit events."},
+			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Production requires https issuers (ADV-018; boot-fail on allowlist load, 403 at mint). Capabilities must be a subset of the caller. Audience is FlowForge. Mint writes host=iss and ctx=embed."},
+			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (signed ctx path allowlist + host=iss; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. Mint writes host=iss and ctx=embed|portal. Exchange selects PORTAL_* vs EMBED_* from that signed ctx — not from an unauthenticated header. Optional X-FlowForge-Host-Issuer / hostContext must agree with the signed claims when sent. nbf allows a short clock-skew leeway only (default 30s, EMBED_NBF_LEEWAY, hard max 60s); exp has no leeway. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403). Rate-limited by IP (default 120/min) and issuer|subject (default 30/min); burst is 429 rate-limited. Authz decisions emit secret-free audit events."},
 			{Method: "POST", Path: "/api/v1/embed/keys/rotate", Auth: "session or identity headers + platform.administer (PLATFORM_ADMINS)", CSRF: "yes when ff_session present", Note: "Register the current active public JWK as overlap (overlapUntil required, max 4h), or retire an overlap kid. workspace.administer is not enough. Arbitrary Ed25519 keys are rejected. Mint stays on the durable active env key. The active key is not an overlap key and has no overlapUntil. Verify refreshes overlap and refuses missing/expired/far-future overlapUntil. Unknown kid fails closed."},
 		},
 		KeyManagement: KeyManagement{
@@ -136,7 +139,7 @@ func fullCatalog(frames []string) Catalog {
 			{ID: "key.rotation", Status: "ready", Fail: "unknown kid fails closed; missing/zero/expired/far-future overlapUntil fails closed; overlap register of a non-prior-active key fails closed; workspace.administer cannot rotate; production missing EMBED_SIGNING_KEY is boot-fail; bad EMBED_OVERLAP_KEYS is boot-fail", Note: "Durable active signing key (EMBED_SIGNING_KEY) plus explicit overlap verification keys (env + rotate API + store). Every overlap key requires a short overlapUntil (max 4h). The active key is not an overlap-until-forever via a missing field. Verify refreshes overlap from the store and refuses missing/expired/retired/far-future keys. Rotate API accepts only the previous active public key and requires platform.administer."},
 			{ID: "tenancy.propagation", Status: "ready", Fail: "host tenant is never authorization; header mismatch fails closed; embed sessions cannot bootstrap tenants or sibling workbenches; workspace delete leaves bound embed cookies 401", Note: "Embed sessions bind (tenant_id, workbench_key) and propagate through API authz, configuration, jobs, workers, caches, realtime, history, and audit. POST /tenants and POST /workspaces from an embed session are 403 even if the principal is a platform-admin. Exchange verifies the assertion before resolving tenant/workbench. DELETE /workspace (soft-disable) revokes embed sessions bound to that workspace_id or tenancy pair, including CHIPS cookies; later requests are 401. Unrelated and unbound sessions stay valid."},
 			{ID: "assertion.verify-before-lookup", Status: "ready", Fail: "forged or invalid assertions fail closed without resolving tenant/workbench; same error class whether or not the workspace exists", Note: "POST /embed/exchange completes signature, audience, issuer allowlist, host-issuer bind, nbf/exp, and jti eligibility before any workspace or membership lookup. nbf clock-skew is DefaultNBFLeeway (30s), configurable via EMBED_NBF_LEEWAY, hard-capped at MaxNBFLeeway (60s). exp has no leeway. Durable jti consume runs only after verify succeeds. Tenancy bind happens after verify."},
-			{ID: "exchange.host-issuer", Status: "ready", Fail: "wrong-issuer-for-host, host claim mismatch, and ambiguous multi-issuer exchange without X-FlowForge-Host-Issuer are 403", Note: "ADV-023. iss is the minting caller (ADV-004). Exchange binds iss to the minting host issuer context: claim host must equal iss when present; X-FlowForge-Host-Issuer or body hostIssuer must equal iss when more than one issuer is on the selected allowlist. X-FlowForge-Host-Context portal|embed selects the Portal vs standalone embed allowlist. Chloe sends the configured host issuer — never a value peeked from the assertion."},
+			{ID: "exchange.host-issuer", Status: "ready", Fail: "wrong-issuer-for-host, host/ctx claim mismatch, and client context that disagrees with signed ctx are 403", Note: "ADV-023. iss is the minting caller (ADV-004). Mint writes host=iss and ctx=embed|portal. Exchange selects the path allowlist from the signed ctx claim, not from an unauthenticated header. Optional X-FlowForge-Host-Issuer / hostContext from the embed shell must agree with those signed claims. Chloe may send the configured catalog/env issuer for this frame as a consistency check — never a value peeked from the assertion."},
 			{ID: "portal.adapter", Status: "ready", Fail: "empty or hostile issuer allowlist, replay, cross-tenant/workbench, and credential/raw-log exposure fail closed", Note: "CP Ops Portal adapter. Portal RBAC is entry only. Mint uses embed.v1 (aud=flowforge). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST is 403. Portal-framed exchange binds iss to the configured Portal issuer (host context=portal). FlowForge never shares its database or executor."},
 			{ID: "chips.embed-cookies", Status: "ready", Fail: "cross-site iframe without the partitioned cookie is 401 (cookie not sent) or 403 (CSRF cookie missing); SameSite=None without Partitioned is not used; top-level cookies stay Lax/Strict", Note: "Embed ff_session/ff_csrf after POST /embed/exchange are SameSite=None; Secure; Partitioned (CHIPS). Secure is never dropped. Standalone POST /session stays SameSite=Lax / Strict. HTTPS / a secure context is required. ADV-013 covers a full cross-origin host check."},
 			{ID: "authz.audit", Status: "ready", Fail: "authz decisions emit secret-free audit; assertion plaintext, signing keys, and session secrets are never logged", Note: "Mint allow/deny (including impersonation), exchange allow/deny with reason codes, rotate allow/deny, capability and tenancy bind failures, and rate-limit denials write structured embed_audit events (jti, kid, issuer, subject, tenant_id, workbench_key, workspace_id, reason)."},
@@ -145,6 +148,7 @@ func fullCatalog(frames []string) Catalog {
 			{ID: "chrome.from-session", Status: "ready", Fail: "embed chrome on /embed/v1 without session.embed fails closed; assertion leftovers, catalog guesses, and host query are not chrome authority", Note: "ADV-021. GET /session session.embed is the authoritative chrome payload after exchange: mode, sdk, tenantId, tenantSlug, tenantName, workbenchKey, workspaceId, workspaceName, capabilities (session-capped). principal.display_name is the chrome-safe subject label. No secrets, no raw assertion, no jti. Refetch after exchange, on /embed/v1 mount, after refresh, and on 401. Chloe retargets chrome from parseEmbedChromeFromSession. Prefer no product-shell rewrite in this API story."},
 		},
 		FrameAncestors: append([]string(nil), frames...),
+		Issuers:        append([]string(nil), issuers...),
 		Rules: CatalogRules{
 			AssertionNotInURL:                true,
 			HostIDsNotAuthz:                  true,
@@ -171,7 +175,7 @@ func fullCatalog(frames []string) Catalog {
 
 func claimDocs() []ClaimDoc {
 	return []ClaimDoc{
-		{Name: "iss", Required: true, JSON: "iss", Note: "Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is 403. At mint must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (Portal mint uses PORTAL_*). At exchange, iss must equal claim host (when present) and the exchange host issuer (X-FlowForge-Host-Issuer / hostIssuer) when more than one issuer is configured. Path context portal|embed selects the Portal vs embed allowlist. Empty allowlist fails closed. Production requires an absolute https URI (ADV-018)."},
+		{Name: "iss", Required: true, JSON: "iss", Note: "Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is 403. At mint must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (Portal mint uses PORTAL_*). At exchange, iss must equal signed host (when present) and sit on the allowlist selected by signed ctx. Empty allowlist fails closed. Production requires an absolute https URI (ADV-018)."},
 		{Name: "aud", Required: true, JSON: "aud", Note: "Must be flowforge. Wrong audience fails closed."},
 		{Name: "sub", Required: true, JSON: "sub", Note: "End-user external subject. Bound to the minting caller unless the caller has embed.impersonate (PLATFORM_ADMINS)."},
 		{Name: "nbf", Required: true, JSON: "nbf", Note: "Unix seconds. Not-yet-valid beyond a short clock-skew leeway fails closed (401). Default 30s (EMBED_NBF_LEEWAY); hard max 60s. Barely-future within leeway is accepted."},
@@ -184,5 +188,6 @@ func claimDocs() []ClaimDoc {
 		{Name: "sdk", Required: true, JSON: "sdk", Note: "embed.v1"},
 		{Name: "display_name", Required: false, JSON: "display_name", Note: "Display context until the API verifies the subject."},
 		{Name: "host", Required: false, JSON: "host", Note: "Minting host issuer. Mint always writes host=iss (the authenticated caller). Exchange requires host==iss when the claim is present (ADV-023). Not a second authorization subject."},
+		{Name: "ctx", Required: false, JSON: "ctx", Note: "Signed mint path: embed or portal. Mint always writes it. Exchange selects EMBED_* vs PORTAL_* from this claim. A client hostContext that disagrees is 403."},
 	}
 }

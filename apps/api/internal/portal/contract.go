@@ -109,9 +109,9 @@ func HostWiring() []HostStep {
 		{
 			ID:    "exchange",
 			Actor: "embed-shell",
-			Do:    "POST {assertion,sdk:embed.v1} to the E11.1 exchange. Send X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Issues CHIPS ff_session / ff_csrf (SameSite=None; Secure; Partitioned) bound to (tenant_id, workbench_key).",
+			Do:    "POST {assertion,sdk:embed.v1} to the E11.1 exchange. Optional X-FlowForge-Host-Issuer from GET /portal/adapter issuers / PORTAL_ISSUER and X-FlowForge-Host-Context: portal (must agree with signed ctx=portal). Issues CHIPS ff_session / ff_csrf (SameSite=None; Secure; Partitioned) bound to (tenant_id, workbench_key).",
 			Path:  "/api/v1/embed/exchange",
-			Note:  "Not a Portal-specific exchange. Verify completes before workspace lookup. iss must equal the configured Portal issuer for this frame. Replay is 409. Body only. Cross-site iframe cookies are Partitioned — do not weaken SameSite. Cookie not sent is 401/403. ADV-013 owns a full cross-origin host check.",
+			Note:  "Not a Portal-specific exchange. Verify completes before workspace lookup. Path allowlist comes from the signed ctx claim, not the request header. Replay is 409. Body only. Cross-site iframe cookies are Partitioned — do not weaken SameSite. Cookie not sent is 401/403. ADV-013 owns a full cross-origin host check.",
 		},
 		{
 			ID:    "authorize",

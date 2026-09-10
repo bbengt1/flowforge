@@ -448,6 +448,7 @@ func TestEmbedCatalogPublishesSharedHostAllowlist(t *testing.T) {
 		EmbedKeys:            keys,
 		EmbedJTI:             embed.NewMemoryJTI(),
 		PortalFrameAncestors: frames,
+		EmbedIssuers:         []string{"https://idp.example"},
 		Now:                  func() time.Time { return *clock },
 	}))
 	rec := httptest.NewRecorder()
@@ -467,6 +468,9 @@ func TestEmbedCatalogPublishesSharedHostAllowlist(t *testing.T) {
 	}
 	if embed.CatalogDisclosesMembershipIsolation(cat) {
 		t.Fatal("unauthenticated allowlist catalog leaked membership/isolation")
+	}
+	if len(cat.Issuers) != 1 || cat.Issuers[0] != "https://idp.example" {
+		t.Fatalf("catalog issuers %v", cat.Issuers)
 	}
 
 	empty := NewWithDeps(withHTTPTestIdentity(Deps{
@@ -1073,7 +1077,7 @@ func TestEmbedExchangeHostIssuerBindingSucceeds(t *testing.T) {
 	}
 }
 
-func TestEmbedExchangeAmbiguousHostRequiresBinding(t *testing.T) {
+func TestEmbedExchangeSignedContextSelectsPathAllowlist(t *testing.T) {
 	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
 	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
 	if rec.Code != http.StatusCreated {
@@ -1083,8 +1087,10 @@ func TestEmbedExchangeAmbiguousHostRequiresBinding(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
 		t.Fatal(err)
 	}
-	denied := postEmbedExchange(t, env, minted.Assertion)
-	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
+	ok := postEmbedExchange(t, env, minted.Assertion)
+	if ok.Code != http.StatusCreated {
+		t.Fatalf("signed embed ctx without client header %d %s", ok.Code, ok.Body.String())
+	}
 }
 
 func TestEmbedExchangePortalContextRejectsEmbedIssuer(t *testing.T) {
@@ -1121,6 +1127,7 @@ func TestEmbedExchangePortalContextAcceptsPortalIssuer(t *testing.T) {
 		Capabilities: []string{"workflow.view"},
 		SDK:          embed.SDKVersion,
 		Host:         "https://portal.cp-ops.example",
+		Ctx:          embed.HostContextPortal,
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))

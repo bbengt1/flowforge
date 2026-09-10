@@ -48,6 +48,7 @@ func PrepareMint(req MintRequest, callerIssuer, callerSubject, display, tenantID
 		Subject:      subject,
 		DisplayName:  name,
 		Host:         strings.TrimSpace(callerIssuer),
+		Context:      embed.HostContextPortal,
 		TenantID:     tenantID,
 		WorkbenchKey: workbench,
 		WorkspaceID:  workspaceID,

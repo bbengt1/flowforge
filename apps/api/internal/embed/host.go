@@ -3,20 +3,22 @@ package embed
 import "strings"
 
 // Exchange host-issuer binding (ADV-023). iss is already the minting
-// caller (ADV-004). Exchange must also bind that iss to the host
-// context that is performing the exchange — Portal-framed vs standalone
-// embed — not merely “any issuer on the merged allowlist.”
+// caller (ADV-004). The minting host path is a signed claim (`ctx`:
+// portal vs embed) so exchange does not trust an unauthenticated
+// request header as the expected issuer. Client headers are an optional
+// consistency check for the honest embed shell.
 const (
 	HeaderHostIssuer  = "X-FlowForge-Host-Issuer"
 	HeaderHostContext = "X-FlowForge-Host-Context"
 	HostContextEmbed  = "embed"
 	HostContextPortal = "portal"
+	ClaimContext      = "ctx"
 )
 
-// HostBinding is the expected minting host issuer for one exchange.
-// Issuer is the configured Portal or embed issuer for this frame — never
-// a value peeked from the assertion. Context selects the path allowlist
-// (portal vs embed). Empty context uses the merged allowlist.
+// HostBinding is an optional exchange request consistency check.
+// Issuer/Context come from X-FlowForge-Host-Issuer / hostContext.
+// They must agree with the signed assertion when present; they are
+// never the sole source of the expected host.
 type HostBinding struct {
 	Issuer  string
 	Context string
@@ -24,7 +26,7 @@ type HostBinding struct {
 
 // ResolveHostBinding merges header and body host-issuer fields.
 // Header and body must agree when both are set. Unknown context is
-// rejected. Chloe should send the configured host issuer, not iss.
+// rejected.
 func ResolveHostBinding(headerIssuer, headerContext, bodyIssuer, bodyContext string) (HostBinding, error) {
 	hi := strings.TrimSpace(headerIssuer)
 	bi := strings.TrimSpace(bodyIssuer)
@@ -51,6 +53,41 @@ func ResolveHostBinding(headerIssuer, headerContext, bodyIssuer, bodyContext str
 	return HostBinding{Issuer: issuer, Context: ctx}, nil
 }
 
+// NormalizeHostContext accepts portal|embed or empty. Anything else is
+// ErrHostContext.
+func NormalizeHostContext(raw string) (string, error) {
+	ctx := strings.ToLower(strings.TrimSpace(raw))
+	if ctx == "" {
+		return "", nil
+	}
+	if ctx != HostContextEmbed && ctx != HostContextPortal {
+		return "", ErrHostContext
+	}
+	return ctx, nil
+}
+
+// ResolveSignedHostContext picks the path allowlist context from the
+// signed `ctx` claim, then an optional client declaration. A client
+// context that disagrees with the signed claim is 403. The signed
+// claim wins when the client omits context.
+func ResolveSignedHostContext(signed, declared string) (string, error) {
+	sig, err := NormalizeHostContext(signed)
+	if err != nil {
+		return "", err
+	}
+	dec, err := NormalizeHostContext(declared)
+	if err != nil {
+		return "", err
+	}
+	if sig != "" && dec != "" && sig != dec {
+		return "", ErrHostIssuer
+	}
+	if sig != "" {
+		return sig, nil
+	}
+	return dec, nil
+}
+
 // MergeIssuers concatenates issuer allowlists, dropping blanks and
 // duplicates while preserving first-seen order.
 func MergeIssuers(lists ...[]string) []string {
@@ -72,10 +109,9 @@ func MergeIssuers(lists ...[]string) []string {
 	return out
 }
 
-// HostAllowlist returns the issuer allowlist for an exchange host
-// context. portal uses PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST only;
-// embed uses EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST only; empty context
-// merges both. An empty selected list fails closed at BindHostIssuer.
+// HostAllowlist returns the issuer allowlist for a minting host path.
+// portal uses PORTAL_* only; embed uses EMBED_* only; empty context
+// merges both (legacy tokens without a signed ctx).
 func HostAllowlist(context string, embedIssuers, portalIssuers []string) []string {
 	switch strings.ToLower(strings.TrimSpace(context)) {
 	case HostContextPortal:
@@ -87,19 +123,15 @@ func HostAllowlist(context string, embedIssuers, portalIssuers []string) []strin
 	}
 }
 
-// BindHostIssuer binds a verified assertion iss to the minting host
-// issuer context (ADV-023).
+// BindHostIssuer binds a verified assertion iss to the minting host.
 //
 //  1. When the host claim is present it must equal iss (mint writes
 //     host=iss). A mismatch is 403.
-//  2. When the exchange declares an expected host issuer, iss must
-//     equal that value. Wrong-issuer-for-host is 403.
-//  3. When no expected issuer is declared and more than one issuer is
-//     on the selected allowlist, exchange fails closed — the host
-//     context is ambiguous (typical when both embed and Portal lists
-//     are configured). A single configured issuer stays compatible
-//     without a header.
-//  4. iss must still be on the selected allowlist (empty fails closed).
+//  2. When the exchange declares an expected host issuer (honest
+//     embed shell), iss must equal that value. Wrong-issuer-for-host
+//     is 403. A missing declaration is not fail-open for path bind —
+//     the signed ctx claim selects the allowlist.
+//  3. iss must be on the selected path allowlist (empty fails closed).
 func BindHostIssuer(iss, hostClaim, expected string, allow []string) error {
 	iss = strings.TrimSpace(iss)
 	hostClaim = strings.TrimSpace(hostClaim)
@@ -110,15 +142,8 @@ func BindHostIssuer(iss, hostClaim, expected string, allow []string) error {
 	if expected != "" && expected != iss {
 		return ErrHostIssuer
 	}
-	if expected == "" && distinctIssuers(allow) > 1 {
-		return ErrHostIssuer
-	}
 	if !IssuerAllowed(iss, allow) {
 		return ErrIssuerNotAllowed
 	}
 	return nil
-}
-
-func distinctIssuers(allow []string) int {
-	return len(MergeIssuers(allow))
 }

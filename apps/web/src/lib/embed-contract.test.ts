@@ -38,7 +38,6 @@ import {
   FLOWFORGE_HOST_ISSUER_HEADER,
   detectEmbedHostContext,
   embedHostBindingHeaders,
-  parseCatalogIssuers,
   peekAssertionHostIssuer,
   readConfiguredHostIssuers,
   resolveConfiguredHostIssuer,
@@ -78,6 +77,8 @@ import {
   frameAncestorsForPath,
   isAllowedEmbedMessageOrigin,
   parseCatalogFrameAncestors,
+  parseCatalogIssuers,
+  exchangeHostBindingFromGate,
   isCompactJws,
   isEmbedMountPath,
   isEmbedUiPath,
@@ -109,6 +110,7 @@ describe("embed-contract", () => {
     assert.ok(EMBED_REQUIRED_CLAIMS.includes("jti"));
     assert.ok(EMBED_REQUIRED_CLAIMS.includes("aud"));
     assert.ok(EMBED_CLAIM_NAMES.includes("workspace_id"));
+    assert.ok(EMBED_CLAIM_NAMES.includes("ctx"));
   });
 
   it("maps standalone deep links onto /embed/v1 without changing the href", () => {
@@ -460,11 +462,30 @@ describe("embed-contract", () => {
     assert.equal(EMBED_VERIFY_RULES.noWorkspaceOracleOnInvalidAssertion, true);
     assert.equal(EMBED_VERIFY_RULES.jtiConsumeAfterVerify, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.bindIssToMintingHost, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.signedCtxSelectsPathAllowlist, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.headersAreOptionalConsistency, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.neverPeekIssFromAssertion, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.wrongIssuerForHostIs403, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.nextPublicIsNotASource, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.header, "X-FlowForge-Host-Issuer");
-    assert.match(EMBED_HOST_ISSUER_HELP, /X-FlowForge-Host-Issuer/);
+    assert.match(EMBED_HOST_ISSUER_HELP, /signed ctx/);
+    assert.deepEqual(parseCatalogIssuers({ issuers: ["https://idp.example", ""] }), [
+      "https://idp.example",
+    ]);
+    assert.deepEqual(
+      exchangeHostBindingFromGate({
+        receivedVia: "postMessage",
+        portalIssuers: ["https://portal.example"],
+      }),
+      { hostContext: "portal", hostIssuer: "https://portal.example" },
+    );
+    assert.deepEqual(
+      exchangeHostBindingFromGate({
+        receivedVia: "form",
+        embedIssuers: ["https://idp.example"],
+      }),
+      { hostContext: "embed", hostIssuer: "https://idp.example" },
+    );
     assert.equal(EMBED_JTI_RULES.atomicSingleStatementConsume, true);
     assert.equal(EMBED_JTI_RULES.retainUsedIdsPastExpiry, true);
     assert.equal(EMBED_JTI_RULES.retention, "24h");

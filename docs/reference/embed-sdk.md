@@ -31,7 +31,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 
 | Claim | Required | Notes |
 | --- | --- | --- |
-| `iss` | yes | Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is `403`. At mint must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (Portal mint uses `PORTAL_*`). At exchange, `iss` must equal claim `host` (when present) and the exchange host issuer (`X-FlowForge-Host-Issuer` / `hostIssuer`) when more than one issuer is configured. `X-FlowForge-Host-Context` `portal` or `embed` selects that path allowlist. Empty allowlist fails closed (`403`). Production (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every configured issuer to be an absolute `https://` URI (ADV-018; boot-fail + request-time `403`) |
+| `iss` | yes | Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is `403`. At mint must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (Portal mint uses `PORTAL_*`). At exchange, `iss` must equal signed `host` (when present) and sit on the allowlist selected by signed `ctx`. Empty allowlist fails closed (`403`). Production (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every configured issuer to be an absolute `https://` URI (ADV-018; boot-fail + request-time `403`) |
 | `aud` | yes | Must be `flowforge` |
 | `sub` | yes | End-user external subject. Bound to the minting caller unless `embed.impersonate` (`PLATFORM_ADMINS`) |
 | `nbf` | yes | Unix seconds. Not-yet-valid **beyond a short clock-skew leeway** fails closed (`401`). Default **30s** (`EMBED_NBF_LEEWAY`); hard max **60s**. Barely-future within leeway is accepted. `exp` is not given this leeway |
@@ -44,6 +44,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 | `sdk` | yes | `embed.v1` |
 | `display_name` | no | Display context until the API verifies the subject |
 | `host` | no | Minting host issuer. Mint always writes `host=iss`. Exchange requires `host==iss` when the claim is present (ADV-023). Not a second authorization subject |
+| `ctx` | no | Signed mint path: `embed` or `portal`. Mint always writes it. Exchange selects `EMBED_*` vs `PORTAL_*` from this claim |
 
 ## Host flow
 
@@ -101,7 +102,7 @@ Portal entry RBAC is not FlowForge authorization. See
 | CHIPS cookies | After exchange, `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Keep `credentials: "include"`. The Next rewrite must preserve `Partitioned` and must not drop `Secure` on that pair. Storage Access API is not required and must not request unpartitioned cookies. |
 | Cookie not sent | Missing partitioned cookie → `401` on `GET /session` and later reads; missing `ff_csrf` on a mutation → `403`. Treat as HTTPS / browser Partitioned / frame-ancestor misconfig. Two-origin harness: ADV-013 (`docs/reference/portal-adapter.md`, `scripts/adv013-cross-origin.sh`). |
 | Exchange `429` | Rate-limited. Back off (`Retry-After`). Do not treat as forbidden and do not rewrite chrome. |
-| Host issuer bind | On exchange send `X-FlowForge-Host-Issuer` set to the configured Portal or embed issuer for this frame, plus optional `X-FlowForge-Host-Context` `portal` or `embed`. Never copy `iss` from the assertion. Wrong-issuer-for-host is `403`. |
+| Host issuer bind | Mint writes `host=iss` and `ctx`. Exchange selects the path allowlist from signed `ctx`. The shell sends `X-FlowForge-Host-Issuer` from catalog / portal adapter `issuers` (`exchangeHostBindingFromGate`). Never copy `iss` from the assertion. |
 | Configuration / jobs / history | Lookups, job tickets, caches, realtime, history, and audit are scoped by the server-derived workspace that matches that pair. Do not send `X-FlowForge-Workspace-ID` as the lookup key. |
 
 ## Stable routes / deep links
@@ -150,7 +151,7 @@ chrome from `GET /session`, not catalog guesses (ADV-021).
 
 | Method | Path | Auth | CSRF | Notes |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/embed/catalog` | none (disclosure follows peeked session) | no | Contract + route map. `frameAncestors` is the shared host allowlist (ADV-011). Membership/isolation omitted unless granted (ADV-024) |
+| `GET` | `/api/v1/embed/catalog` | none (disclosure follows peeked session) | no | Contract + route map. `frameAncestors` is the shared host allowlist (ADV-011). `issuers` is the configured embed host issuer list (always published). Membership/isolation omitted unless granted (ADV-024) |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then **verify signature / iss (path allowlist + minting host issuer bind) / aud / nbf / exp / jti eligibility before any workspace lookup**. `nbf` allows a short clock-skew leeway only (default **30s**, `EMBED_NBF_LEEWAY`, hard max **60s**); `exp` has no leeway. Durable `jti` consume is one `INSERT … ON CONFLICT DO NOTHING RETURNING` after verify succeeds. Used ids stay reserved **24h past `exp`** (`retain_until`); a separate `PurgeExpired` job deletes only after that window. Then resolve `(tenant_id, workbench_key)` and bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. Rate-limited by IP (default 120/min) and issuer\|subject (default 30/min); burst is `429` `rate-limited`. |
@@ -163,7 +164,7 @@ Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,w
 always `403`. Capabilities must still be a subset of the caller.
 `embed.impersonate` is platform-scoped and is never mintable.
 
-Exchange JSON: `{assertion, sdk?, hostIssuer?, hostContext?}`. Optional `X-FlowForge-Host-Issuer` / `X-FlowForge-Host-Context` headers are the preferred binding (must agree with the body when both are set). `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{mode:"embed",sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities}`. The nested `assertion` object is metadata only (no compact JWS). `GET /session` returns the same `session.embed` chrome object (no assertion).
+Exchange JSON: `{assertion, sdk?, hostIssuer?, hostContext?}`. Optional `X-FlowForge-Host-Issuer` / `X-FlowForge-Host-Context` headers are a consistency check (must agree with the body when both are set, and with signed `ctx` / `iss`). `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{mode:"embed",sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities}`. The nested `assertion` object is metadata only (no compact JWS). `GET /session` returns the same `session.embed` chrome object (no assertion).
 
 Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil, kid?}`. On `register-overlap`, `overlapUntil` is **required** RFC3339 and must be a short future window (**max 4h**). Missing, zero, past, or farther-future is `400`. `publicJwk` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
 
@@ -222,14 +223,14 @@ unless `'self'` or the exact origin is listed. Relates to #143 — keep #143 ope
 
 **ADV-008:** `POST /embed/exchange` (the only assertion-accepting path) completes cryptographic verify, audience, issuer allowlist, `nbf`/`exp`, and `jti` eligibility **before** `ResolveWorkspace` / membership. Peeking unverified JWT claims must not drive tenant lookup. Durable `jti` consume is after verify success so forged tokens do not burn ids. Chloe: **no UI change.**
 
-**ADV-023:** Exchange binds assertion `iss` to the minting host issuer context — not merely “any allowlisted issuer.” Mint already writes `host=iss` (the authenticated caller). On exchange:
+**ADV-023:** Exchange binds assertion `iss` to the **signed** minting host — not merely “any allowlisted issuer,” and not a client-supplied header (that would be bypassable by the bearer). Mint writes `host=iss` and `ctx=embed|portal`. On exchange:
 
 1. When `host` is present it must equal `iss`.
-2. `X-FlowForge-Host-Context` / `hostContext` `portal` uses only `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST`; `embed` uses only `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST`. Omitted context merges both.
-3. `X-FlowForge-Host-Issuer` / `hostIssuer` must equal `iss`. Required when the selected allowlist has more than one issuer (typical production: both Portal and embed lists set). A single configured issuer stays compatible without the header.
+2. Signed `ctx` selects the path allowlist: `portal` → `PORTAL_*` only; `embed` → `EMBED_*` only. Missing `ctx` (legacy/hand-signed) merges both.
+3. Optional `X-FlowForge-Host-Issuer` / `hostIssuer` and `X-FlowForge-Host-Context` / `hostContext` must agree with those signed claims when sent. They are a consistency check for the embed shell, not the source of the expected issuer.
 4. Header and body must agree when both are sent. Wrong-issuer-for-host is `403`.
 
-**Chloe:** `EmbedExchangeGate` sends `X-FlowForge-Host-Issuer` set to the **configured** Portal issuer on a Portal-framed flow (`GET /portal/adapter` `issuers`, or server `PORTAL_ISSUER` when the allowlist has more than one), or the configured embed issuer standalone (server `EMBED_ISSUER`, or catalog `issuers` if published). Optional `X-FlowForge-Host-Context: portal|embed` from the in-repo `/portal` demo referrer, `WEB_PORTAL_FRAME_ANCESTORS`, or an explicit prop. **Never copy `iss` / `host` from the assertion.** `NEXT_PUBLIC_*` is not a source. Prefer no UI rewrite beyond attaching those headers (`FLOWFORGE_HOST_ISSUER_HEADER`, `embedHostBindingHeaders`, `resolveEmbedHostBinding`). Contract: `EMBED_HOST_ISSUER_RULES` / `EMBED_HOST_ISSUER_HELP`.
+**Chloe / EmbedExchangeGate:** headers are an **optional consistency check**, not the bind source. `bindEmbedExchangeHost` / `resolveEmbedHostBinding` may send `X-FlowForge-Host-Issuer` set to the **configured** Portal issuer on a Portal-framed flow (`GET /portal/adapter` `issuers`, or server `PORTAL_ISSUER` when the allowlist has more than one), or the configured embed issuer standalone (server `EMBED_ISSUER`, or catalog `issuers`). Optional `X-FlowForge-Host-Context: portal|embed` from the in-repo `/portal` demo referrer, `WEB_PORTAL_FRAME_ANCESTORS`, or an explicit prop. A disagreeing header is `403`. **Never copy `iss` / `host` from the assertion.** `NEXT_PUBLIC_*` is not a source. Prefer no UI rewrite beyond attaching those headers (`FLOWFORGE_HOST_ISSUER_HEADER`, `embedHostBindingHeaders`, `resolveEmbedHostBinding`, `exchangeHostBindingFromGate`). Contract: `EMBED_HOST_ISSUER_RULES` / `EMBED_HOST_ISSUER_HELP`.
 
 **ADV-009:** `jti` consume is a **single database statement** (`INSERT … ON CONFLICT DO NOTHING RETURNING`). Concurrent exchanges with the same `jti` yield exactly one `201` and the rest `409`. Used ids are **not** deleted at JWT `exp` — that would allow minting the same `jti` again. They are retained until `retain_until = exp + 24h`. `PurgeExpired` is a separate job and must key off `retain_until`, never `expires_at` alone. Store errors fail closed (`503`). Chloe: **no UI change.**
 

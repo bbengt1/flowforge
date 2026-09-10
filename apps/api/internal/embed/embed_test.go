@@ -69,8 +69,8 @@ func TestVerifyExpectedHostIssuer(t *testing.T) {
 		t.Fatalf("wrong expected host: %v", err)
 	}
 	opt.ExpectedHostIssuer = ""
-	if _, err := Verify(m, minted.Assertion, opt); err != ErrHostIssuer {
-		t.Fatalf("ambiguous allowlist: %v", err)
+	if _, err := Verify(m, minted.Assertion, opt); err != nil {
+		t.Fatalf("signed host bind does not require a client header: %v", err)
 	}
 }
 
@@ -92,6 +92,9 @@ func TestMintHappyPath(t *testing.T) {
 	}
 	if claims.NotBefore != now.Unix() || claims.ExpiresAt != now.Add(DefaultTTL).Unix() {
 		t.Fatalf("time bounds %+v", claims)
+	}
+	if claims.Host != claims.Issuer || claims.Ctx != HostContextEmbed {
+		t.Fatalf("mint must write host=iss and ctx=embed: %+v", claims)
 	}
 	got, err := Verify(m, minted.Assertion, VerifyOptions{
 		Audience:       DefaultAudience,
@@ -328,7 +331,7 @@ func TestJWKSNeverReturnsPrivateKeys(t *testing.T) {
 }
 
 func TestCatalogDocumentsContractAndHooks(t *testing.T) {
-	c := NewCatalog(nil)
+	c := NewCatalog(nil, nil)
 	if c.SDK != SDKVersion || c.Audience != DefaultAudience {
 		t.Fatalf("catalog %+v", c)
 	}
@@ -344,7 +347,10 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if c.FrameAncestors != nil {
 		t.Fatalf("empty allowlist must publish nil/empty frameAncestors, got %v", c.FrameAncestors)
 	}
-	listed := NewCatalog([]string{"https://portal.example", "'self'"})
+	listed := NewCatalog([]string{"https://portal.example", "'self'"}, []string{"https://idp.example"})
+	if len(listed.Issuers) != 1 || listed.Issuers[0] != "https://idp.example" {
+		t.Fatalf("published issuers %v", listed.Issuers)
+	}
 	if len(listed.FrameAncestors) != 2 || listed.FrameAncestors[0] != "https://portal.example" || listed.FrameAncestors[1] != "'self'" {
 		t.Fatalf("published frames %v", listed.FrameAncestors)
 	}

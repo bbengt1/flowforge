@@ -18,14 +18,18 @@ import (
 // match; when empty, binding is deferred so callers can verify before
 // any store lookup.
 type VerifyOptions struct {
-	Audience           string
-	Now                time.Time
-	SkipJTI            bool
-	Consumer           JTIConsumer
-	ResolvedWS         string
-	Context            context.Context
-	AllowedIssuers     []string
-	ExpectedHostIssuer string
+	Audience            string
+	Now                 time.Time
+	SkipJTI             bool
+	Consumer            JTIConsumer
+	ResolvedWS          string
+	Context             context.Context
+	AllowedIssuers      []string
+	ExpectedHostIssuer  string
+	HostContext         string
+	EmbedIssuers        []string
+	PortalIssuers       []string
+	SelectPathAllowlist bool
 	// NBFLeeway is clock-skew for nbf only (ADV-017). Zero uses
 	// DefaultNBFLeeway (30s). Values above MaxNBFLeeway (60s) are
 	// clamped. exp is never given this leeway.
@@ -113,7 +117,11 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if !authz.ValidIssuer(c.Issuer) {
 		return Verified{}, ErrIssuer
 	}
-	if err := BindHostIssuer(c.Issuer, c.Host, opt.ExpectedHostIssuer, opt.AllowedIssuers); err != nil {
+	allow, err := opt.hostAllowlist(c)
+	if err != nil {
+		return Verified{}, err
+	}
+	if err := BindHostIssuer(c.Issuer, c.Host, opt.ExpectedHostIssuer, allow); err != nil {
 		return Verified{}, err
 	}
 	if !authz.ValidSubject(c.Subject) {
@@ -166,6 +174,17 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 		kid = m.KeyID
 	}
 	return Verified{Claims: c, KeyID: kid, Header: h}, nil
+}
+
+func (opt VerifyOptions) hostAllowlist(c Claims) ([]string, error) {
+	allowCtx, err := ResolveSignedHostContext(c.Ctx, opt.HostContext)
+	if err != nil {
+		return nil, err
+	}
+	if opt.SelectPathAllowlist {
+		return HostAllowlist(allowCtx, opt.EmbedIssuers, opt.PortalIssuers), nil
+	}
+	return opt.AllowedIssuers, nil
 }
 
 func checkRequired(c Claims) error {
