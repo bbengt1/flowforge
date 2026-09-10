@@ -17,11 +17,7 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 const linkClass =
   "text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600";
 
-type OperatorNavProps = {
-  swaggerUrl: string;
-};
-
-export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
+export function OperatorNav() {
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -121,9 +117,9 @@ export function OperatorNav({ swaggerUrl }: OperatorNavProps) {
       <Link href="/isolation" className={linkClass}>
         Isolation
       </Link>
-      <a className={linkClass} href={swaggerUrl}>
-        OpenAPI / Swagger
-      </a>
+      <Link href="/settings" className={linkClass}>
+        Health / OpenAPI
+      </Link>
     </nav>
   );
 }

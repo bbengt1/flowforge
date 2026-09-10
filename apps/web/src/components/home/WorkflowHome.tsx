@@ -12,6 +12,11 @@ import { canSeeApprovalsNav } from "@/lib/approval";
 import { canSeeExecutionsNav } from "@/lib/execution";
 import { listWorkflowExecutions } from "@/lib/execution-client";
 import type { ExecutionRecord } from "@/lib/execution-types";
+import {
+  productHomeCapabilities,
+  templateCreatedEditorHref,
+  workflowHomeLastRunHref,
+} from "@/lib/product-home";
 import { workspaceLookupKey } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
@@ -86,9 +91,16 @@ function WorkflowHomeSession() {
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
-  const canExecute = ready && canOfferManualStart(permissions);
-  const canViewWebhooks = ready && canViewWebhookTriggers(permissions);
-  const canViewSchedules = ready && canViewScheduleTriggers(permissions);
+  const rowCapabilities = productHomeCapabilities(ready ? permissions : null);
+  const canExecute =
+    ready && canOfferManualStart(permissions) && rowCapabilities.canExecute;
+  const canViewWebhooks =
+    ready && canViewWebhookTriggers(permissions) && rowCapabilities.canViewWebhooks;
+  const canViewSchedules =
+    ready &&
+    canViewScheduleTriggers(permissions) &&
+    rowCapabilities.canViewSchedules;
+  const canSeeLastRun = ready && rowCapabilities.canSeeLastRun;
   const denied = ready && permissions != null && !canSeeWorkflowsNav(permissions);
   const [startWorkflowId, setStartWorkflowId] = useState("");
   const [webhookWorkflowId, setWebhookWorkflowId] = useState("");
@@ -270,10 +282,10 @@ function WorkflowHomeSession() {
         kind: "info",
         title: "Draft created",
         detail: created?.name || "Editable draft ready",
-        href: created ? `/workflows/${created.id}` : "/workflows",
+        href: templateCreatedEditorHref(created?.id),
       });
       if (created) {
-        router.push(`/workflows/${created.id}`);
+        router.push(templateCreatedEditorHref(created.id));
       }
     },
     [canCreate, identity, createSlug, createName, router],
@@ -376,10 +388,10 @@ function WorkflowHomeSession() {
           kind: "info",
           title: "Draft imported",
           detail: created?.name || "Validated YAML created a draft",
-          href: created ? `/workflows/${created.id}` : "/workflows",
+          href: templateCreatedEditorHref(created?.id),
         });
         if (created) {
-          router.push(`/workflows/${created.id}`);
+          router.push(templateCreatedEditorHref(created.id));
         }
       })();
     };
@@ -671,6 +683,9 @@ function WorkflowHomeSession() {
           pending={pending !== null}
           canCreate={canCreate}
           canExecute={canExecute}
+          canViewWebhooks={canViewWebhooks}
+          canViewSchedules={canViewSchedules}
+          canSeeLastRun={canSeeLastRun}
           onStart={(item) => setStartWorkflowId(item.id)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onSchedules={(item) => setScheduleWorkflowId(item.id)}
@@ -683,6 +698,9 @@ function WorkflowHomeSession() {
           pending={pending !== null}
           canCreate={canCreate}
           canExecute={canExecute}
+          canViewWebhooks={canViewWebhooks}
+          canViewSchedules={canViewSchedules}
+          canSeeLastRun={canSeeLastRun}
           onStart={(item) => setStartWorkflowId(item.id)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onSchedules={(item) => setScheduleWorkflowId(item.id)}
@@ -773,6 +791,9 @@ function WorkflowActions({
   pending,
   canCreate,
   canExecute,
+  canViewWebhooks,
+  canViewSchedules,
+  canSeeLastRun,
   onStart,
   onWebhooks,
   onSchedules,
@@ -783,6 +804,9 @@ function WorkflowActions({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canViewWebhooks: boolean;
+  canViewSchedules: boolean;
+  canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
@@ -799,7 +823,7 @@ function WorkflowActions({
             onClick={() => onStart(item)}
             className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
           >
-            Start
+            Start published
           </button>
         ) : (
           <span className="text-sm text-zinc-500" title="workflow.execute required">
@@ -807,40 +831,43 @@ function WorkflowActions({
           </span>
         )
       ) : null}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => onWebhooks(item)}
-        className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
-      >
-        Webhooks
-      </button>
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => onSchedules(item)}
-        className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
-      >
-        Schedules
-      </button>
+      {canViewWebhooks ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onWebhooks(item)}
+          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+        >
+          Webhooks
+        </button>
+      ) : null}
+      {canViewSchedules ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onSchedules(item)}
+          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+        >
+          Schedules
+        </button>
+      ) : null}
       <Link
         href={`/workflows/${item.id}`}
         className="text-sm font-medium text-teal-800 underline"
       >
         Open editor
       </Link>
-      {item.lastRunId ? (
+      {canSeeLastRun ? (
         <Link
-          href={`/executions/${item.lastRunId}`}
+          href={workflowHomeLastRunHref({
+            workflowId: item.id,
+            lastRunId: item.lastRunId,
+          })}
           className="text-sm text-zinc-700 underline"
         >
           Last run
         </Link>
-      ) : (
-        <Link href="/executions" className="text-sm text-zinc-700 underline">
-          Executions
-        </Link>
-      )}
+      ) : null}
       {canCreate ? (
         <button
           type="button"
@@ -870,6 +897,9 @@ function WorkflowHomeList({
   pending,
   canCreate,
   canExecute,
+  canViewWebhooks,
+  canViewSchedules,
+  canSeeLastRun,
   onStart,
   onWebhooks,
   onSchedules,
@@ -880,6 +910,9 @@ function WorkflowHomeList({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canViewWebhooks: boolean;
+  canViewSchedules: boolean;
+  canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
@@ -909,6 +942,9 @@ function WorkflowHomeList({
             pending={pending}
             canCreate={canCreate}
             canExecute={canExecute}
+            canViewWebhooks={canViewWebhooks}
+            canViewSchedules={canViewSchedules}
+            canSeeLastRun={canSeeLastRun}
             onStart={onStart}
             onWebhooks={onWebhooks}
             onSchedules={onSchedules}
@@ -926,6 +962,9 @@ function WorkflowHomeCards({
   pending,
   canCreate,
   canExecute,
+  canViewWebhooks,
+  canViewSchedules,
+  canSeeLastRun,
   onStart,
   onWebhooks,
   onSchedules,
@@ -936,6 +975,9 @@ function WorkflowHomeCards({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canViewWebhooks: boolean;
+  canViewSchedules: boolean;
+  canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
@@ -965,6 +1007,9 @@ function WorkflowHomeCards({
               pending={pending}
               canCreate={canCreate}
               canExecute={canExecute}
+              canViewWebhooks={canViewWebhooks}
+              canViewSchedules={canViewSchedules}
+              canSeeLastRun={canSeeLastRun}
               onStart={onStart}
               onWebhooks={onWebhooks}
               onSchedules={onSchedules}

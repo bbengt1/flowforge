@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { ApprovalRequest } from "./approval-types.ts";
 import type { ExecutionRecord } from "./execution-types.ts";
 import type { WorkflowDraft, WorkflowRecord } from "./workflow-types.ts";
+import { workflowHomeLastRunHref } from "./product-home.ts";
 import {
   EMPTY_WORKFLOW_HOME_FILTERS,
   buildWorkflowHomeItems,
@@ -132,6 +133,17 @@ describe("workflow home list/filter", () => {
     assert.equal(item?.pendingApprovals, 1);
     assert.equal(item?.lastRunStatus, "succeeded");
     assert.equal(item?.lastRunKnown, true);
+    assert.equal(
+      workflowHomeLastRunHref({
+        workflowId: item.id,
+        lastRunId: item.lastRunId,
+      }),
+      `/executions/${item.lastRunId}`,
+    );
+    assert.equal(
+      workflowHomeLastRunHref({ workflowId: item.id }),
+      `/executions?workflowId=${item.id}`,
+    );
     assert.equal(item?.environment, "ops");
     assert.equal(item?.latestVersionNumber, 2);
   });

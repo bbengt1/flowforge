@@ -213,9 +213,12 @@ export function WorkspaceShell({
             <p className="sr-only">Workflows is the way back to workflow home.</p>
           ) : (
             <p className="mt-auto text-[11px] text-zinc-500">
-              <a className="underline decoration-zinc-300 hover:decoration-zinc-600" href={swaggerUrl}>
-                OpenAPI / Swagger
-              </a>
+              <Link
+                className="underline decoration-zinc-300 hover:decoration-zinc-600"
+                href="/settings"
+              >
+                Health / OpenAPI
+              </Link>
             </p>
           )}
         </aside>

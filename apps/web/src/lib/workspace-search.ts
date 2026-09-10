@@ -270,15 +270,23 @@ function alertHits(
   });
 }
 
-function docHits(swaggerUrl: string): TokenizedHit[] {
+function docHits(): TokenizedHit[] {
   return [
+    {
+      kind: "doc",
+      id: "doc-health",
+      title: "Control plane health",
+      subtitle: "Liveness and readiness — Settings",
+      href: "/settings#health",
+      tokens: ["health", "readiness", "liveness", "control plane", "settings"],
+    },
     {
       kind: "doc",
       id: "doc-openapi",
       title: "OpenAPI / Swagger",
-      subtitle: "Control-plane API reference",
-      href: swaggerUrl,
-      tokens: ["openapi", "swagger", "docs", "api"],
+      subtitle: "Control-plane API reference — Settings",
+      href: "/settings#api-docs",
+      tokens: ["openapi", "swagger", "docs", "api", "settings"],
     },
     {
       kind: "doc",
@@ -326,7 +334,7 @@ export function buildSearchIndex(
     ...credentialHits(sources.credentials ?? [], permissions),
     ...executionHits(sources.executions ?? [], permissions),
     ...alertHits(sources.alerts ?? [], permissions),
-    ...docHits(sources.swaggerUrl ?? "/"),
+    ...docHits(),
   ];
 }
 
