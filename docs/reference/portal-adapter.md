@@ -176,6 +176,8 @@ the API/web already run):
 # PostgreSQL on 127.0.0.1:5432, role/db flowforge (or set DATABASE_URL)
 export POSTGRES_PASSWORD=replace-with-local-password
 bash scripts/adv013-cross-origin.sh
+# Skip the unit checklist after a green `pnpm --filter @flowforge/web test`:
+# ADV013_SKIP_UNIT=1 bash scripts/adv013-cross-origin.sh
 ```
 
 Compose overlay (when Docker is available) seeds the shared allowlist

@@ -67,9 +67,11 @@ cleanup() {
   if [[ -f "$PIDS_FILE" ]]; then
     while read -r pid; do
       [[ -n "${pid:-}" ]] || continue
-      kill "$pid" 2>/dev/null || true
+      kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
     done <"$PIDS_FILE"
   fi
+  # go run / next leave child servers; free harness ports.
+  fuser -k 8080/tcp 3000/tcp 8443/tcp 8444/tcp 8445/tcp >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -122,7 +124,9 @@ wait_http() {
   local url="$1"
   local extra=("${@:2}")
   for _ in $(seq 1 90); do
-    if curl -sk --max-time 2 "${extra[@]}" "$url" >/dev/null 2>&1; then
+    local code
+    code="$(curl -sk --max-time 2 -o /dev/null -w '%{http_code}' "${extra[@]}" "$url" || true)"
+    if [[ "$code" == "200" ]]; then
       return 0
     fi
     sleep 1
@@ -187,9 +191,8 @@ start_local_stack() {
     fail "PostgreSQL is not running on 127.0.0.1:5432. Start it or use compose."
   fi
 
-  if ! PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select 1' >/dev/null 2>&1; then
-    if command -v sudo >/dev/null 2>&1; then
-      sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+  if command -v sudo >/dev/null 2>&1; then
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL >/dev/null
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${POSTGRES_USER}') THEN
@@ -197,13 +200,15 @@ BEGIN
   END IF;
 END
 \$\$;
-SELECT 'ok' FROM pg_database WHERE datname = '${POSTGRES_DB}';
+ALTER ROLE ${POSTGRES_USER} PASSWORD '${POSTGRES_PASSWORD}';
+-- Isolation migration creates/alters role flowforge_app. Local
+-- harness login must match compose (superuser) for that step.
+ALTER ROLE ${POSTGRES_USER} SUPERUSER;
 SQL
-      sudo -u postgres psql -c "ALTER ROLE ${POSTGRES_USER} PASSWORD '${POSTGRES_PASSWORD}';" >/dev/null
-      sudo -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 \
-        || sudo -u postgres createdb -O "$POSTGRES_USER" "$POSTGRES_DB"
-    fi
+    sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 \
+      || sudo -u postgres createdb -O "$POSTGRES_USER" "$POSTGRES_DB"
   fi
+  PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select 1' >/dev/null
 
   log "== starting API =="
   (
@@ -425,24 +430,27 @@ PY
 
   if command -v google-chrome >/dev/null 2>&1; then
     log "== browser screenshots =="
+    local profile="$RUN_DIR/chrome-profile"
+    mkdir -p "$profile"
     local chrome_args=(
       --headless=new
       --disable-gpu
       --no-sandbox
+      --disable-dev-shm-usage
       --ignore-certificate-errors
       --allow-insecure-localhost
+      --user-data-dir="$profile"
       --host-resolver-rules="MAP portal.test 127.0.0.1, MAP embed.test 127.0.0.1, MAP evil.test 127.0.0.1"
       --window-size=1280,900
     )
-    google-chrome "${chrome_args[@]}" \
+    timeout 20 google-chrome "${chrome_args[@]}" \
       --screenshot="$EVIDENCE_DIR/portal-host.png" \
-      "${PORTAL_ORIGIN}/?autorun=1" >/dev/null 2>&1 || true
-    sleep 2
-    google-chrome "${chrome_args[@]}" \
-      --virtual-time-budget=12000 \
+      "${PORTAL_ORIGIN}/" >/dev/null 2>&1 || true
+    timeout 25 google-chrome "${chrome_args[@]}" \
+      --virtual-time-budget=15000 \
       --screenshot="$EVIDENCE_DIR/portal-host-mounted.png" \
       "${PORTAL_ORIGIN}/?autorun=1" >/dev/null 2>&1 || true
-    google-chrome "${chrome_args[@]}" \
+    timeout 20 google-chrome "${chrome_args[@]}" \
       --screenshot="$EVIDENCE_DIR/hostile-ancestor.png" \
       "$EVIL_ORIGIN/" >/dev/null 2>&1 || true
   fi
@@ -508,7 +516,9 @@ if [[ "$CHECKLIST_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-run_checklist
+if [[ "${ADV013_SKIP_UNIT:-0}" != "1" ]]; then
+  run_checklist
+fi
 gen_certs
 ensure_hosts
 if [[ "$ATTACH" -eq 0 ]]; then
