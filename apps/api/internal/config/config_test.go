@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
+	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 )
 
 func TestListenAddrDefaults(t *testing.T) {
@@ -427,6 +428,75 @@ func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
 func testEmbedSigningKey(t *testing.T) string {
 	t.Helper()
 	return embed.EncodePKCS8PEM(embed.TestMaterial().Private)
+}
+
+func TestLoadSeedLocalDefaultsGate(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv(localseed.EnvSeedLocalDefaults, "")
+
+	t.Setenv("APP_ENV", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SeedLocalDefaults {
+		t.Fatal("empty APP_ENV must not seed")
+	}
+
+	t.Setenv("APP_ENV", "production")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SeedLocalDefaults {
+		t.Fatal("production must not seed")
+	}
+
+	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
+	if _, err := Load(); err == nil {
+		t.Fatal("explicit seed in production must refuse to start")
+	}
+
+	t.Setenv(localseed.EnvSeedLocalDefaults, "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SeedLocalDefaults {
+		t.Fatal("REQUIRE_TLS must not seed")
+	}
+
+	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
+	if _, err := Load(); err == nil {
+		t.Fatal("explicit seed with REQUIRE_TLS must refuse to start")
+	}
+
+	t.Setenv("REQUIRE_TLS", "false")
+	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SeedLocalDefaults {
+		t.Fatal("development + explicit seed must enable")
+	}
+
+	t.Setenv(localseed.EnvSeedLocalDefaults, "0")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SeedLocalDefaults {
+		t.Fatal("explicit opt-out must disable seed")
+	}
 }
 
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {

@@ -12,7 +12,7 @@ weaken E12.1 / E12.2 harnesses.
 | Guide | Audience | Contents |
 | --- | --- | --- |
 | [API / OpenAPI](../reference/openapi.md) | Platform admins, integrators | How the published spec is obtained, `/api/v1` versioning, auth/session at high level |
-| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, production env inventory, local-vs-prod pitfalls, deploy manifests |
+| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (#191), production env inventory, local-vs-prod pitfalls, deploy manifests |
 | [Incident and recovery](incident-recovery.md) | On-call / ops | Health vs readiness, worker-loss/fencing, restore rehearsal, escalation signals |
 | [Retention and backup](retention-backup.md) | Ops / compliance | Encrypted backups, restore cadence, retention purge, legal hold |
 | [E12.3 threat-model review](../reference/e12-threat-model-review.md) | Production-gate reviewers | Trust boundaries, embed, credentials, SSRF, tenancy; sign-off checklist |

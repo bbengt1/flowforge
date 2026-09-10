@@ -305,6 +305,11 @@ docker compose up --build
 # UI http://localhost:3000  API health http://localhost:8080/api/v1/health
 ```
 
+Compose seeds tenant `local` / workbench `default` and demo vault
+credentials for `https://idp.example|admin-1` (opt out with
+`SEED_LOCAL_DEFAULTS=0`). How to point the membership form at that
+context: [deployment.md](../deployment.md#local-default-tenant-seed).
+
 Compose and production env stay on [deployment.md](../deployment.md).
-Do not copy `TRUSTED_DEV_IDENTITY_HEADERS` or sample `PLATFORM_ADMINS`
-into production.
+Do not copy `TRUSTED_DEV_IDENTITY_HEADERS`, sample `PLATFORM_ADMINS`,
+`SEED_LOCAL_DEFAULTS`, or the compose local KEK into production.

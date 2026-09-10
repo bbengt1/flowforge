@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
+	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -94,6 +95,10 @@ type Config struct {
 	// TrustIdentityHeaders is true only when TRUSTED_DEV_IDENTITY_HEADERS
 	// is explicit and the process is not production-locked.
 	TrustIdentityHeaders bool
+	// SeedLocalDefaults is true for local/dev/test compose when
+	// SEED_LOCAL_DEFAULTS is not an explicit off value. Production-locked
+	// processes stay false; an explicit on flag is a boot-fail.
+	SeedLocalDefaults bool
 }
 
 // Load reads configuration from the process environment.
@@ -173,6 +178,11 @@ func Load() (Config, error) {
 	}
 	cfg.AppEnv = appEnv
 	cfg.TrustIdentityHeaders = trustHeaders
+	seedLocal, err := localseed.Resolve(os.Getenv(localseed.EnvSeedLocalDefaults), appEnv, cfg.RequireTLS)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SeedLocalDefaults = seedLocal
 	requireHTTPS := authz.ProductionLocked(appEnv, cfg.RequireTLS)
 	if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
 		return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)

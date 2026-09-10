@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
+	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -30,6 +31,13 @@ func main() {
 	}
 
 	pool := postgres.NewPool(cfg.DatabaseURL, log, cfg.MigrateTimeout)
+	if cfg.SeedLocalDefaults {
+		pool.SetAfterReady(localseed.Hook(localseed.Input{
+			Keys:           cfg.VaultKeys,
+			PlatformAdmins: cfg.PlatformAdmins,
+			Log:            log,
+		}))
+	}
 	bg, stopBG := context.WithCancel(context.Background())
 	go pool.Start(bg)
 	defer func() {
@@ -80,6 +88,9 @@ func main() {
 
 	if cfg.TrustIdentityHeaders {
 		log.Warn("trusted_dev_identity_headers enabled; self-asserted X-FlowForge-Issuer/Subject are accepted")
+	}
+	if cfg.SeedLocalDefaults {
+		log.Info("local defaults seed enabled; tenant/workbench and demo credentials will be written after migrate")
 	}
 
 	errCh := make(chan error, 1)

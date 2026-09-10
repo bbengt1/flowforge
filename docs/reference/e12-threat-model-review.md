@@ -109,7 +109,7 @@ pass/fail by hand-editing JSON.
 | 2 | Sibling supply-chain provenance / vuln gates green | `.github/workflows/supply-chain.yml` (`govulncheck`, `image-scan`, approved bases). Policy: [deploy/supply-chain/policy.md](../../deploy/supply-chain/policy.md) |
 | 3 | E12.2 fail-closed suite green; every required headroom ratio ≥ 2.0 | [e12-resilience-capacity.md](e12-resilience-capacity.md), [capacity-last-run.json](e12-resilience-evidence/capacity-last-run.json) |
 | 4 | Encrypted restore rehearsed (schema + compose/API boot) | `scripts/backup/restore-rehearsal.sh`, `restore-schema-rehearsal.sh`; [retention and backup](../operations/retention-backup.md) |
-| 5 | Production config does not copy local pitfalls | [deployment](../deployment.md#production-vs-local-pitfalls): no `TRUSTED_DEV_IDENTITY_HEADERS`, digest-pinned images, TLS at ingress, `PLATFORM_ADMINS` set, durable KEK / embed key / job + script signing keys, https issuers |
+| 5 | Production config does not copy local pitfalls | [deployment](../deployment.md#production-vs-local-pitfalls): no `TRUSTED_DEV_IDENTITY_HEADERS` / `SEED_LOCAL_DEFAULTS`, digest-pinned images, TLS at ingress, `PLATFORM_ADMINS` set, durable KEK / embed key / job + script signing keys, https issuers |
 | 6 | ADV hardenings on `main` still in force | ADV-002 (fail-closed identity), 004–014, 017–024 as listed above and in the security model. Do not revert for launch. |
 | 7 | Threat-model areas above reviewed against the security model | This page + security-model trust table |
 | 8 | Operator/admin **UI** guides published | **Chloe / E12.3** — stub: [operations/index.md](../operations/index.md#chloe-e123-placeholders) |
