@@ -23,6 +23,8 @@ import {
   publishInvalidatesApprovals,
   shouldBlockRun,
   stripSecretKeys,
+  approvalDecideControlsState,
+  approvalValidityBannerState,
 } from "./approval.ts";
 import {
   APPROVAL_PROBLEM_CODES,
@@ -206,6 +208,21 @@ describe("approval expiry fail-closed", () => {
     });
     assert.equal(isApprovalExpired(statusExpired), true);
     assert.equal(canDecideApproval(statusExpired), false);
+
+    const banner = approvalValidityBannerState(statusExpired);
+    assert.equal(banner.visible, true);
+    if (banner.visible) {
+      assert.equal(banner.title, "Approval expired");
+      assert.equal(banner.role, "alert");
+    }
+    const decide = approvalDecideControlsState(
+      statusExpired,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ["approval.decide"],
+    );
+    assert.equal(decide.canDecide, false);
+    assert.equal(decide.approveDisabled, true);
+    assert.equal(decide.rejectDisabled, true);
   });
 
   it("maps conflict+detail and aliases to fail-closed", () => {

@@ -752,6 +752,72 @@ export function canDecideFromPermissions(
   return Boolean(permissions?.includes("approval.decide"));
 }
 
+/** Existing ApprovalValidityBanner copy. Do not invent new chrome. */
+export const APPROVAL_VALIDITY_FALLBACK_DETAIL =
+  "Server-side recheck failed closed. A prior local approval is not sufficient.";
+
+export const APPROVAL_VALIDITY_BANNER_HELP =
+  "Authorization is rechecked on the server. Approve and reject stay disabled until a new evaluation produces a current pending request.";
+
+export type ApprovalValidityBannerState =
+  | { visible: false }
+  | {
+      visible: true;
+      title: "Approval expired" | "Approval invalidated" | "Approval is not current";
+      detail: string;
+      role: "alert";
+    };
+
+export function approvalValidityBannerState(
+  approval: ApprovalRequest,
+  now = Date.now(),
+): ApprovalValidityBannerState {
+  const expired = isApprovalExpired(approval, now);
+  const invalidated = isApprovalInvalidated(approval);
+  if (!expired && !invalidated && approval.validity.current) {
+    return { visible: false };
+  }
+  const title = expired
+    ? "Approval expired"
+    : invalidated
+      ? "Approval invalidated"
+      : "Approval is not current";
+  return {
+    visible: true,
+    title,
+    detail: invalidationSummary(approval) || APPROVAL_VALIDITY_FALLBACK_DETAIL,
+    role: "alert",
+  };
+}
+
+export type ApprovalDecideControlsState = {
+  canDecide: boolean;
+  approveDisabled: boolean;
+  rejectDisabled: boolean;
+  selfRequested: boolean;
+};
+
+/** Existing ApprovalDecideControls disablement. No new chrome. */
+export function approvalDecideControlsState(
+  approval: ApprovalRequest,
+  actorUserId: string,
+  permissions?: string[] | null,
+  now?: number,
+): ApprovalDecideControlsState {
+  const selfRequested = isRequesterActor(approval.requestedBy, actorUserId);
+  const roleCanDecide = canDecideFromPermissions(
+    permissions ?? ["approval.decide"],
+  );
+  const canDecide =
+    canDecideApproval(approval, now, actorUserId) && roleCanDecide;
+  return {
+    canDecide,
+    approveDisabled: !canDecide,
+    rejectDisabled: !canDecide,
+    selfRequested,
+  };
+}
+
 export function isExecutionAwaitingApproval(status: string | undefined): boolean {
   return Boolean(
     status &&

@@ -1,8 +1,8 @@
 # E12.1 security verification suite
 
-Relates to #182 / Part of #181. **Keep #182 open** — Chloe may add UI
-evidence. This document is the control map, how each control is tested,
-and the Chloe surface list.
+Relates to #182 / Part of #181. **Keep #182 open** — Chloe UI evidence
+is linked below; do not close on this map alone. This document is the
+control map, how each control is tested, and the Chloe surface list.
 
 Harness: `scripts/e12-security-suite.sh` (catalog
 `scripts/e12-security-suite.json`). CI job: `.github/workflows/e12-security.yml`
@@ -53,6 +53,9 @@ lease loss. Memory stores cover the same negatives when the DSN is unset.
 - CI artifact name: `e12-security-suite` (same JSON from the GitHub Actions job).
 - ADV-013 two-origin embed/Portal screenshots remain under
   [adv-013-evidence](adv-013-evidence/README.md) (issue #144 stays open).
+- Chloe Hit-list pointer:
+  [e12-security-evidence/chloe-ui-last-run.json](e12-security-evidence/chloe-ui-last-run.json)
+  · notes [chloe-ui.md](e12-security-evidence/chloe-ui.md).
 
 Re-run the harness and commit an updated `last-run.json` when a domain’s
 tests change. Do not hand-edit pass/fail flags.
@@ -64,10 +67,10 @@ surface can disagree with the API (cookies, chrome, masked secrets).
 
 | Surface | Route / component | Why | Suite already proves | Chloe gap |
 | --- | --- | --- | --- | --- |
-| Embed exchange + replay | `/embed/v1…` · `EmbedExchangeGate` | Body-only assertion, CHIPS cookies, replay `409`, host/ctx bind | Mint/exchange/replay/rotate/nbf/jti Go tests; web embed contracts | **Hit:** postMessage/body exchange in a real iframe; replay the same assertion; confirm session chrome from `GET /session` (ADV-021), not host query. Screenshot 409 / expired. |
-| Session chrome | `EmbedChrome`, `SessionStatusChip`, `SessionExpiryBanner` | Idle/absolute expiry and workspace-delete revoke are `401` | `TestStaleSessionFailsClosed`, ADV-019 workspace-delete tests | **Hit:** let an embed session expire or delete the workspace; confirm existing expired handling (no new chrome). |
+| Embed exchange + replay | `/embed/v1…` · `EmbedExchangeGate` | Body-only assertion, CHIPS cookies, replay `409`, host/ctx bind | Mint/exchange/replay/rotate/nbf/jti Go tests; web embed contracts | **Done.** Iframe `/embed/v1` body-only postMessage/form; replay same assertion → ProblemBanner `Conflict (409)`. Chrome from `GET /session` `session.embed` (ADV-021), not host query. Tests: [e12-chloe-ui-contract.test.ts](../../apps/web/src/lib/e12-chloe-ui-contract.test.ts). Evidence: [chloe-ui.md](e12-security-evidence/chloe-ui.md) · [embed-replay-409.svg](e12-security-evidence/embed-replay-409.svg). |
+| Session chrome | `EmbedChrome`, `SessionStatusChip`, `SessionExpiryBanner` | Idle/absolute expiry and workspace-delete revoke are `401` | `TestStaleSessionFailsClosed`, ADV-019 workspace-delete tests | **Done.** 401 latch reuses existing stale chrome (`Session stale` / `Stale session`); expired still uses existing countdown copy. No new chrome. Tests: same Chloe contract + [session.test.ts](../../apps/web/src/lib/session.test.ts). Evidence: [session-stale-401.svg](e12-security-evidence/session-stale-401.svg). |
 | Portal host | `/portal` · `PortalHost` + ADV-013 origins | Portal mint → embed iframe; hostile ancestor blocked | `httpapi` Portal tests; `adv013-cross-origin.sh` + [adv-013-evidence](adv-013-evidence/README.md) | **Optional** if #144 screenshots are current: Portal mount + `evil.test` blocked iframe. Do not re-prove HMAC/SSRF here. |
-| Approvals | `/approvals` · `ApprovalValidityBanner`, `ApprovalDecideControls` | Expired / rebound approval cannot decide | `TestApprovalExpiryRecheckedServerSide` | **Hit:** open an expired approval; confirm banner + decide disabled. |
+| Approvals | `/approvals` · `ApprovalValidityBanner`, `ApprovalDecideControls` | Expired / rebound approval cannot decide | `TestApprovalExpiryRecheckedServerSide` | **Done.** Expired row shows `Approval expired` banner; Approve/Reject stay disabled. Tests: Chloe contract + [approval.test.ts](../../apps/web/src/lib/approval.test.ts). Evidence: [approval-expired.svg](e12-security-evidence/approval-expired.svg). |
 | Credentials | `/credentials` vault | Disable/rotate; no plaintext | Vault Go tests; web credential contracts | **Optional:** confirm secret fields stay masked after rotate/disable. |
 | Script revoke | `ScriptPublishStatus` | Revoked digest cannot start | `TestScriptRevokeAndEmergencyStop` | **Optional:** revoke badge + start `409` copy. |
 | Artifacts / legal hold | `/executions/{id}` · `ExecutionArtifacts` | Authz download grant, hold blocks purge, redaction | `TestArtifactUploadDownloadRetentionAndHold` | **Optional:** legal-hold badge and denied foreign-workspace download. |
@@ -83,5 +86,6 @@ provider failure, Trivy/SBOM/approved-bases. Those stay harness/CI-only.
 ## Ownership
 
 - **jonny:** harness, API/engine negatives, CI gate, this map.
-- **Chloe:** UI/embed rows marked **Hit** (and optional rows if she wants
-  screenshots on #182). Keep the issue open after this PR.
+- **Chloe:** UI/embed rows marked **Done** (Hit list). Optional rows
+  remain open if she wants extra screenshots on #182. Keep the issue
+  open after this PR.

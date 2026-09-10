@@ -28,7 +28,7 @@ import {
   SESSION_EMBED_WAITING_HELP,
   isSessionEmbedMode,
   sessionEmbedAsVerifiedWorkspace,
-  sessionEmbedChromeLabel,
+  embedChromeChipLabel,
   type SessionEmbedChrome,
 } from "@/lib/session-embed-contract";
 import { visibleWorkspaceNav } from "@/lib/workspace-nav";
@@ -98,9 +98,7 @@ export function EmbedChrome({
             className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 font-mono text-xs font-medium text-teal-950"
             title={SESSION_EMBED_CHROME_HELP}
           >
-            Verified · {sessionEmbedChromeLabel(chrome)}
-            {chrome.workspaceName ? ` · ${chrome.workspaceName}` : ""}
-            {chrome.displayName ? ` · ${chrome.displayName}` : ""}
+            {embedChromeChipLabel(chrome)}
           </p>
         ) : missingEmbed ? (
           <p

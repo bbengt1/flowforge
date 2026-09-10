@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="520" viewBox="0 0 880 520" role="img" aria-labelledby="title desc">
+  <title id="title">Embed exchange replay 409</title>
+  <desc id="desc">Iframe /embed/v1 after replaying the same assertion. ProblemBanner shows Conflict (409).</desc>
+  <rect width="880" height="520" fill="#f4f4f5"/>
+  <rect x="24" y="20" width="832" height="36" rx="8" fill="#18181b"/>
+  <text x="40" y="43" fill="#fafafa" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Host portal.test  iframe src=https://embed.test:8444/embed/v1/workflows (no assertion=)</text>
+  <rect x="40" y="72" width="800" height="428" rx="10" fill="#ffffff" stroke="#d4d4d8"/>
+  <text x="60" y="104" fill="#115e59" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="600">E11.2 · embed.v1 · /embed/v1</text>
+  <text x="60" y="132" fill="#18181b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="600">Exchange a host assertion</text>
+  <text x="60" y="156" fill="#52525b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">POST /embed/exchange body-only. Replay is single-use. Chrome waits for GET /session.</text>
+  <rect x="60" y="176" width="760" height="92" rx="10" fill="#fffbeb" stroke="#fcd34d"/>
+  <text x="80" y="204" fill="#78350f" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="600">Conflict (409)</text>
+  <text x="80" y="226" fill="#78350f" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">This assertion was already used or is no longer valid (HTTP 409). Assertions are single-use. Request a new mint from the host backend.</text>
+  <text x="80" y="250" fill="#92400e" font-family="ui-monospace, monospace" font-size="11">code replay · request_id req-replay-2</text>
+  <rect x="60" y="284" width="760" height="88" rx="10" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="80" y="308" fill="#92400e" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="600">HOST DISPLAY · UNVERIFIED</text>
+  <text x="80" y="330" fill="#3f3f46" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">tenant / workbench on the deep link are display context only. They never authorize. GET /session is chrome authority.</text>
+  <rect x="60" y="388" width="760" height="88" rx="10" fill="#ffffff" stroke="#e4e4e7"/>
+  <text x="80" y="412" fill="#18181b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="600">Assertion exchange</text>
+  <rect x="80" y="424" width="520" height="36" rx="6" fill="#fafafa" stroke="#d4d4d8"/>
+  <text x="92" y="446" fill="#a1a1aa" font-family="ui-monospace, monospace" font-size="11">header.payload.signature (forgotten after exchange)</text>
+  <rect x="616" y="424" width="180" height="36" rx="8" fill="#18181b"/>
+  <text x="640" y="446" fill="#ffffff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Exchange assertion</text>
+</svg>

@@ -100,6 +100,76 @@ export function sessionExpiryState(
   return "ok";
 }
 
+export type SessionChromeSnapshot = {
+  active: boolean;
+  stale: boolean;
+  session: BrowserSession;
+};
+
+export type SessionExpiryBannerState =
+  | { visible: false }
+  | {
+      visible: true;
+      title: "Stale session" | "Session expired" | "Session expiring soon";
+      role: "alert" | "status";
+      kind: "stale" | "expired" | "warning";
+    };
+
+/**
+ * Existing SessionExpiryBanner copy. 401 latch → stale chrome.
+ * Do not invent a second expired/revoked surface.
+ */
+export function sessionExpiryBannerState(
+  snapshot: SessionChromeSnapshot,
+  now = Date.now(),
+): SessionExpiryBannerState {
+  if (snapshot.stale) {
+    return {
+      visible: true,
+      title: "Stale session",
+      role: "alert",
+      kind: "stale",
+    };
+  }
+  if (!snapshot.active) {
+    return { visible: false };
+  }
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+  const state = sessionExpiryState(expiresAt, now);
+  if (state === "expired") {
+    return {
+      visible: true,
+      title: "Session expired",
+      role: "status",
+      kind: "expired",
+    };
+  }
+  if (state === "warning") {
+    return {
+      visible: true,
+      title: "Session expiring soon",
+      role: "status",
+      kind: "warning",
+    };
+  }
+  return { visible: false };
+}
+
+/** Existing SessionStatusChip label. */
+export function sessionStatusChipLabel(
+  snapshot: SessionChromeSnapshot,
+  now = Date.now(),
+): string {
+  if (snapshot.stale) {
+    return "Session stale";
+  }
+  if (!snapshot.active) {
+    return "No session";
+  }
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+  return `${snapshot.session.subject} · ${formatSessionCountdown(expiresAt, now)}`;
+}
+
 export function formatSessionCountdown(
   expiresAt: string | null,
   now = Date.now(),

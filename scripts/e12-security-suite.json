@@ -73,7 +73,8 @@
         "src/lib/portal-adapter-contract.test.ts",
         "src/lib/portal-embed-client.test.ts",
         "src/lib/adv013-cross-origin-contract.test.ts",
-        "src/lib/dev-identity.test.ts"
+        "src/lib/dev-identity.test.ts",
+        "src/lib/e12-chloe-ui-contract.test.ts"
       ]
     },
     {
@@ -115,7 +116,8 @@
       },
       "web": [
         "src/lib/approval.test.ts",
-        "src/lib/approval-client.test.ts"
+        "src/lib/approval-client.test.ts",
+        "src/lib/e12-chloe-ui-contract.test.ts"
       ]
     },
     {

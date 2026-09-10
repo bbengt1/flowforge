@@ -1,0 +1,56 @@
+{
+  "id": "E12.1-chloe-ui",
+  "title": "Chloe UI/embed verification evidence",
+  "relatesTo": 182,
+  "partOf": 181,
+  "keepIssueOpen": true,
+  "ranAt": "2026-09-10T11:22:00Z",
+  "gitSha": "9606d22",
+  "surfaces": [
+    {
+      "id": "embed-exchange-replay",
+      "route": "/embed/v1",
+      "components": ["EmbedExchangeGate"],
+      "status": "pass",
+      "proof": [
+        "apps/web/src/lib/e12-chloe-ui-contract.test.ts",
+        "apps/web/src/lib/embed-client.test.ts",
+        "apps/web/src/lib/adv013-cross-origin-contract.test.ts"
+      ],
+      "screenshot": "docs/reference/e12-security-evidence/embed-replay-409.svg"
+    },
+    {
+      "id": "session-chrome",
+      "route": "/embed/v1",
+      "components": ["EmbedChrome", "SessionStatusChip", "SessionExpiryBanner"],
+      "status": "pass",
+      "proof": [
+        "apps/web/src/lib/e12-chloe-ui-contract.test.ts",
+        "apps/web/src/lib/session.test.ts",
+        "apps/web/src/lib/session-client.test.ts",
+        "apps/web/src/lib/session-embed-contract.test.ts"
+      ],
+      "screenshot": "docs/reference/e12-security-evidence/session-stale-401.svg"
+    },
+    {
+      "id": "expired-approval",
+      "route": "/approvals",
+      "components": ["ApprovalValidityBanner", "ApprovalDecideControls"],
+      "status": "pass",
+      "proof": [
+        "apps/web/src/lib/e12-chloe-ui-contract.test.ts",
+        "apps/web/src/lib/approval.test.ts"
+      ],
+      "screenshot": "docs/reference/e12-security-evidence/approval-expired.svg"
+    }
+  ],
+  "skippedOptional": [
+    "credentials",
+    "script-revoke",
+    "artifacts",
+    "isolation",
+    "webhook"
+  ],
+  "notes": "docs/reference/e12-security-evidence/chloe-ui.md",
+  "ok": true
+}

@@ -185,6 +185,18 @@ export function sessionEmbedChromeLabel(chrome: SessionEmbedChrome): string {
   return `${tenant} / ${chrome.workbenchKey}`;
 }
 
+/** Existing EmbedChrome verified chip. Driven only from GET /session. */
+export function embedChromeChipLabel(chrome: SessionEmbedChrome): string {
+  let label = `Verified · ${sessionEmbedChromeLabel(chrome)}`;
+  if (chrome.workspaceName) {
+    label += ` · ${chrome.workspaceName}`;
+  }
+  if (chrome.displayName) {
+    label += ` · ${chrome.displayName}`;
+  }
+  return label;
+}
+
 export function sessionEmbedAsVerifiedWorkspace(
   chrome: SessionEmbedChrome,
 ): EmbedVerifiedWorkspace {

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isProblemContentType,
   isProblemDetails,
+  problemBannerHeading,
   problemFieldErrors,
   safeProblemDetail,
   unreachableProblem,
@@ -71,6 +72,10 @@ describe("safeProblemDetail", () => {
     assert.match(
       safeProblemDetail("postgres://flowforge:replace-with-local-password@postgres/db"),
       /Sensitive detail was omitted/,
+    );
+    assert.equal(
+      problemBannerHeading({ title: "Conflict", status: 409 }),
+      "Conflict (409)",
     );
   });
 });

@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   effectiveExpiresAt,
   formatSessionCountdown,
-  sessionExpiryState,
+  sessionExpiryBannerState,
 } from "@/lib/session";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
@@ -24,13 +24,18 @@ export function SessionExpiryBanner() {
     return () => window.clearInterval(timer);
   }, [snapshot.active, snapshot.stale]);
 
-  if (snapshot.stale) {
+  const banner = sessionExpiryBannerState(snapshot, now);
+  if (!banner.visible) {
+    return null;
+  }
+
+  if (banner.kind === "stale") {
     return (
       <div
-        role="alert"
+        role={banner.role}
         className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
       >
-        <p className="font-medium">Stale session</p>
+        <p className="font-medium">{banner.title}</p>
         <p className="mt-1">
           The control plane returned{" "}
           <code className="font-mono text-xs">401 unauthenticated</code>.{" "}
@@ -43,24 +48,13 @@ export function SessionExpiryBanner() {
     );
   }
 
-  if (!snapshot.active) {
-    return null;
-  }
-
   const expiresAt = effectiveExpiresAt(snapshot.session);
-  const state = sessionExpiryState(expiresAt, now);
-  if (state !== "warning" && state !== "expired") {
-    return null;
-  }
-
   return (
     <div
-      role="status"
+      role={banner.role}
       className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
     >
-      <p className="font-medium">
-        {state === "expired" ? "Session expired" : "Session expiring soon"}
-      </p>
+      <p className="font-medium">{banner.title}</p>
       <p className="mt-1">
         {formatSessionCountdown(expiresAt, now)} (idle{" "}
         {snapshot.session.idleExpiresAt || "—"}, absolute{" "}
