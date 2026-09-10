@@ -65,6 +65,7 @@ import {
   updateYamlNode,
   type CoreNodeWith,
 } from "@/lib/workflow-yaml-nodes";
+import { sanitizeInspectorWithPatch } from "@/lib/editor-inspector";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -1000,7 +1001,24 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       id: node.id,
       type: node.type,
       name: node.name,
-      with: { ...node.with, ...patch },
+      with: { ...node.with, ...sanitizeInspectorWithPatch(patch) },
+    });
+    if (next) {
+      setDigest(null);
+      setYaml(next);
+    }
+  }
+
+  function applyNodeName(id: string, name: string) {
+    const node = listYamlNodes(yaml).find((item) => item.id === id);
+    if (!node) {
+      return;
+    }
+    const next = updateYamlNode(yaml, {
+      id: node.id,
+      type: node.type,
+      name: name.trim() || node.name,
+      with: node.with,
     });
     if (next) {
       setDigest(null);
@@ -1247,6 +1265,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             dirty={dirty}
             hasPublishedVersion={Boolean(publishedVersion || versions[0])}
             scriptCatalog={scriptCatalog}
+            engineCatalog={engineCatalog}
+            sshCatalog={sshCatalog}
+            httpCatalog={httpCatalog}
             scriptArtifacts={
               scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
               []
@@ -1261,6 +1282,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             }
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
+            onRename={applyNodeName}
             onPatchNodeWith={patchNodeWith}
           />
           <ValidationPanel

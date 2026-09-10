@@ -12,6 +12,7 @@ import {
   isCoreNeutralNodeType,
   type CoreNeutralPaletteEntry,
 } from "@/lib/workflow-core-nodes";
+import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
   configFromNode,
   type CoreNodeWith,
@@ -25,18 +26,28 @@ type NodeInspectorProps = {
   nodes: YamlWorkflowNode[];
   selectedId: string | null;
   entries: CoreNeutralPaletteEntry[];
+  selectedEntry?: ActionLibraryEntry;
   pending: boolean;
+  canEdit?: boolean;
+  constraint?: string | null;
+  showNodeList?: boolean;
   onSelect: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
+  onRename?: (id: string, name: string) => void;
 };
 
 export function NodeInspector({
   nodes,
   selectedId,
   entries,
+  selectedEntry,
   pending,
+  canEdit = true,
+  constraint = null,
+  showNodeList = true,
   onSelect,
   onApply,
+  onRename,
 }: NodeInspectorProps) {
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
   const placeable = nodes.filter((node) => isCoreNeutralNodeType(node.type));
@@ -51,39 +62,52 @@ export function NodeInspector({
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <h2 id="inspector-heading" className="text-base font-semibold">
-        Node config
+        Selected node
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Bounded <code className="font-mono text-xs">with</code> fields from
-        catalog <code className="font-mono text-xs">allowedWith</code>. No
-        expression language and no secrets in YAML.
+        Inspector <span className="font-medium">edits</span> the selected node.
+        Add action stays the guided wizard. Bounded{" "}
+        <code className="font-mono text-xs">with</code> fields from catalog{" "}
+        <code className="font-mono text-xs">allowedWith</code>. No expression
+        language and no secrets in YAML.
       </p>
-
-      {placeable.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-600">
-          Insert a core node from the palette to configure it.
+      {constraint ? (
+        <p role="status" className="mt-2 text-sm text-amber-950">
+          {constraint}
         </p>
-      ) : (
-        <ul className="mt-4 space-y-1">
-          {placeable.map((node) => (
-            <li key={node.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(node.id)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                  node.id === selectedId
-                    ? "bg-teal-50 font-medium text-teal-950"
-                    : "bg-zinc-50 text-zinc-800 hover:bg-zinc-100"
-                }`}
-              >
-                <span className="font-mono text-xs">{node.id}</span>
-                <span className="mx-1 text-zinc-400">·</span>
-                {node.name || node.type}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      ) : null}
+
+      {showNodeList ? (
+        placeable.length === 0 ? (
+          <p className="mt-4 text-sm text-zinc-600">
+            Insert a core node from the palette to configure it.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-1">
+            {placeable.map((node) => (
+              <li key={node.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(node.id)}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
+                    node.id === selectedId
+                      ? "bg-teal-50 font-medium text-teal-950"
+                      : "bg-zinc-50 text-zinc-800 hover:bg-zinc-100"
+                  }`}
+                >
+                  <span className="font-mono text-xs">{node.id}</span>
+                  <span className="mx-1 text-zinc-400">·</span>
+                  {node.name || node.type}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : selected ? (
+        <p className="mt-3 font-mono text-xs text-zinc-500">
+          {selected.id} · {selected.type}
+        </p>
+      ) : null}
 
       {selected && isCoreNeutralNodeType(selected.type) ? (
         <NodeConfigForm
@@ -91,14 +115,56 @@ export function NodeInspector({
           node={selected}
           entry={catalogEntry}
           pending={pending}
+          canEdit={canEdit}
           onApply={onApply}
         />
       ) : selected && !isCoreNeutralNodeType(selected.type) ? (
-        <p className="mt-4 text-sm text-zinc-600">
-          {selected.type} is not an E3.3 core neutral node. Edit it in YAML.
-        </p>
+        <SelectedNodeIdentity
+          key={selected.id}
+          node={selected}
+          entry={selectedEntry}
+          canEdit={canEdit}
+          pending={pending}
+          onRename={onRename}
+        />
       ) : null}
     </section>
+  );
+}
+
+function SelectedNodeIdentity({
+  node,
+  entry,
+  canEdit,
+  pending,
+  onRename,
+}: {
+  node: YamlWorkflowNode;
+  entry?: ActionLibraryEntry;
+  canEdit: boolean;
+  pending: boolean;
+  onRename?: (id: string, name: string) => void;
+}) {
+  const [name, setName] = useState(node.name);
+  return (
+    <div className="mt-4 space-y-3">
+      <p className="font-mono text-xs text-zinc-500">{node.type}</p>
+      {entry ? <CatalogHints entry={entry} /> : null}
+      <label className="block text-sm">
+        <span className="text-zinc-600">Name</span>
+        <input
+          value={name}
+          disabled={!canEdit || pending}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => {
+            if (canEdit && name.trim() && name.trim() !== node.name) {
+              onRename?.(node.id, name.trim());
+            }
+          }}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+        />
+      </label>
+    </div>
   );
 }
 
@@ -106,11 +172,13 @@ function NodeConfigForm({
   node,
   entry,
   pending,
+  canEdit,
   onApply,
 }: {
   node: YamlWorkflowNode;
   entry?: CoreNeutralPaletteEntry;
   pending: boolean;
+  canEdit: boolean;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
 }) {
   const parsed = configFromNode(node);
@@ -141,11 +209,14 @@ function NodeConfigForm({
         <span className="text-zinc-600">Name</span>
         <input
           value={name}
+          disabled={!canEdit || pending}
           onChange={(event) => setName(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
       </label>
-      <ConfigFields config={config} onChange={setConfig} />
+      <fieldset disabled={!canEdit || pending} className="space-y-3">
+        <ConfigFields config={config} onChange={setConfig} />
+      </fieldset>
       {errors.length > 0 ? (
         <ul className="space-y-1 text-sm text-amber-900">
           {errors.map((error) => (
@@ -155,7 +226,7 @@ function NodeConfigForm({
       ) : null}
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !canEdit}
         className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
       >
         Write YAML
@@ -164,7 +235,11 @@ function NodeConfigForm({
   );
 }
 
-function CatalogHints({ entry }: { entry: CoreNeutralPaletteEntry }) {
+function CatalogHints({
+  entry,
+}: {
+  entry: CoreNeutralPaletteEntry | ActionLibraryEntry;
+}) {
   return (
     <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
       <p className="font-mono">
