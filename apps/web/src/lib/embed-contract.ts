@@ -589,6 +589,10 @@ export const EMBED_HOST_ISSUER_RULES = {
   requiredWhenMultipleIssuers: true,
   wrongIssuerForHostIs403: true,
   noUiRewriteBeyondHeader: true,
+  catalogIssuersField: "issuers",
+  portalIssuerEnv: "PORTAL_ISSUER",
+  embedIssuerEnv: "EMBED_ISSUER",
+  nextPublicIsNotASource: true,
 } as const;
 
 export const EMBED_HOST_ISSUER_HELP =
@@ -675,6 +679,236 @@ export function embedHostBindingHeaders(
     headers[FLOWFORGE_HOST_CONTEXT_HEADER] = hostContext;
   }
   return headers;
+}
+
+/**
+ * ADV-023: the embed shell never reads iss / host from the compact JWS.
+ * Always undefined — configured catalog/env issuers are the only source.
+ */
+export function peekAssertionHostIssuer(_assertion: string): undefined {
+  void _assertion;
+  return undefined;
+}
+
+export type ConfiguredHostIssuerEnv = {
+  PORTAL_ISSUER?: string;
+  EMBED_ISSUER?: string;
+  WEB_PORTAL_FRAME_ANCESTORS?: string;
+  NEXT_PUBLIC_PORTAL_ISSUER?: string;
+  NEXT_PUBLIC_EMBED_ISSUER?: string;
+};
+
+/**
+ * Server-only issuer config. NEXT_PUBLIC_* is ignored — not a source of
+ * truth for host-issuer binding (same rule as ADV-011 frame ancestors).
+ */
+export function readConfiguredHostIssuers(
+  env: ConfiguredHostIssuerEnv = {},
+): {
+  portalIssuer: string;
+  embedIssuer: string;
+  portalReferrerAllowlist: string[];
+} {
+  void env.NEXT_PUBLIC_PORTAL_ISSUER;
+  void env.NEXT_PUBLIC_EMBED_ISSUER;
+  return {
+    portalIssuer: env.PORTAL_ISSUER?.trim() ?? "",
+    embedIssuer: env.EMBED_ISSUER?.trim() ?? "",
+    portalReferrerAllowlist: parseEmbedFrameAncestors(
+      env.WEB_PORTAL_FRAME_ANCESTORS,
+    ),
+  };
+}
+
+/**
+ * Published allowlist from GET /portal/adapter (or catalog `issuers` if
+ * present). Never reads iss / host / assertion.
+ */
+export function parseCatalogIssuers(payload: unknown): string[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return [];
+  }
+  const raw = payload as Record<string, unknown>;
+  const fromList = readConfiguredIssuerList(raw.issuers);
+  if (fromList.length > 0) {
+    return fromList;
+  }
+  const single = readConfiguredIssuerString(
+    raw.issuer ?? raw.embedIssuer ?? raw.portalIssuer,
+  );
+  return single ? [single] : [];
+}
+
+/** Single configured issuer, or empty when the allowlist is ambiguous. */
+export function resolveConfiguredHostIssuer(input: {
+  issuers?: readonly string[];
+  primaryIssuer?: string;
+}): string {
+  const primary = readConfiguredIssuerString(input.primaryIssuer);
+  if (primary) {
+    return primary;
+  }
+  const unique = uniqueConfiguredIssuers(input.issuers);
+  if (unique.length === 1) {
+    return unique[0] ?? "";
+  }
+  return "";
+}
+
+export type DetectEmbedHostContextInput = {
+  /** Explicit override (tests / host wiring). */
+  hostContext?: string;
+  referrer?: string;
+  selfOrigin?: string;
+  /** Portal-only origins (WEB_PORTAL_FRAME_ANCESTORS), not the merged list. */
+  portalReferrerAllowlist?: readonly string[];
+};
+
+/**
+ * Portal-framed vs standalone. Same-origin /portal demo, portal referrer
+ * allowlist, or an explicit prop. Unknown framing defaults to embed on
+ * the embed mount — never inferred from the assertion.
+ */
+export function detectEmbedHostContext(
+  input: DetectEmbedHostContextInput = {},
+): EmbedHostContext {
+  const explicit = normalizeEmbedHostContext(input.hostContext);
+  if (explicit) {
+    return explicit;
+  }
+  if (isPortalDemoReferrer(input.referrer, input.selfOrigin)) {
+    return EMBED_HOST_CONTEXT_PORTAL;
+  }
+  const referrerOrigin = originFromReferrer(input.referrer);
+  if (
+    referrerOrigin &&
+    isAllowedEmbedMessageOrigin(referrerOrigin, input.portalReferrerAllowlist ?? [])
+  ) {
+    return EMBED_HOST_CONTEXT_PORTAL;
+  }
+  return EMBED_HOST_CONTEXT_EMBED;
+}
+
+export type ResolveEmbedHostBindingInput = DetectEmbedHostContextInput & {
+  portalIssuers?: readonly string[];
+  embedIssuers?: readonly string[];
+  portalIssuer?: string;
+  embedIssuer?: string;
+};
+
+/**
+ * Host-issuer binding for POST /embed/exchange. Input has no assertion
+ * field — iss / host are never copied from the JWS.
+ */
+export function resolveEmbedHostBinding(
+  input: ResolveEmbedHostBindingInput = {},
+): EmbedHostBinding {
+  const hostContext = detectEmbedHostContext(input);
+  const hostIssuer =
+    hostContext === EMBED_HOST_CONTEXT_PORTAL
+      ? resolveConfiguredHostIssuer({
+          issuers: input.portalIssuers,
+          primaryIssuer: input.portalIssuer,
+        })
+      : resolveConfiguredHostIssuer({
+          issuers: input.embedIssuers,
+          primaryIssuer: input.embedIssuer,
+        });
+  const binding: EmbedHostBinding = { hostContext };
+  if (hostIssuer) {
+    binding.hostIssuer = hostIssuer;
+  }
+  return binding;
+}
+
+export function normalizeEmbedHostContext(
+  value: string | undefined,
+): EmbedHostContext | "" {
+  const trimmed = value?.trim().toLowerCase() ?? "";
+  if (trimmed === EMBED_HOST_CONTEXT_PORTAL) {
+    return EMBED_HOST_CONTEXT_PORTAL;
+  }
+  if (trimmed === EMBED_HOST_CONTEXT_EMBED) {
+    return EMBED_HOST_CONTEXT_EMBED;
+  }
+  return "";
+}
+
+/** In-repo Portal host demo: referrer path is /portal or /portal/… */
+export function isPortalDemoReferrer(
+  referrer: string | undefined,
+  selfOrigin?: string,
+): boolean {
+  const parsed = parseReferrerUrl(referrer);
+  if (!parsed) {
+    return false;
+  }
+  const path = parsed.pathname;
+  if (path !== "/portal" && !path.startsWith("/portal/")) {
+    return false;
+  }
+  const self = selfOrigin?.trim() ?? "";
+  if (self && parsed.origin !== self) {
+    return false;
+  }
+  return true;
+}
+
+function parseReferrerUrl(referrer: string | undefined): URL | null {
+  const trimmed = referrer?.trim() ?? "";
+  if (!trimmed || trimmed === "null") {
+    return null;
+  }
+  try {
+    return new URL(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function originFromReferrer(referrer: string | undefined): string {
+  return parseReferrerUrl(referrer)?.origin ?? "";
+}
+
+function readConfiguredIssuerString(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed || isCompactJws(trimmed)) {
+    return "";
+  }
+  return trimmed;
+}
+
+function readConfiguredIssuerList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    if (typeof value === "string") {
+      return uniqueConfiguredIssuers(
+        value.split(/[,\s]+/).map((part) => readConfiguredIssuerString(part)),
+      );
+    }
+    return [];
+  }
+  return uniqueConfiguredIssuers(
+    value.map((item) => readConfiguredIssuerString(item)),
+  );
+}
+
+function uniqueConfiguredIssuers(
+  values: readonly (string | undefined)[] | undefined,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values ?? []) {
+    const issuer = readConfiguredIssuerString(value);
+    if (!issuer || seen.has(issuer)) {
+      continue;
+    }
+    seen.add(issuer);
+    out.push(issuer);
+  }
+  return out;
 }
 
 export function validateEmbedAssertion(assertion: string):

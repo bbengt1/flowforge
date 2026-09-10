@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
+  bindEmbedExchangeHost,
   emptyAssertionHolder,
   exchangeEmbedAssertion,
-  fetchEmbedCatalog,
+  loadEmbedHostIssuerSources,
 } from "@/lib/embed-client";
 import {
   EMBED_ASSERTION_MESSAGE_TYPE,
@@ -16,9 +17,9 @@ import {
   EMBED_MOUNT_PREFIX,
   EMBED_SDK,
   isAllowedEmbedMessageOrigin,
-  parseCatalogFrameAncestors,
   parseEmbedAssertionMessage,
   parseEmbedHostDisplay,
+  type EmbedHostContext,
   type EmbedHostDisplay,
   type EmbedVerifiedContext,
 } from "@/lib/embed-contract";
@@ -34,11 +35,23 @@ type EmbedExchangeGateProps = {
   search: string;
   /** Optional override. Defaults to GET /embed/catalog frameAncestors. */
   allowlist?: readonly string[];
+  /** Explicit portal | embed. Defaults to referrer / standalone detect. */
+  hostContext?: EmbedHostContext | string;
+  /** Configured PORTAL_ISSUER from server env (not NEXT_PUBLIC_*). */
+  portalIssuer?: string;
+  /** Configured EMBED_ISSUER from server env (not NEXT_PUBLIC_*). */
+  embedIssuer?: string;
+  /** Portal-only referrer origins (WEB_PORTAL_FRAME_ANCESTORS). */
+  portalReferrerAllowlist?: readonly string[];
 };
 
 export function EmbedExchangeGate({
   search,
   allowlist: allowlistProp,
+  hostContext: hostContextProp,
+  portalIssuer = "",
+  embedIssuer = "",
+  portalReferrerAllowlist = [],
 }: EmbedExchangeGateProps) {
   const [assertion, setAssertion] = useState("");
   const [pending, setPending] = useState(false);
@@ -55,18 +68,21 @@ export function EmbedExchangeGate({
   const [catalogAllowlist, setCatalogAllowlist] = useState<string[]>(
     allowlistProp ? [...allowlistProp] : [],
   );
+  const [portalIssuers, setPortalIssuers] = useState<string[]>([]);
+  const [embedIssuers, setEmbedIssuers] = useState<string[]>([]);
   const allowlist = allowlistProp ?? catalogAllowlist;
 
   useEffect(() => {
-    if (allowlistProp) {
-      return;
-    }
     let cancelled = false;
-    void fetchEmbedCatalog().then((result) => {
-      if (cancelled || !result.ok) {
+    void loadEmbedHostIssuerSources().then((sources) => {
+      if (cancelled) {
         return;
       }
-      setCatalogAllowlist(parseCatalogFrameAncestors(result.data));
+      if (!allowlistProp) {
+        setCatalogAllowlist(sources.frameAncestors);
+      }
+      setEmbedIssuers(sources.embedIssuers);
+      setPortalIssuers(sources.portalIssuers);
     });
     return () => {
       cancelled = true;
@@ -100,7 +116,17 @@ export function EmbedExchangeGate({
     setMessage("");
     const holder = emptyAssertionHolder();
     holder.assertion = assertion;
-    const result = await exchangeEmbedAssertion(holder);
+    const binding = bindEmbedExchangeHost({
+      hostContext: hostContextProp,
+      referrer: document.referrer,
+      selfOrigin: window.location.origin,
+      portalReferrerAllowlist,
+      portalIssuers,
+      embedIssuers,
+      portalIssuer,
+      embedIssuer,
+    });
+    const result = await exchangeEmbedAssertion(holder, binding);
     setAssertion("");
     setPending(false);
     if (!result.ok) {

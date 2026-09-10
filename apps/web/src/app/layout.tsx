@@ -5,6 +5,7 @@ import { getPublicSwaggerUrl } from "@/lib/config";
 import {
   EMBED_MOUNT_HEADER,
   EMBED_REJECTED_ASSERTION_HEADER,
+  readConfiguredHostIssuers,
 } from "@/lib/embed-contract";
 import { SESSION_COOKIE_NAME } from "@/lib/session-contract";
 import "./globals.css";
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const headerList = await headers();
   const cookieStore = await cookies();
+  const hostIssuers = readConfiguredHostIssuers(process.env);
   return (
     <html lang="en" className="h-full">
       <body className="min-h-full antialiased">
@@ -27,6 +29,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             headerList.get(EMBED_REJECTED_ASSERTION_HEADER) === "1"
           }
           hasSessionCookie={cookieStore.has(SESSION_COOKIE_NAME)}
+          portalIssuer={hostIssuers.portalIssuer}
+          embedIssuer={hostIssuers.embedIssuer}
+          portalReferrerAllowlist={hostIssuers.portalReferrerAllowlist}
         >
           {children}
         </WorkspaceShell>

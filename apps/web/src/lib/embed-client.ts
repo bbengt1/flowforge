@@ -14,6 +14,9 @@
  *
  * ADV-012: HTTP 429 on exchange is backoff (not forbidden). Prefer no
  * UI change beyond showing the problem detail / Retry-After.
+ *
+ * ADV-023: pass a configured EmbedHostBinding into exchangeEmbedAssertion.
+ * Never peek iss / host from the assertion JWS.
  */
 
 import { persistVerifiedFromExchange } from "./embed-tenancy-client.ts";
@@ -24,6 +27,7 @@ import {
   EMBED_EXCHANGED_MESSAGE,
   EMBED_EXCHANGE_PATH,
   EMBED_FORBIDDEN_MESSAGE,
+  EMBED_HOST_ALLOWLIST_RULES,
   EMBED_JWKS_PATH,
   EMBED_PROBLEM_CODES,
   EMBED_SECRET_LEAK_MESSAGE,
@@ -31,10 +35,14 @@ import {
   embedAuthFailureMessage,
   embedHostBindingHeaders,
   forgetEmbedAssertion,
+  parseCatalogFrameAncestors,
+  parseCatalogIssuers,
   parseEmbedExchangePayload,
   publicJwksOnly,
+  resolveEmbedHostBinding,
   validateEmbedAssertion,
   type EmbedHostBinding,
+  type ResolveEmbedHostBindingInput,
   type EmbedVerifiedContext,
 } from "./embed-contract.ts";
 import { fetchSameOriginProxy } from "./identity-client.ts";
@@ -179,6 +187,47 @@ export async function fetchEmbedCatalog(): Promise<
   | EmbedExchangeFailure
 > {
   return getEmbedJson(EMBED_CATALOG_PATH);
+}
+
+/** GET /portal/adapter through the same-origin proxy (issuers + frameAncestors). */
+export async function fetchPortalAdapterCatalog(): Promise<
+  | { ok: true; statusCode: number; requestId: string; data: unknown }
+  | EmbedExchangeFailure
+> {
+  return getEmbedJson(EMBED_HOST_ALLOWLIST_RULES.portalCatalogPath);
+}
+
+export type EmbedHostIssuerSources = {
+  portalIssuers: string[];
+  embedIssuers: string[];
+  frameAncestors: string[];
+};
+
+/**
+ * Configured issuer allowlists from the same-origin catalogs. Does not
+ * accept or decode an assertion.
+ */
+export async function loadEmbedHostIssuerSources(): Promise<EmbedHostIssuerSources> {
+  const [embedCatalog, portalAdapter] = await Promise.all([
+    fetchEmbedCatalog(),
+    fetchPortalAdapterCatalog(),
+  ]);
+  return {
+    embedIssuers: embedCatalog.ok ? parseCatalogIssuers(embedCatalog.data) : [],
+    portalIssuers: portalAdapter.ok ? parseCatalogIssuers(portalAdapter.data) : [],
+    frameAncestors: embedCatalog.ok
+      ? parseCatalogFrameAncestors(embedCatalog.data)
+      : portalAdapter.ok
+        ? parseCatalogFrameAncestors(portalAdapter.data)
+        : [],
+  };
+}
+
+/** Gate helper: configured sources + referrer/env, never the JWS. */
+export function bindEmbedExchangeHost(
+  input: ResolveEmbedHostBindingInput = {},
+): EmbedHostBinding {
+  return resolveEmbedHostBinding(input);
 }
 
 export async function fetchEmbedJwks(): Promise<

@@ -47,6 +47,11 @@ type WorkspaceShellProps = {
   embedMount?: boolean;
   rejectedAssertion?: boolean;
   hasSessionCookie?: boolean;
+  /** Configured PORTAL_ISSUER (server env). */
+  portalIssuer?: string;
+  /** Configured EMBED_ISSUER (server env). */
+  embedIssuer?: string;
+  portalReferrerAllowlist?: readonly string[];
 };
 
 export function WorkspaceShell({
@@ -55,6 +60,9 @@ export function WorkspaceShell({
   embedMount = false,
   rejectedAssertion: rejectedAssertionProp = false,
   hasSessionCookie = false,
+  portalIssuer = "",
+  embedIssuer = "",
+  portalReferrerAllowlist = [],
 }: WorkspaceShellProps) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
@@ -124,7 +132,12 @@ export function WorkspaceShell({
             ) : session.active && verified ? (
               <EmbedTenancyGate>{children}</EmbedTenancyGate>
             ) : (
-              <EmbedExchangeGate search={search} />
+              <EmbedExchangeGate
+                search={search}
+                portalIssuer={portalIssuer}
+                embedIssuer={embedIssuer}
+                portalReferrerAllowlist={portalReferrerAllowlist}
+              />
             )}
           </div>
         </div>
