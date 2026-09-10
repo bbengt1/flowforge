@@ -7,6 +7,11 @@
 
 import { canSeeAlertsNav, canSeeAuditNav } from "./alert.ts";
 import { canSeeApprovalsNav } from "./approval.ts";
+import {
+  catalogRoutesForGrant,
+  grantsMembershipIsolationCatalog,
+} from "./embed-contract.ts";
+import { embedDeepLink } from "./embed-tenancy-contract.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
 import { canSeeOpsConfigNav } from "./ops-config.ts";
 
@@ -42,6 +47,29 @@ export type WorkspaceNavItem = {
   placeholder?: boolean;
   group: "primary" | "ops" | "foundation";
 };
+
+/** Short marks for the editor icon-rail. Original abbreviations — not cloned icons. */
+export const WORKSPACE_NAV_MARKS: Record<WorkspaceNavId, string> = {
+  workflows: "Wf",
+  actions: "Ac",
+  credentials: "Cr",
+  targets: "Tg",
+  profiles: "Pr",
+  config: "Cf",
+  executions: "Ex",
+  templates: "Tp",
+  approvals: "Ap",
+  alerts: "Al",
+  audit: "Au",
+  settings: "St",
+  membership: "Mb",
+  isolation: "Is",
+  portal: "Pt",
+};
+
+export function workspaceNavMark(id: WorkspaceNavId): string {
+  return WORKSPACE_NAV_MARKS[id];
+}
 
 export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
   {
@@ -255,6 +283,35 @@ export function visibleWorkspaceNav(
   permissions: readonly string[] | null | undefined,
 ): WorkspaceNavItem[] {
   return WORKSPACE_NAV_ITEMS.filter((item) => itemVisible(item, permissions));
+}
+
+/**
+ * Editor / embed chrome nav. Same fail-closed visibility as the
+ * product shell. Embed remaps to `/embed/v1/…` and omits ADV-024
+ * membership/isolation items unless a grant cap is present.
+ */
+export function editorWorkspaceNav(
+  permissions: readonly string[] | null | undefined,
+  options: { embed?: boolean } = {},
+): WorkspaceNavItem[] {
+  let items = visibleWorkspaceNav(permissions);
+  if (options.embed) {
+    const granted = grantsMembershipIsolationCatalog(permissions);
+    const allowedIds = new Set(
+      catalogRoutesForGrant(granted).map((route) => route.id),
+    );
+    items = items.filter((item) => {
+      if (item.id === "membership" || item.id === "isolation") {
+        return granted && allowedIds.has(item.id);
+      }
+      return true;
+    });
+    items = items.map((item) => ({
+      ...item,
+      href: embedDeepLink(item.href),
+    }));
+  }
+  return items;
 }
 
 export function navItemIsActive(href: string, pathname: string): boolean {

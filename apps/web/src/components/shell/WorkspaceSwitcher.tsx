@@ -2,7 +2,11 @@
 
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 
-export function WorkspaceSwitcher() {
+type WorkspaceSwitcherProps = {
+  compact?: boolean;
+};
+
+export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
   const {
     current,
     memberships,
@@ -17,6 +21,53 @@ export function WorkspaceSwitcher() {
   const workspaceName = current?.workspace.name || "No workspace";
   const tenantName = current?.tenant.name || current?.tenant.slug || "";
 
+  const select = (
+    <select
+      className={
+        compact
+          ? "w-full max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
+          : "w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
+      }
+      value={
+        current
+          ? `${current.workspace.tenant_id}:${current.workspace.workbench_key}`
+          : ""
+      }
+      disabled={embedLocked || memberships.length === 0}
+      onChange={(event) => {
+        const next = memberships.find((item) => {
+          const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
+          return key === event.target.value;
+        });
+        if (next) {
+          switchWorkspace(next);
+        }
+      }}
+    >
+      {memberships.length === 0 ? (
+        <option value="">{ready ? workspaceName : "Select a workspace"}</option>
+      ) : (
+        memberships.map((item) => {
+          const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
+          return (
+            <option key={key} value={key}>
+              {item.workspace.name} · {item.tenant.slug}
+            </option>
+          );
+        })
+      )}
+    </select>
+  );
+
+  if (compact) {
+    return (
+      <label className="min-w-40 max-w-56" aria-label="Workspace switcher">
+        <span className="sr-only">Current workspace</span>
+        {select}
+      </label>
+    );
+  }
+
   return (
     <section
       aria-label="Workspace switcher"
@@ -27,37 +78,7 @@ export function WorkspaceSwitcher() {
       </p>
       <label className="mt-1 block">
         <span className="sr-only">Current workspace</span>
-        <select
-          className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
-          value={
-            current
-              ? `${current.workspace.tenant_id}:${current.workspace.workbench_key}`
-              : ""
-          }
-          disabled={embedLocked || memberships.length === 0}
-          onChange={(event) => {
-            const next = memberships.find((item) => {
-              const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
-              return key === event.target.value;
-            });
-            if (next) {
-              switchWorkspace(next);
-            }
-          }}
-        >
-          {memberships.length === 0 ? (
-            <option value="">{ready ? workspaceName : "Select a workspace"}</option>
-          ) : (
-            memberships.map((item) => {
-              const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
-              return (
-                <option key={key} value={key}>
-                  {item.workspace.name} · {item.tenant.slug}
-                </option>
-              );
-            })
-          )}
-        </select>
+        {select}
       </label>
       <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-zinc-600">
         <div>

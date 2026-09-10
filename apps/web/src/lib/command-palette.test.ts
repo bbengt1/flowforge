@@ -92,6 +92,13 @@ describe("paletteCommands", () => {
     assert.equal(ids.includes("normalize"), false);
     assert.equal(isWorkflowHomePath("/workflows"), true);
     assert.equal(isWorkflowHomePath("/workflows/abc"), false);
+    assert.equal(
+      commandHref({
+        type: "open-editor",
+        workflowId: "11111111-1111-4111-8111-111111111111",
+      }),
+      "/workflows/11111111-1111-4111-8111-111111111111",
+    );
     assert.equal(commandHref({ type: "new-workflow" }), "/workflows?create=1");
     assert.equal(commandHref({ type: "import-yaml" }), "/workflows?import=1");
   });

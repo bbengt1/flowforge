@@ -24,6 +24,7 @@ import { useWorkspace, WorkspaceProvider } from "@/components/shell/WorkspacePro
 import { WorkspaceSwitcher } from "@/components/shell/WorkspaceSwitcher";
 import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
 import { SessionStatusChip } from "@/components/session/SessionStatusChip";
+import { editorNavMode, isWorkflowEditorPath } from "@/lib/editor-chrome";
 import {
   isEmbedUiPath,
   urlRejectedAssertion,
@@ -67,6 +68,16 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
+  const editorRoute = isWorkflowEditorPath(pathname);
+  const navMode = editorNavMode({
+    pathname,
+    overlayOpen: navOpen,
+    compact: editorRoute && navOpen,
+  });
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
   const session = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,
@@ -159,25 +170,53 @@ export function WorkspaceShell({
     <WorkspaceProvider>
       <div className="flex h-full min-h-0 overflow-hidden">
         {skipLink}
+        {editorRoute && navOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-10 bg-zinc-900/30 lg:hidden"
+            aria-label="Close workspace navigation"
+            onClick={() => setNavOpen(false)}
+          />
+        ) : null}
         <aside
           id="workspace-nav"
           aria-label="Workspace navigation"
+          data-nav-mode={navMode}
           className={
-            navOpen
-              ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex"
-              : "hidden w-64 shrink-0 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:flex"
+            editorRoute
+              ? navOpen
+                ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex lg:w-14 lg:items-center lg:gap-3 lg:p-2"
+                : "hidden w-14 shrink-0 flex-col items-center gap-3 border-r border-zinc-200 bg-[var(--background)] p-2 lg:flex"
+              : navOpen
+                ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex"
+                : "hidden w-64 shrink-0 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:flex"
           }
         >
-          <Link href="/workflows" className="text-sm font-semibold tracking-tight">
-            FlowForge
+          <Link
+            href="/workflows"
+            className={
+              editorRoute && !navOpen
+                ? "text-xs font-semibold tracking-tight"
+                : "text-sm font-semibold tracking-tight"
+            }
+            onClick={() => setNavOpen(false)}
+          >
+            {editorRoute && !navOpen ? "FF" : "FlowForge"}
           </Link>
-          <WorkspaceSwitcher />
-          <WorkspaceNav />
-          <p className="mt-auto text-[11px] text-zinc-500">
-            <a className="underline decoration-zinc-300 hover:decoration-zinc-600" href={swaggerUrl}>
-              OpenAPI / Swagger
-            </a>
-          </p>
+          {!editorRoute || navOpen ? <WorkspaceSwitcher /> : null}
+          <WorkspaceNav
+            variant={editorRoute && !navOpen ? "rail" : "full"}
+            onNavigate={() => setNavOpen(false)}
+          />
+          {editorRoute && !navOpen ? (
+            <p className="sr-only">Workflows is the way back to workflow home.</p>
+          ) : (
+            <p className="mt-auto text-[11px] text-zinc-500">
+              <a className="underline decoration-zinc-300 hover:decoration-zinc-600" href={swaggerUrl}>
+                OpenAPI / Swagger
+              </a>
+            </p>
+          )}
         </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="border-b border-zinc-200 bg-white/80">
@@ -192,6 +231,7 @@ export function WorkspaceShell({
               >
                 Menu
               </button>
+              {editorRoute ? <WorkspaceSwitcher compact /> : null}
               <GlobalSearch swaggerUrl={swaggerUrl} />
               <CommandPalette />
               <NotificationCenter />

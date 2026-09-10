@@ -5,8 +5,10 @@ import {
   canSeeCredentialsNav,
   canSeeMembershipIsolationNav,
   canSeeWorkflowsNav,
+  editorWorkspaceNav,
   navItemIsActive,
   visibleWorkspaceNav,
+  workspaceNavMark,
 } from "./workspace-nav.ts";
 
 const viewer = [
@@ -102,5 +104,44 @@ describe("navItemIsActive", () => {
     assert.equal(navItemIsActive("/workflows", "/workflows/abc"), true);
     assert.equal(navItemIsActive("/executions", "/executions/abc"), true);
     assert.equal(navItemIsActive("/settings", "/membership"), false);
+  });
+});
+
+describe("editorWorkspaceNav", () => {
+  it("hides gated items when permissions are unknown or denied", () => {
+    assert.deepEqual(
+      editorWorkspaceNav(null).map((item) => item.id),
+      ["settings", "portal"],
+    );
+    assert.equal(
+      editorWorkspaceNav(["execution.view"]).some((item) => item.id === "workflows"),
+      false,
+    );
+    assert.equal(workspaceNavMark("workflows"), "Wf");
+  });
+
+  it("remaps embed hrefs to /embed/v1 and omits ADV-024 items without grant", () => {
+    const admin = [...viewer, "workspace.administer"];
+    const standalone = editorWorkspaceNav(admin);
+    assert.ok(standalone.some((item) => item.id === "membership"));
+    assert.equal(
+      standalone.find((item) => item.id === "workflows")?.href,
+      "/workflows",
+    );
+
+    const embedDenied = editorWorkspaceNav(viewer, { embed: true });
+    assert.equal(embedDenied.some((item) => item.id === "membership"), false);
+    assert.equal(embedDenied.some((item) => item.id === "isolation"), false);
+    assert.equal(
+      embedDenied.find((item) => item.id === "workflows")?.href,
+      "/embed/v1/workflows",
+    );
+
+    const embedGranted = editorWorkspaceNav(admin, { embed: true });
+    assert.ok(embedGranted.some((item) => item.id === "membership"));
+    assert.equal(
+      embedGranted.find((item) => item.id === "isolation")?.href,
+      "/embed/v1/isolation",
+    );
   });
 });

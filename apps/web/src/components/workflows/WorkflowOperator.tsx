@@ -28,6 +28,8 @@ import {
   EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
   EDITOR_YAML_OPEN_ON_FIRST_PAINT,
   canPublishLastSavedDraft,
+  editorCommandAppliesToRoute,
+  editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
@@ -130,6 +132,20 @@ type WorkflowOperatorProps = {
 };
 
 export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
+  const identity = useSyncExternalStore(
+    subscribeDevIdentity,
+    loadDevIdentity,
+    emptyStoredIdentity,
+  );
+  return (
+    <WorkflowOperatorSession
+      key={editorWorkspaceSessionKey(identity, workflowId)}
+      workflowId={workflowId}
+    />
+  );
+}
+
+function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -499,7 +515,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   runNormalizeRef.current = runNormalize;
 
   useEffect(() => {
-    return subscribeWorkspaceCommands((name) => {
+    return subscribeWorkspaceCommands((name, detail) => {
+      if (
+        !editorCommandAppliesToRoute(workflowId, detail?.workflowId ?? workflowId)
+      ) {
+        return;
+      }
       if (name === "validate") {
         void runValidateRef.current(yamlRef.current).then(() => {
           pushNotification({
@@ -596,6 +617,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
 
   async function publishDraft() {
     if (!workflow || revision === null || dirty) {
+      return;
+    }
+    if (!editorCommandAppliesToRoute(workflowId, workflow.id)) {
       return;
     }
     setPending("publish");
@@ -778,6 +802,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     if (!workflow || !runVersionId) {
       return;
     }
+    if (!editorCommandAppliesToRoute(workflowId, workflow.id)) {
+      return;
+    }
     if (!canExecuteWorkflows(permissions)) {
       setProblem({
         type: "urn:flowforge:problem:forbidden",
@@ -902,7 +929,12 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
   runPublishedRef.current = runPublished;
 
   useEffect(() => {
-    return subscribeWorkspaceCommands((name) => {
+    return subscribeWorkspaceCommands((name, detail) => {
+      if (
+        !editorCommandAppliesToRoute(workflowId, detail?.workflowId ?? workflow?.id)
+      ) {
+        return;
+      }
       if (name === "publish") {
         void publishDraftRef.current();
       }
@@ -910,7 +942,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         void runPublishedRef.current();
       }
     });
-  }, []);
+  }, [workflowId, workflow?.id]);
 
   async function refreshPin() {
     if (!workflow || !execution) {
@@ -1123,6 +1155,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       topBar={
         <EditorTopBar
           workflow={workflow}
+          loaded={workflow !== null || (problem !== null && pending !== "open")}
           revision={revision}
           dirty={dirty}
           canCall={canCall}

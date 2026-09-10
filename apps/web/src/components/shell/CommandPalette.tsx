@@ -14,13 +14,9 @@ import {
   paletteCommands,
   paletteHighlightIndex,
 } from "@/lib/command-palette";
+import { editorWorkflowIdFromPath } from "@/lib/editor-chrome";
 import { maybeEmbedDeepLink } from "@/lib/embed-tenancy-contract";
 import { dispatchWorkspaceCommand } from "@/lib/workspace-commands";
-
-function workflowIdFromPath(pathname: string): string | undefined {
-  const match = pathname.match(/^\/workflows\/([^/]+)$/);
-  return match?.[1] && match[1] !== "new" ? match[1] : undefined;
-}
 
 function executionIdFromPath(pathname: string): string | undefined {
   const match = pathname.match(/^\/executions\/([^/]+)$/);
@@ -37,7 +33,7 @@ export function CommandPalette() {
   const [highlight, setHighlight] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const workflowId = workflowIdFromPath(pathname);
+  const workflowId = editorWorkflowIdFromPath(pathname);
   const executionId = executionIdFromPath(pathname);
   const commands = useMemo(
     () => paletteCommands(permissions, { workflowId, executionId }),
@@ -87,22 +83,29 @@ export function CommandPalette() {
     setHighlight(0);
     const action = command.action;
     if (action.type === "validate") {
-      dispatchWorkspaceCommand("validate");
-      if (!workflowId) {
+      if (workflowId) {
+        dispatchWorkspaceCommand("validate", { workflowId });
+      } else {
         router.push(maybeEmbedDeepLink("/workflows", embed));
       }
       return;
     }
     if (action.type === "normalize") {
-      dispatchWorkspaceCommand("normalize");
+      if (workflowId) {
+        dispatchWorkspaceCommand("normalize", { workflowId });
+      }
       return;
     }
     if (action.type === "publish") {
-      dispatchWorkspaceCommand("publish");
+      if (workflowId) {
+        dispatchWorkspaceCommand("publish", { workflowId });
+      }
       return;
     }
     if (action.type === "run-published") {
-      dispatchWorkspaceCommand("run-published");
+      if (workflowId) {
+        dispatchWorkspaceCommand("run-published", { workflowId });
+      }
       return;
     }
     if (action.type === "new-workflow") {

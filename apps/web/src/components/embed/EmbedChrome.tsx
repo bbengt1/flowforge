@@ -16,7 +16,6 @@ import {
   EMBED_HOST_MISMATCH_MESSAGE,
   EMBED_LOCKED_MESSAGE,
   EMBED_TENANCY_MISMATCH_MESSAGE,
-  embedDeepLink,
   embedDeepLinkIsActive,
   embedVerifiedLabel,
   hostDisplayConflictsWithVerified,
@@ -31,7 +30,7 @@ import {
   embedChromeChipLabel,
   type SessionEmbedChrome,
 } from "@/lib/session-embed-contract";
-import { visibleWorkspaceNav } from "@/lib/workspace-nav";
+import { editorWorkspaceNav } from "@/lib/workspace-nav";
 
 /**
  * ADV-021: retarget this chrome from GET /session via
@@ -62,10 +61,7 @@ export function EmbedChrome({
   const items = useMemo(
     () =>
       chromeOpen && !tenancyMismatch
-        ? visibleWorkspaceNav(permissions).map((item) => ({
-            ...item,
-            href: embedDeepLink(item.href),
-          }))
+        ? editorWorkspaceNav(permissions, { embed: true })
         : [],
     [permissions, chromeOpen, tenancyMismatch],
   );

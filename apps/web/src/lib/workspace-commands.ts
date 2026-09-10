@@ -1,6 +1,9 @@
 /**
  * In-tab command bus so the palette can trigger editor actions
  * (validate / normalize / publish / run) without inventing API routes.
+ *
+ * UX.5: validate / publish / run-published carry the route workflow
+ * id so they apply to this editor, not a home list selection.
  */
 
 export type WorkspaceCommandName =
@@ -11,10 +14,16 @@ export type WorkspaceCommandName =
   | "new-workflow"
   | "import-yaml";
 
-const listeners = new Set<(name: WorkspaceCommandName) => void>();
+export type WorkspaceCommandDetail = {
+  workflowId?: string;
+};
+
+const listeners = new Set<
+  (name: WorkspaceCommandName, detail?: WorkspaceCommandDetail) => void
+>();
 
 export function subscribeWorkspaceCommands(
-  listener: (name: WorkspaceCommandName) => void,
+  listener: (name: WorkspaceCommandName, detail?: WorkspaceCommandDetail) => void,
 ): () => void {
   listeners.add(listener);
   return () => {
@@ -22,8 +31,11 @@ export function subscribeWorkspaceCommands(
   };
 }
 
-export function dispatchWorkspaceCommand(name: WorkspaceCommandName): void {
+export function dispatchWorkspaceCommand(
+  name: WorkspaceCommandName,
+  detail?: WorkspaceCommandDetail,
+): void {
   for (const listener of listeners) {
-    listener(name);
+    listener(name, detail);
   }
 }
