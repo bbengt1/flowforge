@@ -172,7 +172,7 @@ membership, and credential display names.
 
 Compose sets a documented local-only KEK
 (`CREDENTIAL_KEK_ID=local:compose`, ASCII
-`flowforge-local-dev-kek-32by!` as base64) so demo credentials can be
+`flowforge-local-dev-kek-32bytes!` as base64) so demo credentials can be
 created. Prefer `openssl rand -base64 32` for a private local key.
 **Do not copy that compose default into `deploy/k8s` or any production
 Secret.** Production still fails closed on vault write until a real KEK

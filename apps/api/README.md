@@ -188,7 +188,7 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
-      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieSE=}
+      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=}
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
       ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}

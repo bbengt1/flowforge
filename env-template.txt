@@ -37,7 +37,7 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # Leave empty to boot the API; create/rotate/test fail closed until set.
 # Compose defaults to a documented local-only KEK so demo credentials can
 # be seeded. That value is never a production secret — do not copy it to k8s.
-# CREDENTIAL_KEK=Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieSE=
+# CREDENTIAL_KEK=Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=
 # CREDENTIAL_KEK_FILE=
 # CREDENTIAL_KEK_ID=local:compose
 # HMAC key for authenticated worker job tickets (E5.2). 32-byte AES-sized

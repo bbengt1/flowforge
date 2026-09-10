@@ -12,6 +12,24 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
+// DocumentedComposeKEK is the local-only compose default (32-byte ASCII
+// "flowforge-local-dev-kek-32bytes!" as standard base64). Never a
+// production value. The constant exists so a typo cannot ship.
+const DocumentedComposeKEK = "Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE="
+
+func TestDocumentedComposeKEKIsReady(t *testing.T) {
+	t.Setenv(vault.EnvKEK, DocumentedComposeKEK)
+	t.Setenv(vault.EnvKEKFile, "")
+	t.Setenv(vault.EnvKEKID, "local:compose")
+	keys, err := vault.LoadKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !keys.Ready() || keys.ID != "local:compose" {
+		t.Fatalf("compose KEK must load as a 32-byte local key, got ready=%v id=%q", keys.Ready(), keys.ID)
+	}
+}
+
 func TestResolveLocalSeedGate(t *testing.T) {
 	cases := []struct {
 		name       string

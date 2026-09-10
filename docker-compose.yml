@@ -70,10 +70,10 @@ services:
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
       # Local-only vault KEK so compose seed can write demo credentials.
-      # 32-byte ASCII "flowforge-local-dev-kek-32by!" as base64.
+      # 32-byte ASCII "flowforge-local-dev-kek-32bytes!" as base64.
       # Generate your own with: openssl rand -base64 32
       # Do not copy this default into deploy/k8s.
-      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieSE=}
+      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=}
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
       ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
