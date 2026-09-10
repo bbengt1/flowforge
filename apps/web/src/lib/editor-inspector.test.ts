@@ -94,7 +94,11 @@ describe("UX.4 selected-node inspector", () => {
       "connect",
       "review",
     ]);
-    assert.equal(EDITOR_INSPECTOR.noCredentialFromInspectorModal, true);
+    assert.equal(
+      EDITOR_INSPECTOR.noCredentialFromInspectorModal,
+      false,
+      "UX.7 opens the existing masked wizard; the rail itself stays secret-free",
+    );
     assert.equal(EDITOR_INSPECTOR.displayNamePlusUuidOnly, true);
     assert.equal(EDITOR_INSPECTOR.noSecretFieldInRail, true);
     assert.equal(EDITOR_INSPECTOR.noPlaintextInRail, true);

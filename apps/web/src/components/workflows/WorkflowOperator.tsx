@@ -70,6 +70,16 @@ import {
   type CoreNodeWith,
 } from "@/lib/workflow-yaml-nodes";
 import { sanitizeInspectorWithPatch } from "@/lib/editor-inspector";
+import { CredentialWizardDialog } from "@/components/credentials/CredentialWizardDialog";
+import {
+  SELECT_CREDENTIAL_PARAM,
+  createdCredentialSelectable,
+  inspectorCreatedCredentialPatch,
+  parseInspectorCreatedCredential,
+  stripInspectorCredentialQuery,
+  type InspectorAddCredentialRequest,
+  type InspectorPendingCredential,
+} from "@/lib/editor-credential";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -241,14 +251,56 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardType, setWizardType] = useState<string | undefined>();
   const [wizardFeedback, setWizardFeedback] = useState<WizardFeedback>("idle");
+  const [addCredential, setAddCredential] =
+    useState<InspectorAddCredentialRequest | null>(null);
+  const [credentialRefreshNonce, setCredentialRefreshNonce] = useState(0);
+  const [pendingCredentials, setPendingCredentials] = useState<
+    Record<string, InspectorPendingCredential>
+  >({});
   const { permissions } = useWorkspace();
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
   const yamlRef = useRef(yaml);
   yamlRef.current = yaml;
+  const createdCredentialReturn = useRef<
+    ReturnType<typeof parseInspectorCreatedCredential> | undefined
+  >(undefined);
 
   const yamlNodes = listYamlNodes(yaml);
+  if (
+    createdCredentialReturn.current === undefined &&
+    typeof window !== "undefined"
+  ) {
+    createdCredentialReturn.current = parseInspectorCreatedCredential(
+      window.location.search,
+    );
+  }
+  const pendingCreated = createdCredentialReturn.current;
+  if (pendingCreated) {
+    const returnedNode = yamlNodes.find((item) => item.id === pendingCreated.nodeId);
+    if (returnedNode) {
+      const returnedPatch = inspectorCreatedCredentialPatch(
+        pendingCreated.field,
+        pendingCreated.credentialId,
+      );
+      createdCredentialReturn.current = null;
+      if (Object.keys(returnedPatch).length > 0) {
+        const nextYaml = updateYamlNode(yaml, {
+          id: returnedNode.id,
+          type: returnedNode.type,
+          name: returnedNode.name,
+          with: { ...returnedNode.with, ...sanitizeInspectorWithPatch(returnedPatch) },
+        });
+        if (nextYaml) {
+          setYaml(nextYaml);
+          setDigest(null);
+          setCredentialRefreshNonce((current) => current + 1);
+          setSelection({ kind: "node", id: pendingCreated.nodeId });
+        }
+      }
+    }
+  }
   const library = adaptActionLibrary(
     catalog,
     engineCatalog,
@@ -511,6 +563,22 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     // openWorkflow is recreated each render; the route ref prevents repeats.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canCall, identity, workflowId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || createdCredentialReturn.current) {
+      return;
+    }
+    if (!window.location.search.includes(`${SELECT_CREDENTIAL_PARAM}=`)) {
+      return;
+    }
+    window.history.replaceState(
+      null,
+      "",
+      stripInspectorCredentialQuery(
+        `${window.location.pathname}${window.location.search}${window.location.hash}`,
+      ),
+    );
+  });
 
   const runValidateRef = useRef(runValidate);
   runValidateRef.current = runValidate;
@@ -1044,6 +1112,26 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
   }
 
+  function applyCreatedVaultCredential(
+    request: { nodeId: string; field: string },
+    credential: InspectorPendingCredential,
+  ) {
+    if (!createdCredentialSelectable(credential)) {
+      return;
+    }
+    const patch = inspectorCreatedCredentialPatch(request.field, credential.id);
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+    patchNodeWith(request.nodeId, patch);
+    setPendingCredentials((current) => ({
+      ...current,
+      [`${request.nodeId}:${request.field}`]: credential,
+    }));
+    setCredentialRefreshNonce((current) => current + 1);
+    setSelection({ kind: "node", id: request.nodeId });
+  }
+
   function applyNodeName(id: string, name: string) {
     const node = listYamlNodes(yaml).find((item) => item.id === id);
     if (!node) {
@@ -1322,6 +1410,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             onApply={applyNodeConfig}
             onRename={applyNodeName}
             onPatchNodeWith={patchNodeWith}
+            workflowId={workflow?.id ?? workflowId}
+            credentialRefreshNonce={credentialRefreshNonce}
+            pendingCredentials={pendingCredentials}
+            onAddCredential={setAddCredential}
           />
           <ValidationPanel
             status={status}
@@ -1431,6 +1523,17 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           <EditorStartDialog open={startOpen} onClose={() => setStartOpen(false)}>
             {runControl}
           </EditorStartDialog>
+          <CredentialWizardDialog
+            open={Boolean(addCredential)}
+            allowedTypes={addCredential?.allowedTypes}
+            onClose={() => setAddCredential(null)}
+            onCreated={(credential) => {
+              if (addCredential) {
+                applyCreatedVaultCredential(addCredential, credential);
+              }
+              setAddCredential(null);
+            }}
+          />
           <ActionWizard
             key={`${wizardOpen ? "open" : "closed"}:${wizardType ?? "any"}`}
             open={wizardOpen}

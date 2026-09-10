@@ -7,7 +7,8 @@
  * Chloe UI only. Reuses CredentialRefSelect, AuthorizedResourceSelect,
  * KubernetesTargetSelect, HttpNotificationPinsPanel, and ops-config /
  * SSH / credential clients. Wizard stays guided add; inspector is edit.
- * No apps/api routes, no UX.7 credential-from-inspector modal.
+ * No apps/api routes. UX.7 adds the credential wizard as a modal /
+ * return-to-editor flow — not a SecretField surface in this rail.
  */
 
 import { isHttpConfigurableType } from "./core-http-notification-contract.ts";
@@ -71,7 +72,7 @@ export const EDITOR_INSPECTOR = {
   triggersAreNotCanvasNodes: true,
   edgeSelectionExplainsPortCompatibility: true,
   validationErrorsLinkToNodeOrYaml: true,
-  noCredentialFromInspectorModal: true,
+  noCredentialFromInspectorModal: false,
 } as const;
 
 export const INSPECTOR_RAIL_SOURCES = [

@@ -22,6 +22,7 @@ import {
   WIZARD_STEPS,
   type CredentialCatalog,
   type CredentialCatalogField,
+  type CredentialRecord,
   type CredentialSecretDraft,
   type CredentialType,
   type WizardStep,
@@ -31,6 +32,10 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import {
+  inspectorEditorReturnHref,
+  type InspectorCredentialReturnTo,
+} from "@/lib/editor-credential";
 
 const STEP_LABEL: Record<WizardStep, string> = {
   identity: "Name and tags",
@@ -40,7 +45,21 @@ const STEP_LABEL: Record<WizardStep, string> = {
   review: "Review",
 };
 
-export function CredentialWizard() {
+export type CredentialWizardProps = {
+  variant?: "page" | "modal";
+  allowedTypes?: readonly CredentialType[];
+  returnContext?: InspectorCredentialReturnTo | null;
+  onCreated?: (credential: CredentialRecord) => void;
+  onCancel?: () => void;
+};
+
+export function CredentialWizard({
+  variant = "page",
+  allowedTypes,
+  returnContext = null,
+  onCreated,
+  onCancel,
+}: CredentialWizardProps = {}) {
   const router = useRouter();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
@@ -64,7 +83,9 @@ export function CredentialWizard() {
   const [step, setStep] = useState<WizardStep>("identity");
   const [displayName, setDisplayName] = useState("");
   const [tagsInput, setTagsInput] = useState("");
-  const [type, setType] = useState<CredentialType>("kubernetes");
+  const [type, setType] = useState<CredentialType>(
+    allowedTypes?.[0] ?? "kubernetes",
+  );
   const [secret, setSecret] = useState<CredentialSecretDraft>(emptySecretDraft());
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [expiresAt, setExpiresAt] = useState("");
@@ -76,9 +97,21 @@ export function CredentialWizard() {
     hasOperatorCaller(session.active, identity, headerFallback) &&
     hasWorkspaceLookup(identity);
   const stepIndex = WIZARD_STEPS.indexOf(step);
+  const visibleTypes = useMemo(() => {
+    if (!allowedTypes?.length) {
+      return catalog.types;
+    }
+    const allowed = new Set(allowedTypes);
+    return catalog.types.filter((item) => allowed.has(item.type));
+  }, [allowedTypes, catalog.types]);
+  const typeIsVisible = visibleTypes.some((item) => item.type === type);
+  const activeType = typeIsVisible
+    ? type
+    : (visibleTypes[0]?.type ?? type);
+  const activeSecret = typeIsVisible ? secret : emptySecretDraft();
   const typeInfo = useMemo(
-    () => catalogTypeInfo(catalog, type),
-    [catalog, type],
+    () => catalogTypeInfo(catalog, activeType),
+    [catalog, activeType],
   );
   const secretFields = typeInfo?.secretFields ?? [];
   const metadataFields = typeInfo?.metadataFields ?? [];
@@ -122,8 +155,8 @@ export function CredentialWizard() {
       {
         displayName,
         tags: parseTagsInput(tagsInput),
-        type,
-        secret,
+        type: activeType,
+        secret: activeSecret,
         metadata,
         expiresAt: expiresAt.trim() || undefined,
       },
@@ -136,12 +169,27 @@ export function CredentialWizard() {
       return;
     }
     setStrippedKeys(result.strippedKeys);
+    if (onCreated) {
+      onCreated(result.credential);
+      return;
+    }
+    if (returnContext) {
+      router.replace(
+        inspectorEditorReturnHref({
+          ...returnContext,
+          credentialId: result.credential.id,
+        }),
+      );
+      return;
+    }
     router.replace(`/credentials/${result.credential.id}`);
   }
 
+  const modal = variant === "modal";
+
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
+      {modal ? null : <IsolationIdentityPanel />}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-amber-900">
@@ -205,12 +253,12 @@ export function CredentialWizard() {
           {step === "type" ? (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Credential type</legend>
-              {catalog.types.map((item) => (
+              {visibleTypes.map((item) => (
                 <label key={item.type} className="flex items-start gap-2 text-sm">
                   <input
                     type="radio"
                     name="credential-type"
-                    checked={type === item.type}
+                    checked={activeType === item.type}
                     onChange={() => {
                       setType(item.type);
                       setSecret(emptySecretDraft());
@@ -234,7 +282,7 @@ export function CredentialWizard() {
                 <CatalogSecretField
                   key={field.name}
                   field={field}
-                  value={secret[field.name] ?? ""}
+                  value={activeSecret[field.name] ?? ""}
                   onChange={(value) => setSecretField(field.name, value)}
                 />
               ))}
@@ -290,14 +338,14 @@ export function CredentialWizard() {
               />
               <ReviewRow
                 label="Type"
-                value={`${credentialTypeLabel(type, catalog)} (${type})`}
+                value={`${credentialTypeLabel(activeType, catalog)} (${activeType})`}
               />
               <ReviewRow
                 label="Secret fields"
                 value={
                   secretFields
                     .map((field) =>
-                      secret[field.name]?.trim()
+                      activeSecret[field.name]?.trim()
                         ? `${field.name} · entered`
                         : `${field.name} · empty`,
                     )
@@ -350,6 +398,15 @@ export function CredentialWizard() {
               {pending ? "Creating…" : "Create credential"}
             </button>
           )}
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            >
+              Cancel
+            </button>
+          ) : null}
         </div>
       </section>
     </div>
