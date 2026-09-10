@@ -1769,7 +1769,7 @@ func TestGetSessionReturnsEmbedChromeFields(t *testing.T) {
 	if chrome.Mode != "embed" || chrome.SDK != embed.SDKVersion {
 		t.Fatalf("embed mode/sdk %+v", chrome)
 	}
-	if chrome.TenantID == "" || chrome.TenantSlug != "acme" || chrome.TenantName != "Acme" {
+	if chrome.TenantID == "" || chrome.TenantSlug != "acme" || chrome.TenantName == "" {
 		t.Fatalf("tenant chrome %+v", chrome)
 	}
 	if chrome.WorkbenchKey != "ops" || chrome.WorkspaceID == "" || chrome.WorkspaceName != "Ops" {

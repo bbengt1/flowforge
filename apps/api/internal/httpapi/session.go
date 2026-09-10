@@ -391,6 +391,20 @@ func (s *Server) attachEmbedChrome(ctx context.Context, chrome *sessionEmbedView
 	}
 }
 
+func attachEmbedChromeKnown(chrome *sessionEmbedView, tenant identity.Tenant, ws identity.Workspace) {
+	if chrome == nil {
+		return
+	}
+	chrome.TenantSlug = strings.TrimSpace(tenant.Slug)
+	chrome.TenantName = strings.TrimSpace(tenant.Name)
+	if name := strings.TrimSpace(ws.Name); name != "" {
+		chrome.WorkspaceName = name
+	}
+	if chrome.WorkspaceID == "" {
+		chrome.WorkspaceID = ws.ID
+	}
+}
+
 func (s *Server) issueSessionCookies(w http.ResponseWriter, r *http.Request, issued session.Issued) {
 	https := s.sec.requestIsHTTPS(r)
 	maxAge := int(issued.Record.IdleExpiresAt.Sub(s.clockNow()).Seconds())
