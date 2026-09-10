@@ -8,7 +8,8 @@
  * `/embed/v1` rewrite + `session.embed`. No new routes or API calls.
  */
 
-import { EMBED_MOUNT_PREFIX, EMBED_ROUTES } from "./embed-contract.ts";
+import { EMBED_MOUNT_PREFIX, EMBED_ROUTES, standalonePathFromEmbed } from "./embed-contract.ts";
+import { workspaceLookupKey, type DevIdentity } from "./identity-headers.ts";
 import { canSaveWorkflowEditor } from "./workflow-graph.ts";
 import { canStartPublishedRun, publishedRunVersions } from "./execution-replay.ts";
 import type { WorkflowFieldError, WorkflowVersion } from "./workflow-types.ts";
@@ -103,4 +104,126 @@ export function editorEmbedRouteUnchanged(): boolean {
     route?.standalone === "/workflows/{id}" &&
     route.embed === editorEmbedWorkflowPath()
   );
+}
+
+/**
+ * UX.5: sticky workflow context + collapsed workspace nav on the
+ * editor route. Relates to #200 / Part of #195. Keep #200 open.
+ *
+ * Commands and the top bar bind to the route id — not a home list
+ * selection. Standalone workspace switch remounts the editor the
+ * same way /workflows already drops previous-workspace state.
+ */
+export const UX5_STORY = 200;
+export const UX5_EPIC = 195;
+export const UX5_KEEP_STORY_OPEN = true;
+
+export type EditorNavMode = "icon-rail" | "overlay" | "full";
+
+export const EDITOR_NAV_RAIL_WIDTH = "3.5rem";
+export const EDITOR_NAV_OVERLAY_WIDTH = "16rem";
+
+export const EDITOR_NAV = {
+  editorRouteCollapsesNav: true,
+  editorNavModes: ["icon-rail", "overlay"] as const,
+  workflowsIsHome: true,
+  gatedHiddenWhenUnknownOrDenied: true,
+  standaloneWorkspaceSwitchDropsEditorState: true,
+  commandsApplyToRouteId: true,
+  embedSwitcherLocked: true,
+  embedNavRemapsToEmbedV1: true,
+  adv024OmittedWithoutGrant: true,
+  noNewEmbedRoutes: true,
+} as const;
+
+const EDITOR_PATH_ID = /^\/workflows\/([^/]+)$/;
+
+/** Route id from standalone or embed `/workflows/{id}`. Not a list selection. */
+export function editorWorkflowIdFromPath(
+  pathname: string | null | undefined,
+): string | undefined {
+  if (!pathname) {
+    return undefined;
+  }
+  const standalone = standalonePathFromEmbed(pathname.split("?")[0] ?? pathname);
+  const match = standalone.match(EDITOR_PATH_ID);
+  const id = match?.[1]?.trim();
+  if (!id || id === "new") {
+    return undefined;
+  }
+  return id;
+}
+
+export function isWorkflowEditorPath(
+  pathname: string | null | undefined,
+): boolean {
+  return editorWorkflowIdFromPath(pathname) !== undefined;
+}
+
+export function editorNavMode(input: {
+  pathname: string | null | undefined;
+  overlayOpen?: boolean;
+  compact?: boolean;
+}): EditorNavMode {
+  if (!isWorkflowEditorPath(input.pathname)) {
+    return "full";
+  }
+  if (input.compact || input.overlayOpen) {
+    return "overlay";
+  }
+  return "icon-rail";
+}
+
+export function editorWorkspaceSessionKey(
+  identity: DevIdentity,
+  workflowId?: string | null,
+): string {
+  return `${workspaceLookupKey(identity)}:${workflowId?.trim() ?? ""}`;
+}
+
+export function editorCommandAppliesToRoute(
+  routeWorkflowId: string | null | undefined,
+  commandWorkflowId: string | null | undefined,
+): boolean {
+  const route = routeWorkflowId?.trim();
+  const command = commandWorkflowId?.trim();
+  return Boolean(route && command && route === command);
+}
+
+export type EditorStickyContext = {
+  heading: string;
+  status: string;
+  slug?: string;
+  loaded: boolean;
+};
+
+export function editorStickyContext(
+  workflow: {
+    name?: string | null;
+    slug?: string | null;
+    status?: string | null;
+  } | null,
+  options: { loaded?: boolean } = {},
+): EditorStickyContext {
+  const loaded = options.loaded === true;
+  if (!loaded) {
+    return {
+      heading: EDITOR_HEADING_FALLBACK,
+      status: "Loading…",
+      loaded: false,
+    };
+  }
+  if (!workflow) {
+    return {
+      heading: EDITOR_HEADING_FALLBACK,
+      status: "Unavailable",
+      loaded: true,
+    };
+  }
+  return {
+    heading: editorHeading(workflow.name),
+    status: (workflow.status ?? "").trim() || "draft",
+    slug: workflow.slug?.trim() || undefined,
+    loaded: true,
+  };
 }

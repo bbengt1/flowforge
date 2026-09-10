@@ -5,8 +5,8 @@ import { useEmbedMode } from "@/components/embed/EmbedMode";
 import {
   EDITOR_WORKFLOWS_HREF,
   editorDirtyLabel,
-  editorHeading,
   editorRevisionLabel,
+  editorStickyContext,
 } from "@/lib/editor-chrome";
 import { EDITOR_LIBRARY_PANEL_ID } from "@/lib/editor-library";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
@@ -14,6 +14,7 @@ import type { WorkflowRecord } from "@/lib/workflow-types";
 
 type EditorTopBarProps = {
   workflow: WorkflowRecord | null;
+  loaded?: boolean;
   revision: number | null;
   dirty: boolean;
   canCall: boolean;
@@ -34,6 +35,7 @@ type EditorTopBarProps = {
 
 export function EditorTopBar({
   workflow,
+  loaded = false,
   revision,
   dirty,
   canCall,
@@ -53,11 +55,14 @@ export function EditorTopBar({
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
-  const heading = editorHeading(workflow?.name);
+  const context = editorStickyContext(workflow, { loaded });
   const dirtyLabel = editorDirtyLabel(dirty);
 
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2">
+    <header
+      data-editor-context="sticky"
+      className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2"
+    >
       <Link
         href={backHref}
         className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
@@ -65,17 +70,21 @@ export function EditorTopBar({
         ← Workflows
       </Link>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-base font-semibold tracking-tight">{heading}</h1>
-        {workflow ? (
-          <p className="truncate font-mono text-xs text-zinc-500">{workflow.slug}</p>
+        <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
+        {context.slug ? (
+          <p className="truncate font-mono text-xs text-zinc-500">{context.slug}</p>
         ) : (
-          <p className="text-xs text-zinc-500">Open a workflow from Workflows to edit a draft.</p>
+          <p className="text-xs text-zinc-500">
+            {context.loaded
+              ? "This workflow could not be loaded."
+              : "Loading this workflow…"}
+          </p>
         )}
       </div>
       <p className="text-xs text-zinc-600" role="status">
         {workflow ? (
           <>
-            <span className="capitalize">{workflow.status}</span>
+            <span className="capitalize">{context.status}</span>
             {" · "}
             {editorRevisionLabel(revision)}
             {" · "}
@@ -84,7 +93,7 @@ export function EditorTopBar({
             </span>
           </>
         ) : (
-          "No draft selected"
+          context.status
         )}
       </p>
       <label className="hidden text-xs sm:block">
