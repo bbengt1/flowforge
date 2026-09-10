@@ -33,9 +33,10 @@ const (
 )
 
 // Environment sources for the FlowForge signing key. The private key is
-// never returned from an API. Production (empty/production APP_ENV or
-// REQUIRE_TLS) requires a durable EMBED_SIGNING_KEY and refuses to start
-// without one. An ephemeral process key is gated to non-production
+// never returned from an API. Preferred form is PKCS#8 PEM parsed with
+// crypto/x509.ParsePKCS8PrivateKey (Ed25519). Production (empty/production
+// APP_ENV or REQUIRE_TLS) requires a durable EMBED_SIGNING_KEY and refuses
+// to start without one. An ephemeral process key is gated to non-production
 // APP_ENV only (ADV-006) and is minted with crypto/rand — never from a
 // committed seed (ADV-016).
 const (

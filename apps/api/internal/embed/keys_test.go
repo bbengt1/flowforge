@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -59,9 +60,81 @@ func TestLoadMaterialNonProductionAllowsEphemeral(t *testing.T) {
 	}
 }
 
+func TestLoadMaterialPKCS8PEM(t *testing.T) {
+	fixture := TestMaterial()
+	pem := EncodePKCS8PEM(fixture.Private)
+	if !strings.Contains(pem, "BEGIN PRIVATE KEY") {
+		t.Fatalf("EncodePKCS8PEM: %q", pem)
+	}
+	t.Setenv(EnvSigningKey, pem)
+	t.Setenv(EnvSigningKeyFile, "")
+	t.Setenv(EnvSigningKeyID, "pkcs8:ops")
+	t.Setenv(authz.EnvAppEnv, "production")
+	t.Setenv("REQUIRE_TLS", "true")
+
+	m, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Ephemeral() || !m.Ready() || m.KeyID != "pkcs8:ops" {
+		t.Fatalf("PKCS8 material %+v", m)
+	}
+	if !bytes.Equal(m.Private, fixture.Private) || !bytes.Equal(m.Public, fixture.Public) {
+		t.Fatal("PKCS8 PEM must load the same Ed25519 key")
+	}
+}
+
+func TestLoadMaterialPKCS8PEMEscapedNewlines(t *testing.T) {
+	fixture := TestMaterial()
+	pem := strings.ReplaceAll(strings.TrimSpace(EncodePKCS8PEM(fixture.Private)), "\n", `\n`)
+	t.Setenv(EnvSigningKey, pem)
+	t.Setenv(EnvSigningKeyFile, "")
+	t.Setenv(authz.EnvAppEnv, "production")
+
+	m, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(m.Private, fixture.Private) {
+		t.Fatal("escaped-newline PKCS8 PEM must load")
+	}
+}
+
+func TestLoadMaterialInvalidPEMRejected(t *testing.T) {
+	t.Setenv(EnvSigningKeyFile, "")
+	t.Setenv(authz.EnvAppEnv, "production")
+	cases := []string{
+		"-----BEGIN PRIVATE KEY-----\nnot-valid-base64\n-----END PRIVATE KEY-----",
+		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+		EncodePKIXPublicPEM(TestMaterial().Public),
+		"-----BEGIN PRIVATE KEY-----",
+	}
+	for _, raw := range cases {
+		t.Setenv(EnvSigningKey, raw)
+		if _, err := LoadMaterial(); err == nil {
+			t.Fatalf("expected reject for %q", raw)
+		}
+	}
+}
+
+func TestParsePublicSPKIPEM(t *testing.T) {
+	fixture := TestMaterial()
+	pem := EncodePKIXPublicPEM(fixture.Public)
+	pub, err := parsePublicSPKIPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(pub, fixture.Public) {
+		t.Fatal("SPKI PEM must parse via x509.ParsePKIXPublicKey")
+	}
+	if _, err := parsePublicSPKIPEM("-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----"); err == nil {
+		t.Fatal("invalid SPKI PEM must be rejected")
+	}
+}
+
 func TestLoadMaterialDurableKeyIsStable(t *testing.T) {
-	seed := EncodeSeedB64(TestMaterial().Private)
-	t.Setenv(EnvSigningKey, seed)
+	pem := EncodePKCS8PEM(TestMaterial().Private)
+	t.Setenv(EnvSigningKey, pem)
 	t.Setenv(EnvSigningKeyFile, "")
 	t.Setenv(EnvSigningKeyID, "stable:ops")
 	t.Setenv(authz.EnvAppEnv, "production")
@@ -85,9 +158,9 @@ func TestLoadMaterialDurableKeyIsStable(t *testing.T) {
 
 func TestLoadMaterialFileSource(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/embed.seed"
+	path := dir + "/embed.pem"
 	fixture := TestMaterial()
-	if err := os.WriteFile(path, []byte(EncodeSeedB64(fixture.Private)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(EncodePKCS8PEM(fixture.Private)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(EnvSigningKey, "")
@@ -103,7 +176,43 @@ func TestLoadMaterialFileSource(t *testing.T) {
 		t.Fatalf("file material %+v", m)
 	}
 	if !bytes.Equal(m.Private, fixture.Private) {
-		t.Fatal("file material must match the temp-dir seed")
+		t.Fatal("file material must match the temp-dir PKCS8 PEM")
+	}
+}
+
+func TestLoadMaterialLegacySeedCompatibility(t *testing.T) {
+	fixture := TestMaterial()
+	t.Setenv(EnvSigningKey, EncodeSeedB64(fixture.Private))
+	t.Setenv(EnvSigningKeyFile, "")
+	t.Setenv(authz.EnvAppEnv, "production")
+
+	m, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(m.Private, fixture.Private) {
+		t.Fatal("legacy raw seed must still load")
+	}
+}
+
+func TestLoadMaterialEnvKeyPrefersOverFile(t *testing.T) {
+	envKey := TestMaterial()
+	fileKey := TestMaterial()
+	dir := t.TempDir()
+	path := dir + "/embed.pem"
+	if err := os.WriteFile(path, []byte(EncodePKCS8PEM(fileKey.Private)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvSigningKey, EncodePKCS8PEM(envKey.Private))
+	t.Setenv(EnvSigningKeyFile, path)
+	t.Setenv(authz.EnvAppEnv, "production")
+
+	m, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(m.Private, envKey.Private) {
+		t.Fatal("EMBED_SIGNING_KEY must win over FILE when both are set")
 	}
 }
 

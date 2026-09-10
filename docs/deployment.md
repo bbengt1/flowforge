@@ -56,8 +56,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |
 | `WEB_CSP_CONNECT_SRC` | unset | Extra CSP `connect-src` origins (space-separated). `NEXT_PUBLIC_API_URL` is always included. |
-| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed/key (base64, hex, or PKCS8 PEM) used to mint embed assertions. Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose seeds a local-only key. Ephemeral process keys are non-production only and come from `crypto/rand` — never a committed Go seed. |
-| `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY`. |
+| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 **PKCS#8 PEM** (`crypto/x509.ParsePKCS8PrivateKey`). Generate with `openssl genpkey -algorithm ED25519`. Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64 or hex is accepted only for compatibility. Ephemeral process keys are non-production only and come from `crypto/rand` — never a committed Go seed. |
+| `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY` (preferred: PKCS#8 PEM). Used when the env value is empty. |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. Never a secret. Never `ephemeral:process` in production. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
@@ -116,4 +116,4 @@ bash scripts/backup/encrypt-pg-dump.sh
 bash scripts/backup/restore-rehearsal.sh
 ```
 
-`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script sets a local-only `EMBED_SIGNING_KEY` (same seed as compose; override via env). CI runs the same script. Production still boot-fails without a unique Secret key.
+`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`). CI runs the same script. Production still boot-fails without a unique Secret key.

@@ -181,8 +181,8 @@ jobs:
         run: docker compose up --build -d --wait --wait-timeout 180 postgres api
 
       - name: Restore rehearsal
-        # Isolated API is production-locked; the script supplies a local-only
-        # EMBED_SIGNING_KEY (ADV-006). Production boot-fail is unchanged.
+        # Isolated API is production-locked; the script mounts the local-only
+        # PKCS#8 PEM (ADV-006 / ADV-022). Production boot-fail is unchanged.
         run: bash scripts/backup/restore-rehearsal.sh
 
       - name: Compose logs (on failure)

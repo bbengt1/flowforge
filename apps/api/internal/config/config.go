@@ -61,8 +61,9 @@ type Config struct {
 	// notification.* when the negative suite is present (default true).
 	IntegrationActionsEnabled bool
 	// EmbedKeys is the Ed25519 material used to mint/verify embed
-	// assertions. Production requires EMBED_SIGNING_KEY (boot-fail).
-	// Non-production APP_ENV may use a crypto/rand ephemeral process key.
+	// assertions. Preferred source is PKCS#8 PEM (ADV-022). Production
+	// requires EMBED_SIGNING_KEY (boot-fail). Non-production APP_ENV may
+	// use a crypto/rand ephemeral process key.
 	EmbedKeys     embed.Material
 	EmbedAudience string
 	EmbedTTL      time.Duration
