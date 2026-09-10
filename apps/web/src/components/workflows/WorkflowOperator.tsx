@@ -22,6 +22,16 @@ import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/Wor
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import {
+  EDITOR_INSPECTOR_FIRST_MEDIA,
+  EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT,
+  editorDrawerAfterEscape,
+  editorDrawerToClose,
+  editorInspectorIsDrawer,
+  editorRestoreDrawerFocus,
+  editorSelectionAnnouncement,
+  type EditorDrawerId,
+} from "@/lib/e12-accessibility-contract";
+import {
   EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
   EDITOR_YAML_OPEN_ON_FIRST_PAINT,
   canPublishLastSavedDraft,
@@ -208,6 +218,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [libraryOpen, setLibraryOpen] = useState(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT);
   const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
   const [runsOpen, setRunsOpen] = useState(EDITOR_RUNS_OPEN_ON_FIRST_PAINT);
+  const [inspectorOpen, setInspectorOpen] = useState(
+    EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT,
+  );
+  const [lastOpenedDrawer, setLastOpenedDrawer] = useState<EditorDrawerId | null>(
+    null,
+  );
+  const [selectionAnnouncement, setSelectionAnnouncement] = useState("");
   const [startOpen, setStartOpen] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<WorkflowVersion | null>(
     null,
@@ -254,6 +271,11 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     Record<string, InspectorPendingCredential>
   >({});
   const { permissions } = useWorkspace();
+  const inspectorFirst = useSyncExternalStore(
+    subscribeInspectorFirstBreakpoint,
+    readInspectorFirstBreakpoint,
+    () => false,
+  );
 
   const validateSeq = useRef(0);
   const skipDebounce = useRef(false);
@@ -264,6 +286,112 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   >(undefined);
 
   const yamlNodes = listYamlNodes(yaml);
+
+  function announceSelection(next: EditorSelection) {
+    if (next.kind === "node") {
+      const node = yamlNodes.find((item) => item.id === next.id);
+      setSelectionAnnouncement(
+        editorSelectionAnnouncement({
+          kind: "node",
+          id: next.id,
+          name: node?.name,
+          type: node?.type,
+        }),
+      );
+      setInspectorOpen(true);
+      return;
+    }
+    if (next.kind === "edge") {
+      setSelectionAnnouncement(
+        editorSelectionAnnouncement({
+          kind: "edge",
+          from: next.from,
+          to: next.to,
+        }),
+      );
+      setInspectorOpen(true);
+      return;
+    }
+    setSelectionAnnouncement(editorSelectionAnnouncement({ kind: "workflow" }));
+  }
+
+  function applySelection(next: EditorSelection) {
+    setSelection(next);
+    announceSelection(next);
+  }
+
+  function setDrawerOpen(id: EditorDrawerId, open: boolean) {
+    if (id === "library") {
+      setLibraryOpen(open);
+    }
+    if (id === "yaml") {
+      setYamlOpen(open);
+    }
+    if (id === "runs") {
+      setRunsOpen(open);
+    }
+    if (id === "inspector") {
+      setInspectorOpen(open);
+    }
+    if (open) {
+      setLastOpenedDrawer(id);
+    }
+  }
+
+  function toggleDrawer(id: EditorDrawerId) {
+    const current =
+      id === "library"
+        ? libraryOpen
+        : id === "yaml"
+          ? yamlOpen
+          : id === "runs"
+            ? runsOpen
+            : inspectorOpen;
+    setDrawerOpen(id, !current);
+  }
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      if (wizardOpen || startOpen || addCredential) {
+        return;
+      }
+      const closer = editorDrawerToClose(
+        {
+          library: libraryOpen,
+          yaml: yamlOpen,
+          runs: runsOpen,
+          inspector: inspectorOpen,
+        },
+        lastOpenedDrawer,
+        { inspectorIsDrawer: editorInspectorIsDrawer(inspectorFirst) },
+      );
+      if (!closer) {
+        return;
+      }
+      event.preventDefault();
+      const next = editorDrawerAfterEscape();
+      setDrawerOpen(closer, next.open);
+      if (next.restoreFocus) {
+        editorRestoreDrawerFocus(closer);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    addCredential,
+    inspectorFirst,
+    inspectorOpen,
+    lastOpenedDrawer,
+    libraryOpen,
+    runsOpen,
+    startOpen,
+    wizardOpen,
+    yamlOpen,
+  ]);
+
   if (
     createdCredentialReturn.current === undefined &&
     typeof window !== "undefined"
@@ -292,7 +420,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           setYaml(nextYaml);
           setDigest(null);
           setCredentialRefreshNonce((current) => current + 1);
-          setSelection({ kind: "node", id: pendingCreated.nodeId });
+          applySelection({ kind: "node", id: pendingCreated.nodeId });
         }
       }
     }
@@ -1039,7 +1167,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     try {
       setDigest(null);
       setYaml(nextYaml);
-      setSelection({ kind: "node", id: nodeId });
+      applySelection({ kind: "node", id: nodeId });
       setWizardFeedback("success");
       setWizardOpen(false);
       pushNotification({
@@ -1070,7 +1198,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     const inserted = insertCatalogNode(yaml, entry.type, { name: entry.name });
     setDigest(null);
     setYaml(inserted.yaml);
-    setSelection({ kind: "node", id: inserted.node.id });
+    applySelection({ kind: "node", id: inserted.node.id });
   }
 
   function connectPorts(from: string, to: string): string[] {
@@ -1125,7 +1253,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       [`${request.nodeId}:${request.field}`]: credential,
     }));
     setCredentialRefreshNonce((current) => current + 1);
-    setSelection({ kind: "node", id: request.nodeId });
+    applySelection({ kind: "node", id: request.nodeId });
   }
 
   function applyNodeName(id: string, name: string) {
@@ -1156,7 +1284,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   });
 
   function jumpToYaml(line: number, column?: number) {
-    setYamlOpen(true);
+    setDrawerOpen("yaml", true);
     setFocusLine(line);
     setFocusColumn(column ?? null);
     setFocusToken((token) => token + 1);
@@ -1252,14 +1380,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           yamlOpen={yamlOpen}
           libraryOpen={libraryOpen}
           runsOpen={runsOpen}
+          inspectorOpen={inspectorOpen}
           publishNote={publishNote}
           onPublishNote={setPublishNote}
           onSave={() => void saveDraft()}
           onPublish={() => void publishDraft()}
           onStart={() => setStartOpen(true)}
-          onToggleYaml={() => setYamlOpen((open) => !open)}
-          onToggleLibrary={() => setLibraryOpen((open) => !open)}
-          onToggleRuns={() => setRunsOpen((open) => !open)}
+          onToggleYaml={() => toggleDrawer("yaml")}
+          onToggleLibrary={() => toggleDrawer("library")}
+          onToggleRuns={() => toggleDrawer("runs")}
+          onToggleInspector={() => toggleDrawer("inspector")}
           onAddAction={() => openWizard()}
         />
       }
@@ -1303,7 +1433,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         ) : null
       }
       libraryOpen={libraryOpen}
-      onToggleLibrary={() => setLibraryOpen((open) => !open)}
+      inspectorOpen={inspectorOpen}
+      selectionAnnouncement={selectionAnnouncement}
+      onToggleLibrary={() => toggleDrawer("library")}
+      onToggleInspector={() => toggleDrawer("inspector")}
       library={
         <ActionLibrary
           compact
@@ -1325,14 +1458,14 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           pending={status === "pending"}
           selection={selection}
           entries={library}
-          onSelect={setSelection}
+          onSelect={applySelection}
           onInsertType={(type) => {
             const entry = library.find((item) => item.type === type);
             if (entry) {
               insertLibraryNode(entry);
             }
           }}
-          onOpenLibrary={() => setLibraryOpen(true)}
+          onOpenLibrary={() => setDrawerOpen("library", true)}
           onAddAction={() => openWizard()}
           onConnect={connectPorts}
         />
@@ -1402,7 +1535,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
                 [artifact.id]: artifact,
               }))
             }
-            onSelectNode={(id) => setSelection({ kind: "node", id })}
+            onSelectNode={(id) => applySelection({ kind: "node", id })}
             onApply={applyNodeConfig}
             onRename={applyNodeName}
             onPatchNodeWith={patchNodeWith}
@@ -1436,8 +1569,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             digest={digest}
             problem={problem}
             onJump={jumpToYaml}
-            onSelectNode={(id) => setSelection({ kind: "node", id })}
-            onSelectEdge={(from, to) => setSelection({ kind: "edge", from, to })}
+            onSelectNode={(id) => applySelection({ kind: "node", id })}
+            onSelectEdge={(from, to) => applySelection({ kind: "edge", from, to })}
           />
           {yamlHasScriptNodes(yaml) ? (
             <ScriptPublishStatus
@@ -1482,7 +1615,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           identity={identity}
           permissions={permissions}
           canCall={canCall}
-          onClose={() => setRunsOpen(false)}
+          onClose={() => setDrawerOpen("runs", false)}
           onStart={() => setStartOpen(true)}
         />
       }
@@ -1529,6 +1662,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       }
     />
   );
+}
+
+function subscribeInspectorFirstBreakpoint(onChange: () => void) {
+  const media = window.matchMedia(EDITOR_INSPECTOR_FIRST_MEDIA);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+function readInspectorFirstBreakpoint(): boolean {
+  return window.matchMedia(EDITOR_INSPECTOR_FIRST_MEDIA).matches;
 }
 
 function wizardUpstream(

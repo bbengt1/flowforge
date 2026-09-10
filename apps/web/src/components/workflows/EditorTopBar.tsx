@@ -8,8 +8,11 @@ import {
   editorRevisionLabel,
   editorStickyContext,
 } from "@/lib/editor-chrome";
-import { EDITOR_LIBRARY_PANEL_ID } from "@/lib/editor-library";
-import { EDITOR_RUNS_PANEL_ID } from "@/lib/editor-runs";
+import {
+  EDITOR_DRAWER_PANEL_IDS,
+  editorDrawerTriggerId,
+  editorTopBarControlLabel,
+} from "@/lib/e12-accessibility-contract";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
@@ -25,6 +28,7 @@ type EditorTopBarProps = {
   yamlOpen: boolean;
   libraryOpen: boolean;
   runsOpen: boolean;
+  inspectorOpen: boolean;
   publishNote: string;
   onPublishNote: (value: string) => void;
   onSave: () => void;
@@ -33,6 +37,7 @@ type EditorTopBarProps = {
   onToggleYaml: () => void;
   onToggleLibrary: () => void;
   onToggleRuns: () => void;
+  onToggleInspector: () => void;
   onAddAction: () => void;
 };
 
@@ -48,6 +53,7 @@ export function EditorTopBar({
   yamlOpen,
   libraryOpen,
   runsOpen,
+  inspectorOpen,
   publishNote,
   onPublishNote,
   onSave,
@@ -56,6 +62,7 @@ export function EditorTopBar({
   onToggleYaml,
   onToggleLibrary,
   onToggleRuns,
+  onToggleInspector,
   onAddAction,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
@@ -72,7 +79,7 @@ export function EditorTopBar({
         href={backHref}
         className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
       >
-        ← Workflows
+        {editorTopBarControlLabel("back")}
       </Link>
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
@@ -102,11 +109,11 @@ export function EditorTopBar({
         )}
       </p>
       <label className="hidden text-xs sm:block">
-        <span className="sr-only">Publish note</span>
+        <span className="sr-only">{editorTopBarControlLabel("publish-note")}</span>
         <input
           value={publishNote}
           onChange={(event) => onPublishNote(event.target.value)}
-          placeholder="Publish note"
+          placeholder={editorTopBarControlLabel("publish-note")}
           className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
         />
       </label>
@@ -115,27 +122,40 @@ export function EditorTopBar({
         onClick={onAddAction}
         className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900"
       >
-        Add action
+        {editorTopBarControlLabel("add-action")}
       </button>
       <button
         type="button"
+        id={editorDrawerTriggerId("library")}
         onClick={onToggleLibrary}
         aria-pressed={libraryOpen}
         aria-expanded={libraryOpen}
-        aria-controls={EDITOR_LIBRARY_PANEL_ID}
+        aria-controls={EDITOR_DRAWER_PANEL_IDS.library}
         className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
       >
-        {libraryOpen ? "Hide library" : "Library"}
+        {editorTopBarControlLabel("library", libraryOpen)}
       </button>
       <button
         type="button"
+        id={editorDrawerTriggerId("yaml")}
         onClick={onToggleYaml}
         aria-pressed={yamlOpen}
         aria-expanded={yamlOpen}
-        aria-controls="editor-yaml-drawer"
+        aria-controls={EDITOR_DRAWER_PANEL_IDS.yaml}
         className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
       >
-        {yamlOpen ? "Hide YAML" : "YAML"}
+        {editorTopBarControlLabel("yaml", yamlOpen)}
+      </button>
+      <button
+        type="button"
+        id={editorDrawerTriggerId("inspector")}
+        onClick={onToggleInspector}
+        aria-pressed={inspectorOpen}
+        aria-expanded={inspectorOpen}
+        aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
+      >
+        {editorTopBarControlLabel("inspector", inspectorOpen)}
       </button>
       <button
         type="button"
@@ -143,7 +163,7 @@ export function EditorTopBar({
         disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
         className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
       >
-        {pending === "save" ? "Saving…" : "Save draft"}
+        {pending === "save" ? "Saving…" : editorTopBarControlLabel("save")}
       </button>
       <button
         type="button"
@@ -151,18 +171,19 @@ export function EditorTopBar({
         disabled={!canCall || pending !== null || !canPublish}
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
       >
-        {pending === "publish" ? "Publishing…" : "Publish"}
+        {pending === "publish" ? "Publishing…" : editorTopBarControlLabel("publish")}
       </button>
       <button
         type="button"
+        id={editorDrawerTriggerId("runs")}
         onClick={onToggleRuns}
         disabled={!workflow}
         aria-pressed={runsOpen}
         aria-expanded={runsOpen}
-        aria-controls={EDITOR_RUNS_PANEL_ID}
+        aria-controls={EDITOR_DRAWER_PANEL_IDS.runs}
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
       >
-        {runsOpen ? "Hide runs" : "Runs"}
+        {editorTopBarControlLabel("runs", runsOpen)}
       </button>
       <button
         type="button"
@@ -170,7 +191,7 @@ export function EditorTopBar({
         disabled={!workflow}
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
       >
-        Start published
+        {editorTopBarControlLabel("start")}
       </button>
     </header>
   );

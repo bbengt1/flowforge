@@ -1,12 +1,15 @@
 /**
- * E12.3 Chloe accessibility checklist.
+ * E12.3 Chloe accessibility checklist + UX.10 canvas-first chrome.
  *
  * Relates to #184 / Part of #181. Keep #184 open.
+ * Relates to #205 / Part of #195. Keep #205 open.
  *
  * Encodes the cheap a11y contracts from
- * docs/reference/e12-accessibility-review.md. Product chrome stays
- * the same — skip target, labels, roles, and keyboard helpers only.
- * Do not invent a canvas redesign or API/OpenAPI docs (Jonny).
+ * docs/reference/e12-accessibility-review.md and the UX.10 editor
+ * chrome contract. Product chrome stays the same — skip target,
+ * labels, roles, drawer Esc, and selection announcements. Do not
+ * invent a screen-reader graph rewrite, a mobile app, or API/OpenAPI
+ * docs (Jonny).
  */
 
 import {
@@ -15,6 +18,8 @@ import {
   PALETTE_SHORTCUT_HELP,
   paletteHighlightIndex,
 } from "./command-palette.ts";
+import { EDITOR_LIBRARY_PANEL_ID } from "./editor-library.ts";
+import { EDITOR_RUNS_PANEL_ID } from "./editor-runs.ts";
 import {
   sessionExpiryBannerState,
   sessionStatusChipAccessibleName,
@@ -54,6 +59,9 @@ export const E12_A11Y_FIXES = [
   "notification-dismiss-label",
   "wizard-escape",
   "home-view-pressed",
+  "editor-top-bar-labels",
+  "editor-drawer-escape",
+  "editor-selection-announce",
 ] as const;
 
 export const E12_A11Y_GAPS = [
@@ -124,5 +132,153 @@ export function e12A11yMembershipIsolationNavIds(
   return visibleWorkspaceNav(permissions)
     .filter((item) => item.id === "membership" || item.id === "isolation")
     .map((item) => item.id);
+}
+
+/** UX.10: A11y contract for canvas-first chrome. Keep #205 open. */
+export const UX10_STORY = 205;
+export const UX10_EPIC = 195;
+export const UX10_KEEP_STORY_OPEN = true;
+export const UX10_A11Y_ID = "UX.10-canvas-chrome-a11y" as const;
+
+export const EDITOR_INSPECTOR_PANEL_ID = "editor-inspector-panel";
+export const EDITOR_YAML_PANEL_ID = "editor-yaml-drawer";
+export const EDITOR_SELECTION_STATUS_ID = "editor-selection-status";
+export const EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT = true;
+export const EDITOR_INSPECTOR_FIRST_MEDIA = "(max-width: 767px)";
+
+export const EDITOR_CHROME_A11Y = {
+  keep205Open: true,
+  skipLinkHref: "#main-content",
+  noNestedMain: true,
+  editorBarLabeled: true,
+  drawerEscapeCloses: true,
+  drawerFocusReturns: true,
+  canvasRoleApplication: true,
+  nodeEdgeAccessibleNames: true,
+  iconPlusTextState: true,
+  selectionAnnouncesInspector: true,
+  inspectorFirstIsDocumentedGap: true,
+  notAMobileApp: true,
+  noSrGraphRewrite: true,
+  statusNeverColorOnly: true,
+} as const;
+
+export const EDITOR_CANVAS_A11Y = {
+  role: "application",
+  label: "Workflow canvas",
+  nodeRole: "group",
+  edgeNamePrefix: "Edge",
+  stateIconAndText: true,
+} as const;
+
+export const EDITOR_DRAWER_IDS = ["library", "yaml", "runs", "inspector"] as const;
+export type EditorDrawerId = (typeof EDITOR_DRAWER_IDS)[number];
+
+export const EDITOR_DRAWER_PANEL_IDS = {
+  library: EDITOR_LIBRARY_PANEL_ID,
+  yaml: EDITOR_YAML_PANEL_ID,
+  runs: EDITOR_RUNS_PANEL_ID,
+  inspector: EDITOR_INSPECTOR_PANEL_ID,
+} as const;
+
+export const EDITOR_TOP_BAR_CONTROLS = [
+  { id: "back", label: "← Workflows" },
+  { id: "add-action", label: "Add action" },
+  { id: "library", label: "Library", openLabel: "Hide library" },
+  { id: "yaml", label: "YAML", openLabel: "Hide YAML" },
+  { id: "inspector", label: "Inspector", openLabel: "Hide inspector" },
+  { id: "save", label: "Save draft" },
+  { id: "publish", label: "Publish" },
+  { id: "runs", label: "Runs", openLabel: "Hide runs" },
+  { id: "start", label: "Start published" },
+  { id: "publish-note", label: "Publish note" },
+] as const;
+
+export type EditorTopBarControlId = (typeof EDITOR_TOP_BAR_CONTROLS)[number]["id"];
+
+export function editorTopBarControlLabel(
+  id: EditorTopBarControlId,
+  open = false,
+): string {
+  const control = EDITOR_TOP_BAR_CONTROLS.find((item) => item.id === id);
+  if (!control) {
+    return "";
+  }
+  if (open && "openLabel" in control && control.openLabel) {
+    return control.openLabel;
+  }
+  return control.label;
+}
+
+export function editorDrawerTriggerId(drawer: EditorDrawerId): string {
+  return `editor-topbar-${drawer}`;
+}
+
+export function editorDrawerAfterEscape(): { open: false; restoreFocus: true } {
+  return { open: false, restoreFocus: true };
+}
+
+export function editorDrawerToggle(open: boolean): {
+  open: boolean;
+  restoreFocus: boolean;
+} {
+  return { open: !open, restoreFocus: open };
+}
+
+export function editorInspectorIsDrawer(narrow: boolean): boolean {
+  return narrow;
+}
+
+export function editorDrawerToClose(
+  open: Record<EditorDrawerId, boolean>,
+  lastOpened: EditorDrawerId | null,
+  options: { inspectorIsDrawer?: boolean } = {},
+): EditorDrawerId | null {
+  const inspectorClosable =
+    options.inspectorIsDrawer === true || lastOpened === "inspector";
+  const closable = EDITOR_DRAWER_IDS.filter((id) => {
+    if (!open[id]) {
+      return false;
+    }
+    return id !== "inspector" || inspectorClosable;
+  });
+  if (lastOpened && closable.includes(lastOpened)) {
+    return lastOpened;
+  }
+  return closable[0] ?? null;
+}
+
+export function editorRestoreDrawerFocus(drawer: EditorDrawerId): void {
+  const focus = () => {
+    const node = document.getElementById(editorDrawerTriggerId(drawer));
+    if (node instanceof HTMLElement) {
+      node.focus();
+    }
+  };
+  focus();
+  if (typeof window !== "undefined") {
+    window.setTimeout(focus, 0);
+  }
+}
+
+export function editorSelectionAnnouncement(input: {
+  kind: "workflow" | "node" | "edge";
+  name?: string | null;
+  type?: string | null;
+  id?: string | null;
+  from?: string | null;
+  to?: string | null;
+}): string {
+  if (input.kind === "node") {
+    const title = input.name?.trim() || input.id?.trim() || "node";
+    const type = input.type?.trim();
+    return type
+      ? `Selected ${title} (${type}). Inspector shows name, with fields, pins, and credentials.`
+      : `Selected ${title}. Inspector shows name, with fields, pins, and credentials.`;
+  }
+  if (input.kind === "edge") {
+    return `Selected edge ${input.from ?? "from"} to ${input.to ?? "to"}. Inspector explains port compatibility.`;
+  }
+  return "Workflow selected. Inspector shows triggers, versions, and pins.";
 }
 
