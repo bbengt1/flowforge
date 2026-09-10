@@ -1411,7 +1411,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             pendingCredentials={pendingCredentials}
             onAddCredential={setAddCredential}
             workflowAdmin={{
-              workflowId: workflow?.id,
+              workflowId: workflow?.id ?? workflowId,
               workflowName: workflow?.name,
               permissions,
               versions,

@@ -107,6 +107,7 @@ describe("UX.9 workflow inspector tabs", () => {
     assert.equal(operator.includes("Triggers &amp; versions"), false);
     assert.equal(operator.includes("Triggers & versions"), false);
     assert.match(operator, /workflowAdmin=/);
+    assert.match(operator, /workflow\?\.id \?\? workflowId/);
     assert.match(operator, /restoreWorkflowVersion/);
 
     const tabs = source("src/components/workflows/EditorWorkflowTabs.tsx");
