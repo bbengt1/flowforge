@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
+import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
 import {
   getPublicOpenApiJsonUrl,
   getPublicOpenApiYamlUrl,
@@ -24,6 +25,7 @@ export default function SettingsPage() {
         </p>
       </header>
       <IsolationIdentityPanel />
+      <DeveloperSettings />
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold">Foundation operators</h2>
         <ul className="mt-3 space-y-2 text-sm">

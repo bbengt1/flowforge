@@ -23,6 +23,7 @@ export type CommandAction =
   | { type: "import-yaml" }
   | { type: "open-editor"; workflowId?: string }
   | { type: "validate" }
+  | { type: "normalize" }
   | { type: "publish" }
   | { type: "run-published" }
   | { type: "open-execution"; executionId?: string };
@@ -105,6 +106,15 @@ export function paletteCommands(
       hint: "Action catalog (placeholder)",
       keywords: ["actions", "catalog", "nodes"],
       action: { type: "navigate", href: "/actions" },
+    });
+  }
+  if (context.workflowId && allowed(permissions, canCreateWorkflows)) {
+    commands.push({
+      id: "normalize",
+      label: "Normalize YAML",
+      hint: "Canonicalize the current draft (not a Save peer)",
+      keywords: ["normalize", "canonical", "yaml", "digest"],
+      action: { type: "normalize" },
     });
   }
   if (context.workflowId && allowed(permissions, canPublishWorkflows)) {
@@ -225,7 +235,7 @@ export function paletteCommands(
     id: "nav-settings",
     label: "Open settings",
     hint: "Session and workspace",
-    keywords: ["settings", "session", "membership"],
+    keywords: ["settings", "session", "membership", "developer"],
     action: { type: "navigate", href: "/settings" },
   });
   commands.push({
@@ -306,6 +316,7 @@ export function commandHref(action: CommandAction): string | null {
   }
   if (
     action.type === "validate" ||
+    action.type === "normalize" ||
     action.type === "publish" ||
     action.type === "run-published"
   ) {

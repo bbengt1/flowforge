@@ -54,7 +54,22 @@ describe("paletteCommands", () => {
     assert.ok(ids.includes("publish"));
     assert.ok(ids.includes("run-published"));
     assert.ok(ids.includes("validate"));
+    assert.ok(ids.includes("normalize"));
     assert.ok(ids.includes("nav-vault"));
+    assert.equal(commandHref({ type: "normalize" }), null);
+    assert.equal(
+      filterPaletteCommands(commands, "normalize")[0]?.id,
+      "normalize",
+    );
+  });
+
+  it("omits normalize without workflow.edit even when a workflow is open", () => {
+    const commands = paletteCommands(viewer, {
+      workflowId: "11111111-1111-4111-8111-111111111111",
+    });
+    const ids = commands.map((item) => item.id);
+    assert.ok(ids.includes("validate"));
+    assert.equal(ids.includes("normalize"), false);
   });
 
   it("omits editor-only commands without an open workflow", () => {
@@ -70,6 +85,7 @@ describe("paletteCommands", () => {
     assert.equal(ids.includes("run-published"), false);
     assert.equal(ids.includes("manual-start"), true);
     assert.equal(ids.includes("validate"), false);
+    assert.equal(ids.includes("normalize"), false);
     assert.equal(isWorkflowHomePath("/workflows"), true);
     assert.equal(isWorkflowHomePath("/workflows/abc"), false);
     assert.equal(commandHref({ type: "new-workflow" }), "/workflows?create=1");
