@@ -19,6 +19,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/workspaces` | Workspaces the caller belongs to. |
 | `POST` | `/api/v1/workspaces` | Create workspace unique on `(tenant_id, workbench_key)`; creator becomes `admin`. Requires `platform.administer` on a non-embed session. Embed sessions are `403`. |
 | `GET` | `/api/v1/workspace` | Server-derived current workspace + roles + permissions. |
+| `DELETE` | `/api/v1/workspace` | Soft-delete current workspace (`status=disabled`). Requires `workspace.administer`. Revokes embed sessions bound to that workspace; later cookies are `401`. Fail closed if revoke cannot complete. |
 | `GET` | `/api/v1/workspace/members` | List members (`workspace.administer`). |
 | `PUT` | `/api/v1/workspace/members` | Bind member roles (`workspace.administer`). |
 | `DELETE` | `/api/v1/workspace/members/{userID}` | Remove member; last admin is protected. |

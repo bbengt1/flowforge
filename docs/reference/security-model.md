@@ -62,7 +62,16 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   State-changing browser requests require CSRF protection
   (`X-CSRF-Token` paired with `ff_csrf` and the server-side hash).
   Bearer tokens are never accepted from a URL or persisted in browser
-  local storage. Idle and absolute expiry fail closed.
+  local storage. Idle and absolute expiry fail closed. Deleting a
+  workspace (`DELETE /workspace`, soft-disable `status=disabled`, or a
+  hard `DELETE` of the workspace row) revokes every embed session bound
+  to that workspace_id or `(tenant_id, workbench_key)`, including CHIPS
+  cookies from `POST /embed/exchange`. Later requests with those
+  cookies are `401`. Unbound standalone sessions and sessions bound to
+  other workspaces are not revoked. Revoke runs before disable; if
+  revoke cannot complete, the workspace is not deleted (fail closed).
+  PostgreSQL applies the same revoke in the disable/delete transaction
+  via trigger so a raw SQL path cannot leave a live embed session.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
   audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`).
   Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /

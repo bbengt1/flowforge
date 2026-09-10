@@ -171,6 +171,61 @@ func (p *Postgres) Revoke(ctx context.Context, token string, now time.Time) (Rec
 	return rec, nil
 }
 
+// RevokeBoundToWorkspace marks embed sessions for the workspace unusable.
+// Matches embed_workspace_id or the (tenant_id, workbench_key) tenancy pair.
+// Standalone (unbound) sessions are left intact.
+func (p *Postgres) RevokeBoundToWorkspace(ctx context.Context, workspaceID, tenantID, workbenchKey string, now time.Time) ([]Record, error) {
+	workspaceID, tenantID, workbenchKey, err := revokeWorkspaceArgs(workspaceID, tenantID, workbenchKey)
+	if err != nil {
+		return nil, err
+	}
+	var wsArg, tenantArg any
+	if workspaceID != "" {
+		wsArg = workspaceID
+	}
+	if tenantID != "" {
+		tenantArg = tenantID
+	}
+	now = now.UTC()
+	rows, err := p.db.Query(ctx, `
+		UPDATE browser_sessions
+		   SET revoked_at = COALESCE(revoked_at, $4),
+		       last_seen_at = $4
+		 WHERE revoked_at IS NULL
+		   AND (
+		        ($1::uuid IS NOT NULL AND embed_workspace_id = $1::uuid)
+		        OR (
+		            $2::uuid IS NOT NULL AND $3 <> ''
+		            AND embed_tenant_id = $2::uuid
+		            AND embed_workbench_key = $3
+		        )
+		   )
+		 RETURNING id::text, user_id::text, created_at, last_seen_at,
+		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
+		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+	`, wsArg, tenantArg, workbenchKey, now)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	out := []Record{}
+	for rows.Next() {
+		var rec Record
+		var csrfHash []byte
+		if err := rows.Scan(
+			&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
+			&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
+			&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+		); err != nil {
+			return nil, mapDBErr(err)
+		}
+		rec.setCSRFHash(csrfHash)
+		out = append(out, rec)
+	}
+	return out, mapDBErr(rows.Err())
+}
+
 // Touch updates last_seen without rotating CSRF.
 func (p *Postgres) Touch(ctx context.Context, token string, now time.Time) error {
 	rec, err := p.load(ctx, token)

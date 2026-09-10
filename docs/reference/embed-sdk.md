@@ -63,7 +63,11 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    `session.embed`. That bind is the only workspace the session may use.
    The session **cannot** `POST /tenants` or `POST /workspaces` (sibling
    workbenches included), even if the principal is a platform-admin.
-   Navigate to the embed mount (`/embed/v1/…`).
+   **ADV-019:** `DELETE /workspace` (or a hard delete of the workspace
+   row) revokes embed sessions bound to that workspace_id /
+   `(tenant_id, workbench_key)`, including these CHIPS cookies. Later
+   calls are `401`. Chloe: prefer existing session-expired handling —
+   no dedicated chrome. Navigate to the embed mount (`/embed/v1/…`).
 5. Subsequent API calls use the cookie session + `X-CSRF-Token` like standalone.
    Fetch must use `credentials: "include"` (already the same-origin proxy
    default). The UI **must** send `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`
@@ -286,7 +290,7 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | `jti.consume` | ready | Single-statement Postgres `INSERT … ON CONFLICT DO NOTHING RETURNING`. Used ids retained 24h past assertion `exp` (`retain_until`). Separate `PurgeExpired` job. Replay `409`. Store down `503`. Consume runs only after signature and claims verify succeed. |
 | `assertion.verify-before-lookup` | ready | Forged/invalid assertions fail closed without resolving tenant/workbench. Same error class whether or not the workspace exists. Tenancy bind is after verify. |
 | `key.rotation` | ready | Durable active key + overlap verification. Every overlap key requires a short `overlapUntil` (max 4h). Unknown / missing-expiry / expired / far-future `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only, requires `overlapUntil`, and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` or bad `EMBED_OVERLAP_KEYS` is boot-fail. The active key is not an overlap key. |
-| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
+| `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs, workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Workspace delete revokes bound embed sessions (including CHIPS); later cookies are `401`. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only; treat post-delete `401` as existing session expiry. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
 | `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Two-origin harness: ADV-013 (`scripts/adv013-cross-origin.sh`). |
 | `host.allowlist` | ready | One list (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) drives CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks. Empty fails closed. `*` / `null` ignored. `GET /embed/catalog` `frameAncestors` publishes the list. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source. |

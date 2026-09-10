@@ -124,6 +124,33 @@ func (m *Memory) Revoke(_ context.Context, token string, now time.Time) (Record,
 	return row.record, nil
 }
 
+// RevokeBoundToWorkspace marks embed sessions for the workspace unusable.
+// Standalone (unbound) sessions are left intact.
+func (m *Memory) RevokeBoundToWorkspace(_ context.Context, workspaceID, tenantID, workbenchKey string, now time.Time) ([]Record, error) {
+	workspaceID, tenantID, workbenchKey, err := revokeWorkspaceArgs(workspaceID, tenantID, workbenchKey)
+	if err != nil {
+		return nil, err
+	}
+	now = now.UTC()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []Record{}
+	for key, row := range m.byHash {
+		if row.record.RevokedAt != nil {
+			continue
+		}
+		if !BoundToWorkspace(row.record.Binding, workspaceID, tenantID, workbenchKey) {
+			continue
+		}
+		t := now
+		row.record.RevokedAt = &t
+		row.record.LastSeenAt = now
+		m.byHash[key] = row
+		out = append(out, row.record)
+	}
+	return out, nil
+}
+
 // Touch updates last_seen without rotating CSRF.
 func (m *Memory) Touch(_ context.Context, token string, now time.Time) error {
 	m.mu.Lock()
