@@ -102,8 +102,13 @@ export const WEBHOOK_HOST_SUPPLIED_KEYS = [
   "workspace_id",
 ] as const;
 
-export const FIELD_MAPPING_PATH_RE =
-  /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+/** Destination key: one identifier segment (Go `identRE` / #113). */
+export const FIELD_MAPPING_DEST_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+/** Source path: dotted identifier segments (Go `validatePath` / #113). */
+export const FIELD_MAPPING_SOURCE_RE =
+  /^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63})*$/;
+/** @deprecated Use FIELD_MAPPING_SOURCE_RE. Kept for older tests. */
+export const FIELD_MAPPING_PATH_RE = FIELD_MAPPING_SOURCE_RE;
 
 export const WEBHOOK_TRIGGER_CATALOG_FALLBACK_HELP =
   "Using marked catalog-fallback #113 defaults because GET /workflows/catalog triggers[type=webhook] is missing ingress+admin. Admin: GET|POST /workflows/{id}/triggers and GET|PATCH|DELETE /triggers/{id} plus POST …/rotate|disable|enable. Public ingress POST /hooks/{publicId} is operator documentation only — not a session UI path. HMAC over v1.{timestamp}.{rawBody} before parse. Cookie session + X-CSRF-Token. camelCase. RFC 9457. Vault webhook_secret only; secret is never returned. Cite #113 / e102-#113. Relates to #107.";
@@ -130,7 +135,7 @@ export const WEBHOOK_YAML_HELP =
   "Workflow YAML may declare only schema / inputSchema and contentType on type=webhook. The opaque publicId (wh_…) and vault secret reference live outside YAML.";
 
 export const WEBHOOK_FIELD_MAPPING_HELP =
-  "Map destination identifier → dotted source path. Empty mapping copies the root JSON object. Payload text is never YAML, shell, template, or code. Secret-shaped destination or source names are rejected.";
+  "Map a single destination identifier → dotted source path (example: alertId: payload.id). Destinations cannot be dotted. Empty mapping copies the root JSON object. Payload text is never YAML, shell, template, or code. Secret-shaped destination or source names are rejected.";
 
 export const WEBHOOK_CSRF_HELP =
   "Create, patch, rotate, disable, enable, and delete send X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called. Public ingress does not use CSRF.";
@@ -720,7 +725,8 @@ export type WebhookProxyRoute = {
 
 /**
  * E10.2 /triggers allowlist (#113). identity-proxy spreads this so a
- * retarget only edits this adapter. E10.3 /schedules lives in
+ * retarget only edits this adapter. Admin only — do not allowlist
+ * public POST /hooks/{publicId}. E10.3 /schedules lives in
  * schedule-trigger-contract.ts.
  */
 export const WEBHOOK_TRIGGER_PROXY_ROUTES: readonly WebhookProxyRoute[] = [
@@ -751,6 +757,15 @@ export const WEBHOOK_TRIGGER_PROXY_ROUTES: readonly WebhookProxyRoute[] = [
 
 export function isWebhookTriggerProxySegments(segments: string[]): boolean {
   return WEBHOOK_TRIGGER_PROXY_ROUTES.some((route) => route.match(segments));
+}
+
+/** Public ingress is operator documentation only — not a session proxy path. */
+export function isWebhookIngressProxySegments(segments: string[]): boolean {
+  return (
+    segments.length === 2 &&
+    segments[0] === "hooks" &&
+    isWebhookPublicId(segments[1])
+  );
 }
 
 export function hostSuppliedWebhookIdentityKeys(
@@ -808,11 +823,20 @@ function validateFieldMappingRow(
   dest: string,
   from: string,
 ): { dest: string; from: string; error?: string } {
-  if (!FIELD_MAPPING_PATH_RE.test(dest)) {
-    return { dest, from, error: `Destination ${dest || "(empty)"} is not a dotted identifier.` };
+  if (!FIELD_MAPPING_DEST_RE.test(dest)) {
+    return {
+      dest,
+      from,
+      error: `Destination ${dest || "(empty)"} must be a single identifier (not a dotted path).`,
+    };
   }
-  if (!FIELD_MAPPING_PATH_RE.test(from)) {
-    return { dest, from, error: `Source ${from || "(empty)"} is not a dotted identifier.` };
+  if (
+    !FIELD_MAPPING_SOURCE_RE.test(from) ||
+    from.includes("..") ||
+    from.startsWith(".") ||
+    from.endsWith(".")
+  ) {
+    return { dest, from, error: `Source ${from || "(empty)"} is not a dotted identifier path.` };
   }
   if (isSecretFieldName(dest) || isSecretFieldName(from)) {
     return {
@@ -1022,7 +1046,7 @@ export function stripUnexpectedWebhookSecret(payload: unknown): {
       ? (sanitized as Record<string, unknown>)
       : {};
   let leaked = strippedKeys.some((key) =>
-    WEBHOOK_SECRET_KEYS.includes(key as (typeof WEBHOOK_SECRET_KEYS)[number]),
+    isWebhookSecretFieldName(terminalWebhookFieldName(key)),
   );
   for (const key of WEBHOOK_SECRET_KEYS) {
     if (key in record) {
@@ -1043,6 +1067,21 @@ export function stripUnexpectedWebhookSecret(payload: unknown): {
     }
   }
   return { leaked, strippedKeys, record };
+}
+
+/** Last path segment, so `items[0].secret` compares as `secret`. */
+export function terminalWebhookFieldName(path: string): string {
+  const last = path.split(".").pop() ?? path;
+  return last.replace(/\[\d+\]/g, "");
+}
+
+function isWebhookSecretFieldName(name: string): boolean {
+  return (
+    (WEBHOOK_SECRET_KEYS as readonly string[]).includes(name) ||
+    name === "reveal" ||
+    name === "oneTime" ||
+    name === "one_time"
+  );
 }
 
 export function parseWebhookTriggerRecord(

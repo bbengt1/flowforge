@@ -459,6 +459,51 @@ describe("resolveIdentityProxyTarget", () => {
         ["alerts", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ack"],
         "/api/v1/alerts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/ack",
       ],
+      [
+        "GET",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "triggers"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/triggers",
+      ],
+      [
+        "POST",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "triggers"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/triggers",
+      ],
+      [
+        "GET",
+        ["triggers", "22222222-2222-4222-8222-222222222222"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "PATCH",
+        ["triggers", "22222222-2222-4222-8222-222222222222"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "DELETE",
+        ["triggers", "22222222-2222-4222-8222-222222222222"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "POST",
+        ["triggers", "22222222-2222-4222-8222-222222222222", "rotate"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222/rotate",
+      ],
+      [
+        "POST",
+        ["triggers", "22222222-2222-4222-8222-222222222222", "disable"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222/disable",
+      ],
+      [
+        "POST",
+        ["triggers", "22222222-2222-4222-8222-222222222222", "enable"],
+        "/api/v1/triggers/22222222-2222-4222-8222-222222222222/enable",
+      ],
+      [
+        "GET",
+        ["triggers", `wh_${"ab".repeat(32)}`],
+        `/api/v1/triggers/wh_${"ab".repeat(32)}`,
+      ],
     ];
 
     for (const [method, segments, apiPath] of cases) {
@@ -1055,6 +1100,15 @@ describe("resolveIdentityProxyTarget", () => {
       assert.equal(missing.status, 404);
       const problem = missing.problem("/api/control-plane/not-a-route", "id-16-characters");
       assert.equal(problem.code, "not-found");
+    }
+
+    const publicIngress = resolveIdentityProxyTarget("POST", [
+      "hooks",
+      `wh_${"ab".repeat(32)}`,
+    ]);
+    assert.equal("status" in publicIngress, true);
+    if ("status" in publicIngress) {
+      assert.equal(publicIngress.status, 404);
     }
 
     const deleteSession = resolveIdentityProxyTarget("DELETE", ["session"]);

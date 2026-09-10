@@ -664,7 +664,7 @@ export function WebhookTriggerPanel({
                 patchDraft({ fieldMappingText: event.target.value })
               }
               rows={3}
-              placeholder="alert.id: payload.id"
+              placeholder="alertId: payload.id"
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-xs"
             />
           </label>
