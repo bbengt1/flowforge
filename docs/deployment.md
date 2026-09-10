@@ -63,7 +63,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
 | `EMBED_NBF_LEEWAY` | `30s` | Clock-skew for embed assertion `nbf` only (ADV-017). Hard max `60s` (clamped). `exp` is exact. |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. Each key requires `overlapUntil` (RFC3339, max 4h from boot). Missing, zero, or far-future is a boot-fail. The active `EMBED_SIGNING_KEY` is not an overlap key and does not use `overlapUntil`. |
-| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, read `GET /metrics` / OpenAPI / swagger, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
 | `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity requires `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403` on mint; exchange also `403` when Portal is empty). Compose seeds `https://idp.example`. Production ConfigMap must set an explicit **https** list — `http://`, relative, or opaque issuers are a boot-fail when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true` (ADV-018). Mint/exchange also `403` a non-https `iss`. Local/dev/test may use `http://`. |
@@ -78,6 +78,29 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 
 ADV-013 two-origin Portal→embed rehearsal (Portal host ≠ embed, local HTTPS):
 `docs/reference/portal-adapter.md` and `bash scripts/adv013-cross-origin.sh`.
+
+## Metrics and OpenAPI scrape (ADV-020)
+
+`GET /api/v1/metrics`, `/openapi.yaml`, `/openapi.json`, and `/swagger` are
+not anonymous. Scrapers must authenticate as a `PLATFORM_ADMINS` principal
+(`platform.administer`). Fail closed when the allowlist is empty.
+
+Prometheus example (Bearer is the session token from `POST /embed/exchange`
+or trusted-dev `POST /session`; refresh before idle/absolute expiry):
+
+```yaml
+scrape_configs:
+  - job_name: flowforge-api
+    metrics_path: /api/v1/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /var/run/secrets/flowforge/scrape-session
+```
+
+Local compose may instead send `X-FlowForge-Issuer` / `X-FlowForge-Subject`
+matching `PLATFORM_ADMINS` because `TRUSTED_DEV_IDENTITY_HEADERS=1`. Do not
+enable that in production. Kubernetes liveness/readiness stay
+`GET /api/v1/health` and `GET /api/v1/readiness` with no credentials.
 
 ## Recovery
 

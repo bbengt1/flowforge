@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"gopkg.in/yaml.v3"
 )
@@ -181,7 +182,7 @@ func TestRecoverWritesInternalProblem(t *testing.T) {
 }
 
 func TestMetricsEndpoint(t *testing.T) {
-	h := New(nil)
+	h := NewWithStore(nil, identity.NewMemory())
 	health := httptest.NewRecorder()
 	h.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
 	if health.Code != http.StatusOK {
@@ -189,8 +190,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
-	req.Header.Set(RequestIDHeader, "caller-request-16")
+	req := identifiedRequest(http.MethodGet, "/api/v1/metrics", nil)
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
@@ -300,9 +300,9 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		}
 	}
 
-	h := New(nil)
+	h := NewWithStore(nil, identity.NewMemory())
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/openapi.json", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}

@@ -6,12 +6,12 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok"}`. Does not check PostgreSQL. |
-| `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). |
-| `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). |
-| `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. |
-| `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. |
-| `GET` | `/api/v1/swagger` | Specification landing page. |
+| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). |
+| `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
+| `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
+| `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. |
+| `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. |
+| `GET` | `/api/v1/swagger` | Specification landing page. Same authz as metrics. |
 | `GET` | `/api/v1/permission-matrix` | Role/permission catalog (view, edit, publish, execute, credential, approval, administration). |
 | `GET` | `/api/v1/roles` | Role vocabulary. |
 | `GET` | `/api/v1/permissions` | Permission vocabulary. |

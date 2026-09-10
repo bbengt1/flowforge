@@ -163,7 +163,7 @@ func Roles() []Role {
 		},
 		{
 			Key:         RolePlatformAdmin,
-			Description: "Platform-scoped operations (tenant/workspace bootstrap, global embed overlap key rotation, and embed.impersonate). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
+			Description: "Platform-scoped operations (tenant/workspace bootstrap, metrics and OpenAPI/swagger, global embed overlap key rotation, and embed.impersonate). Not assignable via workspace membership; granted only by PLATFORM_ADMINS.",
 			Permissions: []string{PermPlatformAdminister, PermEmbedImpersonate},
 		},
 	}

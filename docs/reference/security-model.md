@@ -35,6 +35,16 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   on a **non-embed** session (or trusted-dev header identity).
   Unauthenticated callers are `401`; any other caller is `403`. Empty
   `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
+- Metrics and OpenAPI/swagger (`GET /api/v1/metrics`, `/openapi.yaml`,
+  `/openapi.json`, `/swagger`) require the same `platform.administer`
+  allowlist on an authenticated principal. Unauthenticated is `401`;
+  any other caller (including empty `PLATFORM_ADMINS`) is `403`. There
+  is no anonymous scrape token and no workspace-assignable
+  `ops.metrics.read`. Scrapers send `Authorization: Bearer` with the
+  opaque `ff_session` token, or the `ff_session` cookie. Trusted-dev
+  identity headers work only when that flag is on. Health and
+  readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
+  unauthenticated so Kubernetes probes keep working.
   After `POST /embed/exchange`, the session is bound to the assertion’s
   `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
   sessions cannot create tenants, workspaces, or sibling workbenches —

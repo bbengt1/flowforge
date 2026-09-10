@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 )
 
 func TestHealthOK(t *testing.T) {
@@ -174,16 +176,16 @@ func TestMethodNotAllowedProblem(t *testing.T) {
 }
 
 func TestOpenAPIAndSwagger(t *testing.T) {
-	h := New(nil)
+	h := NewWithStore(nil, identity.NewMemory())
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "openapi:") {
 		t.Fatalf("yaml: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/openapi.json", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("json status = %d", rec.Code)
 	}
@@ -196,7 +198,7 @@ func TestOpenAPIAndSwagger(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/swagger", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/swagger", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("swagger status = %d", rec.Code)
 	}
@@ -205,7 +207,7 @@ func TestOpenAPIAndSwagger(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/openapi.yaml", nil))
 	if !strings.Contains(rec.Body.String(), "/metrics") {
 		t.Fatal("openapi.yaml missing /metrics")
 	}

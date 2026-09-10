@@ -577,19 +577,28 @@ func (s *Server) readiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePlatformOpsRead(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_ = s.registry.WritePrometheus(w)
 }
 
-func (s *Server) openapiYAML(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) openapiYAML(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePlatformOpsRead(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/yaml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(mustOpenAPIYAML())
 }
 
 func (s *Server) openapiJSON(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePlatformOpsRead(w, r) {
+		return
+	}
 	var doc any
 	if err := yaml.Unmarshal(mustOpenAPIYAML(), &doc); err != nil {
 		WriteProblem(w, r, http.StatusInternalServerError, CodeInternalError, "Internal Server Error", "OpenAPI document could not be published.")
@@ -598,7 +607,10 @@ func (s *Server) openapiJSON(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
-func (s *Server) swagger(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) swagger(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePlatformOpsRead(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(swaggerHTML))
