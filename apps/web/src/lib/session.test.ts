@@ -12,6 +12,7 @@ import {
   remainingSessionMs,
   sessionExpiryBannerState,
   sessionExpiryState,
+  sessionStatusChipAccessibleName,
   sessionStatusChipLabel,
 } from "./session.ts";
 
@@ -109,6 +110,8 @@ describe("session expiry UX", () => {
     assert.equal(expired.visible, true);
     if (expired.visible) {
       assert.equal(expired.title, "Session expired");
+      assert.equal(expired.role, "alert");
+      assert.equal(expired.kind, "expired");
     }
     assert.equal(
       sessionStatusChipLabel({
@@ -121,6 +124,26 @@ describe("session expiry UX", () => {
         },
       }, now),
       "ada · Session expired",
+    );
+    assert.equal(
+      sessionStatusChipAccessibleName({
+        active: true,
+        stale: false,
+        session: {
+          ...emptyBrowserSession(),
+          subject: "ada",
+          idleExpiresAt: "2026-09-08T18:00:00.000Z",
+        },
+      }, now),
+      "Session expired for ada",
+    );
+    assert.equal(
+      sessionStatusChipAccessibleName({
+        active: false,
+        stale: true,
+        session: { ...emptyBrowserSession(), subject: "ada" },
+      }, now),
+      "Session stale. Re-establish a cookie session.",
     );
   });
 });

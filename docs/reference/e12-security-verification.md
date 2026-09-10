@@ -92,4 +92,6 @@ provider failure, Trivy/SBOM/approved-bases. Those stay harness/CI-only.
 
 E12.3 production-gate review (existing controls, no new suite):
 [e12-threat-model-review.md](e12-threat-model-review.md). Ops runbooks:
-[operations](../operations/index.md). Keep #184 open (Chloe UI/a11y).
+[operations](../operations/index.md). Chloe UI/a11y:
+[operator-admin.md](../guides/operator-admin.md),
+[e12-accessibility-review.md](e12-accessibility-review.md). Keep #184 open.

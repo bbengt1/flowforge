@@ -116,10 +116,17 @@ export function WorkspaceShell({
     return <>{children}</>;
   }
 
+  const skipLink = (
+    <a href="#main-content" className="skip-link">
+      Skip to main content
+    </a>
+  );
+
   const shell = embed ? (
     <WorkspaceProvider>
       <EmbedDeepLinkGuard>
         <div className="flex min-h-full flex-col">
+          {skipLink}
           <EmbedChrome
             hostDisplay={hostDisplay}
             sessionEmbed={session.embedChrome}
@@ -127,7 +134,7 @@ export function WorkspaceShell({
             sessionActive={session.active}
             sessionChecked={sessionChecked}
           />
-          <div className="flex-1">
+          <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
             {!sessionChecked ? (
               <p className="px-6 py-10 text-sm text-zinc-500">
                 Checking FlowForge session…
@@ -151,7 +158,10 @@ export function WorkspaceShell({
   ) : (
     <WorkspaceProvider>
       <div className="flex min-h-full">
+        {skipLink}
         <aside
+          id="workspace-nav"
+          aria-label="Workspace navigation"
           className={
             navOpen
               ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex"
@@ -177,6 +187,8 @@ export function WorkspaceShell({
                 className="rounded-lg border border-zinc-300 px-2 py-1 text-xs lg:hidden"
                 onClick={() => setNavOpen((open) => !open)}
                 aria-expanded={navOpen}
+                aria-controls="workspace-nav"
+                aria-label={navOpen ? "Close workspace navigation" : "Open workspace navigation"}
               >
                 Menu
               </button>
@@ -189,7 +201,9 @@ export function WorkspaceShell({
               <SessionExpiryBanner />
             </div>
           </header>
-          <div className="flex-1">{children}</div>
+          <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
+            {children}
+          </div>
         </div>
       </div>
     </WorkspaceProvider>

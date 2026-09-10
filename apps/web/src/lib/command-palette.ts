@@ -238,6 +238,33 @@ export function paletteCommands(
   return commands;
 }
 
+export const PALETTE_SHORTCUT_HELP = "Esc to close · Ctrl+Shift+K";
+export const PALETTE_INPUT_LABEL = "Filter commands";
+export const PALETTE_RESULTS_ID = "command-palette-results";
+
+export function paletteHighlightIndex(
+  current: number,
+  key: string,
+  length: number,
+): number {
+  if (length <= 0) {
+    return 0;
+  }
+  if (key === "ArrowDown") {
+    return (current + 1) % length;
+  }
+  if (key === "ArrowUp") {
+    return (current - 1 + length) % length;
+  }
+  if (key === "Home") {
+    return 0;
+  }
+  if (key === "End") {
+    return length - 1;
+  }
+  return current;
+}
+
 export function filterPaletteCommands(
   commands: readonly PaletteCommand[],
   query: string,

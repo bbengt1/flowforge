@@ -467,9 +467,11 @@ function WorkflowHomeSession() {
             >
               {pending === "list" ? "Loading…" : "Refresh"}
             </button>
+            <div role="group" aria-label="Workflow home view" className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setView("list")}
+              aria-pressed={view === "list"}
               className={
                 view === "list"
                   ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
@@ -481,6 +483,7 @@ function WorkflowHomeSession() {
             <button
               type="button"
               onClick={() => setView("card")}
+              aria-pressed={view === "card"}
               className={
                 view === "card"
                   ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
@@ -489,6 +492,7 @@ function WorkflowHomeSession() {
             >
               Cards
             </button>
+            </div>
           </div>
         </div>
 

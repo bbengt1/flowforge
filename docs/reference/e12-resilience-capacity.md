@@ -89,4 +89,6 @@ Keep #183 open after this PR.
 
 Operator restore/incident narrative (E12.3, no harness change):
 [incident and recovery](../operations/incident-recovery.md),
-[retention and backup](../operations/retention-backup.md). Keep #184 open.
+[retention and backup](../operations/retention-backup.md).
+Chloe UI guide ([operator-admin.md](../guides/operator-admin.md)) links
+here and does not add lag/headroom chrome. Keep #184 open.

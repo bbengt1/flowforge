@@ -5,6 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   effectiveExpiresAt,
   sessionExpiryState,
+  sessionStatusChipAccessibleName,
   sessionStatusChipLabel,
 } from "@/lib/session";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
@@ -44,10 +45,12 @@ export function SessionStatusChip() {
   }, [snapshot.active]);
 
   const label = sessionStatusChipLabel(snapshot, now);
+  const accessibleName = sessionStatusChipAccessibleName(snapshot, now);
   if (snapshot.stale) {
     return (
       <a
         href={sessionHref}
+        aria-label={accessibleName}
         className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900"
       >
         {label}
@@ -59,6 +62,7 @@ export function SessionStatusChip() {
     return (
       <a
         href={sessionHref}
+        aria-label={accessibleName}
         className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-600"
       >
         {label}
@@ -76,6 +80,7 @@ export function SessionStatusChip() {
   return (
     <a
       href={sessionHref}
+      aria-label={accessibleName}
       className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}
       title={snapshot.session.subject}
     >

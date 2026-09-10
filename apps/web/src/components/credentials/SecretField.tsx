@@ -24,6 +24,10 @@ export function SecretField({
   multiline = false,
   required = false,
 }: SecretFieldProps) {
+  const hintId = `${id}-hint`;
+  const hintText =
+    hint ??
+    "Masked. Paste is allowed. Cleared from this page after a successful submit.";
   const shared =
     "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20";
 
@@ -33,6 +37,7 @@ export function SecretField({
       {multiline ? (
         <textarea
           id={id}
+          aria-describedby={hintId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onPaste={(event) => {
@@ -54,6 +59,7 @@ export function SecretField({
         <input
           id={id}
           type="password"
+          aria-describedby={hintId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onPaste={(event) => {
@@ -71,9 +77,8 @@ export function SecretField({
           className={shared}
         />
       )}
-      <span className="mt-1 block text-xs text-zinc-500">
-        {hint ??
-          "Masked. Paste is allowed. Cleared from this page after a successful submit."}
+      <span id={hintId} className="mt-1 block text-xs text-zinc-500">
+        {hintText}
       </span>
     </label>
   );

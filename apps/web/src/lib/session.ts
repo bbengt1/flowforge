@@ -140,7 +140,7 @@ export function sessionExpiryBannerState(
     return {
       visible: true,
       title: "Session expired",
-      role: "status",
+      role: "alert",
       kind: "expired",
     };
   }
@@ -168,6 +168,29 @@ export function sessionStatusChipLabel(
   }
   const expiresAt = effectiveExpiresAt(snapshot.session);
   return `${snapshot.session.subject} · ${formatSessionCountdown(expiresAt, now)}`;
+}
+
+/** Screen-reader name: state is not color-only. Visible chip text stays compact. */
+export function sessionStatusChipAccessibleName(
+  snapshot: SessionChromeSnapshot,
+  now = Date.now(),
+): string {
+  if (snapshot.stale) {
+    return "Session stale. Re-establish a cookie session.";
+  }
+  if (!snapshot.active) {
+    return "No session";
+  }
+  const expiresAt = effectiveExpiresAt(snapshot.session);
+  const countdown = formatSessionCountdown(expiresAt, now);
+  const state = sessionExpiryState(expiresAt, now);
+  if (state === "expired") {
+    return `Session expired for ${snapshot.session.subject}`;
+  }
+  if (state === "warning") {
+    return `Session expiring soon for ${snapshot.session.subject}: ${countdown}`;
+  }
+  return `Session active for ${snapshot.session.subject}: ${countdown}`;
 }
 
 export function formatSessionCountdown(

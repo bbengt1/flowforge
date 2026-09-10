@@ -182,3 +182,7 @@ TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=dis
 ```
 
 See [e12-resilience-capacity.md](reference/e12-resilience-capacity.md). CI job: `.github/workflows/e12-resilience.yml`. The E12.1 security suite is unchanged.
+
+Operator/admin **UI** procedures (shell, vault, embed/Portal expectations,
+session/CHIPS/CSRF) are [guides/operator-admin.md](guides/operator-admin.md).
+Do not duplicate OpenAPI/deploy/incident/backup there.

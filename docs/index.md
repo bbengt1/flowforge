@@ -9,11 +9,13 @@
 - [Standard action catalog](reference/action-catalog.md): core workflow nodes and their safe contracts.
 - [Core neutral node contracts](reference/core-node-contracts.md): E3.3 typed ports, `with` schemas, bounds, policy, and catalog deltas for the UI.
 - [Frontend UI](reference/frontend-ui.md): workflow canvas, action wizard, credential vault, and UX requirements.
+- [Operator / admin UI guide](guides/operator-admin.md): shell, authoring, vault, executions, approvals, embed/Portal, ADV-024, session/CHIPS/CSRF (Chloe, E12.3).
+- [E12.3 accessibility review](reference/e12-accessibility-review.md): findings, fixes applied, and tracked gaps.
 - [Database specification](reference/database.md): PostgreSQL entities, isolation, execution durability, and retention.
 - [Security model](reference/security-model.md): trust boundaries, sessions, triggers, secret handling, and security verification.
 - [E12.1 security verification suite](reference/e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.
 - [E12.2 operational resilience and capacity](reference/e12-resilience-capacity.md): backup/restore, worker-loss, queue lag, migrate serialization, load peaks, and ≥2× headroom.
-- [E12.3 release and operations](operations/index.md): API/OpenAPI, deploy/config, incident/recovery, retention/backup (jonny). Operator/admin UI + accessibility — Chloe / E12.3.
+- [E12.3 release and operations](operations/index.md): API/OpenAPI, deploy/config, incident/recovery, retention/backup (jonny) plus Chloe UI/a11y landings.
 - [API / OpenAPI publishing](reference/openapi.md): how to obtain the published spec, `/api/v1` versioning, and auth notes.
 - [E12.3 threat-model review](reference/e12-threat-model-review.md): production-gate checklist against existing controls and E12 evidence.
 - [Kubernetes API engine](reference/kubernetes-engine.md): first backend workflow-node capability.

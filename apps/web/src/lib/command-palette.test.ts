@@ -4,7 +4,10 @@ import {
   commandHref,
   filterPaletteCommands,
   isWorkflowHomePath,
+  PALETTE_INPUT_LABEL,
+  PALETTE_SHORTCUT_HELP,
   paletteCommands,
+  paletteHighlightIndex,
 } from "./command-palette.ts";
 import {
   clearNotifications,
@@ -76,6 +79,17 @@ describe("paletteCommands", () => {
   it("filters commands by query", () => {
     const commands = paletteCommands([...viewer, "workflow.edit"]);
     assert.equal(filterPaletteCommands(commands, "new")[0]?.id, "new-workflow");
+  });
+
+  it("moves the highlight with arrows and wraps", () => {
+    assert.equal(paletteHighlightIndex(0, "ArrowDown", 3), 1);
+    assert.equal(paletteHighlightIndex(2, "ArrowDown", 3), 0);
+    assert.equal(paletteHighlightIndex(0, "ArrowUp", 3), 2);
+    assert.equal(paletteHighlightIndex(1, "Home", 3), 0);
+    assert.equal(paletteHighlightIndex(0, "End", 3), 2);
+    assert.equal(paletteHighlightIndex(1, "Enter", 3), 1);
+    assert.match(PALETTE_SHORTCUT_HELP, /Ctrl\+Shift\+K/);
+    assert.equal(PALETTE_INPUT_LABEL, "Filter commands");
   });
 });
 

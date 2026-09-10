@@ -53,6 +53,7 @@ export function NotificationCenter() {
                 type="button"
                 className="text-[11px] text-zinc-500 hover:text-zinc-800"
                 onClick={() => dismissNotification(item.id)}
+                aria-label={`Dismiss notification: ${item.title}`}
               >
                 Dismiss
               </button>

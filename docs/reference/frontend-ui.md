@@ -25,7 +25,7 @@ flowchart TB
 - Persistent workspace switcher with current workspace, role, and environment context.
 - Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, Approvals, Alerts, Settings (plus Audit / Membership / Isolation as foundation links). Navigation only shows capabilities permitted by RBAC from `GET /workspace`. Until E6.1, the slim operator header exposed the same destinations; E6.1 replaces that header with the product shell.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
-- Command palette (⌘/Ctrl+K) for keyboard-first navigation and common commands: new workflow, import YAML, open YAML/editor, validate, publish, run a selected published version, and open execution / vault / config / approvals / alerts.
+- Command palette (Ctrl+Shift+K, or the Commands button) for keyboard-first navigation and common commands: new workflow, import YAML, open YAML/editor, validate, publish, run a selected published version, and open execution / vault / config / approvals / alerts.
 - Notifications show safe validation, publish, and execution status; they do not expose secrets.
 
 ## Workflow home
@@ -108,13 +108,14 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 - Mouse/trackpad canvas interactions have keyboard equivalents; touch devices use a simplified inspector-first graph editing mode rather than tiny controls.
 - Responsive layout preserves the canvas and inspector on desktop; on smaller screens, library and inspector become drawers while workflow review/run/history remain fully usable.
 - Respect reduced motion and user color preferences. Motion is limited to meaningful execution/connection feedback.
+- E12.3 review and cheap shell/search/palette/session/vault fixes: [e12-accessibility-review.md](e12-accessibility-review.md). Operator keyboard paths: [operator-admin UI guide](../guides/operator-admin.md).
 
 ## E6.1 workspace shell and workflow home
 
 E6.1 (Chloe) replaces the slim operator header with the product workspace shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same as E2.3 / E2.1.
 
-- **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings, Membership, and Isolation stay available so operators can bootstrap a workspace.
-- **Search / palette:** client-side index of workflow name/slug, core catalog action types, credential display name/tags, execution IDs, alerts (identifiers only), and docs. Unexpected secret fields are stripped and never searchable. Cmd/Ctrl+K opens the command palette. New workflow / import use existing `POST /workflows`.
+- **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings stays available. Membership and Isolation appear only when `workspace.administer` or `platform.administer` is granted (ADV-024).
+- **Search / palette:** client-side index of workflow name/slug, core catalog action types, credential display name/tags, execution IDs, alerts (identifiers only), and docs. Unexpected secret fields are stripped and never searchable. Ctrl+Shift+K (Commands) opens the command palette. New workflow / import use existing `POST /workflows`.
 - **Workflow home (`/workflows`):** list + card views with client-side filters (folders from a name prefix `ops/…` or `ops: …`, or a slug `ops--name` encoding — slugs cannot contain `/`; tags from status; owner; trigger from draft summary; environment; status; last run; last modified). Validation health and pending approvals are joined from existing draft / `GET /approvals` responses. Last run uses `GET /workflows/{id}/executions?limit=1` so a workspace-wide top-50 list cannot mark older workflows as never run. Create, import, duplicate, and template cards POST a draft; export uses `GET …/versions/{id}/export` when a published version exists. There is no archive or template API on main. Search and home list drop previous-workspace metadata as soon as tenant/workbench changes.
 - **Editor:** E6.2 canvas + YAML editor is `/workflows/{id}`. `/actions` lists the enabled catalog library. `/templates` and `/settings` are shell destinations.
 
@@ -795,19 +796,21 @@ serialization, and ≥2× capacity headroom are harness + docs
 ([e12-resilience-capacity.md](e12-resilience-capacity.md)). Do not add
 operator chrome for lag or headroom on this story. Keep #183 open.
 
-## E12.3 operator/admin UI guides and accessibility (Chloe)
+## E12.3 operator/admin UI + accessibility (Chloe)
 
-**Placeholder — Chloe / E12.3.** Relates to #184 / Part of #181.
-**Keep #184 open.** This file is not the operator/admin guide and does
-not claim an accessibility review.
+Relates to #184 / Part of #181. **Keep #184 open.** This file is **not**
+the operator/admin guide. Walkthroughs live in
+[operator-admin.md](../guides/operator-admin.md). Accessibility review:
+[e12-accessibility-review.md](e12-accessibility-review.md).
 
-Expected Chloe landing (separate PR):
+- **Guide:** product-shell walkthroughs for membership, vault, approvals,
+  executions, alerts, embed chrome, and admin screens. Points at
+  [embed-sdk](embed-sdk.md) / [portal-adapter](portal-adapter.md).
+  Membership/isolation only when granted (ADV-024).
+- **A11y:** findings, cheap fixes in `apps/web`, tracked gaps. No canvas
+  redesign.
 
-- Operator/admin **UI** guide (membership, vault, approvals, executions,
-  alerts, embed chrome) — walkthroughs of existing screens only.
-- Accessibility review before production approval.
-
-Control-plane docs already on `main` from jonny's E12.3 slice:
+Control-plane docs (jonny, #188) stay authoritative for API/deploy/ops:
 
 - [Release and operations](../operations/index.md)
 - [API / OpenAPI](openapi.md)
