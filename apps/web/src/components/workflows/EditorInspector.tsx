@@ -36,12 +36,15 @@ import { wizardConfigFields, type WizardConfigField } from "@/lib/workflow-actio
 import {
   EDITOR_INSPECTOR,
   INSPECTOR_METADATA_ONLY_HELP,
+  INSPECTOR_NO_SECRET_SURFACE_HELP,
   canEditInspector,
   inspectorCredentialFields,
+  inspectorCredentialRefValue,
   inspectorCredentialTypes,
   inspectorEditConstraint,
   inspectorFocus,
   inspectorWithFields,
+  isInspectorSecretSurfaceName,
 } from "@/lib/editor-inspector";
 
 type EditorInspectorProps = {
@@ -323,7 +326,7 @@ function SelectedNodePins({
       <p className="mt-1 text-sm text-zinc-600">
         Inspector is <span className="font-medium">edit</span>. Add action stays
         the guided wizard ({EDITOR_INSPECTOR.wizardSteps.join(" → ")}).{" "}
-        {INSPECTOR_METADATA_ONLY_HELP}
+        {INSPECTOR_METADATA_ONLY_HELP} {INSPECTOR_NO_SECRET_SURFACE_HELP}
       </p>
       {constraint ? (
         <p role="status" className="mt-2 text-sm text-amber-950">
@@ -417,9 +420,13 @@ function SelectedNodePins({
             }
             disabled={!canEdit || !onPatchNodeWith}
             allowedTypes={inspectorCredentialTypes(node.type)}
-            onChange={(credentialId) =>
-              onPatchNodeWith?.(node.id, { [fieldName]: credentialId })
-            }
+            onChange={(credentialId) => {
+              const ref = inspectorCredentialRefValue(credentialId);
+              if (ref === null) {
+                return;
+              }
+              onPatchNodeWith?.(node.id, { [fieldName]: ref });
+            }}
           />
           <p className="mt-1 text-xs text-zinc-500">
             Credentials are selected by display name only. YAML stores the
@@ -450,6 +457,9 @@ function InspectorWithField({
   disabled: boolean;
   onChange: (value: unknown) => void;
 }) {
+  if (isInspectorSecretSurfaceName(field.name)) {
+    return null;
+  }
   const text =
     value == null || value === ""
       ? field.readOnly

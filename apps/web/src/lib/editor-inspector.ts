@@ -11,6 +11,7 @@
  */
 
 import { isHttpConfigurableType } from "./core-http-notification-contract.ts";
+import { isSecretFieldName } from "./credential.ts";
 import { authorizedSelectorOptions } from "./ops-config.ts";
 import type { OpsConfigKind, OpsConfigPin } from "./ops-config-types.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -30,6 +31,10 @@ import {
   type GroupedValidationError,
 } from "./workflow-graph.ts";
 import type { WorkflowFieldError } from "./workflow-types.ts";
+import {
+  isForbiddenYamlKey,
+  looksLikeSecretValue,
+} from "./workflow-yaml-nodes.ts";
 import { canCreateWorkflows } from "./workspace-nav.ts";
 
 export const UX4_STORY = 199;
@@ -45,6 +50,8 @@ export const INSPECTOR_HTTP_403_HELP =
   "HTTP 403 empties pin and credential selectors. No leftover rows.";
 export const INSPECTOR_METADATA_ONLY_HELP =
   "Selectors show display name and version only. YAML stores workspace UUIDs. Secrets, kubeconfig, and private keys are never listed.";
+export const INSPECTOR_NO_SECRET_SURFACE_HELP =
+  "The inspector never opens a secret surface. No SecretField, plaintext, or rotate UI in the right rail — display name + UUID refs only.";
 
 export const EDITOR_INSPECTOR = {
   wizardIsAdd: true,
@@ -54,6 +61,10 @@ export const EDITOR_INSPECTOR = {
   metadataOnly: true,
   yamlStoresUuids: true,
   secretsNeverShown: true,
+  displayNamePlusUuidOnly: true,
+  noSecretFieldInRail: true,
+  noPlaintextInRail: true,
+  noRotateUiInNodeInspector: true,
   http403EmptiesSelectors: true,
   missingPermissionExplainsConstraint: true,
   workflowSelectionShowsTriggers: true,
@@ -63,7 +74,17 @@ export const EDITOR_INSPECTOR = {
   noCredentialFromInspectorModal: true,
 } as const;
 
-const CREDENTIAL_FIELD = /credential|connectionid/i;
+export const INSPECTOR_RAIL_SOURCES = [
+  "src/components/workflows/NodeInspector.tsx",
+  "src/components/workflows/EditorInspector.tsx",
+  "src/components/config/SshPinSelect.tsx",
+] as const;
+
+const CREDENTIAL_REF_FIELD = /^(credentialid|connectionid)$/i;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SECRET_SURFACE_IN_SOURCE =
+  /SecretField\b|type=["']password["']|rotateCredential|forgetSecretDraft|rotateWebhookTrigger/;
 
 export type InspectorFocus = "workflow" | "edge" | "node";
 
@@ -107,6 +128,27 @@ export function inspectorCredentialTypes(type: string) {
   return credentialTypesForAction(type);
 }
 
+export function isInspectorCredentialRefField(name: string): boolean {
+  return CREDENTIAL_REF_FIELD.test(name.replaceAll("_", ""));
+}
+
+export function isInspectorSecretSurfaceName(name: string): boolean {
+  if (isInspectorCredentialRefField(name)) {
+    return false;
+  }
+  return isSecretFieldName(name) || isForbiddenYamlKey(name);
+}
+
+export function inspectorCredentialRefValue(value: unknown): string | null {
+  if (value == null || value === "") {
+    return "";
+  }
+  if (typeof value === "string" && UUID.test(value.trim())) {
+    return value.trim();
+  }
+  return null;
+}
+
 export function inspectorCredentialFields(
   entry: Pick<ActionLibraryEntry, "requiredWith" | "allowedWith"> | undefined,
   nodeType: string,
@@ -120,7 +162,7 @@ export function inspectorCredentialFields(
   ];
   return names.filter(
     (name, index, all) =>
-      all.indexOf(name) === index && CREDENTIAL_FIELD.test(name),
+      all.indexOf(name) === index && isInspectorCredentialRefField(name),
   );
 }
 
@@ -132,11 +174,58 @@ export function inspectorWithFields(
     if (field.selectorKind) {
       return false;
     }
-    if (CREDENTIAL_FIELD.test(field.name) && !isHttpConfigurableType(nodeType)) {
+    if (isInspectorSecretSurfaceName(field.name)) {
+      return false;
+    }
+    if (
+      isInspectorCredentialRefField(field.name) &&
+      !isHttpConfigurableType(nodeType)
+    ) {
       return false;
     }
     return true;
   });
+}
+
+export function sanitizeInspectorWithPatch(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(patch)) {
+    if (!key.trim() || isInspectorSecretSurfaceName(key)) {
+      continue;
+    }
+    if (isInspectorCredentialRefField(key) || /id$/i.test(key)) {
+      const ref = inspectorCredentialRefValue(raw);
+      if (ref !== null) {
+        out[key] = ref;
+      }
+      continue;
+    }
+    if (typeof raw === "string" && looksLikeSecretValue(raw)) {
+      continue;
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const nested: Record<string, unknown> = {};
+      for (const [child, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (!child.trim() || isInspectorSecretSurfaceName(child)) {
+          continue;
+        }
+        if (typeof value === "string" && looksLikeSecretValue(value)) {
+          continue;
+        }
+        nested[child] = value;
+      }
+      out[key] = nested;
+      continue;
+    }
+    out[key] = raw;
+  }
+  return out;
+}
+
+export function inspectorSourceForbidsSecretSurface(source: string): boolean {
+  return !SECRET_SURFACE_IN_SOURCE.test(source);
 }
 
 export function inspectorShowsCoreWith(type: string): boolean {

@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   EDITOR_INSPECTOR,
   INSPECTOR_EDIT_PERMISSION,
   INSPECTOR_HTTP_403_HELP,
   INSPECTOR_METADATA_ONLY_HELP,
   INSPECTOR_MISSING_EDIT_HELP,
+  INSPECTOR_NO_SECRET_SURFACE_HELP,
+  INSPECTOR_RAIL_SOURCES,
   UX4_EPIC,
   UX4_KEEP_STORY_OPEN,
   UX4_STORY,
@@ -13,14 +18,18 @@ import {
   failClosedCredentialOptions,
   failClosedSelectorOptions,
   inspectorCredentialFields,
+  inspectorCredentialRefValue,
   inspectorCredentialTypes,
   inspectorEditConstraint,
   inspectorFocus,
   inspectorPinField,
   inspectorPinKinds,
   inspectorShowsCoreWith,
+  inspectorSourceForbidsSecretSurface,
   inspectorValidationLinks,
   inspectorWithFields,
+  isInspectorSecretSurfaceName,
+  sanitizeInspectorWithPatch,
 } from "./editor-inspector.ts";
 import { ACTION_WIZARD_STEPS } from "./workflow-action-wizard.ts";
 import type { WizardConfigField } from "./workflow-action-wizard.ts";
@@ -86,6 +95,11 @@ describe("UX.4 selected-node inspector", () => {
       "review",
     ]);
     assert.equal(EDITOR_INSPECTOR.noCredentialFromInspectorModal, true);
+    assert.equal(EDITOR_INSPECTOR.displayNamePlusUuidOnly, true);
+    assert.equal(EDITOR_INSPECTOR.noSecretFieldInRail, true);
+    assert.equal(EDITOR_INSPECTOR.noPlaintextInRail, true);
+    assert.equal(EDITOR_INSPECTOR.noRotateUiInNodeInspector, true);
+    assert.match(INSPECTOR_NO_SECRET_SURFACE_HELP, /SecretField/);
   });
 
   it("enables pin and credential selects only with workflow.edit and a callable session", () => {
@@ -185,6 +199,60 @@ describe("UX.4 selected-node inspector", () => {
       fields.map((item) => item.name),
       ["timeoutSeconds", "namespace"],
     );
+    assert.deepEqual(
+      inspectorWithFields(
+        [
+          field("timeoutSeconds"),
+          field("kubeconfig"),
+          field("privateKey"),
+          field("token"),
+          field("password"),
+        ],
+        "ssh.run",
+      ).map((item) => item.name),
+      ["timeoutSeconds"],
+    );
+  });
+
+  it("never writes secret material — only display-name UUIDs in YAML", () => {
+    assert.equal(isInspectorSecretSurfaceName("kubeconfig"), true);
+    assert.equal(isInspectorSecretSurfaceName("privateKey"), true);
+    assert.equal(isInspectorSecretSurfaceName("token"), true);
+    assert.equal(isInspectorSecretSurfaceName("credentialId"), false);
+    assert.equal(
+      inspectorCredentialRefValue("33333333-3333-4333-8333-333333333333"),
+      "33333333-3333-4333-8333-333333333333",
+    );
+    assert.equal(inspectorCredentialRefValue("-----BEGIN RSA PRIVATE KEY-----"), null);
+    assert.equal(inspectorCredentialRefValue("not-a-uuid"), null);
+    assert.deepEqual(
+      sanitizeInspectorWithPatch({
+        credentialId: "33333333-3333-4333-8333-333333333333",
+        kubeconfig: "apiVersion: v1",
+        token: "tok-live",
+        timeoutSeconds: 30,
+        parameters: { password: "hunter2", retries: 1 },
+      }),
+      {
+        credentialId: "33333333-3333-4333-8333-333333333333",
+        timeoutSeconds: 30,
+        parameters: { retries: 1 },
+      },
+    );
+  });
+
+  it("keeps SecretField, plaintext, and rotate UI out of the inspector rail", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    for (const relative of INSPECTOR_RAIL_SOURCES) {
+      const source = readFileSync(join(here, "..", "..", relative), "utf8");
+      assert.equal(
+        inspectorSourceForbidsSecretSurface(source),
+        true,
+        relative,
+      );
+      assert.equal(source.includes("SecretField"), false, relative);
+      assert.equal(source.includes('type="password"'), false, relative);
+    }
   });
 
   it("focuses workflow triggers, edge ports, or the selected node", () => {

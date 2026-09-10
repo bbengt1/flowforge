@@ -65,6 +65,7 @@ import {
   updateYamlNode,
   type CoreNodeWith,
 } from "@/lib/workflow-yaml-nodes";
+import { sanitizeInspectorWithPatch } from "@/lib/editor-inspector";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -1000,7 +1001,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
       id: node.id,
       type: node.type,
       name: node.name,
-      with: { ...node.with, ...patch },
+      with: { ...node.with, ...sanitizeInspectorWithPatch(patch) },
     });
     if (next) {
       setDigest(null);
