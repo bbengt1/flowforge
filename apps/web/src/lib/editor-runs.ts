@@ -3,10 +3,10 @@
  *
  * Relates to #201 / Part of #195. Keep #201 open until merge.
  *
- * Chloe UI only. Reuses ExecutionHistory listbox patterns,
- * listWorkflowExecutions, and the existing `/executions/{id}` replay
- * page (embed-prefixed when mounted). No second replay canvas, no
- * apps/api changes, no UX.11 redacted run I/O, no draft execute.
+ * Chloe UI only. Reuses ExecutionHistory listbox patterns and
+ * listWorkflowExecutions. UX.11 overlays the selected run on the same
+ * editor canvas; `/executions/{id}` remains the ops deep-link, not a
+ * second graph. No apps/api changes, no draft execute.
  */
 
 import { EMBED_ROUTES } from "./embed-contract.ts";
@@ -19,7 +19,6 @@ import {
 } from "./execution.ts";
 import {
   executionHistoryHref,
-  KEYBOARD_HISTORY_HELP,
   listExecutionsPath,
   listWorkflowExecutionsPath,
 } from "./execution-contract.ts";
@@ -43,15 +42,20 @@ export const EDITOR_RUNS = {
   scopedToOpenWorkflow: true,
   usesWorkflowExecutionsCollection: true,
   keyboardMatchesHistory: true,
-  openGoesToExistingReplayRoute: true,
+  openGoesToExistingReplayRoute: false,
+  openOverlaysSameCanvas: true,
+  opsDeepLinkRemainsAvailable: true,
   noSecondReplayCanvas: true,
   indeterminateIconAndText: true,
   startPublishedUsesExistingRunControl: true,
   workspaceExecutionsRemainsOpsView: true,
   noNewEmbedRoutes: true,
   noDraftExecute: true,
-  noRedactedRunIoInInspector: true,
+  noRedactedRunIoInInspector: false,
 } as const;
+
+export const EDITOR_RUN_OVERLAY_KEYBOARD_HELP =
+  "Arrow keys move through this workflow's runs. Enter or Space overlays the focused run on this canvas. Open execution still goes to the workspace detail page.";
 
 export const EDITOR_RUNS_SOURCES = [
   "src/components/workflows/EditorRunsDrawer.tsx",
@@ -109,7 +113,7 @@ export function editorRunsKeyAction(
 }
 
 export function editorRunsKeyboardHelp(): string {
-  return KEYBOARD_HISTORY_HELP;
+  return EDITOR_RUN_OVERLAY_KEYBOARD_HELP;
 }
 
 export function editorRunsCanList(

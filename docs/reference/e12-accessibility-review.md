@@ -24,7 +24,7 @@ Evidence is secret-free.
 | Command palette | `CommandPalette` | Ctrl+Shift+K. Labeled filter, listbox + highlight, Esc restores focus to Commands. |
 | Session chrome | `SessionStatusChip`, `SessionExpiryBanner` | Accessible chip name; stale/expired are `role="alert"`; warning stays `status`. |
 | Workflow home | `/workflows` · `WorkflowHome` | Page `h1`. Filters labeled. List/Cards `aria-pressed`. Import input `sr-only`. |
-| Authoring | `/workflows/{id}` · canvas, YAML, wizard, validation | Canvas `role="application"` + node/edge labels. YAML `htmlFor`. Validation `aria-live`. Wizard dialog + Esc. UX.10: labeled editor bar; library / YAML / runs / (narrow) inspector Esc closes + focus return; selection `status` announcement. |
+| Authoring | `/workflows/{id}` · canvas, YAML, wizard, validation | Canvas `role="application"` + node/edge labels. YAML `htmlFor`. Validation `aria-live`. Wizard dialog + Esc. UX.10: labeled editor bar; library / YAML / runs / (narrow) inspector Esc closes + focus return; selection `status` announcement. UX.11: last-run I/O is redacted; `indeterminate` stays icon+text in the inspector. |
 | Credentials | `/credentials` · vault, wizard, `SecretField` | Labeled filters. Secret fields described; never plaintext in list. |
 | Executions | `/executions` · `ExecutionHistory` | Focusable listbox, Arrow/Enter, status icon + `sr-only` description. Skip-to-error links on detail. |
 | Approvals | `/approvals` | Labeled filters. Expired banner `alert`; decide disabled. |

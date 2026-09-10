@@ -100,7 +100,9 @@ persisted definition.
 4. **YAML / runs / inspector drawers** — labeled top-bar toggles. Esc
    closes the open drawer and returns focus. On narrow viewports
    (`max-width: 767px`) the inspector stacks first — a documented
-   breakpoint, not a mobile app.
+   breakpoint, not a mobile app. Selecting a run overlays step status
+   on this canvas; the inspector shows redacted last-run I/O for the
+   selected node. **Open execution** still goes to `/executions/{id}`.
 5. **YAML editor** — labeled editor, line/column jump, debounced
    validate. Save normalizes and replaces the buffer with API YAML +
    digest.
