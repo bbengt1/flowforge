@@ -46,10 +46,6 @@ export function CommandPalette() {
   const visible = filterPaletteCommands(commands, query);
   const highlighted = visible[highlight] ?? visible[0];
 
-  useEffect(() => {
-    setHighlight(0);
-  }, [query]);
-
   function closePalette() {
     setOpen(false);
     setQuery("");
@@ -163,7 +159,10 @@ export function CommandPalette() {
           <input
             autoFocus
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setHighlight(0);
+            }}
             placeholder="Type a command…"
             className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             role="combobox"
