@@ -53,6 +53,10 @@ import {
   type InspectorAddCredentialRequest,
   type InspectorPendingCredential,
 } from "@/lib/editor-credential";
+import {
+  EditorWorkflowTabs,
+  type WorkflowInspectorAdmin,
+} from "@/components/workflows/EditorWorkflowTabs";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import Link from "next/link";
 
@@ -83,6 +87,7 @@ type EditorInspectorProps = {
   credentialRefreshNonce?: number;
   pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
   onAddCredential?: (request: InspectorAddCredentialRequest) => void;
+  workflowAdmin?: WorkflowInspectorAdmin;
 };
 
 export function EditorInspector({
@@ -112,6 +117,7 @@ export function EditorInspector({
   credentialRefreshNonce,
   pendingCredentials,
   onAddCredential,
+  workflowAdmin,
 }: EditorInspectorProps) {
   const focus = inspectorFocus(selection);
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
@@ -129,7 +135,19 @@ export function EditorInspector({
 
   return (
     <div className="space-y-6">
-      {focus === "workflow" ? <WorkflowInspect yaml={yaml} graph={graph} /> : null}
+      {focus === "workflow" ? (
+        <>
+          <WorkflowInspect yaml={yaml} graph={graph} />
+          {workflowAdmin ? (
+            <EditorWorkflowTabs
+              identity={identity}
+              canCall={canCall}
+              yaml={yaml}
+              {...workflowAdmin}
+            />
+          ) : null}
+        </>
+      ) : null}
       {focus === "edge" && selection.kind === "edge" ? (
         <EdgeInspect graph={graph} from={selection.from} to={selection.to} entries={entries} />
       ) : null}
