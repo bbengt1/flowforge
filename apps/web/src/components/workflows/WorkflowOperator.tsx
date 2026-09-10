@@ -1072,7 +1072,18 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
 
   return (
     <EditorChrome
-      identityGate={!canCall ? <IsolationIdentityPanel /> : null}
+      identityGate={
+        !canCall ? (
+          <details className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-800">
+              Set workspace identity to load this workflow
+            </summary>
+            <div className="mt-3">
+              <IsolationIdentityPanel />
+            </div>
+          </details>
+        ) : null
+      }
       topBar={
         <EditorTopBar
           workflow={workflow}
