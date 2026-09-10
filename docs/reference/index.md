@@ -7,3 +7,4 @@ Future implementation changes should add API, deployment, and runner references 
 - [Backend API map](backend-api-map.md): implemented control-plane routes and contracts.
 - [Embed SDK / contract](embed-sdk.md): E11.1 mint/exchange plus E11.2 validation, durable `jti`, key rotation, and tenancy propagation.
 - [CP Ops Portal adapter](portal-adapter.md): E11.3 Portal host wiring, capability map, and fail-closed integration boundary.
+- [E12.1 security verification suite](e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.

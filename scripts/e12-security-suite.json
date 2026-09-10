@@ -1,0 +1,227 @@
+{
+  "id": "E12.1",
+  "relatesTo": 182,
+  "partOf": 181,
+  "keepIssueOpen": true,
+  "title": "Security verification suite",
+  "goModuleDir": "apps/api",
+  "webDir": "apps/web",
+  "provenanceSibling": {
+    "workflow": ".github/workflows/supply-chain.yml",
+    "jobs": [
+      "govulncheck",
+      "image-scan (Trivy HIGH/CRITICAL fs + CRITICAL image, SPDX SBOM, provenance)"
+    ],
+    "policy": "deploy/supply-chain/policy.md"
+  },
+  "goPackages": [
+    "./internal/approval",
+    "./internal/artifact",
+    "./internal/authz",
+    "./internal/config",
+    "./internal/embed",
+    "./internal/httpapi",
+    "./internal/httpnotify",
+    "./internal/identity",
+    "./internal/isolation",
+    "./internal/kubernetes",
+    "./internal/observability",
+    "./internal/opsalert",
+    "./internal/opsconfig",
+    "./internal/policy",
+    "./internal/portal",
+    "./internal/postgres",
+    "./internal/schedule",
+    "./internal/scripts",
+    "./internal/session",
+    "./internal/ssh",
+    "./internal/vault",
+    "./internal/webhook",
+    "./internal/wfstore",
+    "./internal/workflow"
+  ],
+  "domains": [
+    {
+      "id": "identity-session-embed",
+      "title": "Identity, session, embed replay, and key rotation",
+      "goPackages": [
+        "./internal/embed",
+        "./internal/session",
+        "./internal/authz",
+        "./internal/identity",
+        "./internal/portal",
+        "./internal/config"
+      ],
+      "goTestMatch": {
+        "./internal/httpapi": "TestEmbed|TestSession|TestFailClosed|TestDeleteWorkspace|TestPortal|TestIdentity|TestOpsRead|TestGetSession|TestHostileOrigin|TestCSRF|TestPrivilegeEscalation|TestLogout|TestHeaderAuth|TestStaleSession|TestRefreshExtends|TestSessionCookie",
+        "./internal/postgres": "TestMigrate|TestAppRole|TestEnsureAppRole"
+      },
+      "web": [
+        "src/lib/embed-contract.test.ts",
+        "src/lib/embed-tenancy-contract.test.ts",
+        "src/lib/embed-client.test.ts",
+        "src/lib/embed-tenancy-client.test.ts",
+        "src/lib/session.test.ts",
+        "src/lib/session-embed-contract.test.ts",
+        "src/lib/session-cookies.test.ts",
+        "src/lib/session-contract.test.ts",
+        "src/lib/session-client.test.ts",
+        "src/lib/csrf.test.ts",
+        "src/lib/security-headers.test.ts",
+        "src/lib/identity-headers.test.ts",
+        "src/lib/identity-proxy.test.ts",
+        "src/lib/portal-adapter-contract.test.ts",
+        "src/lib/portal-embed-client.test.ts",
+        "src/lib/adv013-cross-origin-contract.test.ts",
+        "src/lib/dev-identity.test.ts"
+      ]
+    },
+    {
+      "id": "webhook-safety",
+      "title": "Webhook safety (HMAC, replay, opaque IDs)",
+      "goPackages": ["./internal/webhook", "./internal/schedule"],
+      "goTestMatch": {
+        "./internal/httpapi": "TestWebhook",
+        "./internal/workflow": "TestWebhook",
+        "./internal/httpnotify": "TestWebhookIdempotency"
+      },
+      "web": [
+        "src/lib/webhook-trigger-contract.test.ts",
+        "src/lib/webhook-trigger-client.test.ts",
+        "src/lib/schedule-trigger-contract.test.ts"
+      ]
+    },
+    {
+      "id": "cross-workspace-isolation",
+      "title": "Cross-workspace isolation",
+      "goPackages": ["./internal/isolation", "./internal/postgres"],
+      "goTestMatch": {
+        "./internal/httpapi": "TestIsolation|TestCrossWorkspace|TestHostSupplied|TestCredentialVaultRejectsCross|TestEmbedExchangeCrossTenant|TestPortalCrossTenant|TestPortalHostWorkspace|TestDispatchHostWorkspace|TestWorkflowRBACAndHostIdentity|TestOpsConfigDraftPublishPinAndIsolation|TestScriptCatalogPublishPinAndIsolation",
+        "./internal/wfstore": "Isolation|CrossWorkspace",
+        "./internal/kubernetes": "NamespaceIsolation",
+        "./internal/ssh": "Isolation",
+        "./internal/approval": "Isolation",
+        "./internal/identity": "Workspace"
+      },
+      "web": ["src/lib/isolation-exercises.test.ts"]
+    },
+    {
+      "id": "approval-expiry",
+      "title": "Approval expiry",
+      "goPackages": ["./internal/approval"],
+      "goTestMatch": {
+        "./internal/httpapi": "TestApproval|TestDurableApproval|TestPolicyEvaluateAndApproval",
+        "./internal/policy": "TestEvaluateRequireApproval|TestEvaluateFlowApproval"
+      },
+      "web": [
+        "src/lib/approval.test.ts",
+        "src/lib/approval-client.test.ts"
+      ]
+    },
+    {
+      "id": "credential-artifact-revocation",
+      "title": "Credential and artifact revocation",
+      "goPackages": ["./internal/vault"],
+      "goTestMatch": {
+        "./internal/httpapi": "TestCredentialVault|TestScriptRevoke|TestDeleteWorkspaceRevokes",
+        "./internal/scripts": "TestRevoke|Revoked",
+        "./internal/session": "Revoke"
+      },
+      "web": [
+        "src/lib/credential.test.ts",
+        "src/lib/credential-client.test.ts",
+        "src/lib/script-ops-contract.test.ts",
+        "src/lib/script-ops-client.test.ts"
+      ]
+    },
+    {
+      "id": "artifact-output-authz",
+      "title": "Artifact and output authorization, redaction, and legal holds",
+      "goPackages": ["./internal/artifact", "./internal/observability", "./internal/opsalert"],
+      "goTestMatch": {
+        "./internal/httpapi": "TestArtifact",
+        "./internal/wfstore": "Artifact|Redact|BoundStep",
+        "./internal/httpnotify": "TestSecret|TestOversize|TestSchemaRejects",
+        "./internal/kubernetes": "Redact",
+        "./internal/ssh": "Redaction",
+        "./internal/workflow": "Redact",
+        "./internal/scripts": "Redact"
+      },
+      "web": [
+        "src/lib/execution.test.ts",
+        "src/lib/execution-replay.test.ts"
+      ]
+    },
+    {
+      "id": "stale-worker-fencing",
+      "title": "Stale-worker fencing",
+      "goPackages": [],
+      "goTestMatch": {
+        "./internal/httpapi": "TestDispatchClaimFence|TestLatestRetryCandidate",
+        "./internal/wfstore": "Fence|Lease|Dispatch|JobTicket",
+        "./internal/scripts": "lease|Lease",
+        "./internal/ssh": "Lease"
+      },
+      "web": ["src/lib/ssh-retry-contract.test.ts", "src/lib/script-io-contract.test.ts"]
+    },
+    {
+      "id": "provider-failure",
+      "title": "Provider failure behavior",
+      "goPackages": ["./internal/kubernetes"],
+      "goTestMatch": {
+        "./internal/ssh": "Timeout|UnknownOutcome|Retry|Denied|KnownHost|Indeterminate|AuthzPolicy",
+        "./internal/scripts": "TestExecute|TestRetry|TestStop|Indeterminate|emergency",
+        "./internal/httpapi": "TestScriptRevokeAndEmergencyStop|TestScriptMutable|TestScriptDraft",
+        "./internal/wfstore": "RetrySemantics|Indeterminate"
+      },
+      "web": [
+        "src/lib/kubernetes-contract.test.ts",
+        "src/lib/ssh-retry-contract.test.ts",
+        "src/lib/script-io-contract.test.ts"
+      ]
+    },
+    {
+      "id": "ssrf-redirect-dns-rebinding",
+      "title": "SSRF, redirect, and DNS-rebinding denial (ADV-010)",
+      "goPackages": ["./internal/httpnotify"],
+      "goTestMatch": {
+        "./internal/httpnotify": ".",
+        "./internal/ssh": "DNSRebinding|NormalizeAddresses",
+        "./internal/policy": "HTTPAddress|CIDR",
+        "./internal/opsconfig": "AllowPrivate|Egress",
+        "./internal/httpapi": "TestHTTPNotification"
+      },
+      "web": ["src/lib/core-http-notification-contract.test.ts"]
+    },
+    {
+      "id": "dependency-image-provenance",
+      "title": "Dependency and image provenance gates",
+      "goPackages": [],
+      "goTestMatch": {},
+      "web": [],
+      "scripts": [
+        {
+          "id": "approved-bases",
+          "title": "Approved Dockerfile bases",
+          "argv": ["bash", "scripts/check-approved-bases.sh"]
+        },
+        {
+          "id": "deploy-defaults",
+          "title": "Deployment hardening defaults",
+          "argv": ["bash", "scripts/check-deploy-defaults.sh"]
+        },
+        {
+          "id": "govulncheck-clean-fixture",
+          "title": "govulncheck gate accepts clean fixture",
+          "argv": ["python3", "scripts/govulncheck-gate.py", "scripts/testdata/govulncheck-clean.json"]
+        },
+        {
+          "id": "govulncheck-reject-fixture",
+          "title": "govulncheck gate rejects third-party finding",
+          "argv": ["python3", "scripts/govulncheck-gate.py", "scripts/testdata/govulncheck-reject.json"],
+          "expectNonZero": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # E1.3: provenance, vulnerability, and restore-rehearsal gates.
 # Policy: deploy/supply-chain/policy.md
+# E12.1 provenance domain: this workflow's govulncheck + image-scan jobs
+# stay required; the named suite re-runs approved-bases / deploy-defaults /
+# govulncheck fixtures (see .github/workflows/e12-security.yml).
 name: supply-chain
 
 on:

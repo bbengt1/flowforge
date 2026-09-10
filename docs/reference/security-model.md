@@ -216,7 +216,9 @@ produce an auditable, version-pinned execution.
   limits; output/artifact authorization and redaction; stale worker fencing;
   approval expiry; provider credential revocation; and outbound HTTP SSRF
   (loopback/private/metadata denial after resolve, DNS rebinding, and
-  redirect-to-private).
+  redirect-to-private). The named E12.1 suite
+  (`scripts/e12-security-suite.sh`, CI `.github/workflows/e12-security.yml`)
+  is the verification gate; see [e12-security-verification.md](e12-security-verification.md).
 
 ## Incident-safe behavior
 

@@ -1,0 +1,652 @@
+{
+  "id": "E12.1",
+  "title": "Security verification suite",
+  "relatesTo": 182,
+  "partOf": 181,
+  "keepIssueOpen": true,
+  "ranAt": "2026-09-10T10:57:01Z",
+  "gitSha": "57dcbd2bf29b7d9fe6473f3828b3aa858331f885",
+  "databaseUrlSet": false,
+  "go": {
+    "exit": 0,
+    "elapsedSec": 17.675,
+    "tests": {
+      "passed": 793,
+      "failed": 0,
+      "skipped": 20
+    },
+    "packageFailures": []
+  },
+  "web": [
+    {
+      "id": "src/lib/embed-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.183,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/embed-tenancy-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.161,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/embed-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.167,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/embed-tenancy-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.16,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/session.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.102,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/session-embed-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.163,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/session-cookies.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.106,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/session-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.171,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/session-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.163,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/csrf.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.102,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/security-headers.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.164,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/identity-headers.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.111,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/identity-proxy.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.314,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/portal-adapter-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.165,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/portal-embed-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.171,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/adv013-cross-origin-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.164,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/dev-identity.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.096,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/webhook-trigger-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.269,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/webhook-trigger-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.269,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/schedule-trigger-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.236,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/isolation-exercises.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.092,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/approval.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.165,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/approval-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.171,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/credential.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.125,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/credential-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.167,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/script-ops-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.171,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/script-ops-client.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.208,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/execution.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.212,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/execution-replay.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.224,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/ssh-retry-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.211,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/script-io-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.166,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/kubernetes-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.22,
+      "exit": 0
+    },
+    {
+      "id": "src/lib/core-http-notification-contract.test.ts",
+      "status": "pass",
+      "elapsedSec": 0.168,
+      "exit": 0
+    }
+  ],
+  "scripts": [
+    {
+      "id": "approved-bases",
+      "title": "Approved Dockerfile bases",
+      "status": "pass",
+      "elapsedSec": 0.029,
+      "exit": 0,
+      "expectNonZero": false
+    },
+    {
+      "id": "deploy-defaults",
+      "title": "Deployment hardening defaults",
+      "status": "pass",
+      "elapsedSec": 0.03,
+      "exit": 0,
+      "expectNonZero": false
+    },
+    {
+      "id": "govulncheck-clean-fixture",
+      "title": "govulncheck gate accepts clean fixture",
+      "status": "pass",
+      "elapsedSec": 0.015,
+      "exit": 0,
+      "expectNonZero": false
+    },
+    {
+      "id": "govulncheck-reject-fixture",
+      "title": "govulncheck gate rejects third-party finding",
+      "status": "pass",
+      "elapsedSec": 0.015,
+      "exit": 1,
+      "expectNonZero": true
+    }
+  ],
+  "domains": [
+    {
+      "id": "identity-session-embed",
+      "title": "Identity, session, embed replay, and key rotation",
+      "status": "pass",
+      "go": {
+        "passed": 283,
+        "failed": 0,
+        "skipped": 9
+      },
+      "goExamples": [
+        "./internal/authz TestMatrixCoversRequiredFamilies",
+        "./internal/authz TestAllowsDenyByDefault",
+        "./internal/authz TestViewerCannotPerformPrivilegedActions",
+        "./internal/authz TestAdminHasEveryWorkspacePermission",
+        "./internal/authz TestPlatformAdminRoleIsNotWorkspaceAssignable",
+        "./internal/authz TestUnknownRoleExpandsToNothing",
+        "./internal/authz TestKnown",
+        "./internal/authz TestValidateClaimRequiresTenantAndWorkbench"
+      ],
+      "web": [
+        {
+          "id": "src/lib/embed-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/embed-tenancy-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/embed-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/embed-tenancy-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/session.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/session-embed-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/session-cookies.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/session-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/session-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/csrf.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/security-headers.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/identity-headers.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/identity-proxy.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/portal-adapter-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/portal-embed-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/adv013-cross-origin-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/dev-identity.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 300
+    },
+    {
+      "id": "webhook-safety",
+      "title": "Webhook safety (HMAC, replay, opaque IDs)",
+      "status": "pass",
+      "go": {
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0
+      },
+      "goExamples": [
+        "./internal/httpnotify TestWebhookIdempotencyHeader",
+        "./internal/schedule TestNextAfterTimezoneExplicit",
+        "./internal/schedule TestNextAfterRejectsUnknownTimezone",
+        "./internal/schedule TestNextAfterInterval",
+        "./internal/schedule TestPlanFiresNoCatchUpDefault",
+        "./internal/schedule TestPlanFiresCatchUpBounded",
+        "./internal/schedule TestPlanFiresOverlapSkip",
+        "./internal/schedule TestPlanFiresOverlapReject"
+      ],
+      "web": [
+        {
+          "id": "src/lib/webhook-trigger-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/webhook-trigger-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/schedule-trigger-contract.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 30
+    },
+    {
+      "id": "cross-workspace-isolation",
+      "title": "Cross-workspace isolation",
+      "status": "pass",
+      "go": {
+        "passed": 39,
+        "failed": 0,
+        "skipped": 8
+      },
+      "goExamples": [
+        "./internal/identity TestMemoryRejectsPlatformAdminWorkspaceBinding",
+        "./internal/identity TestMemoryDeleteWorkspaceDisables",
+        "./internal/isolation TestCacheIsWorkspaceScoped",
+        "./internal/isolation TestCachePropagatesTenantWorkbench",
+        "./internal/isolation TestMemoryRejectsCrossWorkspaceReadWriteLinkAndUse",
+        "./internal/isolation TestMemorySameWorkspaceLinkSucceeds",
+        "./internal/isolation TestMemoryStampsTenantWorkbenchOnRecords",
+        "./internal/isolation TestAuthorizeRejectsClientWorkspaceGuess"
+      ],
+      "web": [
+        {
+          "id": "src/lib/isolation-exercises.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 40
+    },
+    {
+      "id": "approval-expiry",
+      "title": "Approval expiry",
+      "status": "pass",
+      "go": {
+        "passed": 23,
+        "failed": 0,
+        "skipped": 1
+      },
+      "goExamples": [
+        "./internal/approval TestMemoryCreateDecideAndInvalidate",
+        "./internal/approval TestMemorySelfApprovalAndExpiry",
+        "./internal/approval TestFreshnessInvalidatesChangedPolicy",
+        "./internal/approval TestHasApproverRole",
+        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/evaluate_returns_bound_requirement",
+        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/dispatch_without_approval_is_409_and_materializes_a_pending_row",
+        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/requester_cannot_self-approve",
+        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/operator_cannot_decide"
+      ],
+      "web": [
+        {
+          "id": "src/lib/approval.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/approval-client.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 25
+    },
+    {
+      "id": "credential-artifact-revocation",
+      "title": "Credential and artifact revocation",
+      "status": "pass",
+      "go": {
+        "passed": 23,
+        "failed": 0,
+        "skipped": 2
+      },
+      "goExamples": [
+        "./internal/session TestMemoryCreateLookupRefreshRevoke",
+        "./internal/session TestMemoryRevokeBoundToWorkspaceLeavesUnrelatedSessions",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/catalog_documents_revoke_and_emergency_stop",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/viewer_cannot_revoke",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/revoked_cannot_start",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/dispatch_rechecks_revocation_on_claim",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/emergency_stop_permission_deny",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/uncertain_stop_is_indeterminate_and_audited"
+      ],
+      "web": [
+        {
+          "id": "src/lib/credential.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/credential-client.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/script-ops-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/script-ops-client.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 27
+    },
+    {
+      "id": "artifact-output-authz",
+      "title": "Artifact and output authorization, redaction, and legal holds",
+      "status": "pass",
+      "go": {
+        "passed": 32,
+        "failed": 0,
+        "skipped": 1
+      },
+      "goExamples": [
+        "./internal/artifact TestMemoryAndFilesystemRoundTrip",
+        "./internal/artifact TestAllowedContentType",
+        "./internal/artifact TestScanRejectsIrredactableSecrets",
+        "./internal/artifact TestScanRedactsTokenShapedLogs",
+        "./internal/artifact TestScanRejectsSecretClassification",
+        "./internal/artifact TestSanitizeFilename",
+        "./internal/artifact TestBoundLines",
+        "./internal/httpnotify TestOversizeDenied"
+      ],
+      "web": [
+        {
+          "id": "src/lib/execution.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/execution-replay.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 34
+    },
+    {
+      "id": "stale-worker-fencing",
+      "title": "Stale-worker fencing",
+      "status": "pass",
+      "go": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 1
+      },
+      "goExamples": [
+        "./internal/httpapi TestDispatchClaimFenceCancelAndLeaseLoss/viewer_cannot_cancel_or_claim",
+        "./internal/httpapi TestDispatchClaimFenceCancelAndLeaseLoss/cancel_is_idempotent_and_authorized",
+        "./internal/httpapi TestDispatchClaimFenceCancelAndLeaseLoss/retry_failed_core_node",
+        "./internal/httpapi TestLatestRetryCandidateIncludesIndeterminate",
+        "./internal/scripts TestExecuteAuthorizationAndLeaseLoss/missing_script.run",
+        "./internal/scripts TestExecuteAuthorizationAndLeaseLoss/lease_lost_is_indeterminate",
+        "./internal/scripts TestExecuteAuthorizationAndLeaseLoss/live_runtime_requested",
+        "./internal/scripts TestExecuteTypedIOAndRecovery/lease_loss_is_indeterminate_and_not_retried"
+      ],
+      "web": [
+        {
+          "id": "src/lib/ssh-retry-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/script-io-contract.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 22
+    },
+    {
+      "id": "provider-failure",
+      "title": "Provider failure behavior",
+      "status": "pass",
+      "go": {
+        "passed": 126,
+        "failed": 0,
+        "skipped": 0
+      },
+      "goExamples": [
+        "./internal/kubernetes TestApplyDryRunThenPersist",
+        "./internal/kubernetes TestApplyWaitReadySkipsNonObservable",
+        "./internal/kubernetes TestApplyOwnershipConflictNeverForced",
+        "./internal/kubernetes TestApplyPolicyAndRBACDenial/namespace_policy",
+        "./internal/kubernetes TestApplyPolicyAndRBACDenial/rbac",
+        "./internal/kubernetes TestApplyPolicyAndRBACDenial/flowforge_permission",
+        "./internal/kubernetes TestApplyPolicyAndRBACDenial/secret",
+        "./internal/kubernetes TestGetListNamespaceIsolation"
+      ],
+      "web": [
+        {
+          "id": "src/lib/ssh-retry-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/script-io-contract.test.ts",
+          "status": "pass"
+        },
+        {
+          "id": "src/lib/kubernetes-contract.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 129
+    },
+    {
+      "id": "ssrf-redirect-dns-rebinding",
+      "title": "SSRF, redirect, and DNS-rebinding denial (ADV-010)",
+      "status": "pass",
+      "go": {
+        "passed": 50,
+        "failed": 0,
+        "skipped": 0
+      },
+      "goExamples": [
+        "./internal/httpnotify TestApprovedHTTPRequest",
+        "./internal/httpnotify TestSSRFDenied",
+        "./internal/httpnotify TestDNSRebindingDenied",
+        "./internal/httpnotify TestRedirectDenied",
+        "./internal/httpnotify TestRedirectHopRevalidated",
+        "./internal/httpnotify TestOversizeDenied",
+        "./internal/httpnotify TestSecretRedaction",
+        "./internal/httpnotify TestWrongConnectionType"
+      ],
+      "web": [
+        {
+          "id": "src/lib/core-http-notification-contract.test.ts",
+          "status": "pass"
+        }
+      ],
+      "scripts": [],
+      "coverage": 51
+    },
+    {
+      "id": "dependency-image-provenance",
+      "title": "Dependency and image provenance gates",
+      "status": "pass",
+      "go": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "goExamples": [],
+      "web": [],
+      "scripts": [
+        {
+          "id": "approved-bases",
+          "status": "pass"
+        },
+        {
+          "id": "deploy-defaults",
+          "status": "pass"
+        },
+        {
+          "id": "govulncheck-clean-fixture",
+          "status": "pass"
+        },
+        {
+          "id": "govulncheck-reject-fixture",
+          "status": "pass"
+        }
+      ],
+      "coverage": 4
+    }
+  ],
+  "provenanceSibling": {
+    "workflow": ".github/workflows/supply-chain.yml",
+    "jobs": [
+      "govulncheck",
+      "image-scan (Trivy HIGH/CRITICAL fs + CRITICAL image, SPDX SBOM, provenance)"
+    ],
+    "policy": "deploy/supply-chain/policy.md"
+  },
+  "ok": true
+}

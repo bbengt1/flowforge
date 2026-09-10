@@ -11,6 +11,7 @@
 - [Frontend UI](reference/frontend-ui.md): workflow canvas, action wizard, credential vault, and UX requirements.
 - [Database specification](reference/database.md): PostgreSQL entities, isolation, execution durability, and retention.
 - [Security model](reference/security-model.md): trust boundaries, sessions, triggers, secret handling, and security verification.
+- [E12.1 security verification suite](reference/e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.
 - [Kubernetes API engine](reference/kubernetes-engine.md): first backend workflow-node capability.
 - [SSH engine](reference/ssh-engine.md): controlled remote-server operations.
 - [Script engine](reference/script-engine.md): isolated Python and Go automation.

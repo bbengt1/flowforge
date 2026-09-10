@@ -38,6 +38,7 @@ dist/
 # test / coverage
 coverage/
 .adv013-run/
+.e12-run/
 
 # go binaries (apps/api is owned by PR #2)
 *.exe
