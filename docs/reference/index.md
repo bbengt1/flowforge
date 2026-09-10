@@ -14,3 +14,4 @@ Future implementation changes should add API, deployment, and runner references 
 - [Release and operations](../operations/index.md): incident/recovery and retention/backup runbooks; Chloe UI/a11y landings.
 - [Operator / admin UI guide](../guides/operator-admin.md): Chloe E12.3 product-shell walkthroughs (not this API→UI map).
 - [E12.3 accessibility review](e12-accessibility-review.md): labels, focus, keyboard paths, and tracked gaps.
+- [Web surface inventory](ux-surface-inventory.md): n8n-inspired UX makeover inventory (analysis only; Relates to upcoming UX epic).
