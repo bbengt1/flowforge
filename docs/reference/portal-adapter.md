@@ -219,6 +219,7 @@ The product adapter is unchanged. A real Portal host still owns steps
 | Catalog vs CSP | Set the same Portal HTTPS origin on the **API** (`PORTAL_FRAME_ANCESTORS` / `WEB_PORTAL_FRAME_ANCESTORS`) and the **web** process. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source (ADV-011). |
 | Embed exchange gate | Allowlisted postMessage fills the assertion; `POST /embed/exchange` stays body-only with `credentials: "include"`. Do not put the JWS in the URL. Auto-exchange is optional host UX. |
 | CHIPS | Both origins must be HTTPS. Do not drop `Secure` or `Partitioned`. Cookie not sent is `401`/`403`. |
+| API process stores | `cmd/api` builds the handler with `NewWithDeps` and a postgres pool. Identity / session / workflow stores must be inferred from that pool (otherwise `POST /tenants` is `503` and Portal mint cannot bind a workspace). |
 
 Contract exports: `apps/web/src/lib/adv013-cross-origin-contract.ts`,
 `buildCrossOriginPortalEmbedSrc`, `deliverCrossOriginPortalAssertion`.
