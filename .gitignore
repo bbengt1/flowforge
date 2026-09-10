@@ -45,5 +45,7 @@ coverage/
 
 # misc
 *.pem
+# Local-only documented embed signing fixture (ADV-022). Not a production secret.
+!deploy/local/embed-signing.pem
 *.sql.enc
 .vercel

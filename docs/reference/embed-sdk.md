@@ -236,7 +236,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 
 ### Recommended rotate procedure
 
-1. Generate a new Ed25519 seed. Keep the current public JWK (`GET /embed/jwks` active key).
+1. Generate a new Ed25519 PKCS#8 private key (`openssl genpkey -algorithm ED25519`). Keep the current public JWK (`GET /embed/jwks` active key).
 2. As a **platform-admin** (`PLATFORM_ADMINS=issuer|subject`), `POST /api/v1/embed/keys/rotate` `{action:"register-overlap", publicJwk:<current public JWK from GET /embed/jwks>, overlapUntil:<now+≤4h>}` **or** set `EMBED_OVERLAP_KEYS` to a JWKS of the current public key **with `overlapUntil` on every key** before restart. Missing/too-long env `overlapUntil` is a **boot-fail**. Workspace admins cannot call this route.
 3. Deploy `EMBED_SIGNING_KEY` + `EMBED_SIGNING_KEY_ID` for the new key. Restart API pods.
 4. JWKS (refreshed from the store) lists `status=active` (new, no `overlapUntil`) and `status=overlap` (old, with required `overlapUntil`). In-flight assertions still verify until that instant.
@@ -248,8 +248,8 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM. Compose seeds a **local-only** key. An ephemeral process key is allowed only when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off; that key is minted with `crypto/rand` (no committed seed). |
-| `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
+| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 **PKCS#8 PEM** parsed with `crypto/x509.ParsePKCS8PrivateKey`. Generate with `openssl genpkey -algorithm ED25519`. Compose mounts a **local-only** PKCS#8 file. A raw 32-byte seed / 64-byte key as base64/hex is accepted only for compatibility. An ephemeral process key is allowed only when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off; that key is minted with `crypto/rand` (no committed seed). |
+| `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material (preferred: PKCS#8 PEM). Used when the env value is empty. |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Active `kid`. Never `ephemeral:process` in production. |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. Each key **requires** `overlapUntil` (RFC3339, max 4h from boot). Missing/zero/far-future is boot-fail. Prefer `POST /embed/keys/rotate` so every instance refreshes from the store. |
 | `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs allowed to rotate embed overlap keys, create tenants/workspaces, read metrics/OpenAPI/swagger, **and** mint for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |

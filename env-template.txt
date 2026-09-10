@@ -89,11 +89,14 @@ TRUSTED_DEV_IDENTITY_HEADERS=1
 # POST /workspaces, and POST /embed/keys/rotate.
 PLATFORM_ADMINS=https://idp.example|admin-1
 
-# --- Embed assertions (E11.1 / ADV-006) ---
-# Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM.
+# --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
+# Preferred: Ed25519 PKCS#8 PEM (crypto/x509.ParsePKCS8PrivateKey).
+# Generate with: openssl genpkey -algorithm ED25519
 # Production (empty/production APP_ENV or REQUIRE_TLS) boot-fails if unset.
-# Compose and this template seed a local-only key. Do not copy it to k8s.
-EMBED_SIGNING_KEY=Zmxvd2ZvcmdlLWVtYmVkLWxvY2FsLWRldi1rZXkhISE=
+# Compose mounts deploy/local/embed-signing.pem (local-only). Do not copy it to k8s.
+# A raw 32-byte seed / 64-byte key as base64 or hex is accepted only for compatibility.
+# Literal \n in the PEM is accepted (single-line Secret / .env form).
+EMBED_SIGNING_KEY="-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGZsb3dmb3JnZS1lbWJlZC1sb2NhbC1kZXYta2V5ISEh\n-----END PRIVATE KEY-----"
 EMBED_SIGNING_KEY_ID=local:compose
 # EMBED_SIGNING_KEY_FILE=
 # EMBED_AUDIENCE=flowforge

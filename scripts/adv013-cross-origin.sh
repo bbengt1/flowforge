@@ -175,7 +175,7 @@ start_local_stack() {
   export APP_ENV=development
   export TRUSTED_DEV_IDENTITY_HEADERS=1
   export PLATFORM_ADMINS="${PLATFORM_ADMINS:-https://idp.example|admin-1}"
-  export EMBED_SIGNING_KEY="${EMBED_SIGNING_KEY:-Zmxvd2ZvcmdlLWVtYmVkLWxvY2FsLWRldi1rZXkhISE=}"
+  export EMBED_SIGNING_KEY="${EMBED_SIGNING_KEY:-$(cat "$ROOT/deploy/local/embed-signing.pem")}"
   export EMBED_SIGNING_KEY_ID="${EMBED_SIGNING_KEY_ID:-local:adv013}"
   export EMBED_ISSUER="${EMBED_ISSUER:-https://idp.example}"
   export PORTAL_ISSUER="${PORTAL_ISSUER:-https://portal.cp-ops.example}"

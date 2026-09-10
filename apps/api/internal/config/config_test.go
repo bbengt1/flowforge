@@ -426,7 +426,7 @@ func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
 
 func testEmbedSigningKey(t *testing.T) string {
 	t.Helper()
-	return embed.EncodeSeedB64(embed.TestMaterial().Private)
+	return embed.EncodePKCS8PEM(embed.TestMaterial().Private)
 }
 
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
