@@ -89,9 +89,14 @@ describe("session-client", () => {
             idle_expires_at: "2026-09-08T21:00:00.000Z",
             absolute_expires_at: "2026-09-09T07:00:00.000Z",
             embed: {
+              mode: "embed",
+              sdk: "embed.v1",
               tenantId: "ten-1",
+              tenantSlug: "acme",
+              tenantName: "Acme",
               workbenchKey: "ops",
               workspaceId: "ws-1",
+              workspaceName: "Ops",
               capabilities: ["workflow.view"],
             },
           },
@@ -110,13 +115,30 @@ describe("session-client", () => {
     const snapshot = getSessionSnapshot();
     assert.equal(snapshot.active, true);
     assert.equal(snapshot.embedChrome?.source, "get-session");
+    assert.equal(snapshot.embedChrome?.mode, "embed");
     assert.equal(snapshot.embedChrome?.tenantId, "ten-1");
+    assert.equal(snapshot.embedChrome?.tenantSlug, "acme");
+    assert.equal(snapshot.embedChrome?.tenantName, "Acme");
     assert.equal(snapshot.embedChrome?.workbenchKey, "ops");
+    assert.equal(snapshot.embedChrome?.workspaceName, "Ops");
+    assert.equal(snapshot.embedChrome?.displayName, "Ada");
     assert.deepEqual(snapshot.embedChrome?.capabilities, ["workflow.view"]);
   });
 
   it("GET /session marks a previously active session stale on 401", async () => {
-    setActiveSession(active);
+    setActiveSession(active, {
+      source: "get-session",
+      mode: "embed",
+      sdk: "embed.v1",
+      tenantId: "ten-1",
+      tenantSlug: "acme",
+      tenantName: "Acme",
+      workbenchKey: "ops",
+      workspaceId: "ws-1",
+      workspaceName: "Ops",
+      capabilities: ["workflow.view"],
+      displayName: "Chloe",
+    });
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -141,6 +163,7 @@ describe("session-client", () => {
     assert.equal(result.ok, false);
     assert.equal(getSessionSnapshot().stale, true);
     assert.equal(getSessionSnapshot().active, false);
+    assert.equal(getSessionSnapshot().embedChrome, null);
   });
 
   it("POST /session/refresh and /session/logout send CSRF", async () => {

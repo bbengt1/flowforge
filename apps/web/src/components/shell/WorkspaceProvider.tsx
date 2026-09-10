@@ -26,7 +26,10 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup, type DevIdentity } from "@/lib/identity-headers";
 import type { CurrentWorkspace, ItemList, Membership } from "@/lib/identity-types";
-import { capChromeCapabilities } from "@/lib/session-embed-contract";
+import {
+  capChromeCapabilities,
+  isSessionEmbedMode,
+} from "@/lib/session-embed-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 export type WorkspaceContextValue = {
@@ -159,7 +162,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       permissions:
         ready && !tenancyMismatch
           ? embed
-            ? capChromeCapabilities(permissions, session.embedChrome)
+            ? capChromeCapabilities(
+                permissions,
+                isSessionEmbedMode(session.embedChrome)
+                  ? session.embedChrome
+                  : null,
+              )
             : permissions
           : null,
       roles: ready && !tenancyMismatch ? current?.roles ?? [] : [],

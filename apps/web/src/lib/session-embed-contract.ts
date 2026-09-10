@@ -127,6 +127,13 @@ export function isVerifiedSessionEmbedChrome(
   );
 }
 
+/** Embed mode is session.embed present (mode === "embed"), not pathname. */
+export function isSessionEmbedMode(
+  chrome: SessionEmbedChrome | null | undefined,
+): chrome is SessionEmbedChrome {
+  return isVerifiedSessionEmbedChrome(chrome);
+}
+
 /**
  * Parse chrome from GET /session (or refresh) via #177
  * `parseEmbedChromeFromSession`. Rejects host display, postMessage,
