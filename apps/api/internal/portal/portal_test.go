@@ -108,6 +108,27 @@ func TestParseFrameAncestorsRejectsWildcards(t *testing.T) {
 	if len(ParseFrameAncestors("*")) != 0 {
 		t.Fatal("wildcard accepted")
 	}
+	if len(ParseFrameAncestors("")) != 0 {
+		t.Fatal("empty must fail closed")
+	}
+	self := ParseFrameAncestors("'self' self https://portal.example")
+	if len(self) != 2 || self[0] != "'self'" || self[1] != "https://portal.example" {
+		t.Fatalf("self %v", self)
+	}
+}
+
+func TestMergeFrameAncestorsIsSharedHostAllowlist(t *testing.T) {
+	got := MergeFrameAncestors(
+		"https://portal.example",
+		"https://host.example *",
+		"'self' https://portal.example",
+	)
+	if len(got) != 3 || got[0] != "https://portal.example" || got[1] != "https://host.example" || got[2] != "'self'" {
+		t.Fatalf("merged %v", got)
+	}
+	if len(MergeFrameAncestors("", "", "")) != 0 {
+		t.Fatal("empty merge must fail closed")
+	}
 }
 
 func TestPrepareMintUsesEmbedAudienceAndPortalIssuer(t *testing.T) {
@@ -193,8 +214,11 @@ func TestCatalogBoundaryNeverShares(t *testing.T) {
 	if c.Boundary.SharesDatabase || c.Boundary.SharesExecutor || c.Boundary.ParallelAuthPath {
 		t.Fatalf("boundary %+v", c.Boundary)
 	}
-	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin || !c.Rules.PartitionedEmbedCookies {
+	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin || !c.Rules.PartitionedEmbedCookies || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors {
 		t.Fatalf("bootstrap rules %+v", c.Rules)
+	}
+	if len(c.FrameAncestors) != 1 || c.FrameAncestors[0] != "https://portal.example" {
+		t.Fatalf("catalog frames %v", c.FrameAncestors)
 	}
 	if c.Boundary.PortalEntryIsAuthorization || c.Boundary.HostTenantIsAuthorization {
 		t.Fatal("entry/host must not authorize")

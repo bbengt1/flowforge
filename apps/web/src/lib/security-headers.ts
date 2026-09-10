@@ -5,15 +5,16 @@
  * (HSTS when the request is actually TLS). Keep this module free of next/server
  * so next.config and node:test can import it.
  *
- * Embed (E11.1) relaxes frame-ancestors to WEB_EMBED_FRAME_ANCESTORS
- * and/or WEB_PORTAL_FRAME_ANCESTORS on /embed/v1 only. Standalone stays
- * deny/none so the shell cannot be clickjacked.
+ * Embed (E11.1 / ADV-011) relaxes frame-ancestors from the shared host
+ * allowlist (WEB_EMBED ∪ WEB_PORTAL ∪ PORTAL_FRAME_ANCESTORS) on
+ * /embed/v1 only. Standalone stays deny/none so the shell cannot be
+ * clickjacked. The same list drives postMessage origin checks.
  */
 
 import {
+  embedHostAllowlist,
   frameAncestorsForPath,
   isEmbedMountPath,
-  parseEmbedFrameAncestors,
 } from "./embed-contract.ts";
 import { frameSrcForPath } from "./portal-adapter-contract.ts";
 
@@ -31,6 +32,7 @@ export type HeaderEnv = {
   WEB_HSTS?: string;
   WEB_EMBED_FRAME_ANCESTORS?: string;
   WEB_PORTAL_FRAME_ANCESTORS?: string;
+  PORTAL_FRAME_ANCESTORS?: string;
 };
 
 const DEFAULT_API_ORIGIN = "http://localhost:8080";
@@ -113,6 +115,7 @@ export function buildContentSecurityPolicy(
     `frame-ancestors ${frameAncestorsForPath(options.pathname ?? "/", {
       WEB_EMBED_FRAME_ANCESTORS: env.WEB_EMBED_FRAME_ANCESTORS,
       WEB_PORTAL_FRAME_ANCESTORS: env.WEB_PORTAL_FRAME_ANCESTORS,
+      PORTAL_FRAME_ANCESTORS: env.PORTAL_FRAME_ANCESTORS,
     })}`,
     `frame-src ${frameSrcForPath(options.pathname ?? "/")}`,
     "worker-src 'self'",
@@ -142,14 +145,7 @@ export function embedFramingAllowed(
   pathname: string,
   env: HeaderEnv = {},
 ): boolean {
-  return (
-    isEmbedMountPath(pathname) &&
-    parseEmbedFrameAncestors(
-      [env.WEB_EMBED_FRAME_ANCESTORS, env.WEB_PORTAL_FRAME_ANCESTORS]
-        .filter(Boolean)
-        .join(" "),
-    ).length > 0
-  );
+  return isEmbedMountPath(pathname) && embedHostAllowlist(env).length > 0;
 }
 
 export function staticSecurityHeaders(

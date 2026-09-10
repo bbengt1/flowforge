@@ -42,7 +42,7 @@ Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 | 1. Entry | Portal | Portal navigation + Portal RBAC decide whether the user may enter the add-in (`/portal/workflows` or the host’s equivalent). Do not share FlowForge cookies, DB, or the executor. |
 | 2. Map roles | Portal backend | Map Portal roles → FlowForge capabilities from `GET /api/v1/portal/adapter` `capabilityMap`. Unknown roles fail closed. |
 | 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer (always the authenticated caller). A `subject` other than the caller requires `embed.impersonate` (`PLATFORM_ADMINS`). |
-| 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame only when the Portal origin is in `WEB_PORTAL_FRAME_ANCESTORS` and/or `WEB_EMBED_FRAME_ANCESTORS`. Host query `tenant` / `workbench` is display-only. |
+| 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame and postMessage only when the Portal origin is on the **shared host allowlist** (`WEB_PORTAL_FRAME_ANCESTORS` ∪ `WEB_EMBED_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`). Read `GET /portal/adapter` `frameAncestors` (same list as `GET /embed/catalog`). Host query `tenant` / `workbench` is display-only. |
 | 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Signature and claims are verified before any workspace lookup. Issues CHIPS `ff_session` / `ff_csrf` (`SameSite=None; Secure; Partitioned`) bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. Keep `credentials: "include"`. Do not request Storage Access / unpartitioned cookies. |
 | 6. Authorize | FlowForge | Later calls: cookie session + `X-CSRF-Token` + exchanged tenant/workbench headers. Disagreeing host tenant/workbench is `403`. If the partitioned cookie is not sent: `401` / CSRF `403`. HTTPS + Partitioned support required. Manual two-host iframe check is ADV-013. |
 
@@ -95,9 +95,9 @@ JWS once). Problem details never echo the JWS or private keys.
 | --- | --- | --- |
 | `PORTAL_ISSUER` | empty | Single allowed Portal `iss`. Empty (with an empty allowlist) fails closed at Portal mint (`403`) |
 | `PORTAL_ISSUER_ALLOWLIST` | empty | Comma-separated Portal issuers. Empty fails closed — mint returns `403`. Compose seeds `https://portal.cp-ops.example` for local/dev. |
-| `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on the adapter catalog |
-| `WEB_PORTAL_FRAME_ANCESTORS` | empty | Exact origins allowed to frame `/embed/v1` (merged with `WEB_EMBED_FRAME_ANCESTORS`) |
-| `WEB_EMBED_FRAME_ANCESTORS` | empty | Existing embed frame allowlist |
+| `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (API-side). Merged with the `WEB_*` vars. Published on `GET /portal/adapter` and `GET /embed/catalog` as `frameAncestors` |
+| `WEB_PORTAL_FRAME_ANCESTORS` | empty | Same shared list (web + API). Drives `/embed/v1` CSP **and** postMessage |
+| `WEB_EMBED_FRAME_ANCESTORS` | empty | Same shared list (embed-origin name) |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed mint allowlist. Empty fails closed at embed mint. Portal issuers are merged in for exchange only. |
 
 Production must set a durable `EMBED_SIGNING_KEY` (boot-fail if missing
@@ -106,6 +106,11 @@ Portal and embed issuer allowlists. Empty allowlists fail closed at
 request time (`403` on mint/exchange); the process still starts so other
 API routes stay up. Local compose seeds a local-only signing key and
 the lists — it does not fail open. `*` / `null` frame ancestors are ignored.
+Empty host allowlist fails closed: CSP `frame-ancestors 'none'` and no
+postMessage (ADV-011). Set the same origins on the API and web processes so
+the catalog matches Next CSP. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a
+source. Contract: `embedHostAllowlist`, `parseCatalogFrameAncestors`,
+`isAllowedEmbedMessageOrigin`, `deliverPortalAssertion(..., allowlist)`.
 
 ## Negative tests (epic #120)
 

@@ -285,7 +285,7 @@ func TestJWKSNeverReturnsPrivateKeys(t *testing.T) {
 }
 
 func TestCatalogDocumentsContractAndHooks(t *testing.T) {
-	c := NewCatalog()
+	c := NewCatalog(nil)
 	if c.SDK != SDKVersion || c.Audience != DefaultAudience {
 		t.Fatalf("catalog %+v", c)
 	}
@@ -295,8 +295,15 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors {
 		t.Fatal("rules")
+	}
+	if c.FrameAncestors != nil {
+		t.Fatalf("empty allowlist must publish nil/empty frameAncestors, got %v", c.FrameAncestors)
+	}
+	listed := NewCatalog([]string{"https://portal.example", "'self'"})
+	if len(listed.FrameAncestors) != 2 || listed.FrameAncestors[0] != "https://portal.example" || listed.FrameAncestors[1] != "'self'" {
+		t.Fatalf("published frames %v", listed.FrameAncestors)
 	}
 	if c.JTIRetention != JTIRetention.String() {
 		t.Fatalf("jtiRetention %q", c.JTIRetention)
@@ -346,7 +353,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
-	foundCHIPS, foundVerifyFirst, foundJTI, foundAudit, foundRate := false, false, false, false, false
+	foundCHIPS, foundVerifyFirst, foundJTI, foundAudit, foundRate, foundAllowlist := false, false, false, false, false, false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
@@ -381,6 +388,12 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("exchange.rate-limit hook %q", h.Fail)
 			}
 		}
+		if h.ID == "host.allowlist" {
+			foundAllowlist = true
+			if !strings.Contains(h.Note, "frameAncestors") || !strings.Contains(h.Fail, "fails closed") {
+				t.Fatalf("host.allowlist hook %q %q", h.Note, h.Fail)
+			}
+		}
 	}
 	if !foundCHIPS {
 		t.Fatal("catalog missing chips.embed-cookies hook")
@@ -396,6 +409,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	}
 	if !foundRate {
 		t.Fatal("catalog missing exchange.rate-limit hook")
+	}
+	if !foundAllowlist {
+		t.Fatal("catalog missing host.allowlist hook")
 	}
 }
 

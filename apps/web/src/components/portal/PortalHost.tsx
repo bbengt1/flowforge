@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { loadDevIdentity } from "@/lib/dev-identity";
-import { EMBED_ROUTES, type EmbedRouteId } from "@/lib/embed-contract";
+import {
+  EMBED_ROUTES,
+  parseCatalogFrameAncestors,
+  type EmbedRouteId,
+} from "@/lib/embed-contract";
 import {
   PORTAL_ASSERTION_HELP,
   PORTAL_BOUNDARY,
@@ -50,6 +54,7 @@ export function PortalHost() {
   const [tokenId, setTokenId] = useState("");
   const [rejectedAssertion, setRejectedAssertion] = useState(false);
   const [catalogNote, setCatalogNote] = useState("");
+  const [hostAllowlist, setHostAllowlist] = useState<string[]>([]);
 
   const rbac = useMemo(() => portalEntryRbac(entryRole), [entryRole]);
   const mappedCaps = useMemo(
@@ -78,12 +83,14 @@ export function PortalHost() {
         return;
       }
       if (!result.ok) {
+        setHostAllowlist([]);
         setCatalogNote(
-          `GET /portal/adapter unavailable (${result.statusCode}). Using the published #129 capability map.`,
+          `GET /portal/adapter unavailable (${result.statusCode}). Using the published #129 capability map. postMessage stays fail-closed until frameAncestors loads.`,
         );
         return;
       }
-      setCatalogNote("GET /portal/adapter loaded. Roles map on the FlowForge side.");
+      setHostAllowlist(parseCatalogFrameAncestors(result.data));
+      setCatalogNote("GET /portal/adapter loaded. Roles map on the FlowForge side. frameAncestors is the shared host allowlist.");
     });
     return () => {
       cancelled = true;
@@ -134,6 +141,8 @@ export function PortalHost() {
     const delivered = deliverPortalAssertion(
       iframeRef.current?.contentWindow,
       holder,
+      window.location.origin,
+      hostAllowlist,
       window.location.origin,
     );
     setStatus(

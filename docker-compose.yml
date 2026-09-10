@@ -88,6 +88,9 @@ services:
       PORTAL_ISSUER: ${PORTAL_ISSUER:-https://portal.cp-ops.example}
       PORTAL_ISSUER_ALLOWLIST: ${PORTAL_ISSUER_ALLOWLIST:-}
       PORTAL_FRAME_ANCESTORS: ${PORTAL_FRAME_ANCESTORS:-}
+      # Same merge as the web process (ADV-011). Catalog publishes this list.
+      WEB_PORTAL_FRAME_ANCESTORS: ${WEB_PORTAL_FRAME_ANCESTORS:-}
+      WEB_EMBED_FRAME_ANCESTORS: ${WEB_EMBED_FRAME_ANCESTORS:-}
       # Local/dev identity only. Production ConfigMap must omit these.
       APP_ENV: ${APP_ENV:-development}
       TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}

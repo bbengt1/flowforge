@@ -31,6 +31,12 @@
  * Treat 429 as backoff and retry after Retry-After / the window.
  * Prefer no UI change beyond that. Authz decisions are audited
  * server-side; this shell never logs the assertion.
+ *
+ * ADV-011: WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪
+ * PORTAL_FRAME_ANCESTORS is one host allowlist. It drives CSP
+ * frame-ancestors on /embed/v1 and postMessage origin checks.
+ * Empty fails closed. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is not a source.
+ * Prefer GET /embed/catalog frameAncestors in the shell.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -223,6 +229,19 @@ export function stripAssertionParams(
   return { clean: clean ? `?${clean}` : "", rejected };
 }
 
+/** Env vars that feed the shared host allowlist (ADV-011). */
+export const EMBED_HOST_ALLOWLIST_ENV = [
+  "WEB_EMBED_FRAME_ANCESTORS",
+  "WEB_PORTAL_FRAME_ANCESTORS",
+  "PORTAL_FRAME_ANCESTORS",
+] as const;
+
+export type EmbedHostAllowlistEnv = {
+  WEB_EMBED_FRAME_ANCESTORS?: string;
+  WEB_PORTAL_FRAME_ANCESTORS?: string;
+  PORTAL_FRAME_ANCESTORS?: string;
+};
+
 export function parseEmbedFrameAncestors(raw: string | undefined): string[] {
   if (!raw?.trim()) {
     return [];
@@ -259,6 +278,47 @@ export function parseEmbedFrameAncestors(raw: string | undefined): string[] {
   return out;
 }
 
+/**
+ * Shared host allowlist: WEB_EMBED ∪ WEB_PORTAL ∪ PORTAL_FRAME_ANCESTORS.
+ * Drives CSP frame-ancestors on /embed/v1 and postMessage origin checks.
+ * Empty fails closed. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is ignored.
+ */
+export function embedHostAllowlist(env: EmbedHostAllowlistEnv = {}): string[] {
+  return parseEmbedFrameAncestors(
+    [
+      env.WEB_EMBED_FRAME_ANCESTORS,
+      env.WEB_PORTAL_FRAME_ANCESTORS,
+      env.PORTAL_FRAME_ANCESTORS,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+/** Same list as embedHostAllowlist — do not parse a second env source. */
+export function embedPostMessageAllowlist(
+  env: EmbedHostAllowlistEnv = {},
+): string[] {
+  return embedHostAllowlist(env);
+}
+
+/** Read GET /embed/catalog or GET /portal/adapter `frameAncestors`. */
+export function parseCatalogFrameAncestors(payload: unknown): string[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return [];
+  }
+  const raw = (payload as Record<string, unknown>).frameAncestors;
+  if (Array.isArray(raw)) {
+    return parseEmbedFrameAncestors(
+      raw.map((item) => (typeof item === "string" ? item : "")).join(" "),
+    );
+  }
+  if (typeof raw === "string") {
+    return parseEmbedFrameAncestors(raw);
+  }
+  return [];
+}
+
 export type EmbedProxyRoute = {
   methods: readonly string[];
   match: (segments: string[]) => boolean;
@@ -282,19 +342,12 @@ export const EMBED_PROXY_ROUTES: readonly EmbedProxyRoute[] = [
 
 export function frameAncestorsForPath(
   pathname: string,
-  env: {
-    WEB_EMBED_FRAME_ANCESTORS?: string;
-    WEB_PORTAL_FRAME_ANCESTORS?: string;
-  } = {},
+  env: EmbedHostAllowlistEnv = {},
 ): string {
   if (!isEmbedMountPath(pathname)) {
     return "'none'";
   }
-  const allow = parseEmbedFrameAncestors(
-    [env.WEB_EMBED_FRAME_ANCESTORS, env.WEB_PORTAL_FRAME_ANCESTORS]
-      .filter(Boolean)
-      .join(" "),
-  );
+  const allow = embedHostAllowlist(env);
   if (allow.length === 0) {
     return "'none'";
   }
@@ -540,22 +593,6 @@ export function isEmbedUiPath(pathname: string | null | undefined): boolean {
   return Boolean(pathname && isEmbedMountPath(pathname));
 }
 
-export function embedPostMessageAllowlist(env: {
-  WEB_EMBED_FRAME_ANCESTORS?: string;
-  WEB_PORTAL_FRAME_ANCESTORS?: string;
-  NEXT_PUBLIC_EMBED_FRAME_ANCESTORS?: string;
-} = {}): string[] {
-  return parseEmbedFrameAncestors(
-    [
-      env.WEB_EMBED_FRAME_ANCESTORS,
-      env.WEB_PORTAL_FRAME_ANCESTORS,
-      env.NEXT_PUBLIC_EMBED_FRAME_ANCESTORS,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
 export function isCompactJws(value: string | undefined): boolean {
   const trimmed = value?.trim() ?? "";
   if (!trimmed || trimmed.length > EMBED_MAX_ASSERTION_BYTES) {
@@ -620,19 +657,57 @@ export function parseEmbedAssertionMessage(
   };
 }
 
+export type EmbedMessageOriginOptions = {
+  /** Page origin used to honor `'self'` on the shared list. */
+  selfOrigin?: string;
+};
+
+/**
+ * postMessage origin check against the shared host allowlist.
+ * Empty list denies (including same-origin). `*` / `null` never match.
+ * `'self'` matches only when selfOrigin is provided and equals origin.
+ */
 export function isAllowedEmbedMessageOrigin(
   origin: string,
   allowlist: readonly string[],
+  options: EmbedMessageOriginOptions = {},
 ): boolean {
   const trimmed = origin.trim();
-  if (!trimmed || trimmed === "null") {
+  if (!trimmed || trimmed === "null" || trimmed === "*") {
     return false;
   }
   if (allowlist.length === 0) {
     return false;
   }
-  return allowlist.includes(trimmed);
+  if (allowlist.includes(trimmed)) {
+    return true;
+  }
+  const selfOrigin = options.selfOrigin?.trim() ?? "";
+  if (
+    selfOrigin &&
+    trimmed === selfOrigin &&
+    (allowlist.includes("'self'") || allowlist.includes("self"))
+  ) {
+    return true;
+  }
+  return false;
 }
+
+export const EMBED_HOST_ALLOWLIST_RULES = {
+  sharedList: true,
+  sources: EMBED_HOST_ALLOWLIST_ENV,
+  catalogField: "frameAncestors",
+  catalogPath: EMBED_CATALOG_PATH,
+  portalCatalogPath: "/portal/adapter",
+  emptyFailsClosed: true,
+  noWildcard: true,
+  noOpenPostMessage: true,
+  nextPublicIsNotASource: true,
+  cspAndPostMessageShareList: true,
+} as const;
+
+export const EMBED_HOST_ALLOWLIST_HELP =
+  "CSP frame-ancestors on /embed/v1 and postMessage origin checks share one allowlist: WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS. Prefer GET /embed/catalog (or GET /portal/adapter) frameAncestors over client env. Empty list is frame-ancestors 'none' and denies all postMessage, including same-origin, unless 'self' or the exact origin is listed. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is not a source.";
 
 export function parseEmbedHostDisplay(
   searchParams: URLSearchParams | Record<string, string | string[] | undefined>,

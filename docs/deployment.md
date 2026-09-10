@@ -35,7 +35,7 @@ The Kubernetes files are a foundation only: configure the database egress policy
 Web image and Next.js headers (`#11`):
 
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, writable paths limited to `/tmp` and `/app/.next/cache`.
-- Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when `WEB_EMBED_FRAME_ANCESTORS` and/or `WEB_PORTAL_FRAME_ANCESTORS` list exact host origins. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
+- Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) lists exact host origins. That same list is published on `GET /embed/catalog` `frameAncestors` and drives postMessage. Empty fails closed. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
 - Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. The web image already pins `node:22-alpine` by digest.
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):
@@ -71,7 +71,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_MINT_RATE_LIMIT_PRINCIPAL` | `60` | Max mint per authenticated principal per window (`/embed/assertions` and Portal adapter mint). |
 | `EMBED_RATE_LIMIT_WINDOW` | `1m` | Window for the embed rate-limit counters. |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint `iss` allowlist. Empty fails closed (`403`). Merged into embed exchange. Compose seeds `https://portal.cp-ops.example`. |
-| `WEB_EMBED_FRAME_ANCESTORS` | unset | Exact origins allowed to frame `/embed/v1` only. Empty keeps `frame-ancestors 'none'`. `*` / `null` are ignored. |
+| `WEB_EMBED_FRAME_ANCESTORS` | unset | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS`). Exact origins allowed to frame `/embed/v1` and send embed postMessage. Empty keeps `frame-ancestors 'none'` and denies postMessage. `*` / `null` are ignored. Set the same values on the API so the catalog matches. |
+| `WEB_PORTAL_FRAME_ANCESTORS` | unset | Same shared list (Portal-origin name). |
+| `PORTAL_FRAME_ANCESTORS` | unset | Same shared list (API catalog name). |
 
 ## Recovery
 

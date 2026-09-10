@@ -2,16 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { emptyAssertionHolder, exchangeEmbedAssertion } from "@/lib/embed-client";
+import {
+  emptyAssertionHolder,
+  exchangeEmbedAssertion,
+  fetchEmbedCatalog,
+} from "@/lib/embed-client";
 import {
   EMBED_ASSERTION_MESSAGE_TYPE,
   EMBED_AUDIENCE,
   EMBED_EXCHANGE_HELP,
+  EMBED_HOST_ALLOWLIST_HELP,
   EMBED_HOST_DISPLAY_HELP,
   EMBED_MOUNT_PREFIX,
   EMBED_SDK,
-  embedPostMessageAllowlist,
   isAllowedEmbedMessageOrigin,
+  parseCatalogFrameAncestors,
   parseEmbedAssertionMessage,
   parseEmbedHostDisplay,
   type EmbedHostDisplay,
@@ -27,9 +32,14 @@ import type { ProblemDetails } from "@/lib/problem";
 
 type EmbedExchangeGateProps = {
   search: string;
+  /** Optional override. Defaults to GET /embed/catalog frameAncestors. */
+  allowlist?: readonly string[];
 };
 
-export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
+export function EmbedExchangeGate({
+  search,
+  allowlist: allowlistProp,
+}: EmbedExchangeGateProps) {
   const [assertion, setAssertion] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -42,15 +52,26 @@ export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
     () => parseEmbedHostDisplay(new URLSearchParams(search.replace(/^\?/, ""))),
     [search],
   );
-  const allowlist = useMemo(
-    () =>
-      embedPostMessageAllowlist({
-        WEB_EMBED_FRAME_ANCESTORS: process.env.WEB_EMBED_FRAME_ANCESTORS,
-        NEXT_PUBLIC_EMBED_FRAME_ANCESTORS:
-          process.env.NEXT_PUBLIC_EMBED_FRAME_ANCESTORS,
-      }),
-    [],
+  const [catalogAllowlist, setCatalogAllowlist] = useState<string[]>(
+    allowlistProp ? [...allowlistProp] : [],
   );
+  const allowlist = allowlistProp ?? catalogAllowlist;
+
+  useEffect(() => {
+    if (allowlistProp) {
+      return;
+    }
+    let cancelled = false;
+    void fetchEmbedCatalog().then((result) => {
+      if (cancelled || !result.ok) {
+        return;
+      }
+      setCatalogAllowlist(parseCatalogFrameAncestors(result.data));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [allowlistProp]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -58,8 +79,11 @@ export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
       if (!parsed) {
         return;
       }
-      const sameOrigin = event.origin === window.location.origin;
-      if (!sameOrigin && !isAllowedEmbedMessageOrigin(event.origin, allowlist)) {
+      if (
+        !isAllowedEmbedMessageOrigin(event.origin, allowlist, {
+          selfOrigin: window.location.origin,
+        })
+      ) {
         return;
       }
       setAssertion(parsed.assertion);
@@ -100,7 +124,7 @@ export function EmbedExchangeGate({ search }: EmbedExchangeGateProps) {
         <p className="text-sm leading-6 text-zinc-600">
           {EMBED_EXCHANGE_HELP} Mount is {EMBED_MOUNT_PREFIX}. Audience is{" "}
           <code>{EMBED_AUDIENCE}</code>. Relates to #122 / Part of #120 — keep
-          #122 open. {EMBED_VERIFIED_HELP}
+          #122 open. {EMBED_VERIFIED_HELP} {EMBED_HOST_ALLOWLIST_HELP}
         </p>
       </header>
 

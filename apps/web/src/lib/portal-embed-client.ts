@@ -8,7 +8,10 @@
  * Relates to #123 / Part of #120. Keep #123 open. Do not change apps/api.
  */
 
-import { forgetEmbedAssertion } from "./embed-contract.ts";
+import {
+  forgetEmbedAssertion,
+  isAllowedEmbedMessageOrigin,
+} from "./embed-contract.ts";
 import { callIdentityProxy } from "./identity-client.ts";
 import { emptyDevIdentity, type DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -199,6 +202,8 @@ export function deliverPortalAssertion(
   target: Window | null | undefined,
   holder: { assertion: string },
   targetOrigin: string,
+  allowlist: readonly string[] = [],
+  selfOrigin?: string,
 ): { delivered: boolean; forgotten: true } {
   const message = buildPortalAssertionMessage(holder.assertion);
   forgetEmbedAssertion(holder);
@@ -206,7 +211,7 @@ export function deliverPortalAssertion(
     return { delivered: false, forgotten: true };
   }
   const origin = targetOrigin.trim();
-  if (!origin || origin === "*" || origin === "null") {
+  if (!isAllowedEmbedMessageOrigin(origin, allowlist, { selfOrigin })) {
     return { delivered: false, forgotten: true };
   }
   target.postMessage(message, origin);

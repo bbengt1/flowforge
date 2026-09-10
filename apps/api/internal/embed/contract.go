@@ -48,6 +48,11 @@ const (
 	EnvIssuerAllow    = "EMBED_ISSUER_ALLOWLIST"
 	EnvOverlapKeys    = "EMBED_OVERLAP_KEYS"
 
+	// EnvWebEmbedFrames is merged with WEB_PORTAL_FRAME_ANCESTORS and
+	// PORTAL_FRAME_ANCESTORS into the shared host allowlist that drives
+	// CSP frame-ancestors and postMessage (ADV-011).
+	EnvWebEmbedFrames = "WEB_EMBED_FRAME_ANCESTORS"
+
 	// ADV-012: exchange (required) and mint (optional) rate limits.
 	EnvExchangeRateLimitIP        = "EMBED_EXCHANGE_RATE_LIMIT_IP"
 	EnvExchangeRateLimitPrincipal = "EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL"

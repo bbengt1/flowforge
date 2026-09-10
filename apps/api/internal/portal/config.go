@@ -27,6 +27,8 @@ func IssuerAllowed(iss string, allow []string) bool {
 }
 
 // ParseFrameAncestors parses exact http(s) origins. "*" and "null" are ignored.
+// "'self'" / "self" is kept so the in-repo same-origin Portal demo can
+// frame /embed/v1. Empty input is fail-closed (no wildcard, no open list).
 func ParseFrameAncestors(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -39,6 +41,14 @@ func ParseFrameAncestors(raw string) []string {
 	}) {
 		part = strings.TrimSpace(part)
 		if part == "" || part == "*" || strings.EqualFold(part, "null") {
+			continue
+		}
+		if part == "'self'" || part == "self" {
+			if _, ok := seen["'self'"]; ok {
+				continue
+			}
+			seen["'self'"] = struct{}{}
+			out = append(out, "'self'")
 			continue
 		}
 		u, err := url.Parse(part)
@@ -56,4 +66,12 @@ func ParseFrameAncestors(raw string) []string {
 		out = append(out, normalized)
 	}
 	return out
+}
+
+// MergeFrameAncestors is the shared host allowlist (ADV-011):
+// PORTAL_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ WEB_EMBED_FRAME_ANCESTORS.
+// The same list is published on GET /embed/catalog and GET /portal/adapter
+// and must match Next CSP frame-ancestors + postMessage origin checks.
+func MergeFrameAncestors(raw ...string) []string {
+	return ParseFrameAncestors(strings.Join(raw, " "))
 }

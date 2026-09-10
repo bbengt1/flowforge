@@ -45,10 +45,14 @@ import {
   embedApiPath,
   embedAuthFailureMessage,
   embedMountPath,
+  EMBED_HOST_ALLOWLIST_HELP,
+  EMBED_HOST_ALLOWLIST_RULES,
+  embedHostAllowlist,
   embedPostMessageAllowlist,
   forgetEmbedAssertion,
   frameAncestorsForPath,
   isAllowedEmbedMessageOrigin,
+  parseCatalogFrameAncestors,
   isCompactJws,
   isEmbedMountPath,
   isEmbedUiPath,
@@ -123,6 +127,76 @@ describe("embed-contract", () => {
       "https://portal.example",
     );
     assert.equal(frameAncestorsForPath("/embed/v1", {}), "'none'");
+  });
+
+  it("uses one host allowlist for CSP frame-ancestors and postMessage", () => {
+    const env = {
+      WEB_EMBED_FRAME_ANCESTORS: "https://host.example *",
+      WEB_PORTAL_FRAME_ANCESTORS: "https://portal.example null",
+      PORTAL_FRAME_ANCESTORS: "'self'",
+      NEXT_PUBLIC_EMBED_FRAME_ANCESTORS: "https://drift.example",
+    };
+    const allow = embedHostAllowlist(env);
+    assert.deepEqual(allow, [
+      "https://host.example",
+      "https://portal.example",
+      "'self'",
+    ]);
+    assert.deepEqual(embedPostMessageAllowlist(env), allow);
+    assert.equal(
+      frameAncestorsForPath("/embed/v1/workflows", env),
+      allow.join(" "),
+    );
+    assert.equal(frameAncestorsForPath("/embed/v1", {}), "'none'");
+    assert.deepEqual(embedHostAllowlist({}), []);
+    assert.deepEqual(embedPostMessageAllowlist({}), []);
+    assert.equal(EMBED_HOST_ALLOWLIST_RULES.sharedList, true);
+    assert.equal(EMBED_HOST_ALLOWLIST_RULES.emptyFailsClosed, true);
+    assert.equal(EMBED_HOST_ALLOWLIST_RULES.nextPublicIsNotASource, true);
+    assert.equal(EMBED_HOST_ALLOWLIST_RULES.catalogField, "frameAncestors");
+    assert.match(EMBED_HOST_ALLOWLIST_HELP, /GET \/embed\/catalog/);
+  });
+
+  it("rejects postMessage origins that are not on the shared list", () => {
+    const allow = embedPostMessageAllowlist({
+      WEB_EMBED_FRAME_ANCESTORS: "https://portal.example",
+    });
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://portal.example", allow),
+      true,
+    );
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://evil.example", allow),
+      false,
+    );
+    assert.equal(isAllowedEmbedMessageOrigin("https://portal.example", []), false);
+    assert.equal(isAllowedEmbedMessageOrigin("null", allow), false);
+    assert.equal(isAllowedEmbedMessageOrigin("*", allow), false);
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://app.example", ["'self'"], {
+        selfOrigin: "https://app.example",
+      }),
+      true,
+    );
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://evil.example", ["'self'"], {
+        selfOrigin: "https://app.example",
+      }),
+      false,
+    );
+    assert.equal(
+      isAllowedEmbedMessageOrigin("https://app.example", [], {
+        selfOrigin: "https://app.example",
+      }),
+      false,
+    );
+    assert.deepEqual(
+      parseCatalogFrameAncestors({
+        frameAncestors: ["https://portal.example", "*", "null", "'self'"],
+      }),
+      ["https://portal.example", "'self'"],
+    );
+    assert.deepEqual(parseCatalogFrameAncestors({}), []);
   });
 
   it("cites #125 / #121 and keeps the published mount map", () => {

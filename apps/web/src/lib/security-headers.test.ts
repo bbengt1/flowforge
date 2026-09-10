@@ -154,6 +154,26 @@ describe("embed framing", () => {
       }),
       true,
     );
+    const merged = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/embed/v1/workflows",
+      env: {
+        WEB_EMBED_FRAME_ANCESTORS: "https://host.example",
+        WEB_PORTAL_FRAME_ANCESTORS: "https://portal.example",
+        PORTAL_FRAME_ANCESTORS: "'self'",
+      },
+    });
+    assert.match(
+      merged,
+      /frame-ancestors https:\/\/host\.example https:\/\/portal\.example 'self'/,
+    );
+    const empty = buildContentSecurityPolicy({
+      development: false,
+      pathname: "/embed/v1",
+      env: {},
+    });
+    assert.match(empty, /frame-ancestors 'none'/);
+    assert.equal(embedFramingAllowed("/embed/v1", {}), false);
   });
 });
 

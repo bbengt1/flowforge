@@ -102,7 +102,7 @@ func HostWiring() []HostStep {
 		{
 			ID:    "mount",
 			Actor: "portal-frontend",
-			Do:    "Load the canonical UI at /embed/v1 (same standalone hrefs). Frame only if the Portal origin is in WEB_PORTAL_FRAME_ANCESTORS / WEB_EMBED_FRAME_ANCESTORS.",
+			Do:    "Load the canonical UI at /embed/v1 (same standalone hrefs). Frame and postMessage only if the Portal origin is on the shared host allowlist (WEB_PORTAL_FRAME_ANCESTORS ∪ WEB_EMBED_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS; GET /portal/adapter frameAncestors).",
 			Path:  MountPrefix,
 			Note:  "Chloe owns the embed shell. Do not rewrite the product tree. Host query tenant/workbench is display-only.",
 		},

@@ -350,6 +350,9 @@ paths:
         Documents SDK `embed.v1`, assertion claims, stable standalone/embed
         routes, mint/exchange, public JWKS, and E11.2 fail-closed hooks
         (atomic jti consume, key rotation, tenancy propagation).
+        `frameAncestors` is the shared host allowlist (ADV-011) used for
+        CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks.
+        Empty fails closed.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
