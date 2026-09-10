@@ -54,8 +54,7 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID})
-	if err != nil {
+	if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID}); err != nil {
@@ -102,12 +101,12 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 	if n, err := store.RecoverExpiredLeases(ctx, scopeA, now.Add(3*time.Second)); err != nil || n < 1 {
 		t.Fatalf("recover: n=%d err=%v", n, err)
 	}
-	got, err := store.GetExecutionByID(ctx, scopeA, exec.ID)
+	got, err := store.GetExecutionByID(ctx, scopeA, first.ExecutionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Status != ExecutionIndeterminate {
-		t.Fatalf("lease loss status = %s", got.Status)
+		t.Fatalf("lease loss status = %s exec=%s", got.Status, first.ExecutionID)
 	}
 	if _, err := store.CompleteJob(ctx, scopeA, now.Add(4*time.Second), JobActionInput{
 		JobID: first.ID, WorkerID: "pg-worker", FencingToken: first.FencingToken,
