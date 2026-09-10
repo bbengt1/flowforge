@@ -715,6 +715,51 @@ func TestRedirectRebindsTransportToVerifiedHop(t *testing.T) {
 	}
 }
 
+func TestHopTransportDeniesMetadataRedirect(t *testing.T) {
+	cases := []struct {
+		name string
+		host string
+		ip   string
+	}{
+		{name: "ipv4-imds", host: "169.254.169.254", ip: "169.254.169.254"},
+		{name: "ipv6-imds", host: "fd00:ec2::254", ip: "fd00:ec2::254"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "http://"+net.JoinHostPort(tc.host, "80")+"/latest/meta-data", http.StatusFound)
+			}))
+			t.Cleanup(src.Close)
+			_, srcPortStr, err := net.SplitHostPort(strings.TrimPrefix(src.URL, "http://"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			srcPort, err := strconv.Atoi(srcPortStr)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			conn := httpConn([]string{"127.0.0.1", tc.host}, []string{"127.0.0.1", tc.ip}, []string{"GET"}, []string{"/"})
+			conn.Policy.Ports = []int{srcPort, 80}
+			conn.Policy.AllowRedirects = true
+			conn.Policy.MaxRedirects = 2
+			conn.Policy.AllowPrivateDestinations = true
+			req := baseHTTPReq(conn, http.MethodGet, "/", nil)
+			req.Resolver = mapResolver{
+				"127.0.0.1": []net.IP{net.ParseIP("127.0.0.1")},
+				tc.host:     []net.IP{net.ParseIP(tc.ip)},
+			}
+			res := Execute(context.Background(), req)
+			if res.OK || res.Error == nil || (res.Error.Code != CodeSSRFDenied && res.Error.Code != CodeRedirectDenied) {
+				t.Fatalf("hop transport metadata redirect %s: %+v", tc.name, res.Error)
+			}
+			if res.Error != nil && strings.Contains(res.Error.Message, tc.ip) {
+				t.Fatalf("hop transport problem leaked address %s: %s", tc.ip, res.Error.Message)
+			}
+		})
+	}
+}
+
 func TestEmailTemplateSchemaTypes(t *testing.T) {
 	mailer := &CaptureMailer{}
 	req := EmailRequest{
