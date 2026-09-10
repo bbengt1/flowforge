@@ -126,12 +126,12 @@ func TestAddOverlapRequiresShortOverlapUntil(t *testing.T) {
 }
 
 func TestLoadMaterialBootFailsOnBadOverlapEnv(t *testing.T) {
-	seed := EncodeSeedB64(TestMaterial().Private)
+	old := TestMaterial()
+	seed := EncodeSeedB64(old.Private)
 	t.Setenv(EnvSigningKey, seed)
 	t.Setenv(EnvSigningKeyFile, "")
 	t.Setenv(EnvSigningKeyID, "stable:ops")
 	t.Setenv("APP_ENV", "production")
-	old := TestMaterial()
 	jwk := map[string]any{
 		"kty": KeyType, "crv": Curve, "x": encodePublicX(old.Public),
 		"kid": "env-bad", "use": "sig", "alg": Algorithm,

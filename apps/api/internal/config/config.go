@@ -62,7 +62,7 @@ type Config struct {
 	IntegrationActionsEnabled bool
 	// EmbedKeys is the Ed25519 material used to mint/verify embed
 	// assertions. Production requires EMBED_SIGNING_KEY (boot-fail).
-	// Non-production APP_ENV may use an ephemeral process key.
+	// Non-production APP_ENV may use a crypto/rand ephemeral process key.
 	EmbedKeys     embed.Material
 	EmbedAudience string
 	EmbedTTL      time.Duration

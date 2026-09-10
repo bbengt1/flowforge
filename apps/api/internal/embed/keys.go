@@ -108,7 +108,7 @@ func (m Material) MarshalJSON() ([]byte, error) {
 // processes (empty/production APP_ENV or REQUIRE_TLS) fail closed when
 // the source is empty — no boot-only ephemeral key. Non-production
 // APP_ENV (development|dev|local|test) without REQUIRE_TLS may mint an
-// ephemeral process key for local convenience (ADV-016 may remove that).
+// ephemeral process key via crypto/rand. There is no committed seed.
 func LoadMaterial() (Material, error) {
 	id := strings.TrimSpace(os.Getenv(EnvSigningKeyID))
 	raw := strings.TrimSpace(os.Getenv(EnvSigningKey))
@@ -131,7 +131,10 @@ func LoadMaterial() (Material, error) {
 			return Material{}, fmt.Errorf("%w: set %s or %s (Ed25519 seed/key); empty APP_ENV/production and REQUIRE_TLS refuse a boot-only key",
 				ErrSigningKeyRequired, EnvSigningKey, EnvSigningKeyFile)
 		}
-		m := NewEphemeralMaterial()
+		m, err := generateEphemeralMaterial()
+		if err != nil {
+			return Material{}, err
+		}
 		m.Overlap = overlap
 		return m, nil
 	}
@@ -169,21 +172,12 @@ func allowEphemeralSigningKey() bool {
 
 // NewEphemeralMaterial generates a process-local Ed25519 key for tests
 // and trusted-dev. It is not a production key and is never the
-// production LoadMaterial path. The deterministic seed is a last-resort
-// fallback if crypto/rand fails (ADV-016 may remove it).
+// production LoadMaterial path. The key comes from crypto/rand only —
+// there is no committed fallback seed.
 func NewEphemeralMaterial() Material {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	m, err := generateEphemeralMaterial()
 	if err != nil {
-		seed := make([]byte, ed25519.SeedSize)
-		copy(seed, []byte("flowforge-embed-ephemeral-seed"))
-		priv = ed25519.NewKeyFromSeed(seed)
-		pub = priv.Public().(ed25519.PublicKey)
-	}
-	m := Material{
-		KeyID:   "ephemeral:process",
-		Private: priv,
-		Public:  pub,
-		Status:  KeyStatusActive,
+		panic(err)
 	}
 	if overlap, err := LoadOverlapFromEnv(); err == nil {
 		m.Overlap = overlap
@@ -191,17 +185,31 @@ func NewEphemeralMaterial() Material {
 	return m
 }
 
-// TestMaterial is a fixed non-production key for unit tests.
-func TestMaterial() Material {
-	seed := make([]byte, ed25519.SeedSize)
-	for i := range seed {
-		seed[i] = byte(i + 3)
+func generateEphemeralMaterial() (Material, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return Material{}, fmt.Errorf("generate ephemeral embed signing key: %w", err)
 	}
-	priv := ed25519.NewKeyFromSeed(seed)
+	return Material{
+		KeyID:   "ephemeral:process",
+		Private: priv,
+		Public:  pub,
+		Status:  KeyStatusActive,
+	}, nil
+}
+
+// TestMaterial generates a random non-production key for unit tests.
+// Callers that need a stable fixture must reuse the returned Material
+// (or write EncodeSeedB64 to t.TempDir). It is never a production default.
+func TestMaterial() Material {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(fmt.Sprintf("generate test embed signing key: %v", err))
+	}
 	return Material{
 		KeyID:   "test:EMBED_SIGNING_KEY",
 		Private: priv,
-		Public:  priv.Public().(ed25519.PublicKey),
+		Public:  pub,
 		Status:  KeyStatusActive,
 	}
 }

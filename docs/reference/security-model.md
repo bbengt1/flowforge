@@ -77,7 +77,8 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   (`EMBED_SIGNING_KEY` / file). Production (empty/`production` `APP_ENV` or
   `REQUIRE_TLS`) **refuses to start** without it — no boot-only ephemeral
   key. An ephemeral process key is gated to explicit non-production
-  `APP_ENV` only. Key rotation accepts only active and explicitly
+  `APP_ENV` only and is minted with `crypto/rand` (no committed seed).
+  Key rotation accepts only active and explicitly
   overlapping verification keys. Every overlap key requires a short
   finite `overlapUntil` (max 4h). Missing, zero, or far-future expiry
   is refused — it is not treated as forever. The active signing key is
