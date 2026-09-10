@@ -11,4 +11,6 @@ Future implementation changes should add API, deployment, and runner references 
 - [E12.2 operational resilience and capacity](e12-resilience-capacity.md): restore/worker/load harness, ≥2× headroom claims, and Chloe no-UI map.
 - [API / OpenAPI publishing](openapi.md): published spec path, `/api/v1` versioning, and operator fetch/auth.
 - [E12.3 threat-model review](e12-threat-model-review.md): production-gate sign-off against existing controls (no new features).
-- [Release and operations](../operations/index.md): incident/recovery and retention/backup runbooks; Chloe UI/a11y stubs.
+- [Release and operations](../operations/index.md): incident/recovery and retention/backup runbooks; Chloe UI/a11y landings.
+- [Operator / admin UI guide](../guides/operator-admin.md): Chloe E12.3 product-shell walkthroughs (not this API→UI map).
+- [E12.3 accessibility review](e12-accessibility-review.md): labels, focus, keyboard paths, and tracked gaps.

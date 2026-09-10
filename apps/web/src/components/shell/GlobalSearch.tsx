@@ -133,21 +133,31 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
           placeholder="Search workflows, actions, credentials, executions, docs"
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
           autoComplete="off"
+          role="combobox"
+          aria-expanded={open && Boolean(query.trim())}
+          aria-controls="workspace-search-results"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
         />
       </label>
       {open && query.trim() ? (
         <ul
+          id="workspace-search-results"
           role="listbox"
           aria-label="Search results"
           className="absolute z-30 mt-1 max-h-80 w-full overflow-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
         >
           {hits.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-zinc-500">No safe matches</li>
+            <li className="px-3 py-2 text-sm text-zinc-500" role="option" aria-selected="false">
+              No safe matches
+            </li>
           ) : (
             hits.map((hit) => (
-              <li key={`${hit.kind}:${hit.id}`}>
+              <li key={`${hit.kind}:${hit.id}`} role="presentation">
                 <button
                   type="button"
+                  role="option"
+                  aria-selected="false"
                   className="flex w-full flex-col px-3 py-2 text-left hover:bg-zinc-50"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openHit(hit)}

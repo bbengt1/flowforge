@@ -137,7 +137,7 @@ Create one GitHub epic per row below. Create the listed stories in sequence with
 
 1. **Run the security verification suite.** Cover identity/session/embed replay and key rotation, webhook safety, cross-workspace isolation, approval expiry, credential and artifact revocation, artifact/output authorization/redaction/legal holds, stale-worker fencing, provider failure behavior, SSRF/redirect/DNS-rebinding denial, and dependency/image provenance gates.
 2. **Prove operational resilience and capacity.** Run backup/restore, worker-loss/recovery, queue lag, migration serialization, and load tests; document at least 2× observed peak headroom for database connections/writes, queue lag, and storage growth.
-3. **Prepare release and operations documentation.** Publish API/OpenAPI, deployment, configuration, incident/recovery, retention, backup, and operator/admin guides; perform an accessibility and threat-model review before production approval. Control-plane slice: [operations](operations/index.md), [openapi](reference/openapi.md), [threat-model review](reference/e12-threat-model-review.md). Operator/admin UI guides and accessibility review are Chloe / E12.3.
+3. **Prepare release and operations documentation.** Publish API/OpenAPI, deployment, configuration, incident/recovery, retention, backup, and operator/admin guides; perform an accessibility and threat-model review before production approval. Control-plane slice: [operations](operations/index.md), [openapi](reference/openapi.md), [threat-model review](reference/e12-threat-model-review.md). Chloe: [operator/admin UI guide](guides/operator-admin.md) and [accessibility review](reference/e12-accessibility-review.md). Keep #184 open.
 
 ## Story definition of ready
 
