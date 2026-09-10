@@ -61,29 +61,46 @@ type KeyManagement struct {
 
 // CatalogRules are fail-closed product rules for the embed shell.
 type CatalogRules struct {
-	AssertionNotInURL             bool `json:"assertionNotInURL"`
-	HostIDsNotAuthz               bool `json:"hostIdsAreNotAuthorization"`
-	SingleUse                     bool `json:"singleUse"`
-	AudienceBound                 bool `json:"audienceBound"`
-	AsymmetricSigned              bool `json:"asymmetricSigned"`
-	StandaloneDeepLinksOK         bool `json:"standaloneDeepLinksRemainValid"`
-	EmbedSessionsCannotBootstrap  bool `json:"embedSessionsCannotBootstrap"`
-	PartitionedEmbedCookies       bool `json:"partitionedEmbedCookies"`
-	VerifyBeforeWorkspaceLookup   bool `json:"verifyBeforeWorkspaceLookup"`
-	JTIRetainPastExpiry           bool `json:"jtiRetainPastExpiry"`
-	AuthzAudited                  bool `json:"authzAudited"`
-	ExchangeRateLimited           bool `json:"exchangeRateLimited"`
-	SharedHostAllowlist           bool `json:"sharedHostAllowlist"`
-	EmptyHostAllowlistFailsClosed bool `json:"emptyHostAllowlistFailsClosed"`
-	PostMessageUsesFrameAncestors bool `json:"postMessageUsesFrameAncestors"`
-	ExchangeBindsHostIssuer       bool `json:"exchangeBindsHostIssuer"`
-	ChromeFromSession             bool `json:"chromeFromSession"`
+	AssertionNotInURL                bool `json:"assertionNotInURL"`
+	HostIDsNotAuthz                  bool `json:"hostIdsAreNotAuthorization"`
+	SingleUse                        bool `json:"singleUse"`
+	AudienceBound                    bool `json:"audienceBound"`
+	AsymmetricSigned                 bool `json:"asymmetricSigned"`
+	StandaloneDeepLinksOK            bool `json:"standaloneDeepLinksRemainValid"`
+	EmbedSessionsCannotBootstrap     bool `json:"embedSessionsCannotBootstrap"`
+	PartitionedEmbedCookies          bool `json:"partitionedEmbedCookies"`
+	VerifyBeforeWorkspaceLookup      bool `json:"verifyBeforeWorkspaceLookup"`
+	JTIRetainPastExpiry              bool `json:"jtiRetainPastExpiry"`
+	AuthzAudited                     bool `json:"authzAudited"`
+	ExchangeRateLimited              bool `json:"exchangeRateLimited"`
+	SharedHostAllowlist              bool `json:"sharedHostAllowlist"`
+	EmptyHostAllowlistFailsClosed    bool `json:"emptyHostAllowlistFailsClosed"`
+	PostMessageUsesFrameAncestors    bool `json:"postMessageUsesFrameAncestors"`
+	ExchangeBindsHostIssuer          bool `json:"exchangeBindsHostIssuer"`
+	ChromeFromSession                bool `json:"chromeFromSession"`
+	MembershipIsolationRequiresGrant bool `json:"membershipIsolationRequiresGrant"`
+	MembershipIsolationGranted       bool `json:"membershipIsolationGranted"`
 }
 
-// NewCatalog builds the E11.1 + E11.2 contract document.
-// frames is the shared host allowlist (ADV-011) published for CSP
-// frame-ancestors and embed-shell postMessage origin checks.
+// NewCatalog builds the full granted contract document (host/docs
+// and unit tests). HTTP handlers must use NewCatalogFor so
+// unauthenticated embed clients do not see membership/isolation.
 func NewCatalog(frames []string) Catalog {
+	return NewCatalogFor(frames, CatalogView{
+		Authenticated: true,
+		Capabilities:  []string{authz.PermWorkspaceAdminister},
+	})
+}
+
+// NewCatalogFor builds the E11.1 + E11.2 contract for a caller.
+// frames is the shared host allowlist (ADV-011) published for CSP
+// frame-ancestors and embed-shell postMessage origin checks — always
+// present, including on the minimized public catalog.
+func NewCatalogFor(frames []string, view CatalogView) Catalog {
+	return applyCatalogView(fullCatalog(frames), view)
+}
+
+func fullCatalog(frames []string) Catalog {
 	return Catalog{
 		SDK:          SDKVersion,
 		Algorithm:    Algorithm,
@@ -99,7 +116,7 @@ func NewCatalog(frames []string) Catalog {
 		Capabilities: authz.PermissionKeys(),
 		Routes:       CanonicalRoutes(),
 		API: []APIRoute{
-			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. frameAncestors is the shared host allowlist (WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS) used for CSP and postMessage. Empty fails closed. Catalog capabilities are the mintable set — not embed chrome authority."},
+			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none (disclosure follows peeked ff_session)", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. Unauthenticated or capability-less embed sessions receive exchange/session/chrome essentials only. Membership/isolation routes and workspace.administer / platform.administer capabilities appear only when the session grants one of those caps (ADV-024). frameAncestors is always published (ADV-011). Catalog capabilities are not embed chrome authority (ADV-021)."},
 			{Method: "GET", Path: "/api/v1/session", Auth: "ff_session cookie", CSRF: "no", Note: "ADV-021. Authoritative embed chrome after exchange. Bound sessions return session.embed {mode,sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities} plus principal.display_name. Standalone omits session.embed. No secrets, no raw assertion. Chloe retargets chrome from this payload; fail closed on /embed/v1 if session.embed is missing."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Production requires https issuers (ADV-018; boot-fail on allowlist load, 403 at mint). Capabilities must be a subset of the caller. Audience is FlowForge."},
@@ -129,23 +146,25 @@ func NewCatalog(frames []string) Catalog {
 		},
 		FrameAncestors: append([]string(nil), frames...),
 		Rules: CatalogRules{
-			AssertionNotInURL:             true,
-			HostIDsNotAuthz:               true,
-			SingleUse:                     true,
-			AudienceBound:                 true,
-			AsymmetricSigned:              true,
-			StandaloneDeepLinksOK:         true,
-			EmbedSessionsCannotBootstrap:  true,
-			PartitionedEmbedCookies:       true,
-			VerifyBeforeWorkspaceLookup:   true,
-			JTIRetainPastExpiry:           true,
-			AuthzAudited:                  true,
-			ExchangeRateLimited:           true,
-			SharedHostAllowlist:           true,
-			EmptyHostAllowlistFailsClosed: true,
-			PostMessageUsesFrameAncestors: true,
-			ExchangeBindsHostIssuer:       true,
-			ChromeFromSession:             true,
+			AssertionNotInURL:                true,
+			HostIDsNotAuthz:                  true,
+			SingleUse:                        true,
+			AudienceBound:                    true,
+			AsymmetricSigned:                 true,
+			StandaloneDeepLinksOK:            true,
+			EmbedSessionsCannotBootstrap:     true,
+			PartitionedEmbedCookies:          true,
+			VerifyBeforeWorkspaceLookup:      true,
+			JTIRetainPastExpiry:              true,
+			AuthzAudited:                     true,
+			ExchangeRateLimited:              true,
+			SharedHostAllowlist:              true,
+			EmptyHostAllowlistFailsClosed:    true,
+			PostMessageUsesFrameAncestors:    true,
+			ExchangeBindsHostIssuer:          true,
+			ChromeFromSession:                true,
+			MembershipIsolationRequiresGrant: true,
+			MembershipIsolationGranted:       false,
 		},
 	}
 }

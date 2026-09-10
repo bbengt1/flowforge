@@ -146,6 +146,14 @@ func TestPortalAdapterCatalog(t *testing.T) {
 	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors || !cat.Rules.ExchangeBindsHostIssuer {
 		t.Fatalf("allowlist rules %+v", cat.Rules)
 	}
+	if cat.Rules.MembershipIsolationGranted {
+		t.Fatal("unauthenticated portal catalog must hide membership/isolation")
+	}
+	for _, route := range cat.Routes {
+		if embed.IsMembershipIsolationRoute(route.ID) {
+			t.Fatalf("portal catalog leaked route %s", route.ID)
+		}
+	}
 }
 
 func TestPortalMintMapsRolesAndExchanges(t *testing.T) {

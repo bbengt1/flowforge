@@ -133,14 +133,14 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
     id: "membership",
     label: "Membership",
     href: "/membership",
-    permission: null,
+    permission: WORKSPACE_ADMIN_PERMISSION,
     group: "foundation",
   },
   {
     id: "isolation",
     label: "Isolation",
     href: "/isolation",
-    permission: null,
+    permission: WORKSPACE_ADMIN_PERMISSION,
     group: "foundation",
   },
   {
@@ -203,10 +203,27 @@ export function canExecuteWorkflows(
   return permissions.includes(WORKFLOW_EXECUTE_PERMISSION);
 }
 
+export const PLATFORM_ADMIN_PERMISSION = "platform.administer";
+
+export function canSeeMembershipIsolationNav(
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (permissions == null) {
+    return false;
+  }
+  return (
+    permissions.includes(WORKSPACE_ADMIN_PERMISSION) ||
+    permissions.includes(PLATFORM_ADMIN_PERMISSION)
+  );
+}
+
 function itemVisible(
   item: WorkspaceNavItem,
   permissions: readonly string[] | null | undefined,
 ): boolean {
+  if (item.id === "membership" || item.id === "isolation") {
+    return canSeeMembershipIsolationNav(permissions);
+  }
   if (item.permission == null) {
     return true;
   }

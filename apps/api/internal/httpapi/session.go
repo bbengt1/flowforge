@@ -79,6 +79,47 @@ func sessionCookieValue(r *http.Request) string {
 	return strings.TrimSpace(c.Value)
 }
 
+// peekCatalogView reads an optional ff_session for catalog disclosure.
+// It never writes a response: missing/invalid cookies stay unauthenticated
+// so GET /embed/catalog remains 200 (ADV-011 frameAncestors).
+func (s *Server) peekCatalogView(r *http.Request) embed.CatalogView {
+	token := sessionCookieValue(r)
+	if token == "" || s.sessions == nil {
+		return embed.CatalogView{}
+	}
+	rec, err := s.sessions.Lookup(r.Context(), token, s.clockNow())
+	if err != nil {
+		return embed.CatalogView{}
+	}
+	view := embed.CatalogView{Authenticated: true, EmbedBound: rec.Binding.Bound()}
+	if rec.Binding.Bound() {
+		view.Capabilities = append([]string(nil), rec.Binding.Capabilities...)
+		return view
+	}
+	if s.store == nil {
+		return view
+	}
+	user, err := s.store.GetUser(r.Context(), rec.UserID)
+	if err != nil || user.Status != "active" {
+		return embed.CatalogView{}
+	}
+	if authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) {
+		view.Capabilities = []string{authz.PermPlatformAdminister}
+		return view
+	}
+	items, err := s.store.ListWorkspacesForUser(r.Context(), user.ID)
+	if err != nil {
+		return view
+	}
+	for _, item := range items {
+		if embed.GrantsMembershipIsolation(item.Permissions) {
+			view.Capabilities = []string{authz.PermWorkspaceAdminister}
+			return view
+		}
+	}
+	return view
+}
+
 func unsafeMethod(method string) bool {
 	switch method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:

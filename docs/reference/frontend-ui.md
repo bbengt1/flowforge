@@ -721,7 +721,7 @@ Query/hash fragments are unchanged. Next rewrites `/embed/v1/:path*` → `/:path
 
 | Method | Path | CSRF | Notes |
 | --- | --- | --- | --- |
-| `GET` | `/api/v1/embed/catalog` | no | Contract. No auth |
+| `GET` | `/api/v1/embed/catalog` | no | Contract. No auth required. **ADV-024:** membership/isolation omitted unless the session grants `workspace.administer` / `platform.administer`. `frameAncestors` always published. |
 | `GET` | `/api/v1/embed/jwks` | no | Public keys only |
 | `POST` | `/api/v1/embed/assertions` | yes if cookie | Mint. `capabilities` ⊂ caller. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`). This shell does not mint. |
 | `POST` | `/api/v1/embed/exchange` | no | Session issue |

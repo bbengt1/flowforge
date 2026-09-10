@@ -12,6 +12,12 @@ import {
   EMBED_MOUNT_PREFIX,
   EMBED_REQUIRED_CLAIMS,
   EMBED_ROUTES,
+  EMBED_CATALOG_MEMBERSHIP_ISOLATION,
+  EMBED_CATALOG_MEMBERSHIP_ISOLATION_HELP,
+  EMBED_CATALOG_MEMBERSHIP_ISOLATION_RULES,
+  catalogRoutesForGrant,
+  grantsMembershipIsolationCatalog,
+  parseCatalogMembershipIsolationGranted,
   EMBED_SDK,
   EMBED_API_PR,
   EMBED_EPIC,
@@ -114,6 +120,47 @@ describe("embed-contract", () => {
     const workflow = EMBED_ROUTES.find((r) => r.id === "workflow");
     assert.equal(workflow?.standalone, "/workflows/{id}");
     assert.equal(workflow?.embed, `${EMBED_MOUNT_PREFIX}/workflows/{id}`);
+  });
+
+  it("hides membership/isolation catalog routes unless granted", () => {
+    assert.equal(grantsMembershipIsolationCatalog(null), false);
+    assert.equal(grantsMembershipIsolationCatalog(["workflow.view"]), false);
+    assert.equal(
+      grantsMembershipIsolationCatalog(["workspace.administer"]),
+      true,
+    );
+    assert.equal(
+      parseCatalogMembershipIsolationGranted({
+        rules: { membershipIsolationGranted: false },
+      }),
+      false,
+    );
+    assert.equal(
+      parseCatalogMembershipIsolationGranted({
+        rules: { membershipIsolationGranted: true },
+      }),
+      true,
+    );
+    const publicRoutes = catalogRoutesForGrant(false).map((r) => r.id);
+    assert.equal(publicRoutes.includes("membership"), false);
+    assert.equal(publicRoutes.includes("isolation"), false);
+    assert.ok(publicRoutes.includes("settings"));
+    const granted = catalogRoutesForGrant(true).map((r) => r.id);
+    assert.ok(granted.includes("membership"));
+    assert.ok(granted.includes("isolation"));
+    assert.equal(
+      EMBED_CATALOG_MEMBERSHIP_ISOLATION.grantedField,
+      "rules.membershipIsolationGranted",
+    );
+    assert.equal(
+      EMBED_CATALOG_MEMBERSHIP_ISOLATION.frameAncestorsAlwaysPublished,
+      true,
+    );
+    assert.equal(
+      EMBED_CATALOG_MEMBERSHIP_ISOLATION_RULES.failClosedWithoutGrant,
+      true,
+    );
+    assert.match(EMBED_CATALOG_MEMBERSHIP_ISOLATION_HELP, /workspace.administer/);
   });
 
   it("never reads an assertion from a URL and strips leaked query keys", () => {

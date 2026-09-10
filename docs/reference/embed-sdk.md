@@ -133,17 +133,24 @@ without a UI rewrite.
 | `/actions` | `/embed/v1/actions` |
 | `/templates` | `/embed/v1/templates` |
 | `/settings` | `/embed/v1/settings` |
-| `/membership` | `/embed/v1/membership` |
-| `/isolation` | `/embed/v1/isolation` |
+| `/membership` | `/embed/v1/membership` (catalog only when granted) |
+| `/isolation` | `/embed/v1/isolation` (catalog only when granted) |
 
 Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
-`GET /api/v1/embed/catalog` `routes[]`.
+`GET /api/v1/embed/catalog` `routes[]`. **ADV-024:** membership/isolation
+routes, `workspace.administer` / `platform.administer` capabilities, and
+isolation help are omitted unless the peeked `ff_session` grants one of those
+caps. Unauthenticated or capability-less embed sessions get
+exchange/session/chrome essentials only. `frameAncestors` stays published
+(ADV-011). Chloe: `EMBED_CATALOG_MEMBERSHIP_ISOLATION` /
+`catalogRoutesForGrant` / `parseCatalogMembershipIsolationGranted`. Drive
+chrome from `GET /session`, not catalog guesses (ADV-021).
 
 ## API
 
 | Method | Path | Auth | CSRF | Notes |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map. `frameAncestors` is the shared host allowlist (ADV-011) |
+| `GET` | `/api/v1/embed/catalog` | none (disclosure follows peeked session) | no | Contract + route map. `frameAncestors` is the shared host allowlist (ADV-011). Membership/isolation omitted unless granted (ADV-024) |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then **verify signature / iss (path allowlist + minting host issuer bind) / aud / nbf / exp / jti eligibility before any workspace lookup**. `nbf` allows a short clock-skew leeway only (default **30s**, `EMBED_NBF_LEEWAY`, hard max **60s**); `exp` has no leeway. Durable `jti` consume is one `INSERT … ON CONFLICT DO NOTHING RETURNING` after verify succeeds. Used ids stay reserved **24h past `exp`** (`retain_until`); a separate `PurgeExpired` job deletes only after that window. Then resolve `(tenant_id, workbench_key)` and bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. Rate-limited by IP (default 120/min) and issuer\|subject (default 30/min); burst is `429` `rate-limited`. |
@@ -294,6 +301,7 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | `key.rotation` | ready | Durable active key + overlap verification. Every overlap key requires a short `overlapUntil` (max 4h). Unknown / missing-expiry / expired / far-future `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only, requires `overlapUntil`, and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` or bad `EMBED_OVERLAP_KEYS` is boot-fail. The active key is not an overlap key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs, workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Workspace delete revokes bound embed sessions (including CHIPS); later cookies are `401`. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only; treat post-delete `401` as existing session expiry. |
 | `chrome.from-session` | ready | **ADV-021.** `GET /session` `session.embed` is the authoritative embed chrome payload. Fail closed on `/embed/v1` without that bind. Assertion leftovers, catalog guesses, and host query are not chrome authority. No secrets / no raw assertion. Chloe retargets via `parseEmbedChromeFromSession`. Prefer no product-shell rewrite in this API story. |
+| Catalog membership/isolation | ready | **ADV-024.** `GET /embed/catalog` (and `GET /portal/adapter` routes) omit membership/isolation unless the peeked session grants `workspace.administer` or `platform.administer`. Unauthenticated / capability-less embed sessions are essentials-only. `frameAncestors` stays published. Chloe: `EMBED_CATALOG_MEMBERSHIP_ISOLATION`. Keep #153 open. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
 | `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Two-origin harness: ADV-013 (`scripts/adv013-cross-origin.sh`). |
 | `host.allowlist` | ready | One list (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) drives CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks. Empty fails closed. `*` / `null` ignored. `GET /embed/catalog` `frameAncestors` publishes the list. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source. |
