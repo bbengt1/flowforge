@@ -12,6 +12,8 @@ type CredentialRefSelectProps = {
   value: string;
   disabled?: boolean;
   allowedTypes?: readonly CredentialType[];
+  refreshNonce?: number;
+  pendingItem?: Pick<CredentialRecord, "id" | "displayName" | "type"> | null;
   onChange: (credentialId: string, displayName: string) => void;
 };
 
@@ -21,6 +23,8 @@ export function CredentialRefSelect({
   value,
   disabled,
   allowedTypes,
+  refreshNonce = 0,
+  pendingItem = null,
   onChange,
 }: CredentialRefSelectProps) {
   const [items, setItems] = useState<CredentialRecord[]>([]);
@@ -59,16 +63,35 @@ export function CredentialRefSelect({
     return () => {
       cancelled = true;
     };
-  }, [ready, identity, allowedKey]);
+  }, [ready, identity, allowedKey, refreshNonce]);
+
+  const visibleItems =
+    pendingItem && !items.some((item) => item.id === pendingItem.id)
+      ? [
+          ...items,
+          {
+            ...pendingItem,
+            status: "active" as const,
+            tags: [],
+            metadata: {},
+            fingerprint: "",
+            encryptionVersion: 0,
+            keyReference: "",
+            lastTestStatus: "untested" as const,
+            useCount: 0,
+            permittedActions: [],
+          },
+        ]
+      : items;
 
   return (
     <label className="block text-sm">
       <span className="font-medium">Vault credential</span>
       <select
         value={value}
-        disabled={disabled || Boolean(problem) || items.length === 0}
+        disabled={disabled || Boolean(problem) || visibleItems.length === 0}
         onChange={(event) => {
-          const next = items.find((item) => item.id === event.target.value);
+          const next = visibleItems.find((item) => item.id === event.target.value);
           onChange(next?.id ?? "", next?.displayName ?? "");
         }}
         className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-50"
@@ -76,11 +99,11 @@ export function CredentialRefSelect({
         <option value="">
           {problem
             ? "No authorized credentials"
-            : items.length === 0
+            : visibleItems.length === 0
               ? "No matching vault credentials"
               : "Select by display name"}
         </option>
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <option key={item.id} value={item.id}>
             {item.displayName} ({item.type})
           </option>

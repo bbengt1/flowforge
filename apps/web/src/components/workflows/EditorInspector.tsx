@@ -46,6 +46,15 @@ import {
   inspectorWithFields,
   isInspectorSecretSurfaceName,
 } from "@/lib/editor-inspector";
+import {
+  editorPathForWorkflow,
+  inspectorAddCredentialHref,
+  vaultHomeHref,
+  type InspectorAddCredentialRequest,
+  type InspectorPendingCredential,
+} from "@/lib/editor-credential";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
+import Link from "next/link";
 
 type EditorInspectorProps = {
   yaml: string;
@@ -70,6 +79,10 @@ type EditorInspectorProps = {
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onRename?: (id: string, name: string) => void;
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
+  workflowId?: string;
+  credentialRefreshNonce?: number;
+  pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
+  onAddCredential?: (request: InspectorAddCredentialRequest) => void;
 };
 
 export function EditorInspector({
@@ -95,6 +108,10 @@ export function EditorInspector({
   onApply,
   onRename,
   onPatchNodeWith,
+  workflowId,
+  credentialRefreshNonce,
+  pendingCredentials,
+  onAddCredential,
 }: EditorInspectorProps) {
   const focus = inspectorFocus(selection);
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
@@ -157,6 +174,10 @@ export function EditorInspector({
             sshCatalog={sshCatalog}
             scriptCatalog={scriptCatalog}
             httpCatalog={httpCatalog}
+            workflowId={workflowId}
+            credentialRefreshNonce={credentialRefreshNonce}
+            pendingCredentials={pendingCredentials}
+            onAddCredential={canEdit ? onAddCredential : undefined}
             onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
           />
         </>
@@ -269,6 +290,10 @@ function SelectedNodePins({
   sshCatalog,
   scriptCatalog,
   httpCatalog,
+  workflowId,
+  credentialRefreshNonce,
+  pendingCredentials,
+  onAddCredential,
   onPatchNodeWith,
 }: {
   node: YamlWorkflowNode;
@@ -281,8 +306,13 @@ function SelectedNodePins({
   sshCatalog?: SshNodeCatalog | null;
   scriptCatalog?: ScriptNodeCatalog | null;
   httpCatalog?: HttpNotificationCatalog | null;
+  workflowId?: string;
+  credentialRefreshNonce?: number;
+  pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
+  onAddCredential?: (request: InspectorAddCredentialRequest) => void;
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 }) {
+  const embed = useEmbedMode();
   const credentialFields = inspectorCredentialFields(entry, node.type);
   const withFields =
     inspectorShowsScriptOwnedField(node.type) ||
@@ -407,7 +437,18 @@ function SelectedNodePins({
           />
         </div>
       ) : null}
-      {credentialFields.map((fieldName) => (
+      {credentialFields.map((fieldName) => {
+        const editorPath = workflowId ? editorPathForWorkflow(workflowId, embed) : null;
+        const returnTo =
+          editorPath && workflowId
+            ? {
+                editorPath,
+                workflowId,
+                nodeId: node.id,
+                field: fieldName,
+              }
+            : null;
+        return (
         <div key={fieldName} className="mt-3">
           <p className="text-xs font-medium text-zinc-600">{fieldName}</p>
           <CredentialRefSelect
@@ -420,6 +461,8 @@ function SelectedNodePins({
             }
             disabled={!canEdit || !onPatchNodeWith}
             allowedTypes={inspectorCredentialTypes(node.type)}
+            refreshNonce={credentialRefreshNonce}
+            pendingItem={pendingCredentials?.[`${node.id}:${fieldName}`] ?? null}
             onChange={(credentialId) => {
               const ref = inspectorCredentialRefValue(credentialId);
               if (ref === null) {
@@ -428,12 +471,45 @@ function SelectedNodePins({
               onPatchNodeWith?.(node.id, { [fieldName]: ref });
             }}
           />
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              type="button"
+              disabled={!canEdit || !onAddCredential}
+              onClick={() =>
+                onAddCredential?.({
+                  nodeId: node.id,
+                  field: fieldName,
+                  allowedTypes: inspectorCredentialTypes(node.type),
+                })
+              }
+              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:text-teal-950 disabled:text-zinc-400 disabled:no-underline"
+            >
+              Add credential
+            </button>
+            {returnTo ? (
+              <Link
+                href={inspectorAddCredentialHref(returnTo, embed)}
+                className="text-xs text-zinc-600 underline decoration-zinc-200 underline-offset-2 hover:text-zinc-900"
+              >
+                Open /credentials/new
+              </Link>
+            ) : null}
+            <Link
+              href={vaultHomeHref(embed)}
+              className="text-xs text-zinc-600 underline decoration-zinc-200 underline-offset-2 hover:text-zinc-900"
+            >
+              Vault home
+            </Link>
+          </div>
           <p className="mt-1 text-xs text-zinc-500">
             Credentials are selected by display name only. YAML stores the
-            workspace UUID; secret values are never shown.
+            workspace UUID; secret values are never shown. Add credential
+            opens the existing masked wizard — not a secret field in this
+            rail.
           </p>
         </div>
-      ))}
+        );
+      })}
     </section>
   );
 }

@@ -1,8 +1,15 @@
 import { CredentialWizard } from "@/components/credentials/CredentialWizard";
+import { parseInspectorCredentialReturnTo } from "@/lib/editor-credential";
 
 export const dynamic = "force-dynamic";
 
-export default function NewCredentialPage() {
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function NewCredentialPage({ searchParams }: PageProps) {
+  const query = await searchParams;
+  const returnContext = parseInspectorCredentialReturnTo(query);
   return (
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
@@ -16,9 +23,12 @@ export default function NewCredentialPage() {
           Catalog-driven wizard: display name, type, masked secret fields,
           safe metadata, and optional expiresAt. After create the secret
           inputs are emptied and only metadata is kept.
+          {returnContext
+            ? " You will return to the workflow editor; the new display name is selected onto the node and YAML stores the UUID only."
+            : ""}
         </p>
       </header>
-      <CredentialWizard />
+      <CredentialWizard returnContext={returnContext} />
     </main>
   );
 }
