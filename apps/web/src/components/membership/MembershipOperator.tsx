@@ -22,6 +22,13 @@ import {
 } from "@/lib/header-fallback";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { emptyDevIdentity, type DevIdentity } from "@/lib/identity-headers";
+import {
+  LOCAL_SEED_EXAMPLE_IDENTITY,
+  LOCAL_SEED_TENANT_NAME,
+  LOCAL_SEED_TENANT_SLUG,
+  LOCAL_SEED_WORKBENCH_KEY,
+  LOCAL_SEED_WORKSPACE_NAME,
+} from "@/lib/local-seed-example";
 import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import type {
@@ -35,15 +42,6 @@ import type {
   Workspace,
 } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
-
-const EXAMPLE_IDENTITY: DevIdentity = {
-  issuer: "https://flowforge.local",
-  subject: "operator-chloe",
-  displayName: "Chloe (dev)",
-  tenantId: "",
-  tenantSlug: "",
-  workbenchKey: "",
-};
 
 export function MembershipOperator() {
   const identity = useSyncExternalStore(
@@ -71,12 +69,14 @@ export function MembershipOperator() {
   const [current, setCurrent] = useState<CurrentWorkspace | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
 
-  const [tenantSlug, setTenantSlug] = useState("acme");
-  const [tenantName, setTenantName] = useState("Acme");
-  const [workspaceName, setWorkspaceName] = useState("Operations");
+  const [tenantSlug, setTenantSlug] = useState(LOCAL_SEED_TENANT_SLUG);
+  const [tenantName, setTenantName] = useState(LOCAL_SEED_TENANT_NAME);
+  const [workspaceName, setWorkspaceName] = useState(LOCAL_SEED_WORKSPACE_NAME);
   const [workspaceTenantId, setWorkspaceTenantId] = useState("");
-  const [workspaceTenantSlug, setWorkspaceTenantSlug] = useState("");
-  const [workspaceKey, setWorkspaceKey] = useState("ops");
+  const [workspaceTenantSlug, setWorkspaceTenantSlug] = useState(
+    LOCAL_SEED_TENANT_SLUG,
+  );
+  const [workspaceKey, setWorkspaceKey] = useState(LOCAL_SEED_WORKBENCH_KEY);
 
   const updateIdentity = useCallback((next: DevIdentity) => {
     saveDevIdentity(next);
@@ -252,7 +252,7 @@ export function MembershipOperator() {
       <IdentityBootstrap
         identity={identity}
         onChange={updateIdentity}
-        onExample={() => updateIdentity({ ...EXAMPLE_IDENTITY })}
+        onExample={() => updateIdentity({ ...LOCAL_SEED_EXAMPLE_IDENTITY })}
         onClear={() => {
           clearDevIdentity();
           setHeaderFallback(false);
