@@ -18,7 +18,13 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const headerList = await headers();
   const cookieStore = await cookies();
-  const hostIssuers = readConfiguredHostIssuers(process.env);
+  const hostIssuers = readConfiguredHostIssuers({
+    PORTAL_ISSUER: process.env.PORTAL_ISSUER,
+    EMBED_ISSUER: process.env.EMBED_ISSUER,
+    WEB_PORTAL_FRAME_ANCESTORS: process.env.WEB_PORTAL_FRAME_ANCESTORS,
+    NEXT_PUBLIC_PORTAL_ISSUER: process.env.NEXT_PUBLIC_PORTAL_ISSUER,
+    NEXT_PUBLIC_EMBED_ISSUER: process.env.NEXT_PUBLIC_EMBED_ISSUER,
+  });
   return (
     <html lang="en" className="h-full">
       <body className="min-h-full antialiased">

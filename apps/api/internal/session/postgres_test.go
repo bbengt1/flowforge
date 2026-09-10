@@ -119,7 +119,9 @@ func TestPostgresRevokeBoundToWorkspaceAndHardDelete(t *testing.T) {
 	}
 
 	store := NewPostgres(pool)
-	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	// Wall-clock now: the hard-delete trigger stamps revoked_at with SQL now(),
+	// and Valid() ignores a revoke timestamp after the lookup clock.
+	now := time.Now().UTC()
 	bound, err := store.Create(ctx, user.ID, now, time.Hour, 12*time.Hour, CreateOpts{
 		Binding: Binding{TenantID: tenant.ID, WorkbenchKey: ws.WorkbenchKey, WorkspaceID: ws.ID, Capabilities: []string{"workflow.view"}},
 	})

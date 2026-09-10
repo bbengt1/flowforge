@@ -153,7 +153,9 @@ func TestPostgresDeleteWorkspaceDisablesAndTriggerRevokes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	// Wall-clock now: the disable trigger stamps revoked_at with SQL now(),
+	// and Valid() ignores a revoke timestamp after the lookup clock.
+	now := time.Now().UTC()
 	sessions := session.NewPostgres(pool)
 	issued, err := sessions.Create(ctx, user.ID, now, time.Hour, 12*time.Hour, session.CreateOpts{
 		Binding: session.Binding{TenantID: tenant.ID, WorkbenchKey: ws.WorkbenchKey, WorkspaceID: ws.ID},
