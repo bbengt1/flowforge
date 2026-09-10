@@ -9,6 +9,6 @@ Thin control-plane defaults. This is not a full production platform.
 | [`tls/`](tls/) | Local reverse-proxy TLS terminator (Caddy) |
 | [`supply-chain/`](supply-chain/) | Approved bases and vulnerability/provenance policy implemented in CI |
 
-Backup encryption and restore rehearsal live in [`scripts/backup/`](../scripts/backup/). Operator narrative: [`docs/deployment.md`](../docs/deployment.md).
+Backup encryption and restore rehearsal live in [`scripts/backup/`](../scripts/backup/). Operator narrative: [`docs/deployment.md`](../docs/deployment.md). Incident/recovery and retention cadence: [`docs/operations/`](../docs/operations/index.md).
 
 Shared identity: containers run as UID/GID **65532**. The web image should use the same UID.

@@ -216,14 +216,18 @@ produce an auditable, version-pinned execution.
   limits; output/artifact authorization and redaction; stale worker fencing;
   approval expiry; provider credential revocation; and outbound HTTP SSRF
   (loopback/private/metadata denial after resolve, DNS rebinding, and
-  redirect-to-private). The named E12.1 suite
+  redirect-to-private).   The named E12.1 suite
   (`scripts/e12-security-suite.sh`, CI `.github/workflows/e12-security.yml`)
   is the verification gate; see [e12-security-verification.md](e12-security-verification.md).
   Operational restore, worker-loss, queue lag, migration serialization, and
   ≥2× capacity headroom are the E12.2 suite
   (`scripts/e12-resilience-suite.sh`, CI `.github/workflows/e12-resilience.yml`);
   see [e12-resilience-capacity.md](e12-resilience-capacity.md). E12.2 does
-  not weaken this security suite.
+  not weaken this security suite. The E12.3 production-gate
+  **threat-model review** (existing controls only — trust boundaries,
+  embed, credentials, SSRF, tenancy) is
+  [e12-threat-model-review.md](e12-threat-model-review.md). Accessibility
+  review is **Chloe / E12.3**.
 
 ## Incident-safe behavior
 

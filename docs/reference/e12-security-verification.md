@@ -89,3 +89,7 @@ provider failure, Trivy/SBOM/approved-bases. Those stay harness/CI-only.
 - **Chloe:** UI/embed rows marked **Done** (Hit list). Optional rows
   remain open if she wants extra screenshots on #182. Keep the issue
   open after this PR.
+
+E12.3 production-gate review (existing controls, no new suite):
+[e12-threat-model-review.md](e12-threat-model-review.md). Ops runbooks:
+[operations](../operations/index.md). Keep #184 open (Chloe UI/a11y).

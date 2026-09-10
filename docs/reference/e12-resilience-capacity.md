@@ -86,3 +86,7 @@ Keep #183 open after this PR.
 - **jonny:** harness, restore/worker/load evidence, CI gate, this map.
 - **Chloe:** no UI on this story unless a later ops surface is explicitly
   requested. Do not close #183 on a UI PR alone.
+
+Operator restore/incident narrative (E12.3, no harness change):
+[incident and recovery](../operations/incident-recovery.md),
+[retention and backup](../operations/retention-backup.md). Keep #184 open.

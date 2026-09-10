@@ -1,5 +1,10 @@
 # Deployment and local development
 
+Release/ops landing: [operations](operations/index.md) (API/OpenAPI,
+incident/recovery, retention/backup, threat-model review). This page is
+the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
+**Accessibility review — Chloe / E12.3.**
+
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
@@ -75,9 +80,54 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `WEB_EMBED_FRAME_ANCESTORS` | unset | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS`). Exact origins allowed to frame `/embed/v1` and send embed postMessage. Empty keeps `frame-ancestors 'none'` and denies postMessage. `*` / `null` are ignored. Set the same values on the API so the catalog matches. |
 | `WEB_PORTAL_FRAME_ANCESTORS` | unset | Same shared list (Portal-origin name). |
 | `PORTAL_FRAME_ANCESTORS` | unset | Same shared list (API catalog name). |
+| `HTTP_ADDR` / `PORT` | `:8080` | Listen address. `PORT` becomes `:PORT` when `HTTP_ADDR` is unset. |
+| `DATABASE_URL` | built from `POSTGRES_*` | Preferred DSN. Compose URL-encodes the password into this. |
+| `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
+| `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
+| `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
+| `JOB_BINDING_SECRET` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Unset = tickets die on API restart. **Set in production.** |
+| `SCRIPT_SIGNING_KEY` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Unset = signatures die on restart. **Set in production.** |
+| `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
+| `BACKUP_ENCRYPTION_KEY` | (scripts only) | Passphrase for `scripts/backup/*` (AES-256-CBC + PBKDF2). Wrap with KMS before production. Not an API process env. |
+
+Sources for this inventory (prefer these over copying compose):
+[`env-template.txt`](../env-template.txt),
+[`apps/api/README.md`](../apps/api/README.md) Environment table,
+[`deploy/k8s/api-configmap.yaml`](../deploy/k8s/api-configmap.yaml),
+[`deploy/k8s/api-secret.example.yaml`](../deploy/k8s/api-secret.example.yaml).
+
+Published OpenAPI for operators: [openapi.md](reference/openapi.md).
 
 ADV-013 two-origin Portal→embed rehearsal (Portal host ≠ embed, local HTTPS):
 `docs/reference/portal-adapter.md` and `bash scripts/adv013-cross-origin.sh`.
+
+## Production vs local pitfalls
+
+Local compose is intentionally loose so membership/embed bootstrap works.
+**Do not copy these into Kubernetes or any production Secret/ConfigMap.**
+
+| Local (compose / `env-template.txt`) | Production (`deploy/k8s`) |
+| --- | --- |
+| `APP_ENV=development` | `APP_ENV=production` (empty also production-locks). |
+| `TRUSTED_DEV_IDENTITY_HEADERS=1` | **Unset.** Process **refuses to start** if the flag is set with production `APP_ENV` or `REQUIRE_TLS=true`. |
+| Sample `PLATFORM_ADMINS=https://idp.example\|admin-1` | Explicit real `issuer\|subject` pairs on the Secret/ConfigMap. Empty is fail-closed (`403` on tenant/workspace bootstrap, metrics, OpenAPI, key rotate, impersonate). Not in the foundation ConfigMap — you must add it. |
+| Compose-mounted `deploy/local/embed-signing.pem` / template PEM | Unique PKCS#8 `EMBED_SIGNING_KEY` on the Secret. **Boot-fail** if missing. Do not copy the local key. |
+| `EMBED_ISSUER` may be `http://` in dev | Absolute `https://` only (ADV-018). `http://` is a boot-fail. |
+| `REQUIRE_TLS` unset / false; HTTP on :8080 | `REQUIRE_TLS=true` + `TRUSTED_PROXY_CIDRS` for cluster ranges. TLS terminates at Ingress (`deploy/k8s/ingress.yaml`, `deploy/tls/`). |
+| `POSTGRES_SSLMODE=disable` in compose DSN | `POSTGRES_SSLMODE=require` (ConfigMap). |
+| `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
+| Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
+| `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` unset (ephemeral) | Durable secrets. Tickets and script signatures die on restart if unset. |
+| `CREDENTIAL_KEK` optional to boot | Required to create/rotate vault secrets and to decrypt artifacts after restore. |
+| `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
+| OpenAPI/metrics via trusted-dev headers | `Authorization: Bearer <ff_session>` for a `PLATFORM_ADMINS` principal. |
+
+Image and runtime defaults that production must keep: digest-pinned
+images from approved provenance, non-root UID **65532**, read-only
+root, `cap_drop: ALL`, `no_new_privs`, resource limits, default-deny
+NetworkPolicy, TLS at the ingress/proxy boundary. See
+[supply-chain policy](../deploy/supply-chain/policy.md) and
+[`deploy/k8s/README.md`](../deploy/k8s/README.md).
 
 ## Metrics and OpenAPI scrape (ADV-020)
 
@@ -103,6 +153,12 @@ enable that in production. Kubernetes liveness/readiness stay
 `GET /api/v1/health` and `GET /api/v1/readiness` with no credentials.
 
 ## Recovery
+
+Operator runbooks (do not duplicate here):
+
+- [Incident and recovery](operations/incident-recovery.md) — health vs readiness, worker-loss/fencing, escalation (`X-Request-ID`, alerts, metrics).
+- [Retention and backup](operations/retention-backup.md) — encryption, restore cadence, `POST /retention/purge`, legal hold.
+- [E12.3 threat-model review](reference/e12-threat-model-review.md) — production-gate sign-off.
 
 Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup job as recovery evidence.
 
