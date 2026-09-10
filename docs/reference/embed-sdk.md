@@ -228,7 +228,7 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM. Compose seeds a **local-only** key. An ephemeral process key is allowed only when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off. |
+| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 seed (32 bytes) or private key (64 bytes) as base64/hex, or PKCS8 PEM. Compose seeds a **local-only** key. An ephemeral process key is allowed only when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off; that key is minted with `crypto/rand` (no committed seed). |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of the same material |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Active `kid`. Never `ephemeral:process` in production. |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. Each key **requires** `overlapUntil` (RFC3339, max 4h from boot). Missing/zero/far-future is boot-fail. Prefer `POST /embed/keys/rotate` so every instance refreshes from the store. |
@@ -253,8 +253,10 @@ which fail closed at **request time** (`403` on mint and exchange) so
 the rest of the API stays up. Local compose seeds a local-only signing
 key plus `https://idp.example` and `https://portal.cp-ops.example`.
 Production ConfigMaps/Secrets must set their own values; do not copy the
-compose seeds. ADV-016 may later remove the hardcoded ephemeral seed
-used only in trusted-dev when the env key is unset.
+compose seeds. When a non-production process is allowed to mint an
+ephemeral key (explicit `APP_ENV` and `REQUIRE_TLS` off), that key is
+generated with `crypto/rand` per process. There is no committed
+GenerateKey seed in Go source.
 
 Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 `token`, and `private_key`. Audit events record `jti`, `kid`, `issuer`,

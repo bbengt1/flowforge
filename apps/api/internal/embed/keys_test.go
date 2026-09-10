@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"testing"
@@ -85,7 +86,8 @@ func TestLoadMaterialDurableKeyIsStable(t *testing.T) {
 func TestLoadMaterialFileSource(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/embed.seed"
-	if err := os.WriteFile(path, []byte(EncodeSeedB64(TestMaterial().Private)), 0o600); err != nil {
+	fixture := TestMaterial()
+	if err := os.WriteFile(path, []byte(EncodeSeedB64(fixture.Private)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(EnvSigningKey, "")
@@ -99,5 +101,53 @@ func TestLoadMaterialFileSource(t *testing.T) {
 	}
 	if m.Ephemeral() || !m.Ready() || m.KeyID != "file:"+EnvSigningKeyFile {
 		t.Fatalf("file material %+v", m)
+	}
+	if !bytes.Equal(m.Private, fixture.Private) {
+		t.Fatal("file material must match the temp-dir seed")
+	}
+}
+
+func TestNewEphemeralMaterialIsRandom(t *testing.T) {
+	first := NewEphemeralMaterial()
+	second := NewEphemeralMaterial()
+	if !first.Ready() || !first.Ephemeral() {
+		t.Fatalf("first %+v", first)
+	}
+	if bytes.Equal(first.Private, second.Private) || bytes.Equal(first.Public, second.Public) {
+		t.Fatal("ephemeral keys must not share a committed seed")
+	}
+}
+
+func TestTestMaterialIsRandomAndNonProduction(t *testing.T) {
+	first := TestMaterial()
+	second := TestMaterial()
+	if first.Ephemeral() || first.KeyID != "test:EMBED_SIGNING_KEY" {
+		t.Fatalf("test helper must stay non-production: %+v", first)
+	}
+	if bytes.Equal(first.Private, second.Private) {
+		t.Fatal("test material must not reuse a fixed seed")
+	}
+}
+
+func TestLoadMaterialNonProductionEphemeralIsRandom(t *testing.T) {
+	t.Setenv(EnvSigningKey, "")
+	t.Setenv(EnvSigningKeyFile, "")
+	t.Setenv(authz.EnvAppEnv, "development")
+	t.Setenv(authz.EnvFlowforgeEnv, "")
+	t.Setenv("REQUIRE_TLS", "")
+
+	first, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := LoadMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Ephemeral() || !second.Ephemeral() {
+		t.Fatalf("non-prod empty key must be ephemeral: %q %q", first.KeyID, second.KeyID)
+	}
+	if bytes.Equal(first.Private, second.Private) {
+		t.Fatal("non-prod ephemeral loads must not mint the same key")
 	}
 }

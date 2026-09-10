@@ -36,8 +36,8 @@ const (
 // never returned from an API. Production (empty/production APP_ENV or
 // REQUIRE_TLS) requires a durable EMBED_SIGNING_KEY and refuses to start
 // without one. An ephemeral process key is gated to non-production
-// APP_ENV only (ADV-006). ADV-016 may later remove the hardcoded
-// ephemeral seed entirely.
+// APP_ENV only (ADV-006) and is minted with crypto/rand — never from a
+// committed seed (ADV-016).
 const (
 	EnvSigningKey     = "EMBED_SIGNING_KEY"
 	EnvSigningKeyFile = "EMBED_SIGNING_KEY_FILE"
