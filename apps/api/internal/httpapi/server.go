@@ -400,6 +400,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/workspaces", s.listWorkspaces)
 	mux.HandleFunc("POST /api/v1/workspaces", s.createWorkspace)
 	mux.HandleFunc("GET /api/v1/workspace", s.getCurrentWorkspace)
+	mux.HandleFunc("DELETE /api/v1/workspace", s.deleteWorkspace)
 	mux.HandleFunc("GET /api/v1/workspace/members", s.listMembers)
 	mux.HandleFunc("PUT /api/v1/workspace/members", s.putMember)
 	mux.HandleFunc("DELETE /api/v1/workspace/members/{userID}", s.deleteMember)

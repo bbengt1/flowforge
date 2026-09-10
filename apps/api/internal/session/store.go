@@ -12,6 +12,7 @@ type Store interface {
 	Lookup(ctx context.Context, token string, now time.Time) (Record, error)
 	Refresh(ctx context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error)
 	Revoke(ctx context.Context, token string, now time.Time) (Record, error)
+	RevokeBoundToWorkspace(ctx context.Context, workspaceID, tenantID, workbenchKey string, now time.Time) ([]Record, error)
 	Touch(ctx context.Context, token string, now time.Time) error
 	Audit(ctx context.Context, event AuditEvent) error
 	ListAudit(ctx context.Context, userID string, limit int) ([]AuditEvent, error)
@@ -29,6 +30,35 @@ func Valid(rec Record, now time.Time) error {
 		return ErrExpired
 	}
 	return nil
+}
+
+// BoundToWorkspace reports whether an embed session is bound to the
+// deleted workspace by workspace_id or by (tenant_id, workbench_key).
+// Unbound standalone sessions never match.
+func BoundToWorkspace(b Binding, workspaceID, tenantID, workbenchKey string) bool {
+	if !b.Bound() {
+		return false
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	tenantID = strings.TrimSpace(tenantID)
+	workbenchKey = strings.TrimSpace(workbenchKey)
+	if workspaceID != "" && b.WorkspaceID == workspaceID {
+		return true
+	}
+	if tenantID != "" && workbenchKey != "" && b.TenantID == tenantID && b.WorkbenchKey == workbenchKey {
+		return true
+	}
+	return false
+}
+
+func revokeWorkspaceArgs(workspaceID, tenantID, workbenchKey string) (string, string, string, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	tenantID = strings.TrimSpace(tenantID)
+	workbenchKey = strings.TrimSpace(workbenchKey)
+	if workspaceID == "" && (tenantID == "" || workbenchKey == "") {
+		return "", "", "", ErrInvalid
+	}
+	return workspaceID, tenantID, workbenchKey, nil
 }
 
 func mergeCreateBinding(opts []CreateOpts) Binding {

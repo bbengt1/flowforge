@@ -196,6 +196,21 @@ func (p *Postgres) GetWorkspace(ctx context.Context, id string) (Workspace, erro
 	return ws, nil
 }
 
+func (p *Postgres) DeleteWorkspace(ctx context.Context, id string) (Workspace, error) {
+	var ws Workspace
+	err := p.db.QueryRow(ctx, `
+		UPDATE workspaces
+		   SET status = 'disabled',
+		       updated_at = now()
+		 WHERE id = $1::uuid
+		 RETURNING id::text, tenant_id::text, workbench_key, name, status, created_at, updated_at
+	`, id).Scan(&ws.ID, &ws.TenantID, &ws.WorkbenchKey, &ws.Name, &ws.Status, &ws.CreatedAt, &ws.UpdatedAt)
+	if err != nil {
+		return Workspace{}, mapDBErr(err)
+	}
+	return ws, nil
+}
+
 func (p *Postgres) ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error) {
 	rows, err := p.db.Query(ctx, `
 		SELECT w.id::text, w.tenant_id::text, w.workbench_key, w.name, w.status, w.created_at, w.updated_at,

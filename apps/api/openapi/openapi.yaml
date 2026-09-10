@@ -2797,6 +2797,42 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteCurrentWorkspace
+      summary: Soft-delete the current workspace and revoke bound sessions
+      description: |
+        Soft-deletes the server-derived workspace (`status=disabled`).
+        Requires `workspace.administer`. Before disable, every embed
+        session bound to that workspace_id or `(tenant_id, workbench_key)`
+        is revoked. Subsequent requests with those cookies are `401`.
+        Unbound standalone sessions and sessions bound to other
+        workspaces are not revoked. If bound sessions cannot be revoked,
+        the workspace is not deleted (fail closed). A later disable
+        failure after revoke leaves sessions revoked (safe).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "204":
+          description: Workspace disabled; bound sessions revoked
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workspace/members:
     get:
       operationId: listWorkspaceMembers

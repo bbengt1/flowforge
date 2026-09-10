@@ -35,7 +35,7 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if all[0].Version != 1 {
 		t.Fatalf("first migration version = %d, want 1", all[0].Version)
 	}
-	var sawIsolation, sawSessions, sawWorkflows, sawCredentials, sawOps, sawApprovals, sawExecutions, sawArtifacts, sawAuditIntegrity, sawKubernetesRead, sawEmbedValidation, sawPlatformAdmin bool
+	var sawIsolation, sawSessions, sawWorkflows, sawCredentials, sawOps, sawApprovals, sawExecutions, sawArtifacts, sawAuditIntegrity, sawKubernetesRead, sawEmbedValidation, sawPlatformAdmin, sawWorkspaceSessionRevoke bool
 	for _, m := range all {
 		if m.Version == 3 && m.Name == "workspace_isolation" {
 			sawIsolation = true
@@ -73,6 +73,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 		if m.Version == 18 && m.Name == "platform_admin" {
 			sawPlatformAdmin = true
 		}
+		if m.Version == 22 && m.Name == "adv019_revoke_sessions_on_workspace_delete" {
+			sawWorkspaceSessionRevoke = true
+		}
 	}
 	if !sawIsolation {
 		t.Fatal("expected 000003_workspace_isolation.sql")
@@ -109,6 +112,9 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	}
 	if !sawPlatformAdmin {
 		t.Fatal("expected 000018_platform_admin.sql")
+	}
+	if !sawWorkspaceSessionRevoke {
+		t.Fatal("expected 000022_adv019_revoke_sessions_on_workspace_delete.sql")
 	}
 }
 

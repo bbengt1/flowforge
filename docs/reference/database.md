@@ -29,13 +29,13 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | Table | Key columns | Notes |
 | --- | --- | --- |
 | `tenants` | `id`, `slug`, `name`, `status` | Organization/host isolation root. |
-| `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. |
+| `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. App delete is soft (`status=disabled`). ADV-019 triggers revoke embed-bound `browser_sessions` on disable and on hard `DELETE` (and clear embed tenancy columns on hard delete so `ON DELETE SET NULL` cannot violate the embed CHECK). |
 | `users` | `id`, `issuer`, `external_subject`, `display_name`, `status` | OIDC/host identity reference; unique `(issuer, external_subject)`; no provider token. |
 | `roles` | `id`, `key`, `description` | Stable role vocabulary. |
 | `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`, `platform.administer`, `embed.impersonate`. |
 | `role_permissions` | `role_id`, `permission_id` | Role capability map. |
 | `workspace_role_bindings` | `workspace_id`, `user_id`, `role_id` | Workspace-scoped RBAC. |
-| `browser_sessions` | `id`, `user_id`, `token_hash`, `csrf_hash`, idle/absolute expiry, `revoked_at`, optional `embed_tenant_id` / `embed_workbench_key` / `embed_workspace_id` / `embed_capabilities` | Cookie secrets stored only as SHA-256; no RLS (identity substrate). Embed exchange binds `(tenant_id, workbench_key)` onto the session. |
+| `browser_sessions` | `id`, `user_id`, `token_hash`, `csrf_hash`, idle/absolute expiry, `revoked_at`, optional `embed_tenant_id` / `embed_workbench_key` / `embed_workspace_id` / `embed_capabilities` | Cookie secrets stored only as SHA-256; no RLS (identity substrate). Embed exchange binds `(tenant_id, workbench_key)` onto the session. Workspace disable/delete revokes rows matching `embed_workspace_id` or that tenancy pair (ADV-019). |
 | `session_audit_events` | `id`, `user_id`, `session_id`, `event_type`, `outcome`, `reason`, `request_id` | Append-only, secret-free session security events. |
 | `embed_assertion_jtis` | `jti`, `expires_at`, `consumed_at`, `retain_until` | E11.2 / ADV-009 atomic one-time assertion token ids. Consume is a single `INSERT … ON CONFLICT DO NOTHING RETURNING` (no check-then-insert, no DELETE). `expires_at` is JWT `exp`. `retain_until` is `exp + 24h`. Used ids stay reserved after `exp` so the same `jti` cannot be minted again. `PurgeExpired` deletes only `WHERE retain_until <= now`. Replay is conflict (`409`). No RLS (identity substrate). |
 | `embed_overlap_keys` | `kid`, public JWK fields, `expires_at` | E11.2 overlap verification public keys only. Never private material. `expires_at` (`overlapUntil`) is required and capped at 4h at register; NULL / missing / far-future rows are not loaded for verify. Exchange/JWKS refresh this table and drop those rows. The active signing key is not stored here. |

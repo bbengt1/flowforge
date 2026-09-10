@@ -295,6 +295,36 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ws)
 }
 
+func (s *Server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	// Fail closed: do not disable the workspace if bound sessions cannot
+	// be revoked. A later disable-after-revoke failure leaves sessions
+	// revoked (safe); the inverse is not.
+	if !s.requireSessions(w, r) {
+		return
+	}
+	ws, tenant, _, _, ok := s.requireAccess(w, r, user, authz.PermWorkspaceAdminister)
+	if !ok {
+		return
+	}
+	revoked, err := s.sessions.RevokeBoundToWorkspace(r.Context(), ws.ID, tenant.ID, ws.WorkbenchKey, s.clockNow())
+	if err != nil {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Bound sessions could not be revoked; the workspace was not deleted.")
+		return
+	}
+	for _, rec := range revoked {
+		s.auditSession(r, rec, session.EventRevoked, session.OutcomeAllowed, "workspace deleted")
+	}
+	if _, err := s.store.DeleteWorkspace(r.Context(), ws.ID); err != nil {
+		writeIdentityError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requirePrincipal(w, r)
 	if !ok {

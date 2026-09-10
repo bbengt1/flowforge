@@ -208,6 +208,21 @@ func (m *Memory) GetWorkspace(_ context.Context, id string) (Workspace, error) {
 	return ws, nil
 }
 
+func (m *Memory) DeleteWorkspace(_ context.Context, id string) (Workspace, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ws, ok := m.workspaces[id]
+	if !ok {
+		return Workspace{}, ErrNotFound
+	}
+	if ws.Status != "disabled" {
+		ws.Status = "disabled"
+		ws.UpdatedAt = time.Now().UTC()
+		m.workspaces[ws.ID] = ws
+	}
+	return ws, nil
+}
+
 func (m *Memory) ListWorkspacesForUser(_ context.Context, userID string) ([]Membership, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

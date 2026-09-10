@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
 func TestPostgresUniqueTenantWorkbench(t *testing.T) {
@@ -125,6 +126,93 @@ func TestMemoryRejectsPlatformAdminWorkspaceBinding(t *testing.T) {
 	}
 	if containsString(perms, authz.PermEmbedImpersonate) {
 		t.Fatalf("workspace admin must not receive embed.impersonate: %v", perms)
+	}
+}
+
+func TestPostgresDeleteWorkspaceDisablesAndTriggerRevokes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	pool, err := postgres.Open(ctx, testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	store := NewPostgres(pool)
+	suffix := newID()[:8]
+	tenant, err := store.CreateTenant(ctx, "td-"+suffix, "Tenant "+suffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := store.UpsertUser(ctx, "https://idp.example", "del-"+suffix, "User")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.CreateWorkspace(ctx, tenant.ID, "ops-"+suffix, "Ops", user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	sessions := session.NewPostgres(pool)
+	issued, err := sessions.Create(ctx, user.ID, now, time.Hour, 12*time.Hour, session.CreateOpts{
+		Binding: session.Binding{TenantID: tenant.ID, WorkbenchKey: ws.WorkbenchKey, WorkspaceID: ws.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disabled, err := store.DeleteWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Status != "disabled" {
+		t.Fatalf("status %q", disabled.Status)
+	}
+	got, err := store.GetWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "disabled" {
+		t.Fatalf("persisted status %q", got.Status)
+	}
+	if _, err := sessions.Lookup(ctx, issued.Token, now.Add(time.Second)); err != session.ErrRevoked {
+		t.Fatalf("soft-delete trigger: %v", err)
+	}
+
+	again, err := store.DeleteWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Status != "disabled" {
+		t.Fatalf("idempotent disable %q", again.Status)
+	}
+}
+
+func TestMemoryDeleteWorkspaceDisables(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	tenant, err := store.CreateTenant(ctx, "acme", "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := store.UpsertUser(ctx, "https://idp.example", "u1", "U")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.CreateWorkspace(ctx, tenant.ID, "ops", "Ops", user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := store.DeleteWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Status != "disabled" {
+		t.Fatalf("status %q", disabled.Status)
+	}
+	if _, err := store.DeleteWorkspace(ctx, "11111111-1111-1111-1111-111111111111"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing workspace: %v", err)
 	}
 }
 

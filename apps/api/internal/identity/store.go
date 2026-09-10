@@ -18,6 +18,7 @@ type Store interface {
 	CreateWorkspace(ctx context.Context, tenantID, workbenchKey, name, creatorUserID string) (Workspace, error)
 	ResolveWorkspace(ctx context.Context, tenantID, tenantSlug, workbenchKey string) (Workspace, Tenant, error)
 	GetWorkspace(ctx context.Context, id string) (Workspace, error)
+	DeleteWorkspace(ctx context.Context, id string) (Workspace, error)
 	ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error)
 
 	ListRoles(ctx context.Context) ([]Role, error)

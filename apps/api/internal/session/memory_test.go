@@ -128,6 +128,64 @@ func TestMemoryCreateStoresEmbedBinding(t *testing.T) {
 	}
 }
 
+func TestMemoryRevokeBoundToWorkspaceLeavesUnrelatedSessions(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	userA := "11111111-1111-1111-1111-111111111111"
+	userB := "22222222-2222-2222-2222-222222222222"
+	wsA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	wsB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	tenantA := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+	tenantB := "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+	boundA, err := store.Create(ctx, userA, now, time.Hour, 12*time.Hour, CreateOpts{
+		Binding: Binding{TenantID: tenantA, WorkbenchKey: "ops", WorkspaceID: wsA, Capabilities: []string{"workflow.view"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenancyOnly, err := store.Create(ctx, userA, now, time.Hour, 12*time.Hour, CreateOpts{
+		Binding: Binding{TenantID: tenantA, WorkbenchKey: "ops", WorkspaceID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundB, err := store.Create(ctx, userB, now, time.Hour, 12*time.Hour, CreateOpts{
+		Binding: Binding{TenantID: tenantB, WorkbenchKey: "other", WorkspaceID: wsB, Capabilities: []string{"workflow.view"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := store.Create(ctx, userA, now, time.Hour, 12*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revoked, err := store.RevokeBoundToWorkspace(ctx, wsA, tenantA, "ops", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revoked) != 2 {
+		t.Fatalf("revoked %d want 2", len(revoked))
+	}
+	if _, err := store.Lookup(ctx, boundA.Token, now.Add(time.Second)); err != ErrRevoked {
+		t.Fatalf("bound workspace session: %v", err)
+	}
+	if _, err := store.Lookup(ctx, tenancyOnly.Token, now.Add(time.Second)); err != ErrRevoked {
+		t.Fatalf("tenancy-bound session: %v", err)
+	}
+	if _, err := store.Lookup(ctx, boundB.Token, now.Add(time.Second)); err != nil {
+		t.Fatalf("unrelated workspace session: %v", err)
+	}
+	if _, err := store.Lookup(ctx, unbound.Token, now.Add(time.Second)); err != nil {
+		t.Fatalf("unbound session: %v", err)
+	}
+	if _, err := store.RevokeBoundToWorkspace(ctx, "", "", "", now); err != ErrInvalid {
+		t.Fatalf("empty selector: %v", err)
+	}
+}
+
 func TestMemoryAuditOmitsEmptyUser(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()
