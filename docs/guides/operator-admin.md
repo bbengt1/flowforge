@@ -1,6 +1,7 @@
 # Operator and admin UI guide
 
 Relates to #184 / Part of #181. **Keep #184 open.**
+Relates to #207 / Part of #195. **Keep #207 open.**
 
 Product-shell walkthrough for operators and workspace admins using
 the Next.js UI (`apps/web`). This is the Chloe E12.3 **UI** guide.
@@ -55,7 +56,8 @@ shell.
    Operations: Executions, Templates, Approvals, Alerts, Audit.
    Foundation: Settings always; **Membership / Isolation only** with
    `workspace.administer` or `platform.administer` (ADV-024); Portal
-   host is the E11.3 demo.
+   host is the E11.3 demo. On `/workflows/{id}` the nav collapses to
+   an icon-rail (or overlay) so the canvas can take the viewport.
 4. **Search** indexes workflows, catalog action types, credential
    **display names/tags**, execution IDs, alert identifiers, and docs.
    Unexpected secret fields are stripped and never searchable.
@@ -70,45 +72,103 @@ Inaccessible capabilities never flash in nav or search.
 
 ## Workflow home and authoring
 
-`/workflows` is the operational home.
+`/workflows` is the **product home** (UX.8). `/` with `workflow.view`
+lands here. Health and OpenAPI live under Settings. This is **not** an
+n8n clone — n8n is a behavior reference only (canvas-first shell, left
+library, right inspector, executions drawer). Do not copy n8n assets or
+source. ADV/embed/membership meaning is unchanged.
 
 1. Filter by search, folder (`ops/…`, `ops: …`, or slug `ops--name`),
    tag, owner, trigger, environment, status, last run, last modified.
 2. Toggle **List** / **Cards** (`aria-pressed`).
 3. Create, import YAML, duplicate, and templates all `POST` a **draft**.
-   Export is the immutable published version.
+   Templates then open the editor. Export is the immutable published
+   version.
 4. Drafts never execute. Start a **published** version from home
    (`?start=1` or Commands → Start published version) with typed input
    and an idempotency key.
 5. Webhook and schedule admin open from home when the role can see
-   those triggers. Webhook secrets are shown **once**, then discarded.
+   those triggers (`?webhooks=`, `?schedules=`). Webhook secrets are
+   shown **once**, then discarded.
 
-Editor `/workflows/{id}` — one draft, two views. YAML is the only
-persisted definition.
+Open a row → `/workflows/{id}` (same page under `/embed/v1`). YAML
+(`flowforge/v1`) is the only persisted definition; the canvas is a
+projection. Walkthrough: **home → editor top bar → palette → inspector
+→ YAML mode → runs drawer.**
 
-1. **Action library** — enabled catalog only. Triggers stay
-   workflow-level; they are not canvas nodes. Library is a drawer;
-   Esc closes it and returns focus to **Library**.
-2. **Canvas** — pan, zoom, select, connect compatible ports. Invalid
-   YAML never draws a guessed graph. State uses icon + text. Keyboard:
-   focus the canvas, then Zoom in / Zoom out / Reset. Selecting a node
-   announces enough to use the inspector. This is not a screen-reader
-   graph rewrite.
-3. **Add action wizard** — type → authorized target/credential →
+### Editor top bar
+
+Sticky workflow context. Left nav collapses to an icon-rail (or overlay)
+so the canvas can take the viewport. Commands bind to this route id.
+
+1. **← Workflows** returns to product home.
+2. Read name, slug, status, revision, and **Unsaved** / **Saved**.
+3. **Add action** opens the wizard. **Library**, **YAML**, **Inspector**,
+   and **Runs** toggle drawers (`aria-pressed` / `aria-expanded`).
+4. **Save draft** normalizes then `PUT`s the draft and replaces the
+   buffer with API YAML + digest. Disabled while invalid.
+5. **Publish** is last **saved** draft only. Optional publish note.
+6. **Start published** lists published versions only. Drafts never run.
+
+### Palette / library
+
+The action library is a **left drawer**, hidden on first paint.
+
+1. **Library** or a canvas **+** opens the enabled catalog. Triggers
+   stay workflow-level; they are not canvas nodes.
+2. **Add action** wizard — type → authorized target/credential →
    configure → map ports → review. Esc closes. Secrets never appear in
    selectors.
-4. **YAML / runs / inspector drawers** — labeled top-bar toggles. Esc
-   closes the open drawer and returns focus. On narrow viewports
-   (`max-width: 767px`) the inspector stacks first — a documented
-   breakpoint, not a mobile app. Selecting a run overlays step status
-   on this canvas; the inspector shows redacted last-run I/O for the
-   selected node. **Open execution** still goes to `/executions/{id}`.
-5. **YAML editor** — labeled editor, line/column jump, debounced
-   validate. Save normalizes and replaces the buffer with API YAML +
-   digest.
-6. **Validation** — live region; errors link to a node or YAML path.
+3. Drag from the library still inserts defaults. Catalog 403 / empty
+   list fail closed. `/actions` is the catalog reference, not a third
+   app.
+
+Canvas: pan, zoom, select, connect compatible ports. Invalid YAML never
+draws a guessed graph. State uses icon + text. Keyboard: focus the
+canvas, then Zoom in / Zoom out / Reset. Selecting a node announces
+enough to use the inspector — this is not a screen-reader graph rewrite.
+Esc on an open drawer restores focus to the matching top-bar control.
+On narrow viewports (`max-width: 767px`) the inspector stacks first —
+a documented breakpoint, not a mobile app.
+
+### Inspector
+
+Right rail.
+
+1. **Node** — edit name, `with`, pins, and credentials by **display
+   name**. Pick an existing vault item or **add** one; secret entry
+   stays in the masked wizard (modal or `/credentials/new` return-to-
+   editor). The rail never shows `SecretField` / plaintext / rotate.
+2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
+   Pins**. Same webhook/schedule contracts as home. Restore creates a
+   new draft. Pins are authorized metadata only.
+3. **Edge** — port compatibility.
+4. **Validation** — live region; errors link to a node or YAML path.
    Save stays disabled while invalid.
-7. **Publish** — last **saved** draft only. Restore creates a new draft.
+5. **Last run** — when a run is selected in the Runs drawer, redacted
+   input / output / logs for this node. Secrets stay `[redacted]`.
+   `indeterminate` is icon + text.
+
+### YAML mode
+
+YAML is a **mode** (drawer under the canvas), not a permanent stack.
+
+1. Open **YAML**. Labeled editor, line/column jump, debounced validate.
+2. **Validate** and **Normalize** live here (or Commands). Normalize is
+   not a Save peer.
+3. Starter / invalid fixtures are **Developer samples** or Settings →
+   Developer — not primary chrome.
+4. Import stays on `/workflows` and still validates before create.
+
+### Runs drawer
+
+1. **Runs** opens a drawer scoped to this workflow (hidden on first
+   paint). `/executions` remains the workspace inbox.
+2. Arrow keys move; Enter / Space overlays the focused run on **this**
+   canvas. Do not expect a second replay graph.
+3. Inspector shows redacted last-run I/O for the selected node.
+4. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
+   removes the overlay. Still no draft execute. Do not invent `/replay`.
 
 Catalog library: `/actions`. Templates: `/templates`.
 
@@ -300,9 +360,10 @@ Threat model: [Security model](../reference/security-model.md).
 Review: [e12-accessibility-review.md](../reference/e12-accessibility-review.md).
 
 Keyboard-first path: skip link → nav → search → Ctrl+Shift+K → Esc
-back to Commands. Then `/workflows` List/Cards, vault labeled secret
-fields, `/executions` listbox arrows, `/approvals` disabled decide
-when expired.
+back to Commands. Then `/workflows` List/Cards, open an editor, Tab
+the labeled top bar, Esc a library / YAML / runs drawer (focus
+returns), vault labeled secret fields, `/executions` listbox arrows,
+`/approvals` disabled decide when expired.
 
 ## Local smoke (secret-free)
 

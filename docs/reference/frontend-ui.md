@@ -6,29 +6,80 @@ The FlowForge UI makes operational automation understandable before it makes it 
 
 The canvas must stay responsive while workflow validation, credential tests, imports, publishing, or execution take longer. Show optimistic interaction feedback immediately, then clear pending/success/error state. Primary actions are visible and large enough for frequent use; advanced controls stay available through progressive disclosure.
 
+**Not an n8n clone.** Epic #195 used n8n’s *interaction model* as a behavior reference only ([n8n-io/n8n](https://github.com/n8n-io/n8n)): canvas-first shell, left library, right inspector, executions drawer, credentials. FlowForge does **not** copy n8n assets, trademarks, colors, CSS, icons, or source. YAML (`flowforge/v1`) remains the only persisted definition; the canvas is a projection. Triggers stay workflow-level. Drafts never execute.
+
 ## Information architecture
+
+Landed UX.1–UX.11 chrome (Chloe, epic #195). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195 — **keep #207 open**) updates this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough only.
 
 ```mermaid
 flowchart TB
-  W[Workspace switcher] --> H[Workflow home]
-  H --> L[Workflow list and folders]
-  H --> C[Canvas editor]
-  H --> V[Credential vault]
-  H --> R[Execution history]
-  C --> A[Action wizard]
-  C --> Y[YAML editor]
-  C --> I[Inspector and validation]
+  Shell[Workspace shell + switcher]
+  Home["/workflows product home"]
+  Editor["/workflows/{id} canvas-first editor"]
+  Vault["/credentials vault"]
+  Inbox["/executions ops inbox"]
+  Bar[Editor top bar]
+  Canvas[Canvas]
+  Lib[Library drawer / palette]
+  Insp[Inspector]
+  Yaml[YAML mode]
+  Runs[Runs drawer]
+  Wizard[Add action wizard]
+  NodeInsp["Node: with / pins / credentials"]
+  WfTabs["Workflow tabs: Triggers / Versions / Pins"]
+  Overlay[Same-canvas redacted last-run I/O]
+
+  Shell --> Home
+  Shell --> Vault
+  Shell --> Inbox
+  Home --> Editor
+  Editor --> Bar
+  Editor --> Canvas
+  Bar --> Lib
+  Bar --> Insp
+  Bar --> Yaml
+  Bar --> Runs
+  Lib --> Wizard
+  Insp --> NodeInsp
+  Insp --> WfTabs
+  Runs --> Overlay
+  Overlay --> Canvas
 ```
+
+Authoring path: **home → editor top bar → palette → inspector → YAML mode → runs drawer.** Same editor page under `/embed/v1/workflows/{id}`.
 
 ### Workspace shell
 
 - Persistent workspace switcher with current workspace, role, and environment context.
 - Left navigation: Workflows, Actions, Credentials, Targets, Profiles, Config, Executions, Templates, Approvals, Alerts, Settings (plus Audit / Membership / Isolation as foundation links). Navigation only shows capabilities permitted by RBAC from `GET /workspace`. Until E6.1, the slim operator header exposed the same destinations; E6.1 replaces that header with the product shell.
+- On `/workflows/{id}` the nav **collapses** to an icon-rail (or overlay on compact / when expanded) so the canvas can take the viewport. List surfaces keep the full rail. Marks are original abbreviations — not cloned icons.
 - Global search for workflows, action types, credentials by safe name/tag, execution IDs, and documentation. Never search plaintext secrets or redacted payloads.
-- Command palette (Ctrl+Shift+K, or the Commands button) for keyboard-first navigation and common commands: new workflow, import YAML, open YAML/editor, validate, publish, run a selected published version, and open execution / vault / config / approvals / alerts.
+- Command palette (Ctrl+Shift+K, or the Commands button) for keyboard-first navigation and common commands: new workflow, import YAML, open YAML/editor, validate, publish, run a selected published version, and open execution / vault / config / approvals / alerts. On the editor, Commands bind to the **route** workflow id.
 - Notifications show safe validation, publish, and execution status; they do not expose secrets.
 
+### Product surfaces
+
+Folded from the pre-makeover inventory (draft PR #194). Routes and keep/reshape that **landed**; do not treat the old stacked-operator snapshot as current.
+
+| Surface | Routes / chrome | Landed behavior |
+| --- | --- | --- |
+| Product home | `/workflows` | Operational list. `/` with `workflow.view` lands here. Health / OpenAPI live under Settings. |
+| Canvas editor | `/workflows/{id}` · same page `/embed/v1/workflows/{id}` | Viewport canvas + sticky top bar. Not a second studio app. |
+| Library / palette | Left drawer, hidden on first paint | **Library** or canvas **+** opens the enabled catalog. **Add action** opens the wizard. Drag still inserts defaults. `/actions` is the catalog reference, not a third app. |
+| Inspector | Right rail | Selected **node**: name, `with`, pins, credentials (display names; add vault credential without leaving). **Workflow**: tabs Triggers / Versions / Pins. **Edge**: port compatibility. |
+| YAML mode | Drawer under the canvas, hidden on first paint | Validate / Normalize here (or Commands). Starter/invalid fixtures are Developer samples or Settings → Developer. Import stays on home. |
+| Runs drawer | Overlay, hidden on first paint | Scoped to the open workflow. Choosing a run overlays step status on the **same** canvas and shows redacted last-run I/O in the inspector. |
+| Credential vault | `/credentials`, `/new`, `/{id}` | Dedicated routes remain. Inspector create reuses the masked wizard. |
+| Executions inbox | `/executions`, `/executions/{id}` | Workspace ops view + full replay. **Open execution** is the deep-link, not the primary editor path. |
+| Membership / Isolation | `/membership`, `/isolation` | ADV-024 grant only. Meaning unchanged. |
+| Embed / Portal | `/embed/v1/…`, `/portal/workflows` | `session.embed`, CHIPS, host-issuer binding unchanged. |
+
+**Keep (do not n8n-clone):** YAML as source of truth (no persisted canvas format); invalid YAML never guesses a graph; triggers stay workflow-level; drafts never execute; vault never returns plaintext; RBAC fail-closed nav; approval resume is `POST /approvals/{id}/decide`; embed/Portal/CHIPS contracts.
+
 ## Workflow home
+
+`/workflows` is the **product home** (UX.8). `/` with `workflow.view` replaces to this list. The editor is never a second home. Health and OpenAPI live under Settings.
 
 Workflow home prioritizes operational work over dashboard decoration:
 
@@ -36,15 +87,20 @@ Workflow home prioritizes operational work over dashboard decoration:
 - Compact list and card views; pinned/high-frequency workflows surface first.
 - Create workflow, import YAML, duplicate, archive, export immutable version, and open run history.
 - Draft/published state, version, validation health, and required approvals are visible without opening the editor.
-- Templates provide reviewed starting points for Kubernetes rollout, SSH maintenance, Python/Go automation, and common compositions. Creating from a template always creates an editable draft in the current workspace.
+- Templates provide reviewed starting points for Kubernetes rollout, SSH maintenance, Python/Go automation, and common compositions. Creating from a template always creates an editable draft in the current workspace, then opens `/workflows/{id}`.
+- Row actions: Open editor, Start published (when a published version exists), Webhooks / Schedules when the role can see those triggers, Last run. Home query drawers (`?start=`, `?webhooks=`, `?schedules=`) still work.
 
 ## Canvas editor
 
-The editor has one focused canvas with three coordinated areas:
+The editor is **canvas-first** (UX.1–UX.11). The graph takes the viewport. The left library and right inspector are satellites. The top bar carries workflow context and save / publish / start-published. YAML is a mode, not a permanent stack under the graph. This is **not** the pre-makeover stacked operator page.
 
-1. **Action library**: searchable, categorized draggable node objects: triggers, Kubernetes, SSH, scripts, control flow, data transforms, and notifications. Each card shows its safe name, required permissions, inputs, outputs, and policy restrictions.
-2. **Canvas**: pan, zoom, fit-to-workflow, snap-to-grid, minimap, multi-select, alignment/distribution, duplicate, group/ungroup, undo/redo, and keyboard shortcuts. Nodes use distinct shape/icon treatments by family plus text labels and status badges; color alone never conveys meaning.
-3. **Inspector**: a contextual right panel for the selected workflow, node, edge, or execution. It shows configuration, typed ports, policy status, credentials by display name, validation, change history, and help.
+**Editor top bar** (sticky): ← Workflows, name / slug / status / revision / Unsaved|Saved, Add action, Library, YAML, Inspector, Save draft, Publish, Runs, Start published, optional publish note. Publish is last **saved** draft only. Start lists **published** versions only.
+
+1. **Action library** (drawer, hidden on first paint): searchable, categorized enabled catalog — Kubernetes, SSH, scripts, control flow, data transforms, and notifications. Triggers stay **workflow-level**; they are not canvas nodes. Each card shows its safe name, required permissions, inputs, outputs, and policy restrictions. **Library** or canvas **+** opens the palette; **Add action** opens the wizard.
+2. **Canvas**: pan, zoom, select, output→input connect, library drag-drop (defaults). Nodes use distinct shape/icon treatments by family plus text labels and status badges; color alone never conveys meaning. Fit-to-workflow, snap-to-grid, minimap, multi-select, alignment, undo/redo remain aspirational — **not** in the landed chrome. Positions are auto-layout only (not a persisted UI format).
+3. **Inspector** (right rail): selected **node** edits `with`, pins, and credentials by display name (pick or add a vault credential without leaving; secret entry stays in the masked wizard). Selected **workflow** shows tabs **Triggers / Versions / Pins**. Selected **edge** explains port compatibility. Validation groups errors and links to a node or YAML path.
+4. **YAML mode** (drawer, hidden on first paint): see [YAML editor and round-trip](#yaml-editor-and-round-trip).
+5. **Runs drawer** (overlay, hidden on first paint): scoped to the open workflow. Choosing a run overlays step status on the **same** canvas; the inspector shows redacted last-run I/O. `/executions` remains the workspace inbox.
 
 Drag from a node output port to a compatible input port to create an edge. Incompatible ports are visibly unavailable and explain why on focus/hover. Edge creation opens a compact mapper when the destination accepts only a subfield. Selecting a node shows required inputs, optional defaults, upstream values, downstream consumers, and runtime policy without hiding the graph.
 
@@ -64,7 +120,7 @@ The wizard supports creating a single-action workflow or adding an action to a l
 
 ## YAML editor and round-trip
 
-Canvas and YAML are two synchronized views of one draft:
+Canvas and YAML are two synchronized views of one draft. YAML is a **mode** (UX.2): the drawer is hidden on first paint. Validate and Normalize live in YAML mode or Commands — Normalize is not a Save peer. Starter / invalid fixtures are a Developer samples disclosure or Settings → Developer. Import stays on `/workflows` and still validates before create.
 
 - YAML mode offers syntax highlighting, schema-aware completion, outline/breadcrumb navigation, formatting, inline validation, line/column errors, and safe diff against the last saved or published version.
 - Canvas edits update the typed draft model; Save serializes canonical YAML. YAML edits parse into that model after debounced validation.
@@ -85,6 +141,8 @@ Credentials are workspace-scoped encrypted backend resources, never browser pers
 Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` (wizard), `/credentials/{id}` (detail). Contract adapter: `apps/web/src/lib/credential-contract.ts`. Unexpected secret fields on API responses are stripped and treated as a contract bug.
 
 ## Execution experience
+
+The editor **Runs** drawer (UX.6 / UX.11) lists executions for the **open** workflow. Arrow keys move; Enter / Space overlays the focused run on this canvas (existing `overlayExecutionOnGraph` helpers — do not mount a second `ExecutionReplay` graph). The inspector **Last run** panel shows redacted input / output / logs for the selected node (`GET /executions/{id}` step payloads + `…/steps/{stepId}/logs`). Secrets stay `[redacted]`. `indeterminate` stays icon+text. **Open execution** deep-links to `/executions/{id}`. Workspace `/executions` remains the ops inbox. Do not invent `/replay`.
 
 - Run a selected published version, schedule, webhook-trigger, pause/resume, cancel, and rerun options are explicit. Drafts can be validated and published but never executed directly; a test run must first create a distinct immutable test version with the same policy checks and audit trail.
 - Pre-run review shows version digest, selected trigger input, target/environment, approvals, and side-effect warnings. A dry-run/plan option appears when supported by the node.
@@ -120,16 +178,16 @@ At `max-width: 767px` the editor stacks the inspector above the canvas (`order-f
 
 E6.1 (Chloe) replaces the slim operator header with the product workspace shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same as E2.3 / E2.1.
 
-- **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings stays available. Membership and Isolation appear only when `workspace.administer` or `platform.administer` is granted (ADV-024).
+- **Shell:** persistent switcher (`GET /workspaces` + `GET /workspace`) shows workspace name, role, and environment (`workbench_key`). Left nav is fail-closed once permissions are known. Gated items: Workflows / Actions / Templates (`workflow.view`), Credentials (`credential.view`), Targets / Profiles / Config (`opsconfig.view`), Executions (`execution.view`), Approvals (`approval.view`), Alerts / Audit (`alert.view`). Settings stays available. Membership and Isolation appear only when `workspace.administer` or `platform.administer` is granted (ADV-024). On the editor route the nav collapses to an icon-rail (or overlay).
 - **Search / palette:** client-side index of workflow name/slug, core catalog action types, credential display name/tags, execution IDs, alerts (identifiers only), and docs. Unexpected secret fields are stripped and never searchable. Ctrl+Shift+K (Commands) opens the command palette. New workflow / import use existing `POST /workflows`.
 - **Workflow home (`/workflows`):** list + card views with client-side filters (folders from a name prefix `ops/…` or `ops: …`, or a slug `ops--name` encoding — slugs cannot contain `/`; tags from status; owner; trigger from draft summary; environment; status; last run; last modified). Validation health and pending approvals are joined from existing draft / `GET /approvals` responses. Last run uses `GET /workflows/{id}/executions?limit=1` so a workspace-wide top-50 list cannot mark older workflows as never run. Create, import, duplicate, and template cards POST a draft; export uses `GET …/versions/{id}/export` when a published version exists. There is no archive or template API on main. Search and home list drop previous-workspace metadata as soon as tenant/workbench changes.
-- **Editor:** E6.2 canvas + YAML editor is `/workflows/{id}`. `/actions` lists the enabled catalog library. `/templates` and `/settings` are shell destinations.
+- **Editor:** `/workflows/{id}` is the canvas-first editor (UX.1–UX.11 chrome above; E6.2 still owns graph/YAML sync). `/actions` lists the enabled catalog library. `/templates` and `/settings` are shell destinations. `/` with `workflow.view` lands on `/workflows` (UX.8).
 
 ## E6.2 synchronized YAML and canvas
 
-E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the E6.1 shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same.
+E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the E6.1 shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same. UX.1–UX.11 reshaped the **chrome** (library/YAML as drawers; inspector tabs; runs overlay) — the sync contract below is unchanged.
 
-- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Schedule admin is `triggers[type=schedule].admin`. `flow.approval` ships full ports/`allowedWith`/policy/bounds. Cards show ports and policy/bounds hints.
+- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Schedule admin is `triggers[type=schedule].admin`. `flow.approval` ships full ports/`allowedWith`/policy/bounds. Cards show ports and policy/bounds hints. The library is a left drawer (hidden on first paint), not a permanent 18rem column.
 - **Canvas:** nodes and `nodeId.port` edges from a successful validate summary only. Invalid YAML never draws a guessed graph. Pan/zoom/select; incompatible ports are unavailable with text, not color alone. Node states use icon + label.
 - **Inspector:** selected workflow, node, or edge. Core-neutral `with` forms stay from E3.3. Credentials appear by display name only.
 - **YAML:** syntax highlighting, line/column jump, debounced `POST /workflows/validate`. Save serializes through `POST /workflows/normalize` then `PUT /workflows/{id}/draft` and replaces the buffer with the normalize YAML + digest.
@@ -154,8 +212,8 @@ Helpers: `apps/web/src/lib/workflow-action-wizard.ts`. Component: `ActionWizard.
 
 E6.4 (Chloe) extends E5.1–E5.3 `/executions` and the E6.2/E6.3 editor run control. `apps/api` is unchanged. Prefer existing E5 routes. Session cookies + `X-CSRF-Token` stay the same.
 
-- **Published-version run:** `/workflows/{id}` run control lists published versions only. Pre-run review shows version digest, trigger input (optional JSON, secrets stripped), pinned target/environment, `POST /policy/evaluate`, and side-effect warnings. Start is still `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input}` plus `Idempotency-Key` (#111). E10.1 run dialog always sends a key and typed `input` from the published manual trigger schema / catalog `triggers[type=manual].start`. Drafts never execute.
-- **Graph replay:** `/executions/{id}` overlays step status on the E6.2 canvas projection of the pinned version YAML (`GET /workflows/{id}/versions/{versionId}`). Invalid YAML is never guessed. Current node, duration, attempts, waiting/approval, safe outputs, artifacts, correlation ID, and redacted logs are shown. Status uses icon + text — `indeterminate` is unmistakable.
+- **Published-version run:** `/workflows/{id}` top-bar **Start published** lists published versions only. Pre-run review shows version digest, trigger input (optional JSON, secrets stripped), pinned target/environment, `POST /policy/evaluate`, and side-effect warnings. Start is still `POST /workflows/{id}/executions` `{workflowVersionId, idempotencyKey, input}` plus `Idempotency-Key` (#111). E10.1 run dialog always sends a key and typed `input` from the published manual trigger schema / catalog `triggers[type=manual].start`. Drafts never execute. The editor **Runs** drawer lists this workflow’s executions; choosing a run overlays the same helpers on the editor canvas (UX.6 / UX.11).
+- **Graph replay:** `/executions/{id}` remains the ops replay of the pinned version YAML (`GET /workflows/{id}/versions/{versionId}`). Invalid YAML is never guessed. Current node, duration, attempts, waiting/approval, safe outputs, artifacts, correlation ID, and redacted logs are shown. Status uses icon + text — `indeterminate` is unmistakable. The editor does **not** mount a second replay graph.
 - **Cancel / retry:** E5.2 rules unchanged. Cancel is idempotent. Retry is hidden for `indeterminate` and provider nodes.
 - **Compare:** two executions on `/executions` or detail — client-side diff of redacted summaries (status, inputs, outcomes, policy, pins). Same-workflow YAML can still use `POST /workflows/{id}/compare`. Secrets are stripped; plaintext never appears in the diff.
 - **Approvals:** waiting state lists `GET /approvals?executionId=`. Decide links go to `/approvals/{id}`. E10.3 enables wait/resume: job/step/execution become `waiting` with no worker lease; resume is `POST /approvals/{id}/decide` (fresh `approval.decide`, no self-approval). Do not invent a separate resume route.
@@ -293,10 +351,10 @@ E10.1 (Chloe UI) wires jonny's **#111** map on `main` (`e10-#111`). `apps/api` i
 
 ## Foundation operator shell
 
-E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
+E2–E5 operator pages remain mounted inside the E6.1 shell. Product home is `/workflows` (UX.8). Health/readiness and OpenAPI live under **Settings**, not a foundation landing on `/`. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts keep the same contracts:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
-- OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification. **ADV-020 / Chloe — no product UI.** Those routes require `platform.administer` (`PLATFORM_ADMINS`). Unauthenticated or non-admin callers get `401`/`403`. Do not add a metrics or swagger screen; treat a failed link as expected unless the operator is a platform-admin with a session.
+- OpenAPI/Swagger links under Settings use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification. **ADV-020 / Chloe — no product UI.** Those routes require `platform.administer` (`PLATFORM_ADMINS`). Unauthenticated or non-admin callers get `401`/`403`. Do not add a metrics or swagger screen; treat a failed link as expected unless the operator is a platform-admin with a session.
 
 ## E2.1 membership operator
 
@@ -809,10 +867,12 @@ the operator/admin guide. Walkthroughs live in
 [operator-admin.md](../guides/operator-admin.md). Accessibility review:
 [e12-accessibility-review.md](e12-accessibility-review.md).
 
-- **Guide:** product-shell walkthroughs for membership, vault, approvals,
-  executions, alerts, embed chrome, and admin screens. Points at
-  [embed-sdk](embed-sdk.md) / [portal-adapter](portal-adapter.md).
-  Membership/isolation only when granted (ADV-024).
+- **Guide:** product-shell walkthroughs for canvas-first authoring
+  (home → top bar → palette → inspector → YAML mode → runs drawer),
+  membership, vault, approvals, executions, alerts, embed chrome, and
+  admin screens. Points at [embed-sdk](embed-sdk.md) /
+  [portal-adapter](portal-adapter.md). Membership/isolation only when
+  granted (ADV-024). ADV/embed/membership meaning is unchanged.
 - **A11y:** findings, cheap fixes in `apps/web`, tracked gaps. No canvas
   redesign.
 
