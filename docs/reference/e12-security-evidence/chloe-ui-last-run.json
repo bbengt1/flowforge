@@ -4,8 +4,8 @@
   "relatesTo": 182,
   "partOf": 181,
   "keepIssueOpen": true,
-  "ranAt": "2026-09-10T11:20:00Z",
-  "gitSha": "pending",
+  "ranAt": "2026-09-10T11:22:00Z",
+  "gitSha": "9606d22",
   "surfaces": [
     {
       "id": "embed-exchange-replay",
