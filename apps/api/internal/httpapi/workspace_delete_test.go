@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
@@ -137,11 +139,11 @@ func TestDeleteWorkspaceViewerForbiddenDoesNotRevoke(t *testing.T) {
 	}
 }
 
-func TestDeleteWorkspaceFailsClosedWhenSessionStoreMissing(t *testing.T) {
+func TestDeleteWorkspaceFailsClosedWhenRevokeCannotComplete(t *testing.T) {
 	store := identity.NewMemory()
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:    store,
-		Sessions: nil,
+		Sessions: revokeFailStore{Store: session.NewMemory()},
 	}))
 	admin := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
 	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
@@ -154,6 +156,9 @@ func TestDeleteWorkspaceFailsClosedWhenSessionStoreMissing(t *testing.T) {
 	req := workspaceRequest(http.MethodDelete, "/api/v1/workspace", nil, admin, tenant, ws)
 	h.ServeHTTP(rec, req)
 	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "")
+	if !strings.Contains(rec.Body.String(), "was not deleted") {
+		t.Fatalf("detail should say workspace was not deleted: %s", rec.Body.String())
+	}
 	got, err := store.GetWorkspace(t.Context(), ws.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +166,14 @@ func TestDeleteWorkspaceFailsClosedWhenSessionStoreMissing(t *testing.T) {
 	if got.Status != "active" {
 		t.Fatalf("must not delete when revoke cannot run: %q", got.Status)
 	}
+}
+
+type revokeFailStore struct {
+	session.Store
+}
+
+func (revokeFailStore) RevokeBoundToWorkspace(context.Context, string, string, string, time.Time) ([]session.Record, error) {
+	return nil, session.ErrStoreUnavailable
 }
 
 func TestDeleteWorkspaceDoesNotRegressPlatformAdminBootstrap(t *testing.T) {
