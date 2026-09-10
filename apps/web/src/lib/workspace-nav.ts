@@ -56,7 +56,6 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
     label: "Actions",
     href: "/actions",
     permission: WORKFLOW_VIEW_PERMISSION,
-    placeholder: true,
     group: "primary",
   },
   {

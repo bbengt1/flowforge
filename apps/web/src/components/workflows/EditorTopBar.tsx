@@ -8,6 +8,7 @@ import {
   editorHeading,
   editorRevisionLabel,
 } from "@/lib/editor-chrome";
+import { EDITOR_LIBRARY_PANEL_ID } from "@/lib/editor-library";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
@@ -20,12 +21,15 @@ type EditorTopBarProps = {
   canSave: boolean;
   canPublish: boolean;
   yamlOpen: boolean;
+  libraryOpen: boolean;
   publishNote: string;
   onPublishNote: (value: string) => void;
   onSave: () => void;
   onPublish: () => void;
   onStart: () => void;
   onToggleYaml: () => void;
+  onToggleLibrary: () => void;
+  onAddAction: () => void;
 };
 
 export function EditorTopBar({
@@ -37,12 +41,15 @@ export function EditorTopBar({
   canSave,
   canPublish,
   yamlOpen,
+  libraryOpen,
   publishNote,
   onPublishNote,
   onSave,
   onPublish,
   onStart,
   onToggleYaml,
+  onToggleLibrary,
+  onAddAction,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
@@ -89,6 +96,23 @@ export function EditorTopBar({
           className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
         />
       </label>
+      <button
+        type="button"
+        onClick={onAddAction}
+        className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900"
+      >
+        Add action
+      </button>
+      <button
+        type="button"
+        onClick={onToggleLibrary}
+        aria-pressed={libraryOpen}
+        aria-expanded={libraryOpen}
+        aria-controls={EDITOR_LIBRARY_PANEL_ID}
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
+      >
+        {libraryOpen ? "Hide library" : "Library"}
+      </button>
       <button
         type="button"
         onClick={onToggleYaml}

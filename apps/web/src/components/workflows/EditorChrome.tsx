@@ -1,6 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import {
+  EDITOR_LIBRARY_COLUMN_WIDTH,
+  EDITOR_LIBRARY_PANEL_ID,
+} from "@/lib/editor-library";
 
 type EditorChromeProps = {
   identityGate?: ReactNode;
@@ -40,7 +44,8 @@ export function EditorChrome({
         {libraryOpen ? (
           <aside
             aria-label="Action library"
-            className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-white"
+            className="flex shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-white"
+            style={{ width: EDITOR_LIBRARY_COLUMN_WIDTH }}
           >
             <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
               <p className="text-sm font-medium text-zinc-800">Library</p>
@@ -48,34 +53,17 @@ export function EditorChrome({
                 type="button"
                 onClick={onToggleLibrary}
                 aria-expanded
-                aria-controls="editor-library-panel"
+                aria-controls={EDITOR_LIBRARY_PANEL_ID}
                 className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
               >
                 Hide
               </button>
             </div>
-            <div id="editor-library-panel" className="min-h-0 flex-1 overflow-auto">
+            <div id={EDITOR_LIBRARY_PANEL_ID} className="min-h-0 flex-1 overflow-auto">
               {library}
             </div>
           </aside>
-        ) : (
-          <aside
-            aria-label="Action library"
-            className="flex w-10 shrink-0 flex-col items-center border-r border-zinc-200 bg-white py-2"
-          >
-            <button
-              type="button"
-              onClick={onToggleLibrary}
-              aria-expanded={false}
-              aria-controls="editor-library-panel"
-              aria-label="Open action library"
-              title="Open action library"
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-teal-800 bg-teal-800 text-lg font-semibold leading-none text-white hover:bg-teal-900"
-            >
-              +
-            </button>
-          </aside>
-        )}
+        ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{canvas}</div>
           {yaml}

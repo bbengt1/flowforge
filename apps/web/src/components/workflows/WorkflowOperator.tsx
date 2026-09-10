@@ -1112,12 +1112,15 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
           canSave={canSave}
           canPublish={canPublish}
           yamlOpen={yamlOpen}
+          libraryOpen={libraryOpen}
           publishNote={publishNote}
           onPublishNote={setPublishNote}
           onSave={() => void saveDraft()}
           onPublish={() => void publishDraft()}
           onStart={() => setStartOpen(true)}
           onToggleYaml={() => setYamlOpen((open) => !open)}
+          onToggleLibrary={() => setLibraryOpen((open) => !open)}
+          onAddAction={() => openWizard()}
         />
       }
       banners={
@@ -1189,6 +1192,8 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
               insertLibraryNode(entry);
             }
           }}
+          onOpenLibrary={() => setLibraryOpen(true)}
+          onAddAction={() => openWizard()}
           onConnect={connectPorts}
         />
       }

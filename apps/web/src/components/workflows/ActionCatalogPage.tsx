@@ -93,12 +93,13 @@ export function ActionCatalogPage() {
     <main className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-6 py-12">
       <header className="space-y-3">
         <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E6.2 · Action library
+          Catalog
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Actions</h1>
         <p className="text-base leading-7 text-zinc-600">
-          Enabled catalog implementations only. Triggers are not placeable
-          nodes. Add them from a workflow canvas at{" "}
+          Catalog reference for enabled implementations. Triggers stay
+          workflow-level and are not placeable. Add actions from a workflow
+          canvas at{" "}
           <code className="font-mono text-sm">/workflows/{"{id}"}</code>.
         </p>
       </header>
