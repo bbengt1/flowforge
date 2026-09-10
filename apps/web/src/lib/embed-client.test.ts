@@ -86,7 +86,6 @@ describe("embed client", () => {
         tenantId: "ten-1",
         workbenchKey: "ops",
         display_name: "Hostile leftover",
-        capabilities: ["workspace.administer"],
       },
       workspace: {
         id: "ws-1",
@@ -96,7 +95,7 @@ describe("embed client", () => {
         status: "active",
       },
       tenant: { id: "ten-1", slug: "acme", name: "Acme", status: "active" },
-      capabilities: ["workspace.administer"],
+      capabilities: ["workflow.view"],
     };
     const seenUrls: string[] = [];
     globalThis.fetch = (async (input, init) => {
