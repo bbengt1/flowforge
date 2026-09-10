@@ -16,6 +16,7 @@ type EditorChromeProps = {
   canvas: ReactNode;
   yaml: ReactNode;
   inspector: ReactNode;
+  runs?: ReactNode;
   overlays?: ReactNode;
 };
 
@@ -29,6 +30,7 @@ export function EditorChrome({
   canvas,
   yaml,
   inspector,
+  runs,
   overlays,
 }: EditorChromeProps) {
   return (
@@ -74,6 +76,7 @@ export function EditorChrome({
         >
           {inspector}
         </aside>
+        {runs}
       </div>
       {overlays}
     </div>

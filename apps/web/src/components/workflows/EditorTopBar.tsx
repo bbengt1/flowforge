@@ -9,6 +9,7 @@ import {
   editorStickyContext,
 } from "@/lib/editor-chrome";
 import { EDITOR_LIBRARY_PANEL_ID } from "@/lib/editor-library";
+import { EDITOR_RUNS_PANEL_ID } from "@/lib/editor-runs";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
@@ -23,6 +24,7 @@ type EditorTopBarProps = {
   canPublish: boolean;
   yamlOpen: boolean;
   libraryOpen: boolean;
+  runsOpen: boolean;
   publishNote: string;
   onPublishNote: (value: string) => void;
   onSave: () => void;
@@ -30,6 +32,7 @@ type EditorTopBarProps = {
   onStart: () => void;
   onToggleYaml: () => void;
   onToggleLibrary: () => void;
+  onToggleRuns: () => void;
   onAddAction: () => void;
 };
 
@@ -44,6 +47,7 @@ export function EditorTopBar({
   canPublish,
   yamlOpen,
   libraryOpen,
+  runsOpen,
   publishNote,
   onPublishNote,
   onSave,
@@ -51,6 +55,7 @@ export function EditorTopBar({
   onStart,
   onToggleYaml,
   onToggleLibrary,
+  onToggleRuns,
   onAddAction,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
@@ -147,6 +152,17 @@ export function EditorTopBar({
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
       >
         {pending === "publish" ? "Publishing…" : "Publish"}
+      </button>
+      <button
+        type="button"
+        onClick={onToggleRuns}
+        disabled={!workflow}
+        aria-pressed={runsOpen}
+        aria-expanded={runsOpen}
+        aria-controls={EDITOR_RUNS_PANEL_ID}
+        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+      >
+        {runsOpen ? "Hide runs" : "Runs"}
       </button>
       <button
         type="button"

@@ -13,6 +13,7 @@ import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner"
 import { EditorChrome } from "@/components/workflows/EditorChrome";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { EditorStartDialog } from "@/components/workflows/EditorStartDialog";
+import { EditorRunsDrawer } from "@/components/workflows/EditorRunsDrawer";
 import { EditorTopBar } from "@/components/workflows/EditorTopBar";
 import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
 import { EditorYamlTools } from "@/components/workflows/EditorYamlTools";
@@ -31,6 +32,7 @@ import {
   editorCommandAppliesToRoute,
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
+import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import { getSshCatalog } from "@/lib/ssh-client";
@@ -199,6 +201,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [publishNote, setPublishNote] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT);
   const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
+  const [runsOpen, setRunsOpen] = useState(EDITOR_RUNS_OPEN_ON_FIRST_PAINT);
   const [startOpen, setStartOpen] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<WorkflowVersion | null>(
     null,
@@ -1164,6 +1167,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           canPublish={canPublish}
           yamlOpen={yamlOpen}
           libraryOpen={libraryOpen}
+          runsOpen={runsOpen}
           publishNote={publishNote}
           onPublishNote={setPublishNote}
           onSave={() => void saveDraft()}
@@ -1171,6 +1175,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           onStart={() => setStartOpen(true)}
           onToggleYaml={() => setYamlOpen((open) => !open)}
           onToggleLibrary={() => setLibraryOpen((open) => !open)}
+          onToggleRuns={() => setRunsOpen((open) => !open)}
           onAddAction={() => openWizard()}
         />
       }
@@ -1408,6 +1413,18 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             </p>
           ) : null}
         </div>
+      }
+      runs={
+        <EditorRunsDrawer
+          open={runsOpen}
+          workflowId={workflow?.id ?? workflowId}
+          workflowName={workflow?.name}
+          identity={identity}
+          permissions={permissions}
+          canCall={canCall}
+          onClose={() => setRunsOpen(false)}
+          onStart={() => setStartOpen(true)}
+        />
       }
       overlays={
         <>
