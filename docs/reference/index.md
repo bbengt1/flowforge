@@ -8,3 +8,4 @@ Future implementation changes should add API, deployment, and runner references 
 - [Embed SDK / contract](embed-sdk.md): E11.1 mint/exchange plus E11.2 validation, durable `jti`, key rotation, and tenancy propagation.
 - [CP Ops Portal adapter](portal-adapter.md): E11.3 Portal host wiring, capability map, and fail-closed integration boundary.
 - [E12.1 security verification suite](e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.
+- [E12.2 operational resilience and capacity](e12-resilience-capacity.md): restore/worker/load harness, ≥2× headroom claims, and Chloe no-UI map.

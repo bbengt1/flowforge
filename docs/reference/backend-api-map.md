@@ -23,6 +23,8 @@ Empty `PLATFORM_ADMINS` is `403` even with a valid session. Workspace `admin` is
 
 **Chloe:** no product UI. Home/shell OpenAPI links will `401`/`403` for callers who are not platform-admins; do not add a metrics or swagger screen.
 
+**E12.2 / Chloe:** no operator UI for connection headroom, queue lag, or storage growth. Those stay [e12-resilience-capacity.md](e12-resilience-capacity.md) + `scripts/e12-resilience-suite.sh`. Keep #183 open.
+
 ## Browser sessions (E2.3)
 
 Browser clients use cookie sessions from `POST /embed/exchange` (or a future OIDC login). Production does **not** treat `X-FlowForge-Issuer` / `X-FlowForge-Subject` as authentication and `POST /session` must not upsert principals from those values. Self-asserted header identity exists only behind `TRUSTED_DEV_IDENTITY_HEADERS` plus an explicit non-production `APP_ENV` (see [security model](security-model.md) and [deployment](../deployment.md)). When `ff_session` is present, identity comes only from the session; conflicting identity headers fail closed (`403`). Header-only callers skip CSRF, and only when trusted-dev is on.

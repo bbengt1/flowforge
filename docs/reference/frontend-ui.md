@@ -788,6 +788,13 @@ Thin host wiring on jonny's **#129** map (`e113-#129`). `apps/api` is unchanged.
 - **ADV-018:** no Portal host UI change. Production issuer allowlists must be `https://`; that is API boot/request enforcement.
 - **ADV-013:** `/portal/workflows` remains same-origin. A real Portal host must use two HTTPS origins and `deliverCrossOriginPortalAssertion`. Re-run: `docs/reference/portal-adapter.md` (ADV-013) + `bash scripts/adv013-cross-origin.sh`. Keep #144 open.
 
+## E12.2 operational resilience (Chloe)
+
+**No UI.** Backup/restore, worker-loss recovery, queue lag, migration
+serialization, and ≥2× capacity headroom are harness + docs
+([e12-resilience-capacity.md](e12-resilience-capacity.md)). Do not add
+operator chrome for lag or headroom on this story. Keep #183 open.
+
 ## Required validation
 
 - YAML import → canvas → no-edit save → export preserves normalized semantics and digest.
