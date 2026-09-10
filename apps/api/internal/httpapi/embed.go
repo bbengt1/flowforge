@@ -322,7 +322,7 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "embed exchange")
 	s.auditEmbedTenancy(r, embed.EventExchanged, session.OutcomeAllowed, embed.ReasonIssued, c.TokenID, verified.KeyID, c.Issuer, c.Subject, tenant.ID, ws.WorkbenchKey, ws.ID)
 	writeJSON(w, http.StatusCreated, embedExchangeResponse{
-		Session:      viewSession(issued.Record),
+		Session:      s.viewSession(r.Context(), issued.Record),
 		Principal:    user,
 		CSRFToken:    issued.CSRF,
 		Assertion:    embed.PublicViewFromClaims(c, verified.KeyID),

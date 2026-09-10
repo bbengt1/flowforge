@@ -76,6 +76,8 @@ describe("embed-tenancy-contract", () => {
     assert.equal(retargetEmbedTenancyApiPath("/workspace"), "/workspace");
     assert.equal(isEmbedTenancyProxySegments(["workspace"]), false);
     assert.match(EMBED_TENANCY_RETARGET.tenancyApis, /session\.embed/);
+    assert.match(EMBED_TENANCY_RETARGET.chromeFromSession, /GET \/session/);
+    assert.match(EMBED_TENANCY_RETARGET.chromeFromSession, /fail closed/i);
     assert.match(EMBED_LOCKED_MESSAGE, /locked/);
   });
 
@@ -299,14 +301,19 @@ describe("embed-tenancy-contract", () => {
     assert.deepEqual(capEmbedPermissions(["workflow.view"], []), []);
     const fromSession = verifiedWorkspaceFromSessionEmbed({
       embed: {
+        mode: "embed",
         tenantId: "ten-1",
+        tenantSlug: "acme",
         workbenchKey: "ops",
         workspaceId: "ws-1",
+        workspaceName: "Ops",
         capabilities: ["workflow.view"],
       },
     });
     assert.equal(fromSession?.source, "flowforge");
     assert.deepEqual(fromSession?.capabilities, ["workflow.view"]);
+    assert.equal(fromSession?.tenantSlug, "acme");
+    assert.equal(fromSession?.workspaceName, "Ops");
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/workspace"), true);
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/embed/exchange"), false);
     assert.equal(shouldAttachEmbedTenancyHeaders("/api/v1/portal/adapter"), false);

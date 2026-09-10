@@ -288,7 +288,14 @@ paths:
     get:
       operationId: getSession
       summary: Current browser session
-      description: Requires the `ff_session` cookie. Header-only callers receive `401`.
+      description: |
+        Requires the `ff_session` cookie. Header-only callers receive `401`.
+        Embed-bound sessions (after `POST /embed/exchange`) include
+        `session.embed` as the authoritative chrome payload: `mode`, `sdk`,
+        `tenantId`, `tenantSlug`, `tenantName`, `workbenchKey`, `workspaceId`,
+        `workspaceName`, and session-capped `capabilities`. Standalone
+        sessions omit `session.embed`. The body never includes a compact JWS,
+        assertion leftovers, or signing material.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -6694,15 +6701,29 @@ components:
           $ref: "#/components/schemas/SessionEmbedBinding"
     SessionEmbedBinding:
       type: object
-      description: Present on embed-exchanged sessions. Source of truth for workbench/tenant.
-      required: [tenantId, workbenchKey, workspaceId, capabilities]
+      description: |
+        Present only on embed-exchanged sessions. Authoritative chrome
+        payload for the embed shell (ADV-021). Absence means standalone.
+        No secrets and no raw assertion.
+      required: [mode, sdk, tenantId, workbenchKey, workspaceId, capabilities]
       properties:
+        mode:
+          type: string
+          enum: [embed]
+          description: Explicit embed-mode flag. Always `embed` when this object is present.
+        sdk:
+          type: string
+          enum: [embed.v1]
         tenantId: {type: string, format: uuid}
+        tenantSlug: {type: string, description: Chrome-safe tenant display slug.}
+        tenantName: {type: string, description: Chrome-safe tenant display name.}
         workbenchKey: {type: string}
         workspaceId: {type: string, format: uuid}
+        workspaceName: {type: string, description: Chrome-safe workspace display name.}
         capabilities:
           type: array
           items: {type: string}
+          description: Session-capped minted capabilities. Not the catalog set.
     SessionResponse:
       type: object
       required: [session, principal, csrf_token]

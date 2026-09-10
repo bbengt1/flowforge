@@ -759,9 +759,10 @@ Thin contract adapter + chrome on jonny's **#127** map (`e112-#127`). `apps/api`
 
 After `POST /embed/exchange`, chrome and deep links use the FlowForge-verified `(tenant_id, workbench_key)` from `workspace` / `session.embed`. Host query, route, and postMessage tenant/workbench/`workspace_id` values are display-only and never become lookup headers or authorize.
 
-- **Persist:** `workspace.tenant_id` + `workbench_key` or `session.embed` in tab `sessionStorage` (`flowforge.embed-verified.v1`, `source: "flowforge"`). Host-shaped records are ignored.
+- **Persist:** `workspace.tenant_id` + `workbench_key` or `GET /session` `session.embed` in tab `sessionStorage` (`flowforge.embed-verified.v1`, `source: "flowforge"`). Host-shaped records are ignored. After exchange, prefer a `GET /session` refetch over assertion leftovers.
 - **Headers:** every later `/api/v1` / `/api/control-plane` call sends `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key` via `embedWorkspaceHeaders` matching the bound session. Do not retry a `403` with host values.
 - **Source of truth:** `GET /session` `session.embed` wins over host route state. Workspace switching is locked.
+- **ADV-021 chrome from session:** Drive nav, capabilities, tenant/workbench display, workspace identity, and the embed-mode flag from `GET /session` `session.embed` (`mode`, `sdk`, `tenantId`, `tenantSlug`, `tenantName`, `workbenchKey`, `workspaceId`, `workspaceName`, capped `capabilities`) plus `principal.display_name`. Parser: `parseEmbedChromeFromSession` / `EMBED_CHROME_FROM_SESSION`. Refetch after exchange, on `/embed/v1` mount, after refresh, and on `401`. Fail closed if `session.embed` is missing. Do not use assertion leftovers, catalog guesses, or host query. Prefer no product-shell rewrite in the API story — Chloe owns the chrome retarget (keep #151 open).
 - **Capabilities:** hide chrome/nav the minted `session.embed.capabilities` set cannot perform.
 - **Fail closed:** no verified pair → no `GET /workspace`. Mismatch vs `GET /workspace` closes the surface. Durable `jti` replay is HTTP `409` (no silent retry).
 - **Deep links:** same standalone hrefs under `/embed/v1`. Chrome nav, session chip, command palette, and search remap hrefs. In-app `<a>` / `Link` clicks stay on the mount.

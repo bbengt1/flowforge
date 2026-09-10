@@ -26,6 +26,11 @@ import {
 } from "@/lib/embed-tenancy-contract";
 import { visibleWorkspaceNav } from "@/lib/workspace-nav";
 
+/**
+ * ADV-021: retarget this chrome from GET /session via
+ * `parseEmbedChromeFromSession` / `EMBED_CHROME_FROM_SESSION`. Host query,
+ * assertion leftovers, and catalog guesses are not chrome authority.
+ */
 type EmbedChromeProps = {
   hostDisplay: EmbedHostDisplay;
   verified: EmbedVerifiedWorkspace | null;

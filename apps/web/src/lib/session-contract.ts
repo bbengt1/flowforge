@@ -4,6 +4,9 @@
  * Aligned to jonny's API PR #22. Paths, cookie names, and the CSRF
  * header live here so they stay in one place.
  *
+ * ADV-021: GET /session session.embed is the embed-chrome payload.
+ * Standalone sessions omit that object.
+ *
  * Merge order: #22 (API) then #21 (this UI).
  */
 
@@ -58,11 +61,19 @@ export type SessionView = {
   last_seen_at?: string;
   idle_expires_at?: string;
   absolute_expires_at?: string;
-  /** Present on embed-exchanged sessions. Source of truth for workbench/tenant. */
+  /**
+   * Present only on embed-exchanged sessions (ADV-021). Authoritative
+   * chrome payload. Standalone sessions omit this object.
+   */
   embed?: {
+    mode: "embed";
+    sdk: string;
     tenantId: string;
+    tenantSlug?: string;
+    tenantName?: string;
     workbenchKey: string;
     workspaceId: string;
+    workspaceName?: string;
     capabilities: string[];
   };
 };

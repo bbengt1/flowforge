@@ -43,7 +43,7 @@ CORS is an exact allowlist (`CORS_ALLOWED_ORIGINS`). Empty allowlist + foreign `
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
 | `POST /api/v1/session` | Trusted-dev only: create session from identity headers and/or JSON `{issuer,external_subject,display_name?}`. Headers win; a conflicting body is `403`. Production (fail-closed) returns `401` and does not upsert a principal. Prefer `POST /embed/exchange`. Sets both cookies when allowed. | `201` `{session,principal,csrf_token}` | `401` `403` (hostile origin, identity conflict, or fail-closed) |
-| `GET /api/v1/session` | Current browser session. Cookie required; header-only is `401`. | `200` `{session,principal,csrf_token}` | `401` `403` |
+| `GET /api/v1/session` | Current browser session. Cookie required; header-only is `401`. Embed-bound sessions include `session.embed` chrome fields (`mode`, `sdk`, tenant/workbench/workspace identity, capped `capabilities`). Standalone omits `session.embed`. No secrets, no raw assertion. | `200` `{session,principal,csrf_token}` | `401` `403` |
 | `POST /api/v1/session/refresh` | Extend idle expiry; rotate CSRF. Requires CSRF pair. Concurrent/stale CSRF is `409`. | `200` `{session,principal,csrf_token}` | `401` `403` `409` |
 | `POST /api/v1/session/logout` | Revoke session and clear cookies. Requires CSRF when a session cookie is present. | `204` | `403` |
 | `GET /api/v1/session/audit-events` | Caller's secret-free session audit events. | `200` `{items}` | `401` |
@@ -75,6 +75,19 @@ Mint body: `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,workspaceId?,
 **ADV-018 / Chloe:** Production issuers must be `https://` (boot-fail on allowlist load; mint/exchange `403`). **No UI change.**
 
 **ADV-019 / Chloe:** After `DELETE /workspace`, cookies for embed sessions bound to that workspace (including CHIPS) are revoked. Later calls are `401` `unauthenticated`. Prefer **no UI beyond existing session-expired / 401 handling**. Unrelated workspace sessions and unbound standalone sessions stay valid. Do not invent a dedicated “workspace deleted” chrome.
+
+**ADV-021 / Chloe retarget map:** Drive embed chrome from `GET /session` `session.embed` — not assertion leftovers, catalog guesses, or host query. Adapter: `parseEmbedChromeFromSession` / `EMBED_CHROME_FROM_SESSION` in `apps/web/src/lib/embed-contract.ts`. Prefer **no product-shell rewrite in this API story**; keep #151 open.
+
+| Chrome need | Authoritative field | Do not use |
+| --- | --- | --- |
+| Embed mode | `session.embed.mode === "embed"` (object present) | Pathname-only guess without a bound session |
+| Capabilities / nav | `session.embed.capabilities` (session-capped) | `GET /embed/catalog` capabilities, assertion leftovers |
+| Tenant display | `session.embed.tenantSlug` / `tenantName` / `tenantId` | Host query `tenant` / `tenantId` |
+| Workbench | `session.embed.workbenchKey` | Host query `workbench` |
+| Workspace identity | `session.embed.workspaceId` / `workspaceName` | Host `workspace_id` |
+| Subject label | `principal.display_name` | Assertion `display_name`, host `displayName` |
+| Refetch | After exchange, on `/embed/v1` mount, after refresh, on `401` | Stale `sessionStorage` / catalog |
+| Fail closed | `/embed/v1` + GET `/session` without `session.embed` | Fall back to host / catalog / leftovers |
 
 Rotate body: `{action:"register-overlap"|"retire", publicJwk, overlapUntil, kid?}`. On `register-overlap`, `overlapUntil` is **required** RFC3339 and must be ≤ 4h from now (missing / zero / past / farther-future → `400`). Ops (platform-admin only): register the **current** public JWK as overlap (must match the process active key), deploy new `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`, retire after the overlap window. The **active** signing key is not an overlap key and does not use `overlapUntil`. A caller-supplied foreign Ed25519 key is `400`. `EMBED_OVERLAP_KEYS` is the env form of the same public set and **requires** `overlapUntil` on every key (boot-fail if missing or > 4h). Verify/JWKS reload overlap from the store on each call so a rotate on another instance is visible and missing/expired/far-future `overlapUntil` kids are dropped.
 

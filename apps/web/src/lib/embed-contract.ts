@@ -43,6 +43,12 @@
  * frame-ancestors on /embed/v1 and postMessage origin checks.
  * Empty fails closed. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is not a source.
  * Prefer GET /embed/catalog frameAncestors in the shell.
+ *
+ * ADV-021: embed chrome (nav / capabilities / tenant display) is driven
+ * from GET /session session.embed — not assertion leftovers, catalog
+ * guesses, or host query. Fail closed on /embed/v1 if the session lacks
+ * an embed binding. Prefer no product-shell rewrite in this API story;
+ * Chloe owns the chrome retarget via parseEmbedChromeFromSession.
  */
 
 export const EMBED_SDK = "embed.v1" as const;
@@ -554,11 +560,36 @@ export type EmbedVerifiedContext = {
 };
 
 export type EmbedSessionBinding = {
+  mode: "embed";
+  sdk: string;
   tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
   workbenchKey: string;
   workspaceId: string;
+  workspaceName: string;
   capabilities: string[];
 };
+
+/** Chrome-safe GET /session fields. No secrets, no raw assertion. */
+export type EmbedChromeFromSession = EmbedSessionBinding & {
+  displayName: string;
+};
+
+export type EmbedChromeDecision =
+  | {
+      ok: true;
+      chrome: EmbedChromeFromSession;
+      leaked: boolean;
+      strippedKeys: string[];
+    }
+  | {
+      ok: false;
+      reason: "missing-embed-binding";
+      message: string;
+      leaked: boolean;
+      strippedKeys: string[];
+    };
 
 /** How the embed shell must honor workbench/tenant after E11.2 exchange. */
 export const EMBED_TENANCY_RULES = {
@@ -568,7 +599,73 @@ export const EMBED_TENANCY_RULES = {
   headerMismatchFailsClosed: true,
   capabilitiesCapSession: true,
   sessionEmbedIsSourceOfTruth: true,
+  chromeFromGetSession: true,
 } as const;
+
+/**
+ * ADV-021 Chloe retarget map — drive embed chrome from GET /session.
+ * Keep #151 open. Prefer no product-shell rewrite here.
+ */
+export const EMBED_CHROME_FROM_SESSION = {
+  path: "GET /session",
+  source: "session.embed",
+  embedModeField: "session.embed.mode",
+  embedModeValue: "embed",
+  fields: {
+    mode: "session.embed.mode — always \"embed\" when the object is present",
+    sdk: "session.embed.sdk — embed.v1",
+    capabilities: "session.embed.capabilities — session-capped minted set; hide nav the session cannot perform",
+    tenantId: "session.embed.tenantId",
+    tenantSlug: "session.embed.tenantSlug — chrome tenant label (prefer over id)",
+    tenantName: "session.embed.tenantName",
+    workbenchKey: "session.embed.workbenchKey",
+    workspaceId: "session.embed.workspaceId",
+    workspaceName: "session.embed.workspaceName",
+    displayName: "principal.display_name — chrome-safe subject label",
+  },
+  refetch: [
+    "after successful POST /embed/exchange (overwrite sessionStorage from GET /session, not assertion leftovers)",
+    "on /embed/v1 mount when ff_session may exist",
+    "after POST /session/refresh",
+    "on 401 — clear chrome and re-exchange; do not keep stale sessionStorage",
+  ],
+  failClosed:
+    "On /embed/v1, GET /session without session.embed is not an embed session. Close chrome. Do not fall back to host query, catalog capabilities, or assertion leftovers.",
+  doNotUse: [
+    "assertion leftovers (display_name / host / jti / compact JWS)",
+    "GET /embed/catalog capabilities as chrome nav authority",
+    "host query tenant / workbench / displayName / workspace_id",
+    "client-only guesses after a bound session exists",
+  ],
+  secretsNeverPresent: [
+    "assertion",
+    "jti",
+    "tokenId",
+    "d",
+    "seed",
+    "pem",
+    "private_key",
+    "privateKey",
+    "EMBED_SIGNING_KEY",
+  ],
+} as const;
+
+export const EMBED_CHROME_FROM_SESSION_RULES = {
+  sessionIsAuthority: true,
+  noAssertionLeftovers: true,
+  noCatalogGuesses: true,
+  noHostQueryAuthority: true,
+  failClosedWithoutEmbedBinding: true,
+  capabilitiesAreCapped: true,
+  noSecrets: true,
+  noProductShellRewrite: true,
+} as const;
+
+export const EMBED_CHROME_FROM_SESSION_HELP =
+  "Drive embed chrome from GET /session session.embed after exchange. Capabilities, tenant/workbench display, workspace identity, and the embed mode flag come from that object (plus principal.display_name). Host query, catalog guesses, and assertion leftovers are not chrome authority. Fail closed on /embed/v1 if session.embed is missing.";
+
+export const EMBED_CHROME_MISSING_SESSION_MESSAGE =
+  "This embed has no FlowForge-bound session. GET /session did not return session.embed. Host identity and catalog values are not chrome authority. Exchange a host assertion.";
 
 /** ADV-008: exchange verifies before tenant/workbench resolution. No UI. */
 export const EMBED_VERIFY_RULES = {
@@ -1254,16 +1351,106 @@ export function parseSessionEmbedBinding(
     raw.embed && typeof raw.embed === "object" && !Array.isArray(raw.embed)
       ? (raw.embed as Record<string, unknown>)
       : raw;
+  const mode = readString(embed.mode);
+  if (mode && mode !== "embed") {
+    return null;
+  }
   const binding: EmbedSessionBinding = {
+    mode: "embed",
+    sdk: readString(embed.sdk) || EMBED_SDK,
     tenantId: readString(embed.tenantId, embed.tenant_id),
+    tenantSlug: readString(embed.tenantSlug, embed.tenant_slug),
+    tenantName: readString(embed.tenantName, embed.tenant_name),
     workbenchKey: readString(embed.workbenchKey, embed.workbench_key),
     workspaceId: readString(embed.workspaceId, embed.workspace_id),
+    workspaceName: readString(embed.workspaceName, embed.workspace_name),
     capabilities: readStringList(embed.capabilities),
   };
   if (!binding.tenantId || !binding.workbenchKey) {
     return null;
   }
   return binding;
+}
+
+const EMBED_CHROME_SECRET_KEYS = [
+  "assertion",
+  "jti",
+  "tokenId",
+  "token_id",
+  ...EMBED_JWKS_PRIVATE_FIELDS,
+] as const;
+
+export function sanitizeSessionChromePayload(payload: unknown): {
+  leaked: boolean;
+  strippedKeys: string[];
+  record: Record<string, unknown>;
+} {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { leaked: false, strippedKeys: [], record: {} };
+  }
+  const record = { ...(payload as Record<string, unknown>) };
+  const strippedKeys: string[] = [];
+  for (const field of EMBED_CHROME_SECRET_KEYS) {
+    if (field in record) {
+      delete record[field];
+      strippedKeys.push(field);
+    }
+  }
+  if (typeof record.assertion === "string" && isCompactJws(record.assertion)) {
+    delete record.assertion;
+    if (!strippedKeys.includes("assertion")) {
+      strippedKeys.push("assertion");
+    }
+  }
+  return { leaked: strippedKeys.length > 0, strippedKeys, record };
+}
+
+/**
+ * Chloe chrome parser. Accepts GET /session `{session,principal}` or a
+ * session object. Fail-closed when session.embed is missing. Strips
+ * unexpected secrets; they are never chrome inputs.
+ */
+export function parseEmbedChromeFromSession(
+  payload: unknown,
+): EmbedChromeDecision {
+  const sanitized = sanitizeSessionChromePayload(payload);
+  const root = sanitized.record;
+  const session =
+    root.session && typeof root.session === "object" && !Array.isArray(root.session)
+      ? (root.session as Record<string, unknown>)
+      : root;
+  const principal =
+    root.principal &&
+    typeof root.principal === "object" &&
+    !Array.isArray(root.principal)
+      ? (root.principal as Record<string, unknown>)
+      : {};
+  const binding = parseSessionEmbedBinding(session);
+  if (!binding) {
+    return {
+      ok: false,
+      reason: "missing-embed-binding",
+      message: EMBED_CHROME_MISSING_SESSION_MESSAGE,
+      leaked: sanitized.leaked,
+      strippedKeys: sanitized.strippedKeys,
+    };
+  }
+  return {
+    ok: true,
+    chrome: {
+      ...binding,
+      displayName: readString(
+        principal.display_name,
+        principal.displayName,
+      ),
+    },
+    leaked: sanitized.leaked,
+    strippedKeys: sanitized.strippedKeys,
+  };
+}
+
+export function isEmbedBoundSession(session: unknown): boolean {
+  return parseSessionEmbedBinding(session) !== null;
 }
 
 /** Host-supplied tenant is never authorization. Always false. */
