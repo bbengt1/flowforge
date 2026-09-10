@@ -748,7 +748,7 @@ Thin chrome + exchange gate on the #125 map. `apps/api` is unchanged. Relates to
 
 - **Mount:** `/embed/v1` (same standalone hrefs under rewrite). `/embed` redirects to `/embed/v1` only — not a parallel product tree.
 - **Exchange:** `POST /embed/exchange` `{assertion, sdk?: "embed.v1"}` body-only. CSRF-exempt. `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. Nested `assertion` is metadata (no compact JWS). Forget the JWS after POST.
-- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). JWKS refreshes overlap from the store and omits expired `overlapUntil`. Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint. **ADV-004 / ADV-006 / ADV-014:** no embed-shell UI change. Subject/issuer bind, durable signing, and required short `overlapUntil` (max 4h) are enforced on the API.
+- **Catalog / JWKS:** `GET /embed/catalog`, `GET /embed/jwks` (public keys only; strip `d` / PEM / seed). JWKS refreshes overlap from the store and omits expired `overlapUntil`. Mint `POST /embed/assertions` is proxied for host backends (CSRF if cookie) — this shell does not mint. **ADV-004 / ADV-006 / ADV-014 / ADV-018:** no embed-shell UI change. Subject/issuer bind, durable signing, required short `overlapUntil` (max 4h), and production `https://` issuers are enforced on the API.
 - **postMessage:** `{type:"flowforge.embed.assertion",version:1,assertion}`. Parents must be on the shared host allowlist from `GET /embed/catalog` `frameAncestors` (`parseCatalogFrameAncestors` + `isAllowedEmbedMessageOrigin`). Empty list denies, including same-origin, unless `'self'` or the exact origin is listed. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source.
 - **Secrets:** assertion never in query, hash, path, or `localStorage`. Host query values are display-only until exchange. Workspace lookup after exchange uses API `workspace` / `tenant`, not host query.
 - **CSP:** standalone stays `frame-ancestors 'none'` / `X-Frame-Options: DENY`. The same shared list relaxes framing on `/embed/v1` only (`frameAncestorsForPath` / `embedHostAllowlist`).
@@ -784,6 +784,7 @@ Thin host wiring on jonny's **#129** map (`e113-#129`). `apps/api` is unchanged.
 - **CSP / postMessage (ADV-011):** `/portal` and `/portal/workflows` set `frame-src 'self'` so the host can iframe same-origin `/embed/v1`. Production Portal origin must be on the shared host allowlist. `'self'` is accepted for the in-repo demo when it is on that list. Empty list fails closed. Standalone stays `frame-ancestors 'none'` / `frame-src 'none'`.
 - **Proxies:** `GET /api/v1/portal/adapter` (no auth) and `POST /api/v1/portal/adapter/assertions` (CSRF if cookie). Exchange is not a Portal hop.
 - **ADV-004:** no Portal host UI change. Mint subject bind / `embed.impersonate` is API-only. The demo host still posts `{portalRoles}` as the caller.
+- **ADV-018:** no Portal host UI change. Production issuer allowlists must be `https://`; that is API boot/request enforcement.
 - **ADV-013:** `/portal/workflows` remains same-origin. A real Portal host must use two HTTPS origins and `deliverCrossOriginPortalAssertion`. Re-run: `docs/reference/portal-adapter.md` (ADV-013) + `bash scripts/adv013-cross-origin.sh`. Keep #144 open.
 
 ## Required validation

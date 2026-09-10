@@ -155,19 +155,7 @@ func LoadMaterial() (Material, error) {
 }
 
 func allowEphemeralSigningKey() bool {
-	appEnv := strings.TrimSpace(os.Getenv(authz.EnvAppEnv))
-	if appEnv == "" {
-		appEnv = strings.TrimSpace(os.Getenv(authz.EnvFlowforgeEnv))
-	}
-	if !authz.NonProductionAppEnv(appEnv) {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("REQUIRE_TLS"))) {
-	case "1", "true", "yes", "on":
-		return false
-	default:
-		return true
-	}
+	return !authz.ProductionLockedFromEnv()
 }
 
 // NewEphemeralMaterial generates a process-local Ed25519 key for tests

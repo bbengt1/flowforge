@@ -72,7 +72,12 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   documented leeway (default 30s, `EMBED_NBF_LEEWAY`, hard max 60s);
   `exp` is exact. An empty allowlist fails closed
   at request time (`403` on mint and exchange) — the process does not
-  refuse to start, consistent with empty `PLATFORM_ADMINS`. Token IDs
+  refuse to start, consistent with empty `PLATFORM_ADMINS`. Production
+  (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every
+  configured issuer to be an absolute `https://` URI: a non-https
+  allowlist entry is a boot-fail, and mint/exchange still reject a
+  non-https `iss` with `403` (ADV-018). Local/dev/test may use `http://`
+  issuers. Token IDs
   are consumed atomically in one
   `INSERT … ON CONFLICT DO NOTHING RETURNING` and retained 24h past
   JWT `exp` (replay is conflict). The active signing key is durable

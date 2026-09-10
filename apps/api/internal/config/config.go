@@ -69,9 +69,13 @@ type Config struct {
 	EmbedIssuer   string
 	// EmbedIssuers is EMBED_ISSUER + EMBED_ISSUER_ALLOWLIST. Empty is
 	// fail-closed at embed mint and (when Portal is also empty) exchange.
+	// Production-locked processes require every configured issuer to be
+	// an absolute https URI (ADV-018; boot-fail).
 	EmbedIssuers []string
 	// PortalIssuers is PORTAL_ISSUER + PORTAL_ISSUER_ALLOWLIST. Empty is
 	// fail-closed at Portal mint. Merged into embed exchange verification.
+	// Production-locked processes require every configured issuer to be
+	// an absolute https URI (ADV-018; boot-fail).
 	PortalIssuers []string
 	// PortalFrameAncestors is the shared host allowlist (ADV-011):
 	// PORTAL_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪
@@ -168,6 +172,13 @@ func Load() (Config, error) {
 	}
 	cfg.AppEnv = appEnv
 	cfg.TrustIdentityHeaders = trustHeaders
+	requireHTTPS := authz.ProductionLocked(appEnv, cfg.RequireTLS)
+	if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
+		return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)
+	}
+	if err := embed.ValidateIssuerAllowlist(cfg.PortalIssuers, requireHTTPS); err != nil {
+		return Config{}, fmt.Errorf("%s / %s: %w", portal.EnvIssuer, portal.EnvIssuerAllow, err)
+	}
 	return cfg, nil
 }
 

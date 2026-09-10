@@ -215,6 +215,52 @@ func TestPortalExchangeWrongHostIssuerDenied(t *testing.T) {
 	}
 }
 
+func newPortalEnvForIssuer(t *testing.T, issuer string) portalEnv {
+	t.Helper()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	clock := &now
+	keys := embed.TestMaterial()
+	store := identity.NewMemory()
+	var buf bytes.Buffer
+	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
+	admin := identity.User{Issuer: issuer, ExternalSubject: "portal-svc", DisplayName: "Portal"}
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:         store,
+		Scoped:        isolation.NewMemory(),
+		Sessions:      session.NewMemory(),
+		Workflows:     wfstore.NewMemory(),
+		Ops:           opsconfig.NewMemory(),
+		Hooks:         webhook.NewMemory(),
+		Vault:         vault.NewMemory(vault.TestKeys(), nil),
+		Keys:          vault.TestKeys(),
+		EmbedKeys:     keys,
+		EmbedJTI:      embed.NewMemoryJTI(),
+		PortalIssuers: []string{issuer},
+		Now:           func() time.Time { return *clock },
+		Log:           log,
+	}))
+	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
+	return portalEnv{embedEnv: embedEnv{h: h, store: store, keys: keys, now: clock, admin: admin, logs: &buf}}
+}
+
+func TestPortalMintHTTPIssuerDeniedInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REQUIRE_TLS", "")
+	env := newPortalEnvForIssuer(t, "http://portal.example")
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"]}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestPortalMintHTTPIssuerAllowedInDevelopment(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "")
+	env := newPortalEnvForIssuer(t, "http://portal.example")
+	rec := env.mintPortal(t, `{"portalRoles":["viewer"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("non-prod http portal mint %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPortalMintEmptyAllowlistDenied(t *testing.T) {
 	env := newPortalEnvWithIssuers(t, nil)
 	rec := env.mintPortal(t, `{"portalRoles":["viewer"]}`)

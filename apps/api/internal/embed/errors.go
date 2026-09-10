@@ -19,8 +19,12 @@ var (
 	// EMBED_SIGNING_KEY. Local/dev/test may mint a crypto/rand ephemeral
 	// key (no committed seed).
 	ErrSigningKeyRequired = errors.New("EMBED_SIGNING_KEY is required in production")
-	ErrIssuer             = errors.New("embed assertion issuer is not valid")
-	ErrIssuerNotAllowed   = errors.New("embed assertion issuer is not on the allowlist")
+	ErrIssuer           = errors.New("embed assertion issuer is not valid")
+	ErrIssuerNotAllowed = errors.New("embed assertion issuer is not on the allowlist")
+	// ErrIssuerNotHTTPS is a boot-fail: production-locked processes
+	// (empty/production APP_ENV or REQUIRE_TLS) reject configured
+	// embed/Portal issuers that are not absolute https URIs (ADV-018).
+	ErrIssuerNotHTTPS = errors.New("issuer must be an https URI in production")
 	// ErrHostIssuer is ADV-023: iss is not bound to the minting host
 	// issuer context (wrong host, host claim mismatch, or ambiguous
 	// multi-issuer exchange without an explicit binding).

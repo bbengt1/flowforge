@@ -31,7 +31,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 
 | Claim | Required | Notes |
 | --- | --- | --- |
-| `iss` | yes | Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is `403`. At mint must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (Portal mint uses `PORTAL_*`). At exchange, `iss` must equal claim `host` (when present) and the exchange host issuer (`X-FlowForge-Host-Issuer` / `hostIssuer`) when more than one issuer is configured. `X-FlowForge-Host-Context` `portal` or `embed` selects that path allowlist. Empty allowlist fails closed (`403`) |
+| `iss` | yes | Minting host issuer (always the authenticated caller). Client-supplied issuer that differs is `403`. At mint must be on `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` (Portal mint uses `PORTAL_*`). At exchange, `iss` must equal claim `host` (when present) and the exchange host issuer (`X-FlowForge-Host-Issuer` / `hostIssuer`) when more than one issuer is configured. `X-FlowForge-Host-Context` `portal` or `embed` selects that path allowlist. Empty allowlist fails closed (`403`). Production (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every configured issuer to be an absolute `https://` URI (ADV-018; boot-fail + request-time `403`) |
 | `aud` | yes | Must be `flowforge` |
 | `sub` | yes | End-user external subject. Bound to the minting caller unless `embed.impersonate` (`PLATFORM_ADMINS`) |
 | `nbf` | yes | Unix seconds. Not-yet-valid **beyond a short clock-skew leeway** fails closed (`401`). Default **30s** (`EMBED_NBF_LEEWAY`); hard max **60s**. Barely-future within leeway is accepted. `exp` is not given this leeway |
@@ -222,6 +222,8 @@ unless `'self'` or the exact origin is listed. Relates to #143 — keep #143 ope
 
 **ADV-017:** Embed assertion `nbf` allows a short documented clock-skew leeway only: default **30s** (`DefaultNBFLeeway` / `EMBED_NBF_LEEWAY`), hard max **60s** (`MaxNBFLeeway`). Values above the max are clamped. Assertions with `nbf` in the future beyond leeway are `401` (same class as other nbf failures). `exp` stays exact — the nbf helper is not reused for expiry. Chloe: **no UI change.**
 
+**ADV-018:** Production-locked processes (empty/`production` `APP_ENV` or `REQUIRE_TLS`) require every configured embed/Portal issuer (`EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST`, `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST`) to be an absolute `https://` URI. `http://`, relative, protocol-relative, and opaque issuers are a **boot-fail**. Mint and exchange also reject a non-https `iss` at request time (`403`) even if it was injected onto the allowlist. Empty allowlists still fail closed at request time only (ADV-005). Local/dev/test may keep `http://` issuers when `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is off. Chloe: **no UI change.**
+
 ## Key rotation (ops)
 
 Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_ID`). That material must be durable — production refuses to start without it. The active key is **not** an “overlap until forever” via a missing field; it is the current signing key until replaced. Verify (exchange) **refreshes** overlap from the durable store, then accepts the active key and any **explicit overlap** public key that still has a short finite `overlapUntil` (max 4h), is still inside that window, and has not been retired. Unknown, missing-expiry, expired, far-future, or retired `kid` fails closed. A stale in-memory ring does not keep accepting expired keys and does not miss overlap registered on another instance.
@@ -248,10 +250,10 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge` |
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
 | `EMBED_NBF_LEEWAY` | `30s` | Clock-skew for assertion `nbf` only (ADV-017). Hard max `60s` (clamped). `exp` is not given this leeway. |
-| `EMBED_ISSUER` | empty | Single allowed `iss` for embed mint. Empty (with an empty allowlist) fails closed at mint (`403`) |
-| `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty is fail-closed: mint and (when Portal is also empty) exchange return `403`. Compose seeds `https://idp.example` for local/dev. |
+| `EMBED_ISSUER` | empty | Single allowed `iss` for embed mint. Empty (with an empty allowlist) fails closed at mint (`403`). Production requires `https://` (ADV-018; boot-fail) |
+| `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty is fail-closed: mint and (when Portal is also empty) exchange return `403`. Compose seeds `https://idp.example` for local/dev. Production requires every entry to be an absolute `https://` URI |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Exact origins in the **shared host allowlist** (ADV-011). Merged with `WEB_PORTAL_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS`. Drives CSP `frame-ancestors` on `/embed/v1` **and** postMessage origin checks. `*` / `null` ignored. Empty fails closed (`'none'`, no open postMessage). Standalone stays `frame-ancestors 'none'` |
-| `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Empty fails closed at Portal mint (`403`). Merged into embed exchange verification. Compose seeds `https://portal.cp-ops.example`. |
+| `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Empty fails closed at Portal mint (`403`). Merged into embed exchange verification. Compose seeds `https://portal.cp-ops.example`. Production requires `https://` (ADV-018; boot-fail) |
 | `PORTAL_FRAME_ANCESTORS` | empty | Same shared host allowlist (API-side name). Merged with the `WEB_*` vars. Published on `GET /embed/catalog` and `GET /portal/adapter` as `frameAncestors` |
 | `WEB_PORTAL_FRAME_ANCESTORS` | empty | Same shared host allowlist (Portal-origin name). Merged with `WEB_EMBED_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS` |
 | `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` requests per client IP per window. `0`/unset uses the default. Negative is unlimited. |
@@ -263,7 +265,9 @@ Production must set a durable `EMBED_SIGNING_KEY` (Secret / env / file).
 Missing signing material is a **boot-fail** when `APP_ENV` is empty or
 `production` or when `REQUIRE_TLS=true` — unlike empty issuer allowlists,
 which fail closed at **request time** (`403` on mint and exchange) so
-the rest of the API stays up. Local compose seeds a local-only signing
+the rest of the API stays up. A **non-empty** production allowlist that
+contains `http://`, relative, or opaque issuers is a boot-fail (ADV-018).
+Local compose seeds a local-only signing
 key plus `https://idp.example` and `https://portal.cp-ops.example`.
 Production ConfigMaps/Secrets must set their own values; do not copy the
 compose seeds. When a non-production process is allowed to mint an

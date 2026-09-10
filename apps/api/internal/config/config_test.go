@@ -301,6 +301,112 @@ func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadProductionRejectsHTTPIssuers(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("PORTAL_ISSUER", "")
+	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "")
+
+	t.Setenv("EMBED_ISSUER", "http://idp.example")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("empty APP_ENV must boot-fail on http EMBED_ISSUER")
+	}
+
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("EMBED_ISSUER", "https://idp.example")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "http://host-b.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("production must boot-fail on http EMBED_ISSUER_ALLOWLIST")
+	}
+
+	t.Setenv("EMBED_ISSUER", "")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
+	t.Setenv("PORTAL_ISSUER", "idp.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("production must boot-fail on relative PORTAL_ISSUER")
+	}
+
+	t.Setenv("PORTAL_ISSUER", "urn:example:portal")
+	if _, err := Load(); err == nil {
+		t.Fatal("production must boot-fail on opaque PORTAL_ISSUER")
+	}
+
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "true")
+	t.Setenv("PORTAL_ISSUER", "http://portal.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("REQUIRE_TLS must boot-fail on http PORTAL_ISSUER")
+	}
+}
+
+func TestLoadProductionAcceptsHTTPSIssuersAndEmptyAllowlist(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("EMBED_ISSUER", "https://idp.example")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "https://host-b.example")
+	t.Setenv("PORTAL_ISSUER", "https://portal.cp-ops.example")
+	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.EmbedIssuers) != 2 || cfg.EmbedIssuers[0] != "https://host-b.example" || cfg.EmbedIssuers[1] != "https://idp.example" {
+		t.Fatalf("embed issuers %v", cfg.EmbedIssuers)
+	}
+	if len(cfg.PortalIssuers) != 1 || cfg.PortalIssuers[0] != "https://portal.cp-ops.example" {
+		t.Fatalf("portal issuers %v", cfg.PortalIssuers)
+	}
+
+	t.Setenv("EMBED_ISSUER", "")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
+	t.Setenv("PORTAL_ISSUER", "")
+	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
+	empty, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.EmbedIssuers) != 0 || len(empty.PortalIssuers) != 0 {
+		t.Fatalf("empty allowlists must still load (ADV-005 request-time 403), embed=%v portal=%v", empty.EmbedIssuers, empty.PortalIssuers)
+	}
+}
+
+func TestLoadNonProductionAllowsHTTPIssuers(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("EMBED_ISSUER", "http://idp.example")
+	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
+	t.Setenv("PORTAL_ISSUER", "http://portal.example")
+	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.EmbedIssuers) != 1 || cfg.EmbedIssuers[0] != "http://idp.example" {
+		t.Fatalf("dev embed issuers %v", cfg.EmbedIssuers)
+	}
+	if len(cfg.PortalIssuers) != 1 || cfg.PortalIssuers[0] != "http://portal.example" {
+		t.Fatalf("dev portal issuers %v", cfg.PortalIssuers)
+	}
+}
+
 func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 )
 
 // OverlapEnv is the JSON document accepted by EMBED_OVERLAP_KEYS:
@@ -170,7 +173,9 @@ func OverlapStillValid(expiresAt time.Time, now time.Time) bool {
 // ParseIssuerAllowlist builds the iss allowlist from EMBED_ISSUER and
 // EMBED_ISSUER_ALLOWLIST. Empty is fail-closed at mint and exchange
 // (request-time 403). Compose seeds local issuers; production must set
-// an explicit list.
+// an explicit list. Production-locked processes also require every
+// configured issuer to be an absolute https URI (ADV-018; boot-fail
+// via ValidateIssuerAllowlist).
 func ParseIssuerAllowlist(allowlist, single string) []string {
 	var out []string
 	seen := map[string]struct{}{}
@@ -192,11 +197,52 @@ func ParseIssuerAllowlist(allowlist, single string) []string {
 	return out
 }
 
+// HTTPSIssuer reports whether iss is an absolute https URI with a host.
+// http, relative, protocol-relative, and opaque URIs are rejected.
+func HTTPSIssuer(iss string) bool {
+	iss = strings.TrimSpace(iss)
+	if iss == "" {
+		return false
+	}
+	u, err := url.Parse(iss)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, "https") || u.Opaque != "" || u.Host == "" || u.User != nil {
+		return false
+	}
+	return true
+}
+
+// ValidateIssuerAllowlist is the boot-time ADV-018 check. Empty is
+// allowed (request-time 403, ADV-005). When requireHTTPS is set, every
+// configured issuer must be an absolute https URI.
+func ValidateIssuerAllowlist(issuers []string, requireHTTPS bool) error {
+	if !requireHTTPS {
+		return nil
+	}
+	for _, iss := range issuers {
+		iss = strings.TrimSpace(iss)
+		if iss == "" {
+			continue
+		}
+		if !HTTPSIssuer(iss) {
+			return fmt.Errorf("%w: %q", ErrIssuerNotHTTPS, iss)
+		}
+	}
+	return nil
+}
+
 // IssuerAllowed reports whether iss may mint or exchange. An empty
-// allowlist is fail-closed (no issuer is accepted).
+// allowlist is fail-closed (no issuer is accepted). Production-locked
+// processes (empty/production APP_ENV or REQUIRE_TLS) also require
+// an absolute https URI (ADV-018).
 func IssuerAllowed(iss string, allow []string) bool {
 	iss = strings.TrimSpace(iss)
 	if iss == "" || len(allow) == 0 {
+		return false
+	}
+	if authz.ProductionLockedFromEnv() && !HTTPSIssuer(iss) {
 		return false
 	}
 	for _, a := range allow {

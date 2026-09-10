@@ -100,6 +100,27 @@ func TestIssuerAllowlistFailsClosed(t *testing.T) {
 	}
 }
 
+func TestIssuerAllowedHTTPSInProduction(t *testing.T) {
+	t.Setenv(authz.EnvAppEnv, "production")
+	t.Setenv(authz.EnvFlowforgeEnv, "")
+	t.Setenv(authz.EnvRequireTLS, "")
+	httpAllow := []string{"http://portal.example"}
+	if IssuerAllowed("http://portal.example", httpAllow) {
+		t.Fatal("production must reject http Portal issuer")
+	}
+	if !IssuerAllowed("https://portal.cp-ops.example", []string{"https://portal.cp-ops.example"}) {
+		t.Fatal("production must accept https Portal issuer")
+	}
+	if IssuerAllowed("https://portal.cp-ops.example", nil) {
+		t.Fatal("empty allowlist must fail closed")
+	}
+
+	t.Setenv(authz.EnvAppEnv, "development")
+	if !IssuerAllowed("http://portal.example", httpAllow) {
+		t.Fatal("non-prod http Portal issuer must be allowed when listed")
+	}
+}
+
 func TestParseFrameAncestorsRejectsWildcards(t *testing.T) {
 	got := ParseFrameAncestors("https://portal.example * null http://localhost:3000")
 	if len(got) != 2 || got[0] != "https://portal.example" || got[1] != "http://localhost:3000" {

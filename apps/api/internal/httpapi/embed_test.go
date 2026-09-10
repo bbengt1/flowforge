@@ -1160,6 +1160,77 @@ func TestEmbedMintAllowlistedIssuerSucceeds(t *testing.T) {
 	}
 }
 
+func newHTTPIssuerEmbedEnv(t *testing.T, issuer string) embedEnv {
+	t.Helper()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	clock := &now
+	keys := embed.TestMaterial()
+	store := identity.NewMemory()
+	var buf bytes.Buffer
+	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
+	admin := identity.User{Issuer: issuer, ExternalSubject: "admin-1", DisplayName: "Admin"}
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:        store,
+		Scoped:       isolation.NewMemory(),
+		Sessions:     session.NewMemory(),
+		Workflows:    wfstore.NewMemory(),
+		Ops:          opsconfig.NewMemory(),
+		Hooks:        webhook.NewMemory(),
+		Vault:        vault.NewMemory(vault.TestKeys(), nil),
+		Keys:         vault.TestKeys(),
+		EmbedKeys:    keys,
+		EmbedJTI:     embed.NewMemoryJTI(),
+		EmbedIssuers: []string{issuer},
+		Now:          func() time.Time { return *clock },
+		Log:          log,
+	}))
+	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
+	return embedEnv{h: h, store: store, keys: keys, now: clock, admin: admin, logs: &buf, sessions: session.NewMemory()}
+}
+
+func TestEmbedMintHTTPIssuerDeniedInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REQUIRE_TLS", "")
+	env := newHTTPIssuerEmbedEnv(t, "http://idp.example")
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangeHTTPIssuerDeniedInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REQUIRE_TLS", "")
+	env := newHTTPIssuerEmbedEnv(t, "http://idp.example")
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "http://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+		Host:         "http://idp.example",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedMintHTTPIssuerAllowedInDevelopment(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REQUIRE_TLS", "")
+	env := newHTTPIssuerEmbedEnv(t, "http://idp.example")
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("non-prod http mint %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestEmbedMintRejectsForeignSubject(t *testing.T) {
 	env := newEmbedEnv(t)
 	rec := env.mint(t, `{"capabilities":["workflow.view"],"subject":"other-user"}`)

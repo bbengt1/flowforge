@@ -405,6 +405,8 @@ paths:
         issuer is 403. `capabilities` must be a known permission subset of
         the caller. The assertion `iss` must be on a non-empty `EMBED_ISSUER` /
         `EMBED_ISSUER_ALLOWLIST` (empty fails closed with 403).
+        Production requires each configured issuer to be an absolute https URI
+        (ADV-018; boot-fail on allowlist load, 403 at mint/exchange).
         The compact JWS is returned once. Private keys are never returned.
         Cookie callers need CSRF; header-only host backends skip CSRF.
       parameters:
@@ -605,7 +607,9 @@ paths:
         `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is
         403. `capabilities` must remain a subset of the minting caller.
         The portal `iss` must be on a non-empty `PORTAL_ISSUER` /
-        `PORTAL_ISSUER_ALLOWLIST` (empty fails closed with 403). Compact
+        `PORTAL_ISSUER_ALLOWLIST` (empty fails closed with 403).
+        Production requires each configured issuer to be an absolute https
+        URI (ADV-018; boot-fail on allowlist load, 403 at mint). Compact
         JWS is returned once. Cookie callers need CSRF; header-only
         Portal backends skip CSRF.
       parameters:
