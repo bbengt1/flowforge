@@ -147,6 +147,9 @@ export function workspaceExecutionsRemainsOpsView(): boolean {
 export function editorRunsEmbedRoutesUnchanged(): boolean {
   const list = EMBED_ROUTES.filter((route) => route.id === "executions");
   const detail = EMBED_ROUTES.filter((route) => route.id === "execution");
+  const executionRelated = EMBED_ROUTES.filter(
+    (route) => route.id === "executions" || route.id === "execution",
+  );
   return (
     list.length === 1 &&
     list[0]?.standalone === "/executions" &&
@@ -154,6 +157,6 @@ export function editorRunsEmbedRoutesUnchanged(): boolean {
     detail.length === 1 &&
     detail[0]?.standalone === "/executions/{id}" &&
     detail[0]?.embed === "/embed/v1/executions/{id}" &&
-    !EMBED_ROUTES.some((route) => route.id === "editor-runs")
+    executionRelated.length === 2
   );
 }
