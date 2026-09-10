@@ -38,7 +38,10 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	normalized := mustNormalize(t, twoNodeDispatchYAML)
+	// Two valid single-node executions (a disconnected two-node graph is
+	// rejected by workflow validation). Concurrent ClaimJob must still
+	// SKIP LOCKED distinct queued jobs.
+	normalized := mustNormalize(t, coreDispatchYAML)
 	wf, draft, err := store.Create(ctx, scopeA, CreateInput{
 		NormalizedYAML: normalized.NormalizedYAML,
 		Digest:         normalized.Digest,
@@ -51,8 +54,10 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID})
-	if err != nil {
+	if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -96,12 +101,12 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 	if n, err := store.RecoverExpiredLeases(ctx, scopeA, now.Add(3*time.Second)); err != nil || n < 1 {
 		t.Fatalf("recover: n=%d err=%v", n, err)
 	}
-	got, err := store.GetExecutionByID(ctx, scopeA, exec.ID)
+	got, err := store.GetExecutionByID(ctx, scopeA, first.ExecutionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Status != ExecutionIndeterminate {
-		t.Fatalf("lease loss status = %s", got.Status)
+		t.Fatalf("lease loss status = %s exec=%s", got.Status, first.ExecutionID)
 	}
 	if _, err := store.CompleteJob(ctx, scopeA, now.Add(4*time.Second), JobActionInput{
 		JobID: first.ID, WorkerID: "pg-worker", FencingToken: first.FencingToken,
@@ -109,27 +114,3 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 		t.Fatal("stale complete after lease loss")
 	}
 }
-
-const twoNodeDispatchYAML = `apiVersion: flowforge/v1
-kind: Workflow
-metadata:
-  name: e52-two-node
-spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: one
-      type: data.set
-      name: One
-      with:
-        value:
-          env: a
-    - id: two
-      type: data.set
-      name: Two
-      with:
-        value:
-          env: b
-  edges: []
-`

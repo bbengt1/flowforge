@@ -1,0 +1,76 @@
+# E12.1: named security verification suite.
+# Relates to #182 / Part of #181. Keep #182 open.
+# Catalog: scripts/e12-security-suite.json
+# Provenance sibling: supply-chain.yml (govulncheck + Trivy/SBOM).
+name: e12-security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e12-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-suite:
+    name: Security verification suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flowforge
+          POSTGRES_PASSWORD: flowforge
+          POSTGRES_DB: flowforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowforge -d flowforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://flowforge:flowforge@127.0.0.1:5432/flowforge?sslmode=disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install web deps
+        run: pnpm install --filter @flowforge/web...
+
+      - name: Run E12.1 security suite
+        env:
+          E12_SKIP_PNPM: "1"
+          E12_WRITE_EVIDENCE: "1"
+        run: bash scripts/e12-security-suite.sh
+
+      - name: Upload last-run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e12-security-suite
+          path: docs/reference/e12-security-evidence/last-run.json
