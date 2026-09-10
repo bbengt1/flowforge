@@ -27,6 +27,12 @@
  * workspace lookup. Invalid assertions fail closed the same way
  * whether or not the tenant exists. No UI rewrite.
  *
+ * ADV-023: exchange binds assertion iss to the minting host issuer.
+ * Send X-FlowForge-Host-Issuer (or body hostIssuer) set to the
+ * configured Portal / embed issuer for this frame — never peeked from
+ * the assertion. Optional X-FlowForge-Host-Context: portal|embed
+ * selects the path allowlist. Prefer no UI rewrite beyond the header.
+ *
  * ADV-012: POST /embed/exchange is rate-limited (429 rate-limited).
  * Treat 429 as backoff and retry after Retry-After / the window.
  * Prefer no UI change beyond that. Authz decisions are audited
@@ -398,8 +404,13 @@ export const EMBED_PROBLEM_CODES = {
   rateLimited: "rate-limited",
 } as const;
 
+export const FLOWFORGE_HOST_ISSUER_HEADER = "X-FlowForge-Host-Issuer";
+export const FLOWFORGE_HOST_CONTEXT_HEADER = "X-FlowForge-Host-Context";
+export const EMBED_HOST_CONTEXT_EMBED = "embed" as const;
+export const EMBED_HOST_CONTEXT_PORTAL = "portal" as const;
+
 export const EMBED_EXCHANGE_HELP =
-  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds. HTTP 429 rate-limited means backoff (Retry-After); do not treat it as a forbidden assertion.";
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Send X-FlowForge-Host-Issuer set to the configured host issuer for this frame (Portal issuer on a Portal-framed flow; embed issuer standalone) — never copy iss from the assertion. Optional X-FlowForge-Host-Context: portal|embed selects that path allowlist. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds. HTTP 429 rate-limited means backoff (Retry-After); do not treat it as a forbidden assertion.";
 
 /** Embed session cookies after POST /embed/exchange. Not used for POST /session. */
 export const EMBED_SESSION_COOKIE = {
@@ -504,9 +515,20 @@ export const EMBED_TENANCY_HELP =
 export const EMBED_ROTATE_HELP =
   "Ops only: POST /embed/keys/rotate {action:\"register-overlap\"|\"retire\", publicJwk, overlapUntil} with platform.administer (PLATFORM_ADMINS). overlapUntil is required RFC3339 and must be a short future window (max 4h). publicJwk must be the previous active signing key. The active signing key is not an overlap key and does not use overlapUntil. workspace.administer is 403. Exchange/JWKS refresh overlap from the store and drop missing/expired/far-future overlapUntil kids. Production requires a durable EMBED_SIGNING_KEY (boot-fail if missing). Bad EMBED_OVERLAP_KEYS is boot-fail. The embed shell does not rotate keys.";
 
+export type EmbedHostContext =
+  | typeof EMBED_HOST_CONTEXT_EMBED
+  | typeof EMBED_HOST_CONTEXT_PORTAL;
+
+export type EmbedHostBinding = {
+  hostIssuer?: string;
+  hostContext?: EmbedHostContext | string;
+};
+
 export type EmbedExchangeBody = {
   assertion: string;
   sdk?: typeof EMBED_SDK;
+  hostIssuer?: string;
+  hostContext?: string;
 };
 
 export type EmbedHostDisplay = {
@@ -554,6 +576,23 @@ export const EMBED_VERIFY_RULES = {
   noWorkspaceOracleOnInvalidAssertion: true,
   jtiConsumeAfterVerify: true,
 } as const;
+
+/**
+ * ADV-023: bind iss to the minting host issuer on exchange.
+ * Chloe sends the configured host issuer, never a peeked assertion iss.
+ */
+export const EMBED_HOST_ISSUER_RULES = {
+  bindIssToMintingHost: true,
+  header: FLOWFORGE_HOST_ISSUER_HEADER,
+  contextHeader: FLOWFORGE_HOST_CONTEXT_HEADER,
+  neverPeekIssFromAssertion: true,
+  requiredWhenMultipleIssuers: true,
+  wrongIssuerForHostIs403: true,
+  noUiRewriteBeyondHeader: true,
+} as const;
+
+export const EMBED_HOST_ISSUER_HELP =
+  "On POST /embed/exchange send X-FlowForge-Host-Issuer (or body hostIssuer) set to the configured Portal or embed issuer for this frame. Do not copy iss/host from the assertion. Optional X-FlowForge-Host-Context: portal (Portal-framed) or embed (standalone) selects that path allowlist. Wrong-issuer-for-host is HTTP 403. Prefer no UI rewrite beyond attaching the header.";
 
 /** ADV-009: atomic jti consume; used ids retained 24h past exp. No UI. */
 export const EMBED_JTI_RULES = {
@@ -606,8 +645,36 @@ export function forgetEmbedAssertion(holder: { assertion: string }): string {
   return "";
 }
 
-export function buildEmbedExchangeBody(assertion: string): EmbedExchangeBody {
-  return { assertion: assertion.trim(), sdk: EMBED_SDK };
+export function buildEmbedExchangeBody(
+  assertion: string,
+  binding?: EmbedHostBinding,
+): EmbedExchangeBody {
+  const body: EmbedExchangeBody = { assertion: assertion.trim(), sdk: EMBED_SDK };
+  const hostIssuer = binding?.hostIssuer?.trim();
+  const hostContext = binding?.hostContext?.trim();
+  if (hostIssuer) {
+    body.hostIssuer = hostIssuer;
+  }
+  if (hostContext) {
+    body.hostContext = hostContext;
+  }
+  return body;
+}
+
+/** Headers Chloe must send on exchange. Values are configured host issuers. */
+export function embedHostBindingHeaders(
+  binding?: EmbedHostBinding,
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const hostIssuer = binding?.hostIssuer?.trim();
+  const hostContext = binding?.hostContext?.trim();
+  if (hostIssuer) {
+    headers[FLOWFORGE_HOST_ISSUER_HEADER] = hostIssuer;
+  }
+  if (hostContext) {
+    headers[FLOWFORGE_HOST_CONTEXT_HEADER] = hostContext;
+  }
+  return headers;
 }
 
 export function validateEmbedAssertion(assertion: string):

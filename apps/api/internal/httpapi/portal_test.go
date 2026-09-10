@@ -143,7 +143,7 @@ func TestPortalAdapterCatalog(t *testing.T) {
 	if len(cat.FrameAncestors) != 2 || cat.FrameAncestors[0] != "https://portal.example" || cat.FrameAncestors[1] != "'self'" {
 		t.Fatalf("shared host allowlist %v", cat.FrameAncestors)
 	}
-	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors {
+	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors || !cat.Rules.ExchangeBindsHostIssuer {
 		t.Fatalf("allowlist rules %+v", cat.Rules)
 	}
 }
@@ -187,6 +187,31 @@ func TestPortalMintMapsRolesAndExchanges(t *testing.T) {
 	}
 	if exchanged.Session.Embed == nil || exchanged.Session.Embed.WorkbenchKey != "ops" {
 		t.Fatalf("session embed %+v", exchanged.Session.Embed)
+	}
+}
+
+func TestPortalExchangeWrongHostIssuerDenied(t *testing.T) {
+	env := newPortalEnv(t)
+	rec := env.mintPortal(t, `{"portalRoles":["portal.viewer"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	wrong := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`,"sdk":"embed.v1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostIssuer, "https://idp.example")
+	req.Header.Set(headerHostContext, embed.HostContextPortal)
+	env.h.ServeHTTP(wrong, req)
+	assertProblem(t, wrong, http.StatusForbidden, CodeForbidden, "")
+
+	ok := env.exchange(t, minted.Assertion)
+	if ok.Code != http.StatusCreated {
+		t.Fatalf("single portal issuer without header %d %s", ok.Code, ok.Body.String())
 	}
 }
 

@@ -29,10 +29,12 @@ import {
   EMBED_SECRET_LEAK_MESSAGE,
   buildEmbedExchangeBody,
   embedAuthFailureMessage,
+  embedHostBindingHeaders,
   forgetEmbedAssertion,
   parseEmbedExchangePayload,
   publicJwksOnly,
   validateEmbedAssertion,
+  type EmbedHostBinding,
   type EmbedVerifiedContext,
 } from "./embed-contract.ts";
 import { fetchSameOriginProxy } from "./identity-client.ts";
@@ -81,6 +83,7 @@ function localProblem(
 
 export async function exchangeEmbedAssertion(
   holder: { assertion: string },
+  binding?: EmbedHostBinding,
 ): Promise<EmbedExchangeSuccess | EmbedExchangeFailure> {
   const path = EMBED_EXCHANGE_PATH;
   const requestId = generateRequestId();
@@ -129,8 +132,11 @@ export async function exchangeEmbedAssertion(
       Accept: "application/json, application/problem+json",
       "Content-Type": "application/json",
       [REQUEST_ID_HEADER]: requestId,
+      ...embedHostBindingHeaders(binding),
     },
-    body: JSON.stringify(buildEmbedExchangeBody(validated.body.assertion)),
+    body: JSON.stringify(
+      buildEmbedExchangeBody(validated.body.assertion, binding),
+    ),
     requestId,
   });
   forgetEmbedAssertion(holder);

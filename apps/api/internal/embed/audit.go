@@ -22,6 +22,7 @@ const (
 	ReasonImpersonated  = "impersonated"
 	ReasonImpersonation = "impersonation"
 	ReasonIssuer        = "issuer"
+	ReasonHostIssuer    = "host-issuer"
 	ReasonCapability    = "capability"
 	ReasonTenancy       = "tenancy"
 	ReasonWorkspace     = "workspace"

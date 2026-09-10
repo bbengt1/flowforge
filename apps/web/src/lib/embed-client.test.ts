@@ -94,7 +94,10 @@ describe("embed client", () => {
     }) as typeof fetch;
 
     const holder = { assertion: SAMPLE_JWS };
-    const result = await exchangeEmbedAssertion(holder);
+    const result = await exchangeEmbedAssertion(holder, {
+      hostIssuer: "https://idp.example",
+      hostContext: "embed",
+    });
     assert.equal(result.ok, true);
     assert.equal(seen.url, "/api/v1/embed/exchange");
     assert.equal(seen.init?.method, "POST");
@@ -102,7 +105,12 @@ describe("embed client", () => {
     const body = JSON.parse(String(seen.init?.body));
     assert.equal(body.assertion, SAMPLE_JWS);
     assert.equal(body.sdk, "embed.v1");
+    assert.equal(body.hostIssuer, "https://idp.example");
+    assert.equal(body.hostContext, "embed");
     assert.equal("workspaceId" in body, false);
+    const headers = new Headers(seen.init?.headers);
+    assert.equal(headers.get("X-FlowForge-Host-Issuer"), "https://idp.example");
+    assert.equal(headers.get("X-FlowForge-Host-Context"), "embed");
     assert.equal(holder.assertion, "");
     const snapshot = getSessionSnapshot();
     assert.equal(snapshot.active, true);

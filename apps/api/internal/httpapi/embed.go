@@ -30,8 +30,10 @@ type mintAssertionRequest struct {
 }
 
 type exchangeAssertionRequest struct {
-	Assertion string `json:"assertion"`
-	SDK       string `json:"sdk"`
+	Assertion   string `json:"assertion"`
+	SDK         string `json:"sdk"`
+	HostIssuer  string `json:"hostIssuer"`
+	HostContext string `json:"hostContext"`
 }
 
 type embedExchangeResponse struct {
@@ -268,7 +270,9 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	// ADV-008: verify signature, audience, issuer allowlist, nbf/exp,
 	// claims, and consume jti before any tenant/workbench lookup so a
 	// forged assertion cannot probe workspace existence.
-	verified, err := s.verifyEmbedAssertion(r, req.Assertion)
+	// ADV-023: bind iss to the minting host issuer context (Portal vs
+	// standalone embed) before that lookup as well.
+	verified, err := s.verifyEmbedAssertion(r, req)
 	if err != nil {
 		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embedDenyReason(err), peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
 		writeEmbedError(w, r, err)
@@ -366,6 +370,10 @@ func writeEmbedError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The embed assertion is missing or has invalid claims.")
 	case errors.Is(err, embed.ErrIssuerNotAllowed):
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The embed assertion issuer is not on the allowlist. Empty EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST fails closed.")
+	case errors.Is(err, embed.ErrHostIssuer):
+		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "The embed assertion issuer is not bound to the minting host. Send X-FlowForge-Host-Issuer (or hostIssuer) set to the configured Portal or embed issuer for this frame — never a value peeked from the assertion.")
+	case errors.Is(err, embed.ErrHostContext):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "X-FlowForge-Host-Context / hostContext must be portal or embed.")
 	case errors.Is(err, embed.ErrAudience):
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", "The embed assertion audience is not bound to FlowForge.")
 	case errors.Is(err, embed.ErrExpired), errors.Is(err, embed.ErrNotYetValid):
@@ -438,6 +446,8 @@ func embedDenyReason(err error) string {
 		return embed.ReasonTenancy
 	case errors.Is(err, embed.ErrIssuerNotAllowed), errors.Is(err, embed.ErrIssuer):
 		return embed.ReasonIssuer
+	case errors.Is(err, embed.ErrHostIssuer), errors.Is(err, embed.ErrHostContext):
+		return embed.ReasonHostIssuer
 	case errors.Is(err, embed.ErrCapability):
 		return embed.ReasonCapability
 	case errors.Is(err, embed.ErrMissingClaim), errors.Is(err, embed.ErrSDK):
@@ -447,18 +457,28 @@ func embedDenyReason(err error) string {
 	}
 }
 
-func (s *Server) verifyEmbedAssertion(r *http.Request, assertion string) (embed.Verified, error) {
+func (s *Server) verifyEmbedAssertion(r *http.Request, req exchangeAssertionRequest) (embed.Verified, error) {
+	binding, err := embed.ResolveHostBinding(
+		r.Header.Get(headerHostIssuer),
+		r.Header.Get(headerHostContext),
+		req.HostIssuer,
+		req.HostContext,
+	)
+	if err != nil {
+		return embed.Verified{}, err
+	}
 	opt := embed.VerifyOptions{
-		Audience:       embed.DefaultAudience,
-		Now:            s.clockNow(),
-		Consumer:       s.embedJTI,
-		Context:        r.Context(),
-		AllowedIssuers: s.embedIssuers,
+		Audience:           embed.DefaultAudience,
+		Now:                s.clockNow(),
+		Consumer:           s.embedJTI,
+		Context:            r.Context(),
+		AllowedIssuers:     embed.HostAllowlist(binding.Context, s.embedMintIssuers, s.portalIssuers),
+		ExpectedHostIssuer: binding.Issuer,
 	}
 	if s.embedRing != nil {
-		return s.embedRing.Verify(r.Context(), assertion, opt)
+		return s.embedRing.Verify(r.Context(), req.Assertion, opt)
 	}
-	return embed.Verify(s.embedMaterial(), assertion, opt)
+	return embed.Verify(s.embedMaterial(), req.Assertion, opt)
 }
 
 func (s *Server) embedMaterial() embed.Material {

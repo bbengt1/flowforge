@@ -83,8 +83,15 @@ func Mint(m Material, in MintInput) (Minted, Claims, error) {
 	}
 	iss := strings.TrimSpace(in.Issuer)
 	sub := strings.TrimSpace(in.Subject)
+	host := strings.TrimSpace(in.Host)
+	if host == "" {
+		host = iss
+	}
 	if !authz.ValidIssuer(iss) {
 		return Minted{}, Claims{}, ErrIssuer
+	}
+	if host != iss {
+		return Minted{}, Claims{}, ErrHostIssuer
 	}
 	if !authz.ValidSubject(sub) {
 		return Minted{}, Claims{}, ErrSubject
@@ -119,7 +126,7 @@ func Mint(m Material, in MintInput) (Minted, Claims, error) {
 		Capabilities: append([]string(nil), in.Capabilities...),
 		SDK:          SDKVersion,
 		DisplayName:  strings.TrimSpace(in.DisplayName),
-		Host:         strings.TrimSpace(in.Host),
+		Host:         host,
 	}
 	token, err := Sign(m, c)
 	if err != nil {

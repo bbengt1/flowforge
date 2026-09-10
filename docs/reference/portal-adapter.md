@@ -43,7 +43,7 @@ Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 | 2. Map roles | Portal backend | Map Portal roles → FlowForge capabilities from `GET /api/v1/portal/adapter` `capabilityMap`. Unknown roles fail closed. |
 | 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer (always the authenticated caller). A `subject` other than the caller requires `embed.impersonate` (`PLATFORM_ADMINS`). |
 | 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame and postMessage only when the Portal origin is on the **shared host allowlist** (`WEB_PORTAL_FRAME_ANCESTORS` ∪ `WEB_EMBED_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`). Read `GET /portal/adapter` `frameAncestors` (same list as `GET /embed/catalog`). Host query `tenant` / `workbench` is display-only. |
-| 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Signature and claims are verified before any workspace lookup. Issues CHIPS `ff_session` / `ff_csrf` (`SameSite=None; Secure; Partitioned`) bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. Keep `credentials: "include"`. Do not request Storage Access / unpartitioned cookies. |
+| 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Send `X-FlowForge-Host-Issuer` set to the configured `PORTAL_ISSUER` (never peeked from the assertion) and `X-FlowForge-Host-Context: portal`. Signature and claims are verified before any workspace lookup. `iss` must equal that Portal issuer. Issues CHIPS `ff_session` / `ff_csrf` (`SameSite=None; Secure; Partitioned`) bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. Keep `credentials: "include"`. Do not request Storage Access / unpartitioned cookies. |
 | 6. Authorize | FlowForge | Later calls: cookie session + `X-CSRF-Token` + exchanged tenant/workbench headers. Disagreeing host tenant/workbench is `403`. If the partitioned cookie is not sent: `401` / CSRF `403`. HTTPS + Partitioned support required. Manual two-host iframe check is ADV-013. |
 
 Do **not** invent a Portal-specific exchange, cookie, or audience. Do **not**
@@ -70,7 +70,7 @@ permission sets. Extra `capabilities` must be known FlowForge keys.
 | `GET` | `/api/v1/portal/adapter` | none | no | Contract, capability map, host wiring |
 | `POST` | `/api/v1/portal/adapter/assertions` | session or identity headers + membership | yes if `ff_session` | Maps roles, checks portal issuer, binds subject to the caller unless `embed.impersonate`, signs with E11.1 mint |
 | `POST` | `/api/v1/embed/assertions` | same | yes if cookie | Same mint without role mapping. Subject/issuer bind to the caller |
-| `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific. Issues CHIPS cookies (`SameSite=None; Secure; Partitioned`). Bound sessions cannot `POST /tenants` or `POST /workspaces`. Cookie not sent is `401`/`403`. |
+| `POST` | `/api/v1/embed/exchange` | assertion | no | E11.1/E11.2 exchange. Not Portal-specific. Binds `iss` to the minting Portal host issuer (`X-FlowForge-Host-Issuer` + `hostContext=portal`). Issues CHIPS cookies (`SameSite=None; Secure; Partitioned`). Bound sessions cannot `POST /tenants` or `POST /workspaces`. Cookie not sent is `401`/`403`. |
 | `GET` | `/api/v1/embed/catalog` | none | no | Embed SDK |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only |
 | `POST` | `/api/v1/embed/keys/rotate` | `platform.administer` (`PLATFORM_ADMINS`) | yes if `ff_session` | Not a Portal host control. `portal.admin` / `workspace.administer` cannot register overlap keys. |
@@ -98,7 +98,7 @@ JWS once). Problem details never echo the JWS or private keys.
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (API-side). Merged with the `WEB_*` vars. Published on `GET /portal/adapter` and `GET /embed/catalog` as `frameAncestors` |
 | `WEB_PORTAL_FRAME_ANCESTORS` | empty | Same shared list (web + API). Drives `/embed/v1` CSP **and** postMessage |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Same shared list (embed-origin name) |
-| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed mint allowlist. Empty fails closed at embed mint. Portal issuers are merged in for exchange only. |
+| `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Embed mint allowlist. Empty fails closed at embed mint. Exchange uses this list only when `X-FlowForge-Host-Context: embed` (or merges it with Portal issuers when context is omitted). |
 
 Production must set a durable `EMBED_SIGNING_KEY` (boot-fail if missing
 when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true`) and explicit
@@ -118,6 +118,7 @@ These fail closed on the FlowForge adapter:
 
 - Empty Portal issuer allowlist (mint/exchange `403`)
 - Hostile host issuer (not on the Portal allowlist)
+- Cross-host issuer reuse: assertion minted under issuer A exchanged when the host expects issuer B (`403`)
 - Replayed assertion (`409` on `POST /embed/exchange`)
 - Cross-tenant / cross-workbench headers after exchange (`403`)
 - Credential plaintext and raw runner-log secrets absent from Portal-session
@@ -220,6 +221,7 @@ The product adapter is unchanged. A real Portal host still owns steps
 | In-repo `PortalHost` uses a relative `/embed/v1` src and `postMessage(..., window.location.origin)` | Production Portal must iframe the **absolute embed origin** and call `deliverCrossOriginPortalAssertion({embedOrigin, portalOrigin, allowlist})`. The ADV-011 helper `deliverPortalAssertion` is same-origin (target must be on the host allowlist). |
 | Catalog vs CSP | Set the same Portal HTTPS origin on the **API** (`PORTAL_FRAME_ANCESTORS` / `WEB_PORTAL_FRAME_ANCESTORS`) and the **web** process. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source (ADV-011). |
 | Embed exchange gate | Allowlisted postMessage fills the assertion; `POST /embed/exchange` stays body-only with `credentials: "include"`. Do not put the JWS in the URL. Auto-exchange is optional host UX. |
+| Host issuer bind (ADV-023) | Embed shell must send `X-FlowForge-Host-Issuer` set to the **configured** `PORTAL_ISSUER` and `X-FlowForge-Host-Context: portal`. Never copy `iss` from the assertion. Wrong-issuer-for-host is `403`. Prefer no chrome rewrite beyond those headers (`PORTAL_HOST_ISSUER_RULES`). |
 | CHIPS | Both origins must be HTTPS. Do not drop `Secure` or `Partitioned`. Cookie not sent is `401`/`403`. |
 | API process stores | `cmd/api` builds the handler with `NewWithDeps` and a postgres pool. Identity / session / workflow stores must be inferred from that pool (otherwise `POST /tenants` is `503` and Portal mint cannot bind a workspace). |
 

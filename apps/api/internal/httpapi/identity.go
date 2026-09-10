@@ -20,6 +20,8 @@ const (
 	headerTenantSlug   = "X-FlowForge-Tenant-Slug"
 	headerWorkbenchKey = "X-FlowForge-Workbench-Key"
 	headerWorkspaceID  = "X-FlowForge-Workspace-ID"
+	headerHostIssuer   = embed.HeaderHostIssuer
+	headerHostContext  = embed.HeaderHostContext
 )
 
 type currentWorkspaceResponse struct {

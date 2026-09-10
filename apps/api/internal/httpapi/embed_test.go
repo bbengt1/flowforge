@@ -440,7 +440,7 @@ func TestEmbedCatalogPublishesSharedHostAllowlist(t *testing.T) {
 	if len(cat.FrameAncestors) != 2 || cat.FrameAncestors[0] != frames[0] || cat.FrameAncestors[1] != frames[1] {
 		t.Fatalf("catalog frames %v want %v", cat.FrameAncestors, frames)
 	}
-	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors {
+	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors || !cat.Rules.ExchangeBindsHostIssuer {
 		t.Fatalf("allowlist rules %+v", cat.Rules)
 	}
 
@@ -955,6 +955,149 @@ func TestEmbedExchangeAcceptsPortalIssuerWhenEmbedEmpty(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("portal issuer exchange %d %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestEmbedExchangeWrongHostIssuerDenied(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	wrong := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`,"sdk":"embed.v1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostIssuer, "https://portal.cp-ops.example")
+	req.Header.Set(headerHostContext, embed.HostContextPortal)
+	env.h.ServeHTTP(wrong, req)
+	assertProblem(t, wrong, http.StatusForbidden, CodeForbidden, "")
+	if !strings.Contains(wrong.Body.String(), "minting host") {
+		t.Fatalf("detail should mention minting host: %s", wrong.Body.String())
+	}
+}
+
+func TestEmbedExchangeHostIssuerBindingSucceeds(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	ok := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`,"sdk":"embed.v1","hostIssuer":"https://idp.example","hostContext":"embed"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostIssuer, "https://idp.example")
+	req.Header.Set(headerHostContext, embed.HostContextEmbed)
+	env.h.ServeHTTP(ok, req)
+	if ok.Code != http.StatusCreated {
+		t.Fatalf("bound exchange %d %s", ok.Code, ok.Body.String())
+	}
+}
+
+func TestEmbedExchangeAmbiguousHostRequiresBinding(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	denied := postEmbedExchange(t, env, minted.Assertion)
+	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangePortalContextRejectsEmbedIssuer(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	denied := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostContext, embed.HostContextPortal)
+	env.h.ServeHTTP(denied, req)
+	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangePortalContextAcceptsPortalIssuer(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://portal.cp-ops.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+		Host:         "https://portal.cp-ops.example",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostIssuer, "https://portal.cp-ops.example")
+	req.Header.Set(headerHostContext, embed.HostContextPortal)
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("portal-bound exchange %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEmbedExchangeHostClaimMismatchDenied(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Unix(),
+		ExpiresAt:    now.Add(time.Minute).Unix(),
+		TokenID:      "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+		Host:         "https://portal.cp-ops.example",
+	})
+	rec := postEmbedExchange(t, env, token)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+}
+
+func TestEmbedExchangeHeaderBodyHostMismatchDenied(t *testing.T) {
+	env := newEmbedEnvWithIssuers(t, []string{"https://idp.example"}, []string{"https://portal.cp-ops.example"})
+	rec := env.mint(t, `{"capabilities":["workflow.view"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", rec.Code, rec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(rec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	denied := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, minted.Assertion)+`,"hostIssuer":"https://idp.example"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerHostIssuer, "https://portal.cp-ops.example")
+	env.h.ServeHTTP(denied, req)
+	assertProblem(t, denied, http.StatusForbidden, CodeForbidden, "")
 }
 
 func TestEmbedMintAllowlistedIssuerSucceeds(t *testing.T) {

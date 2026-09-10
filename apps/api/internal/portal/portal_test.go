@@ -214,7 +214,7 @@ func TestCatalogBoundaryNeverShares(t *testing.T) {
 	if c.Boundary.SharesDatabase || c.Boundary.SharesExecutor || c.Boundary.ParallelAuthPath {
 		t.Fatalf("boundary %+v", c.Boundary)
 	}
-	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin || !c.Rules.PartitionedEmbedCookies || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors {
+	if !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PortalAdminIsNotPlatformAdmin || !c.Rules.PartitionedEmbedCookies || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors || !c.Rules.ExchangeBindsHostIssuer {
 		t.Fatalf("bootstrap rules %+v", c.Rules)
 	}
 	if len(c.FrameAncestors) != 1 || c.FrameAncestors[0] != "https://portal.example" {

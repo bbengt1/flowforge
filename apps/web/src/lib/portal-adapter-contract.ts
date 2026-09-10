@@ -29,6 +29,11 @@
  * host ≠ embed). In-repo /portal/workflows is same-origin only.
  * Cross-origin hosts use deliverCrossOriginPortalAssertion and
  * buildCrossOriginPortalEmbedSrc. See adv013-cross-origin-contract.ts.
+ *
+ * ADV-023: Portal-framed exchange must send X-FlowForge-Host-Issuer
+ * set to the configured PORTAL_ISSUER (never peeked from the
+ * assertion) and X-FlowForge-Host-Context: portal. Prefer no host
+ * chrome rewrite beyond those headers.
  */
 
 import {
@@ -36,6 +41,10 @@ import {
   EMBED_ASSERTION_MESSAGE_VERSION,
   EMBED_AUDIENCE,
   EMBED_EXCHANGE_PATH,
+  EMBED_HOST_CONTEXT_PORTAL,
+  EMBED_HOST_ISSUER_HELP,
+  FLOWFORGE_HOST_CONTEXT_HEADER,
+  FLOWFORGE_HOST_ISSUER_HEADER,
   EMBED_HOST_DISPLAY_KEYS,
   EMBED_MAX_ASSERTION_BYTES,
   EMBED_MINT_PATH,
@@ -202,7 +211,7 @@ export const PORTAL_HOST_WIRING = [
     id: "exchange",
     actor: "embed-shell",
     path: `/api/v1${PORTAL_EXCHANGE_PATH}`,
-    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange with credentials:include. Issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned). Replay is 409. Cookie not sent is 401/403.",
+    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange with credentials:include. Send X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned). Replay is 409. Cookie not sent is 401/403.",
   },
 ] as const;
 
@@ -322,7 +331,18 @@ export const PORTAL_TENANCY_HELP =
   "Tenant and workbench on this host are display context for the iframe query. After exchange the embed uses FlowForge-verified session.embed headers. Host values are not retried on 403.";
 
 export const PORTAL_ASSERTION_HELP =
-  "Mint through POST /portal/adapter/assertions {portalRoles}. Subject defaults to the caller; a different subject requires embed.impersonate (PLATFORM_ADMINS). Then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange. Never put the JWS in the URL, hash, path, or localStorage.";
+  "Mint through POST /portal/adapter/assertions {portalRoles}. Subject defaults to the caller; a different subject requires embed.impersonate (PLATFORM_ADMINS). Then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange with X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Never put the JWS in the URL, hash, path, or localStorage.";
+
+export const PORTAL_HOST_ISSUER_HELP = EMBED_HOST_ISSUER_HELP;
+
+export const PORTAL_HOST_ISSUER_RULES = {
+  header: FLOWFORGE_HOST_ISSUER_HEADER,
+  contextHeader: FLOWFORGE_HOST_CONTEXT_HEADER,
+  context: EMBED_HOST_CONTEXT_PORTAL,
+  sendConfiguredPortalIssuer: true,
+  neverPeekIssFromAssertion: true,
+  wrongIssuerForHostIs403: true,
+} as const;
 
 export const PORTAL_BOUNDARY_HELP =
   "This host replaces Portal's protected workflow surface by embedding FlowForge. FlowForge keeps its own database, executor, and authorization. Portal RBAC stays on the Portal side of the iframe.";
