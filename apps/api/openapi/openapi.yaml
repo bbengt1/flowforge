@@ -395,7 +395,11 @@ paths:
         (atomic jti consume, key rotation, tenancy propagation).
         `frameAncestors` is the shared host allowlist (ADV-011) used for
         CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks.
-        Empty fails closed.
+        Empty fails closed. ADV-024: unauthenticated or capability-less
+        embed sessions receive exchange/session/chrome essentials only.
+        Membership/isolation routes and `workspace.administer` /
+        `platform.administer` capabilities are omitted unless the peeked
+        session grants one of those caps. `frameAncestors` stays published.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -6779,7 +6783,12 @@ components:
             $ref: "#/components/schemas/SessionAuditEvent"
     EmbedCatalog:
       type: object
-      description: Versioned embed SDK/contract for Chloe and host backends.
+      description: |
+        Versioned embed SDK/contract for Chloe and host backends.
+        `rules.membershipIsolationGranted` is true only when the peeked
+        session has `workspace.administer` or `platform.administer`.
+        Public catalogs omit membership/isolation routes and those
+        capabilities. `frameAncestors` is always present (ADV-011).
     PortalAdapterCatalog:
       type: object
       description: Versioned CP Ops Portal adapter contract and host wiring map.

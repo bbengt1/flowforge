@@ -38,7 +38,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
-| `GET` | `/api/v1/embed/catalog` | Versioned embed SDK/contract. |
+| `GET` | `/api/v1/embed/catalog` | Versioned embed SDK/contract. No auth required. Membership/isolation omitted unless the peeked session grants `workspace.administer` or `platform.administer`. `frameAncestors` always published. |
 | `GET` | `/api/v1/embed/jwks` | Public embed keys (active + overlap). |
 | `POST` | `/api/v1/embed/assertions` | Mint a short-lived embed assertion. Subject/issuer bind to the caller unless `embed.impersonate` (`PLATFORM_ADMINS`). |
 | `POST` | `/api/v1/embed/exchange` | Exchange assertion for a tenancy-bound `ff_session`. |

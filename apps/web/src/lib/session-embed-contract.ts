@@ -55,7 +55,10 @@ export const SESSION_EMBED_RETARGET = {
   embedShape:
     "session.embed {mode,sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities} plus principal.display_name. #177 map.",
   parser: "parseEmbedChromeFromSession",
-  notChrome: EMBED_CHROME_FROM_SESSION.doNotUse,
+  notChrome: [
+    ...EMBED_CHROME_FROM_SESSION.doNotUse,
+    "GET /embed/catalog membership/isolation routes unless rules.membershipIsolationGranted (ADV-024)",
+  ],
   refetch: EMBED_CHROME_FROM_SESSION.refetch,
   failClosed: EMBED_CHROME_FROM_SESSION.failClosed,
   capabilities: EMBED_CHROME_FROM_SESSION.fields.capabilities,

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { loadDevIdentity } from "@/lib/dev-identity";
 import {
-  EMBED_ROUTES,
+  catalogRoutesForGrant,
   parseCatalogFrameAncestors,
   type EmbedRouteId,
 } from "@/lib/embed-contract";
@@ -34,7 +34,7 @@ import {
 } from "@/lib/portal-embed-client";
 import type { ProblemDetails } from "@/lib/problem";
 
-const DEEP_LINK_OPTIONS = EMBED_ROUTES.filter(
+const DEEP_LINK_OPTIONS = catalogRoutesForGrant(false).filter(
   (route) => !route.standalone.includes("{"),
 );
 

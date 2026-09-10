@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   canCreateWorkflows,
   canSeeCredentialsNav,
+  canSeeMembershipIsolationNav,
   canSeeWorkflowsNav,
   navItemIsActive,
   visibleWorkspaceNav,
@@ -32,8 +33,22 @@ describe("visibleWorkspaceNav", () => {
     const items = visibleWorkspaceNav(null);
     assert.deepEqual(
       items.map((item) => item.id),
-      ["settings", "membership", "isolation", "portal"],
+      ["settings", "portal"],
     );
+  });
+
+  it("hides membership/isolation without workspace.administer", () => {
+    assert.equal(canSeeMembershipIsolationNav(null), false);
+    assert.equal(canSeeMembershipIsolationNav(viewer), false);
+    const ids = visibleWorkspaceNav(viewer).map((item) => item.id);
+    assert.equal(ids.includes("membership"), false);
+    assert.equal(ids.includes("isolation"), false);
+    const admin = visibleWorkspaceNav([
+      ...viewer,
+      "workspace.administer",
+    ]).map((item) => item.id);
+    assert.ok(admin.includes("membership"));
+    assert.ok(admin.includes("isolation"));
   });
 
   it("hides inaccessible capabilities for a viewer", () => {

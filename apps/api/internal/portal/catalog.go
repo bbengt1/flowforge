@@ -36,27 +36,40 @@ type Catalog struct {
 
 // CatalogRules are fail-closed product rules for the Portal host.
 type CatalogRules struct {
-	PortalEntryIsNotAuthz         bool `json:"portalEntryIsNotAuthorization"`
-	MustUseEmbedMint              bool `json:"mustUseEmbedMint"`
-	MustUseEmbedExchange          bool `json:"mustUseEmbedExchange"`
-	AssertionNotInURL             bool `json:"assertionNotInURL"`
-	HostIDsNotAuthz               bool `json:"hostIdsAreNotAuthorization"`
-	NoDatabaseShare               bool `json:"noDatabaseShare"`
-	NoExecutorShare               bool `json:"noExecutorShare"`
-	NoCredentialOrRawLogLeak      bool `json:"noCredentialOrRawLogExposure"`
-	FrameAncestorsExactOrigin     bool `json:"frameAncestorsExactOrigin"`
-	EmbedSessionsCannotBootstrap  bool `json:"embedSessionsCannotBootstrap"`
-	PortalAdminIsNotPlatformAdmin bool `json:"portalAdminIsNotPlatformAdmin"`
-	PartitionedEmbedCookies       bool `json:"partitionedEmbedCookies"`
-	SharedHostAllowlist           bool `json:"sharedHostAllowlist"`
-	EmptyHostAllowlistFailsClosed bool `json:"emptyHostAllowlistFailsClosed"`
-	PostMessageUsesFrameAncestors bool `json:"postMessageUsesFrameAncestors"`
-	ExchangeBindsHostIssuer       bool `json:"exchangeBindsHostIssuer"`
+	PortalEntryIsNotAuthz            bool `json:"portalEntryIsNotAuthorization"`
+	MustUseEmbedMint                 bool `json:"mustUseEmbedMint"`
+	MustUseEmbedExchange             bool `json:"mustUseEmbedExchange"`
+	AssertionNotInURL                bool `json:"assertionNotInURL"`
+	HostIDsNotAuthz                  bool `json:"hostIdsAreNotAuthorization"`
+	NoDatabaseShare                  bool `json:"noDatabaseShare"`
+	NoExecutorShare                  bool `json:"noExecutorShare"`
+	NoCredentialOrRawLogLeak         bool `json:"noCredentialOrRawLogExposure"`
+	FrameAncestorsExactOrigin        bool `json:"frameAncestorsExactOrigin"`
+	EmbedSessionsCannotBootstrap     bool `json:"embedSessionsCannotBootstrap"`
+	PortalAdminIsNotPlatformAdmin    bool `json:"portalAdminIsNotPlatformAdmin"`
+	PartitionedEmbedCookies          bool `json:"partitionedEmbedCookies"`
+	SharedHostAllowlist              bool `json:"sharedHostAllowlist"`
+	EmptyHostAllowlistFailsClosed    bool `json:"emptyHostAllowlistFailsClosed"`
+	PostMessageUsesFrameAncestors    bool `json:"postMessageUsesFrameAncestors"`
+	ExchangeBindsHostIssuer          bool `json:"exchangeBindsHostIssuer"`
+	MembershipIsolationRequiresGrant bool `json:"membershipIsolationRequiresGrant"`
+	MembershipIsolationGranted       bool `json:"membershipIsolationGranted"`
 }
 
-// NewCatalog builds the E11.3 contract. Issuers and frame ancestors are
-// the configured allowlists (empty issuer lists fail closed at mint).
+// NewCatalog builds the unauthenticated E11.3 contract (membership /
+// isolation routes omitted). HTTP handlers use NewCatalogFor.
 func NewCatalog(issuers, frames []string) Catalog {
+	return NewCatalogFor(issuers, frames, embed.CatalogView{})
+}
+
+// NewCatalogFor builds the E11.3 contract. Issuers and frame ancestors
+// are the configured allowlists (empty issuer lists fail closed at mint).
+// Membership/isolation routes follow the same grant as GET /embed/catalog.
+func NewCatalogFor(issuers, frames []string, view embed.CatalogView) Catalog {
+	return applyPortalCatalogView(fullCatalog(issuers, frames), view)
+}
+
+func fullCatalog(issuers, frames []string) Catalog {
 	return Catalog{
 		Adapter:        AdapterVersion,
 		SDK:            EmbedSDK,
@@ -74,33 +87,46 @@ func NewCatalog(issuers, frames []string) Catalog {
 		Issuers:        append([]string(nil), issuers...),
 		FrameAncestors: append([]string(nil), frames...),
 		Rules: CatalogRules{
-			PortalEntryIsNotAuthz:         true,
-			MustUseEmbedMint:              true,
-			MustUseEmbedExchange:          true,
-			AssertionNotInURL:             true,
-			HostIDsNotAuthz:               true,
-			NoDatabaseShare:               true,
-			NoExecutorShare:               true,
-			NoCredentialOrRawLogLeak:      true,
-			FrameAncestorsExactOrigin:     true,
-			EmbedSessionsCannotBootstrap:  true,
-			PortalAdminIsNotPlatformAdmin: true,
-			PartitionedEmbedCookies:       true,
-			SharedHostAllowlist:           true,
-			EmptyHostAllowlistFailsClosed: true,
-			PostMessageUsesFrameAncestors: true,
-			ExchangeBindsHostIssuer:       true,
+			PortalEntryIsNotAuthz:            true,
+			MustUseEmbedMint:                 true,
+			MustUseEmbedExchange:             true,
+			AssertionNotInURL:                true,
+			HostIDsNotAuthz:                  true,
+			NoDatabaseShare:                  true,
+			NoExecutorShare:                  true,
+			NoCredentialOrRawLogLeak:         true,
+			FrameAncestorsExactOrigin:        true,
+			EmbedSessionsCannotBootstrap:     true,
+			PortalAdminIsNotPlatformAdmin:    true,
+			PartitionedEmbedCookies:          true,
+			SharedHostAllowlist:              true,
+			EmptyHostAllowlistFailsClosed:    true,
+			PostMessageUsesFrameAncestors:    true,
+			ExchangeBindsHostIssuer:          true,
+			MembershipIsolationRequiresGrant: true,
+			MembershipIsolationGranted:       false,
 		},
 	}
 }
 
+func applyPortalCatalogView(c Catalog, view embed.CatalogView) Catalog {
+	granted := view.GrantsMembershipIsolation()
+	c.Rules.MembershipIsolationRequiresGrant = true
+	c.Rules.MembershipIsolationGranted = granted
+	if !granted {
+		c.Routes = embed.FilterMembershipIsolationRoutes(c.Routes)
+		c.Capabilities = embed.FilterMembershipIsolationCapabilities(c.Capabilities)
+	}
+	return c
+}
+
 func adapterAPI() []APIRoute {
 	return []APIRoute{
-		{Method: "GET", Path: "/api/v1/portal/adapter", Auth: "none", CSRF: "no", Note: "Versioned Portal adapter contract, capability map, and host wiring for Chloe. frameAncestors is the shared host allowlist (same merge as GET /embed/catalog) for CSP and postMessage."},
+		{Method: "GET", Path: "/api/v1/portal/adapter", Auth: "none (disclosure follows peeked ff_session)", CSRF: "no", Note: "Versioned Portal adapter contract, capability map, and host wiring for Chloe. frameAncestors is the shared host allowlist (same merge as GET /embed/catalog) for CSP and postMessage. Membership/isolation routes are omitted unless the session grants workspace.administer or platform.administer (ADV-024)."},
 		{Method: "POST", Path: "/api/v1/portal/adapter/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Portal-backend mint after Portal RBAC. Maps portalRoles → FlowForge capabilities, requires a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed, 403), then signs with E11.1 embed.Mint (aud=flowforge). Subject binds to the caller unless embed.impersonate (PLATFORM_ADMINS). Client issuer that differs from the caller is 403. Production requires https issuers (ADV-018; boot-fail on allowlist load, 403 at mint)."},
 		{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Same mint without role mapping. Subject/issuer bind to the caller unless embed.impersonate. Portal may call this directly after mapping roles client-side."},
 		{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "E11.1/E11.2 exchange. Not a Portal-specific path. Signature/claims verify before any workspace lookup. iss must bind to the minting Portal host issuer (X-FlowForge-Host-Issuer / hostIssuer + hostContext=portal). Replay 409. Binds (tenant_id, workbench_key) onto CHIPS cookies (SameSite=None; Secure; Partitioned). Bound sessions cannot create tenants or sibling workbenches. Cookie not sent is 401/403."},
-		{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Embed SDK/contract. Portal adapter builds on this."},
+		{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none (disclosure follows peeked ff_session)", CSRF: "no", Note: "Embed SDK/contract. Portal adapter builds on this. Membership/isolation routes are omitted unless the session grants workspace.administer or platform.administer (ADV-024). frameAncestors stays published."},
 		{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only."},
 	}
 }

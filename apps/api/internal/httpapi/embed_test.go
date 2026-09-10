@@ -360,8 +360,18 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"sdk":"embed.v1"`) {
 		t.Fatal(rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"/embed/v1/workflows/{id}"`) {
-		t.Fatal("missing embed deep link")
+	var public embed.Catalog
+	if err := json.Unmarshal(rec.Body.Bytes(), &public); err != nil {
+		t.Fatal(err)
+	}
+	if embed.CatalogDisclosesMembershipIsolation(public) {
+		t.Fatal("unauthenticated catalog leaked membership/isolation")
+	}
+	if !public.Rules.MembershipIsolationRequiresGrant || public.Rules.MembershipIsolationGranted {
+		t.Fatalf("public grant flags %+v", public.Rules)
+	}
+	if !strings.Contains(rec.Body.String(), `"/api/v1/embed/exchange"`) || !strings.Contains(rec.Body.String(), `"/api/v1/session"`) {
+		t.Fatal("minimized catalog must keep exchange/session essentials")
 	}
 	if !strings.Contains(rec.Body.String(), `"maxOverlapTtl":"4h0m0s"`) {
 		t.Fatal("catalog must document the overlapUntil cap")
@@ -454,6 +464,9 @@ func TestEmbedCatalogPublishesSharedHostAllowlist(t *testing.T) {
 	}
 	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors || !cat.Rules.ExchangeBindsHostIssuer {
 		t.Fatalf("allowlist rules %+v", cat.Rules)
+	}
+	if embed.CatalogDisclosesMembershipIsolation(cat) {
+		t.Fatal("unauthenticated allowlist catalog leaked membership/isolation")
 	}
 
 	empty := NewWithDeps(withHTTPTestIdentity(Deps{
@@ -1790,6 +1803,203 @@ func TestGetSessionReturnsEmbedChromeFields(t *testing.T) {
 	for _, secret := range []string{`"assertion"`, `"jti"`, `"tokenid"`, `"private_key"`, `"privatekey"`, `"embed_signing_key"`, `"d":`} {
 		if strings.Contains(lower, secret) {
 			t.Fatalf("GET /session leaked secret field %s: %s", secret, body)
+		}
+	}
+}
+
+func TestEmbedCatalogHidesMembershipIsolationUnlessGranted(t *testing.T) {
+	env := newEmbedEnv(t)
+
+	public := getEmbedCatalog(t, env, "", "")
+	if embed.CatalogDisclosesMembershipIsolation(public.cat) {
+		t.Fatal("unauthenticated catalog leaked membership/isolation")
+	}
+	if public.cat.Rules.MembershipIsolationGranted || !public.cat.Rules.MembershipIsolationRequiresGrant {
+		t.Fatalf("public flags %+v", public.cat.Rules)
+	}
+	if public.cat.Rules.ChromeFromSession == false || public.cat.Rules.SharedHostAllowlist == false {
+		t.Fatal("must not regress ADV-021 / ADV-011 on the public catalog")
+	}
+	assertCatalogSecretFree(t, public.body, "")
+
+	viewer := exchangeCatalog(t, env, `{"capabilities":["workflow.view"]}`)
+	if embed.CatalogDisclosesMembershipIsolation(viewer.cat) {
+		t.Fatal("capability-limited embed catalog leaked membership/isolation")
+	}
+	foundWorkflow := false
+	for _, route := range viewer.cat.Routes {
+		if route.ID == "workflow" {
+			foundWorkflow = true
+		}
+	}
+	if !foundWorkflow {
+		t.Fatal("embed session with caps must keep product routes")
+	}
+	assertCatalogSecretFree(t, viewer.body, viewer.assertion)
+
+	ws, tenant := currentWorkspace(t, env.h, env.admin)
+	issued, err := env.sessions.Create(t.Context(), env.admin.ID, *env.now, session.DefaultIdleTimeout, session.DefaultAbsoluteTimeout, session.CreateOpts{
+		Binding: session.Binding{
+			TenantID:     tenant.ID,
+			WorkbenchKey: ws.WorkbenchKey,
+			WorkspaceID:  ws.ID,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := getEmbedCatalog(t, env, issued.Token, issued.CSRF)
+	if embed.CatalogDisclosesMembershipIsolation(empty.cat) {
+		t.Fatal("capability-less embed catalog leaked membership/isolation")
+	}
+	if len(empty.cat.Routes) != 1 || empty.cat.Routes[0].ID != "home" {
+		t.Fatalf("capability-less embed catalog must be essentials-only, got %+v", empty.cat.Routes)
+	}
+
+	granted := exchangeCatalog(t, env, `{"capabilities":["workspace.administer"]}`)
+	if !embed.CatalogDisclosesMembershipIsolation(granted.cat) || !granted.cat.Rules.MembershipIsolationGranted {
+		t.Fatal("workspace.administer must disclose membership/isolation")
+	}
+	foundMembership, foundIsolation := false, false
+	for _, route := range granted.cat.Routes {
+		if route.ID == embed.RouteIDMembership {
+			foundMembership = true
+		}
+		if route.ID == embed.RouteIDIsolation {
+			foundIsolation = true
+		}
+	}
+	if !foundMembership || !foundIsolation {
+		t.Fatalf("granted routes %+v", granted.cat.Routes)
+	}
+	assertCatalogSecretFree(t, granted.body, granted.assertion)
+
+	grantToken, grantCSRF := sessionPair(t, granted.ex)
+	portalRec := httptest.NewRecorder()
+	env.h.ServeHTTP(portalRec, sessionAPIRequest(http.MethodGet, "/api/v1/portal/adapter", "", grantToken, grantCSRF))
+	if portalRec.Code != http.StatusOK {
+		t.Fatalf("portal catalog %d %s", portalRec.Code, portalRec.Body.String())
+	}
+	if !strings.Contains(portalRec.Body.String(), `"membershipIsolationGranted":true`) {
+		t.Fatal("granted session must disclose membership/isolation on portal adapter")
+	}
+	if !strings.Contains(portalRec.Body.String(), `"/membership"`) {
+		t.Fatal("granted portal catalog missing membership route")
+	}
+
+	created, _ := createSession(t, env.h, env.admin.Issuer, env.admin.ExternalSubject, "Admin", false)
+	token, csrf := sessionPair(t, created)
+	standalone := getEmbedCatalog(t, env, token, csrf)
+	if !standalone.cat.Rules.MembershipIsolationGranted {
+		t.Fatal("standalone workspace admin session must grant membership/isolation")
+	}
+	if embed.CatalogDisclosesMembershipIsolation(standalone.cat) == false {
+		t.Fatal("standalone granted catalog missing membership/isolation")
+	}
+
+	createdOps, _ := createSession(t, env.h, env.ops.Issuer, env.ops.ExternalSubject, "Ops", false)
+	opsToken, opsCSRF := sessionPair(t, createdOps)
+	opsCat := getEmbedCatalog(t, env, opsToken, opsCSRF)
+	if !opsCat.cat.Rules.MembershipIsolationGranted {
+		t.Fatal("standalone platform-admin session must grant membership/isolation")
+	}
+
+	viewerUser := identity.User{Issuer: "https://idp.example", ExternalSubject: "viewer-catalog", DisplayName: "Viewer"}
+	u, err := env.store.UpsertUser(t.Context(), viewerUser.Issuer, viewerUser.ExternalSubject, viewerUser.DisplayName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.store.SetMemberRoles(t.Context(), ws.ID, u.ID, []string{authz.RoleViewer}); err != nil {
+		t.Fatal(err)
+	}
+	createdViewer, _ := createSession(t, env.h, viewerUser.Issuer, viewerUser.ExternalSubject, "Viewer", false)
+	vToken, vCSRF := sessionPair(t, createdViewer)
+	standaloneViewer := getEmbedCatalog(t, env, vToken, vCSRF)
+	if standaloneViewer.cat.Rules.MembershipIsolationGranted || embed.CatalogDisclosesMembershipIsolation(standaloneViewer.cat) {
+		t.Fatal("standalone viewer must not see membership/isolation")
+	}
+	foundWorkflow = false
+	for _, route := range standaloneViewer.cat.Routes {
+		if route.ID == "workflow" {
+			foundWorkflow = true
+		}
+	}
+	if !foundWorkflow {
+		t.Fatal("standalone authenticated catalog must keep product routes")
+	}
+
+	matrix := httptest.NewRecorder()
+	env.h.ServeHTTP(matrix, identifiedRequest(http.MethodGet, "/api/v1/permission-matrix", nil))
+	if matrix.Code != http.StatusOK {
+		t.Fatalf("standalone permission-matrix %d", matrix.Code)
+	}
+	if !strings.Contains(matrix.Body.String(), authz.PermWorkspaceAdminister) {
+		t.Fatal("do not shrink the authz-gated standalone permission matrix")
+	}
+}
+
+type catalogGET struct {
+	cat       embed.Catalog
+	body      string
+	assertion string
+	ex        *httptest.ResponseRecorder
+}
+
+func getEmbedCatalog(t *testing.T, env embedEnv, token, csrf string) catalogGET {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	var req *http.Request
+	if token == "" {
+		req = httptest.NewRequest(http.MethodGet, "/api/v1/embed/catalog", nil)
+	} else {
+		req = sessionAPIRequest(http.MethodGet, "/api/v1/embed/catalog", "", token, csrf)
+	}
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog %d %s", rec.Code, rec.Body.String())
+	}
+	var cat embed.Catalog
+	if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	return catalogGET{cat: cat, body: rec.Body.String()}
+}
+
+func exchangeCatalog(t *testing.T, env embedEnv, mintBody string) catalogGET {
+	t.Helper()
+	return exchangeCatalogAs(t, env, env.admin, mintBody)
+}
+
+func exchangeCatalogAs(t *testing.T, env embedEnv, user identity.User, mintBody string) catalogGET {
+	t.Helper()
+	mintedRec := env.mintAs(t, user, mintBody)
+	if mintedRec.Code != http.StatusCreated {
+		t.Fatalf("mint %d %s", mintedRec.Code, mintedRec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(mintedRec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+	ex := postEmbedExchange(t, env, minted.Assertion)
+	if ex.Code != http.StatusCreated {
+		return catalogGET{ex: ex, assertion: minted.Assertion, body: ex.Body.String()}
+	}
+	token, csrf := sessionPair(t, ex)
+	got := getEmbedCatalog(t, env, token, csrf)
+	got.assertion = minted.Assertion
+	got.ex = ex
+	return got
+}
+
+func assertCatalogSecretFree(t *testing.T, body, assertion string) {
+	t.Helper()
+	if assertion != "" && strings.Contains(body, assertion) {
+		t.Fatal("catalog leaked compact assertion")
+	}
+	lower := strings.ToLower(body)
+	for _, leak := range []string{"begin private", `"d":`} {
+		if strings.Contains(lower, leak) {
+			t.Fatalf("catalog leaked %s", leak)
 		}
 	}
 }

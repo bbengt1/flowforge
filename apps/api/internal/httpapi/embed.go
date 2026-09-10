@@ -54,8 +54,8 @@ func (s *Server) requireEmbedKeys(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func (s *Server) getEmbedCatalog(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, embed.NewCatalog(s.portalFrames))
+func (s *Server) getEmbedCatalog(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, embed.NewCatalogFor(s.portalFrames, s.peekCatalogView(r)))
 }
 
 func (s *Server) getEmbedJWKS(w http.ResponseWriter, r *http.Request) {

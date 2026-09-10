@@ -11,8 +11,8 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
-func (s *Server) getPortalAdapter(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, portal.NewCatalog(s.portalIssuers, s.portalFrames))
+func (s *Server) getPortalAdapter(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, portal.NewCatalogFor(s.portalIssuers, s.portalFrames, s.peekCatalogView(r)))
 }
 
 func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {

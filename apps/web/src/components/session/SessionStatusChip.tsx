@@ -15,12 +15,15 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 export function SessionStatusChip() {
   const pathname = usePathname();
   const embed = useEmbedMode();
+  const settingsHref = embed ? embedDeepLink("/settings") : "/settings";
   const membershipHref = embed ? embedDeepLink("/membership") : "/membership";
   const isolationHref = embed ? embedDeepLink("/isolation") : "/isolation";
   const sessionHref =
-    pathname === membershipHref || pathname === isolationHref
+    pathname === settingsHref ||
+    pathname === membershipHref ||
+    pathname === isolationHref
       ? "#session"
-      : `${membershipHref}#session`;
+      : `${settingsHref}#session`;
   const snapshot = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,

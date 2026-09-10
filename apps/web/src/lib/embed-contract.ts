@@ -137,6 +137,8 @@ export type EmbedRoute = {
   standalone: string;
   embed: string;
   description: string;
+  /** ADV-024: published on GET /embed/catalog only when granted. */
+  grant?: "membership-isolation";
 };
 
 /** Stable mounts. Deep links are the same hrefs standalone and under /embed/v1. */
@@ -162,9 +164,86 @@ export const EMBED_ROUTES: readonly EmbedRoute[] = [
   { id: "alert", standalone: "/alerts/{id}", embed: "/embed/v1/alerts/{id}", description: "Alert detail" },
   { id: "audit", standalone: "/audit", embed: "/embed/v1/audit", description: "Audit browse" },
   { id: "settings", standalone: "/settings", embed: "/embed/v1/settings", description: "Settings" },
-  { id: "membership", standalone: "/membership", embed: "/embed/v1/membership", description: "Membership operator" },
-  { id: "isolation", standalone: "/isolation", embed: "/embed/v1/isolation", description: "Isolation exercise" },
+  { id: "membership", standalone: "/membership", embed: "/embed/v1/membership", description: "Membership operator", grant: "membership-isolation" },
+  { id: "isolation", standalone: "/isolation", embed: "/embed/v1/isolation", description: "Isolation exercise", grant: "membership-isolation" },
 ];
+
+/** Caps that disclose membership/isolation on embed/portal catalogs. */
+export const EMBED_MEMBERSHIP_ISOLATION_GRANT_CAPS = [
+  "workspace.administer",
+  "platform.administer",
+] as const;
+
+export const EMBED_MEMBERSHIP_ISOLATION_ROUTE_IDS = [
+  "membership",
+  "isolation",
+] as const;
+
+/**
+ * ADV-024 Chloe map — hide membership/isolation catalog chrome unless
+ * GET /session session.embed.capabilities (or catalog
+ * rules.membershipIsolationGranted) includes a grant cap.
+ * Keep #153 open. frameAncestors stays public (ADV-011).
+ */
+export const EMBED_CATALOG_MEMBERSHIP_ISOLATION = {
+  story: "ADV-024",
+  issue: 153,
+  catalogPath: EMBED_CATALOG_PATH,
+  grantCapabilities: EMBED_MEMBERSHIP_ISOLATION_GRANT_CAPS,
+  routeIds: EMBED_MEMBERSHIP_ISOLATION_ROUTE_IDS,
+  grantedField: "rules.membershipIsolationGranted",
+  requiresGrantField: "rules.membershipIsolationRequiresGrant",
+  publicCatalog: "exchange/session/chrome essentials + frameAncestors",
+  notChrome: [
+    "GET /embed/catalog capabilities as chrome nav authority",
+    "membership/isolation routes when rules.membershipIsolationGranted is false",
+  ],
+  frameAncestorsAlwaysPublished: true,
+  secretsNeverPresent: true,
+} as const;
+
+export const EMBED_CATALOG_MEMBERSHIP_ISOLATION_RULES = {
+  failClosedWithoutGrant: true,
+  publicCatalogIsEssentials: true,
+  frameAncestorsAlwaysPublished: true,
+  chromeFromSessionNotCatalog: true,
+  standaloneAuthzCatalogsUnchanged: true,
+} as const;
+
+export const EMBED_CATALOG_MEMBERSHIP_ISOLATION_HELP =
+  "GET /embed/catalog omits membership/isolation routes, workspace.administer / platform.administer capabilities, and isolation help unless the peeked session grants workspace.administer or platform.administer. Unauthenticated or capability-less embed sessions get exchange/session/chrome essentials only. frameAncestors stays published for CSP. Drive chrome from GET /session, not catalog guesses.";
+
+export function grantsMembershipIsolationCatalog(
+  capabilities: readonly string[] | null | undefined,
+): boolean {
+  if (capabilities == null) {
+    return false;
+  }
+  return EMBED_MEMBERSHIP_ISOLATION_GRANT_CAPS.some((cap) =>
+    capabilities.includes(cap),
+  );
+}
+
+export function parseCatalogMembershipIsolationGranted(
+  payload: unknown,
+): boolean {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const rules = (payload as { rules?: { membershipIsolationGranted?: unknown } })
+    .rules;
+  return rules?.membershipIsolationGranted === true;
+}
+
+/** Product + granted mounts. Do not treat as chrome authority. */
+export function catalogRoutesForGrant(
+  granted: boolean,
+): readonly EmbedRoute[] {
+  if (granted) {
+    return EMBED_ROUTES;
+  }
+  return EMBED_ROUTES.filter((route) => route.grant !== "membership-isolation");
+}
 
 export type MintEmbedAssertionBody = {
   subject?: string;
