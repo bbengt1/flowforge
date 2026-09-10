@@ -38,7 +38,10 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	normalized := mustNormalize(t, twoNodeDispatchYAML)
+	// Two valid single-node executions (a disconnected two-node graph is
+	// rejected by workflow validation). Concurrent ClaimJob must still
+	// SKIP LOCKED distinct queued jobs.
+	normalized := mustNormalize(t, coreDispatchYAML)
 	wf, draft, err := store.Create(ctx, scopeA, CreateInput{
 		NormalizedYAML: normalized.NormalizedYAML,
 		Digest:         normalized.Digest,
@@ -53,6 +56,9 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 	}
 	exec, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scopeA, wf.ID, StartInput{VersionID: ver.ID}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -109,27 +115,3 @@ func TestPostgresDispatchSkipLockedAndLeaseLoss(t *testing.T) {
 		t.Fatal("stale complete after lease loss")
 	}
 }
-
-const twoNodeDispatchYAML = `apiVersion: flowforge/v1
-kind: Workflow
-metadata:
-  name: e52-two-node
-spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: one
-      type: data.set
-      name: One
-      with:
-        value:
-          env: a
-    - id: two
-      type: data.set
-      name: Two
-      with:
-        value:
-          env: b
-  edges: []
-`

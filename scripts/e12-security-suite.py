@@ -74,6 +74,7 @@ def run_cmd(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> su
 
 def parse_go_json(text: str) -> tuple[dict[tuple[str, str], dict[str, Any]], list[str], bool]:
     tests: dict[tuple[str, str], dict[str, Any]] = {}
+    outputs: dict[tuple[str, str], list[str]] = defaultdict(list)
     package_fail: list[str] = []
     build_failed = False
     for raw in text.splitlines():
@@ -87,6 +88,9 @@ def parse_go_json(text: str) -> tuple[dict[tuple[str, str], dict[str, Any]], lis
         action = ev.get("Action")
         pkg = ev.get("Package") or ""
         name = ev.get("Test")
+        if action == "output" and name:
+            outputs[(pkg, name)].append(ev.get("Output") or "")
+            continue
         if not name:
             if action == "fail" and pkg:
                 package_fail.append(pkg)
@@ -101,6 +105,7 @@ def parse_go_json(text: str) -> tuple[dict[tuple[str, str], dict[str, Any]], lis
                 "name": name,
                 "action": action,
                 "elapsed": ev.get("Elapsed"),
+                "output": "".join(outputs.get((pkg, name), [])),
             }
     return tests, package_fail, build_failed
 
@@ -184,25 +189,29 @@ def main() -> int:
         else:
             packages = catalog["goPackages"]
             go_bin = os.environ.get("E12_GO", "go")
+            argv = [go_bin, "test", "-json", "-count=1", "-timeout", "12m"]
+            # Shared TEST_DATABASE_URL: serialize packages so parallel
+            # integration tests cannot collide on tenants/roles.
+            if os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL"):
+                argv.extend(["-p", "1"])
+            argv.extend(packages)
             started = time.monotonic()
             proc = run_cmd(
-                [go_bin, "test", "-json", "-count=1", "-timeout", "12m", *packages],
+                argv,
                 cwd=root / catalog["goModuleDir"],
             )
             go_elapsed = time.monotonic() - started
             go_exit = proc.returncode
             text = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
             go_json_path.write_text(text)
-            if proc.stdout:
-                # Keep a human-readable tail without dumping the whole JSON stream.
-                events = [ln for ln in proc.stdout.splitlines() if '"Action":"fail"' in ln or '"Action":"pass"' in ln and '"Test":' not in ln]
-                for line in events[-20:]:
-                    try:
-                        ev = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if ev.get("Action") == "fail":
-                        print(f"FAIL {ev.get('Package')} {ev.get('Test') or ''}".rstrip(), flush=True)
+            go_tests_preview, _, _ = parse_go_json(text)
+            for meta in go_tests_preview.values():
+                if meta["action"] != "fail":
+                    continue
+                print(f"FAIL {meta['shortPackage']} {meta['name']}", flush=True)
+                out = (meta.get("output") or "").strip()
+                if out:
+                    print(out[-4000:], flush=True)
             if proc.returncode != 0 and not proc.stdout:
                 print(proc.stderr or "go test failed with no output", file=sys.stderr)
         go_tests, go_package_fail, build_failed = parse_go_json(text)

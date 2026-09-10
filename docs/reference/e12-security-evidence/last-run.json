@@ -4,16 +4,16 @@
   "relatesTo": 182,
   "partOf": 181,
   "keepIssueOpen": true,
-  "ranAt": "2026-09-10T10:57:01Z",
-  "gitSha": "57dcbd2bf29b7d9fe6473f3828b3aa858331f885",
-  "databaseUrlSet": false,
+  "ranAt": "2026-09-10T11:03:29Z",
+  "gitSha": "518fedd70cd9548b7c4a1f0ef7ba7f85f33ed149",
+  "databaseUrlSet": true,
   "go": {
     "exit": 0,
-    "elapsedSec": 17.675,
+    "elapsedSec": 10.616,
     "tests": {
-      "passed": 793,
+      "passed": 824,
       "failed": 0,
-      "skipped": 20
+      "skipped": 0
     },
     "packageFailures": []
   },
@@ -21,7 +21,7 @@
     {
       "id": "src/lib/embed-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.183,
+      "elapsedSec": 0.172,
       "exit": 0
     },
     {
@@ -33,115 +33,115 @@
     {
       "id": "src/lib/embed-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.167,
+      "elapsedSec": 0.164,
       "exit": 0
     },
     {
       "id": "src/lib/embed-tenancy-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.16,
+      "elapsedSec": 0.157,
       "exit": 0
     },
     {
       "id": "src/lib/session.test.ts",
       "status": "pass",
-      "elapsedSec": 0.102,
+      "elapsedSec": 0.105,
       "exit": 0
     },
     {
       "id": "src/lib/session-embed-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.163,
+      "elapsedSec": 0.16,
       "exit": 0
     },
     {
       "id": "src/lib/session-cookies.test.ts",
       "status": "pass",
-      "elapsedSec": 0.106,
+      "elapsedSec": 0.105,
       "exit": 0
     },
     {
       "id": "src/lib/session-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.171,
+      "elapsedSec": 0.162,
       "exit": 0
     },
     {
       "id": "src/lib/session-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.163,
+      "elapsedSec": 0.159,
       "exit": 0
     },
     {
       "id": "src/lib/csrf.test.ts",
       "status": "pass",
-      "elapsedSec": 0.102,
+      "elapsedSec": 0.106,
       "exit": 0
     },
     {
       "id": "src/lib/security-headers.test.ts",
       "status": "pass",
-      "elapsedSec": 0.164,
+      "elapsedSec": 0.166,
       "exit": 0
     },
     {
       "id": "src/lib/identity-headers.test.ts",
       "status": "pass",
-      "elapsedSec": 0.111,
+      "elapsedSec": 0.119,
       "exit": 0
     },
     {
       "id": "src/lib/identity-proxy.test.ts",
       "status": "pass",
-      "elapsedSec": 0.314,
+      "elapsedSec": 0.318,
       "exit": 0
     },
     {
       "id": "src/lib/portal-adapter-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.165,
+      "elapsedSec": 0.168,
       "exit": 0
     },
     {
       "id": "src/lib/portal-embed-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.171,
+      "elapsedSec": 0.174,
       "exit": 0
     },
     {
       "id": "src/lib/adv013-cross-origin-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.164,
+      "elapsedSec": 0.171,
       "exit": 0
     },
     {
       "id": "src/lib/dev-identity.test.ts",
       "status": "pass",
-      "elapsedSec": 0.096,
+      "elapsedSec": 0.098,
       "exit": 0
     },
     {
       "id": "src/lib/webhook-trigger-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.269,
+      "elapsedSec": 0.238,
       "exit": 0
     },
     {
       "id": "src/lib/webhook-trigger-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.269,
+      "elapsedSec": 0.287,
       "exit": 0
     },
     {
       "id": "src/lib/schedule-trigger-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.236,
+      "elapsedSec": 0.242,
       "exit": 0
     },
     {
       "id": "src/lib/isolation-exercises.test.ts",
       "status": "pass",
-      "elapsedSec": 0.092,
+      "elapsedSec": 0.095,
       "exit": 0
     },
     {
@@ -153,25 +153,25 @@
     {
       "id": "src/lib/approval-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.171,
+      "elapsedSec": 0.175,
       "exit": 0
     },
     {
       "id": "src/lib/credential.test.ts",
       "status": "pass",
-      "elapsedSec": 0.125,
+      "elapsedSec": 0.119,
       "exit": 0
     },
     {
       "id": "src/lib/credential-client.test.ts",
       "status": "pass",
-      "elapsedSec": 0.167,
+      "elapsedSec": 0.168,
       "exit": 0
     },
     {
       "id": "src/lib/script-ops-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.171,
+      "elapsedSec": 0.172,
       "exit": 0
     },
     {
@@ -183,37 +183,37 @@
     {
       "id": "src/lib/execution.test.ts",
       "status": "pass",
-      "elapsedSec": 0.212,
+      "elapsedSec": 0.214,
       "exit": 0
     },
     {
       "id": "src/lib/execution-replay.test.ts",
       "status": "pass",
-      "elapsedSec": 0.224,
+      "elapsedSec": 0.221,
       "exit": 0
     },
     {
       "id": "src/lib/ssh-retry-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.211,
+      "elapsedSec": 0.222,
       "exit": 0
     },
     {
       "id": "src/lib/script-io-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.166,
+      "elapsedSec": 0.171,
       "exit": 0
     },
     {
       "id": "src/lib/kubernetes-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.22,
+      "elapsedSec": 0.222,
       "exit": 0
     },
     {
       "id": "src/lib/core-http-notification-contract.test.ts",
       "status": "pass",
-      "elapsedSec": 0.168,
+      "elapsedSec": 0.166,
       "exit": 0
     }
   ],
@@ -222,7 +222,7 @@
       "id": "approved-bases",
       "title": "Approved Dockerfile bases",
       "status": "pass",
-      "elapsedSec": 0.029,
+      "elapsedSec": 0.028,
       "exit": 0,
       "expectNonZero": false
     },
@@ -257,9 +257,9 @@
       "title": "Identity, session, embed replay, and key rotation",
       "status": "pass",
       "go": {
-        "passed": 283,
+        "passed": 292,
         "failed": 0,
-        "skipped": 9
+        "skipped": 0
       },
       "goExamples": [
         "./internal/authz TestMatrixCoversRequiredFamilies",
@@ -342,7 +342,7 @@
         }
       ],
       "scripts": [],
-      "coverage": 300
+      "coverage": 309
     },
     {
       "id": "webhook-safety",
@@ -354,14 +354,14 @@
         "skipped": 0
       },
       "goExamples": [
-        "./internal/httpnotify TestWebhookIdempotencyHeader",
-        "./internal/schedule TestNextAfterTimezoneExplicit",
-        "./internal/schedule TestNextAfterRejectsUnknownTimezone",
-        "./internal/schedule TestNextAfterInterval",
-        "./internal/schedule TestPlanFiresNoCatchUpDefault",
-        "./internal/schedule TestPlanFiresCatchUpBounded",
-        "./internal/schedule TestPlanFiresOverlapSkip",
-        "./internal/schedule TestPlanFiresOverlapReject"
+        "./internal/httpapi TestWebhookTriggerCRUDRotateAndTenancy/viewer_cannot_create",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/bad_signature",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/timestamp_skew",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/oversize",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/unknown_trigger",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/replay",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/rate_limit",
+        "./internal/httpapi TestWebhookIngressValidAndFailClosed/disabled"
       ],
       "web": [
         {
@@ -385,19 +385,19 @@
       "title": "Cross-workspace isolation",
       "status": "pass",
       "go": {
-        "passed": 39,
+        "passed": 55,
         "failed": 0,
-        "skipped": 8
+        "skipped": 0
       },
       "goExamples": [
-        "./internal/identity TestMemoryRejectsPlatformAdminWorkspaceBinding",
-        "./internal/identity TestMemoryDeleteWorkspaceDisables",
-        "./internal/isolation TestCacheIsWorkspaceScoped",
-        "./internal/isolation TestCachePropagatesTenantWorkbench",
-        "./internal/isolation TestMemoryRejectsCrossWorkspaceReadWriteLinkAndUse",
-        "./internal/isolation TestMemorySameWorkspaceLinkSucceeds",
-        "./internal/isolation TestMemoryStampsTenantWorkbenchOnRecords",
-        "./internal/isolation TestAuthorizeRejectsClientWorkspaceGuess"
+        "./internal/approval TestPostgresIsolationAndAppendOnlyEvents",
+        "./internal/httpapi TestDispatchHostWorkspaceRejected",
+        "./internal/httpapi TestEmbedExchangeCrossTenantWorkbenchRejected",
+        "./internal/httpapi TestHostSuppliedWorkspaceIDIsRejected/header_workspace_id_without_tenant_workbench",
+        "./internal/httpapi TestHostSuppliedWorkspaceIDIsRejected/mismatched_host_workspace_id",
+        "./internal/httpapi TestHostSuppliedWorkspaceIDIsRejected/create_body_workspace_id",
+        "./internal/httpapi TestCrossWorkspaceHostIdentityIsRejected",
+        "./internal/httpapi TestIsolationAPIRejectsCrossWorkspaceSurfaces"
       ],
       "web": [
         {
@@ -406,26 +406,26 @@
         }
       ],
       "scripts": [],
-      "coverage": 40
+      "coverage": 56
     },
     {
       "id": "approval-expiry",
       "title": "Approval expiry",
       "status": "pass",
       "go": {
-        "passed": 23,
+        "passed": 24,
         "failed": 0,
-        "skipped": 1
+        "skipped": 0
       },
       "goExamples": [
         "./internal/approval TestMemoryCreateDecideAndInvalidate",
         "./internal/approval TestMemorySelfApprovalAndExpiry",
         "./internal/approval TestFreshnessInvalidatesChangedPolicy",
         "./internal/approval TestHasApproverRole",
+        "./internal/approval TestPostgresIsolationAndAppendOnlyEvents",
         "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/evaluate_returns_bound_requirement",
         "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/dispatch_without_approval_is_409_and_materializes_a_pending_row",
-        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/requester_cannot_self-approve",
-        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/operator_cannot_decide"
+        "./internal/httpapi TestPolicyEvaluateAndApprovalBoundary/requester_cannot_self-approve"
       ],
       "web": [
         {
@@ -438,26 +438,26 @@
         }
       ],
       "scripts": [],
-      "coverage": 25
+      "coverage": 26
     },
     {
       "id": "credential-artifact-revocation",
       "title": "Credential and artifact revocation",
       "status": "pass",
       "go": {
-        "passed": 23,
+        "passed": 25,
         "failed": 0,
-        "skipped": 2
+        "skipped": 0
       },
       "goExamples": [
-        "./internal/session TestMemoryCreateLookupRefreshRevoke",
-        "./internal/session TestMemoryRevokeBoundToWorkspaceLeavesUnrelatedSessions",
         "./internal/httpapi TestScriptRevokeAndEmergencyStop/catalog_documents_revoke_and_emergency_stop",
         "./internal/httpapi TestScriptRevokeAndEmergencyStop/viewer_cannot_revoke",
         "./internal/httpapi TestScriptRevokeAndEmergencyStop/revoked_cannot_start",
         "./internal/httpapi TestScriptRevokeAndEmergencyStop/dispatch_rechecks_revocation_on_claim",
         "./internal/httpapi TestScriptRevokeAndEmergencyStop/emergency_stop_permission_deny",
-        "./internal/httpapi TestScriptRevokeAndEmergencyStop/uncertain_stop_is_indeterminate_and_audited"
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/uncertain_stop_is_indeterminate_and_audited",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/policy_deny_emergency_stop",
+        "./internal/httpapi TestCredentialVaultCreateRotateTestNeverReturnsPlaintext"
       ],
       "web": [
         {
@@ -478,16 +478,16 @@
         }
       ],
       "scripts": [],
-      "coverage": 27
+      "coverage": 29
     },
     {
       "id": "artifact-output-authz",
       "title": "Artifact and output authorization, redaction, and legal holds",
       "status": "pass",
       "go": {
-        "passed": 32,
+        "passed": 36,
         "failed": 0,
-        "skipped": 1
+        "skipped": 0
       },
       "goExamples": [
         "./internal/artifact TestMemoryAndFilesystemRoundTrip",
@@ -497,7 +497,7 @@
         "./internal/artifact TestScanRejectsSecretClassification",
         "./internal/artifact TestSanitizeFilename",
         "./internal/artifact TestBoundLines",
-        "./internal/httpnotify TestOversizeDenied"
+        "./internal/httpapi TestArtifactUploadDownloadRetentionAndHold/rejects_unsafe_content_before_upload"
       ],
       "web": [
         {
@@ -510,16 +510,16 @@
         }
       ],
       "scripts": [],
-      "coverage": 34
+      "coverage": 38
     },
     {
       "id": "stale-worker-fencing",
       "title": "Stale-worker fencing",
       "status": "pass",
       "go": {
-        "passed": 20,
+        "passed": 21,
         "failed": 0,
-        "skipped": 1
+        "skipped": 0
       },
       "goExamples": [
         "./internal/httpapi TestDispatchClaimFenceCancelAndLeaseLoss/viewer_cannot_cancel_or_claim",
@@ -542,7 +542,7 @@
         }
       ],
       "scripts": [],
-      "coverage": 22
+      "coverage": 23
     },
     {
       "id": "provider-failure",
@@ -554,14 +554,14 @@
         "skipped": 0
       },
       "goExamples": [
-        "./internal/kubernetes TestApplyDryRunThenPersist",
-        "./internal/kubernetes TestApplyWaitReadySkipsNonObservable",
-        "./internal/kubernetes TestApplyOwnershipConflictNeverForced",
-        "./internal/kubernetes TestApplyPolicyAndRBACDenial/namespace_policy",
-        "./internal/kubernetes TestApplyPolicyAndRBACDenial/rbac",
-        "./internal/kubernetes TestApplyPolicyAndRBACDenial/flowforge_permission",
-        "./internal/kubernetes TestApplyPolicyAndRBACDenial/secret",
-        "./internal/kubernetes TestGetListNamespaceIsolation"
+        "./internal/httpapi TestScriptMutableArtifactRejectedAtExecute/draft_status",
+        "./internal/httpapi TestScriptMutableArtifactRejectedAtExecute/pending_scan",
+        "./internal/httpapi TestScriptMutableArtifactRejectedAtExecute/unsigned",
+        "./internal/httpapi TestScriptMutableArtifactRejectedAtExecute/failed_scan",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/catalog_documents_revoke_and_emergency_stop",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/viewer_cannot_revoke",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/revoked_cannot_start",
+        "./internal/httpapi TestScriptRevokeAndEmergencyStop/dispatch_rechecks_revocation_on_claim"
       ],
       "web": [
         {
@@ -590,14 +590,14 @@
         "skipped": 0
       },
       "goExamples": [
+        "./internal/httpapi TestHTTPNotificationCatalogAndPins/catalogs_document_the_integration_gate",
+        "./internal/httpapi TestHTTPNotificationCatalogAndPins/connection_rejects_non-token_credentials",
+        "./internal/httpapi TestHTTPNotificationCatalogAndPins/publish_pins_http_connection_and_rejects_wrong_type",
+        "./internal/httpapi TestHTTPNotificationCatalogAndPins/cross-workspace_connection_cannot_be_pinned",
         "./internal/httpnotify TestApprovedHTTPRequest",
         "./internal/httpnotify TestSSRFDenied",
         "./internal/httpnotify TestDNSRebindingDenied",
-        "./internal/httpnotify TestRedirectDenied",
-        "./internal/httpnotify TestRedirectHopRevalidated",
-        "./internal/httpnotify TestOversizeDenied",
-        "./internal/httpnotify TestSecretRedaction",
-        "./internal/httpnotify TestWrongConnectionType"
+        "./internal/httpnotify TestRedirectDenied"
       ],
       "web": [
         {
