@@ -27,6 +27,7 @@ type ActionLibraryProps = {
   onRefresh: () => void;
   onInsert?: (entry: ActionLibraryEntry) => void;
   onOpenWizard?: (entry?: ActionLibraryEntry) => void;
+  compact?: boolean;
 };
 
 export function ActionLibrary({
@@ -38,6 +39,7 @@ export function ActionLibrary({
   onRefresh,
   onInsert,
   onOpenWizard,
+  compact = false,
 }: ActionLibraryProps) {
   const visible = filterActionLibrary(entries, query);
   const triggersWorkflowLevel = catalogExcludesTriggerNodes(catalog);
@@ -46,20 +48,30 @@ export function ActionLibrary({
   return (
     <section
       aria-labelledby="action-library-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={
+        compact
+          ? "bg-white p-3"
+          : "rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      }
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="action-library-heading" className="text-base font-semibold">
             Action library
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Enabled catalog implementations only (
-            <code className="font-mono text-xs">phase: core</code>
-            {", next/provider if enabled"}). Triggers stay on{" "}
-            <code className="font-mono text-xs">spec.triggers</code>
-            {triggersWorkflowLevel ? " (rules.triggersAreWorkflowLevel)." : "."}
-          </p>
+          {compact ? (
+            <p className="mt-1 text-xs text-zinc-600">
+              Enabled catalog actions. Triggers stay workflow-level.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-zinc-600">
+              Enabled catalog implementations only (
+              <code className="font-mono text-xs">phase: core</code>
+              {", next/provider if enabled"}). Triggers stay on{" "}
+              <code className="font-mono text-xs">spec.triggers</code>
+              {triggersWorkflowLevel ? " (rules.triggersAreWorkflowLevel)." : "."}
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2">
           {onOpenWizard ? (
@@ -92,13 +104,15 @@ export function ActionLibrary({
         />
       </label>
 
-      <p className="mt-2 text-xs text-zinc-500">
-        {fromCatalog
-          ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry.ui / retry.probe (#90). Scripts prefer GET /scripts/catalog io / retry.ui / retry.probe (#101) plus revocation / emergencyStop (#103). HTTP/notification prefer GET /http/catalog + httpNotificationEngine (#118) and hide when the integration gate is off. Retry defaults to zero; maxAttempts>0 needs retrySafe + idempotencyKey + verification. Retry is gated on result.retry.allowed; POST …/retry is 409 when closed. Revoked artifacts cannot start; emergency stop is distinct from cancel."
-          : "Showing the published core-neutral, Kubernetes read/apply, ssh.run, script, and HTTP/notification contract fallback until catalogs load. Script typed I/O uses the marked e93-#101 map. Revoke/stop uses the marked e94-#103 map (GET /scripts/catalog revocation / emergencyStop). HTTP/notification uses the marked e104-#118 map."}
-      </p>
+      {compact ? null : (
+        <p className="mt-2 text-xs text-zinc-500">
+          {fromCatalog
+            ? "Ports, policy, and bounds come from GET /workflows/catalog. Kubernetes read/apply prefer GET /kubernetes/catalog nodes[] / errors[] / apply (#78) when listed. ssh.run prefers GET /ssh/catalog nodes[] / retry.ui / retry.probe (#90). Scripts prefer GET /scripts/catalog io / retry.ui / retry.probe (#101) plus revocation / emergencyStop (#103). HTTP/notification prefer GET /http/catalog + httpNotificationEngine (#118) and hide when the integration gate is off. Retry defaults to zero; maxAttempts>0 needs retrySafe + idempotencyKey + verification. Retry is gated on result.retry.allowed; POST …/retry is 409 when closed. Revoked artifacts cannot start; emergency stop is distinct from cancel."
+            : "Showing the published core-neutral, Kubernetes read/apply, ssh.run, script, and HTTP/notification contract fallback until catalogs load. Script typed I/O uses the marked e93-#101 map. Revoke/stop uses the marked e94-#103 map (GET /scripts/catalog revocation / emergencyStop). HTTP/notification uses the marked e104-#118 map."}
+        </p>
+      )}
 
-      <div className="mt-4 max-h-[36rem] space-y-4 overflow-auto pr-1">
+      <div className={compact ? "mt-3 space-y-3 pr-1" : "mt-4 max-h-[36rem] space-y-4 overflow-auto pr-1"}>
         {ACTION_FAMILY_ORDER.map((family) => {
           const items = visible.filter((entry) => entry.family === family && entry.placeable);
           if (items.length === 0) {

@@ -125,7 +125,7 @@ export function WorkspaceShell({
   const shell = embed ? (
     <WorkspaceProvider>
       <EmbedDeepLinkGuard>
-        <div className="flex min-h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
           {skipLink}
           <EmbedChrome
             hostDisplay={hostDisplay}
@@ -134,7 +134,7 @@ export function WorkspaceShell({
             sessionActive={session.active}
             sessionChecked={sessionChecked}
           />
-          <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
+          <div id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto outline-none">
             {!sessionChecked ? (
               <p className="px-6 py-10 text-sm text-zinc-500">
                 Checking FlowForge session…
@@ -157,7 +157,7 @@ export function WorkspaceShell({
     </WorkspaceProvider>
   ) : (
     <WorkspaceProvider>
-      <div className="flex min-h-full">
+      <div className="flex h-full min-h-0 overflow-hidden">
         {skipLink}
         <aside
           id="workspace-nav"
@@ -179,7 +179,7 @@ export function WorkspaceShell({
             </a>
           </p>
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="border-b border-zinc-200 bg-white/80">
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <button
@@ -201,7 +201,7 @@ export function WorkspaceShell({
               <SessionExpiryBanner />
             </div>
           </header>
-          <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
+          <div id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto outline-none">
             {children}
           </div>
         </div>
