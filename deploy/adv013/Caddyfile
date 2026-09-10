@@ -1,0 +1,24 @@
+# ADV-013 two-origin TLS terminator (optional; the Node portal-host
+# can terminate TLS itself). Use with:
+#   caddy run --config deploy/adv013/Caddyfile
+#
+# /etc/hosts (or Chrome --host-resolver-rules):
+#   127.0.0.1 portal.test embed.test evil.test
+
+{
+	local_certs
+}
+
+https://portal.test:8443 {
+	reverse_proxy 127.0.0.1:8450
+}
+
+https://embed.test:8444 {
+	reverse_proxy 127.0.0.1:3000
+	header_up X-Forwarded-Proto https
+	header_up X-Forwarded-Host embed.test:8444
+}
+
+https://evil.test:8445 {
+	reverse_proxy 127.0.0.1:8451
+}

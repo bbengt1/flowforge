@@ -1,0 +1,27 @@
+# ADV-013 overlay on the root compose stack.
+#   export POSTGRES_PASSWORD=...
+#   export WEB_PORTAL_FRAME_ANCESTORS=https://portal.test:8443
+#   export PORTAL_FRAME_ANCESTORS=https://portal.test:8443
+#   docker compose -f docker-compose.yml -f deploy/adv013/docker-compose.yml up --build
+#
+# Then run: bash scripts/adv013-cross-origin.sh --attach
+#
+# Portal host origin (https://portal.test:8443) ≠ embed origin
+# (https://embed.test:8444). Add those names to /etc/hosts → 127.0.0.1.
+
+name: flowforge
+
+services:
+  api:
+    environment:
+      WEB_PORTAL_FRAME_ANCESTORS: ${WEB_PORTAL_FRAME_ANCESTORS:-https://portal.test:8443}
+      WEB_EMBED_FRAME_ANCESTORS: ${WEB_EMBED_FRAME_ANCESTORS:-}
+      PORTAL_FRAME_ANCESTORS: ${PORTAL_FRAME_ANCESTORS:-https://portal.test:8443}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://embed.test:8444,https://portal.test:8443,http://localhost:3000}
+
+  web:
+    environment:
+      WEB_PORTAL_FRAME_ANCESTORS: ${WEB_PORTAL_FRAME_ANCESTORS:-https://portal.test:8443}
+      WEB_EMBED_FRAME_ANCESTORS: ${WEB_EMBED_FRAME_ANCESTORS:-}
+      WEB_HSTS: ${WEB_HSTS:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}

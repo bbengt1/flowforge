@@ -40,6 +40,9 @@ export function proxy(request: NextRequest) {
     request: { headers: requestHeaders },
   });
   applySecurityHeaders(response.headers, headerOptions);
+  if (requestHeaders.get(EMBED_REJECTED_ASSERTION_HEADER) === "1") {
+    response.headers.set(EMBED_REJECTED_ASSERTION_HEADER, "1");
+  }
   return response;
 }
 

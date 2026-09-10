@@ -76,6 +76,27 @@ jobs:
       - name: Test
         run: go test ./...
 
+  web-tests:
+    name: Web unit tests (ADV-013 checklist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --filter @flowforge/web...
+      - name: Test
+        run: pnpm --filter @flowforge/web test
+
   image-scan:
     name: API image SBOM and vulnerability scan
     runs-on: ubuntu-latest

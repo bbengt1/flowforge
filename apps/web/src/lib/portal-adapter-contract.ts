@@ -24,6 +24,11 @@
  * ADV-011: Portal + embed frame ancestors share one allowlist with
  * postMessage. Prefer GET /portal/adapter frameAncestors (same merge
  * as GET /embed/catalog). Empty fails closed.
+ *
+ * ADV-013: prove the adapter on two distinct HTTPS origins (Portal
+ * host ≠ embed). In-repo /portal/workflows is same-origin only.
+ * Cross-origin hosts use deliverCrossOriginPortalAssertion and
+ * buildCrossOriginPortalEmbedSrc. See adv013-cross-origin-contract.ts.
  */
 
 import {
@@ -449,6 +454,58 @@ export function buildPortalEmbedSrc(input: {
     rejectedAssertion: leaked.rejected,
     displayOnly: true,
   };
+}
+
+export type CrossOriginPortalEmbedSrc = PortalEmbedSrc & {
+  embedOrigin: string;
+  portalOrigin?: string;
+};
+
+/**
+ * ADV-013: iframe src on a Portal origin ≠ embed origin.
+ * Assertion still never attached. embedOrigin must be an exact http(s) origin.
+ */
+export function buildCrossOriginPortalEmbedSrc(input: {
+  embedOrigin: string;
+  routeId?: EmbedRouteId;
+  standalone?: string;
+  params?: Record<string, string>;
+  display: PortalHostDisplay;
+  leakedSearch?: string;
+}): CrossOriginPortalEmbedSrc {
+  const built = buildPortalEmbedSrc(input);
+  const embedOrigin = normalizeExactOrigin(input.embedOrigin);
+  return {
+    ...built,
+    src: embedOrigin ? `${embedOrigin}${built.src}` : built.src,
+    embedOrigin,
+  };
+}
+
+export function normalizeExactOrigin(raw: string | undefined): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed || trimmed === "*" || trimmed.toLowerCase() === "null") {
+    return "";
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return "";
+    }
+    if (parsed.username) {
+      return "";
+    }
+    return parsed.origin;
+  } catch {
+    return "";
+  }
+}
+
+/** Distinct registrable-looking HTTPS origins (scheme+host+port). */
+export function isDistinctOriginPair(a: string, b: string): boolean {
+  const left = normalizeExactOrigin(a);
+  const right = normalizeExactOrigin(b);
+  return Boolean(left && right && left !== right);
 }
 
 export function portalUrlContainsAssertion(url: string): boolean {

@@ -29,8 +29,10 @@ import {
   PORTAL_ROUTE_MAP_SOURCE,
   PORTAL_SDK,
   PORTAL_STORY,
+  buildCrossOriginPortalEmbedSrc,
   buildPortalAssertionMessage,
   buildPortalEmbedSrc,
+  isDistinctOriginPair,
   frameSrcForPath,
   isPortalHostPath,
   mapPortalRoles,
@@ -201,5 +203,19 @@ describe("portal adapter contract", () => {
       version: 1,
       assertion: jws,
     });
+
+    assert.equal(
+      isDistinctOriginPair("https://portal.test:8443", "https://embed.test:8444"),
+      true,
+    );
+    const cross = buildCrossOriginPortalEmbedSrc({
+      embedOrigin: "https://embed.test:8444",
+      display,
+      leakedSearch: "?token=a.b.c",
+    });
+    assert.equal(cross.embedOrigin, "https://embed.test:8444");
+    assert.ok(cross.src.startsWith("https://embed.test:8444/embed/v1/workflows?"));
+    assert.equal(cross.rejectedAssertion, true);
+    assert.equal(cross.src.includes("token="), false);
   });
 });
