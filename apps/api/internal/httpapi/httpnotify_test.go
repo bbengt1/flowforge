@@ -10,6 +10,8 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func TestHTTPNotificationCatalogAndPins(t *testing.T) {
@@ -39,12 +41,64 @@ func TestHTTPNotificationCatalogAndPins(t *testing.T) {
 		if !cat.Gate.Enabled || len(cat.Nodes) != 3 || !cat.Isolation.SSRFDenied {
 			t.Fatalf("http catalog = %+v", cat)
 		}
+		prev := workflow.IntegrationActionsEnabled
+		workflow.IntegrationActionsEnabled = false
+		t.Cleanup(func() { workflow.IntegrationActionsEnabled = prev })
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/http/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("disabled http catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+			t.Fatal(err)
+		}
+		if cat.Gate.Enabled {
+			t.Fatalf("http catalog ignored kill switch: %+v", cat.Gate)
+		}
+		for _, n := range cat.Nodes {
+			if n.Enabled {
+				t.Fatalf("disabled catalog still enabled node %s", n.Type)
+			}
+		}
+		rec = httptest.NewRecorder()
+		req = workspaceRequest(http.MethodGet, "/api/v1/ops-config/catalog", nil, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("disabled ops catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		var opsCat opsconfig.Catalog
+		if err := json.Unmarshal(rec.Body.Bytes(), &opsCat); err != nil {
+			t.Fatal(err)
+		}
+		if opsCat.HTTPNotification.Gate.Enabled {
+			t.Fatalf("ops catalog ignored kill switch: %+v", opsCat.HTTPNotification.Gate)
+		}
+		workflow.IntegrationActionsEnabled = prev
 		rec = httptest.NewRecorder()
 		req = workspaceRequest(http.MethodGet, "/api/v1/workflows/catalog", nil, admin, tenant, wsA)
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"integrationGate"`) {
 			t.Fatalf("workflow catalog: %d %s", rec.Code, rec.Body.String())
 		}
+	})
+
+	t.Run("connection rejects non-token credentials", func(t *testing.T) {
+		kube := createKubernetesCredential(t, h, admin, tenant, wsA, "HTTP-Kube")
+		body, _ := json.Marshal(map[string]any{
+			"name": "bad-conn-cred",
+			"spec": map[string]any{
+				"type":         "http",
+				"credentialId": kube.ID,
+				"endpointPolicy": map[string]any{
+					"hosts": []string{"status.example.com"}, "methods": []string{"GET"}, "pathPrefixes": []string{"/"},
+				},
+			},
+		})
+		rec := httptest.NewRecorder()
+		req := workspaceJSON(http.MethodPost, "/api/v1/connections", body, admin, tenant, wsA)
+		h.ServeHTTP(rec, req)
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
 	})
 
 	httpConn := publishTypedConnection(t, h, admin, tenant, wsA, "status-http", "http", []string{"status.example.com"})

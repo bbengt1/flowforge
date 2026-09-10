@@ -148,18 +148,39 @@ func Catalog() EngineCatalog {
 			"workflow.execute", "connection.use", "recipientList.use",
 			"messageTemplate.use", "responseSchema.use", "policy.use",
 		},
-		Gate: Gate(),
+		Gate: GateWithEnabled(true),
 	}
+}
+
+// CatalogWithEnabled is Catalog with the configured integration kill switch.
+// INTEGRATION_ACTIONS_ENABLED=false must disable advertised nodes so Chloe
+// does not offer actions the server will reject.
+func CatalogWithEnabled(enabled bool) EngineCatalog {
+	cat := Catalog()
+	cat.Gate = GateWithEnabled(enabled)
+	for i := range cat.Nodes {
+		cat.Nodes[i].Enabled = enabled
+	}
+	return cat
 }
 
 // Gate documents that the integration suite is the enablement check.
 func Gate() IntegrationGate {
+	return GateWithEnabled(true)
+}
+
+// GateWithEnabled reports the configured kill-switch state.
+func GateWithEnabled(enabled bool) IntegrationGate {
+	note := "http.request, notification.webhook, and notification.email are catalog-enabled because the negative SSRF/redirect/DNS-rebinding/TLS/secret-field/redaction/tenancy suite is implemented. Set INTEGRATION_ACTIONS_ENABLED=false to disable publish, execute, and HTTP/ops catalogs."
+	if !enabled {
+		note = "Integration actions are disabled (INTEGRATION_ACTIONS_ENABLED=false). Catalogs advertise enabled=false; validate/publish/execute reject the three node types."
+	}
 	return IntegrationGate{
 		Name:    "integration",
-		Enabled: true,
+		Enabled: enabled,
 		Nodes:   IntegrationNodes(),
 		Suites:  IntegrationSuites(),
-		Note:    "http.request, notification.webhook, and notification.email are catalog-enabled because the negative SSRF/redirect/DNS-rebinding/TLS/secret-field/redaction/tenancy suite is implemented. Set INTEGRATION_ACTIONS_ENABLED=false to disable publish and execute.",
+		Note:    note,
 	}
 }
 

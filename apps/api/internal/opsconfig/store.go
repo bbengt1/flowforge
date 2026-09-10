@@ -155,11 +155,16 @@ type Catalog struct {
 
 // TypeCatalog returns kind/collection/YAML field shapes plus engine rules.
 func TypeCatalog() Catalog {
+	return TypeCatalogWithGate(true)
+}
+
+// TypeCatalogWithGate applies the integration kill switch to httpNotificationEngine.
+func TypeCatalogWithGate(integrationEnabled bool) Catalog {
 	return Catalog{
 		Kinds:            KindInfos(),
 		Kubernetes:       kubernetes.Catalog(),
 		SSH:              ssheng.Catalog(),
 		Script:           scripts.Catalog(),
-		HTTPNotification: httpnotify.Catalog(),
+		HTTPNotification: httpnotify.CatalogWithEnabled(integrationEnabled),
 	}
 }

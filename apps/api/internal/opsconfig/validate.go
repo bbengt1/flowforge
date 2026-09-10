@@ -675,6 +675,9 @@ func normalizeMessageTemplate(spec map[string]any) (map[string]any, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("%w: inputSchema is required", ErrInvalid)
 	}
+	if err := rejectInvalidPinnedSchema(schema, "inputSchema"); err != nil {
+		return nil, err
+	}
 	class, ok, err := optionalString(spec, "contentClassification", 1, 32)
 	if err != nil || !ok {
 		return nil, fmt.Errorf("%w: contentClassification is required", ErrInvalid)
@@ -716,6 +719,9 @@ func normalizeResponseSchema(spec map[string]any) (map[string]any, error) {
 	}
 	if schema == nil {
 		return nil, fmt.Errorf("%w: schema is required", ErrInvalid)
+	}
+	if err := rejectInvalidPinnedSchema(schema, "schema"); err != nil {
+		return nil, err
 	}
 	raw, exists := spec["maxBytes"]
 	if !exists {
@@ -1444,6 +1450,13 @@ func asInt(raw any) (int, error) {
 	default:
 		return 0, ErrInvalid
 	}
+}
+
+func rejectInvalidPinnedSchema(schema map[string]any, path string) error {
+	if errs := workflow.ValidateDeclaredSchema(schema, path); len(errs) > 0 {
+		return fmt.Errorf("%w: %s", ErrInvalid, errs[0].Error())
+	}
+	return nil
 }
 
 func rejectUnknown(spec map[string]any, allowed ...string) error {

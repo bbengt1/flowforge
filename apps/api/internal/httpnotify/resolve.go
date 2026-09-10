@@ -144,6 +144,55 @@ func VerifyResolvedAddresses(host string, resolved []net.IP, allowlist []string,
 	return nil
 }
 
+// AddressOrNetworkCovered reports whether a connection IP or CIDR is contained
+// by a policy allowlist of IPs/CIDRs. A tighter connection range (for example
+// 203.0.113.0/25) is allowed when the policy lists a covering network
+// (203.0.113.0/24). Hostnames fall back to case-insensitive equality.
+func AddressOrNetworkCovered(allowlist []string, item string) bool {
+	item = strings.TrimSpace(item)
+	if item == "" || len(allowlist) == 0 {
+		return false
+	}
+	if ip := net.ParseIP(item); ip != nil {
+		return AddressAllowed(allowlist, ip)
+	}
+	if _, child, err := net.ParseCIDR(item); err == nil && child != nil {
+		for _, parent := range allowlist {
+			if networkCovers(parent, child) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, parent := range allowlist {
+		if strings.EqualFold(strings.TrimSpace(parent), item) {
+			return true
+		}
+	}
+	return false
+}
+
+func networkCovers(parent string, child *net.IPNet) bool {
+	parent = strings.TrimSpace(parent)
+	if child == nil || parent == "" {
+		return false
+	}
+	if ip := net.ParseIP(parent); ip != nil {
+		ones, bits := child.Mask.Size()
+		return ones == bits && child.Contains(ip)
+	}
+	_, pnet, err := net.ParseCIDR(parent)
+	if err != nil || pnet == nil {
+		return false
+	}
+	pOnes, pBits := pnet.Mask.Size()
+	cOnes, cBits := child.Mask.Size()
+	if pBits != cBits || cOnes < pOnes {
+		return false
+	}
+	return pnet.Contains(child.IP)
+}
+
 // AddressAllowed reports whether ip matches an IP or CIDR allowlist member.
 func AddressAllowed(allowlist []string, ip net.IP) bool {
 	if ip == nil || len(allowlist) == 0 {

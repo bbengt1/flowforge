@@ -944,7 +944,7 @@ Last story on epic #105. Relates to #109 / Part of #105 — **Keep #109 open** (
 
 `http.request`, `notification.webhook`, and `notification.email` use pinned, server-authorized connection / recipient-list / message-template / response-schema revisions. YAML stores **resource UUIDs only** (`connectionId`, `recipientListId`, `templateId`, `responseSchemaRef`, `policyId`). Publish and execution start pin the published revision; later draft edits do not retarget a pin.
 
-**Integration gate:** the nodes are catalog-enabled because the negative suite is implemented (SSRF, redirect, DNS-rebinding, oversize, secret redaction, wrong connection type, unpublished pin, tenancy, email recipient deny). `GET /workflows/catalog` exposes `rules.integrationActionsEnabled` and `integrationGate`. Set `INTEGRATION_ACTIONS_ENABLED=false` to reject the three types at validate/publish.
+**Integration gate:** the nodes are catalog-enabled because the negative suite is implemented (SSRF, redirect, DNS-rebinding, oversize, secret redaction, wrong connection type, unpublished pin, tenancy, email recipient deny). `GET /workflows/catalog` exposes `rules.integrationActionsEnabled` and `integrationGate`. `GET /http/catalog` and `GET /ops-config/catalog` (`httpNotificationEngine.integrationGate` / node `enabled`) receive the same configured gate. Set `INTEGRATION_ACTIONS_ENABLED=false` to reject the three types at validate/publish and to advertise `enabled: false` on those catalogs.
 
 **UI route map (Chloe):** do **not** rewrite `apps/web` in this API story. Cookie session + `credentials: "include"`; send `X-CSRF-Token` on POST. JSON is camelCase. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`. Cross-workspace UUIDs are `404`. Wizard/library should read `GET /workflows/catalog` (`allowedWith`, `policy`, `bounds`, `redaction`, `integrationGate`) and `GET /http/catalog` / `GET /ops-config/catalog` (`httpNotificationEngine`). Connection pickers list workspace connections whose `type` matches the node (`http` / `webhook` / `smtp`). Next proxies can expose `/api/control-plane/http/catalog`.
 
@@ -966,9 +966,11 @@ HTTP/webhook delivery:
 4. Link-local and metadata addresses (`169.254.0.0/16`, `fe80::/10`, `169.254.169.254`, AWS IPv6 IMDS `fd00:ec2::254`) are always denied, even when private destinations are opted in. Only `kind=http` / `kind=notification` policies may set `allowPrivateDestinations`; other kinds (including `approval`) are ignored.
 5. Denied problems use a redacted reason (`destination resolved to a non-public address` or `link-local and metadata addresses are denied`) and do not echo resolved private IPs.
 6. Connect only to the verified address. TLS verification cannot be skipped. `tlsRequired` defaults true.
-7. Redirects default deny. When `allowRedirects=true`, each hop is re-resolved and re-checked for host/method/path/TLS/address and private/loopback policy (max 5).
+7. Redirects default deny. When `allowRedirects=true`, each hop is re-resolved and re-checked for host/method/path/TLS/address and private/loopback policy (max 5), and the transport re-pins the verified destination address/port/TLS server name for that hop.
 8. Request/response bodies are capped (`maxRequestBytes` / `maxResponseBytes`, default 16 KiB, hard 1 MiB).
-9. Secret-bearing payload fields require `endpointPolicy.secretFields`. Results and audit records are redacted.
+9. Secret-bearing payload fields require `endpointPolicy.secretFields`. Results and audit records are redacted, including known request/credential secret values echoed under other keys.
+10. Pinned response schemas and email template input schemas are fully validated (types, enums, bounds, `additionalProperties`).
+11. Connections may bind only `token` vault credentials. HTTP/notification policy address allowlists use CIDR containment (a tighter connection range is allowed when the policy covers it).
 
 Email delivery uses only the pinned recipient-list emails/domains and the pinned message-template revision. `{name}` placeholders may interpolate explicit typed string inputs; `{{` / `${` are denied. Payload `to` / `recipients` is `recipient-denied`.
 

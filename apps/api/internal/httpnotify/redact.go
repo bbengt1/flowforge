@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-const redactedMarker = "[redacted]"
+const (
+	redactedMarker     = "[redacted]"
+	minTrackedSecretLen = 4
+)
 
 var secretKeyPart = regexp.MustCompile(`(?i)(password|passwd|secret|token|authorization|credential|api[_-]?key|private[_-]?key|passphrase|kubeconfig|ciphertext|bearer|smtp)`)
 
@@ -56,12 +59,66 @@ func walkSecrets(v any, path string, policy EndpointPolicy) *EngineError {
 	return nil
 }
 
-// RedactValue strips secret-shaped keys and values from engine outputs.
-func RedactValue(v any) any {
-	return redactValue(v, 0)
+// CollectSecretValues records request/credential secret strings so echoed
+// values can be scrubbed even when they appear under innocuous keys.
+func CollectSecretValues(payload map[string]any, policy EndpointPolicy, extras ...string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	var add func(string)
+	add = func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+		lower := strings.ToLower(s)
+		if strings.HasPrefix(lower, "bearer ") {
+			add(strings.TrimSpace(s[7:]))
+		}
+	}
+	for _, extra := range extras {
+		add(extra)
+	}
+	collectSecretWalk(payload, "", policy, add)
+	return out
 }
 
-func redactValue(v any, depth int) any {
+func collectSecretWalk(v any, path string, policy EndpointPolicy, add func(string)) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			field := k
+			if path != "" {
+				field = path + "." + k
+			}
+			if shouldRedactKey(k) || SecretFieldAuthorized(policy, k) || SecretFieldAuthorized(policy, field) {
+				if s, ok := child.(string); ok {
+					add(s)
+				}
+			}
+			collectSecretWalk(child, field, policy, add)
+		}
+	case []any:
+		for _, child := range t {
+			collectSecretWalk(child, path, policy, add)
+		}
+	case string:
+		if looksLikeSecretString(t) {
+			add(t)
+		}
+	}
+}
+
+// RedactValue strips secret-shaped keys and known secret values from outputs.
+func RedactValue(v any, secrets ...string) any {
+	return redactValue(v, secrets, 0)
+}
+
+func redactValue(v any, secrets []string, depth int) any {
 	if depth > 16 || v == nil {
 		return v
 	}
@@ -73,33 +130,43 @@ func redactValue(v any, depth int) any {
 				out[k] = redactedMarker
 				continue
 			}
-			out[k] = redactValue(child, depth+1)
+			out[k] = redactValue(child, secrets, depth+1)
 		}
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, child := range t {
-			out[i] = redactValue(child, depth+1)
+			out[i] = redactValue(child, secrets, depth+1)
 		}
 		return out
 	case []string:
 		out := make([]string, len(t))
 		for i, child := range t {
-			if looksLikeSecretString(child) {
-				out[i] = redactedMarker
-			} else {
-				out[i] = child
-			}
+			out[i] = redactSecretString(child, secrets)
 		}
 		return out
 	case string:
-		if looksLikeSecretString(t) {
-			return redactedMarker
-		}
-		return t
+		return redactSecretString(t, secrets)
 	default:
 		return v
 	}
+}
+
+func redactSecretString(s string, secrets []string) string {
+	if looksLikeSecretString(s) {
+		return redactedMarker
+	}
+	for _, secret := range secrets {
+		if secret != "" && s == secret {
+			return redactedMarker
+		}
+	}
+	for _, secret := range secrets {
+		if len(secret) >= minTrackedSecretLen && strings.Contains(s, secret) {
+			s = strings.ReplaceAll(s, secret, redactedMarker)
+		}
+	}
+	return s
 }
 
 func shouldRedactKey(key string) bool {
