@@ -17,16 +17,8 @@ import {
   subscribeHeaderFallback,
 } from "@/lib/header-fallback";
 import { emptyDevIdentity, type DevIdentity } from "@/lib/identity-headers";
+import { LOCAL_SEED_EXAMPLE_IDENTITY } from "@/lib/local-seed-example";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
-
-const EXAMPLE_IDENTITY: DevIdentity = {
-  issuer: "https://flowforge.local",
-  subject: "operator-chloe",
-  displayName: "Chloe (dev)",
-  tenantId: "",
-  tenantSlug: "",
-  workbenchKey: "",
-};
 
 export function IsolationIdentityPanel() {
   const identity = useSyncExternalStore(
@@ -56,7 +48,7 @@ export function IsolationIdentityPanel() {
       <IdentityBootstrap
         identity={identity}
         onChange={updateIdentity}
-        onExample={() => updateIdentity({ ...EXAMPLE_IDENTITY })}
+        onExample={() => updateIdentity({ ...LOCAL_SEED_EXAMPLE_IDENTITY })}
         onClear={() => {
           clearDevIdentity();
           setHeaderFallback(false);

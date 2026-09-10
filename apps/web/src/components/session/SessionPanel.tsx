@@ -20,11 +20,16 @@ import {
 } from "@/lib/session-client";
 import type { SessionAuditEvent } from "@/lib/session-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import {
+  LOCAL_SEED_DISPLAY_NAME,
+  LOCAL_SEED_ISSUER,
+  LOCAL_SEED_SUBJECT,
+} from "@/lib/local-seed-example";
 
 const EXAMPLE_LOGIN = {
-  issuer: "https://flowforge.local",
-  subject: "operator-chloe",
-  displayName: "Chloe (dev)",
+  issuer: LOCAL_SEED_ISSUER,
+  subject: LOCAL_SEED_SUBJECT,
+  displayName: LOCAL_SEED_DISPLAY_NAME,
 };
 
 export function SessionPanel() {

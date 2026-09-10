@@ -186,15 +186,13 @@ the seeded rows for `admin-1` once workspace lookup is
 identity (or a cookie session for that principal) is still required —
 the seed does not change authentication.
 
-On `/membership`, enable the temporary header fallback if you are not
-using a session, then set:
-
-- Issuer `https://idp.example`, subject `admin-1`
-- Tenant slug `local`, workbench key `default`
-
-List workspaces / open Credentials. The switcher lists memberships only
-after that workspace lookup is in tab `sessionStorage` (existing UI
-contract; see the Chloe note on the #191 PR).
+On `/membership`, click **Example context** to fill issuer
+`https://idp.example`, subject `admin-1`, tenant slug `local`, and
+workbench key `default`. Enable the temporary header fallback if you
+are not using a session (cookie-session establish uses the same seed
+principal). Then list workspaces / open Credentials. The switcher
+lists memberships only after that workspace lookup is in tab
+`sessionStorage`.
 
 ### Production
 

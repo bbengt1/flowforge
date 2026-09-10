@@ -3,6 +3,13 @@ import {
   hasWorkspaceLookup,
   type DevIdentity,
 } from "@/lib/identity-headers";
+import {
+  LOCAL_SEED_DISPLAY_NAME,
+  LOCAL_SEED_ISSUER,
+  LOCAL_SEED_SUBJECT,
+  LOCAL_SEED_TENANT_SLUG,
+  LOCAL_SEED_WORKBENCH_KEY,
+} from "@/lib/local-seed-example";
 
 type IdentityBootstrapProps = {
   identity: DevIdentity;
@@ -80,7 +87,7 @@ export function IdentityBootstrap({
           label="Tenant slug"
           value={identity.tenantSlug}
           onChange={(value) => set("tenantSlug", value)}
-          placeholder="acme"
+          placeholder={LOCAL_SEED_TENANT_SLUG}
           hint="Used with workbench key when tenant ID is empty."
           autoComplete="off"
         />
@@ -89,7 +96,7 @@ export function IdentityBootstrap({
           label="Workbench key"
           value={identity.workbenchKey}
           onChange={(value) => set("workbenchKey", value)}
-          placeholder="ops"
+          placeholder={LOCAL_SEED_WORKBENCH_KEY}
           hint="Combined with tenant id or slug. Workspace UUID is not a lookup field."
           autoComplete="off"
         />
@@ -146,7 +153,7 @@ export function IdentityBootstrap({
               label="Issuer"
               value={identity.issuer}
               onChange={(value) => set("issuer", value)}
-              placeholder="https://flowforge.local"
+              placeholder={LOCAL_SEED_ISSUER}
               autoComplete="off"
             />
             <Field
@@ -154,7 +161,7 @@ export function IdentityBootstrap({
               label="Subject"
               value={identity.subject}
               onChange={(value) => set("subject", value)}
-              placeholder="operator-chloe"
+              placeholder={LOCAL_SEED_SUBJECT}
               autoComplete="off"
             />
             <Field
@@ -162,7 +169,7 @@ export function IdentityBootstrap({
               label="Display name (optional)"
               value={identity.displayName}
               onChange={(value) => set("displayName", value)}
-              placeholder="Chloe (dev)"
+              placeholder={LOCAL_SEED_DISPLAY_NAME}
               autoComplete="off"
             />
           </div>
