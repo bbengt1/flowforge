@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import {
+  bindEmbedExchangeHost,
   exchangeEmbedAssertion,
   fetchEmbedCatalog,
   fetchEmbedJwks,
+  fetchPortalAdapterCatalog,
+  loadEmbedHostIssuerSources,
 } from "./embed-client.ts";
+import {
+  FLOWFORGE_HOST_CONTEXT_HEADER,
+  FLOWFORGE_HOST_ISSUER_HEADER,
+  peekAssertionHostIssuer,
+} from "./embed-contract.ts";
 import { clearDevIdentity, loadDevIdentity } from "./dev-identity.ts";
 import { clearEmbedVerified, loadEmbedVerified } from "./embed-tenancy-client.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
@@ -237,5 +245,120 @@ describe("embed client", () => {
       assert.equal("d" in (jwks.keys[0] ?? {}), false);
       assert.equal(jwks.keys[0]?.x, "abc");
     }
+  });
+
+  it("loads catalog issuers and exchanges with configured binding, never iss from the JWS", async () => {
+    const hostileIss = "https://evil.example";
+    const header = Buffer.from(JSON.stringify({ alg: "EdDSA" })).toString(
+      "base64url",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({ iss: hostileIss, aud: "flowforge", host: hostileIss }),
+    ).toString("base64url");
+    const hostileJws = `${header}.${payload}.sig`;
+    assert.equal(JSON.parse(Buffer.from(payload, "base64url").toString()).iss, hostileIss);
+    assert.equal(peekAssertionHostIssuer(hostileJws), undefined);
+
+    const seenUrls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      seenUrls.push(url);
+      if (url.endsWith("/embed/catalog")) {
+        return new Response(
+          JSON.stringify({
+            sdk: "embed.v1",
+            issuers: ["https://idp.example"],
+            iss: hostileIss,
+            assertion: hostileJws,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/portal/adapter")) {
+        return new Response(
+          JSON.stringify({
+            adapter: "portal.v1",
+            issuers: [
+              "https://portal.a.example",
+              "https://portal.cp-ops.example",
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("nope", { status: 500 });
+    }) as typeof fetch;
+
+    const adapter = await fetchPortalAdapterCatalog();
+    assert.equal(adapter.ok, true);
+    const sources = await loadEmbedHostIssuerSources();
+    assert.deepEqual(sources.embedIssuers, ["https://idp.example"]);
+    assert.deepEqual(sources.portalIssuers, [
+      "https://portal.a.example",
+      "https://portal.cp-ops.example",
+    ]);
+    assert.ok(seenUrls.some((url) => url.endsWith("/portal/adapter")));
+
+    const portalBinding = bindEmbedExchangeHost({
+      hostContext: "portal",
+      portalIssuers: sources.portalIssuers,
+      portalIssuer: "https://portal.cp-ops.example",
+    });
+    assert.equal(portalBinding.hostIssuer, "https://portal.cp-ops.example");
+    assert.notEqual(portalBinding.hostIssuer, hostileIss);
+
+    const standaloneBinding = bindEmbedExchangeHost({
+      embedIssuers: sources.embedIssuers,
+    });
+    assert.deepEqual(standaloneBinding, {
+      hostContext: "embed",
+      hostIssuer: "https://idp.example",
+    });
+
+    const seen: { url?: string; init?: RequestInit } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.init = init;
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "sess-bind",
+            idle_expires_at: "2026-09-09T21:00:00.000Z",
+            absolute_expires_at: "2026-09-10T07:00:00.000Z",
+            embed: {
+              tenantId: "ten-1",
+              workbenchKey: "ops",
+              workspaceId: "ws-1",
+              capabilities: ["workflow.view"],
+            },
+          },
+          workspace: {
+            id: "ws-1",
+            tenant_id: "ten-1",
+            workbench_key: "ops",
+            name: "Ops",
+          },
+          tenant: { id: "ten-1", slug: "acme" },
+          capabilities: ["workflow.view"],
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const holder = { assertion: hostileJws };
+    const result = await exchangeEmbedAssertion(holder, standaloneBinding);
+    assert.equal(result.ok, true);
+    assert.equal(seen.url, "/api/v1/embed/exchange");
+    assert.equal(seen.init?.credentials, "include");
+    const body = JSON.parse(String(seen.init?.body));
+    assert.equal(body.assertion, hostileJws);
+    assert.equal(body.hostIssuer, "https://idp.example");
+    assert.equal(body.hostContext, "embed");
+    assert.notEqual(body.hostIssuer, hostileIss);
+    const headers = new Headers(seen.init?.headers);
+    assert.equal(headers.get(FLOWFORGE_HOST_ISSUER_HEADER), "https://idp.example");
+    assert.equal(headers.get(FLOWFORGE_HOST_CONTEXT_HEADER), "embed");
+    assert.notEqual(headers.get(FLOWFORGE_HOST_ISSUER_HEADER), hostileIss);
+    assert.equal(holder.assertion, "");
   });
 });

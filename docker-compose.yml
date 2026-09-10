@@ -125,6 +125,9 @@ services:
       WEB_CSP_CONNECT_SRC: ${WEB_CSP_CONNECT_SRC:-}
       WEB_EMBED_FRAME_ANCESTORS: ${WEB_EMBED_FRAME_ANCESTORS:-}
       WEB_PORTAL_FRAME_ANCESTORS: ${WEB_PORTAL_FRAME_ANCESTORS:-}
+      # Server-only (not NEXT_PUBLIC_*). RSC passes these into the embed gate.
+      EMBED_ISSUER: ${EMBED_ISSUER:-https://idp.example}
+      PORTAL_ISSUER: ${PORTAL_ISSUER:-https://portal.cp-ops.example}
     depends_on:
       - api
     restart: unless-stopped

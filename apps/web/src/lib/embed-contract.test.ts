@@ -30,7 +30,13 @@ import {
   EMBED_HOST_CONTEXT_PORTAL,
   FLOWFORGE_HOST_CONTEXT_HEADER,
   FLOWFORGE_HOST_ISSUER_HEADER,
+  detectEmbedHostContext,
   embedHostBindingHeaders,
+  parseCatalogIssuers,
+  peekAssertionHostIssuer,
+  readConfiguredHostIssuers,
+  resolveConfiguredHostIssuer,
+  resolveEmbedHostBinding,
   EMBED_JTI_RULES,
   EMBED_RATE_LIMIT_RULES,
   EMBED_RATE_LIMITED_MESSAGE,
@@ -394,6 +400,7 @@ describe("embed-contract", () => {
     assert.equal(EMBED_HOST_ISSUER_RULES.bindIssToMintingHost, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.neverPeekIssFromAssertion, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.wrongIssuerForHostIs403, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.nextPublicIsNotASource, true);
     assert.equal(EMBED_HOST_ISSUER_RULES.header, "X-FlowForge-Host-Issuer");
     assert.match(EMBED_HOST_ISSUER_HELP, /X-FlowForge-Host-Issuer/);
     assert.equal(EMBED_JTI_RULES.atomicSingleStatementConsume, true);
@@ -414,4 +421,127 @@ describe("embed-contract", () => {
     );
     assert.match(EMBED_RATE_LIMITED_MESSAGE, /429/);
   });
+
+  it("resolves host-issuer binding from configured sources and never peeks the JWS", () => {
+    const hostile = compactJwsWithIss("https://evil.example");
+    assert.equal(peekAssertionHostIssuer(hostile), undefined);
+    assert.equal(peekAssertionHostIssuer("not-a-jws"), undefined);
+
+    assert.deepEqual(
+      parseCatalogIssuers({
+        issuers: ["https://portal.cp-ops.example", hostile, ""],
+        iss: "https://evil.example",
+        host: "https://evil.example",
+        assertion: hostile,
+      }),
+      ["https://portal.cp-ops.example"],
+    );
+    assert.deepEqual(parseCatalogIssuers({ issuer: "https://idp.example" }), [
+      "https://idp.example",
+    ]);
+    assert.deepEqual(parseCatalogIssuers({ issuer: hostile }), []);
+
+    assert.equal(
+      resolveConfiguredHostIssuer({
+        issuers: ["https://portal.a", "https://portal.b"],
+        primaryIssuer: "https://portal.cp-ops.example",
+      }),
+      "https://portal.cp-ops.example",
+    );
+    assert.equal(
+      resolveConfiguredHostIssuer({ issuers: ["https://idp.example"] }),
+      "https://idp.example",
+    );
+    assert.equal(
+      resolveConfiguredHostIssuer({
+        issuers: ["https://portal.a", "https://portal.b"],
+      }),
+      "",
+    );
+
+    const fromEnv = readConfiguredHostIssuers({
+      PORTAL_ISSUER: "https://portal.cp-ops.example",
+      EMBED_ISSUER: "https://idp.example",
+      WEB_PORTAL_FRAME_ANCESTORS: "https://portal.test:8443",
+      NEXT_PUBLIC_PORTAL_ISSUER: "https://drift.example",
+      NEXT_PUBLIC_EMBED_ISSUER: "https://drift-embed.example",
+    });
+    assert.equal(fromEnv.portalIssuer, "https://portal.cp-ops.example");
+    assert.equal(fromEnv.embedIssuer, "https://idp.example");
+    assert.deepEqual(fromEnv.portalReferrerAllowlist, [
+      "https://portal.test:8443",
+    ]);
+    assert.equal(
+      readConfiguredHostIssuers({
+        NEXT_PUBLIC_PORTAL_ISSUER: "https://drift.example",
+      }).portalIssuer,
+      "",
+    );
+
+    assert.equal(
+      detectEmbedHostContext({ hostContext: "portal" }),
+      EMBED_HOST_CONTEXT_PORTAL,
+    );
+    assert.equal(
+      detectEmbedHostContext({
+        referrer: "https://app.example/portal/workflows",
+        selfOrigin: "https://app.example",
+      }),
+      EMBED_HOST_CONTEXT_PORTAL,
+    );
+    assert.equal(
+      detectEmbedHostContext({
+        referrer: "https://portal.test:8443/workflows",
+        portalReferrerAllowlist: ["https://portal.test:8443"],
+      }),
+      EMBED_HOST_CONTEXT_PORTAL,
+    );
+    assert.equal(
+      detectEmbedHostContext({
+        referrer: "https://host.example/embed",
+        portalReferrerAllowlist: ["https://portal.test:8443"],
+      }),
+      EMBED_HOST_CONTEXT_EMBED,
+    );
+
+    const portalBinding = resolveEmbedHostBinding({
+      hostContext: "portal",
+      portalIssuers: ["https://portal.a", "https://portal.b"],
+      portalIssuer: "https://portal.cp-ops.example",
+      embedIssuer: "https://idp.example",
+    });
+    assert.deepEqual(portalBinding, {
+      hostContext: "portal",
+      hostIssuer: "https://portal.cp-ops.example",
+    });
+    assert.notEqual(portalBinding.hostIssuer, "https://evil.example");
+    assert.deepEqual(
+      embedHostBindingHeaders(portalBinding),
+      {
+        [FLOWFORGE_HOST_ISSUER_HEADER]: "https://portal.cp-ops.example",
+        [FLOWFORGE_HOST_CONTEXT_HEADER]: "portal",
+      },
+    );
+
+    const standalone = resolveEmbedHostBinding({
+      embedIssuer: "https://idp.example",
+    });
+    assert.deepEqual(standalone, {
+      hostContext: "embed",
+      hostIssuer: "https://idp.example",
+    });
+
+    const ambiguous = resolveEmbedHostBinding({
+      hostContext: "portal",
+      portalIssuers: ["https://portal.a", "https://portal.b"],
+    });
+    assert.deepEqual(ambiguous, { hostContext: "portal" });
+    assert.equal("hostIssuer" in ambiguous, false);
+  });
 });
+
+function compactJwsWithIss(iss: string): string {
+  const encode = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "EdDSA" })}.${encode({ iss, aud: "flowforge" })}.sig`;
+}

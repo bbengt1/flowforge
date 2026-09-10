@@ -60,6 +60,7 @@ import {
   isCompactJws,
   isEmbedMountPath,
   parseCatalogFrameAncestors,
+  parseCatalogIssuers,
   type EmbedHostAllowlistEnv,
   stripAssertionParams,
   type EmbedAssertionMessage,
@@ -314,6 +315,7 @@ export {
   embedHostAllowlist,
   isAllowedEmbedMessageOrigin,
   parseCatalogFrameAncestors,
+  parseCatalogIssuers,
 };
 
 export const PORTAL_HELP =

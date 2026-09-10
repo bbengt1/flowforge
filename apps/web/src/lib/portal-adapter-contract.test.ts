@@ -22,6 +22,7 @@ import {
   PORTAL_HELP,
   PORTAL_HOST_ISSUER_HELP,
   PORTAL_HOST_ISSUER_RULES,
+  parseCatalogIssuers,
   PORTAL_HOST_WIRING,
   PORTAL_MINT_PATH,
   PORTAL_MOUNT_PREFIX,
@@ -73,6 +74,13 @@ describe("portal adapter contract", () => {
     assert.equal(PORTAL_HOST_ISSUER_RULES.context, "portal");
     assert.equal(PORTAL_HOST_ISSUER_RULES.neverPeekIssFromAssertion, true);
     assert.match(PORTAL_HOST_ISSUER_HELP, /X-FlowForge-Host-Issuer/);
+    assert.deepEqual(
+      parseCatalogIssuers({
+        issuers: ["https://portal.cp-ops.example"],
+        iss: "https://evil.example",
+      }),
+      ["https://portal.cp-ops.example"],
+    );
     assert.match(PORTAL_CHIPS_HELP, /Partitioned/);
     assert.match(PORTAL_NO_BOOTSTRAP_MESSAGE, /cannot create tenants/);
   });
