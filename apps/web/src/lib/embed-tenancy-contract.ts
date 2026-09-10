@@ -125,7 +125,7 @@ export const EMBED_TENANCY_RETARGET = {
 } as const;
 
 export const EMBED_VERIFIED_HELP =
-  "Chrome and deep links use the FlowForge-verified (tenant_id, workbench_key) from exchange workspace / session.embed. Host query, route, and postMessage values never authorize.";
+  "Chrome and deep links use GET /session session.embed (ADV-021). Host query, route, peeked assertion, and postMessage values never authorize.";
 
 export const EMBED_LOCKED_MESSAGE =
   "This embed is locked to the FlowForge-verified tenant/workbench. Workspace switching is disabled.";

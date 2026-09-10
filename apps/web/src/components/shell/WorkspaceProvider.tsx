@@ -19,7 +19,6 @@ import {
   subscribeEmbedVerified,
 } from "@/lib/embed-tenancy-client";
 import {
-  capEmbedPermissions,
   identityMatchesVerified,
   workspaceMatchesVerified,
 } from "@/lib/embed-tenancy-contract";
@@ -27,6 +26,10 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup, type DevIdentity } from "@/lib/identity-headers";
 import type { CurrentWorkspace, ItemList, Membership } from "@/lib/identity-types";
+import {
+  capChromeCapabilities,
+  isSessionEmbedMode,
+} from "@/lib/session-embed-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 export type WorkspaceContextValue = {
@@ -158,8 +161,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ready,
       permissions:
         ready && !tenancyMismatch
-          ? embed && verified
-            ? capEmbedPermissions(permissions, verified.capabilities)
+          ? embed
+            ? capChromeCapabilities(
+                permissions,
+                isSessionEmbedMode(session.embedChrome)
+                  ? session.embedChrome
+                  : null,
+              )
             : permissions
           : null,
       roles: ready && !tenancyMismatch ? current?.roles ?? [] : [],
@@ -167,7 +175,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       memberships: ready && !tenancyMismatch ? memberships : [],
       environment: identity.workbenchKey.trim(),
       switchWorkspace,
-      embedLocked: embed && Boolean(verified),
+      embedLocked: embed && Boolean(session.embedChrome || verified),
       tenancyMismatch: embed && tenancyMismatch,
     }),
     [
@@ -179,6 +187,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       switchWorkspace,
       embed,
       verified,
+      session.embedChrome,
       tenancyMismatch,
     ],
   );

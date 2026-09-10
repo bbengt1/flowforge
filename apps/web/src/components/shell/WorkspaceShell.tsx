@@ -39,6 +39,7 @@ import {
   hostDisplayFromSearch,
 } from "@/lib/embed-tenancy-contract";
 import { loadCurrentSession } from "@/lib/session-client";
+import { isSessionEmbedMode } from "@/lib/session-embed-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 type WorkspaceShellProps = {
@@ -84,6 +85,7 @@ export function WorkspaceShell({
     () => window.location.hash,
     () => "",
   );
+  // Mount prefix selects the embed layout. Chrome mode is session.embed only.
   const embed = embedMount || isEmbedUiPath(pathname);
   const portalHost = isPortalHostPath(pathname);
   const rejectedAssertion =
@@ -120,16 +122,19 @@ export function WorkspaceShell({
         <div className="flex min-h-full flex-col">
           <EmbedChrome
             hostDisplay={hostDisplay}
-            verified={verified}
+            sessionEmbed={session.embedChrome}
             rejectedAssertion={rejectedAssertion}
             sessionActive={session.active}
+            sessionChecked={sessionChecked}
           />
           <div className="flex-1">
             {!sessionChecked ? (
               <p className="px-6 py-10 text-sm text-zinc-500">
                 Checking FlowForge session…
               </p>
-            ) : session.active && verified ? (
+            ) : session.active &&
+              isSessionEmbedMode(session.embedChrome) &&
+              verified ? (
               <EmbedTenancyGate>{children}</EmbedTenancyGate>
             ) : (
               <EmbedExchangeGate

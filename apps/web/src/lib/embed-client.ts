@@ -17,6 +17,9 @@
  *
  * ADV-023: pass a configured EmbedHostBinding into exchangeEmbedAssertion.
  * Never peek iss / host from the assertion JWS.
+ *
+ * ADV-021: after exchange, GET /session drives embed chrome. Do not
+ * treat the exchange body, host query, or peeked JWS as chrome.
  */
 
 import { persistVerifiedFromExchange } from "./embed-tenancy-client.ts";
@@ -48,6 +51,7 @@ import {
 import { fetchSameOriginProxy } from "./identity-client.ts";
 import type { ProblemDetails } from "./problem.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
+import { loadCurrentSession } from "./session-client.ts";
 import { parseBrowserSession } from "./session.ts";
 import { sameOriginProxyUrl } from "./session-contract.ts";
 import { getSessionSnapshot, setActiveSession } from "./session-store.ts";
@@ -169,6 +173,8 @@ export async function exchangeEmbedAssertion(
   const parsed = parseEmbedExchangePayload(result.data);
   applyExchangeSession(result.data);
   applyVerifiedWorkspaceLookup(parsed.context);
+  // ADV-021: chrome waits for GET /session. Exchange cookies are not chrome.
+  await loadCurrentSession();
   return {
     ok: true,
     statusCode: result.statusCode,

@@ -13,10 +13,12 @@ import {
   SESSION_PATH,
   SESSION_REFRESH_PATH,
 } from "./session-contract.ts";
+import { sessionEmbedGetPath } from "./session-embed-contract.ts";
 
 describe("session-contract", () => {
   it("matches jonny's #22 cookie names, paths, and CSRF header", () => {
     assert.equal(sessionApiPath(), "/api/v1/session");
+    assert.equal(sessionEmbedGetPath(), "/api/v1/session");
     assert.equal(sessionBrowserPath(), "/api/v1/session");
     assert.equal(sessionBrowserPath(SESSION_REFRESH_PATH), "/api/v1/session/refresh");
     assert.equal(sessionBrowserPath(SESSION_LOGOUT_PATH), "/api/v1/session/logout");

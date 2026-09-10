@@ -8,6 +8,9 @@
  * Relates to #122 / #121 / Part of #120. Keep #122 open — Chloe still
  * has UI pending to honor session.embed / tenant+workbench headers.
  *
+ * ADV-021: EmbedChrome is driven from GET /session via
+ * session-embed-contract.ts — not host query, peeked JWS, or postMessage.
+ *
  * ADV-005: empty EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST fails closed
  * (HTTP 403) on mint and, when Portal is also empty, exchange. No UI rewrite.
  *

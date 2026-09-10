@@ -62,6 +62,10 @@ import {
   isEmbedTenancyProxySegments,
   retargetEmbedTenancyApiPath,
 } from "./embed-tenancy-contract.ts";
+import {
+  isSessionEmbedProxySegments,
+  retargetSessionEmbedApiPath,
+} from "./session-embed-contract.ts";
 
 export { isResourceId } from "./identity-proxy-ids.ts";
 
@@ -419,6 +423,8 @@ export function resolveIdentityProxyTarget(
     apiPath = retargetHttpNotificationApiPath(mapped);
   } else if (isEmbedTenancyProxySegments(segments)) {
     apiPath = retargetEmbedTenancyApiPath(mapped);
+  } else if (isSessionEmbedProxySegments(segments)) {
+    apiPath = retargetSessionEmbedApiPath(mapped);
   }
   return {
     method,

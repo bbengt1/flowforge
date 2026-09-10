@@ -8,6 +8,9 @@
  * Standalone sessions omit that object.
  *
  * Merge order: #22 (API) then #21 (this UI).
+ *
+ * ADV-021: embed chrome reads GET /session `session.embed` via
+ * `parseEmbedChromeFromSession` / `session-embed-contract.ts` (#177 map).
  */
 
 export const SESSION_API_PREFIX = "/api/v1";
