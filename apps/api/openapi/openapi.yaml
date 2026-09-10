@@ -41,7 +41,11 @@ info:
       CORS is rejected at process start.
     - Request bodies are capped at 1048576 bytes.
     - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
-      and `/api/v1/swagger`.
+      and `/api/v1/swagger`. Those routes and `/metrics` require an
+      authenticated principal with `platform.administer` (`PLATFORM_ADMINS`).
+      Scrapers send `Authorization: Bearer <ff_session>` or the `ff_session`
+      cookie. `GET /health` and `GET /readiness` stay unauthenticated for
+      Kubernetes probes.
 servers:
   - url: /api/v1
 paths:
@@ -119,6 +123,12 @@ paths:
       description: |
         Prometheus 0.0.4 text exposition of HTTP request counts and
         duration histograms. Labels are method, route, and status only.
+        Requires `platform.administer` (`PLATFORM_ADMINS`) on an
+        authenticated principal. Scrapers send `Authorization: Bearer`
+        with the opaque `ff_session` token, or the `ff_session` cookie.
+        Trusted-dev identity headers work only when
+        `TRUSTED_DEV_IDENTITY_HEADERS` is on. Empty `PLATFORM_ADMINS`
+        is fail-closed (`403`). Health and readiness stay unauthenticated.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -131,6 +141,10 @@ paths:
             text/plain:
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -141,6 +155,10 @@ paths:
     get:
       operationId: getOpenAPIYAML
       summary: Published OpenAPI YAML
+      description: |
+        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
+        credentials as `GET /metrics` (session cookie, Bearer session
+        token, or trusted-dev headers).
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -153,6 +171,10 @@ paths:
             application/yaml:
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -163,6 +185,9 @@ paths:
     get:
       operationId: getOpenAPIJSON
       summary: Published OpenAPI JSON
+      description: |
+        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
+        credentials as `GET /metrics`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -175,6 +200,10 @@ paths:
             application/json:
               schema:
                 type: object
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -185,6 +214,9 @@ paths:
     get:
       operationId: getSwagger
       summary: Specification landing page
+      description: |
+        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
+        credentials as `GET /metrics`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -197,6 +229,10 @@ paths:
             text/html:
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":

@@ -86,7 +86,7 @@ func TestCredentialVaultLogsMetricsAndAuditOmitPlaintext(t *testing.T) {
 	createVaultCredential(t, h, admin, tenant, ws, "token", "Logs", map[string]string{"token": vaultPlaintext})
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil))
+	h.ServeHTTP(rec, identifiedRequest(http.MethodGet, "/api/v1/metrics", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("metrics: %d", rec.Code)
 	}

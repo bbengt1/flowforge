@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Thin E1.1 smoke: assert control-plane health/readiness over HTTP.
+# ADV-020: unauthenticated metrics/OpenAPI/swagger are 401; authorized
+# compose identity headers (PLATFORM_ADMINS) still get 200.
 # Assumes the compose `api` service is listening (default http://127.0.0.1:8080).
 # Does not print environment values (DATABASE_URL / POSTGRES_PASSWORD).
 set -euo pipefail
@@ -66,14 +68,45 @@ echo "smoke against ${BASE_URL}"
 wait_for /api/v1/health 200 '.status == "ok"'
 wait_for /api/v1/readiness 200 '.status == "ready"'
 
-assert_body /api/v1/openapi.yaml 200 'openapi:'
-code="$(request "${BASE_URL}/api/v1/openapi.json")"
-if [[ "$code" != "200" ]] || ! jq -e '.openapi != null and .paths["/metrics"] != null' "$BODY" >/dev/null 2>&1; then
-  echo "assert failed GET /api/v1/openapi.json: status=${code}" >&2
+# ADV-020: metrics and OpenAPI/swagger are gated. Probes stay open.
+for path in /api/v1/metrics /api/v1/openapi.yaml /api/v1/openapi.json /api/v1/swagger; do
+  code="$(request "${BASE_URL}${path}")"
+  if [[ "$code" != "401" ]] || ! jq -e '.code == "unauthenticated" and .status == 401' "$BODY" >/dev/null 2>&1; then
+    echo "assert failed unauth GET ${path}: status=${code} body=$(cat "$BODY")" >&2
+    exit 1
+  fi
+  echo "ok GET ${path} ${code} (unauthenticated)"
+done
+
+auth_request() {
+  local url="$1"
+  curl -s -m 5 -D "$HEADERS" -o "$BODY" -w '%{http_code}' \
+    -H "X-FlowForge-Issuer: https://idp.example" \
+    -H "X-FlowForge-Subject: admin-1" \
+    -H "X-FlowForge-Display-Name: Admin" \
+    "$url" 2>/dev/null || true
+}
+
+code="$(auth_request "${BASE_URL}/api/v1/openapi.yaml")"
+if [[ "$code" != "200" ]] || ! grep -q 'openapi:' "$BODY"; then
+  echo "assert failed authorized GET /api/v1/openapi.yaml: status=${code} body=$(cat "$BODY")" >&2
   exit 1
 fi
-echo "ok GET /api/v1/openapi.json ${code}"
-assert_body /api/v1/metrics 200 'flowforge_http_requests_total'
+echo "ok GET /api/v1/openapi.yaml ${code} (authorized)"
+
+code="$(auth_request "${BASE_URL}/api/v1/openapi.json")"
+if [[ "$code" != "200" ]] || ! jq -e '.openapi != null and .paths["/metrics"] != null' "$BODY" >/dev/null 2>&1; then
+  echo "assert failed authorized GET /api/v1/openapi.json: status=${code}" >&2
+  exit 1
+fi
+echo "ok GET /api/v1/openapi.json ${code} (authorized)"
+
+code="$(auth_request "${BASE_URL}/api/v1/metrics")"
+if [[ "$code" != "200" ]] || ! grep -q 'flowforge_http_requests_total' "$BODY"; then
+  echo "assert failed authorized GET /api/v1/metrics: status=${code} body=$(cat "$BODY")" >&2
+  exit 1
+fi
+echo "ok GET /api/v1/metrics ${code} (authorized)"
 
 code="$(request "${BASE_URL}/api/v1/missing")"
 if [[ "$code" != "404" ]] || ! jq -e '.code == "not-found" and .status == 404 and .request_id != null' "$BODY" >/dev/null 2>&1; then

@@ -4,12 +4,24 @@
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/health` | Process liveness; no dependency check. | `200 {"status":"ok"}` | — |
-| `GET /api/v1/readiness` | PostgreSQL dependency readiness. | `200 {"status":"ready"}` | `503` RFC 9457 Problem Details (`dependency-unavailable`) |
-| `GET /api/v1/metrics` | Baseline Prometheus text metrics (request count and duration). | `200` `text/plain` | — |
-| `GET /api/v1/openapi.yaml` | Published OpenAPI YAML. | `200` | — |
-| `GET /api/v1/openapi.json` | Published OpenAPI JSON. | `200` | — |
-| `GET /api/v1/swagger` | Specification landing page. | `200` | — |
+| `GET /api/v1/health` | Process liveness; no dependency check. Unauthenticated for Kubernetes probes. | `200 {"status":"ok"}` | — |
+| `GET /api/v1/readiness` | PostgreSQL dependency readiness. Unauthenticated for Kubernetes probes. | `200 {"status":"ready"}` | `503` RFC 9457 Problem Details (`dependency-unavailable`) |
+| `GET /api/v1/metrics` | Baseline Prometheus text metrics (request count and duration). Requires authenticated principal + `platform.administer` (`PLATFORM_ADMINS`). | `200` `text/plain` | `401` `403` |
+| `GET /api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. | `200` | `401` `403` |
+| `GET /api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. | `200` | `401` `403` |
+| `GET /api/v1/swagger` | Specification landing page. Same authz as metrics. | `200` | `401` `403` |
+
+**ADV-020 / scrapers:** Prometheus and other scrapers authenticate with existing identity — there is no anonymous scrape token and no `ops.metrics.read` grant path. Fail closed.
+
+| Method | How |
+| --- | --- |
+| `Authorization: Bearer <token>` | Opaque `ff_session` token for a principal on `PLATFORM_ADMINS`. Preferred for in-cluster scrapers (cookie `Path=/api/v1` is awkward for Prometheus). |
+| `Cookie: ff_session=<token>` | Same session as a browser/operator. Idle/absolute expiry still apply (`SESSION_IDLE_TIMEOUT` / `SESSION_ABSOLUTE_TIMEOUT`); refresh or re-issue before scrape. |
+| Trusted-dev headers | `X-FlowForge-Issuer` / `X-FlowForge-Subject` matching `PLATFORM_ADMINS`, only when `TRUSTED_DEV_IDENTITY_HEADERS` is on in non-production. Production is `401`. |
+
+Empty `PLATFORM_ADMINS` is `403` even with a valid session. Workspace `admin` is not enough. `GET /health` and `GET /readiness` stay open so kubelet probes do not need credentials. There are no `/healthz` / `/readyz` aliases.
+
+**Chloe:** no product UI. Home/shell OpenAPI links will `401`/`403` for callers who are not platform-admins; do not add a metrics or swagger screen.
 
 ## Browser sessions (E2.3)
 

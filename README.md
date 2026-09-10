@@ -13,7 +13,7 @@ This README only covers how to start the local stack. It does not define product
 
 The UI proxies `GET /api/v1/health` and `GET /api/v1/readiness` (compose network `http://api:8080`). Proxies forward or generate `X-Request-ID` and preserve `application/problem+json` on failure. Until the API is running, the home page shows those problem details instead of a private error string.
 
-Operator OpenAPI links on the home/shell point at the public control plane (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
+Operator OpenAPI links on the home/shell point at the control plane (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). Those routes require `platform.administer` (`PLATFORM_ADMINS`). The UI does not re-host the specification.
 
 `/membership` (Chloe, E2.1) exercises workspace identity and RBAC against jonny's API contract in [PR #17](https://github.com/bbengt1/flowforge/pull/17). Next.js `/api/control-plane/*` proxies attach `X-FlowForge-*` identity headers and `X-Request-ID`. The operator never treats a host-supplied workspace UUID as the lookup key.
 

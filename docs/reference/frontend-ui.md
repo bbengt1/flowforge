@@ -289,7 +289,7 @@ E10.1 (Chloe UI) wires jonny's **#111** map on `main` (`e10-#111`). `apps/api` i
 E2–E5 operator pages remain mounted inside the E6.1 shell. The home page still exposes health/readiness and the foundation cards. Session, membership, isolation, YAML editor, vault, config, approvals, executions, and alerts are unchanged:
 
 - Control-plane health and readiness probes go through Next.js `/api/control-plane/*` proxies. Outbound calls send `X-Request-ID` (16–128 ASCII letters, digits, or hyphens; otherwise generated). The proxy echoes the header. API `application/problem+json` bodies are preserved; the card maps `title`, `detail`, `status`, `code`, and `request_id` only. Credentials, `DATABASE_URL`, and raw sensitive headers are never logged or shown.
-- OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification.
+- OpenAPI/Swagger links in the header and on the home page use the public control-plane origin (`NEXT_PUBLIC_API_URL` + `/api/v1/swagger`, `/openapi.json`, `/openapi.yaml`). The UI does not re-host the specification. **ADV-020 / Chloe — no product UI.** Those routes require `platform.administer` (`PLATFORM_ADMINS`). Unauthenticated or non-admin callers get `401`/`403`. Do not add a metrics or swagger screen; treat a failed link as expected unless the operator is a platform-admin with a session.
 
 ## E2.1 membership operator
 
