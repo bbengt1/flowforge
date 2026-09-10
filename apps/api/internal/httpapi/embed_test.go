@@ -192,6 +192,12 @@ func TestEmbedMintHappyPath(t *testing.T) {
 	if exchanged.Session.Embed.TenantID != exchanged.Tenant.ID {
 		t.Fatalf("session tenant %s", exchanged.Session.Embed.TenantID)
 	}
+	if exchanged.Session.Embed.Mode != "embed" || exchanged.Session.Embed.SDK != embed.SDKVersion {
+		t.Fatalf("exchange chrome mode/sdk %+v", exchanged.Session.Embed)
+	}
+	if exchanged.Session.Embed.TenantSlug != "acme" || exchanged.Session.Embed.WorkspaceName != "Ops" {
+		t.Fatalf("exchange chrome display %+v", exchanged.Session.Embed)
+	}
 	foundSession := false
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == session.CookieName && c.Value != "" {
@@ -1727,4 +1733,63 @@ func TestEmbedExchangeSucceedsUnderRateLimit(t *testing.T) {
 		t.Fatalf("expected exchange allow: %+v", env.auditor.Events())
 	}
 	assertNoSecretsInAudit(t, env, minted.Assertion)
+}
+
+func TestGetSessionReturnsEmbedChromeFields(t *testing.T) {
+	env := newEmbedEnv(t)
+	mintedRec := env.mint(t, `{"capabilities":["workflow.view","execution.view"]}`)
+	if mintedRec.Code != http.StatusCreated {
+		t.Fatalf("mint: %d %s", mintedRec.Code, mintedRec.Body.String())
+	}
+	var minted embed.Minted
+	if err := json.Unmarshal(mintedRec.Body.Bytes(), &minted); err != nil {
+		t.Fatal(err)
+	}
+
+	ex := postEmbedExchange(t, env, minted.Assertion)
+	if ex.Code != http.StatusCreated {
+		t.Fatalf("exchange: %d %s", ex.Code, ex.Body.String())
+	}
+	token, csrf := sessionPair(t, ex)
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf)
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /session: %d %s", rec.Code, rec.Body.String())
+	}
+	var payload sessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	chrome := payload.Session.Embed
+	if chrome == nil {
+		t.Fatal("embed-bound GET /session must include session.embed")
+	}
+	if chrome.Mode != "embed" || chrome.SDK != embed.SDKVersion {
+		t.Fatalf("embed mode/sdk %+v", chrome)
+	}
+	if chrome.TenantID == "" || chrome.TenantSlug != "acme" || chrome.TenantName == "" {
+		t.Fatalf("tenant chrome %+v", chrome)
+	}
+	if chrome.WorkbenchKey != "ops" || chrome.WorkspaceID == "" || chrome.WorkspaceName != "Ops" {
+		t.Fatalf("workspace chrome %+v", chrome)
+	}
+	if len(chrome.Capabilities) != 2 || chrome.Capabilities[0] != "workflow.view" || chrome.Capabilities[1] != "execution.view" {
+		t.Fatalf("capped capabilities %+v", chrome.Capabilities)
+	}
+	if payload.Principal.DisplayName == "" {
+		t.Fatal("principal.display_name is the chrome-safe subject label")
+	}
+
+	body := rec.Body.String()
+	if strings.Contains(body, minted.Assertion) {
+		t.Fatal("GET /session leaked the compact assertion")
+	}
+	lower := strings.ToLower(body)
+	for _, secret := range []string{`"assertion"`, `"jti"`, `"tokenid"`, `"private_key"`, `"privatekey"`, `"embed_signing_key"`, `"d":`} {
+		if strings.Contains(lower, secret) {
+			t.Fatalf("GET /session leaked secret field %s: %s", secret, body)
+		}
+	}
 }

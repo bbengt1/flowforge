@@ -321,8 +321,10 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "embed exchange")
 	s.auditEmbedTenancy(r, embed.EventExchanged, session.OutcomeAllowed, embed.ReasonIssued, c.TokenID, verified.KeyID, c.Issuer, c.Subject, tenant.ID, ws.WorkbenchKey, ws.ID)
+	session := viewSession(issued.Record)
+	attachEmbedChromeKnown(session.Embed, tenant, ws)
 	writeJSON(w, http.StatusCreated, embedExchangeResponse{
-		Session:      viewSession(issued.Record),
+		Session:      session,
 		Principal:    user,
 		CSRFToken:    issued.CSRF,
 		Assertion:    embed.PublicViewFromClaims(c, verified.KeyID),

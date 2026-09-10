@@ -338,7 +338,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors || !c.Rules.ExchangeBindsHostIssuer {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors || !c.Rules.ExchangeBindsHostIssuer || !c.Rules.ChromeFromSession {
 		t.Fatal("rules")
 	}
 	if c.FrameAncestors != nil {
@@ -377,7 +377,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if !envListed {
 		t.Fatal("catalog keyManagement.env must list EMBED_NBF_LEEWAY")
 	}
-	foundRotate, foundMint, foundExchange := false, false, false
+	foundRotate, foundMint, foundExchange, foundSession := false, false, false, false
 	for _, r := range c.API {
 		if r.Path == "/api/v1/embed/assertions" {
 			foundMint = true
@@ -389,6 +389,12 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 			foundRotate = true
 			if !strings.Contains(r.Auth, "platform.administer") || strings.Contains(r.Auth, "workspace.administer") {
 				t.Fatalf("rotate auth %q", r.Auth)
+			}
+		}
+		if r.Path == "/api/v1/session" {
+			foundSession = true
+			if !strings.Contains(r.Note, "session.embed") || !strings.Contains(r.Note, "ADV-021") {
+				t.Fatalf("session chrome note %q", r.Note)
 			}
 		}
 		if r.Path == "/api/v1/embed/exchange" {
@@ -419,6 +425,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if !foundExchange {
 		t.Fatal("catalog missing exchange route")
 	}
+	if !foundSession {
+		t.Fatal("catalog missing GET /session chrome route")
+	}
 	if DeniesBootstrap(false) {
 		t.Fatal("unbound session must allow the trusted bootstrap path")
 	}
@@ -428,7 +437,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if len(c.Hooks) < 3 {
 		t.Fatal("expected E11.2 hooks")
 	}
-	foundCHIPS, foundVerifyFirst, foundJTI, foundAudit, foundRate, foundAllowlist := false, false, false, false, false, false
+	foundCHIPS, foundVerifyFirst, foundJTI, foundAudit, foundRate, foundAllowlist, foundChrome := false, false, false, false, false, false, false
 	for _, h := range c.Hooks {
 		if h.Status != "ready" {
 			t.Fatalf("hook %s status %s", h.ID, h.Status)
@@ -469,6 +478,12 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 				t.Fatalf("host.allowlist hook %q %q", h.Note, h.Fail)
 			}
 		}
+		if h.ID == "chrome.from-session" {
+			foundChrome = true
+			if !strings.Contains(h.Note, "GET /session") || !strings.Contains(h.Fail, "session.embed") {
+				t.Fatalf("chrome.from-session hook %q %q", h.Note, h.Fail)
+			}
+		}
 	}
 	if !foundCHIPS {
 		t.Fatal("catalog missing chips.embed-cookies hook")
@@ -487,6 +502,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	}
 	if !foundAllowlist {
 		t.Fatal("catalog missing host.allowlist hook")
+	}
+	if !foundChrome {
+		t.Fatal("catalog missing chrome.from-session hook")
 	}
 }
 

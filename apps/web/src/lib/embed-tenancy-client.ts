@@ -1,7 +1,8 @@
 /**
  * Persist and apply FlowForge-verified embed workspace lookup.
  * Values come from POST /embed/exchange `workspace` / `session.embed`
- * or GET /session — never from host query.
+ * or GET /session — never from host query. ADV-021: GET /session
+ * session.embed is the authoritative chrome payload.
  *
  * Relates to #122 / Part of #120. Keep #122 open. Do not change apps/api.
  */

@@ -11,16 +11,20 @@
 
 import {
   EMBED_AUDIENCE,
+  EMBED_CHROME_FROM_SESSION,
+  EMBED_CHROME_FROM_SESSION_HELP,
   EMBED_MOUNT_PREFIX,
   EMBED_SDK,
   EMBED_TENANCY_RULES,
   embedMountPath,
   embedWorkspaceHeaders,
   isEmbedMountPath,
+  parseEmbedChromeFromSession,
   parseEmbedHostDisplay,
   parseSessionEmbedBinding,
   standalonePathFromEmbed,
   stripAssertionParams,
+  type EmbedChromeFromSession,
   type EmbedHostDisplay,
   type EmbedSessionBinding,
   type EmbedVerifiedContext,
@@ -33,7 +37,15 @@ export const EMBED_TENANCY_EPIC = 120;
 export const EMBED_TENANCY_API_PR = 127;
 export const EMBED_TENANCY_ROUTE_MAP_SOURCE = "e112-#127" as const;
 
-export { EMBED_TENANCY_RULES, embedWorkspaceHeaders, parseSessionEmbedBinding };
+export {
+  EMBED_CHROME_FROM_SESSION,
+  EMBED_CHROME_FROM_SESSION_HELP,
+  EMBED_TENANCY_RULES,
+  embedWorkspaceHeaders,
+  parseEmbedChromeFromSession,
+  parseSessionEmbedBinding,
+};
+export type { EmbedChromeFromSession };
 
 export const EMBED_VERIFIED_STORAGE_KEY = "flowforge.embed-verified.v1";
 
@@ -107,6 +119,8 @@ export const EMBED_TENANCY_RETARGET = {
     "workspace.tenant_id + workspace.workbench_key or session.embed {tenantId,workbenchKey,workspaceId,capabilities}. workspace.id is binding/display only.",
   workspaceGet:
     "GET /session session.embed is source of truth over host route state. GET /workspace must match the bound pair.",
+  chromeFromSession:
+    "ADV-021. Drive embed chrome from GET /session session.embed {mode,sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities} plus principal.display_name. Refetch after exchange, on /embed/v1 mount, after refresh, and on 401. Fail closed if session.embed is missing. Do not use assertion leftovers, catalog guesses, or host query. parseEmbedChromeFromSession. Prefer no product-shell rewrite here.",
   routeMap: "e112-#127",
 } as const;
 
@@ -194,12 +208,12 @@ export function verifiedWorkspaceFromBinding(
 ): EmbedVerifiedWorkspace | null {
   const verified: EmbedVerifiedWorkspace = {
     audience: EMBED_AUDIENCE,
-    sdk: EMBED_SDK,
+    sdk: binding.sdk.trim() || EMBED_SDK,
     tenantId: binding.tenantId.trim(),
-    tenantSlug: "",
+    tenantSlug: binding.tenantSlug.trim(),
     workbenchKey: binding.workbenchKey.trim(),
     workspaceId: binding.workspaceId.trim(),
-    workspaceName: "",
+    workspaceName: binding.workspaceName.trim(),
     capabilities: [...binding.capabilities],
     source: "flowforge",
   };

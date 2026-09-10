@@ -77,6 +77,7 @@ type CatalogRules struct {
 	EmptyHostAllowlistFailsClosed bool `json:"emptyHostAllowlistFailsClosed"`
 	PostMessageUsesFrameAncestors bool `json:"postMessageUsesFrameAncestors"`
 	ExchangeBindsHostIssuer       bool `json:"exchangeBindsHostIssuer"`
+	ChromeFromSession             bool `json:"chromeFromSession"`
 }
 
 // NewCatalog builds the E11.1 + E11.2 contract document.
@@ -98,7 +99,8 @@ func NewCatalog(frames []string) Catalog {
 		Capabilities: authz.PermissionKeys(),
 		Routes:       CanonicalRoutes(),
 		API: []APIRoute{
-			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. frameAncestors is the shared host allowlist (WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS) used for CSP and postMessage. Empty fails closed."},
+			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. frameAncestors is the shared host allowlist (WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS) used for CSP and postMessage. Empty fails closed. Catalog capabilities are the mintable set — not embed chrome authority."},
+			{Method: "GET", Path: "/api/v1/session", Auth: "ff_session cookie", CSRF: "no", Note: "ADV-021. Authoritative embed chrome after exchange. Bound sessions return session.embed {mode,sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities} plus principal.display_name. Standalone omits session.embed. No secrets, no raw assertion. Chloe retargets chrome from this payload; fail closed on /embed/v1 if session.embed is missing."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Production requires https issuers (ADV-018; boot-fail on allowlist load, 403 at mint). Capabilities must be a subset of the caller. Audience is FlowForge."},
 			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (path allowlist + minting host issuer bind; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. iss must equal the minting host: claim host (when present) and X-FlowForge-Host-Issuer or body hostIssuer when more than one issuer is configured. X-FlowForge-Host-Context / hostContext portal|embed selects PORTAL_* vs EMBED_* allowlist. nbf allows a short clock-skew leeway only (default 30s, EMBED_NBF_LEEWAY, hard max 60s); exp has no leeway. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403). Rate-limited by IP (default 120/min) and issuer|subject (default 30/min); burst is 429 rate-limited. Authz decisions emit secret-free audit events."},
@@ -123,6 +125,7 @@ func NewCatalog(frames []string) Catalog {
 			{ID: "authz.audit", Status: "ready", Fail: "authz decisions emit secret-free audit; assertion plaintext, signing keys, and session secrets are never logged", Note: "Mint allow/deny (including impersonation), exchange allow/deny with reason codes, rotate allow/deny, capability and tenancy bind failures, and rate-limit denials write structured embed_audit events (jti, kid, issuer, subject, tenant_id, workbench_key, workspace_id, reason)."},
 			{ID: "exchange.rate-limit", Status: "ready", Fail: "burst POST /embed/exchange is 429 rate-limited", Note: "Keyed by client IP (default 120/min) and issuer|subject when claims are peekable (default 30/min). Window default 1m. Configurable via EMBED_EXCHANGE_RATE_LIMIT_IP, EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL, EMBED_RATE_LIMIT_WINDOW. Mint may use EMBED_MINT_RATE_LIMIT_PRINCIPAL (default 60/min). Soft-deny with 429 + problem detail. A nil limiter fails closed."},
 			{ID: "host.allowlist", Status: "ready", Fail: "empty frame-ancestors / postMessage allowlist fails closed; * and null are ignored; no open postMessage", Note: "WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS is one list. Next CSP frame-ancestors on /embed/v1 and embed-shell postMessage origin checks use the same origins. GET /embed/catalog frameAncestors (and GET /portal/adapter frameAncestors) publish the list. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is not a source. Chloe: parseCatalogFrameAncestors + isAllowedEmbedMessageOrigin; do not parse a second client env."},
+			{ID: "chrome.from-session", Status: "ready", Fail: "embed chrome on /embed/v1 without session.embed fails closed; assertion leftovers, catalog guesses, and host query are not chrome authority", Note: "ADV-021. GET /session session.embed is the authoritative chrome payload after exchange: mode, sdk, tenantId, tenantSlug, tenantName, workbenchKey, workspaceId, workspaceName, capabilities (session-capped). principal.display_name is the chrome-safe subject label. No secrets, no raw assertion, no jti. Refetch after exchange, on /embed/v1 mount, after refresh, and on 401. Chloe retargets chrome from parseEmbedChromeFromSession. Prefer no product-shell rewrite in this API story."},
 		},
 		FrameAncestors: append([]string(nil), frames...),
 		Rules: CatalogRules{
@@ -142,6 +145,7 @@ func NewCatalog(frames []string) Catalog {
 			EmptyHostAllowlistFailsClosed: true,
 			PostMessageUsesFrameAncestors: true,
 			ExchangeBindsHostIssuer:       true,
+			ChromeFromSession:             true,
 		},
 	}
 }

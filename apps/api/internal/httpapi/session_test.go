@@ -396,6 +396,39 @@ func TestGetSessionRequiresCookie(t *testing.T) {
 	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "")
 }
 
+func TestGetSessionStandaloneOmitsEmbedChrome(t *testing.T) {
+	env := newSessionEnv(Security{})
+	created, first := createSession(t, env.h, "https://idp.example", "admin-1", "Admin", false)
+	if first.Session.Embed != nil {
+		t.Fatalf("POST /session must omit session.embed: %+v", first.Session.Embed)
+	}
+	token, csrf := sessionPair(t, created)
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf)
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /session: %d %s", rec.Code, rec.Body.String())
+	}
+	var payload sessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Session.Embed != nil {
+		t.Fatalf("standalone GET /session must omit session.embed: %+v", payload.Session.Embed)
+	}
+	if payload.Session.ID == "" || payload.Principal.ExternalSubject != "admin-1" || payload.CSRFToken == "" {
+		t.Fatalf("standalone session shape: %+v", payload)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, `"embed"`) || strings.Contains(body, `"tenantId"`) || strings.Contains(body, `"workbenchKey"`) {
+		t.Fatalf("standalone GET /session must not grow embed chrome fields: %s", body)
+	}
+	if strings.Contains(body, `"assertion"`) {
+		t.Fatal("standalone GET /session must not include assertion")
+	}
+}
+
 func createSession(t *testing.T, h http.Handler, issuer, subject, display string, https bool) (*httptest.ResponseRecorder, sessionResponse) {
 	t.Helper()
 	rec := httptest.NewRecorder()

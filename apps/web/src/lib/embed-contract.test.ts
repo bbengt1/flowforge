@@ -54,6 +54,12 @@ import {
   embedWorkspaceHeaders,
   hostTenantIsAuthorization,
   parseSessionEmbedBinding,
+  parseEmbedChromeFromSession,
+  isEmbedBoundSession,
+  EMBED_CHROME_FROM_SESSION,
+  EMBED_CHROME_FROM_SESSION_RULES,
+  EMBED_CHROME_FROM_SESSION_HELP,
+  EMBED_CHROME_MISSING_SESSION_MESSAGE,
   buildEmbedExchangeBody,
   embedApiPath,
   embedAuthFailureMessage,
@@ -351,16 +357,25 @@ describe("embed-contract", () => {
   it("honors E11.2 session embed tenancy and never trusts host tenant", () => {
     assert.equal(EMBED_VALIDATION_STORY, 122);
     assert.equal(EMBED_TENANCY_RULES.hostTenantIsNotAuthorization, true);
+    assert.equal(EMBED_TENANCY_RULES.chromeFromGetSession, true);
     assert.equal(hostTenantIsAuthorization("acme"), false);
     const bound = parseSessionEmbedBinding({
       embed: {
+        mode: "embed",
+        sdk: "embed.v1",
         tenantId: "ten-1",
+        tenantSlug: "acme",
+        tenantName: "Acme",
         workbenchKey: "ops",
         workspaceId: "ws-1",
+        workspaceName: "Ops",
         capabilities: ["workflow.view"],
       },
     });
     assert.equal(bound?.workbenchKey, "ops");
+    assert.equal(bound?.mode, "embed");
+    assert.equal(bound?.tenantSlug, "acme");
+    assert.equal(bound?.workspaceName, "Ops");
     assert.equal(embedHeadersMatchSession({ tenantId: "ten-1", workbenchKey: "ops" }, bound!), true);
     assert.equal(embedHeadersMatchSession({ tenantId: "ten-1", workbenchKey: "other" }, bound!), false);
     const headers = embedWorkspaceHeaders({
@@ -537,6 +552,89 @@ describe("embed-contract", () => {
     });
     assert.deepEqual(ambiguous, { hostContext: "portal" });
     assert.equal("hostIssuer" in ambiguous, false);
+  });
+
+  it("drives embed chrome from GET /session and fail-closes without a bind", () => {
+    assert.equal(EMBED_CHROME_FROM_SESSION.path, "GET /session");
+    assert.equal(EMBED_CHROME_FROM_SESSION.source, "session.embed");
+    assert.equal(EMBED_CHROME_FROM_SESSION.embedModeValue, "embed");
+    assert.equal(EMBED_CHROME_FROM_SESSION_RULES.sessionIsAuthority, true);
+    assert.equal(EMBED_CHROME_FROM_SESSION_RULES.failClosedWithoutEmbedBinding, true);
+    assert.equal(EMBED_CHROME_FROM_SESSION_RULES.noSecrets, true);
+    assert.equal(EMBED_CHROME_FROM_SESSION_RULES.noProductShellRewrite, true);
+    assert.match(EMBED_CHROME_FROM_SESSION_HELP, /GET \/session/);
+    assert.ok(EMBED_CHROME_FROM_SESSION.refetch.includes(
+      "on /embed/v1 mount when ff_session may exist",
+    ));
+    assert.ok(
+      EMBED_CHROME_FROM_SESSION.doNotUse.some((item) =>
+        item.includes("catalog"),
+      ),
+    );
+
+    const sample = "eyJhbGciOiJFZERTQSJ9.eyJhdWQiOiJmbG93Zm9yZ2UifQ.signature";
+    const parsed = parseEmbedChromeFromSession({
+      session: {
+        id: "sess-1",
+        embed: {
+          mode: "embed",
+          sdk: "embed.v1",
+          tenantId: "ten-1",
+          tenantSlug: "acme",
+          tenantName: "Acme",
+          workbenchKey: "ops",
+          workspaceId: "ws-1",
+          workspaceName: "Ops",
+          capabilities: ["workflow.view"],
+        },
+      },
+      principal: {
+        issuer: "https://idp.example",
+        external_subject: "ada",
+        display_name: "Ada",
+      },
+      csrf_token: "csrf-1",
+      assertion: sample,
+      jti: "leak",
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) {
+      return;
+    }
+    assert.equal(parsed.leaked, true);
+    assert.ok(parsed.strippedKeys.includes("assertion"));
+    assert.ok(parsed.strippedKeys.includes("jti"));
+    assert.equal(parsed.chrome.mode, "embed");
+    assert.equal(parsed.chrome.tenantSlug, "acme");
+    assert.equal(parsed.chrome.tenantName, "Acme");
+    assert.equal(parsed.chrome.workbenchKey, "ops");
+    assert.equal(parsed.chrome.workspaceName, "Ops");
+    assert.equal(parsed.chrome.displayName, "Ada");
+    assert.deepEqual(parsed.chrome.capabilities, ["workflow.view"]);
+    assert.equal("assertion" in parsed.chrome, false);
+    assert.equal(isEmbedBoundSession({
+      embed: { tenantId: "ten-1", workbenchKey: "ops" },
+    }), true);
+
+    const standalone = parseEmbedChromeFromSession({
+      session: {
+        id: "sess-standalone",
+        created_at: "2026-09-10T00:00:00Z",
+      },
+      principal: { display_name: "Admin" },
+    });
+    assert.equal(standalone.ok, false);
+    if (standalone.ok) {
+      return;
+    }
+    assert.equal(standalone.reason, "missing-embed-binding");
+    assert.match(standalone.message, /session\.embed/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.equal(isEmbedBoundSession({ id: "sess-standalone" }), false);
+    assert.equal(
+      parseSessionEmbedBinding({ embed: { mode: "standalone", tenantId: "ten-1", workbenchKey: "ops" } }),
+      null,
+    );
   });
 });
 

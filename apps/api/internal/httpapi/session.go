@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
@@ -33,11 +34,20 @@ type sessionView struct {
 	Embed             *sessionEmbedView `json:"embed,omitempty"`
 }
 
+// sessionEmbedView is the authoritative embed-chrome payload on a bound
+// session. Present only after POST /embed/exchange. No secrets, no
+// compact JWS, no assertion leftovers. Standalone sessions omit this
+// object entirely (ADV-021).
 type sessionEmbedView struct {
-	TenantID     string   `json:"tenantId"`
-	WorkbenchKey string   `json:"workbenchKey"`
-	WorkspaceID  string   `json:"workspaceId"`
-	Capabilities []string `json:"capabilities"`
+	Mode          string   `json:"mode"`
+	SDK           string   `json:"sdk"`
+	TenantID      string   `json:"tenantId"`
+	TenantSlug    string   `json:"tenantSlug,omitempty"`
+	TenantName    string   `json:"tenantName,omitempty"`
+	WorkbenchKey  string   `json:"workbenchKey"`
+	WorkspaceID   string   `json:"workspaceId"`
+	WorkspaceName string   `json:"workspaceName,omitempty"`
+	Capabilities  []string `json:"capabilities"`
 }
 
 type sessionResponse struct {
@@ -210,7 +220,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "issued")
 	writeJSON(w, http.StatusCreated, sessionResponse{
-		Session:   viewSession(issued.Record),
+		Session:   s.viewSession(r.Context(), issued.Record),
 		Principal: user,
 		CSRFToken: issued.CSRF,
 	})
@@ -235,7 +245,7 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		csrf = c.Value
 	}
 	writeJSON(w, http.StatusOK, sessionResponse{
-		Session:   viewSession(*pc.session),
+		Session:   s.viewSession(r.Context(), *pc.session),
 		Principal: user,
 		CSRFToken: csrf,
 	})
@@ -272,7 +282,7 @@ func (s *Server) refreshSession(w http.ResponseWriter, r *http.Request) {
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventRefreshed, session.OutcomeAllowed, "refreshed")
 	writeJSON(w, http.StatusOK, sessionResponse{
-		Session:   viewSession(issued.Record),
+		Session:   s.viewSession(r.Context(), issued.Record),
 		Principal: user,
 		CSRFToken: issued.CSRF,
 	})
@@ -330,6 +340,12 @@ func (s *Server) listSessionAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listResponse[session.AuditEvent]{Items: items})
 }
 
+func (s *Server) viewSession(ctx context.Context, rec session.Record) sessionView {
+	view := viewSession(rec)
+	s.attachEmbedChrome(ctx, view.Embed)
+	return view
+}
+
 func viewSession(rec session.Record) sessionView {
 	view := sessionView{
 		ID:                rec.ID,
@@ -339,14 +355,54 @@ func viewSession(rec session.Record) sessionView {
 		AbsoluteExpiresAt: rec.AbsoluteExpiresAt,
 	}
 	if rec.Binding.Bound() {
+		caps := append([]string{}, rec.Binding.Capabilities...)
 		view.Embed = &sessionEmbedView{
+			Mode:         "embed",
+			SDK:          embed.SDKVersion,
 			TenantID:     rec.Binding.TenantID,
 			WorkbenchKey: rec.Binding.WorkbenchKey,
 			WorkspaceID:  rec.Binding.WorkspaceID,
-			Capabilities: append([]string(nil), rec.Binding.Capabilities...),
+			Capabilities: caps,
 		}
 	}
 	return view
+}
+
+// attachEmbedChrome fills chrome-safe tenant/workspace display from the
+// identity store. Lookup failure leaves IDs in place and does not fail
+// GET /session. Never copies assertion leftovers or secrets.
+func (s *Server) attachEmbedChrome(ctx context.Context, chrome *sessionEmbedView) {
+	if chrome == nil || s.store == nil {
+		return
+	}
+	if chrome.WorkspaceID != "" {
+		if ws, err := s.store.GetWorkspace(ctx, chrome.WorkspaceID); err == nil {
+			chrome.WorkspaceName = strings.TrimSpace(ws.Name)
+			if chrome.TenantID == "" {
+				chrome.TenantID = ws.TenantID
+			}
+		}
+	}
+	if chrome.TenantID != "" {
+		if tenant, err := s.store.GetTenant(ctx, chrome.TenantID); err == nil {
+			chrome.TenantSlug = strings.TrimSpace(tenant.Slug)
+			chrome.TenantName = strings.TrimSpace(tenant.Name)
+		}
+	}
+}
+
+func attachEmbedChromeKnown(chrome *sessionEmbedView, tenant identity.Tenant, ws identity.Workspace) {
+	if chrome == nil {
+		return
+	}
+	chrome.TenantSlug = strings.TrimSpace(tenant.Slug)
+	chrome.TenantName = strings.TrimSpace(tenant.Name)
+	if name := strings.TrimSpace(ws.Name); name != "" {
+		chrome.WorkspaceName = name
+	}
+	if chrome.WorkspaceID == "" {
+		chrome.WorkspaceID = ws.ID
+	}
 }
 
 func (s *Server) issueSessionCookies(w http.ResponseWriter, r *http.Request, issued session.Issued) {

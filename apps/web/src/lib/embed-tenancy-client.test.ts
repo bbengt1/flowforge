@@ -120,14 +120,21 @@ describe("embed-tenancy-client", () => {
   it("persists GET /session session.embed and overwrites host headers", () => {
     const verified = persistVerifiedFromSession({
       embed: {
+        mode: "embed",
+        sdk: "embed.v1",
         tenantId: "ten-1",
+        tenantSlug: "acme",
+        tenantName: "Acme",
         workbenchKey: "ops",
         workspaceId: "ws-1",
+        workspaceName: "Ops",
         capabilities: ["workflow.view"],
       },
     });
     assert.equal(verified?.source, "flowforge");
     assert.deepEqual(verified?.capabilities, ["workflow.view"]);
+    assert.equal(verified?.tenantSlug, "acme");
+    assert.equal(verified?.workspaceName, "Ops");
     const headers = attachEmbedWorkspaceHeaders(
       {
         [FLOWFORGE_TENANT_ID_HEADER]: "host-supplied",

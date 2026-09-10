@@ -60,7 +60,9 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
    `Lax` / `Strict` and is not Partitioned. `Secure` is never dropped;
    `SameSite=None` is never used without `Partitioned`. The session record
    stores `(tenant_id, workbench_key, workspace_id, capabilities)` as
-   `session.embed`. That bind is the only workspace the session may use.
+   `session.embed` and `GET /session` adds chrome-safe display
+   (`mode`, `sdk`, `tenantSlug`, `tenantName`, `workspaceName`). That bind
+   is the only workspace the session may use.
    The session **cannot** `POST /tenants` or `POST /workspaces` (sibling
    workbenches included), even if the principal is a platform-admin.
    **ADV-019:** `DELETE /workspace` (or a hard delete of the workspace
@@ -95,7 +97,7 @@ Portal entry RBAC is not FlowForge authorization. See
 | Mismatch fails closed | If the host later supplies a different tenant or workbench, the API returns `403`. Do not retry with the host value. |
 | Capabilities cap | `session.embed.capabilities` is the minted set. Membership cannot escalate past it. Hide UI actions the session cannot perform. `platform.administer` is never in this set. |
 | No bootstrap | Do not offer create-tenant / create-workspace from embed chrome. Those routes return `403` for embed sessions. Standalone platform-admin bootstrap is unchanged. |
-| GET `/session` | When `session.embed` is present, treat it as the source of truth over host route state. |
+| GET `/session` | **ADV-021.** `session.embed` is the authoritative chrome payload after exchange: `mode`, `sdk`, `tenantId`, `tenantSlug`, `tenantName`, `workbenchKey`, `workspaceId`, `workspaceName`, capped `capabilities`. `principal.display_name` is the subject label. Standalone sessions omit `session.embed`. Refetch after exchange, on `/embed/v1` mount, after refresh, and on `401`. Fail closed on `/embed/v1` if `session.embed` is missing. Do not drive chrome from assertion leftovers, catalog guesses, or host query. Parser: `parseEmbedChromeFromSession`. Prefer no product-shell rewrite in the API story. |
 | CHIPS cookies | After exchange, `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Keep `credentials: "include"`. The Next rewrite must preserve `Partitioned` and must not drop `Secure` on that pair. Storage Access API is not required and must not request unpartitioned cookies. |
 | Cookie not sent | Missing partitioned cookie → `401` on `GET /session` and later reads; missing `ff_csrf` on a mutation → `403`. Treat as HTTPS / browser Partitioned / frame-ancestor misconfig. Two-origin harness: ADV-013 (`docs/reference/portal-adapter.md`, `scripts/adv013-cross-origin.sh`). |
 | Exchange `429` | Rate-limited. Back off (`Retry-After`). Do not treat as forbidden and do not rewrite chrome. |
@@ -154,7 +156,7 @@ Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,w
 always `403`. Capabilities must still be a subset of the caller.
 `embed.impersonate` is platform-scoped and is never mintable.
 
-Exchange JSON: `{assertion, sdk?, hostIssuer?, hostContext?}`. Optional `X-FlowForge-Host-Issuer` / `X-FlowForge-Host-Context` headers are the preferred binding (must agree with the body when both are set). `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{tenantId,workbenchKey,workspaceId,capabilities}`. The nested `assertion` object is metadata only (no compact JWS).
+Exchange JSON: `{assertion, sdk?, hostIssuer?, hostContext?}`. Optional `X-FlowForge-Host-Issuer` / `X-FlowForge-Host-Context` headers are the preferred binding (must agree with the body when both are set). `201` `{session,principal,csrf_token,assertion,workspace,tenant,capabilities}`. `session.embed` is `{mode:"embed",sdk,tenantId,tenantSlug,tenantName,workbenchKey,workspaceId,workspaceName,capabilities}`. The nested `assertion` object is metadata only (no compact JWS). `GET /session` returns the same `session.embed` chrome object (no assertion).
 
 Rotate JSON: `{action:"register-overlap"|"retire", publicJwk:{kty,crv,x,kid,use,alg}, overlapUntil, kid?}`. On `register-overlap`, `overlapUntil` is **required** RFC3339 and must be a short future window (**max 4h**). Missing, zero, past, or farther-future is `400`. `publicJwk` must be the current active signing key (`kid` + `x`). Arbitrary keys are `400`. Response is the public JWKS. Never send or receive `d` / PEM / seed.
 
@@ -291,6 +293,7 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | `assertion.verify-before-lookup` | ready | Forged/invalid assertions fail closed without resolving tenant/workbench. Same error class whether or not the workspace exists. Tenancy bind is after verify. |
 | `key.rotation` | ready | Durable active key + overlap verification. Every overlap key requires a short `overlapUntil` (max 4h). Unknown / missing-expiry / expired / far-future `kid` `401`. Verify refreshes from the store. Rotate API is platform-admin only, requires `overlapUntil`, and accepts only the previous active public key. Production missing `EMBED_SIGNING_KEY` or bad `EMBED_OVERLAP_KEYS` is boot-fail. The active key is not an overlap key. |
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs, workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Workspace delete revokes bound embed sessions (including CHIPS); later cookies are `401`. Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only; treat post-delete `401` as existing session expiry. |
+| `chrome.from-session` | ready | **ADV-021.** `GET /session` `session.embed` is the authoritative embed chrome payload. Fail closed on `/embed/v1` without that bind. Assertion leftovers, catalog guesses, and host query are not chrome authority. No secrets / no raw assertion. Chloe retargets via `parseEmbedChromeFromSession`. Prefer no product-shell rewrite in this API story. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
 | `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Two-origin harness: ADV-013 (`scripts/adv013-cross-origin.sh`). |
 | `host.allowlist` | ready | One list (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) drives CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks. Empty fails closed. `*` / `null` ignored. `GET /embed/catalog` `frameAncestors` publishes the list. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source. |

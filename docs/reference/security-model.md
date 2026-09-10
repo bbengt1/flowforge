@@ -133,7 +133,9 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   authorization, and FlowForge does not share its database or executor.
   After exchange, embed chrome and deep
   links use the FlowForge-verified `(tenant_id, workbench_key)` /
-  `session.embed` only. Assertions are never accepted from a URL.
+  `GET /session` `session.embed` only (ADV-021). Assertion leftovers,
+  catalog guesses, and host query are not chrome authority. Assertions
+  are never accepted from a URL.
   Embed authorization decisions (mint, exchange, rotate, capability
   and tenancy bind, impersonation) emit secret-free audit events;
   assertion plaintext, signing keys, and session secrets are never
