@@ -121,3 +121,8 @@ export function safeProblemDetail(detail: string): string {
   }
   return detail;
 }
+
+/** ProblemBanner heading: existing chrome, including replay `409`. */
+export function problemBannerHeading(problem: Pick<ProblemDetails, "title" | "status">): string {
+  return problem.status ? `${problem.title} (${problem.status})` : problem.title;
+}

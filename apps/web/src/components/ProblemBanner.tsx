@@ -1,4 +1,4 @@
-import { safeProblemDetail, type ProblemDetails } from "@/lib/problem";
+import { problemBannerHeading, safeProblemDetail, type ProblemDetails } from "@/lib/problem";
 import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
 
 type ProblemBannerProps = {
@@ -15,10 +15,7 @@ export function ProblemBanner({ problem, className }: ProblemBannerProps) {
         "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
       }
     >
-      <p className="font-medium">
-        {problem.title}
-        {problem.status ? ` (${problem.status})` : null}
-      </p>
+      <p className="font-medium">{problemBannerHeading(problem)}</p>
       <p className="mt-1">{safeProblemDetail(problem.detail)}</p>
       {isStaleSessionProblem(problem) ? (
         <p className="mt-2">

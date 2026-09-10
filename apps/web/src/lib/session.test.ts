@@ -4,12 +4,15 @@ import type { ProblemDetails } from "./problem.ts";
 import {
   csrfRequiredProblem,
   effectiveExpiresAt,
+  emptyBrowserSession,
   formatSessionCountdown,
   isCsrfProblem,
   isStaleSessionProblem,
   parseBrowserSession,
   remainingSessionMs,
+  sessionExpiryBannerState,
   sessionExpiryState,
+  sessionStatusChipLabel,
 } from "./session.ts";
 
 function problem(partial: Partial<ProblemDetails> & Pick<ProblemDetails, "code" | "status">): ProblemDetails {
@@ -74,6 +77,51 @@ describe("session expiry UX", () => {
       "Expires in 4m 5s",
     );
     assert.equal(formatSessionCountdown("2026-09-08T18:00:00.000Z", now), "Session expired");
+
+    const stale = sessionExpiryBannerState({
+      active: false,
+      stale: true,
+      session: { ...emptyBrowserSession(), subject: "ada" },
+    }, now);
+    assert.equal(stale.visible, true);
+    if (stale.visible) {
+      assert.equal(stale.title, "Stale session");
+      assert.equal(stale.kind, "stale");
+    }
+    assert.equal(
+      sessionStatusChipLabel({
+        active: false,
+        stale: true,
+        session: { ...emptyBrowserSession(), subject: "ada" },
+      }, now),
+      "Session stale",
+    );
+
+    const expired = sessionExpiryBannerState({
+      active: true,
+      stale: false,
+      session: {
+        ...emptyBrowserSession(),
+        subject: "ada",
+        idleExpiresAt: "2026-09-08T18:00:00.000Z",
+      },
+    }, now);
+    assert.equal(expired.visible, true);
+    if (expired.visible) {
+      assert.equal(expired.title, "Session expired");
+    }
+    assert.equal(
+      sessionStatusChipLabel({
+        active: true,
+        stale: false,
+        session: {
+          ...emptyBrowserSession(),
+          subject: "ada",
+          idleExpiresAt: "2026-09-08T18:00:00.000Z",
+        },
+      }, now),
+      "ada · Session expired",
+    );
   });
 });
 

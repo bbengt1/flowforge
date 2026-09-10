@@ -27,6 +27,7 @@ import {
   sessionEmbedChromeFromHostDisplay,
   sessionEmbedChromeFromPeekedAssertion,
   sessionEmbedChromeLabel,
+  embedChromeChipLabel,
   sessionEmbedGetPath,
 } from "./session-embed-contract.ts";
 
@@ -105,6 +106,7 @@ describe("session-embed-contract", () => {
     assert.equal(chrome?.displayName, "Ada");
     assert.deepEqual(chrome?.capabilities, ["workflow.view", "credential.view"]);
     assert.equal(sessionEmbedChromeLabel(chrome!), "acme / ops");
+    assert.equal(embedChromeChipLabel(chrome!), "Verified · acme / ops · Ops · Ada");
 
     const decision = parseEmbedChromeFromSession(GET_SESSION);
     assert.equal(decision.ok, true);

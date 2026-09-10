@@ -4,8 +4,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   effectiveExpiresAt,
-  formatSessionCountdown,
   sessionExpiryState,
+  sessionStatusChipLabel,
 } from "@/lib/session";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
@@ -43,13 +43,14 @@ export function SessionStatusChip() {
     return () => window.clearInterval(timer);
   }, [snapshot.active]);
 
+  const label = sessionStatusChipLabel(snapshot, now);
   if (snapshot.stale) {
     return (
       <a
         href={sessionHref}
         className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900"
       >
-        Session stale
+        {label}
       </a>
     );
   }
@@ -60,7 +61,7 @@ export function SessionStatusChip() {
         href={sessionHref}
         className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-600"
       >
-        No session
+        {label}
       </a>
     );
   }
@@ -78,7 +79,7 @@ export function SessionStatusChip() {
       className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}
       title={snapshot.session.subject}
     >
-      {snapshot.session.subject} · {formatSessionCountdown(expiresAt, now)}
+      {label}
     </a>
   );
 }

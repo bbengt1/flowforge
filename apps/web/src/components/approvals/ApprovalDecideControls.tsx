@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
-  canDecideApproval,
-  canDecideFromPermissions,
+  approvalDecideControlsState,
   failClosedProblemTitle,
-  isRequesterActor,
   problemClosesApproval,
 } from "@/lib/approval";
 import { approveApproval, rejectApproval } from "@/lib/approval-client";
@@ -36,10 +34,11 @@ export function ApprovalDecideControls({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
-  const selfRequested = isRequesterActor(approval.requestedBy, actorUserId);
-  const roleCanDecide = canDecideFromPermissions(permissions ?? ["approval.decide"]);
-  const canDecide =
-    canDecideApproval(approval, undefined, actorUserId) && roleCanDecide;
+  const { canDecide, selfRequested } = approvalDecideControlsState(
+    approval,
+    actorUserId,
+    permissions,
+  );
 
   async function decide(action: "approve" | "reject") {
     setPending(action);
