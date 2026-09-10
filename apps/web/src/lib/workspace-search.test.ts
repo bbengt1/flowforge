@@ -137,6 +137,8 @@ describe("buildSearchIndex", () => {
     assert.equal(querySearchIndex(index, "data.set")[0]?.kind, "action");
     assert.equal(querySearchIndex(index, "workflow.call").length, 0);
     assert.ok(querySearchIndex(index, "openapi")[0]?.title.includes("OpenAPI"));
+    assert.equal(querySearchIndex(index, "openapi")[0]?.href, "/settings#api-docs");
+    assert.equal(querySearchIndex(index, "health")[0]?.href, "/settings#health");
   });
 
   it("does not index credentials or executions the caller cannot see", () => {

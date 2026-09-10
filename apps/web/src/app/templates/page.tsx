@@ -6,6 +6,7 @@ import { TemplateGrid } from "@/components/home/WorkflowHome";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { optionalCreateFields } from "@/lib/workflow";
 import { createWorkflow } from "@/lib/workflow-client";
+import { templateCreatedEditorHref } from "@/lib/product-home";
 import { canCreateWorkflows } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 import type { WorkflowTemplate } from "@/lib/workflow-templates";
@@ -28,10 +29,10 @@ export default function TemplatesPage() {
       kind: "info",
       title: "Draft created from template",
       detail: template.title,
-      href: created ? `/workflows/${created.id}` : "/workflows",
+      href: templateCreatedEditorHref(created?.id),
     });
     if (created) {
-      router.push(`/workflows/${created.id}`);
+      router.push(templateCreatedEditorHref(created.id));
     }
   }
 

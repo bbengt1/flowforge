@@ -12,16 +12,18 @@ export default function WorkflowsPage() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Workflows</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Workspace home for drafts and published versions. List and card
+          Product home for drafts and published versions. List and card
           views show status, version, validation health, and required
           approvals without opening the editor. Create and import use{" "}
           <code className="font-mono text-sm">POST /workflows</code>. The
-          canvas + YAML editor is at{" "}
-          <code className="font-mono text-sm">/workflows/{"{id}"}</code>.
-          Published workflows can start from home with typed input and an
-          idempotency key. Webhook and schedule triggers are configured from
-          home or the editor. Schedules are timezone-explicit with skip /
-          no-catch-up defaults. Webhook secrets are shown once, then discarded.
+          canvas + YAML editor is a standalone surface at{" "}
+          <code className="font-mono text-sm">/workflows/{"{id}"}</code>
+          — not a second list. Published workflows can start from home with
+          typed input and an idempotency key. Webhook and schedule triggers
+          are configured from home when the role can see them. Last run
+          opens <code className="font-mono text-sm">/executions/{"{id}"}</code>{" "}
+          or the workspace history filtered by{" "}
+          <code className="font-mono text-sm">workflowId</code>.
         </p>
       </header>
       <Suspense
