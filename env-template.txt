@@ -98,6 +98,8 @@ EMBED_SIGNING_KEY_ID=local:compose
 # EMBED_SIGNING_KEY_FILE=
 # EMBED_AUDIENCE=flowforge
 # EMBED_ASSERTION_TTL=60s
+# Clock-skew for embed assertion nbf only (ADV-017). Hard max 60s. exp is exact.
+# EMBED_NBF_LEEWAY=30s
 # EMBED_ISSUER=
 # EMBED_ISSUER_ALLOWLIST=
 # Previous public JWKS for the overlap window after a signing-key rotate.

@@ -245,6 +245,40 @@ func TestLoadMergesSharedHostAllowlist(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedNBFLeewayFromEnv(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv(embed.EnvNBFLeeway, "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmbedNBFLeeway != embed.DefaultNBFLeeway {
+		t.Fatalf("default nbf leeway %s", cfg.EmbedNBFLeeway)
+	}
+
+	t.Setenv(embed.EnvNBFLeeway, "15s")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmbedNBFLeeway != 15*time.Second {
+		t.Fatalf("custom nbf leeway %s", cfg.EmbedNBFLeeway)
+	}
+
+	t.Setenv(embed.EnvNBFLeeway, "5m")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmbedNBFLeeway != embed.MaxNBFLeeway {
+		t.Fatalf("over-max nbf leeway must clamp, got %s", cfg.EmbedNBFLeeway)
+	}
+}
+
 func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

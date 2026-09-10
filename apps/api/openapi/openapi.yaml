@@ -455,7 +455,9 @@ paths:
         `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` merged with Portal issuers;
         empty fails closed with 403), audience (`flowforge`),
         `nbf`/`exp`, `jti`, signature (active + live overlap kids),
-        and capabilities **before any workspace lookup**. Atomically
+        and capabilities **before any workspace lookup**. `nbf` allows
+        a short clock-skew leeway only (default 30s, `EMBED_NBF_LEEWAY`,
+        hard max 60s); `exp` has no leeway. Atomically
         consumes `jti` with TTL only after verify succeeds (replay is
         409). Then resolves `tenant_id` + `workbench_key` and confirms
         optional workspace binding. Invalid assertions fail closed

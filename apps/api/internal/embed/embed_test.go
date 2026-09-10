@@ -219,8 +219,8 @@ func TestVerifyExpiredAndNBF(t *testing.T) {
 	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(31 * time.Second), SkipJTI: true, AllowedIssuers: []string{c.Issuer}}); err != ErrExpired {
 		t.Fatalf("expired: %v", err)
 	}
-	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(-time.Second), SkipJTI: true, AllowedIssuers: []string{c.Issuer}}); err != ErrNotYetValid {
-		t.Fatalf("nbf: %v", err)
+	if _, err := Verify(m, token, VerifyOptions{Now: now.Add(-(DefaultNBFLeeway + time.Second)), SkipJTI: true, AllowedIssuers: []string{c.Issuer}}); err != ErrNotYetValid {
+		t.Fatalf("nbf beyond leeway: %v", err)
 	}
 }
 
@@ -351,6 +351,32 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if c.JTIRetention != JTIRetention.String() {
 		t.Fatalf("jtiRetention %q", c.JTIRetention)
 	}
+	if c.NBFLeeway != DefaultNBFLeeway.String() || c.MaxNBFLeeway != MaxNBFLeeway.String() {
+		t.Fatalf("nbf leeway catalog %q / %q", c.NBFLeeway, c.MaxNBFLeeway)
+	}
+	foundNBF := false
+	for _, claim := range c.Claims {
+		if claim.JSON != "nbf" {
+			continue
+		}
+		foundNBF = true
+		if !strings.Contains(claim.Note, "30s") || !strings.Contains(claim.Note, EnvNBFLeeway) || !strings.Contains(claim.Note, "60s") {
+			t.Fatalf("nbf claim must document default/env/max: %q", claim.Note)
+		}
+	}
+	if !foundNBF {
+		t.Fatal("catalog missing nbf claim")
+	}
+	envListed := false
+	for _, name := range c.KeyManagement.Env {
+		if name == EnvNBFLeeway {
+			envListed = true
+			break
+		}
+	}
+	if !envListed {
+		t.Fatal("catalog keyManagement.env must list EMBED_NBF_LEEWAY")
+	}
 	foundRotate, foundMint, foundExchange := false, false, false
 	for _, r := range c.API {
 		if r.Path == "/api/v1/embed/assertions" {
@@ -378,6 +404,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 			}
 			if !strings.Contains(r.Note, "429") || !strings.Contains(r.Note, "rate-limited") {
 				t.Fatalf("exchange note must document 429 rate-limit: %q", r.Note)
+			}
+			if !strings.Contains(r.Note, EnvNBFLeeway) || !strings.Contains(r.Note, "30s") {
+				t.Fatalf("exchange note must document nbf leeway: %q", r.Note)
 			}
 		}
 	}

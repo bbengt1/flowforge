@@ -68,7 +68,9 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /
   `EMBED_ISSUER_ALLOWLIST` merged with `PORTAL_ISSUER` /
   `PORTAL_ISSUER_ALLOWLIST`), audience, `nbf`/`exp`, `jti`,
-  capabilities, and workspace binding. An empty allowlist fails closed
+  capabilities, and workspace binding. `nbf` clock-skew is a short
+  documented leeway (default 30s, `EMBED_NBF_LEEWAY`, hard max 60s);
+  `exp` is exact. An empty allowlist fails closed
   at request time (`403` on mint and exchange) — the process does not
   refuse to start, consistent with empty `PLATFORM_ADMINS`. Token IDs
   are consumed atomically in one

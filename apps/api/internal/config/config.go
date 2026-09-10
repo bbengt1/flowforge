@@ -81,6 +81,9 @@ type Config struct {
 	PlatformAdmins       []authz.PrincipalRef
 	// EmbedLimits rate-limits POST /embed/exchange (required) and mint.
 	EmbedLimits embed.Limits
+	// EmbedNBFLeeway is clock-skew for embed assertion nbf only (ADV-017).
+	// Default 30s, hard max 60s. exp is not given this leeway.
+	EmbedNBFLeeway time.Duration
 	// AppEnv is APP_ENV / FLOWFORGE_ENV. Empty is treated as production.
 	AppEnv string
 	// TrustIdentityHeaders is true only when TRUSTED_DEV_IDENTITY_HEADERS
@@ -141,6 +144,7 @@ func Load() (Config, error) {
 		),
 		PlatformAdmins: authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
 		EmbedLimits:    embed.LoadLimits(),
+		EmbedNBFLeeway: embed.LoadNBFLeeway(),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

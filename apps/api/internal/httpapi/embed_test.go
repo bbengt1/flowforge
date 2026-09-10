@@ -375,6 +375,12 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"jtiRetention":"24h0m0s"`) {
 		t.Fatal("catalog must document the 24h jti retention window")
 	}
+	if !strings.Contains(rec.Body.String(), `"nbfLeeway":"30s"`) {
+		t.Fatal("catalog must document the default nbf leeway")
+	}
+	if !strings.Contains(rec.Body.String(), `"maxNbfLeeway":"1m0s"`) {
+		t.Fatal("catalog must document the nbf leeway hard max")
+	}
 	if !strings.Contains(rec.Body.String(), `"sharedHostAllowlist":true`) {
 		t.Fatal("catalog must document the shared host allowlist")
 	}
@@ -551,6 +557,52 @@ func TestEmbedExchangeNBF(t *testing.T) {
 		NotBefore:    now.Add(time.Minute).Unix(),
 		ExpiresAt:    now.Add(2 * time.Minute).Unix(),
 		TokenID:      "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "")
+}
+
+func TestEmbedExchangeNBFWithinLeeway(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Add(embed.DefaultNBFLeeway).Unix(),
+		ExpiresAt:    now.Add(2 * time.Minute).Unix(),
+		TokenID:      "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee",
+		TenantID:     tenantID(t, env),
+		WorkbenchKey: "ops",
+		Capabilities: []string{"workflow.view"},
+		SDK:          embed.SDKVersion,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed/exchange", strings.NewReader(`{"assertion":`+mustQuoteJSON(t, token)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	env.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("nbf at default leeway bound: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEmbedExchangeNBFBeyondLeeway(t *testing.T) {
+	env := newEmbedEnv(t)
+	now := *env.now
+	token := signClaims(t, env.keys, embed.Claims{
+		Issuer:       "https://idp.example",
+		Audience:     embed.DefaultAudience,
+		Subject:      "admin-1",
+		NotBefore:    now.Add(embed.DefaultNBFLeeway + time.Second).Unix(),
+		ExpiresAt:    now.Add(2 * time.Minute).Unix(),
+		TokenID:      "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee",
 		TenantID:     tenantID(t, env),
 		WorkbenchKey: "ops",
 		Capabilities: []string{"workflow.view"},
