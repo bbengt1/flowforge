@@ -9,3 +9,6 @@ Future implementation changes should add API, deployment, and runner references 
 - [CP Ops Portal adapter](portal-adapter.md): E11.3 Portal host wiring, capability map, and fail-closed integration boundary.
 - [E12.1 security verification suite](e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.
 - [E12.2 operational resilience and capacity](e12-resilience-capacity.md): restore/worker/load harness, ≥2× headroom claims, and Chloe no-UI map.
+- [API / OpenAPI publishing](openapi.md): published spec path, `/api/v1` versioning, and operator fetch/auth.
+- [E12.3 threat-model review](e12-threat-model-review.md): production-gate sign-off against existing controls (no new features).
+- [Release and operations](../operations/index.md): incident/recovery and retention/backup runbooks; Chloe UI/a11y stubs.

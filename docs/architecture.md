@@ -18,7 +18,7 @@ flowchart LR
 
 The control plane owns workflow validation, workspace RBAC, credential authorization, versioning, idempotency, audit events, and dispatch. Workers execute one step at a time in short-lived isolated pods/containers with a non-root UID, read-only filesystem, CPU/memory/time limits, default-deny egress, and ephemeral scoped credentials.
 
-Every boundary fails closed: the API authenticates and authorizes server-derived workspace context, webhook ingress verifies a replay-resistant signature before parsing, and workers revalidate an authenticated job's version/policy/lease before calling a provider. The [security model](reference/security-model.md) defines the required controls and negative tests.
+Every boundary fails closed: the API authenticates and authorizes server-derived workspace context, webhook ingress verifies a replay-resistant signature before parsing, and workers revalidate an authenticated job's version/policy/lease before calling a provider. The [security model](reference/security-model.md) defines the required controls and negative tests. Production-gate review of those existing controls: [E12.3 threat-model review](reference/e12-threat-model-review.md). Operator runbooks: [release and operations](operations/index.md).
 
 PostgreSQL is the durable source of truth for workspace-scoped configuration, canonical workflow YAML, immutable versions, encrypted credential payload metadata, policy snapshots, durable job leases, redacted execution state, and audit events. See the [database specification](reference/database.md).
 

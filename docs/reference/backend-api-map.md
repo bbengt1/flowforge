@@ -1,5 +1,11 @@
 # Backend API map
 
+Operator fetch, versioning, and auth for the published specification:
+[API / OpenAPI publishing](openapi.md) (`apps/api/openapi/openapi.yaml`,
+`GET /api/v1/openapi.yaml` / `openapi.json` / `swagger`).
+Release/ops runbooks: [operations](../operations/index.md).
+**Operator UI guide — Chloe / E12.3.**
+
 ## Foundation routes
 
 | Route | Purpose | Success | Failure |

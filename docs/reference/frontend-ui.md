@@ -795,6 +795,26 @@ serialization, and ≥2× capacity headroom are harness + docs
 ([e12-resilience-capacity.md](e12-resilience-capacity.md)). Do not add
 operator chrome for lag or headroom on this story. Keep #183 open.
 
+## E12.3 operator/admin UI guides and accessibility (Chloe)
+
+**Placeholder — Chloe / E12.3.** Relates to #184 / Part of #181.
+**Keep #184 open.** This file is not the operator/admin guide and does
+not claim an accessibility review.
+
+Expected Chloe landing (separate PR):
+
+- Operator/admin **UI** guide (membership, vault, approvals, executions,
+  alerts, embed chrome) — walkthroughs of existing screens only.
+- Accessibility review before production approval.
+
+Control-plane docs already on `main` from jonny's E12.3 slice:
+
+- [Release and operations](../operations/index.md)
+- [API / OpenAPI](openapi.md)
+- [Incident and recovery](../operations/incident-recovery.md)
+- [Retention and backup](../operations/retention-backup.md)
+- [Threat-model review](e12-threat-model-review.md)
+
 ## Required validation
 
 - YAML import → canvas → no-edit save → export preserves normalized semantics and digest.
