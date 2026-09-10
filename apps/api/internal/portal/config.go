@@ -16,12 +16,15 @@ type Config struct {
 // ParseIssuers builds the Portal issuer allowlist from PORTAL_ISSUER and
 // PORTAL_ISSUER_ALLOWLIST. Empty is fail-closed at Portal mint (request-time
 // 403). Compose seeds a local issuer; production must set an explicit list.
+// Production-locked processes require every configured issuer to be an
+// absolute https URI (ADV-018; boot-fail via embed.ValidateIssuerAllowlist).
 func ParseIssuers(allowlist, single string) []string {
 	return embed.ParseIssuerAllowlist(allowlist, single)
 }
 
 // IssuerAllowed reports whether iss may mint through the Portal adapter.
-// An empty allowlist is fail-closed.
+// An empty allowlist is fail-closed. Production-locked processes also
+// require an absolute https URI (ADV-018).
 func IssuerAllowed(iss string, allow []string) bool {
 	return embed.IssuerAllowed(iss, allow)
 }

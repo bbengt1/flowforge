@@ -54,3 +54,30 @@ func TestNonProductionAppEnv(t *testing.T) {
 		t.Fatal("explicit local/dev/test must be allowed")
 	}
 }
+
+func TestProductionLocked(t *testing.T) {
+	if !ProductionLocked("", false) || !ProductionLocked("production", false) || !ProductionLocked("staging", false) {
+		t.Fatal("empty/production/unknown must be production-locked")
+	}
+	if ProductionLocked("development", false) || ProductionLocked("test", false) {
+		t.Fatal("explicit local/dev/test without TLS must not be locked")
+	}
+	if !ProductionLocked("development", true) || !ProductionLocked("local", true) {
+		t.Fatal("REQUIRE_TLS locks even non-production APP_ENV")
+	}
+
+	t.Setenv(EnvAppEnv, "")
+	t.Setenv(EnvFlowforgeEnv, "")
+	t.Setenv(EnvRequireTLS, "")
+	if !ProductionLockedFromEnv() {
+		t.Fatal("empty env is production-locked")
+	}
+	t.Setenv(EnvAppEnv, "development")
+	if ProductionLockedFromEnv() {
+		t.Fatal("APP_ENV=development must not be locked")
+	}
+	t.Setenv(EnvRequireTLS, "true")
+	if !ProductionLockedFromEnv() {
+		t.Fatal("REQUIRE_TLS locks development")
+	}
+}

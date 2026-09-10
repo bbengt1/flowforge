@@ -2,6 +2,19 @@ package embed
 
 import "testing"
 
+func TestBindHostIssuerRejectsHTTPInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REQUIRE_TLS", "")
+	allow := []string{"http://idp.example"}
+	if err := BindHostIssuer("http://idp.example", "http://idp.example", "http://idp.example", allow); err != ErrIssuerNotAllowed {
+		t.Fatalf("production http host bind: %v", err)
+	}
+	https := []string{"https://idp.example"}
+	if err := BindHostIssuer("https://idp.example", "https://idp.example", "https://idp.example", https); err != nil {
+		t.Fatalf("production https host bind: %v", err)
+	}
+}
+
 func TestBindHostIssuerFailsClosed(t *testing.T) {
 	allow := []string{"https://idp.example"}
 	if err := BindHostIssuer("https://idp.example", "https://idp.example", "https://idp.example", allow); err != nil {

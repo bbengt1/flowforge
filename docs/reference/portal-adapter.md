@@ -84,7 +84,11 @@ Mint JSON (camelCase): `{subject?,displayName?,issuer?,tenantId?,workbenchKey?,w
 `issuer` that differs from the caller is `403`. Issuer not on a
 non-empty `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` is `403`. An
 empty/unset Portal allowlist fails closed at mint (`403`); it does not
-accept any issuer. Successful impersonation is audited (`reason=impersonated`).
+accept any issuer. Production (empty/`production` `APP_ENV` or
+`REQUIRE_TLS`) requires every configured Portal (and embed) issuer to
+be an absolute `https://` URI — `http://`, relative, or opaque values
+are a boot-fail, and mint/exchange still `403` a non-https `iss`
+(ADV-018). Local/dev/test may use `http://` issuers. Successful impersonation is audited (`reason=impersonated`).
 Host-supplied `workspaceId` that does not match server resolution is
 forbidden. Success is the same minted assertion as E11.1 (`201`, compact
 JWS once). Problem details never echo the JWS or private keys.
@@ -93,8 +97,8 @@ JWS once). Problem details never echo the JWS or private keys.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORTAL_ISSUER` | empty | Single allowed Portal `iss`. Empty (with an empty allowlist) fails closed at Portal mint (`403`) |
-| `PORTAL_ISSUER_ALLOWLIST` | empty | Comma-separated Portal issuers. Empty fails closed — mint returns `403`. Compose seeds `https://portal.cp-ops.example` for local/dev. |
+| `PORTAL_ISSUER` | empty | Single allowed Portal `iss`. Empty (with an empty allowlist) fails closed at Portal mint (`403`). Production requires `https://` (ADV-018; boot-fail) |
+| `PORTAL_ISSUER_ALLOWLIST` | empty | Comma-separated Portal issuers. Empty fails closed — mint returns `403`. Compose seeds `https://portal.cp-ops.example` for local/dev. Production requires every entry to be an absolute `https://` URI |
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (API-side). Merged with the `WEB_*` vars. Published on `GET /portal/adapter` and `GET /embed/catalog` as `frameAncestors` |
 | `WEB_PORTAL_FRAME_ANCESTORS` | empty | Same shared list (web + API). Drives `/embed/v1` CSP **and** postMessage |
 | `WEB_EMBED_FRAME_ANCESTORS` | empty | Same shared list (embed-origin name) |
@@ -104,7 +108,8 @@ Production must set a durable `EMBED_SIGNING_KEY` (boot-fail if missing
 when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true`) and explicit
 Portal and embed issuer allowlists. Empty allowlists fail closed at
 request time (`403` on mint/exchange); the process still starts so other
-API routes stay up. Local compose seeds a local-only signing key and
+API routes stay up. A configured production issuer that is not
+`https://` is a boot-fail (ADV-018). Local compose seeds a local-only signing key and
 the lists — it does not fail open. `*` / `null` frame ancestors are ignored.
 Empty host allowlist fails closed: CSP `frame-ancestors 'none'` and no
 postMessage (ADV-011). Set the same origins on the API and web processes so
@@ -118,6 +123,7 @@ These fail closed on the FlowForge adapter:
 
 - Empty Portal issuer allowlist (mint/exchange `403`)
 - Hostile host issuer (not on the Portal allowlist)
+- Production `http://` / relative / opaque Portal or embed issuer (boot-fail; request-time `403`)
 - Cross-host issuer reuse: assertion minted under issuer A exchanged when the host expects issuer B (`403`)
 - Replayed assertion (`409` on `POST /embed/exchange`)
 - Cross-tenant / cross-workbench headers after exchange (`403`)
@@ -222,6 +228,7 @@ The product adapter is unchanged. A real Portal host still owns steps
 | Catalog vs CSP | Set the same Portal HTTPS origin on the **API** (`PORTAL_FRAME_ANCESTORS` / `WEB_PORTAL_FRAME_ANCESTORS`) and the **web** process. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source (ADV-011). |
 | Embed exchange gate | Allowlisted postMessage fills the assertion; `POST /embed/exchange` stays body-only with `credentials: "include"`. Do not put the JWS in the URL. Auto-exchange is optional host UX. |
 | Host issuer bind (ADV-023) | `EmbedExchangeGate` sends `X-FlowForge-Host-Issuer` set to the **configured** `PORTAL_ISSUER` (adapter `issuers` / server env) and `X-FlowForge-Host-Context: portal` when the frame is Portal. Never copy `iss` from the assertion. Wrong-issuer-for-host is `403`. Prefer no chrome rewrite beyond those headers (`PORTAL_HOST_ISSUER_RULES`). |
+| Production https issuers (ADV-018) | **No UI change.** Production ConfigMaps must use `https://` Portal/embed issuers. `http://` is local/dev only. |
 | CHIPS | Both origins must be HTTPS. Do not drop `Secure` or `Partitioned`. Cookie not sent is `401`/`403`. |
 | API process stores | `cmd/api` builds the handler with `NewWithDeps` and a postgres pool. Identity / session / workflow stores must be inferred from that pool (otherwise `POST /tenants` is `503` and Portal mint cannot bind a workspace). |
 

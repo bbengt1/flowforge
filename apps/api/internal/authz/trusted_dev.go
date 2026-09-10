@@ -2,6 +2,7 @@ package authz
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -12,6 +13,7 @@ const (
 	EnvTrustedDevIdentityHeaders = "TRUSTED_DEV_IDENTITY_HEADERS"
 	EnvAppEnv                    = "APP_ENV"
 	EnvFlowforgeEnv              = "FLOWFORGE_ENV"
+	EnvRequireTLS                = "REQUIRE_TLS"
 )
 
 // NonProductionAppEnv reports whether appEnv is an explicit local/dev/test
@@ -23,6 +25,22 @@ func NonProductionAppEnv(appEnv string) bool {
 	default:
 		return false
 	}
+}
+
+// ProductionLocked is the ADV-002/006 gate: empty/`production`/unknown
+// APP_ENV, or REQUIRE_TLS. Used for durable signing keys, trusted-dev
+// identity, and production-only https issuers (ADV-018).
+func ProductionLocked(appEnv string, requireTLS bool) bool {
+	return requireTLS || !NonProductionAppEnv(appEnv)
+}
+
+// ProductionLockedFromEnv reads APP_ENV / FLOWFORGE_ENV and REQUIRE_TLS.
+func ProductionLockedFromEnv() bool {
+	appEnv := strings.TrimSpace(os.Getenv(EnvAppEnv))
+	if appEnv == "" {
+		appEnv = strings.TrimSpace(os.Getenv(EnvFlowforgeEnv))
+	}
+	return ProductionLocked(appEnv, truthyEnv(os.Getenv(EnvRequireTLS)))
 }
 
 // ResolveTrustedDevIdentityHeaders enables self-asserted
