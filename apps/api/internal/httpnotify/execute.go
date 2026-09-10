@@ -245,7 +245,15 @@ func Execute(ctx context.Context, req Request) Result {
 }
 
 func privateDestinationsAllowed(req Request) bool {
-	return req.Connection.Policy.AllowPrivateDestinations || req.Policy.AllowPrivateDestinations
+	if req.Connection.Policy.AllowPrivateDestinations {
+		return true
+	}
+	switch req.Policy.Kind {
+	case "http", "notification":
+		return req.Policy.AllowPrivateDestinations
+	default:
+		return false
+	}
 }
 
 func authorizeHTTP(req Request, op string) *EngineError {

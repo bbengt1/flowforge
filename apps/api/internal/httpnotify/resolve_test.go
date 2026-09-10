@@ -61,6 +61,14 @@ func TestSSRFReasonPrivateAndLoopback(t *testing.T) {
 	if denied, _ := ssrfReason(net.ParseIP("169.254.169.254"), true); !denied {
 		t.Fatal("metadata must stay denied even when private destinations are opted in")
 	}
+	if denied, _ := ssrfReason(net.ParseIP("fd00:ec2::254"), true); !denied {
+		t.Fatal("AWS IPv6 IMDS must stay denied even when private destinations are opted in")
+	}
+	if denied, why := ssrfReason(net.ParseIP("fd00:ec2::254"), false); !denied {
+		t.Fatal("AWS IPv6 IMDS must be denied by default")
+	} else if strings.Contains(why, "fd00:ec2::254") {
+		t.Fatalf("IPv6 IMDS reason leaked address: %s", why)
+	}
 	if denied, _ := ssrfReason(net.ParseIP("169.254.1.1"), true); !denied {
 		t.Fatal("link-local must stay denied even when private destinations are opted in")
 	}

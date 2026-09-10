@@ -13,7 +13,7 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 | Trigger source → control plane | A caller may replay, flood, or guess a trigger URL. | Use per-trigger secrets, constant-time verification, bounded body size, rate limits, replay protection, and an idempotency key. Never put a secret in a URL. |
 | Control plane → worker | Queue data is untrusted transport data. | Sign or authenticate jobs; include workspace, workflow-version digest, policy revision, expiration, lease/fencing data, and correlation ID; re-authorize before execution. |
 | Worker → provider | Provider credentials and responses are sensitive. | Resolve short-lived scoped credentials only in the worker; enforce target policy; redact and size-limit output before it crosses back to the control plane. |
-| Worker → outbound HTTP | `http.request` / webhook destinations may be attacker-controlled after DNS. | Resolve, then deny loopback, RFC1918/ULA, CGNAT, link-local, and metadata by default; re-check every redirect hop. Private destinations require an explicit connection or workspace-policy opt-in (`allowPrivateDestinations`). Fail closed when unset. Problem details must not echo resolved private IPs. |
+| Worker → outbound HTTP | `http.request` / webhook destinations may be attacker-controlled after DNS. | Resolve, then deny loopback, RFC1918/ULA, CGNAT, link-local, and metadata (including AWS IPv6 IMDS `fd00:ec2::254`) by default; re-check every redirect hop. Private destinations require an explicit connection flag or a `kind=http` / `kind=notification` policy opt-in (`allowPrivateDestinations`). Other policy kinds are ignored. Fail closed when unset. Problem details must not echo resolved private IPs. |
 
 ## Identity, sessions, and authorization
 
