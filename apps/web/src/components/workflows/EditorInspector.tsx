@@ -151,7 +151,7 @@ export function EditorInspector({
     selectedNodeId && lastRun?.detail
       ? latestStepsByNode(lastRun.detail.steps).get(selectedNodeId)?.id
       : undefined;
-  const lastRunPanel = lastRun?.detail || lastRun?.pending || lastRun?.problem ? (
+  const lastRunPanel = lastRun && (lastRun.detail || lastRun.pending || lastRun.problem) ? (
     <LastRunIoPanel
       detail={lastRun.detail}
       nodeId={selectedNodeId}

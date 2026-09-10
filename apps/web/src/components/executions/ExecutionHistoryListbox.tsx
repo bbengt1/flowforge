@@ -80,7 +80,10 @@ export function ExecutionHistoryListbox({
                   {onActivate ? (
                     <button
                       type="button"
-                      onClick={() => onActivate(row)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onActivate(row);
+                      }}
                       className="text-left underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
                     >
                       {row.workflowLabel}
