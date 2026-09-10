@@ -96,7 +96,7 @@ export function WorkflowConfigPins({ identity, ready }: WorkflowConfigPinsProps)
         empty lists fail closed.
       </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-[16rem_1fr]">
+      <div className="mt-4 grid gap-3">
         <label className="text-sm">
           <span className="font-medium">Kind</span>
           <select
