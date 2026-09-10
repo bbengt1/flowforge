@@ -126,9 +126,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   workspace create (fail closed). A host-supplied tenant is never authorization.
   The UI treats host-provided identity as display context until
   `POST /embed/exchange` verifies it. Exchange also binds assertion
-  `iss` to the minting host issuer (`X-FlowForge-Host-Issuer` /
-  `hostContext`); an assertion minted under issuer A cannot be
-  exchanged when the host expects issuer B. The CP Ops Portal adapter mints those
+  `iss` to the signed minting host (`host=iss`, `ctx=embed|portal`).
+  The path allowlist is selected from that signed `ctx`, not from an
+  unauthenticated request header. An embed-minted assertion cannot
+  satisfy a Portal path allowlist, and a client header that disagrees
+  with the signed claims is `403`. The CP Ops Portal adapter mints those
   same assertions after Portal RBAC; Portal entry is never FlowForge
   authorization, and FlowForge does not share its database or executor.
   After exchange, embed chrome and deep

@@ -212,7 +212,7 @@ export const PORTAL_HOST_WIRING = [
     id: "exchange",
     actor: "embed-shell",
     path: `/api/v1${PORTAL_EXCHANGE_PATH}`,
-    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange with credentials:include. Send X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned). Replay is 409. Cookie not sent is 401/403.",
+    do: "POST {assertion,sdk:embed.v1} to E11.1 exchange with credentials:include. Optional X-FlowForge-Host-Issuer from GET /portal/adapter issuers and X-FlowForge-Host-Context: portal (must agree with signed ctx=portal). Issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned). Replay is 409. Cookie not sent is 401/403.",
   },
 ] as const;
 

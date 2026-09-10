@@ -18,6 +18,7 @@ type MintInput struct {
 	Subject      string
 	DisplayName  string
 	Host         string
+	Context      string
 	TenantID     string
 	WorkbenchKey string
 	WorkspaceID  string
@@ -93,6 +94,13 @@ func Mint(m Material, in MintInput) (Minted, Claims, error) {
 	if host != iss {
 		return Minted{}, Claims{}, ErrHostIssuer
 	}
+	ctx, err := NormalizeHostContext(in.Context)
+	if err != nil {
+		return Minted{}, Claims{}, err
+	}
+	if ctx == "" {
+		ctx = HostContextEmbed
+	}
 	if !authz.ValidSubject(sub) {
 		return Minted{}, Claims{}, ErrSubject
 	}
@@ -127,6 +135,7 @@ func Mint(m Material, in MintInput) (Minted, Claims, error) {
 		SDK:          SDKVersion,
 		DisplayName:  strings.TrimSpace(in.DisplayName),
 		Host:         host,
+		Ctx:          ctx,
 	}
 	token, err := Sign(m, c)
 	if err != nil {

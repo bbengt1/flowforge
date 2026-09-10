@@ -55,7 +55,7 @@ func (s *Server) requireEmbedKeys(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) getEmbedCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, embed.NewCatalogFor(s.portalFrames, s.peekCatalogView(r)))
+	writeJSON(w, http.StatusOK, embed.NewCatalogFor(s.portalFrames, s.embedMintIssuers, s.peekCatalogView(r)))
 }
 
 func (s *Server) getEmbedJWKS(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +225,7 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 		Subject:      subject,
 		DisplayName:  display,
 		Host:         user.Issuer,
+		Context:      embed.HostContextEmbed,
 		TenantID:     tenant.ID,
 		WorkbenchKey: ws.WorkbenchKey,
 		WorkspaceID:  ws.ID,
@@ -470,13 +471,16 @@ func (s *Server) verifyEmbedAssertion(r *http.Request, req exchangeAssertionRequ
 		return embed.Verified{}, err
 	}
 	opt := embed.VerifyOptions{
-		Audience:           embed.DefaultAudience,
-		Now:                s.clockNow(),
-		Consumer:           s.embedJTI,
-		Context:            r.Context(),
-		AllowedIssuers:     embed.HostAllowlist(binding.Context, s.embedMintIssuers, s.portalIssuers),
-		ExpectedHostIssuer: binding.Issuer,
-		NBFLeeway:          s.embedNBFLeeway,
+		Audience:            embed.DefaultAudience,
+		Now:                 s.clockNow(),
+		Consumer:            s.embedJTI,
+		Context:             r.Context(),
+		ExpectedHostIssuer:  binding.Issuer,
+		HostContext:         binding.Context,
+		EmbedIssuers:        s.embedMintIssuers,
+		PortalIssuers:       s.portalIssuers,
+		SelectPathAllowlist: true,
+		NBFLeeway:           s.embedNBFLeeway,
 	}
 	if s.embedRing != nil {
 		return s.embedRing.Verify(r.Context(), req.Assertion, opt)

@@ -36,11 +36,28 @@ func TestBindHostIssuerFailsClosed(t *testing.T) {
 		t.Fatalf("empty allowlist: %v", err)
 	}
 	both := []string{"https://idp.example", "https://portal.example"}
-	if err := BindHostIssuer("https://idp.example", "https://idp.example", "", both); err != ErrHostIssuer {
-		t.Fatalf("ambiguous host without binding: %v", err)
+	if err := BindHostIssuer("https://idp.example", "https://idp.example", "", both); err != nil {
+		t.Fatalf("signed path allowlist without client header: %v", err)
 	}
 	if err := BindHostIssuer("https://idp.example", "https://idp.example", "https://idp.example", both); err != nil {
 		t.Fatalf("explicit binding on merged list: %v", err)
+	}
+}
+
+func TestResolveSignedHostContext(t *testing.T) {
+	got, err := ResolveSignedHostContext(HostContextEmbed, "")
+	if err != nil || got != HostContextEmbed {
+		t.Fatalf("signed only: %q %v", got, err)
+	}
+	got, err = ResolveSignedHostContext("", HostContextPortal)
+	if err != nil || got != HostContextPortal {
+		t.Fatalf("declared only: %q %v", got, err)
+	}
+	if _, err := ResolveSignedHostContext(HostContextEmbed, HostContextPortal); err != ErrHostIssuer {
+		t.Fatalf("disagree: %v", err)
+	}
+	if _, err := ResolveSignedHostContext("iframe", ""); err != ErrHostContext {
+		t.Fatalf("bad signed: %v", err)
 	}
 }
 

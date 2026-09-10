@@ -30,11 +30,11 @@
  * workspace lookup. Invalid assertions fail closed the same way
  * whether or not the tenant exists. No UI rewrite.
  *
- * ADV-023: exchange binds assertion iss to the minting host issuer.
- * Send X-FlowForge-Host-Issuer (or body hostIssuer) set to the
- * configured Portal / embed issuer for this frame — never peeked from
- * the assertion. Optional X-FlowForge-Host-Context: portal|embed
- * selects the path allowlist. Prefer no UI rewrite beyond the header.
+ * ADV-023: exchange binds assertion iss to the signed minting host.
+ * Mint writes host=iss and ctx=embed|portal. The path allowlist comes
+ * from that signed ctx, not from an unauthenticated header. Optional
+ * X-FlowForge-Host-Issuer / hostContext from catalog or server env
+ * are a consistency check — never peeked from the assertion.
  *
  * ADV-012: POST /embed/exchange is rate-limited (429 rate-limited).
  * Treat 429 as backoff and retry after Retry-After / the window.
@@ -92,6 +92,7 @@ export const EMBED_CLAIM_NAMES = [
   "sdk",
   "display_name",
   "host",
+  "ctx",
 ] as const;
 
 export const EMBED_REQUIRED_CLAIMS = [
@@ -413,6 +414,29 @@ export function parseCatalogFrameAncestors(payload: unknown): string[] {
   return [];
 }
 
+/**
+ * Optional consistency headers for EmbedExchangeGate. postMessage uses
+ * Portal adapter issuers; the form / standalone path uses embed catalog
+ * issuers. Never peek iss from the assertion. Not the bind source —
+ * signed ctx selects the path allowlist.
+ */
+export function exchangeHostBindingFromGate(input: {
+  receivedVia: "form" | "postMessage" | null;
+  embedIssuers?: readonly string[];
+  portalIssuers?: readonly string[];
+}): EmbedHostBinding {
+  if (input.receivedVia === "postMessage") {
+    return {
+      hostContext: EMBED_HOST_CONTEXT_PORTAL,
+      hostIssuer: input.portalIssuers?.[0]?.trim() || undefined,
+    };
+  }
+  return {
+    hostContext: EMBED_HOST_CONTEXT_EMBED,
+    hostIssuer: input.embedIssuers?.[0]?.trim() || undefined,
+  };
+}
+
 export type EmbedProxyRoute = {
   methods: readonly string[];
   match: (segments: string[]) => boolean;
@@ -498,7 +522,7 @@ export const EMBED_HOST_CONTEXT_EMBED = "embed" as const;
 export const EMBED_HOST_CONTEXT_PORTAL = "portal" as const;
 
 export const EMBED_EXCHANGE_HELP =
-  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Send X-FlowForge-Host-Issuer set to the configured host issuer for this frame (Portal issuer on a Portal-framed flow; embed issuer standalone) — never copy iss from the assertion. Optional X-FlowForge-Host-Context: portal|embed selects that path allowlist. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds. HTTP 429 rate-limited means backoff (Retry-After); do not treat it as a forbidden assertion.";
+  "POST /embed/exchange {assertion, sdk?: \"embed.v1\"} through the same-origin /api/v1 proxy with credentials:include. The compact JWS is body-only — never query, hash, path, or localStorage. The API verifies signature and claims before any workspace lookup. Mint binds host=iss and ctx=embed|portal; exchange selects the path allowlist from that signed ctx. Optional X-FlowForge-Host-Issuer from GET /embed/catalog issuers (standalone) or GET /portal/adapter issuers (Portal) plus X-FlowForge-Host-Context is a consistency check — never copy iss from the assertion. Success sets CHIPS ff_session + ff_csrf (SameSite=None; Secure; Partitioned). Host identity is display context until this call succeeds. HTTP 429 rate-limited means backoff (Retry-After); do not treat it as a forbidden assertion.";
 
 /** Embed session cookies after POST /embed/exchange. Not used for POST /session. */
 export const EMBED_SESSION_COOKIE = {
@@ -757,15 +781,18 @@ export const EMBED_VERIFY_RULES = {
 } as const;
 
 /**
- * ADV-023: bind iss to the minting host issuer on exchange.
- * Chloe sends the configured host issuer, never a peeked assertion iss.
+ * ADV-023: bind iss to the signed minting host on exchange.
+ * Path allowlist comes from signed ctx. Optional headers are a
+ * consistency check; Chloe never peeks assertion iss.
  */
 export const EMBED_HOST_ISSUER_RULES = {
   bindIssToMintingHost: true,
+  signedCtxSelectsPathAllowlist: true,
   header: FLOWFORGE_HOST_ISSUER_HEADER,
   contextHeader: FLOWFORGE_HOST_CONTEXT_HEADER,
   neverPeekIssFromAssertion: true,
-  requiredWhenMultipleIssuers: true,
+  catalogIssuersAreConfiguredHost: true,
+  headersAreOptionalConsistency: true,
   wrongIssuerForHostIs403: true,
   noUiRewriteBeyondHeader: true,
   catalogIssuersField: "issuers",
@@ -775,7 +802,7 @@ export const EMBED_HOST_ISSUER_RULES = {
 } as const;
 
 export const EMBED_HOST_ISSUER_HELP =
-  "On POST /embed/exchange send X-FlowForge-Host-Issuer (or body hostIssuer) set to the configured Portal or embed issuer for this frame. Do not copy iss/host from the assertion. Optional X-FlowForge-Host-Context: portal (Portal-framed) or embed (standalone) selects that path allowlist. Wrong-issuer-for-host is HTTP 403. Prefer no UI rewrite beyond attaching the header.";
+  "Mint writes host=iss and ctx=embed|portal. Exchange selects EMBED_* vs PORTAL_* from that signed ctx. Optional X-FlowForge-Host-Issuer from catalog issuers (standalone) or portal adapter issuers (Portal) plus X-FlowForge-Host-Context is a consistency check. Do not copy iss/host from the assertion. A disagreeing header is HTTP 403.";
 
 /** ADV-009: atomic jti consume; used ids retained 24h past exp. No UI. */
 export const EMBED_JTI_RULES = {
