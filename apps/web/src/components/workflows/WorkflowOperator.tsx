@@ -1008,6 +1008,23 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     }
   }
 
+  function applyNodeName(id: string, name: string) {
+    const node = listYamlNodes(yaml).find((item) => item.id === id);
+    if (!node) {
+      return;
+    }
+    const next = updateYamlNode(yaml, {
+      id: node.id,
+      type: node.type,
+      name: name.trim() || node.name,
+      with: node.with,
+    });
+    if (next) {
+      setDigest(null);
+      setYaml(next);
+    }
+  }
+
   const errorLines = errors
     .map((error) => error.line)
     .filter((line): line is number => typeof line === "number");
@@ -1247,6 +1264,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             dirty={dirty}
             hasPublishedVersion={Boolean(publishedVersion || versions[0])}
             scriptCatalog={scriptCatalog}
+            engineCatalog={engineCatalog}
+            sshCatalog={sshCatalog}
+            httpCatalog={httpCatalog}
             scriptArtifacts={
               scriptArtifacts[publishedVersion?.id ?? versions[0]?.id ?? ""] ??
               []
@@ -1261,6 +1281,7 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             }
             onSelectNode={(id) => setSelection({ kind: "node", id })}
             onApply={applyNodeConfig}
+            onRename={applyNodeName}
             onPatchNodeWith={patchNodeWith}
           />
           <ValidationPanel

@@ -543,8 +543,9 @@ export function ActionWizard({
           </button>
         </div>
         <p className="mt-1 text-sm text-zinc-600">
-          Inserts a canonical YAML node on the canvas. Secrets stay in the
-          vault — selectors show display names only.
+          Guided add: type → authorized target/credential → configure → map →
+          review. Select a canvas node to edit it in the inspector. Secrets
+          stay in the vault — selectors show display names only.
         </p>
         <ol className="mt-3 flex flex-wrap gap-2 text-sm text-zinc-600">
           {ACTION_WIZARD_STEPS.map((item, index) => (
