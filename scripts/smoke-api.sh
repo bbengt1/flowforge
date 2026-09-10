@@ -108,6 +108,36 @@ if [[ "$code" != "200" ]] || ! grep -q 'flowforge_http_requests_total' "$BODY"; 
 fi
 echo "ok GET /api/v1/metrics ${code} (authorized)"
 
+# #191 local compose seed (tenant local / workbench default + demo vault).
+code="$(auth_request "${BASE_URL}/api/v1/workspaces")"
+if [[ "$code" != "200" ]] || ! jq -e '
+  [.items[] | select(.tenant.slug == "local" and .workspace.workbench_key == "default" and (.roles | index("admin")))] | length == 1
+' "$BODY" >/dev/null 2>&1; then
+  echo "assert failed seeded GET /api/v1/workspaces: status=${code} body=$(cat "$BODY")" >&2
+  exit 1
+fi
+echo "ok GET /api/v1/workspaces ${code} (seeded local/default)"
+
+auth_workspace_request() {
+  local url="$1"
+  curl -s -m 5 -D "$HEADERS" -o "$BODY" -w '%{http_code}' \
+    -H "X-FlowForge-Issuer: https://idp.example" \
+    -H "X-FlowForge-Subject: admin-1" \
+    -H "X-FlowForge-Display-Name: Admin" \
+    -H "X-FlowForge-Tenant-Slug: local" \
+    -H "X-FlowForge-Workbench-Key: default" \
+    "$url" 2>/dev/null || true
+}
+
+code="$(auth_workspace_request "${BASE_URL}/api/v1/credentials")"
+if [[ "$code" != "200" ]] || ! jq -e '
+  ([.items[].displayName] | sort) == ["Local demo provider", "Local demo token", "Local demo webhook"]
+' "$BODY" >/dev/null 2>&1; then
+  echo "assert failed seeded GET /api/v1/credentials: status=${code} body=$(cat "$BODY")" >&2
+  exit 1
+fi
+echo "ok GET /api/v1/credentials ${code} (seeded demo credentials)"
+
 code="$(request "${BASE_URL}/api/v1/missing")"
 if [[ "$code" != "404" ]] || ! jq -e '.code == "not-found" and .status == 404 and .request_id != null' "$BODY" >/dev/null 2>&1; then
   echo "assert failed GET /api/v1/missing: status=${code} body=$(cat "$BODY")" >&2

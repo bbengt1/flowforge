@@ -35,9 +35,11 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # Local vault KEK (E4.1). 32-byte AES-256 as base64 or 64 hex chars.
 # Generate with: openssl rand -base64 32
 # Leave empty to boot the API; create/rotate/test fail closed until set.
-# CREDENTIAL_KEK=
+# Compose defaults to a documented local-only KEK so demo credentials can
+# be seeded. That value is never a production secret — do not copy it to k8s.
+# CREDENTIAL_KEK=Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=
 # CREDENTIAL_KEK_FILE=
-# CREDENTIAL_KEK_ID=env:CREDENTIAL_KEK
+# CREDENTIAL_KEK_ID=local:compose
 # HMAC key for authenticated worker job tickets (E5.2). 32-byte AES-sized
 # secret as base64 or 64 hex. Unset uses an ephemeral process key.
 # JOB_BINDING_SECRET=
@@ -88,6 +90,11 @@ TRUSTED_DEV_IDENTITY_HEADERS=1
 # Platform-admin allowlist (issuer|subject). Empty denies POST /tenants,
 # POST /workspaces, and POST /embed/keys/rotate.
 PLATFORM_ADMINS=https://idp.example|admin-1
+# Seed one local tenant/workbench + demo vault credentials on API boot.
+# Default on when APP_ENV is development|dev|local|test and REQUIRE_TLS=false.
+# Set 0 to opt out. Explicit 1 with production APP_ENV or REQUIRE_TLS=true
+# is a boot-fail. Do not set in deploy/k8s.
+# SEED_LOCAL_DEFAULTS=1
 
 # --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
 # Preferred: Ed25519 PKCS#8 PEM (crypto/x509.ParsePKCS8PrivateKey).

@@ -130,7 +130,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |
-| `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use. |
+| `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use and for local demo credential seed. Compose may default a local-only value — do not copy it to k8s. |
 | `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
 | `JOB_BINDING_SECRET` | ephemeral | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Unset generates a process-local key (tickets die on restart). |
@@ -148,6 +148,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403`). Production requires `https://` (ADV-018; boot-fail). |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint issuer allowlist. Empty fails closed (`403`). Merged into embed exchange verification. Production requires `https://` (ADV-018; boot-fail). |
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `WEB_EMBED_FRAME_ANCESTORS`). Published on `GET /api/v1/embed/catalog` and `GET /api/v1/portal/adapter` as `frameAncestors`. Empty fails closed. |
+| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, and demo vault credentials. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -187,7 +188,8 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
-      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-}
+      CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=}
+      CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
       ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
@@ -197,6 +199,7 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       APP_ENV: ${APP_ENV:-development}
       TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
+      SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}
     depends_on:
       postgres:
         condition: service_healthy

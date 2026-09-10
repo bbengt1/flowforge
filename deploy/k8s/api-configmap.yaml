@@ -8,6 +8,7 @@ metadata:
 data:
   HTTP_ADDR: ":8080"
   # Production-locked. Do not set TRUSTED_DEV_IDENTITY_HEADERS here.
+  # Do not set SEED_LOCAL_DEFAULTS (local compose tenant/credential seed).
   # Set PLATFORM_ADMINS on the Secret (issuer|subject). Empty is fail-closed.
   APP_ENV: "production"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.

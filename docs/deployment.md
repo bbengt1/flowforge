@@ -10,7 +10,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
 2. Run `docker compose up --build`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production.
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
@@ -53,7 +53,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `CORS_ALLOWED_ORIGINS` | empty | Exact browser origins allowed to make credentialed API calls. Empty fails closed. Wildcard is rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Browser session absolute lifetime. |
-| `CREDENTIAL_KEK` | empty | 32-byte AES-256 credential envelope KEK (base64 or hex). Generate with `openssl rand -base64 32`. Required to create/rotate vault secrets. |
+| `CREDENTIAL_KEK` | empty (compose: documented local-only default) | 32-byte AES-256 credential envelope KEK (base64 or hex). Generate with `openssl rand -base64 32`. Required to create/rotate vault secrets and to seed demo credentials. Compose may default a local-only value (`CREDENTIAL_KEK_ID=local:compose`). Never copy that default to k8s. |
 | `CREDENTIAL_KEK_FILE` | empty | Optional KEK file path (same encoding, or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Key reference stored with ciphertext (not the key). |
 | `ARTIFACT_STORE_DIR` | empty | Encrypted artifact payload root. Empty = in-process memory. Read-only containers should use `/tmp/flowforge-artifacts`. |
@@ -69,8 +69,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_NBF_LEEWAY` | `30s` | Clock-skew for embed assertion `nbf` only (ADV-017). Hard max `60s` (clamped). `exp` is exact. |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. Each key requires `overlapUntil` (RFC3339, max 4h from boot). Missing, zero, or far-future is a boot-fail. The active `EMBED_SIGNING_KEY` is not an overlap key and does not use `overlapUntil`. |
 | `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, read `GET /metrics` / OpenAPI / swagger, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
-| `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity requires `development`, `dev`, `local`, or `test`. |
+| `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity and local seed require `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
+| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | **Local/dev only.** When `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is false, the API seeds one tenant (`local`), workbench (`default`), attaches `PLATFORM_ADMINS` as workspace admin, and writes demo vault credentials if `CREDENTIAL_KEK` is set. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403` on mint; exchange also `403` when Portal is empty). Compose seeds `https://idp.example`. Production ConfigMap must set an explicit **https** list — `http://`, relative, or opaque issuers are a boot-fail when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true` (ADV-018). Mint/exchange also `403` a non-https `iss`. Local/dev/test may use `http://`. |
 | `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` per client IP per window. Raise if a Portal shared egress IP remounts many iframes. Negative is unlimited. |
 | `EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL` | `30` | Max exchange per peekable `iss\|sub` per window. |
@@ -118,7 +119,8 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
 | `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` unset (ephemeral) | Durable secrets. Tickets and script signatures die on restart if unset. |
-| `CREDENTIAL_KEK` optional to boot | Required to create/rotate vault secrets and to decrypt artifacts after restore. |
+| `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
+| Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
 | `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
 | OpenAPI/metrics via trusted-dev headers | `Authorization: Bearer <ff_session>` for a `PLATFORM_ADMINS` principal. |
 
@@ -128,6 +130,77 @@ root, `cap_drop: ALL`, `no_new_privs`, resource limits, default-deny
 NetworkPolicy, TLS at the ingress/proxy boundary. See
 [supply-chain policy](../deploy/supply-chain/policy.md) and
 [`deploy/k8s/README.md`](../deploy/k8s/README.md).
+
+## Local default tenant seed
+
+Relates to #191. Fresh `docker compose up` seeds one tenant, one workbench,
+and placeholder vault credentials so the UI can be exercised without a
+manual `POST /tenants` / `POST /workspaces` bootstrap.
+
+This path is **local/dev only**. It does not run in production-like
+`APP_ENV` (empty, `production`, or unknown) or when `REQUIRE_TLS=true`.
+ADV-002 (fail-closed identity), ADV-003 (embed-session bootstrap), and
+ADV-010 stay unchanged: seed writes rows; it does not accept
+self-asserted headers or let an embed session create tenants.
+
+### What is seeded
+
+| Object | Value |
+| --- | --- |
+| Tenant slug / name | `local` / `Local demo` |
+| Workbench key / name | `default` / `Local workbench` |
+| Workspace admin | Each `PLATFORM_ADMINS` principal (compose default `https://idp.example\|admin-1`) |
+| Demo credentials | `Local demo token`, `Local demo webhook`, `Local demo provider` (tag `local-demo`) |
+
+Demo secret payloads are documented placeholders
+(`local-demo-token-not-a-secret` and siblings). They are **not**
+third-party credentials and must never be used outside local compose.
+
+The seed is idempotent. Restarting the API, or re-running against a
+volume that already has these rows, reuses the same tenant, workbench,
+membership, and credential display names.
+
+### Opt in / opt out
+
+| Setting | Effect |
+| --- | --- |
+| `APP_ENV=development\|dev\|local\|test` and `REQUIRE_TLS` false (compose default) | Seed runs after migrate, before readiness. |
+| `SEED_LOCAL_DEFAULTS=0` / `false` / `off` | Opt out in local/dev. |
+| `SEED_LOCAL_DEFAULTS=1` with empty/`production`/unknown `APP_ENV` or `REQUIRE_TLS=true` | **Boot-fail** (leftover flag cannot stay on). |
+| Empty `PLATFORM_ADMINS` | Seed no-ops (nothing is invented). |
+| `CREDENTIAL_KEK` unset | Tenant/workbench still seed; demo credentials are skipped (fail-closed). |
+
+Compose sets a documented local-only KEK
+(`CREDENTIAL_KEK_ID=local:compose`, ASCII
+`flowforge-local-dev-kek-32bytes!` as base64) so demo credentials can be
+created. Prefer `openssl rand -base64 32` for a private local key.
+**Do not copy that compose default into `deploy/k8s` or any production
+Secret.** Production still fails closed on vault write until a real KEK
+is set.
+
+### Using the seeded workspace in the UI
+
+`GET /api/v1/workspaces` and `GET /api/v1/credentials` already return
+the seeded rows for `admin-1` once workspace lookup is
+`tenant slug=local` + `workbench_key=default`. Trusted-dev header
+identity (or a cookie session for that principal) is still required —
+the seed does not change authentication.
+
+On `/membership`, enable the temporary header fallback if you are not
+using a session, then set:
+
+- Issuer `https://idp.example`, subject `admin-1`
+- Tenant slug `local`, workbench key `default`
+
+List workspaces / open Credentials. The switcher lists memberships only
+after that workspace lookup is in tab `sessionStorage` (existing UI
+contract; see the Chloe note on the #191 PR).
+
+### Production
+
+`deploy/k8s/api-configmap.yaml` must not set `SEED_LOCAL_DEFAULTS`.
+Empty/`production` `APP_ENV` plus `REQUIRE_TLS=true` keeps the seed
+inactive even if someone copies the compose file.
 
 ## Metrics and OpenAPI scrape (ADV-020)
 

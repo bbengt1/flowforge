@@ -33,9 +33,17 @@ type Pool struct {
 	url            string
 	log            *slog.Logger
 	migrateTimeout time.Duration
+	afterReady     func(context.Context, *pgxpool.Pool) error
 	mu             sync.RWMutex
 	pool           *pgxpool.Pool
 	last           error
+}
+
+// SetAfterReady registers a hook that runs after migrate and before the
+// pool is published for readiness. A failing hook keeps readiness down
+// and is retried with the connect loop. Used for local/dev seed only.
+func (p *Pool) SetAfterReady(fn func(context.Context, *pgxpool.Pool) error) {
+	p.afterReady = fn
 }
 
 // NewPool returns an unconnected pool. Call Start to connect and migrate.
@@ -156,6 +164,14 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 		return err
 	}
 	cancelPing()
+
+	if p.afterReady != nil {
+		if err := p.afterReady(ctx, app); err != nil {
+			app.Close()
+			p.setErr(err)
+			return fmt.Errorf("after ready: %w", err)
+		}
+	}
 
 	p.mu.Lock()
 	if p.pool != nil {
