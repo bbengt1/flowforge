@@ -68,16 +68,17 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
+  const [navPath, setNavPath] = useState(pathname);
+  if (navPath !== pathname) {
+    setNavPath(pathname);
+    setNavOpen(false);
+  }
   const editorRoute = isWorkflowEditorPath(pathname);
   const navMode = editorNavMode({
     pathname,
     overlayOpen: navOpen,
     compact: editorRoute && navOpen,
   });
-
-  useEffect(() => {
-    setNavOpen(false);
-  }, [pathname]);
   const session = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,
