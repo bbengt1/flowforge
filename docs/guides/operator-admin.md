@@ -87,18 +87,26 @@ Editor `/workflows/{id}` — one draft, two views. YAML is the only
 persisted definition.
 
 1. **Action library** — enabled catalog only. Triggers stay
-   workflow-level; they are not canvas nodes.
+   workflow-level; they are not canvas nodes. Library is a drawer;
+   Esc closes it and returns focus to **Library**.
 2. **Canvas** — pan, zoom, select, connect compatible ports. Invalid
    YAML never draws a guessed graph. State uses icon + text. Keyboard:
-   focus the canvas, then Zoom in / Zoom out / Reset.
+   focus the canvas, then Zoom in / Zoom out / Reset. Selecting a node
+   announces enough to use the inspector. This is not a screen-reader
+   graph rewrite.
 3. **Add action wizard** — type → authorized target/credential →
    configure → map ports → review. Esc closes. Secrets never appear in
    selectors.
-4. **YAML** — labeled editor, line/column jump, debounced validate.
-   Save normalizes and replaces the buffer with API YAML + digest.
-5. **Validation** — live region; errors link to a node or YAML path.
+4. **YAML / runs / inspector drawers** — labeled top-bar toggles. Esc
+   closes the open drawer and returns focus. On narrow viewports
+   (`max-width: 767px`) the inspector stacks first — a documented
+   breakpoint, not a mobile app.
+5. **YAML editor** — labeled editor, line/column jump, debounced
+   validate. Save normalizes and replaces the buffer with API YAML +
+   digest.
+6. **Validation** — live region; errors link to a node or YAML path.
    Save stays disabled while invalid.
-6. **Publish** — last **saved** draft only. Restore creates a new draft.
+7. **Publish** — last **saved** draft only. Restore creates a new draft.
 
 Catalog library: `/actions`. Templates: `/templates`.
 

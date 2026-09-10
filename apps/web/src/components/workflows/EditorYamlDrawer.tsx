@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { EDITOR_YAML_PANEL_ID } from "@/lib/e12-accessibility-contract";
 
 type EditorYamlDrawerProps = {
   open: boolean;
@@ -19,7 +20,7 @@ export function EditorYamlDrawer({
 
   return (
     <section
-      id="editor-yaml-drawer"
+      id={EDITOR_YAML_PANEL_ID}
       aria-label="YAML editor"
       className="flex max-h-[42%] min-h-[12rem] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white"
     >

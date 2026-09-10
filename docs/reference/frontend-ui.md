@@ -109,6 +109,11 @@ Operator routes (Chloe, E4.1): `/credentials` (list/search), `/credentials/new` 
 - Responsive layout preserves the canvas and inspector on desktop; on smaller screens, library and inspector become drawers while workflow review/run/history remain fully usable.
 - Respect reduced motion and user color preferences. Motion is limited to meaningful execution/connection feedback.
 - E12.3 review and cheap shell/search/palette/session/vault fixes: [e12-accessibility-review.md](e12-accessibility-review.md). Operator keyboard paths: [operator-admin UI guide](../guides/operator-admin.md).
+- UX.10 canvas-first chrome contract (Chloe, #205 / epic #195 — **keep #205 open**): skip link still `#main-content`; editor bar controls are labeled; library / YAML / runs / (narrow) inspector drawers close on Esc and restore focus; canvas keeps `role="application"`, node/edge names, and icon+text state; selecting a node announces enough to use the inspector. Status is never color-only. Do not nest a second `<main>`. This is **not** a screen-reader graph rewrite.
+
+### Touch / narrow inspector-first (documented gap)
+
+At `max-width: 767px` the editor stacks the inspector above the canvas (`order-first`). That is a **layout breakpoint**, not a mobile app and not a full touch graph editor. Tiny canvas handles, a dedicated mobile authoring mode, and a complete inspector-first editing flow remain a tracked frontend-ui gap (`touch-inspector-first`). Desktop keyboard + inspector rail stay the MVP path.
 
 ## E6.1 workspace shell and workflow home
 
