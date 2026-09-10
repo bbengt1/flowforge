@@ -42,6 +42,7 @@ export function VersionHistory({
 
   return (
     <section
+      id="version-history"
       aria-labelledby="version-history-heading"
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >

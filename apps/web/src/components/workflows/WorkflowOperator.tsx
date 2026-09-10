@@ -6,7 +6,6 @@ import { ProblemBanner } from "@/components/ProblemBanner";
 import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
-import { WorkflowConfigPins } from "@/components/workflows/WorkflowConfigPins";
 import { ActionLibrary } from "@/components/workflows/ActionLibrary";
 import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
@@ -18,10 +17,7 @@ import { EditorTopBar } from "@/components/workflows/EditorTopBar";
 import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
 import { EditorYamlTools } from "@/components/workflows/EditorYamlTools";
 import { RunControl } from "@/components/workflows/RunControl";
-import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
-import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
-import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
@@ -1414,6 +1410,23 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             credentialRefreshNonce={credentialRefreshNonce}
             pendingCredentials={pendingCredentials}
             onAddCredential={setAddCredential}
+            workflowAdmin={{
+              workflowId: workflow?.id ?? workflowId,
+              workflowName: workflow?.name,
+              permissions,
+              versions,
+              pending,
+              dirty,
+              compareLeft,
+              compareRight,
+              compare,
+              onCompareLeft: setCompareLeft,
+              onCompareRight: setCompareRight,
+              onCompare: () => void runCompare(),
+              onExport: (version) => void exportVersion(version),
+              onRestore: (version) => void restoreVersion(version),
+              versionPins,
+            }}
           />
           <ValidationPanel
             status={status}
@@ -1454,51 +1467,6 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
               }
             />
           ) : null}
-          {workflow ? (
-            <details className="rounded-xl border border-zinc-200 bg-white p-3">
-              <summary className="cursor-pointer text-sm font-medium text-zinc-800">
-                Triggers &amp; versions
-              </summary>
-              <div className="mt-3 space-y-4">
-                <WebhookTriggerPanel
-                  identity={identity}
-                  workflowId={workflow.id}
-                  workflowName={workflow.name}
-                  yaml={yaml}
-                  permissions={permissions}
-                />
-                <ScheduleTriggerPanel
-                  identity={identity}
-                  workflowId={workflow.id}
-                  workflowName={workflow.name}
-                  yaml={yaml}
-                  permissions={permissions}
-                />
-                <VersionHistory
-                  versions={versions}
-                  pending={pending}
-                  dirty={dirty}
-                  compareLeft={compareLeft}
-                  compareRight={compareRight}
-                  compare={compare}
-                  onCompareLeft={setCompareLeft}
-                  onCompareRight={setCompareRight}
-                  onCompare={() => void runCompare()}
-                  onExport={(version) => void exportVersion(version)}
-                  onRestore={(version) => void restoreVersion(version)}
-                  versionPins={versionPins}
-                />
-              </div>
-            </details>
-          ) : null}
-          <details className="rounded-xl border border-zinc-200 bg-white p-3">
-            <summary className="cursor-pointer text-sm font-medium text-zinc-800">
-              Config pins
-            </summary>
-            <div className="mt-3">
-              <WorkflowConfigPins identity={identity} ready={canCall} />
-            </div>
-          </details>
           {lastRequestId && !problem ? (
             <p className="font-mono text-[11px] text-zinc-400">
               last request_id {lastRequestId}
