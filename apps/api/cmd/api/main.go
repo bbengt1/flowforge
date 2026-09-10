@@ -58,6 +58,7 @@ func main() {
 			PortalFrameAncestors: cfg.PortalFrameAncestors,
 			PlatformAdmins:       cfg.PlatformAdmins,
 			EmbedLimits:          cfg.EmbedLimits,
+			EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
 			Security: httpapi.Security{
 				TrustedProxies:       cfg.TrustedProxies,
 				RequireTLS:           cfg.RequireTLS,

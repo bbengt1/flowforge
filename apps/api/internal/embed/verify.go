@@ -26,6 +26,10 @@ type VerifyOptions struct {
 	Context            context.Context
 	AllowedIssuers     []string
 	ExpectedHostIssuer string
+	// NBFLeeway is clock-skew for nbf only (ADV-017). Zero uses
+	// DefaultNBFLeeway (30s). Values above MaxNBFLeeway (60s) are
+	// clamped. exp is never given this leeway.
+	NBFLeeway time.Duration
 }
 
 // Verified is a signature-checked assertion. Host IDs remain untrusted
@@ -137,9 +141,10 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 			return Verified{}, err
 		}
 	}
-	if now.Unix() < c.NotBefore {
+	if nbfNotYetValid(now, c.NotBefore, opt.NBFLeeway) {
 		return Verified{}, ErrNotYetValid
 	}
+	// exp has no clock-skew leeway (ADV-017). Do not reuse nbfNotYetValid.
 	if now.Unix() >= c.ExpiresAt {
 		return Verified{}, ErrExpired
 	}

@@ -64,6 +64,7 @@ type Server struct {
 	platformAdmins   []authz.PrincipalRef
 	embedLimiter     *embed.Limiter
 	embedAuditor     embed.Auditor
+	embedNBFLeeway   time.Duration
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -100,6 +101,9 @@ type Deps struct {
 	PlatformAdmins       []authz.PrincipalRef
 	EmbedLimits          embed.Limits
 	EmbedAuditor         embed.Auditor
+	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
+	// documented default (30s). Values above 60s are clamped.
+	EmbedNBFLeeway time.Duration
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -352,6 +356,7 @@ func newServer(d Deps) http.Handler {
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
 		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
 		embedAuditor:     d.EmbedAuditor,
+		embedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
 	}
 	if d.PlatformAdmins != nil {
 		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)

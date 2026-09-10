@@ -474,6 +474,7 @@ func (s *Server) verifyEmbedAssertion(r *http.Request, req exchangeAssertionRequ
 		Context:            r.Context(),
 		AllowedIssuers:     embed.HostAllowlist(binding.Context, s.embedMintIssuers, s.portalIssuers),
 		ExpectedHostIssuer: binding.Issuer,
+		NBFLeeway:          s.embedNBFLeeway,
 	}
 	if s.embedRing != nil {
 		return s.embedRing.Verify(r.Context(), req.Assertion, opt)
