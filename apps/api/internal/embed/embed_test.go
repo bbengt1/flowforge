@@ -31,6 +31,49 @@ func testMintInput(now time.Time) MintInput {
 	}
 }
 
+func TestMintBindsHostToIssuer(t *testing.T) {
+	m := TestMaterial()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	in := testMintInput(now)
+	in.Host = ""
+	_, claims, err := Mint(m, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Host != claims.Issuer {
+		t.Fatalf("host %q iss %q", claims.Host, claims.Issuer)
+	}
+	in.Host = "https://other.example"
+	if _, _, err := Mint(m, in); err != ErrHostIssuer {
+		t.Fatalf("host mismatch: %v", err)
+	}
+}
+
+func TestVerifyExpectedHostIssuer(t *testing.T) {
+	m := TestMaterial()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	minted, claims, err := Mint(m, testMintInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := VerifyOptions{
+		Now: now.Add(time.Second), SkipJTI: true, ResolvedWS: claims.WorkspaceID,
+		AllowedIssuers:     []string{claims.Issuer, "https://other.example"},
+		ExpectedHostIssuer: claims.Issuer,
+	}
+	if _, err := Verify(m, minted.Assertion, opt); err != nil {
+		t.Fatal(err)
+	}
+	opt.ExpectedHostIssuer = "https://other.example"
+	if _, err := Verify(m, minted.Assertion, opt); err != ErrHostIssuer {
+		t.Fatalf("wrong expected host: %v", err)
+	}
+	opt.ExpectedHostIssuer = ""
+	if _, err := Verify(m, minted.Assertion, opt); err != ErrHostIssuer {
+		t.Fatalf("ambiguous allowlist: %v", err)
+	}
+}
+
 func TestMintHappyPath(t *testing.T) {
 	m := TestMaterial()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -295,7 +338,7 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 	if EmbedPath("/workflows/{id}") != "/embed/v1/workflows/{id}" {
 		t.Fatal(EmbedPath("/workflows/{id}"))
 	}
-	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors {
+	if !c.Rules.AssertionNotInURL || !c.Rules.AudienceBound || !c.Rules.EmbedSessionsCannotBootstrap || !c.Rules.PartitionedEmbedCookies || !c.Rules.VerifyBeforeWorkspaceLookup || !c.Rules.JTIRetainPastExpiry || !c.Rules.AuthzAudited || !c.Rules.ExchangeRateLimited || !c.Rules.SharedHostAllowlist || !c.Rules.EmptyHostAllowlistFailsClosed || !c.Rules.PostMessageUsesFrameAncestors || !c.Rules.ExchangeBindsHostIssuer {
 		t.Fatal("rules")
 	}
 	if c.FrameAncestors != nil {
@@ -329,6 +372,9 @@ func TestCatalogDocumentsContractAndHooks(t *testing.T) {
 			}
 			if !strings.Contains(r.Note, "before any workspace lookup") {
 				t.Fatalf("exchange note must require verify before workspace lookup: %q", r.Note)
+			}
+			if !strings.Contains(r.Note, "X-FlowForge-Host-Issuer") {
+				t.Fatalf("exchange note must bind minting host issuer: %q", r.Note)
 			}
 			if !strings.Contains(r.Note, "429") || !strings.Contains(r.Note, "rate-limited") {
 				t.Fatalf("exchange note must document 429 rate-limit: %q", r.Note)

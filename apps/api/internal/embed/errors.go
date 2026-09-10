@@ -21,14 +21,20 @@ var (
 	ErrSigningKeyRequired = errors.New("EMBED_SIGNING_KEY is required in production")
 	ErrIssuer             = errors.New("embed assertion issuer is not valid")
 	ErrIssuerNotAllowed   = errors.New("embed assertion issuer is not on the allowlist")
-	ErrSubject            = errors.New("embed assertion subject is not valid")
-	ErrTokenID            = errors.New("embed assertion token id is not valid")
-	ErrTenant             = errors.New("embed assertion tenant_id is not valid")
-	ErrWorkbench          = errors.New("embed assertion workbench_key is not valid")
-	ErrTTL                = errors.New("embed assertion ttl is not valid")
-	ErrStoreUnavailable   = errors.New("embed assertion store is unavailable")
-	ErrUnknownKey         = errors.New("embed assertion key id is not active or overlapping")
-	ErrOverlapNotPrior    = errors.New("embed overlap key must be the previous active signing key")
+	// ErrHostIssuer is ADV-023: iss is not bound to the minting host
+	// issuer context (wrong host, host claim mismatch, or ambiguous
+	// multi-issuer exchange without an explicit binding).
+	ErrHostIssuer = errors.New("embed assertion issuer is not bound to the minting host")
+	// ErrHostContext is an unknown X-FlowForge-Host-Context / hostContext.
+	ErrHostContext      = errors.New("embed host context is not valid")
+	ErrSubject          = errors.New("embed assertion subject is not valid")
+	ErrTokenID          = errors.New("embed assertion token id is not valid")
+	ErrTenant           = errors.New("embed assertion tenant_id is not valid")
+	ErrWorkbench        = errors.New("embed assertion workbench_key is not valid")
+	ErrTTL              = errors.New("embed assertion ttl is not valid")
+	ErrStoreUnavailable = errors.New("embed assertion store is unavailable")
+	ErrUnknownKey       = errors.New("embed assertion key id is not active or overlapping")
+	ErrOverlapNotPrior  = errors.New("embed overlap key must be the previous active signing key")
 	// ErrOverlapUntilRequired is missing, zero, or already-elapsed
 	// overlapUntil on an overlap verify key (ADV-014). Zero is not forever.
 	ErrOverlapUntilRequired = errors.New("embed overlap key requires a short overlapUntil")

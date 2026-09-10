@@ -99,7 +99,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   realtime, history, and audit. The bound session cannot call tenant or
   workspace create (fail closed). A host-supplied tenant is never authorization.
   The UI treats host-provided identity as display context until
-  `POST /embed/exchange` verifies it. The CP Ops Portal adapter mints those
+  `POST /embed/exchange` verifies it. Exchange also binds assertion
+  `iss` to the minting host issuer (`X-FlowForge-Host-Issuer` /
+  `hostContext`); an assertion minted under issuer A cannot be
+  exchanged when the host expects issuer B. The CP Ops Portal adapter mints those
   same assertions after Portal RBAC; Portal entry is never FlowForge
   authorization, and FlowForge does not share its database or executor.
   After exchange, embed chrome and deep

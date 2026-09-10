@@ -24,6 +24,13 @@ import {
   EMBED_ROTATE_PATH,
   EMBED_TENANCY_RULES,
   EMBED_VERIFY_RULES,
+  EMBED_HOST_ISSUER_RULES,
+  EMBED_HOST_ISSUER_HELP,
+  EMBED_HOST_CONTEXT_EMBED,
+  EMBED_HOST_CONTEXT_PORTAL,
+  FLOWFORGE_HOST_CONTEXT_HEADER,
+  FLOWFORGE_HOST_ISSUER_HEADER,
+  embedHostBindingHeaders,
   EMBED_JTI_RULES,
   EMBED_RATE_LIMIT_RULES,
   EMBED_RATE_LIMITED_MESSAGE,
@@ -228,6 +235,28 @@ describe("embed-contract", () => {
       assertion: sample,
       sdk: "embed.v1",
     });
+    assert.deepEqual(
+      buildEmbedExchangeBody(sample, {
+        hostIssuer: "https://idp.example",
+        hostContext: EMBED_HOST_CONTEXT_EMBED,
+      }),
+      {
+        assertion: sample,
+        sdk: "embed.v1",
+        hostIssuer: "https://idp.example",
+        hostContext: "embed",
+      },
+    );
+    assert.deepEqual(
+      embedHostBindingHeaders({
+        hostIssuer: "https://portal.example",
+        hostContext: EMBED_HOST_CONTEXT_PORTAL,
+      }),
+      {
+        [FLOWFORGE_HOST_ISSUER_HEADER]: "https://portal.example",
+        [FLOWFORGE_HOST_CONTEXT_HEADER]: "portal",
+      },
+    );
   });
 
   it("rejects assertion tokens in query or hash and never reads them", () => {
@@ -362,6 +391,11 @@ describe("embed-contract", () => {
     assert.equal(EMBED_VERIFY_RULES.verifyBeforeWorkspaceLookup, true);
     assert.equal(EMBED_VERIFY_RULES.noWorkspaceOracleOnInvalidAssertion, true);
     assert.equal(EMBED_VERIFY_RULES.jtiConsumeAfterVerify, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.bindIssToMintingHost, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.neverPeekIssFromAssertion, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.wrongIssuerForHostIs403, true);
+    assert.equal(EMBED_HOST_ISSUER_RULES.header, "X-FlowForge-Host-Issuer");
+    assert.match(EMBED_HOST_ISSUER_HELP, /X-FlowForge-Host-Issuer/);
     assert.equal(EMBED_JTI_RULES.atomicSingleStatementConsume, true);
     assert.equal(EMBED_JTI_RULES.retainUsedIdsPastExpiry, true);
     assert.equal(EMBED_JTI_RULES.retention, "24h");

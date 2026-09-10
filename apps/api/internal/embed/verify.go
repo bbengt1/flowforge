@@ -18,13 +18,14 @@ import (
 // match; when empty, binding is deferred so callers can verify before
 // any store lookup.
 type VerifyOptions struct {
-	Audience       string
-	Now            time.Time
-	SkipJTI        bool
-	Consumer       JTIConsumer
-	ResolvedWS     string
-	Context        context.Context
-	AllowedIssuers []string
+	Audience           string
+	Now                time.Time
+	SkipJTI            bool
+	Consumer           JTIConsumer
+	ResolvedWS         string
+	Context            context.Context
+	AllowedIssuers     []string
+	ExpectedHostIssuer string
 }
 
 // Verified is a signature-checked assertion. Host IDs remain untrusted
@@ -36,11 +37,12 @@ type Verified struct {
 }
 
 // Verify checks signature (active + overlap), SDK, required claims,
-// audience, issuer allowlist, time bounds including nbf, capabilities,
-// and jti eligibility. Durable jti consume runs only after those
-// checks succeed so forged tokens do not burn ids. Workspace binding
-// is confirmed here only when ResolvedWS is already known; exchange
-// verifies first, then resolves tenant/workbench, then binds.
+// audience, issuer allowlist, minting-host issuer bind (ADV-023),
+// time bounds including nbf, capabilities, and jti eligibility.
+// Durable jti consume runs only after those checks succeed so forged
+// tokens do not burn ids. Workspace binding is confirmed here only
+// when ResolvedWS is already known; exchange verifies first, then
+// resolves tenant/workbench, then binds.
 func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -107,8 +109,8 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if !authz.ValidIssuer(c.Issuer) {
 		return Verified{}, ErrIssuer
 	}
-	if !IssuerAllowed(c.Issuer, opt.AllowedIssuers) {
-		return Verified{}, ErrIssuerNotAllowed
+	if err := BindHostIssuer(c.Issuer, c.Host, opt.ExpectedHostIssuer, opt.AllowedIssuers); err != nil {
+		return Verified{}, err
 	}
 	if !authz.ValidSubject(c.Subject) {
 		return Verified{}, ErrSubject

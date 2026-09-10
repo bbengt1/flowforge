@@ -59,7 +59,6 @@ type Server struct {
 	embedRing        *embed.Ring
 	embedJTI         embed.JTIConsumer
 	embedMintIssuers []string
-	embedIssuers     []string
 	portalIssuers    []string
 	portalFrames     []string
 	platformAdmins   []authz.PrincipalRef
@@ -349,7 +348,6 @@ func newServer(d Deps) http.Handler {
 		embedRing:        d.EmbedRing,
 		embedJTI:         d.EmbedJTI,
 		embedMintIssuers: append([]string(nil), d.EmbedIssuers...),
-		embedIssuers:     mergeIssuers(d.EmbedIssuers, d.PortalIssuers),
 		portalIssuers:    append([]string(nil), d.PortalIssuers...),
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
 		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
@@ -683,25 +681,6 @@ func muxMethodNotAllowed(mux *http.ServeMux, r *http.Request) (string, string) {
 		return "", ""
 	}
 	return "The " + r.Method + " method is not allowed for this path.", strings.Join(allowed, ", ")
-}
-
-func mergeIssuers(embedList, portalList []string) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, list := range [][]string{embedList, portalList} {
-		for _, iss := range list {
-			iss = strings.TrimSpace(iss)
-			if iss == "" {
-				continue
-			}
-			if _, ok := seen[iss]; ok {
-				continue
-			}
-			seen[iss] = struct{}{}
-			out = append(out, iss)
-		}
-	}
-	return out
 }
 
 // ReadyChecker adapts a ping function to postgres.Checker.
