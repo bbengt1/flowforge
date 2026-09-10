@@ -15,6 +15,7 @@ import {
   type SessionPayload,
   sessionBrowserPath,
 } from "./session-contract.ts";
+import { parseSessionEmbedChrome } from "./session-embed-contract.ts";
 import {
   clearSession,
   getSessionSnapshot,
@@ -168,6 +169,6 @@ function applySessionPayload(payload: SessionPayload): void {
   if (remembered) {
     parsed.csrfToken = remembered;
   }
-  setActiveSession(parsed);
+  setActiveSession(parsed, parseSessionEmbedChrome(payload));
   persistVerifiedFromSession(payload.session);
 }

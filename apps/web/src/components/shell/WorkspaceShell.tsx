@@ -120,7 +120,7 @@ export function WorkspaceShell({
         <div className="flex min-h-full flex-col">
           <EmbedChrome
             hostDisplay={hostDisplay}
-            verified={verified}
+            sessionEmbed={session.embedChrome}
             rejectedAssertion={rejectedAssertion}
             sessionActive={session.active}
           />
@@ -129,7 +129,7 @@ export function WorkspaceShell({
               <p className="px-6 py-10 text-sm text-zinc-500">
                 Checking FlowForge session…
               </p>
-            ) : session.active && verified ? (
+            ) : session.active && session.embedChrome && verified ? (
               <EmbedTenancyGate>{children}</EmbedTenancyGate>
             ) : (
               <EmbedExchangeGate

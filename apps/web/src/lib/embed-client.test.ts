@@ -52,53 +52,64 @@ afterEach(() => {
 describe("embed client", () => {
   it("POSTs {assertion,sdk} to /api/v1/embed/exchange and forgets the JWS", async () => {
     const seen: { url?: string; init?: RequestInit } = {};
-    globalThis.fetch = (async (input, init) => {
-      seen.url = String(input);
-      seen.init = init;
-      return new Response(
-        JSON.stringify({
-          session: {
-            id: "sess-embed",
-            idle_expires_at: "2026-09-09T21:00:00.000Z",
-            absolute_expires_at: "2026-09-10T07:00:00.000Z",
-            embed: {
-              tenantId: "ten-1",
-              workbenchKey: "ops",
-              workspaceId: "ws-1",
-              capabilities: ["workflow.view"],
-            },
-          },
-          principal: {
-            issuer: "https://portal.example.test",
-            external_subject: "ada",
-            display_name: "Ada",
-          },
-          csrf_token: "csrf-embed",
-          assertion: {
-            sdk: "embed.v1",
-            tokenId: "jti-1",
-            audience: "flowforge",
-            tenantId: "ten-1",
-            workbenchKey: "ops",
-          },
-          workspace: {
-            id: "ws-1",
-            tenant_id: "ten-1",
-            workbench_key: "ops",
-            name: "Ops",
-            status: "active",
-          },
-          tenant: { id: "ten-1", slug: "acme", name: "Acme", status: "active" },
+    let exchangeInit: RequestInit | undefined;
+    const exchangeBody = {
+      session: {
+        id: "sess-embed",
+        idle_expires_at: "2026-09-09T21:00:00.000Z",
+        absolute_expires_at: "2026-09-10T07:00:00.000Z",
+        embed: {
+          tenantId: "ten-1",
+          workbenchKey: "ops",
+          workspaceId: "ws-1",
           capabilities: ["workflow.view"],
-        }),
-        {
-          status: 201,
-          headers: {
-            "Content-Type": "application/json",
-            [CSRF_HEADER]: "csrf-header",
-          },
         },
-      );
+      },
+      principal: {
+        issuer: "https://portal.example.test",
+        external_subject: "ada",
+        display_name: "Ada",
+      },
+      csrf_token: "csrf-embed",
+      assertion: {
+        sdk: "embed.v1",
+        tokenId: "jti-1",
+        audience: "flowforge",
+        tenantId: "ten-1",
+        workbenchKey: "ops",
+      },
+      workspace: {
+        id: "ws-1",
+        tenant_id: "ten-1",
+        workbench_key: "ops",
+        name: "Ops",
+        status: "active",
+      },
+      tenant: { id: "ten-1", slug: "acme", name: "Acme", status: "active" },
+      capabilities: ["workflow.view"],
+    };
+    const seenUrls: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      seenUrls.push(url);
+      seen.url = url;
+      seen.init = init;
+      if (url.endsWith("/embed/exchange")) {
+        exchangeInit = init;
+      }
+      if (url.endsWith("/session") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify(exchangeBody), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(exchangeBody), {
+        status: 201,
+        headers: {
+          "Content-Type": "application/json",
+          [CSRF_HEADER]: "csrf-header",
+        },
+      });
     }) as typeof fetch;
 
     const holder = { assertion: SAMPLE_JWS };
@@ -107,16 +118,18 @@ describe("embed client", () => {
       hostContext: "embed",
     });
     assert.equal(result.ok, true);
-    assert.equal(seen.url, "/api/v1/embed/exchange");
-    assert.equal(seen.init?.method, "POST");
-    assert.equal(seen.init?.credentials, "include");
-    const body = JSON.parse(String(seen.init?.body));
+    assert.ok(seenUrls.includes("/api/v1/embed/exchange"));
+    assert.ok(seenUrls.includes("/api/v1/session"));
+    assert.equal(seenUrls[0], "/api/v1/embed/exchange");
+    assert.equal(exchangeInit?.method, "POST");
+    assert.equal(exchangeInit?.credentials, "include");
+    const body = JSON.parse(String(exchangeInit?.body));
     assert.equal(body.assertion, SAMPLE_JWS);
     assert.equal(body.sdk, "embed.v1");
     assert.equal(body.hostIssuer, "https://idp.example");
     assert.equal(body.hostContext, "embed");
     assert.equal("workspaceId" in body, false);
-    const headers = new Headers(seen.init?.headers);
+    const headers = new Headers(exchangeInit?.headers);
     assert.equal(headers.get("X-FlowForge-Host-Issuer"), "https://idp.example");
     assert.equal(headers.get("X-FlowForge-Host-Context"), "embed");
     assert.equal(holder.assertion, "");
@@ -124,6 +137,9 @@ describe("embed client", () => {
     assert.equal(snapshot.active, true);
     assert.equal(snapshot.session.subject, "ada");
     assert.equal(snapshot.session.csrfToken, "csrf-header");
+    assert.equal(snapshot.embedChrome?.source, "get-session");
+    assert.equal(snapshot.embedChrome?.tenantId, "ten-1");
+    assert.equal(snapshot.embedChrome?.workbenchKey, "ops");
     if (result.ok) {
       assert.equal(result.context.audience, "flowforge");
       assert.equal(result.context.tenantSlug, "acme");
@@ -316,33 +332,45 @@ describe("embed client", () => {
     });
 
     const seen: { url?: string; init?: RequestInit } = {};
-    globalThis.fetch = (async (input, init) => {
-      seen.url = String(input);
-      seen.init = init;
-      return new Response(
-        JSON.stringify({
-          session: {
-            id: "sess-bind",
-            idle_expires_at: "2026-09-09T21:00:00.000Z",
-            absolute_expires_at: "2026-09-10T07:00:00.000Z",
-            embed: {
-              tenantId: "ten-1",
-              workbenchKey: "ops",
-              workspaceId: "ws-1",
-              capabilities: ["workflow.view"],
-            },
-          },
-          workspace: {
-            id: "ws-1",
-            tenant_id: "ten-1",
-            workbench_key: "ops",
-            name: "Ops",
-          },
-          tenant: { id: "ten-1", slug: "acme" },
+    const bindBody = {
+      session: {
+        id: "sess-bind",
+        idle_expires_at: "2026-09-09T21:00:00.000Z",
+        absolute_expires_at: "2026-09-10T07:00:00.000Z",
+        embed: {
+          tenantId: "ten-1",
+          workbenchKey: "ops",
+          workspaceId: "ws-1",
           capabilities: ["workflow.view"],
-        }),
-        { status: 201, headers: { "Content-Type": "application/json" } },
-      );
+        },
+      },
+      principal: {
+        issuer: "https://idp.example",
+        external_subject: "ada",
+      },
+      workspace: {
+        id: "ws-1",
+        tenant_id: "ten-1",
+        workbench_key: "ops",
+        name: "Ops",
+      },
+      tenant: { id: "ten-1", slug: "acme" },
+      capabilities: ["workflow.view"],
+    };
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/embed/exchange")) {
+        seen.url = url;
+        seen.init = init;
+        return new Response(JSON.stringify(bindBody), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(bindBody), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }) as typeof fetch;
 
     const holder = { assertion: hostileJws };

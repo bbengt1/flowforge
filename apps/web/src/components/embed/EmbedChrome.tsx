@@ -16,14 +16,19 @@ import {
   EMBED_HOST_MISMATCH_MESSAGE,
   EMBED_LOCKED_MESSAGE,
   EMBED_TENANCY_MISMATCH_MESSAGE,
-  EMBED_TENANCY_ROUTE_MAP_SOURCE,
-  EMBED_VERIFIED_HELP,
   embedDeepLink,
   embedDeepLinkIsActive,
   embedVerifiedLabel,
   hostDisplayConflictsWithVerified,
-  type EmbedVerifiedWorkspace,
 } from "@/lib/embed-tenancy-contract";
+import {
+  SESSION_EMBED_CHROME_HELP,
+  SESSION_EMBED_ROUTE_MAP_SOURCE,
+  SESSION_EMBED_WAITING_HELP,
+  sessionEmbedAsVerifiedWorkspace,
+  sessionEmbedChromeLabel,
+  type SessionEmbedChrome,
+} from "@/lib/session-embed-contract";
 import { visibleWorkspaceNav } from "@/lib/workspace-nav";
 
 /**
@@ -33,31 +38,47 @@ import { visibleWorkspaceNav } from "@/lib/workspace-nav";
  */
 type EmbedChromeProps = {
   hostDisplay: EmbedHostDisplay;
-  verified: EmbedVerifiedWorkspace | null;
+  sessionEmbed: SessionEmbedChrome | null;
   rejectedAssertion: boolean;
   sessionActive: boolean;
 };
 
 export function EmbedChrome({
   hostDisplay,
-  verified,
+  sessionEmbed,
   rejectedAssertion,
   sessionActive,
 }: EmbedChromeProps) {
   const pathname = usePathname();
   const { permissions, tenancyMismatch, current } = useWorkspace();
+  const chromeVerified = Boolean(sessionActive && sessionEmbed);
+  const verified = sessionEmbed
+    ? sessionEmbedAsVerifiedWorkspace(sessionEmbed, {
+        tenantSlug: current?.tenant.slug,
+        workspaceName: current?.workspace.name,
+      })
+    : null;
   const items = useMemo(
     () =>
-      sessionActive && verified && !tenancyMismatch
+      chromeVerified && !tenancyMismatch
         ? visibleWorkspaceNav(permissions).map((item) => ({
             ...item,
             href: embedDeepLink(item.href),
           }))
         : [],
-    [permissions, sessionActive, verified, tenancyMismatch],
+    [permissions, chromeVerified, tenancyMismatch],
   );
   const hostConflict =
     Boolean(verified) && hostDisplayConflictsWithVerified(hostDisplay, verified!);
+  const hostPreview =
+    !sessionEmbed &&
+    Boolean(
+      hostDisplay.host ||
+        hostDisplay.tenant ||
+        hostDisplay.tenantId ||
+        hostDisplay.workbench ||
+        hostDisplay.displayName,
+    );
 
   return (
     <header className="border-b border-zinc-200 bg-white/80">
@@ -68,27 +89,27 @@ export function EmbedChrome({
         >
           FlowForge embed
         </Link>
-        {sessionActive && verified ? (
+        {sessionEmbed ? (
           <p
             className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 font-mono text-xs font-medium text-teal-950"
-            title={EMBED_VERIFIED_HELP}
+            title={SESSION_EMBED_CHROME_HELP}
           >
-            Verified · {embedVerifiedLabel(verified)}
-            {verified.workspaceName ? ` · ${verified.workspaceName}` : ""}
+            Verified · {sessionEmbedChromeLabel(sessionEmbed)}
+            {verified?.workspaceName ? ` · ${verified.workspaceName}` : ""}
           </p>
         ) : (
           <p className="text-xs text-zinc-500">
-            {EMBED_MOUNT_PREFIX} · {EMBED_TENANCY_ROUTE_MAP_SOURCE} · host
-            identity is display-only until assertion exchange.
+            {EMBED_MOUNT_PREFIX} · {SESSION_EMBED_ROUTE_MAP_SOURCE} ·{" "}
+            {SESSION_EMBED_WAITING_HELP}
           </p>
         )}
         <div className="ml-auto">
           <SessionStatusChip />
         </div>
       </div>
-      {sessionActive && verified ? (
+      {sessionEmbed ? (
         <p className="px-4 pb-2 text-[11px] text-zinc-500">
-          {EMBED_LOCKED_MESSAGE} {EMBED_VERIFIED_HELP}
+          {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}
         </p>
       ) : null}
       {items.length > 0 ? (
@@ -139,14 +160,26 @@ export function EmbedChrome({
           role="status"
           className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
-          {EMBED_HOST_MISMATCH_MESSAGE} FlowForge verified{" "}
+          {EMBED_HOST_MISMATCH_MESSAGE} GET /session verified{" "}
           {verified ? embedVerifiedLabel(verified) : ""}.
           {current?.workspace.workbench_key
             ? ` GET /workspace is ${current.tenant.slug || current.workspace.tenant_id} / ${current.workspace.workbench_key}.`
             : ""}
         </div>
       ) : null}
-      {!sessionActive ? (
+      {hostPreview ? (
+        <p className="px-4 pb-3 text-xs text-zinc-500">
+          {EMBED_HOST_DISPLAY_HELP} Host shows{" "}
+          {[
+            hostDisplay.tenant || hostDisplay.tenantId,
+            hostDisplay.workbench,
+          ]
+            .filter(Boolean)
+            .join(" / ") || hostDisplay.host}{" "}
+          until GET /session.
+        </p>
+      ) : null}
+      {!sessionActive && !hostPreview ? (
         <p className="px-4 pb-3 text-xs text-zinc-500">{EMBED_HOST_DISPLAY_HELP}</p>
       ) : null}
     </header>

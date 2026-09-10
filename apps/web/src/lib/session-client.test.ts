@@ -75,7 +75,44 @@ describe("session-client", () => {
     assert.equal(snapshot.session.subject, "operator-chloe");
     assert.equal(snapshot.session.idleExpiresAt, "2026-09-08T21:00:00.000Z");
     assert.equal(snapshot.session.csrfToken, "csrf-header");
+    assert.equal(snapshot.embedChrome, null);
     assert.equal(JSON.stringify(seen.init?.body).includes("Bearer"), false);
+  });
+
+  it("GET /session stores embed chrome from session.embed only", async () => {
+    globalThis.fetch = (async (input) => {
+      assert.equal(String(input), "/api/v1/session");
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "sess-embed",
+            idle_expires_at: "2026-09-08T21:00:00.000Z",
+            absolute_expires_at: "2026-09-09T07:00:00.000Z",
+            embed: {
+              tenantId: "ten-1",
+              workbenchKey: "ops",
+              workspaceId: "ws-1",
+              capabilities: ["workflow.view"],
+            },
+          },
+          principal: {
+            issuer: "https://idp.example",
+            external_subject: "ada",
+            display_name: "Ada",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await loadCurrentSession();
+    assert.equal(result.ok, true);
+    const snapshot = getSessionSnapshot();
+    assert.equal(snapshot.active, true);
+    assert.equal(snapshot.embedChrome?.source, "get-session");
+    assert.equal(snapshot.embedChrome?.tenantId, "ten-1");
+    assert.equal(snapshot.embedChrome?.workbenchKey, "ops");
+    assert.deepEqual(snapshot.embedChrome?.capabilities, ["workflow.view"]);
   });
 
   it("GET /session marks a previously active session stale on 401", async () => {
