@@ -22,6 +22,10 @@ type Checker interface {
 const (
 	defaultConnectTimeout = 5 * time.Second
 	defaultMigrateTimeout = 5 * time.Minute
+
+	// DefaultMaxConns is the production API pool size. E12.2 capacity
+	// evidence compares observed peak backends against this limit.
+	DefaultMaxConns int32 = 8
 )
 
 // Pool is a reconnecting PostgreSQL pool used by readiness and migrations.
@@ -93,7 +97,7 @@ func (p *Pool) connectAndMigrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("parse database url: %w", err)
 	}
-	cfg.MaxConns = 8
+	cfg.MaxConns = DefaultMaxConns
 	cfg.MinConns = 0
 	cfg.MaxConnLifetime = time.Hour
 	cfg.HealthCheckPeriod = 30 * time.Second
@@ -275,6 +279,10 @@ func openAppPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error)
 	if cfg.ConnConfig.ConnectTimeout == 0 {
 		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
 	}
+	cfg.MaxConns = DefaultMaxConns
+	cfg.MinConns = 0
+	cfg.MaxConnLifetime = time.Hour
+	cfg.HealthCheckPeriod = 30 * time.Second
 	applyPoolHooks(cfg, true)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

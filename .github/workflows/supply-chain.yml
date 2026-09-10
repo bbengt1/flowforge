@@ -160,6 +160,9 @@ jobs:
             api-sbom.spdx.json
             api-provenance.json
 
+  # E12.2 sibling: full encrypted compose dump + isolated API boot.
+  # The named resilience suite runs a schema-level isolated restore
+  # (scripts/backup/restore-schema-rehearsal.sh) in e12-resilience.yml.
   restore-rehearsal:
     name: Encrypted backup restore rehearsal
     runs-on: ubuntu-latest

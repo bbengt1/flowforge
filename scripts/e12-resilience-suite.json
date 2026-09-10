@@ -1,0 +1,82 @@
+{
+  "id": "E12.2",
+  "relatesTo": 183,
+  "partOf": 181,
+  "keepIssueOpen": true,
+  "title": "Operational resilience and capacity",
+  "goModuleDir": "apps/api",
+  "minHeadroom": 2.0,
+  "restoreSibling": {
+    "workflow": ".github/workflows/supply-chain.yml",
+    "job": "restore-rehearsal",
+    "script": "scripts/backup/restore-rehearsal.sh",
+    "note": "Encrypted compose dump + isolated Postgres + hardened API health/readiness. Unchanged by this suite."
+  },
+  "securitySibling": {
+    "workflow": ".github/workflows/e12-security.yml",
+    "job": "security-suite",
+    "note": "E12.1 security verification suite stays required. This workflow does not skip or weaken it."
+  },
+  "goTargets": [
+    {
+      "id": "e12-capacity",
+      "dir": "./internal/e12resilience",
+      "run": "."
+    },
+    {
+      "id": "migrate-serial",
+      "dir": "./internal/postgres",
+      "run": "TestMigrate|TestParseMigration|TestLoadMigrations"
+    },
+    {
+      "id": "worker-loss-store",
+      "dir": "./internal/wfstore",
+      "run": "Lease|Fence|Dispatch|JobTicket|Recover|SkipLocked"
+    },
+    {
+      "id": "worker-loss-http",
+      "dir": "./internal/httpapi",
+      "run": "TestDispatchClaimFence"
+    }
+  ],
+  "domains": [
+    {
+      "id": "backup-restore",
+      "title": "Backup and restore rehearsal",
+      "goTargets": [],
+      "scripts": [
+        {
+          "id": "restore-schema",
+          "title": "Encrypted dump into isolated database (schema + execution_jobs)",
+          "argv": ["bash", "scripts/backup/restore-schema-rehearsal.sh"]
+        }
+      ]
+    },
+    {
+      "id": "worker-loss-recovery",
+      "title": "Worker-loss, lease recovery, and fencing",
+      "goTargets": ["e12-capacity", "worker-loss-store", "worker-loss-http"],
+      "scripts": []
+    },
+    {
+      "id": "queue-lag",
+      "title": "Queue lag under bounded load",
+      "goTargets": ["e12-capacity"],
+      "capacityKeys": ["queueLagSeconds", "queueDepth"],
+      "scripts": []
+    },
+    {
+      "id": "migration-serialization",
+      "title": "Migration serialization / safe migrate rehearsal",
+      "goTargets": ["migrate-serial"],
+      "scripts": []
+    },
+    {
+      "id": "load-capacity",
+      "title": "Bounded load test and ≥2× headroom",
+      "goTargets": ["e12-capacity"],
+      "capacityKeys": ["dbConnections", "dbWritesPerSec", "queueLagSeconds", "storageGrowth"],
+      "scripts": []
+    }
+  ]
+}

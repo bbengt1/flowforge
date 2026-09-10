@@ -117,3 +117,12 @@ bash scripts/backup/restore-rehearsal.sh
 ```
 
 `restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`). CI runs the same script. Production still boot-fails without a unique Secret key.
+
+E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus a schema-level isolated restore that does not need compose:
+
+```bash
+TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
+  bash scripts/e12-resilience-suite.sh
+```
+
+See [e12-resilience-capacity.md](reference/e12-resilience-capacity.md). CI job: `.github/workflows/e12-resilience.yml`. The E12.1 security suite is unchanged.

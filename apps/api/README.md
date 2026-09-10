@@ -168,6 +168,8 @@ go run ./cmd/api
 
 Integration coverage for a live database is skipped unless `TEST_DATABASE_URL` or `DATABASE_URL` is set.
 
+E12.2 resilience/capacity (`scripts/e12-resilience-suite.sh`) **requires** that DSN and fails closed if a domain is skipped. See [e12-resilience-capacity.md](../../docs/reference/e12-resilience-capacity.md).
+
 ## Compose wiring (`api` service)
 
 Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI agent. Point the **`api`** service at this module:

@@ -219,6 +219,11 @@ produce an auditable, version-pinned execution.
   redirect-to-private). The named E12.1 suite
   (`scripts/e12-security-suite.sh`, CI `.github/workflows/e12-security.yml`)
   is the verification gate; see [e12-security-verification.md](e12-security-verification.md).
+  Operational restore, worker-loss, queue lag, migration serialization, and
+  ≥2× capacity headroom are the E12.2 suite
+  (`scripts/e12-resilience-suite.sh`, CI `.github/workflows/e12-resilience.yml`);
+  see [e12-resilience-capacity.md](e12-resilience-capacity.md). E12.2 does
+  not weaken this security suite.
 
 ## Incident-safe behavior
 

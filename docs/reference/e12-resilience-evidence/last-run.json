@@ -1,0 +1,257 @@
+{
+  "id": "E12.2",
+  "title": "Operational resilience and capacity",
+  "relatesTo": 183,
+  "partOf": 181,
+  "keepIssueOpen": true,
+  "ranAt": "2026-09-10T11:31:22Z",
+  "gitSha": "6717c654837e0e360b9457bca7a8d0f69ee3344a",
+  "databaseUrlSet": true,
+  "loadMode": "ci",
+  "minHeadroom": 2.0,
+  "go": {
+    "e12-capacity": {
+      "id": "e12-capacity",
+      "dir": "./internal/e12resilience",
+      "status": "pass",
+      "exit": 0,
+      "elapsedSec": 0.878,
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packageFailures": []
+    },
+    "migrate-serial": {
+      "id": "migrate-serial",
+      "dir": "./internal/postgres",
+      "status": "pass",
+      "exit": 0,
+      "elapsedSec": 0.344,
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packageFailures": []
+    },
+    "worker-loss-store": {
+      "id": "worker-loss-store",
+      "dir": "./internal/wfstore",
+      "status": "pass",
+      "exit": 0,
+      "elapsedSec": 0.487,
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packageFailures": []
+    },
+    "worker-loss-http": {
+      "id": "worker-loss-http",
+      "dir": "./internal/httpapi",
+      "status": "pass",
+      "exit": 0,
+      "elapsedSec": 0.458,
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packageFailures": []
+    }
+  },
+  "scripts": [
+    {
+      "id": "restore-schema",
+      "title": "Encrypted dump into isolated database (schema + execution_jobs)",
+      "status": "pass",
+      "elapsedSec": 1.524,
+      "exit": 0
+    }
+  ],
+  "capacity": {
+    "id": "E12.2-capacity",
+    "mode": "ci",
+    "ranAt": "2026-09-10T11:31:22Z",
+    "minHeadroom": 2,
+    "peaks": {
+      "dbConnections": 3,
+      "dbWritesPerSec": 323.29290200869553,
+      "queueLagSeconds": 0.199119,
+      "queueDepth": 16,
+      "storageGrowthBytes": 57344,
+      "loadJobs": 16,
+      "loadWorkers": 2,
+      "loadElapsedSec": 0.296944348
+    },
+    "capacity": {
+      "dbConnections": 8,
+      "dbWritesPerSec": 612374.1838965798,
+      "queueLagSecondsSLO": 15,
+      "queueDepthBudget": 64,
+      "storageBudgetBytes": 1073741824,
+      "postgresMaxConnections": 100,
+      "measuredWriteCeilingPerSec": 612374.1838965798,
+      "documentedWriteBudgetPerSec": 1000
+    },
+    "headroom": {
+      "dbConnections": 2.6666666666666665,
+      "dbWritesPerSec": 1894.177633012521,
+      "queueDepth": 4,
+      "queueLagSeconds": 75.33183674084341,
+      "storageGrowth": 18724.571428571428
+    },
+    "workerLoss": {
+      "recovered": 1,
+      "becameIndeterminate": true,
+      "staleCompleteRejected": true
+    },
+    "ok": true,
+    "claims": [
+      "Database connection pool (MaxConns=8) is \u22652\u00d7 observed peak connections (3).",
+      "Database write capacity (612374.2/s measured ceiling; planning budget 1000.0/s) is \u22652\u00d7 observed peak writes (323.3/s).",
+      "Queue-lag SLO (15.0s) is \u22652\u00d7 observed peak lag (0.199s); depth budget 64 vs peak 16.",
+      "Storage growth budget (1073741824 bytes) is \u22652\u00d7 observed growth (57344 bytes)."
+    ]
+  },
+  "restoreSchema": {
+    "id": "E12.2-restore-schema",
+    "sourceVersion": 22,
+    "restoredVersion": 22,
+    "encrypted": true,
+    "isolatedDatabaseDropped": true
+  },
+  "domains": [
+    {
+      "id": "backup-restore",
+      "title": "Backup and restore rehearsal",
+      "status": "pass",
+      "go": [],
+      "scripts": [
+        {
+          "id": "restore-schema",
+          "status": "pass"
+        }
+      ],
+      "headroom": {},
+      "coverage": 2
+    },
+    {
+      "id": "worker-loss-recovery",
+      "title": "Worker-loss, lease recovery, and fencing",
+      "status": "pass",
+      "go": [
+        {
+          "id": "e12-capacity",
+          "status": "pass",
+          "tests": {
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "worker-loss-http",
+          "status": "pass",
+          "tests": {
+            "passed": 4,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "worker-loss-store",
+          "status": "pass",
+          "tests": {
+            "passed": 5,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ],
+      "scripts": [],
+      "headroom": {},
+      "coverage": 4
+    },
+    {
+      "id": "queue-lag",
+      "title": "Queue lag under bounded load",
+      "status": "pass",
+      "go": [
+        {
+          "id": "e12-capacity",
+          "status": "pass",
+          "tests": {
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ],
+      "scripts": [],
+      "headroom": {
+        "queueLagSeconds": 75.33183674084341,
+        "queueDepth": 4
+      },
+      "coverage": 2
+    },
+    {
+      "id": "migration-serialization",
+      "title": "Migration serialization / safe migrate rehearsal",
+      "status": "pass",
+      "go": [
+        {
+          "id": "migrate-serial",
+          "status": "pass",
+          "tests": {
+            "passed": 4,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ],
+      "scripts": [],
+      "headroom": {},
+      "coverage": 2
+    },
+    {
+      "id": "load-capacity",
+      "title": "Bounded load test and \u22652\u00d7 headroom",
+      "status": "pass",
+      "go": [
+        {
+          "id": "e12-capacity",
+          "status": "pass",
+          "tests": {
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ],
+      "scripts": [],
+      "headroom": {
+        "dbConnections": 2.6666666666666665,
+        "dbWritesPerSec": 1894.177633012521,
+        "queueLagSeconds": 75.33183674084341,
+        "storageGrowth": 18724.571428571428
+      },
+      "coverage": 2
+    }
+  ],
+  "restoreSibling": {
+    "workflow": ".github/workflows/supply-chain.yml",
+    "job": "restore-rehearsal",
+    "script": "scripts/backup/restore-rehearsal.sh",
+    "note": "Encrypted compose dump + isolated Postgres + hardened API health/readiness. Unchanged by this suite."
+  },
+  "securitySibling": {
+    "workflow": ".github/workflows/e12-security.yml",
+    "job": "security-suite",
+    "note": "E12.1 security verification suite stays required. This workflow does not skip or weaken it."
+  },
+  "ok": true
+}
