@@ -55,6 +55,11 @@ describe("visibleWorkspaceNav", () => {
     const ids = visibleWorkspaceNav(viewer).map((item) => item.id);
     assert.ok(ids.includes("workflows"));
     assert.ok(ids.includes("actions"));
+    assert.equal(
+      visibleWorkspaceNav(viewer).find((item) => item.id === "actions")
+        ?.placeholder,
+      undefined,
+    );
     assert.ok(ids.includes("targets"));
     assert.ok(ids.includes("profiles"));
     assert.ok(ids.includes("config"));

@@ -103,7 +103,7 @@ export function paletteCommands(
     commands.push({
       id: "nav-actions",
       label: "Go to Actions",
-      hint: "Action catalog (placeholder)",
+      hint: "Enabled action catalog",
       keywords: ["actions", "catalog", "nodes"],
       action: { type: "navigate", href: "/actions" },
     });

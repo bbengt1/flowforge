@@ -28,6 +28,10 @@ describe("paletteCommands", () => {
     const commands = paletteCommands(viewer);
     const ids = commands.map((item) => item.id);
     assert.ok(ids.includes("open-editor"));
+    assert.equal(
+      commands.find((item) => item.id === "nav-actions")?.hint,
+      "Enabled action catalog",
+    );
     assert.ok(ids.includes("webhook-triggers"));
     assert.ok(ids.includes("schedule-triggers"));
     assert.ok(ids.includes("nav-alerts"));

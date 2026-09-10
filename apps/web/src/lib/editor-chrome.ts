@@ -19,11 +19,13 @@ export const UX1_KEEP_STORY_OPEN = true;
 
 export const EDITOR_WORKFLOWS_HREF = "/workflows";
 export const EDITOR_YAML_OPEN_ON_FIRST_PAINT = false;
-export const EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT = true;
+/** UX.3: first paint hides the 18rem library column. */
+export const EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT = false;
 export const EDITOR_HEADING_FALLBACK = "Workflow editor";
 
 export const EDITOR_CHROME = {
   yamlHiddenOnFirstPaint: true,
+  libraryHiddenOnFirstPaint: true,
   workflowListInEditor: false,
   createImportOnWorkflowsHome: true,
   publishLastSavedDraftOnly: true,
