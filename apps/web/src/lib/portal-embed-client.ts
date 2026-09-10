@@ -218,6 +218,58 @@ export function deliverPortalAssertion(
   return { delivered: true, forgotten: true };
 }
 
+/**
+ * ADV-013 cross-origin sender. postMessage target is the embed origin
+ * (iframe dest). The shared host allowlist still authorizes the Portal
+ * sender — empty list, `*`, and unallowlisted Portal origins fail closed.
+ * Does not weaken ADV-011: the in-repo same-origin helper is unchanged.
+ */
+export function deliverCrossOriginPortalAssertion(
+  target: Window | null | undefined,
+  holder: { assertion: string },
+  input: {
+    embedOrigin: string;
+    portalOrigin: string;
+    allowlist: readonly string[];
+  },
+): { delivered: boolean; forgotten: true } {
+  const message = buildPortalAssertionMessage(holder.assertion);
+  forgetEmbedAssertion(holder);
+  if (!message || !target) {
+    return { delivered: false, forgotten: true };
+  }
+  const embedOrigin = input.embedOrigin.trim();
+  const portalOrigin = input.portalOrigin.trim();
+  if (
+    !embedOrigin ||
+    embedOrigin === "*" ||
+    embedOrigin === "null" ||
+    input.allowlist.length === 0
+  ) {
+    return { delivered: false, forgotten: true };
+  }
+  try {
+    const parsed = new URL(embedOrigin);
+    if (
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      parsed.origin !== embedOrigin
+    ) {
+      return { delivered: false, forgotten: true };
+    }
+  } catch {
+    return { delivered: false, forgotten: true };
+  }
+  if (
+    !isAllowedEmbedMessageOrigin(portalOrigin, input.allowlist, {
+      selfOrigin: portalOrigin,
+    })
+  ) {
+    return { delivered: false, forgotten: true };
+  }
+  target.postMessage(message, embedOrigin);
+  return { delivered: true, forgotten: true };
+}
+
 export function emptyPortalAssertionHolder(): { assertion: string } {
   return { assertion: "" };
 }

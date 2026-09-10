@@ -784,6 +784,7 @@ Thin host wiring on jonny's **#129** map (`e113-#129`). `apps/api` is unchanged.
 - **CSP / postMessage (ADV-011):** `/portal` and `/portal/workflows` set `frame-src 'self'` so the host can iframe same-origin `/embed/v1`. Production Portal origin must be on the shared host allowlist. `'self'` is accepted for the in-repo demo when it is on that list. Empty list fails closed. Standalone stays `frame-ancestors 'none'` / `frame-src 'none'`.
 - **Proxies:** `GET /api/v1/portal/adapter` (no auth) and `POST /api/v1/portal/adapter/assertions` (CSRF if cookie). Exchange is not a Portal hop.
 - **ADV-004:** no Portal host UI change. Mint subject bind / `embed.impersonate` is API-only. The demo host still posts `{portalRoles}` as the caller.
+- **ADV-013:** `/portal/workflows` remains same-origin. A real Portal host must use two HTTPS origins and `deliverCrossOriginPortalAssertion`. Re-run: `docs/reference/portal-adapter.md` (ADV-013) + `bash scripts/adv013-cross-origin.sh`. Keep #144 open.
 
 ## Required validation
 

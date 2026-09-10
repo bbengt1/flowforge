@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { EMBED_ASSERTION_MESSAGE_TYPE } from "./embed-contract.ts";
 import {
+  deliverCrossOriginPortalAssertion,
   deliverPortalAssertion,
   emptyPortalAssertionHolder,
   fetchPortalAdapter,
@@ -151,5 +152,33 @@ describe("portal-embed-client", () => {
       [],
     );
     assert.equal(emptyDenied.delivered, false);
+  });
+
+  it("cross-origin deliver posts to the embed origin and forgets the JWS", () => {
+    const posted: Array<{ data: unknown; origin: string }> = [];
+    const target = {
+      postMessage(data: unknown, origin: string) {
+        posted.push({ data, origin });
+      },
+    };
+    const holder = emptyPortalAssertionHolder();
+    holder.assertion = SAMPLE_JWS;
+    const result = deliverCrossOriginPortalAssertion(
+      target as unknown as Window,
+      holder,
+      {
+        embedOrigin: "https://embed.test:8444",
+        portalOrigin: "https://portal.test:8443",
+        allowlist: ["https://portal.test:8443"],
+      },
+    );
+    assert.equal(result.delivered, true);
+    assert.equal(holder.assertion, "");
+    assert.equal(posted[0]?.origin, "https://embed.test:8444");
+    assert.deepEqual(posted[0]?.data, {
+      type: EMBED_ASSERTION_MESSAGE_TYPE,
+      version: 1,
+      assertion: SAMPLE_JWS,
+    });
   });
 });

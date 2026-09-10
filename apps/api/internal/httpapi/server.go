@@ -219,6 +219,26 @@ func inferAlerts(db postgres.Checker) opsalert.Store {
 }
 
 func newServer(d Deps) http.Handler {
+	// Production cmd/api uses NewWithDeps with a postgres.Pool and no
+	// explicit Store. Infer identity / isolation / session / workflow
+	// stores from that pool so mint, membership, and exchange can run.
+	// Tests that inject stores keep them. Nil store + non-pool DB still
+	// fail closed (503) via requireStore.
+	if d.Store == nil || d.Scoped == nil || d.Sessions == nil || d.Workflows == nil {
+		infStore, infScoped, infSessions, infWorkflows := inferStores(d.DB)
+		if d.Store == nil {
+			d.Store = infStore
+		}
+		if d.Scoped == nil {
+			d.Scoped = infScoped
+		}
+		if d.Sessions == nil {
+			d.Sessions = infSessions
+		}
+		if d.Workflows == nil {
+			d.Workflows = infWorkflows
+		}
+	}
 	log := d.Log
 	if log == nil {
 		log = slog.Default()

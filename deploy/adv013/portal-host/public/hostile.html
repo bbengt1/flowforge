@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ADV-013 hostile ancestor</title>
+  </head>
+  <body>
+    <h1>Hostile ancestor (must be blocked)</h1>
+    <p>This origin is not on WEB_PORTAL_FRAME_ANCESTORS. Framing /embed/v1 must fail closed.</p>
+    <iframe
+      id="embed"
+      title="blocked embed"
+      src="{{EMBED_ORIGIN}}/embed/v1/workflows"
+      style="width:100%;height:50vh;border:1px solid #991b1b"
+    ></iframe>
+    <pre id="note">If CSP is correct, the iframe is blank / blocked and the console shows a frame-ancestors violation.</pre>
+  </body>
+</html>

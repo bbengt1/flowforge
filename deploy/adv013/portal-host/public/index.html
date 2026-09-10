@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ADV-013 Portal host</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+      header, main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+      header { background: #312e81; color: #eef2ff; }
+      button { background: #312e81; color: #fff; border: 0; padding: 0.6rem 1rem; border-radius: 0.5rem; }
+      iframe { width: 100%; height: 70vh; border: 1px solid #cbd5e1; background: #fff; }
+      pre, .mono { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+      .ok { color: #166534; }
+      .bad { color: #991b1b; }
+      .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1rem; margin: 1rem 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p>ADV-013 · cross-origin Portal adapter</p>
+      <h1>Portal host ({{PORTAL_ORIGIN}})</h1>
+      <p>Frames FlowForge {{EMBED_ORIGIN}}/embed/v1 — not this origin.</p>
+    </header>
+    <main>
+      <div class="card">
+        <p id="status">Load the adapter catalog, mint, then mount the embed.</p>
+        <p class="mono" id="meta"></p>
+        <button id="run" type="button">Mint assertion and mount FlowForge</button>
+      </div>
+      <div id="frame-wrap" hidden>
+        <iframe id="embed" title="FlowForge embed"></iframe>
+      </div>
+    </main>
+    <script>
+      const PORTAL_ORIGIN = "{{PORTAL_ORIGIN}}";
+      const EMBED_ORIGIN = "{{EMBED_ORIGIN}}";
+      const statusEl = document.getElementById("status");
+      const metaEl = document.getElementById("meta");
+      const frame = document.getElementById("embed");
+      const wrap = document.getElementById("frame-wrap");
+      let pendingAssertion = "";
+      let allowlist = [];
+
+      function setStatus(text, ok) {
+        statusEl.textContent = text;
+        statusEl.className = ok === true ? "ok" : ok === false ? "bad" : "";
+      }
+
+      function isAllowed(origin, list) {
+        if (!origin || origin === "*" || origin === "null" || !list.length) return false;
+        return list.includes(origin);
+      }
+
+      async function loadCatalog() {
+        const res = await fetch("/api/adapter");
+        const data = await res.json();
+        allowlist = Array.isArray(data.frameAncestors) ? data.frameAncestors : [];
+        metaEl.textContent =
+          "portal=" + PORTAL_ORIGIN +
+          " embed=" + EMBED_ORIGIN +
+          " frameAncestors=" + JSON.stringify(allowlist);
+        return data;
+      }
+
+      async function bootstrap() {
+        const res = await fetch("/api/bootstrap", { method: "POST" });
+        if (!res.ok) {
+          throw new Error("bootstrap failed: " + res.status);
+        }
+        return res.json();
+      }
+
+      async function mint() {
+        const res = await fetch("/api/mint", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || !data.assertion) {
+          throw new Error("mint failed: " + (data.problem?.detail || res.status));
+        }
+        return data;
+      }
+
+      function deliver(assertion) {
+        const win = frame.contentWindow;
+        if (!win) return false;
+        if (!isAllowed(PORTAL_ORIGIN, allowlist)) return false;
+        if (!EMBED_ORIGIN || EMBED_ORIGIN === "*" || EMBED_ORIGIN === "null") return false;
+        win.postMessage(
+          { type: "flowforge.embed.assertion", version: 1, assertion },
+          EMBED_ORIGIN,
+        );
+        return true;
+      }
+
+      frame.addEventListener("load", () => {
+        if (!pendingAssertion) return;
+        const assertion = pendingAssertion;
+        pendingAssertion = "";
+        const delivered = deliver(assertion);
+        setStatus(
+          delivered
+            ? "Assertion postMessaged to the embed origin and forgotten. Exchange is body-only POST /embed/exchange."
+            : "postMessage skipped (empty/unallowlisted sender or wildcard target).",
+          delivered,
+        );
+      });
+
+      async function run() {
+        setStatus("Bootstrapping workspace + minting…");
+        await loadCatalog();
+        await bootstrap();
+        const minted = await mint();
+        pendingAssertion = minted.assertion;
+        const src =
+          EMBED_ORIGIN +
+          "/embed/v1/workflows?host=ADV-013%20Portal&tenant=acme&workbench=ops";
+        if (src.includes("assertion=") || src.includes("token=")) {
+          throw new Error("assertion leaked into iframe src");
+        }
+        wrap.hidden = false;
+        frame.src = src;
+        setStatus("Minted " + (minted.tokenId || "jti") + ". Framing " + src);
+      }
+
+      document.getElementById("run").addEventListener("click", () => {
+        run().catch((error) => setStatus(String(error), false));
+      });
+
+      loadCatalog()
+        .then(() => {
+          if (new URLSearchParams(location.search).get("autorun") === "1") {
+            return run();
+          }
+          return undefined;
+        })
+        .catch((error) => setStatus(String(error), false));
+    </script>
+  </body>
+</html>

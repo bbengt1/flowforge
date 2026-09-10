@@ -75,6 +75,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `WEB_PORTAL_FRAME_ANCESTORS` | unset | Same shared list (Portal-origin name). |
 | `PORTAL_FRAME_ANCESTORS` | unset | Same shared list (API catalog name). |
 
+ADV-013 two-origin Portal→embed rehearsal (Portal host ≠ embed, local HTTPS):
+`docs/reference/portal-adapter.md` and `bash scripts/adv013-cross-origin.sh`.
+
 ## Recovery
 
 Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup job as recovery evidence.

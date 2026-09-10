@@ -1,0 +1,43 @@
+{
+  "id": "ADV-013",
+  "relatesTo": 144,
+  "partOf": 130,
+  "keepIssueOpen": true,
+  "ranAt": "2026-09-10T00:18:24Z",
+  "origins": {
+    "portal": "https://portal.test:8443",
+    "embed": "https://embed.test:8444",
+    "evil": "https://evil.test:8445",
+    "distinct": true
+  },
+  "checks": {
+    "distinctHttpsOrigins": true,
+    "frameAncestorsAllowlistsPortal": true,
+    "hostileAncestorAbsentFromCsp": true,
+    "standaloneFrameAncestorsNone": true,
+    "catalogPublishesPortal": true,
+    "assertionInUrlRejected": true,
+    "mintViaAdapter": true,
+    "chipsSameSiteNone": true,
+    "chipsPartitioned": true,
+    "chipsSecure": true,
+    "sessionWithChipsCookie": true,
+    "emptyAllowlistFailClosed": true
+  },
+  "embedCsp": "default-src 'self'; script-src 'self' 'nonce-ODgyNDgzZjktMTgxMi00ZjE4LTgyNTAtMGRlMGE3MjUzM2Jj' 'strict-dynamic' 'unsafe-eval'; style-src 'self' 'unsafe-inline' 'nonce-ODgyNDgzZjktMTgxMi00ZjE4LTgyNTAtMGRlMGE3MjUzM2Jj'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:8080; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors https://portal.test:8443; frame-src 'none'; worker-src 'self'; manifest-src 'self'",
+  "standaloneCsp": "default-src 'self'; script-src 'self' 'nonce-ODExOGUwMGYtMTQ4NC00NjFiLWE5ZjctYzA4ZDUzNzA3NDIy' 'strict-dynamic' 'unsafe-eval'; style-src 'self' 'unsafe-inline' 'nonce-ODExOGUwMGYtMTQ4NC00NjFiLWE5ZjctYzA4ZDUzNzA3NDIy'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:8080; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'",
+  "catalogFrameAncestors": [
+    "https://portal.test:8443"
+  ],
+  "setCookieRedacted": [
+    "ff_session=<redacted>; Path=/api/v1; Max-Age=1799; HttpOnly; SameSite=None; Partitioned; Secure",
+    "ff_csrf=<redacted>; Path=/api/v1; Max-Age=1799; SameSite=None; Partitioned; Secure"
+  ],
+  "mint": {
+    "tokenId": "066d588f-4286-4a92-aee3-241cb69792d6",
+    "issuer": "https://portal.cp-ops.example",
+    "subject": "portal-user-1",
+    "audience": "flowforge",
+    "ok": true
+  }
+}

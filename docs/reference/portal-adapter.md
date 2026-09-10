@@ -131,7 +131,100 @@ These fail closed on the FlowForge adapter:
   workbench / membership bootstrap)
 - Cross-site iframe session without CHIPS (`SameSite=None` without
   `Partitioned`, or dropping `Secure`) is not used. Cookie not sent is
-  `401`/`403`. A full two-host iframe check is ADV-013.
+  `401`/`403`. A full two-host iframe check is ADV-013 (below).
+
+## ADV-013 — cross-origin Portal adapter evidence
+
+Relates to #144 / Part of #130. **Keep #144 open** until the two-origin
+evidence is reviewed. This is proof + harness, not a new auth path.
+
+The in-repo demo at `/portal/workflows` is **same-origin** as FlowForge.
+ADV-013 requires **two distinct HTTPS origins**: Portal host ≠ embed
+(`/embed/v1`). `.test` names are on the public suffix list, so
+`https://portal.test:8443` and `https://embed.test:8444` are different
+sites (CHIPS / third-party cookies). `127.0.0.1:port` pairs are **not**
+cross-site.
+
+| Origin | Role |
+| --- | --- |
+| `https://portal.test:8443` | Portal entry, role map, mint proxy, iframe parent |
+| `https://embed.test:8444` | FlowForge web + `/embed/v1` + same-origin `/api/v1` proxy |
+| `https://evil.test:8445` | Hostile ancestor (must not appear in `frame-ancestors`) |
+
+`/etc/hosts`:
+
+```text
+127.0.0.1 portal.test embed.test evil.test
+```
+
+Or Chrome `--host-resolver-rules="MAP portal.test 127.0.0.1, MAP embed.test 127.0.0.1, MAP evil.test 127.0.0.1"`.
+
+### Re-run locally
+
+Contract checklist (this is what CI runs):
+
+```bash
+pnpm --filter @flowforge/web test
+# or
+bash scripts/adv013-cross-origin.sh --checklist
+```
+
+Full two-origin run (local HTTPS, no Docker required if PostgreSQL and
+the API/web already run):
+
+```bash
+# PostgreSQL on 127.0.0.1:5432, role/db flowforge (or set DATABASE_URL)
+export POSTGRES_PASSWORD=replace-with-local-password
+bash scripts/adv013-cross-origin.sh
+# Skip the unit checklist after a green `pnpm --filter @flowforge/web test`:
+# ADV013_SKIP_UNIT=1 bash scripts/adv013-cross-origin.sh
+```
+
+Compose overlay (when Docker is available) seeds the shared allowlist
+on **both** API and web, then attach the prover:
+
+```bash
+export POSTGRES_PASSWORD=...
+export WEB_PORTAL_FRAME_ANCESTORS=https://portal.test:8443
+export PORTAL_FRAME_ANCESTORS=https://portal.test:8443
+docker compose -f docker-compose.yml -f deploy/adv013/docker-compose.yml up --build
+# in another shell, with API/web already up:
+ADV013_WEB_URL=http://127.0.0.1:3000 bash scripts/adv013-cross-origin.sh --attach
+```
+
+The script writes redacted evidence to
+[`docs/reference/adv-013-evidence/`](adv-013-evidence/RUN.md) (no compact
+JWS). It exercises:
+
+1. Portal entry → `POST /portal/adapter/assertions` (adapter mint)
+2. Frame `/embed/v1` with allowlisted ancestors (CSP + catalog)
+3. Body-only `POST /embed/exchange` through the embed origin
+4. CHIPS `Set-Cookie` (`SameSite=None; Secure; Partitioned`) +
+   `credentials: include` session read
+5. postMessage only when the Portal sender is on the shared list
+   (`deliverCrossOriginPortalAssertion`)
+6. Negatives: hostile ancestor absent from CSP; assertion in the URL
+   rejected (`x-flowforge-embed-rejected`); empty allowlist fail-closed
+
+TLS material is generated under `deploy/adv013/tls/` (gitignored). The
+Node terminator in `deploy/adv013/portal-host/server.mjs` fronts the
+three origins. Optional Caddy: `deploy/adv013/Caddyfile`.
+
+### Chloe map (host wiring gaps)
+
+The product adapter is unchanged. A real Portal host still owns steps
+1–2 and the iframe parent.
+
+| Gap | Do |
+| --- | --- |
+| In-repo `PortalHost` uses a relative `/embed/v1` src and `postMessage(..., window.location.origin)` | Production Portal must iframe the **absolute embed origin** and call `deliverCrossOriginPortalAssertion({embedOrigin, portalOrigin, allowlist})`. The ADV-011 helper `deliverPortalAssertion` is same-origin (target must be on the host allowlist). |
+| Catalog vs CSP | Set the same Portal HTTPS origin on the **API** (`PORTAL_FRAME_ANCESTORS` / `WEB_PORTAL_FRAME_ANCESTORS`) and the **web** process. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source (ADV-011). |
+| Embed exchange gate | Allowlisted postMessage fills the assertion; `POST /embed/exchange` stays body-only with `credentials: "include"`. Do not put the JWS in the URL. Auto-exchange is optional host UX. |
+| CHIPS | Both origins must be HTTPS. Do not drop `Secure` or `Partitioned`. Cookie not sent is `401`/`403`. |
+| API process stores | `cmd/api` builds the handler with `NewWithDeps` and a postgres pool. Identity / session / workflow stores must be inferred from that pool (otherwise `POST /tenants` is `503` and Portal mint cannot bind a workspace). |
+
+Contract exports: `apps/web/src/lib/adv013-cross-origin-contract.ts`,
+`buildCrossOriginPortalEmbedSrc`, `deliverCrossOriginPortalAssertion`.
 
 ## Out of scope
 
