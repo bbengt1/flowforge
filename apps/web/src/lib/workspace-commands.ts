@@ -1,10 +1,11 @@
 /**
  * In-tab command bus so the palette can trigger editor actions
- * (validate / publish / run) without inventing API routes.
+ * (validate / normalize / publish / run) without inventing API routes.
  */
 
 export type WorkspaceCommandName =
   | "validate"
+  | "normalize"
   | "publish"
   | "run-published"
   | "new-workflow"

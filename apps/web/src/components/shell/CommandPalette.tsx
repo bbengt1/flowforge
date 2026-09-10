@@ -93,6 +93,10 @@ export function CommandPalette() {
       }
       return;
     }
+    if (action.type === "normalize") {
+      dispatchWorkspaceCommand("normalize");
+      return;
+    }
     if (action.type === "publish") {
       dispatchWorkspaceCommand("publish");
       return;

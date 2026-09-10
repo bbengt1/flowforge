@@ -15,6 +15,7 @@ import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { EditorStartDialog } from "@/components/workflows/EditorStartDialog";
 import { EditorTopBar } from "@/components/workflows/EditorTopBar";
 import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
+import { EditorYamlTools } from "@/components/workflows/EditorYamlTools";
 import { RunControl } from "@/components/workflows/RunControl";
 import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
 import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
@@ -71,9 +72,9 @@ import { listWorkflowVersionPins } from "@/lib/ops-config-client";
 import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import { loadDeveloperYaml } from "@/lib/editor-developer";
 import {
   draftCompareRef,
-  INVALID_WORKFLOW_YAML,
   STARTER_WORKFLOW_YAML,
   VALIDATE_DEBOUNCE_MS,
   versionCompareRef,
@@ -380,6 +381,18 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
     applyEditor(result.applied);
   }
 
+  function applyDeveloperYaml(kind: "starter" | "invalid") {
+    const fixture = loadDeveloperYaml(kind);
+    skipDebounce.current = false;
+    setDigest(fixture.digest);
+    setYaml(fixture.yaml);
+    setStatus(fixture.status);
+    setErrors(fixture.errors);
+    if (fixture.clearGraph) {
+      clearGraph();
+    }
+  }
+
   function resetWorkflowScopedState() {
     setConflictDraft(null);
     setConflictProblem(null);
@@ -481,6 +494,8 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
 
   const runValidateRef = useRef(runValidate);
   runValidateRef.current = runValidate;
+  const runNormalizeRef = useRef(runNormalize);
+  runNormalizeRef.current = runNormalize;
 
   useEffect(() => {
     return subscribeWorkspaceCommands((name) => {
@@ -493,6 +508,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
             href: workflowId ? `/workflows/${workflowId}` : "/workflows",
           });
         });
+      }
+      if (name === "normalize") {
+        void runNormalizeRef.current();
       }
     });
   }, [workflowId]);
@@ -1178,76 +1196,23 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
         <EditorYamlDrawer
           open={yamlOpen}
           tools={
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  skipDebounce.current = false;
-                  setDigest(null);
-                  setStatus("idle");
-                  setErrors([]);
-                  setYaml(STARTER_WORKFLOW_YAML);
-                }}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
-              >
-                Load starter YAML
-              </button>
-              <button
-                type="button"
-                id="load-invalid-yaml"
-                onClick={() => {
-                  skipDebounce.current = false;
-                  setDigest(null);
-                  setYaml(INVALID_WORKFLOW_YAML);
-                  setStatus("invalid");
-                  setErrors([
-                    {
-                      path: "spec.nodes[0].id",
-                      line: 9,
-                      column: 7,
-                      code: "invalid-id",
-                      message: "Node IDs must be DNS labels.",
-                    },
-                    {
-                      path: "spec.nodes[0].type",
-                      line: 10,
-                      column: 7,
-                      code: "unsupported-node",
-                      message: "workflow.call is not enabled.",
-                    },
-                  ]);
-                  clearGraph();
-                }}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
-              >
-                Load invalid YAML
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void runValidate(yaml).then(() => {
-                    pushNotification({
-                      kind: "validation",
-                      title: "Validation requested",
-                      detail: "See the validation panel for safe status.",
-                      href: workflow ? `/workflows/${workflow.id}` : "/workflows",
-                    });
+            <EditorYamlTools
+              canCall={canCall}
+              pending={pending}
+              onValidate={() => {
+                void runValidate(yaml).then(() => {
+                  pushNotification({
+                    kind: "validation",
+                    title: "Validation requested",
+                    detail: "See the validation panel for safe status.",
+                    href: workflow ? `/workflows/${workflow.id}` : "/workflows",
                   });
-                }}
-                disabled={!canCall || pending !== null}
-                className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-              >
-                Validate now
-              </button>
-              <button
-                type="button"
-                onClick={() => void runNormalize()}
-                disabled={!canCall || pending !== null}
-                className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-              >
-                {pending === "normalize" ? "Normalizing…" : "Normalize"}
-              </button>
-            </>
+                });
+              }}
+              onNormalize={() => void runNormalize()}
+              onLoadStarter={() => applyDeveloperYaml("starter")}
+              onLoadInvalid={() => applyDeveloperYaml("invalid")}
+            />
           }
         >
           <YamlEditor
