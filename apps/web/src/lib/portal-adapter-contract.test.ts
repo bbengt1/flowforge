@@ -40,6 +40,7 @@ import {
   portalEntryRbac,
   portalFrameAncestors,
   portalHostDisplay,
+  portalPostMessageAllowlist,
   portalMintBody,
   portalRbacIsFlowForgeAuthorization,
   portalUrlContainsAssertion,
@@ -127,6 +128,23 @@ describe("portal adapter contract", () => {
       }),
       "https://host.example https://portal.example",
     );
+    assert.deepEqual(
+      portalPostMessageAllowlist({
+        WEB_EMBED_FRAME_ANCESTORS: "https://host.example",
+        WEB_PORTAL_FRAME_ANCESTORS: "https://portal.example",
+        PORTAL_FRAME_ANCESTORS: "'self'",
+      }),
+      ["https://host.example", "https://portal.example", "'self'"],
+    );
+    assert.equal(
+      portalFrameAncestors({
+        WEB_EMBED_FRAME_ANCESTORS: "https://host.example",
+        WEB_PORTAL_FRAME_ANCESTORS: "https://portal.example",
+        PORTAL_FRAME_ANCESTORS: "'self'",
+      }),
+      "https://host.example https://portal.example 'self'",
+    );
+    assert.deepEqual(portalPostMessageAllowlist({}), []);
   });
 
   it("allowlists portal adapter proxy routes", () => {

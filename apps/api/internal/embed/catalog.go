@@ -12,21 +12,22 @@ type HookStatus struct {
 
 // Catalog is the versioned embed contract for host backends and Chloe.
 type Catalog struct {
-	SDK           string        `json:"sdk"`
-	Algorithm     string        `json:"algorithm"`
-	Audience      string        `json:"audience"`
-	DefaultTTL    string        `json:"defaultTtl"`
-	MinTTL        string        `json:"minTtl"`
-	MaxTTL        string        `json:"maxTtl"`
-	JTIRetention  string        `json:"jtiRetention"`
-	MountPrefix   string        `json:"mountPrefix"`
-	Claims        []ClaimDoc    `json:"claims"`
-	Capabilities  []string      `json:"capabilities"`
-	Routes        []Route       `json:"routes"`
-	API           []APIRoute    `json:"api"`
-	KeyManagement KeyManagement `json:"keyManagement"`
-	Hooks         []HookStatus  `json:"hooks"`
-	Rules         CatalogRules  `json:"rules"`
+	SDK            string        `json:"sdk"`
+	Algorithm      string        `json:"algorithm"`
+	Audience       string        `json:"audience"`
+	DefaultTTL     string        `json:"defaultTtl"`
+	MinTTL         string        `json:"minTtl"`
+	MaxTTL         string        `json:"maxTtl"`
+	JTIRetention   string        `json:"jtiRetention"`
+	MountPrefix    string        `json:"mountPrefix"`
+	Claims         []ClaimDoc    `json:"claims"`
+	Capabilities   []string      `json:"capabilities"`
+	Routes         []Route       `json:"routes"`
+	API            []APIRoute    `json:"api"`
+	KeyManagement  KeyManagement `json:"keyManagement"`
+	Hooks          []HookStatus  `json:"hooks"`
+	FrameAncestors []string      `json:"frameAncestors"`
+	Rules          CatalogRules  `json:"rules"`
 }
 
 // ClaimDoc documents an assertion claim.
@@ -58,22 +59,27 @@ type KeyManagement struct {
 
 // CatalogRules are fail-closed product rules for the embed shell.
 type CatalogRules struct {
-	AssertionNotInURL            bool `json:"assertionNotInURL"`
-	HostIDsNotAuthz              bool `json:"hostIdsAreNotAuthorization"`
-	SingleUse                    bool `json:"singleUse"`
-	AudienceBound                bool `json:"audienceBound"`
-	AsymmetricSigned             bool `json:"asymmetricSigned"`
-	StandaloneDeepLinksOK        bool `json:"standaloneDeepLinksRemainValid"`
-	EmbedSessionsCannotBootstrap bool `json:"embedSessionsCannotBootstrap"`
-	PartitionedEmbedCookies      bool `json:"partitionedEmbedCookies"`
-	VerifyBeforeWorkspaceLookup  bool `json:"verifyBeforeWorkspaceLookup"`
-	JTIRetainPastExpiry          bool `json:"jtiRetainPastExpiry"`
-	AuthzAudited                 bool `json:"authzAudited"`
-	ExchangeRateLimited          bool `json:"exchangeRateLimited"`
+	AssertionNotInURL             bool `json:"assertionNotInURL"`
+	HostIDsNotAuthz               bool `json:"hostIdsAreNotAuthorization"`
+	SingleUse                     bool `json:"singleUse"`
+	AudienceBound                 bool `json:"audienceBound"`
+	AsymmetricSigned              bool `json:"asymmetricSigned"`
+	StandaloneDeepLinksOK         bool `json:"standaloneDeepLinksRemainValid"`
+	EmbedSessionsCannotBootstrap  bool `json:"embedSessionsCannotBootstrap"`
+	PartitionedEmbedCookies       bool `json:"partitionedEmbedCookies"`
+	VerifyBeforeWorkspaceLookup   bool `json:"verifyBeforeWorkspaceLookup"`
+	JTIRetainPastExpiry           bool `json:"jtiRetainPastExpiry"`
+	AuthzAudited                  bool `json:"authzAudited"`
+	ExchangeRateLimited           bool `json:"exchangeRateLimited"`
+	SharedHostAllowlist           bool `json:"sharedHostAllowlist"`
+	EmptyHostAllowlistFailsClosed bool `json:"emptyHostAllowlistFailsClosed"`
+	PostMessageUsesFrameAncestors bool `json:"postMessageUsesFrameAncestors"`
 }
 
 // NewCatalog builds the E11.1 + E11.2 contract document.
-func NewCatalog() Catalog {
+// frames is the shared host allowlist (ADV-011) published for CSP
+// frame-ancestors and embed-shell postMessage origin checks.
+func NewCatalog(frames []string) Catalog {
 	return Catalog{
 		SDK:          SDKVersion,
 		Algorithm:    Algorithm,
@@ -87,7 +93,7 @@ func NewCatalog() Catalog {
 		Capabilities: authz.PermissionKeys(),
 		Routes:       CanonicalRoutes(),
 		API: []APIRoute{
-			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends."},
+			{Method: "GET", Path: "/api/v1/embed/catalog", Auth: "none", CSRF: "no", Note: "Versioned SDK/contract + route map for Chloe and host backends. frameAncestors is the shared host allowlist (WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS) used for CSP and postMessage. Empty fails closed."},
 			{Method: "GET", Path: "/api/v1/embed/jwks", Auth: "none", CSRF: "no", Note: "Public Ed25519 keys only. Never includes d / PEM / seed."},
 			{Method: "POST", Path: "/api/v1/embed/assertions", Auth: "session or identity headers + workspace membership", CSRF: "yes when ff_session present", Note: "Host backend mint. Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. Issuer must be on EMBED_ISSUER / EMBED_ISSUER_ALLOWLIST (empty fails closed, 403). Capabilities must be a subset of the caller. Audience is FlowForge."},
 			{Method: "POST", Path: "/api/v1/embed/exchange", Auth: "assertion", CSRF: "no", Note: "Refresh overlap from the durable store, then verify signature/iss (merged embed+portal allowlist; empty fails closed, 403)/aud/nbf/exp/jti/capabilities before any workspace lookup. Refuse expired/retired overlap (overlapUntil). Atomically consume jti in one INSERT ON CONFLICT DO NOTHING RETURNING only after verify succeeds. Used jtis are retained 24h past assertion exp; purge is a separate job on retain_until. Then resolve (tenant_id, workbench_key) and bind onto ff_session with CHIPS cookies (SameSite=None; Secure; Partitioned). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot POST /tenants or /workspaces. Assertion is never accepted from a URL. A browser that does not send the partitioned cookie fails closed (401/403). Rate-limited by IP (default 120/min) and issuer|subject (default 30/min); burst is 429 rate-limited. Authz decisions emit secret-free audit events."},
@@ -97,7 +103,7 @@ func NewCatalog() Catalog {
 			Algorithm:     Algorithm + " (" + Curve + ")",
 			PublicJWKS:    "/api/v1/embed/jwks",
 			PrivateNever:  []string{"d", "privateKey", "private_key", "seed", "pem", "EMBED_SIGNING_KEY"},
-			Env:           []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer, EnvIssuerAllow, EnvOverlapKeys, EnvExchangeRateLimitIP, EnvExchangeRateLimitPrincipal, EnvMintRateLimitPrincipal, EnvRateLimitWindow, authz.EnvPlatformAdmins, authz.EnvPlatformAdmin},
+			Env:           []string{EnvSigningKey, EnvSigningKeyFile, EnvSigningKeyID, EnvAudience, EnvAssertionTTL, EnvIssuer, EnvIssuerAllow, EnvOverlapKeys, EnvWebEmbedFrames, EnvExchangeRateLimitIP, EnvExchangeRateLimitPrincipal, EnvMintRateLimitPrincipal, EnvRateLimitWindow, authz.EnvPlatformAdmins, authz.EnvPlatformAdmin},
 			MaxOverlapTTL: MaxOverlapTTL.String(),
 			Rotation:      "Mint with the durable active EMBED_SIGNING_KEY (production boot-fails if unset). The active key is not an overlap key and does not use overlapUntil. JWKS publishes active + overlap after a store refresh. Every overlap verify key requires a short overlapUntil (max 4h). Missing, zero, or far-future is 400 on rotate or boot-fail on EMBED_OVERLAP_KEYS. Verify refreshes overlap and refuses missing/expired/retired/far-future kids. POST /embed/keys/rotate is platform-admin only and registers only the previous/current active public key as overlap. Unknown kid fails closed.",
 		},
@@ -110,20 +116,25 @@ func NewCatalog() Catalog {
 			{ID: "chips.embed-cookies", Status: "ready", Fail: "cross-site iframe without the partitioned cookie is 401 (cookie not sent) or 403 (CSRF cookie missing); SameSite=None without Partitioned is not used; top-level cookies stay Lax/Strict", Note: "Embed ff_session/ff_csrf after POST /embed/exchange are SameSite=None; Secure; Partitioned (CHIPS). Secure is never dropped. Standalone POST /session stays SameSite=Lax / Strict. HTTPS / a secure context is required. ADV-013 covers a full cross-origin host check."},
 			{ID: "authz.audit", Status: "ready", Fail: "authz decisions emit secret-free audit; assertion plaintext, signing keys, and session secrets are never logged", Note: "Mint allow/deny (including impersonation), exchange allow/deny with reason codes, rotate allow/deny, capability and tenancy bind failures, and rate-limit denials write structured embed_audit events (jti, kid, issuer, subject, tenant_id, workbench_key, workspace_id, reason)."},
 			{ID: "exchange.rate-limit", Status: "ready", Fail: "burst POST /embed/exchange is 429 rate-limited", Note: "Keyed by client IP (default 120/min) and issuer|subject when claims are peekable (default 30/min). Window default 1m. Configurable via EMBED_EXCHANGE_RATE_LIMIT_IP, EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL, EMBED_RATE_LIMIT_WINDOW. Mint may use EMBED_MINT_RATE_LIMIT_PRINCIPAL (default 60/min). Soft-deny with 429 + problem detail. A nil limiter fails closed."},
+			{ID: "host.allowlist", Status: "ready", Fail: "empty frame-ancestors / postMessage allowlist fails closed; * and null are ignored; no open postMessage", Note: "WEB_EMBED_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪ PORTAL_FRAME_ANCESTORS is one list. Next CSP frame-ancestors on /embed/v1 and embed-shell postMessage origin checks use the same origins. GET /embed/catalog frameAncestors (and GET /portal/adapter frameAncestors) publish the list. NEXT_PUBLIC_EMBED_FRAME_ANCESTORS is not a source. Chloe: parseCatalogFrameAncestors + isAllowedEmbedMessageOrigin; do not parse a second client env."},
 		},
+		FrameAncestors: append([]string(nil), frames...),
 		Rules: CatalogRules{
-			AssertionNotInURL:            true,
-			HostIDsNotAuthz:              true,
-			SingleUse:                    true,
-			AudienceBound:                true,
-			AsymmetricSigned:             true,
-			StandaloneDeepLinksOK:        true,
-			EmbedSessionsCannotBootstrap: true,
-			PartitionedEmbedCookies:      true,
-			VerifyBeforeWorkspaceLookup:  true,
-			JTIRetainPastExpiry:          true,
-			AuthzAudited:                 true,
-			ExchangeRateLimited:          true,
+			AssertionNotInURL:             true,
+			HostIDsNotAuthz:               true,
+			SingleUse:                     true,
+			AudienceBound:                 true,
+			AsymmetricSigned:              true,
+			StandaloneDeepLinksOK:         true,
+			EmbedSessionsCannotBootstrap:  true,
+			PartitionedEmbedCookies:       true,
+			VerifyBeforeWorkspaceLookup:   true,
+			JTIRetainPastExpiry:           true,
+			AuthzAudited:                  true,
+			ExchangeRateLimited:           true,
+			SharedHostAllowlist:           true,
+			EmptyHostAllowlistFailsClosed: true,
+			PostMessageUsesFrameAncestors: true,
 		},
 	}
 }

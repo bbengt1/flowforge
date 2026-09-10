@@ -20,6 +20,10 @@
  *
  * ADV-008: POST /embed/exchange verifies before workspace lookup.
  * No host chrome change.
+ *
+ * ADV-011: Portal + embed frame ancestors share one allowlist with
+ * postMessage. Prefer GET /portal/adapter frameAncestors (same merge
+ * as GET /embed/catalog). Empty fails closed.
  */
 
 import {
@@ -35,9 +39,14 @@ import {
   EMBED_SDK,
   assertionFromURL,
   embedMountPath,
+  embedHostAllowlist,
+  embedPostMessageAllowlist,
   frameAncestorsForPath,
+  isAllowedEmbedMessageOrigin,
   isCompactJws,
   isEmbedMountPath,
+  parseCatalogFrameAncestors,
+  type EmbedHostAllowlistEnv,
   stripAssertionParams,
   type EmbedAssertionMessage,
   type EmbedHostDisplay,
@@ -182,7 +191,7 @@ export const PORTAL_HOST_WIRING = [
     id: "mount",
     actor: "portal-frontend",
     path: PORTAL_MOUNT_PREFIX,
-    do: "Load the canonical UI under /embed/v1. Host tenant/workbench is display-only.",
+    do: "Load the canonical UI under /embed/v1. Frame and postMessage only when the origin is on GET /portal/adapter frameAncestors (shared host allowlist). Host tenant/workbench is display-only.",
   },
   {
     id: "exchange",
@@ -276,12 +285,22 @@ export function portalMintBody(
   };
 }
 
-export function portalFrameAncestors(env: {
-  WEB_EMBED_FRAME_ANCESTORS?: string;
-  WEB_PORTAL_FRAME_ANCESTORS?: string;
-} = {}): string {
+export function portalFrameAncestors(env: EmbedHostAllowlistEnv = {}): string {
   return frameAncestorsForPath(EMBED_MOUNT_PREFIX, env);
 }
+
+/** Same shared list as embedHostAllowlist / catalog frameAncestors. */
+export function portalPostMessageAllowlist(
+  env: EmbedHostAllowlistEnv = {},
+): string[] {
+  return embedPostMessageAllowlist(env);
+}
+
+export {
+  embedHostAllowlist,
+  isAllowedEmbedMessageOrigin,
+  parseCatalogFrameAncestors,
+};
 
 export const PORTAL_HELP =
   "Portal entry is not FlowForge authorization. Mint via /portal/adapter/assertions, exchange via /embed/exchange, mount /embed/v1.";

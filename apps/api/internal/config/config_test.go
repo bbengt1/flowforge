@@ -215,6 +215,36 @@ func TestLoadProductionMissingSigningKeyFails(t *testing.T) {
 	}
 }
 
+func TestLoadMergesSharedHostAllowlist(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("PORTAL_FRAME_ANCESTORS", "https://portal.example *")
+	t.Setenv("WEB_PORTAL_FRAME_ANCESTORS", "'self'")
+	t.Setenv("WEB_EMBED_FRAME_ANCESTORS", "https://host.example null")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.PortalFrameAncestors) != 3 {
+		t.Fatalf("merged allowlist %v", cfg.PortalFrameAncestors)
+	}
+	if cfg.PortalFrameAncestors[0] != "https://portal.example" || cfg.PortalFrameAncestors[1] != "'self'" || cfg.PortalFrameAncestors[2] != "https://host.example" {
+		t.Fatalf("merged allowlist %v", cfg.PortalFrameAncestors)
+	}
+
+	t.Setenv("PORTAL_FRAME_ANCESTORS", "")
+	t.Setenv("WEB_PORTAL_FRAME_ANCESTORS", "")
+	t.Setenv("WEB_EMBED_FRAME_ANCESTORS", "")
+	empty, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.PortalFrameAncestors) != 0 {
+		t.Fatalf("empty allowlist must fail closed, got %v", empty.PortalFrameAncestors)
+	}
+}
+
 func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

@@ -145,7 +145,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the overlap window. Each key requires `overlapUntil` (RFC3339, max 4h). Missing/too-long is boot-fail. The active signing key is not an overlap key. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403`). |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint issuer allowlist. Empty fails closed (`403`). Merged into embed exchange verification. |
-| `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on `GET /api/v1/portal/adapter`. |
+| `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `WEB_EMBED_FRAME_ANCESTORS`). Published on `GET /api/v1/embed/catalog` and `GET /api/v1/portal/adapter` as `frameAncestors`. Empty fails closed. |
 
 Suggested local URL (compose service hostname `postgres`):
 

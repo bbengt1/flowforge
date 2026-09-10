@@ -72,7 +72,11 @@ type Config struct {
 	EmbedIssuers []string
 	// PortalIssuers is PORTAL_ISSUER + PORTAL_ISSUER_ALLOWLIST. Empty is
 	// fail-closed at Portal mint. Merged into embed exchange verification.
-	PortalIssuers        []string
+	PortalIssuers []string
+	// PortalFrameAncestors is the shared host allowlist (ADV-011):
+	// PORTAL_FRAME_ANCESTORS ∪ WEB_PORTAL_FRAME_ANCESTORS ∪
+	// WEB_EMBED_FRAME_ANCESTORS. Published on embed + Portal catalogs.
+	// Empty fails closed (CSP 'none', no open postMessage).
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef
 	// EmbedLimits rate-limits POST /embed/exchange (required) and mint.
@@ -130,9 +134,13 @@ func Load() (Config, error) {
 		EmbedIssuer:               strings.TrimSpace(os.Getenv("EMBED_ISSUER")),
 		EmbedIssuers:              embed.ParseIssuerAllowlist(os.Getenv(embed.EnvIssuerAllow), os.Getenv(embed.EnvIssuer)),
 		PortalIssuers:             portal.ParseIssuers(os.Getenv(portal.EnvIssuerAllow), os.Getenv(portal.EnvIssuer)),
-		PortalFrameAncestors:      portal.ParseFrameAncestors(os.Getenv(portal.EnvFrameAllow)),
-		PlatformAdmins:            authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
-		EmbedLimits:               embed.LoadLimits(),
+		PortalFrameAncestors: portal.MergeFrameAncestors(
+			os.Getenv(portal.EnvFrameAllow),
+			os.Getenv(portal.EnvWebFrameAllow),
+			os.Getenv(embed.EnvWebEmbedFrames),
+		),
+		PlatformAdmins: authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
+		EmbedLimits:    embed.LoadLimits(),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR / PORT is empty")

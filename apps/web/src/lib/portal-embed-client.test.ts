@@ -112,6 +112,7 @@ describe("portal-embed-client", () => {
       target as unknown as Window,
       holder,
       "http://localhost:3000",
+      ["http://localhost:3000"],
     );
     assert.equal(result.delivered, true);
     assert.equal(holder.assertion, "");
@@ -120,5 +121,35 @@ describe("portal-embed-client", () => {
       version: 1,
       assertion: SAMPLE_JWS,
     });
+  });
+
+  it("refuses postMessage when the target origin is not on the shared list", () => {
+    const posted: unknown[] = [];
+    const target = {
+      postMessage(data: unknown) {
+        posted.push(data);
+      },
+    };
+    const holder = emptyPortalAssertionHolder();
+    holder.assertion = SAMPLE_JWS;
+    const denied = deliverPortalAssertion(
+      target as unknown as Window,
+      holder,
+      "https://evil.example",
+      ["https://portal.example"],
+    );
+    assert.equal(denied.delivered, false);
+    assert.equal(holder.assertion, "");
+    assert.deepEqual(posted, []);
+
+    const empty = emptyPortalAssertionHolder();
+    empty.assertion = SAMPLE_JWS;
+    const emptyDenied = deliverPortalAssertion(
+      target as unknown as Window,
+      empty,
+      "http://localhost:3000",
+      [],
+    );
+    assert.equal(emptyDenied.delivered, false);
   });
 });

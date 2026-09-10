@@ -136,7 +136,7 @@ Query and hash fragments are unchanged (`?tab=`, `#schedules`). Discovery:
 
 | Method | Path | Auth | CSRF | Notes |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map |
+| `GET` | `/api/v1/embed/catalog` | none | no | Contract + route map. `frameAncestors` is the shared host allowlist (ADV-011) |
 | `GET` | `/api/v1/embed/jwks` | none | no | Public keys only (active + live overlap). Refreshes from the store; expired `overlapUntil` omitted. |
 | `POST` | `/api/v1/embed/assertions` | session or identity headers + membership | yes if `ff_session` | Mint with the **active** key. Subject/issuer bind to the caller; a different subject requires `embed.impersonate` (`PLATFORM_ADMINS`); a different issuer is `403` |
 | `POST` | `/api/v1/embed/exchange` | assertion | no | Refresh overlap from the store, refuse expired `overlapUntil`, then **verify signature / iss / aud / nbf / exp / jti eligibility before any workspace lookup**. Durable `jti` consume is one `INSERT … ON CONFLICT DO NOTHING RETURNING` after verify succeeds. Used ids stay reserved **24h past `exp`** (`retain_until`); a separate `PurgeExpired` job deletes only after that window. Then resolve `(tenant_id, workbench_key)` and bind tenancy onto `ff_session` with CHIPS cookies (`SameSite=None; Secure; Partitioned`). Invalid assertions fail closed the same way whether or not the tenant exists. Bound sessions cannot create tenants or workspaces. Cookie not sent later is `401`/`403`. Rate-limited by IP (default 120/min) and issuer\|subject (default 30/min); burst is `429` `rate-limited`. |
@@ -162,6 +162,49 @@ Failures: missing claims `400`; wrong audience / expired / nbf / bad signature /
 `POST /embed/exchange` is rate-limited **before** verify, keyed by client IP (default **120/min**) and peekable `iss`\|`sub` (default **30/min**) over `EMBED_RATE_LIMIT_WINDOW` (default `1m`). Soft-deny is `429` + problem detail + `Retry-After`. Mint may use `EMBED_MINT_RATE_LIMIT_PRINCIPAL` (default 60/min). A nil limiter fails closed. Defaults are sized so legitimate Portal iframe remounts from a shared egress IP stay under the cap.
 
 Chloe: **no UI change** beyond treating `429` as backoff (`Retry-After` / `EMBED_RATE_LIMITED_MESSAGE`). Do not treat 429 as forbidden.
+
+## ADV-011 shared host allowlist (Chloe)
+
+One allowlist feeds CSP `frame-ancestors` on `/embed/v1` **and** embed-shell
+postMessage origin checks. Do not keep a second client list.
+
+**Env (same merge on API and web):**
+
+| Variable | Where it is read |
+| --- | --- |
+| `WEB_EMBED_FRAME_ANCESTORS` | Next CSP (`security-headers.ts` → `embedHostAllowlist`). API catalog merge. |
+| `WEB_PORTAL_FRAME_ANCESTORS` | Same Next merge (E11.3). API catalog merge. |
+| `PORTAL_FRAME_ANCESTORS` | Same merge (API-side name). Set on the API so the catalog matches CSP. |
+
+Space/comma exact `http(s)` origins. `'self'` is kept for the in-repo
+same-origin Portal demo. `*` / `null` are ignored. Empty → CSP
+`frame-ancestors 'none'` and **no** postMessage (including same-origin).
+
+**How the UI reads the list (prefer catalog, not Next public env):**
+
+1. `GET /api/v1/embed/catalog` `frameAncestors` — publish path for the embed shell.
+2. `GET /api/v1/portal/adapter` `frameAncestors` — same list for the Portal host.
+3. Server CSP still reads process env at request time (`frameAncestorsForPath`).
+   That is **not** `NEXT_PUBLIC_*`. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is
+   **not** a source of truth.
+
+**Contract exports** (`apps/web/src/lib/embed-contract.ts`,
+`portal-adapter-contract.ts`):
+
+| Export | Use |
+| --- | --- |
+| `embedHostAllowlist(env)` | Parse the shared list from the three env vars |
+| `embedPostMessageAllowlist(env)` | Alias of `embedHostAllowlist` |
+| `frameAncestorsForPath(path, env)` | CSP directive (`'none'` off `/embed/v1` or when empty) |
+| `parseCatalogFrameAncestors(payload)` | Read catalog / adapter `frameAncestors` |
+| `isAllowedEmbedMessageOrigin(origin, list, { selfOrigin })` | Receiver + sender check. Empty list denies |
+| `EMBED_HOST_ALLOWLIST_RULES` / `EMBED_HOST_ALLOWLIST_HELP` | Chloe map constants |
+| `portalFrameAncestors(env)` / `portalPostMessageAllowlist(env)` | Portal adapter aliases |
+| `deliverPortalAssertion(..., allowlist, selfOrigin?)` | Sender must pass the catalog list |
+
+**Remaining shell wiring:** any new postMessage listener Chloe adds must call
+`isAllowedEmbedMessageOrigin` with the catalog list. Do not accept same-origin
+unless `'self'` or the exact origin is listed. Relates to #143 — keep #143 open.
 
 **ADV-008:** `POST /embed/exchange` (the only assertion-accepting path) completes cryptographic verify, audience, issuer allowlist, `nbf`/`exp`, and `jti` eligibility **before** `ResolveWorkspace` / membership. Peeking unverified JWT claims must not drive tenant lookup. Durable `jti` consume is after verify success so forged tokens do not burn ids. Chloe: **no UI change.**
 
@@ -194,10 +237,10 @@ Mint always uses the process **active** key (`EMBED_SIGNING_KEY` / `EMBED_SIGNIN
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (clamped 15s–5m) |
 | `EMBED_ISSUER` | empty | Single allowed `iss` for embed mint. Empty (with an empty allowlist) fails closed at mint (`403`) |
 | `EMBED_ISSUER_ALLOWLIST` | empty | Comma-separated allowed `iss`. Empty is fail-closed: mint and (when Portal is also empty) exchange return `403`. Compose seeds `https://idp.example` for local/dev. |
-| `WEB_EMBED_FRAME_ANCESTORS` | empty | Space/comma exact origins allowed to frame `/embed/v1` only. `*` / `null` ignored. Standalone stays `frame-ancestors 'none'` |
+| `WEB_EMBED_FRAME_ANCESTORS` | empty | Exact origins in the **shared host allowlist** (ADV-011). Merged with `WEB_PORTAL_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS`. Drives CSP `frame-ancestors` on `/embed/v1` **and** postMessage origin checks. `*` / `null` ignored. Empty fails closed (`'none'`, no open postMessage). Standalone stays `frame-ancestors 'none'` |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | E11.3 Portal mint issuer allowlist. Empty fails closed at Portal mint (`403`). Merged into embed exchange verification. Compose seeds `https://portal.cp-ops.example`. |
-| `PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins published on `GET /api/v1/portal/adapter` |
-| `WEB_PORTAL_FRAME_ANCESTORS` | empty | Exact Portal origins merged into `/embed/v1` `frame-ancestors` |
+| `PORTAL_FRAME_ANCESTORS` | empty | Same shared host allowlist (API-side name). Merged with the `WEB_*` vars. Published on `GET /embed/catalog` and `GET /portal/adapter` as `frameAncestors` |
+| `WEB_PORTAL_FRAME_ANCESTORS` | empty | Same shared host allowlist (Portal-origin name). Merged with `WEB_EMBED_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS` |
 | `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` requests per client IP per window. `0`/unset uses the default. Negative is unlimited. |
 | `EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL` | `30` | Max exchange requests per peekable `iss\|sub` per window. |
 | `EMBED_MINT_RATE_LIMIT_PRINCIPAL` | `60` | Max mint (`/embed/assertions` and Portal adapter mint) per authenticated principal per window. |
@@ -227,5 +270,6 @@ Public JWKS never includes `d`, PEM, or seed. Logs redact `assertion`,
 | `tenancy.propagation` | ready | Embed session binds `(tenant_id, workbench_key)` through API authz, configuration lookups, jobs/workers, caches, realtime, history, and audit. Host tenant is never authorization. Embed sessions cannot bootstrap tenants or sibling workbenches (`403`). Chloe chrome + deep links honor `session.embed` / exchanged workspace only. **No embed UI change required** — Membership create actions are standalone / platform-admin only. |
 | Portal adapter | ready | CP Ops Portal add-in. Portal RBAC is entry only. Mint uses this SDK (`aud=flowforge`). Empty issuer allowlists fail closed (`403`). FlowForge never shares its database or executor. Host wiring: [portal adapter](portal-adapter.md). Chloe host: `/portal/workflows`. |
 | `chips.embed-cookies` | ready | Embed `ff_session` / `ff_csrf` are `SameSite=None; Secure; Partitioned`. Top-level cookies stay Lax/Strict. Secure is never dropped. Cookie not sent fails closed (`401`/`403`). HTTPS / Partitioned support required. Full two-host iframe check is ADV-013. |
+| `host.allowlist` | ready | One list (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) drives CSP `frame-ancestors` on `/embed/v1` and postMessage origin checks. Empty fails closed. `*` / `null` ignored. `GET /embed/catalog` `frameAncestors` publishes the list. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a source. |
 | `authz.audit` | ready | Mint/exchange/rotate allow and deny, impersonation, capability and tenancy bind failures, and rate-limit denials emit secret-free `embed_audit` events. Assertion plaintext, signing keys, and session secrets are never logged. |
 | `exchange.rate-limit` | ready | `POST /embed/exchange` burst is `429` `rate-limited` (IP + issuer\|subject keys). Configurable via env. Mint may share a per-principal cap. Chloe treats 429 as backoff. |

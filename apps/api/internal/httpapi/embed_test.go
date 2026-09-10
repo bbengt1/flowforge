@@ -375,6 +375,18 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"jtiRetention":"24h0m0s"`) {
 		t.Fatal("catalog must document the 24h jti retention window")
 	}
+	if !strings.Contains(rec.Body.String(), `"sharedHostAllowlist":true`) {
+		t.Fatal("catalog must document the shared host allowlist")
+	}
+	if !strings.Contains(rec.Body.String(), `"emptyHostAllowlistFailsClosed":true`) {
+		t.Fatal("catalog must fail closed on an empty host allowlist")
+	}
+	if !strings.Contains(rec.Body.String(), `"postMessageUsesFrameAncestors":true`) {
+		t.Fatal("catalog must bind postMessage to frameAncestors")
+	}
+	if !strings.Contains(rec.Body.String(), `"frameAncestors":[`) && !strings.Contains(rec.Body.String(), `"frameAncestors":null`) && !strings.Contains(rec.Body.String(), `"frameAncestors":[]`) {
+		t.Fatal("catalog must publish frameAncestors")
+	}
 
 	mintedRec := env.mint(t, `{"capabilities":["workflow.view"]}`)
 	if mintedRec.Code != http.StatusCreated {
@@ -393,6 +405,66 @@ func TestEmbedCatalogAndSecretFreeLogs(t *testing.T) {
 	}
 	if !strings.Contains(out, "embed.minted") {
 		t.Fatalf("expected embed audit: %s", out)
+	}
+}
+
+func TestEmbedCatalogPublishesSharedHostAllowlist(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	clock := &now
+	keys := embed.TestMaterial()
+	store := identity.NewMemory()
+	frames := []string{"https://portal.example", "https://host.example"}
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:                store,
+		Scoped:               isolation.NewMemory(),
+		Sessions:             session.NewMemory(),
+		Workflows:            wfstore.NewMemory(),
+		Ops:                  opsconfig.NewMemory(),
+		Hooks:                webhook.NewMemory(),
+		Vault:                vault.NewMemory(vault.TestKeys(), nil),
+		Keys:                 vault.TestKeys(),
+		EmbedKeys:            keys,
+		EmbedJTI:             embed.NewMemoryJTI(),
+		PortalFrameAncestors: frames,
+		Now:                  func() time.Time { return *clock },
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/embed/catalog", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog %d %s", rec.Code, rec.Body.String())
+	}
+	var cat embed.Catalog
+	if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.FrameAncestors) != 2 || cat.FrameAncestors[0] != frames[0] || cat.FrameAncestors[1] != frames[1] {
+		t.Fatalf("catalog frames %v want %v", cat.FrameAncestors, frames)
+	}
+	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors {
+		t.Fatalf("allowlist rules %+v", cat.Rules)
+	}
+
+	empty := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:     identity.NewMemory(),
+		Scoped:    isolation.NewMemory(),
+		Sessions:  session.NewMemory(),
+		Workflows: wfstore.NewMemory(),
+		Ops:       opsconfig.NewMemory(),
+		Hooks:     webhook.NewMemory(),
+		Vault:     vault.NewMemory(vault.TestKeys(), nil),
+		Keys:      vault.TestKeys(),
+		EmbedKeys: keys,
+		EmbedJTI:  embed.NewMemoryJTI(),
+		Now:       func() time.Time { return *clock },
+	}))
+	emptyRec := httptest.NewRecorder()
+	empty.ServeHTTP(emptyRec, httptest.NewRequest(http.MethodGet, "/api/v1/embed/catalog", nil))
+	var emptyCat embed.Catalog
+	if err := json.Unmarshal(emptyRec.Body.Bytes(), &emptyCat); err != nil {
+		t.Fatal(err)
+	}
+	if len(emptyCat.FrameAncestors) != 0 {
+		t.Fatalf("empty allowlist must publish empty frameAncestors, got %v", emptyCat.FrameAncestors)
 	}
 }
 

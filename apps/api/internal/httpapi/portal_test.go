@@ -56,20 +56,21 @@ func newPortalEnvConfigured(t *testing.T, issuers []string, platformAdmins []aut
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
-		Store:          store,
-		Scoped:         isolation.NewMemory(),
-		Sessions:       session.NewMemory(),
-		Workflows:      wfstore.NewMemory(),
-		Ops:            opsconfig.NewMemory(),
-		Hooks:          webhook.NewMemory(),
-		Vault:          vault.NewMemory(vault.TestKeys(), nil),
-		Keys:           vault.TestKeys(),
-		EmbedKeys:      keys,
-		EmbedJTI:       embed.NewMemoryJTI(),
-		PortalIssuers:  issuers,
-		PlatformAdmins: platformAdmins,
-		Now:            func() time.Time { return *clock },
-		Log:            log,
+		Store:                store,
+		Scoped:               isolation.NewMemory(),
+		Sessions:             session.NewMemory(),
+		Workflows:            wfstore.NewMemory(),
+		Ops:                  opsconfig.NewMemory(),
+		Hooks:                webhook.NewMemory(),
+		Vault:                vault.NewMemory(vault.TestKeys(), nil),
+		Keys:                 vault.TestKeys(),
+		EmbedKeys:            keys,
+		EmbedJTI:             embed.NewMemoryJTI(),
+		PortalIssuers:        issuers,
+		PortalFrameAncestors: []string{"https://portal.example", "'self'"},
+		PlatformAdmins:       platformAdmins,
+		Now:                  func() time.Time { return *clock },
+		Log:                  log,
 	}))
 	admin := identity.User{Issuer: portalIssuer, ExternalSubject: "portal-svc", DisplayName: "Portal"}
 	seedWorkspace(t, store, admin, "acme", "ops", "Ops")
@@ -138,6 +139,12 @@ func TestPortalAdapterCatalog(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "DATABASE_URL") || strings.Contains(rec.Body.String(), "BEGIN PRIVATE") {
 		t.Fatal("catalog leaked secrets")
+	}
+	if len(cat.FrameAncestors) != 2 || cat.FrameAncestors[0] != "https://portal.example" || cat.FrameAncestors[1] != "'self'" {
+		t.Fatalf("shared host allowlist %v", cat.FrameAncestors)
+	}
+	if !cat.Rules.SharedHostAllowlist || !cat.Rules.EmptyHostAllowlistFailsClosed || !cat.Rules.PostMessageUsesFrameAncestors {
+		t.Fatalf("allowlist rules %+v", cat.Rules)
 	}
 }
 
