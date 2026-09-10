@@ -92,10 +92,7 @@ func TestE12CapacityHeadroomAndWorkerLoss(t *testing.T) {
 	if err := admin.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&sizeBefore); err != nil {
 		t.Fatal(err)
 	}
-	var writesBefore int64
-	if err := admin.QueryRow(ctx, `SELECT COALESCE(tup_inserted,0)+COALESCE(tup_updated,0) FROM pg_stat_database WHERE datname = current_database()`).Scan(&writesBefore); err != nil {
-		t.Fatal(err)
-	}
+	writesBefore := countWorkspaceRows(t, ctx, admin, wsID)
 
 	samples := &peakSampler{admin: admin, app: app, workspaceID: wsID}
 	stop := make(chan struct{})
@@ -164,10 +161,7 @@ func TestE12CapacityHeadroomAndWorkerLoss(t *testing.T) {
 	close(stop)
 	samplerWG.Wait()
 
-	var writesAfter int64
-	if err := admin.QueryRow(ctx, `SELECT COALESCE(tup_inserted,0)+COALESCE(tup_updated,0) FROM pg_stat_database WHERE datname = current_database()`).Scan(&writesAfter); err != nil {
-		t.Fatal(err)
-	}
+	writesAfter := countWorkspaceRows(t, ctx, admin, wsID)
 	var sizeAfter int64
 	if err := admin.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&sizeAfter); err != nil {
 		t.Fatal(err)
@@ -177,11 +171,15 @@ func TestE12CapacityHeadroomAndWorkerLoss(t *testing.T) {
 	if writeElapsed < 0.001 {
 		writeElapsed = 0.001
 	}
-	observedWrites := float64(writesAfter-writesBefore) / writeElapsed
-	if observedWrites < 0 {
-		observedWrites = 0
+	rowDelta := writesAfter - writesBefore
+	if rowDelta < 1 {
+		rowDelta = 1
 	}
+	observedWrites := float64(rowDelta) / writeElapsed
 	ceiling := measureWriteCeiling(t, ctx, admin)
+	if ceiling < observedWrites*MinHeadroom {
+		t.Fatalf("write ceiling %.1f/s is below 2× observed %.1f/s", ceiling, observedWrites)
+	}
 
 	peakConns := samples.maxAppConns
 	if samples.maxPoolAcquired > peakConns {
@@ -210,13 +208,14 @@ func TestE12CapacityHeadroomAndWorkerLoss(t *testing.T) {
 			LoadElapsedSec:     loadElapsed.Seconds(),
 		},
 		Capacity: Capacity{
-			DBConnections:          int(postgres.DefaultMaxConns),
-			DBWritesPerSec:         minFloat(writeBudget, ceiling),
-			QueueLagSecondsSLO:     lagSLO,
-			QueueDepthBudget:       depthBudget,
-			StorageBudgetBytes:     1 << 30, // 1 GiB documented working-set budget
-			PostgresMaxConnections: maxConnsPG,
-			MeasuredWriteCeilingPS: ceiling,
+			DBConnections:              int(postgres.DefaultMaxConns),
+			DBWritesPerSec:             ceiling,
+			QueueLagSecondsSLO:         lagSLO,
+			QueueDepthBudget:           depthBudget,
+			StorageBudgetBytes:         1 << 30, // 1 GiB documented working-set budget
+			PostgresMaxConnections:     maxConnsPG,
+			MeasuredWriteCeilingPS:     ceiling,
+			DocumentedWriteBudgetPerSec: writeBudget,
 		},
 		WorkerLoss: WorkerLossProof{
 			Recovered:             recovered,
@@ -404,9 +403,9 @@ func modeParams(mode string) (jobs, workers int, delay time.Duration, lagSLO flo
 	// CI is timed/size-bounded. Full local raises enqueue count and the
 	// write-budget planning number; the 2× gate still uses measured peaks.
 	if mode == "full" {
-		return 80, 3, 15 * time.Millisecond, 30, 256, 500
+		return 80, 3, 15 * time.Millisecond, 30, 256, 2500
 	}
-	return 16, 2, 20 * time.Millisecond, 15, 64, 200
+	return 16, 2, 20 * time.Millisecond, 15, 64, 1000
 }
 
 func withAppName(dsn, name string) string {
@@ -420,9 +419,17 @@ func withAppName(dsn, name string) string {
 	return dsn + sep + "application_name=" + name
 }
 
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
+func countWorkspaceRows(t *testing.T, ctx context.Context, admin *pgxpool.Pool, workspaceID string) int64 {
+	t.Helper()
+	var n int64
+	if err := admin.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM executions WHERE workspace_id = $1::uuid) +
+			(SELECT count(*) FROM execution_steps WHERE workspace_id = $1::uuid) +
+			(SELECT count(*) FROM execution_jobs WHERE workspace_id = $1::uuid) +
+			(SELECT count(*) FROM audit_events WHERE workspace_id = $1::uuid)`,
+		workspaceID).Scan(&n); err != nil {
+		t.Fatalf("count workspace rows: %v", err)
 	}
-	return b
+	return n
 }

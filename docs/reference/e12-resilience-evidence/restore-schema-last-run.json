@@ -1,0 +1,7 @@
+{
+  "id": "E12.2-restore-schema",
+  "sourceVersion": 22,
+  "restoredVersion": 22,
+  "encrypted": true,
+  "isolatedDatabaseDropped": true
+}

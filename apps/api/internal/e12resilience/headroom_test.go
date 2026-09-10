@@ -22,6 +22,9 @@ func TestHeadroomRatio(t *testing.T) {
 	if !math.IsInf(Headroom(8, 0), 1) {
 		t.Fatal("zero peak with capacity should be +Inf")
 	}
+	if got := finiteHeadroom(8, 0); got != 99 {
+		t.Fatalf("finiteHeadroom zero peak = %v", got)
+	}
 	if Headroom(0, 1) != 0 {
 		t.Fatal("zero capacity should be 0")
 	}

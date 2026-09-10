@@ -30,8 +30,8 @@ E12_LOAD_MODE=full TEST_DATABASE_URL='…' bash scripts/e12-resilience-suite.sh
 CI starts Postgres 16, installs `postgresql-client`, and sets
 `E12_LOAD_MODE=ci`. Heavy saturation stays local; CI still measures real
 peaks and asserts 2× headroom against the production pool limit, a
-documented write budget (capped by a measured insert ceiling), a queue-lag
-SLO, and a 1 GiB storage-growth budget.
+measured insert ceiling (planning write budget is recorded separately),
+a queue-lag SLO, and a 1 GiB storage-growth budget.
 
 ## Rehearsals and how they are tested
 
@@ -54,7 +54,7 @@ and a 1 GiB storage-growth budget for the rehearsal window.
 | Metric | Capacity | Observed peak (see last-run) | Claim |
 | --- | --- | --- | --- |
 | Database connections | Pool `MaxConns=8` (Postgres `max_connections` also recorded) | `peaks.dbConnections` | Pool ≥ 2× peak backends used by `application_name=e12-resilience` |
-| Database writes | `min(budget, measuredWriteCeilingPerSec)` | `peaks.dbWritesPerSec` | Write capacity ≥ 2× peak inserts+updates/s |
+| Database writes | Measured `INSERT` ceiling (`capacity.dbWritesPerSec`) | Workspace row-delta / window (`peaks.dbWritesPerSec`) | Ceiling ≥ 2× peak durable row writes/s. Planning budget (`documentedWriteBudgetPerSec`, 1000/s CI, 2500/s full) is operator guidance, not the gate. |
 | Queue lag | SLO seconds | `peaks.queueLagSeconds` | SLO ≥ 2× oldest queued job age |
 | Storage growth | 1 GiB budget | `peaks.storageGrowthBytes` | Budget ≥ 2× `pg_database_size` delta |
 

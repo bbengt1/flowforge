@@ -1,0 +1,45 @@
+{
+  "id": "E12.2-capacity",
+  "mode": "ci",
+  "ranAt": "2026-09-10T11:31:22Z",
+  "minHeadroom": 2,
+  "peaks": {
+    "dbConnections": 3,
+    "dbWritesPerSec": 323.29290200869553,
+    "queueLagSeconds": 0.199119,
+    "queueDepth": 16,
+    "storageGrowthBytes": 57344,
+    "loadJobs": 16,
+    "loadWorkers": 2,
+    "loadElapsedSec": 0.296944348
+  },
+  "capacity": {
+    "dbConnections": 8,
+    "dbWritesPerSec": 612374.1838965798,
+    "queueLagSecondsSLO": 15,
+    "queueDepthBudget": 64,
+    "storageBudgetBytes": 1073741824,
+    "postgresMaxConnections": 100,
+    "measuredWriteCeilingPerSec": 612374.1838965798,
+    "documentedWriteBudgetPerSec": 1000
+  },
+  "headroom": {
+    "dbConnections": 2.6666666666666665,
+    "dbWritesPerSec": 1894.177633012521,
+    "queueDepth": 4,
+    "queueLagSeconds": 75.33183674084341,
+    "storageGrowth": 18724.571428571428
+  },
+  "workerLoss": {
+    "recovered": 1,
+    "becameIndeterminate": true,
+    "staleCompleteRejected": true
+  },
+  "ok": true,
+  "claims": [
+    "Database connection pool (MaxConns=8) is \u22652\u00d7 observed peak connections (3).",
+    "Database write capacity (612374.2/s measured ceiling; planning budget 1000.0/s) is \u22652\u00d7 observed peak writes (323.3/s).",
+    "Queue-lag SLO (15.0s) is \u22652\u00d7 observed peak lag (0.199s); depth budget 64 vs peak 16.",
+    "Storage growth budget (1073741824 bytes) is \u22652\u00d7 observed growth (57344 bytes)."
+  ]
+}

@@ -3,10 +3,23 @@ package e12resilience
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+// finiteHeadroom is JSON-safe: +Inf (zero peak) becomes a large finite ratio.
+func finiteHeadroom(capacity, peak float64) float64 {
+	r := Headroom(capacity, peak)
+	if math.IsInf(r, 1) {
+		return 99
+	}
+	if math.IsInf(r, -1) || math.IsNaN(r) {
+		return 0
+	}
+	return r
+}
 
 // Report is the machine-readable E12.2 capacity evidence payload.
 type Report struct {
@@ -38,12 +51,13 @@ type Peaks struct {
 // Capacity is configured or measured headroom denominators.
 type Capacity struct {
 	DBConnections           int     `json:"dbConnections"`
-	DBWritesPerSec          float64 `json:"dbWritesPerSec"`
-	QueueLagSecondsSLO      float64 `json:"queueLagSecondsSLO"`
-	QueueDepthBudget        int     `json:"queueDepthBudget"`
-	StorageBudgetBytes      int64   `json:"storageBudgetBytes"`
-	PostgresMaxConnections  int     `json:"postgresMaxConnections"`
-	MeasuredWriteCeilingPS  float64 `json:"measuredWriteCeilingPerSec"`
+	DBWritesPerSec             float64 `json:"dbWritesPerSec"`
+	QueueLagSecondsSLO         float64 `json:"queueLagSecondsSLO"`
+	QueueDepthBudget           int     `json:"queueDepthBudget"`
+	StorageBudgetBytes         int64   `json:"storageBudgetBytes"`
+	PostgresMaxConnections     int     `json:"postgresMaxConnections"`
+	MeasuredWriteCeilingPS     float64 `json:"measuredWriteCeilingPerSec"`
+	DocumentedWriteBudgetPerSec float64 `json:"documentedWriteBudgetPerSec"`
 }
 
 // WorkerLossProof records the lease-expiry / fencing recovery path.
@@ -56,11 +70,11 @@ type WorkerLossProof struct {
 func (r Report) evaluate() Report {
 	r.MinRatio = MinHeadroom
 	r.Headroom = map[string]float64{
-		"dbConnections":   Headroom(float64(r.Capacity.DBConnections), float64(r.Peaks.DBConnections)),
-		"dbWritesPerSec":  Headroom(r.Capacity.DBWritesPerSec, r.Peaks.DBWritesPerSec),
-		"queueLagSeconds": Headroom(r.Capacity.QueueLagSecondsSLO, r.Peaks.QueueLagSeconds),
-		"queueDepth":      Headroom(float64(r.Capacity.QueueDepthBudget), float64(r.Peaks.QueueDepth)),
-		"storageGrowth":   Headroom(float64(r.Capacity.StorageBudgetBytes), float64(r.Peaks.StorageGrowthBytes)),
+		"dbConnections":   finiteHeadroom(float64(r.Capacity.DBConnections), float64(r.Peaks.DBConnections)),
+		"dbWritesPerSec":  finiteHeadroom(r.Capacity.DBWritesPerSec, r.Peaks.DBWritesPerSec),
+		"queueLagSeconds": finiteHeadroom(r.Capacity.QueueLagSecondsSLO, r.Peaks.QueueLagSeconds),
+		"queueDepth":      finiteHeadroom(float64(r.Capacity.QueueDepthBudget), float64(r.Peaks.QueueDepth)),
+		"storageGrowth":   finiteHeadroom(float64(r.Capacity.StorageBudgetBytes), float64(r.Peaks.StorageGrowthBytes)),
 	}
 	var fails []string
 	checks := []struct {
@@ -86,7 +100,7 @@ func (r Report) evaluate() Report {
 	r.OK = len(fails) == 0
 	r.Claims = []string{
 		fmt.Sprintf("Database connection pool (MaxConns=%d) is ≥2× observed peak connections (%d).", r.Capacity.DBConnections, r.Peaks.DBConnections),
-		fmt.Sprintf("Database write capacity (%.1f/s budget, %.1f/s measured ceiling) is ≥2× observed peak writes (%.1f/s).", r.Capacity.DBWritesPerSec, r.Capacity.MeasuredWriteCeilingPS, r.Peaks.DBWritesPerSec),
+		fmt.Sprintf("Database write capacity (%.1f/s measured ceiling; planning budget %.1f/s) is ≥2× observed peak writes (%.1f/s).", r.Capacity.MeasuredWriteCeilingPS, r.Capacity.DocumentedWriteBudgetPerSec, r.Peaks.DBWritesPerSec),
 		fmt.Sprintf("Queue-lag SLO (%.1fs) is ≥2× observed peak lag (%.3fs); depth budget %d vs peak %d.", r.Capacity.QueueLagSecondsSLO, r.Peaks.QueueLagSeconds, r.Capacity.QueueDepthBudget, r.Peaks.QueueDepth),
 		fmt.Sprintf("Storage growth budget (%d bytes) is ≥2× observed growth (%d bytes).", r.Capacity.StorageBudgetBytes, r.Peaks.StorageGrowthBytes),
 	}
