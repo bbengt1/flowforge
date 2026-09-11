@@ -10,7 +10,7 @@ The canvas must stay responsive while workflow validation, credential tests, imp
 
 ## Information architecture
 
-Landed UX.1–UX.11 chrome (Chloe, epic #195). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195 — **keep #207 open**) updates this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough only.
+Landed UX.1–UX.11 chrome (Chloe, epic #195). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
 
 ```mermaid
 flowchart TB
