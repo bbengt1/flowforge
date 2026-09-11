@@ -47,7 +47,6 @@ import {
   credentialDetailHeaderOmitsKek,
   credentialDetailHoldsSecurityLine,
   credentialDetailHref,
-  credentialDetailIdentity,
   credentialDetailIdentityIsDisplayNameAndUuid,
   credentialDetailIdentityText,
   credentialDetailImpactDisplay,
@@ -308,6 +307,8 @@ describe("R5.2 credential detail operate density", () => {
 
     const draft = emptySecretDraft();
     draft.kubeconfig = "apiVersion: v1\nkind: Config\n";
+    const leftover = emptySecretDraft();
+    leftover.kubeconfig = "apiVersion: v1\nkind: Config\n";
     const cleared = clearSecretDraftAfterSubmit(draft);
     assert.equal(
       credentialDetailRotateNeverSurfacesPlaintext({
@@ -327,7 +328,7 @@ describe("R5.2 credential detail operate density", () => {
     assert.equal(
       credentialDetailRotateNeverSurfacesPlaintext({
         record,
-        draft,
+        draft: leftover,
       }),
       false,
     );

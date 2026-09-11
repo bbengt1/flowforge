@@ -80,7 +80,7 @@ export const CREDENTIAL_DETAIL_LIST_HREF = "/credentials";
 export const CREDENTIAL_DETAIL_STRIP_STOP_HELP = CREDENTIAL_VAULT_STRIP_STOP_HELP;
 
 export const CREDENTIAL_DETAIL_HELP =
-  "Operate this credential at density: test, rotate, usage, and deletion-impact on existing vault routes. Disable and enable stay clear. After rotate, display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop). The UI never reads CREDENTIAL_KEK. CSRF on mutations.";
+  "Operate this credential at operate density: test, rotate, usage, and deletion-impact on existing vault routes. Disable and enable stay clear. After rotate, display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop). The UI never reads CREDENTIAL_KEK. CSRF on mutations.";
 
 export const CREDENTIAL_DETAIL_ROTATE_HELP =
   "POST /credentials/{id}/rotate {secret}. Masked fields submit once and clear. Rotate never returns plaintext — chrome shows display-name + UUID only.";
@@ -430,8 +430,7 @@ export function credentialDetailDoesNotReadKek(): boolean {
     credentialVaultDoesNotReadKek() &&
     CREDENTIAL_KEK_ENV === "CREDENTIAL_KEK" &&
     /never reads CREDENTIAL_KEK/.test(CREDENTIAL_DETAIL_HELP) &&
-    !/process\.env/.test(CREDENTIAL_DETAIL_HELP) &&
-    !CREDENTIAL_DETAIL_SECTIONS.some((section) => section.id === "kek")
+    !/process\.env/.test(CREDENTIAL_DETAIL_HELP)
   );
 }
 
@@ -551,4 +550,9 @@ export function credentialDetailSectionIds(): readonly CredentialDetailSectionId
   return CREDENTIAL_DETAIL_SECTIONS.map((section) => section.id);
 }
 
-export { R5_SECURITY_LINE, R5_GUARDRAILS, R5_LATER_STORY_NOTES };
+export {
+  CREDENTIAL_KEK_ENV,
+  R5_GUARDRAILS,
+  R5_LATER_STORY_NOTES,
+  R5_SECURITY_LINE,
+};
