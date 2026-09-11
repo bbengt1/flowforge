@@ -259,6 +259,16 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
       editorSelectionAnnouncement({ kind: "workflow" }),
       /triggers, versions, and pins/,
     );
+    assert.match(
+      editorSelectionAnnouncement({
+        kind: "node",
+        name: "Deploy",
+        type: "http.request",
+        id: "deploy",
+        count: 3,
+      }),
+      /Selected 3 nodes/,
+    );
 
     const canvas = source("src/components/workflows/WorkflowCanvas.tsx");
     assert.match(canvas, /role="application"/);

@@ -153,6 +153,7 @@ describe("UX.1 editor chrome", () => {
       zoomShortcuts: true,
       wizardEscape: true,
       undoRedo: true,
+      multiSelectFitSnap: true,
     });
   });
 });
