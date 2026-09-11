@@ -23,7 +23,6 @@ import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import {
   EDITOR_INSPECTOR_FIRST_MEDIA,
-  EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT,
   editorDrawerAfterEscape,
   editorDrawerToClose,
   editorInspectorIsDrawer,
@@ -43,6 +42,13 @@ import {
   rememberLibraryOpen,
   subscribeLibraryOpenPreference,
 } from "@/lib/editor-library";
+import {
+  EDITOR_NDV_DEFAULT_OPEN,
+  readInspectorOpenPreference,
+  rememberInspectorFocus,
+  rememberInspectorOpen,
+  subscribeInspectorOpenPreference,
+} from "@/lib/editor-ndv";
 import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
 import {
   EDITOR_RUN_OVERLAY_HELP,
@@ -243,8 +249,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   );
   const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
   const [runsOpen, setRunsOpen] = useState(EDITOR_RUNS_OPEN_ON_FIRST_PAINT);
-  const [inspectorOpen, setInspectorOpen] = useState(
-    EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT,
+  const inspectorOpen = useSyncExternalStore(
+    subscribeInspectorOpenPreference,
+    readInspectorOpenPreference,
+    () => EDITOR_NDV_DEFAULT_OPEN,
   );
   const [lastOpenedDrawer, setLastOpenedDrawer] = useState<EditorDrawerId | null>(
     null,
@@ -348,7 +356,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           }),
         );
       }
-      setInspectorOpen(true);
+      rememberInspectorFocus(next);
       return;
     }
     if (next.kind === "edge") {
@@ -359,7 +367,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           to: next.to,
         }),
       );
-      setInspectorOpen(true);
+      rememberInspectorFocus(next);
       return;
     }
     setSelectionAnnouncement(editorSelectionAnnouncement({ kind: "workflow" }));
@@ -444,9 +452,9 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           io: editorRunIoForNode(result.execution, currentId),
         }),
       );
-      setInspectorOpen(true);
+      rememberInspectorOpen(true);
     } else {
-      setInspectorOpen(true);
+      rememberInspectorOpen(true);
     }
   }
 
@@ -461,7 +469,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       setRunsOpen(open);
     }
     if (id === "inspector") {
-      setInspectorOpen(open);
+      rememberInspectorOpen(open);
     }
     if (open) {
       setLastOpenedDrawer(id);

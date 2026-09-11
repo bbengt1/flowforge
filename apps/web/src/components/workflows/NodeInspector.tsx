@@ -62,14 +62,14 @@ export function NodeInspector({
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <h2 id="inspector-heading" className="text-base font-semibold">
-        Selected node
+        Parameters
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Inspector <span className="font-medium">edits</span> the selected node.
-        Add action stays the guided wizard. Bounded{" "}
+        Inspector <span className="font-medium">edits</span> name and bounded{" "}
         <code className="font-mono text-xs">with</code> fields from catalog{" "}
-        <code className="font-mono text-xs">allowedWith</code>. No expression
-        language and no secrets in YAML.
+        <code className="font-mono text-xs">allowedWith</code>. Add action
+        stays the guided wizard. No expression language and no secrets in
+        YAML.
       </p>
       {constraint ? (
         <p role="status" className="mt-2 text-sm text-amber-950">

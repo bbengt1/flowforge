@@ -146,17 +146,25 @@ a documented breakpoint, not a mobile app.
 
 ### Inspector
 
-Right rail.
+The inspector is a **right drawer** that opens with the editor
+(remembered-open) and stays an **Inspector** satellite when hidden —
+not hide-by-default only. Selecting a node focuses the conversation
+shell. Relates to #235 / Part of #228. Keep #235 open.
 
-1. **Node** — edit name, `with`, pins, and credentials by **display
-   name**. Pick an existing vault item or **add** one; secret entry
-   stays in the masked wizard (modal or `/credentials/new` return-to-
-   editor). The rail never shows `SecretField` / plaintext / rotate.
+1. **Node** — conversation chrome for this step: parameters / `with` /
+   pins / credentials by **display name**. Pick an existing vault item
+   or **add** one; secret entry stays in the masked wizard (modal or
+   `/credentials/new` return-to-editor). The rail never shows
+   `SecretField` / plaintext / rotate. No expression language. Deep
+   mapping is R3.
 2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
    Pins**. Same webhook/schedule contracts as home. Restore creates a
    new draft. Pins are authorized metadata only.
 3. **Edge** — port compatibility.
 4. **Validation** — live region; errors link to a node or YAML path.
+5. **Hide** remembers closed for the next visit in this tab. The
+   **Inspector** satellite stays on the canvas so the shell is never
+   missing.
    Save stays disabled while invalid.
 5. **Last run** — when a run is selected in the Runs drawer, redacted
    input / output / logs for this node. Secrets stay `[redacted]`.

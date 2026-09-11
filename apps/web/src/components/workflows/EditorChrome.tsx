@@ -12,6 +12,12 @@ import {
   EDITOR_LIBRARY_SATELLITE_ID,
   EDITOR_LIBRARY_SATELLITE_WIDTH,
 } from "@/lib/editor-library";
+import {
+  EDITOR_NDV_COLUMN_WIDTH,
+  EDITOR_NDV_SATELLITE_ID,
+  EDITOR_NDV_SATELLITE_LABEL,
+  EDITOR_NDV_SATELLITE_WIDTH,
+} from "@/lib/editor-ndv";
 
 type EditorChromeProps = {
   identityGate?: ReactNode;
@@ -117,10 +123,14 @@ export function EditorChrome({
           <aside
             id={EDITOR_INSPECTOR_PANEL_ID}
             aria-label="Inspector"
-            className="order-first flex max-h-[46%] w-full shrink-0 flex-col overflow-auto border-zinc-200 bg-white max-md:border-b md:order-none md:max-h-none md:w-80 md:border-l"
+            data-editor-inspector="drawer"
+            className="order-first flex max-h-[46%] w-full shrink-0 flex-col overflow-auto border-zinc-200 bg-white max-md:!w-full max-md:border-b md:order-none md:max-h-none md:border-l"
+            style={{ width: EDITOR_NDV_COLUMN_WIDTH }}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 md:hidden">
-              <p className="text-sm font-medium text-zinc-800">Inspector</p>
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
+              <p className="text-sm font-medium text-zinc-800">
+                {EDITOR_NDV_SATELLITE_LABEL}
+              </p>
               <button
                 type="button"
                 onClick={onToggleInspector}
@@ -133,7 +143,25 @@ export function EditorChrome({
             </div>
             {inspector}
           </aside>
-        ) : null}
+        ) : (
+          <aside
+            aria-label="Inspector"
+            data-editor-inspector="satellite"
+            className="order-first flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:order-none md:flex-col md:border-l"
+            style={{ width: EDITOR_NDV_SATELLITE_WIDTH }}
+          >
+            <button
+              type="button"
+              id={EDITOR_NDV_SATELLITE_ID}
+              onClick={onToggleInspector}
+              aria-expanded={false}
+              aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
+              className="rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:px-1 md:py-3"
+            >
+              {EDITOR_NDV_SATELLITE_LABEL}
+            </button>
+          </aside>
+        )}
         {runs}
       </div>
       {overlays}
