@@ -268,10 +268,14 @@ denial, not a row of foreign data.
    enter display name/tags, paste into masked `SecretField`s. Submit
    once. Fields clear on success and unmount. Never in `localStorage`,
    URL, or analytics.
-3. **Rotate / test / disable:** same mask-and-clear rule. Test status
-   is safe metadata, not a secret dump.
-4. **Delete:** load `deletion-impact`, then `DELETE` with
-   `{confirm:true}`.
+3. **Operate (R5.2):** test, rotate, usage, and deletion-impact sit on
+   `/credentials/{id}` at operate density using existing vault routes.
+   Test status is safe metadata. Rotate is mask-and-clear; after
+   submit, chrome shows **display-name + UUID only**. Disable/enable
+   stay explicit. CSRF on mutations. Unexpected plaintext is strip +
+   stop — do not paste into chrome.
+4. **Delete:** deletion-impact is already on the page; type the
+   display name, then `DELETE` with `{confirm:true}`.
 5. Workflow selectors show **display names** only. The UI never reads
    `CREDENTIAL_KEK`.
 
