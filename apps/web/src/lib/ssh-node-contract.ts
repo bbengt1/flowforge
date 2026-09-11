@@ -27,7 +27,6 @@ import { parseParameterSchema } from "./ssh.ts";
 import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_INDETERMINATE_HELP,
-  SSH_MAX_RETRY_ATTEMPTS,
   SSH_RETRY_DENIED_MESSAGE,
   SSH_RETRY_ZERO_MESSAGE,
   defaultSshRetryPolicy,
@@ -679,9 +678,9 @@ export function adaptSshNodeEntries(
         allowedWith: listed?.allowedWith?.length
           ? listed.allowedWith
           : engineAllowed ?? [],
-        policy: listed?.policy ?? null,
-        bounds: listed?.bounds ?? null,
-        redaction: listed?.redaction ?? null,
+        policy: listed?.policy,
+        bounds: listed?.bounds,
+        redaction: listed?.redaction,
       },
     ];
   });

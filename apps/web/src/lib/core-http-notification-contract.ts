@@ -56,10 +56,6 @@ import type { ConnectionType, OpsConfigPin, OpsConfigSpec } from "./ops-config-t
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
-  CatalogNodeBounds,
-  CatalogNodePolicy,
-  CatalogPort,
-  CatalogRedaction,
   CatalogWithField,
   WorkflowCatalog,
 } from "./workflow-types.ts";
@@ -1055,9 +1051,9 @@ export function adaptHttpNotificationEntries(
         allowedWith: listed?.allowedWith?.length
           ? listed.allowedWith
           : engineAllowed ?? [],
-        policy: listed?.policy ?? null,
-        bounds: listed?.bounds ?? null,
-        redaction: listed?.redaction ?? null,
+        policy: listed?.policy,
+        bounds: listed?.bounds,
+        redaction: listed?.redaction,
       },
     ];
   });

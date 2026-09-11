@@ -271,8 +271,9 @@ export function rolloutWaitReadyMessage(
 }
 
 export function rolloutNodeDescription(
-  _catalog?: KubernetesEngineCatalog | null,
+  catalog?: KubernetesEngineCatalog | null,
 ): string {
+  void catalog;
   return "Bounded watch of Deployment, StatefulSet, DaemonSet, or Job. Verb is watch and needs kubernetes.read. Identify the workload with kind+name or resource {kind,name}. Timeout or cancel stops waiting — never delete or rollback.";
 }
 

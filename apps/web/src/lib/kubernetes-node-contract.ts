@@ -21,7 +21,6 @@ import {
 import {
   KUBERNETES_ROLLOUT_KINDS,
   KUBERNETES_ROLLOUT_NODE_TYPE,
-  KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
   KUBERNETES_WAIT_READY_OBSERVED,
   isKubernetesRolloutKind,
   isKubernetesRolloutType,
@@ -639,9 +638,9 @@ export function adaptKubernetesNodeEntries(
         allowedWith: listed?.allowedWith?.length
           ? listed.allowedWith
           : engineAllowed ?? [],
-        policy: listed?.policy ?? null,
-        bounds: listed?.bounds ?? null,
-        redaction: listed?.redaction ?? null,
+        policy: listed?.policy,
+        bounds: listed?.bounds,
+        redaction: listed?.redaction,
       },
     ];
   });

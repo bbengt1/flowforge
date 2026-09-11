@@ -25,10 +25,6 @@ import { validateScriptIoNodeExtras } from "./script-io-contract.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
-  CatalogNodeBounds,
-  CatalogNodePolicy,
-  CatalogPort,
-  CatalogRedaction,
   CatalogWithField,
   WorkflowCatalog,
   WorkflowVersion,
@@ -1098,9 +1094,9 @@ export function adaptScriptNodeEntries(
         allowedWith: listed?.allowedWith?.length
           ? listed.allowedWith
           : engineAllowed ?? [],
-        policy: listed?.policy ?? null,
-        bounds: listed?.bounds ?? null,
-        redaction: listed?.redaction ?? null,
+        policy: listed?.policy,
+        bounds: listed?.bounds,
+        redaction: listed?.redaction,
       },
     ];
   });
