@@ -441,19 +441,21 @@ export function rowsFromMappingValue(value: unknown): NdvTypedPortMapping[] {
     return [{ dest: "", from: "" }];
   }
   if (Array.isArray(value)) {
-    const rows = value
-      .map((item) => {
-        if (!item || typeof item !== "object") {
-          return null;
-        }
-        const rec = item as { dest?: unknown; from?: unknown; convert?: unknown };
-        return {
-          dest: typeof rec.dest === "string" ? rec.dest : "",
-          from: typeof rec.from === "string" ? rec.from : "",
-          convert: typeof rec.convert === "string" ? rec.convert : undefined,
-        };
-      })
-      .filter((row): row is NdvTypedPortMapping => row !== null);
+    const rows: NdvTypedPortMapping[] = [];
+    for (const item of value) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const rec = item as { dest?: unknown; from?: unknown; convert?: unknown };
+      const row: NdvTypedPortMapping = {
+        dest: typeof rec.dest === "string" ? rec.dest : "",
+        from: typeof rec.from === "string" ? rec.from : "",
+      };
+      if (typeof rec.convert === "string") {
+        row.convert = rec.convert;
+      }
+      rows.push(row);
+    }
     return rows.length > 0 ? rows : [{ dest: "", from: "" }];
   }
   if (typeof value !== "object") {
