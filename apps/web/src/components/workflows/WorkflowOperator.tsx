@@ -80,14 +80,20 @@ import {
 import {
   EDITOR_RUN_OVERLAY_HELP,
   editorRunCurrentNodeId,
-  editorRunOverlayAnnouncement,
   editorRunOverlayGraph,
-  editorRunIoForNode,
   editorRunShouldPoll,
   editorRunWaitingNodeIds,
 } from "@/lib/editor-run-io";
 import {
+  ndvRunIoAnnouncement,
+  ndvRunIoCanLoad,
+  ndvRunIoView,
+  pickLatestPublishedRun,
+  type NdvRunIoContextSource,
+} from "@/lib/editor-ndv-run-io";
+import {
   getExecutionStepLogs,
+  listWorkflowExecutions,
   loadExecutionHistory,
   pollExecutionStatus,
 } from "@/lib/execution-client";
@@ -357,6 +363,20 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [selectedRunApprovals, setSelectedRunApprovals] = useState<
     ApprovalRequest[]
   >([]);
+  const [runIoSource, setRunIoSource] = useState<NdvRunIoContextSource | null>(
+    null,
+  );
+  const [latestNonce, setLatestNonce] = useState(0);
+  const runIoSourceRef = useRef<NdvRunIoContextSource | null>(null);
+
+  function rememberRunIoSource(source: NdvRunIoContextSource | null) {
+    runIoSourceRef.current = source;
+    setRunIoSource(source);
+  }
+
+  function runIoIsOverlay(): boolean {
+    return runIoSourceRef.current === "overlay";
+  }
   const { permissions } = useWorkspace();
   const inspectorFirst = useSyncExternalStore(
     subscribeInspectorFirstBreakpoint,
@@ -381,11 +401,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       const node = yamlNodes.find((item) => item.id === next.id);
       if (selectedRun) {
         setSelectionAnnouncement(
-          editorRunOverlayAnnouncement({
+          ndvRunIoAnnouncement({
             nodeId: next.id,
             nodeName: node?.name,
             nodeType: node?.type,
-            io: editorRunIoForNode(selectedRun, next.id),
+            view: ndvRunIoView({
+              detail: selectedRun,
+              nodeId: next.id,
+              source: runIoSource,
+            }),
           }),
         );
       } else {
@@ -513,6 +537,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setSelectedRunStrippedKeys([]);
     setSelectedRunApprovals([]);
     setSelectedRunPending(false);
+    rememberRunIoSource(null);
+    setLatestNonce((current) => current + 1);
   }
 
   async function loadSelectedRunLogs(
@@ -536,6 +562,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   async function selectRun(executionId: string) {
     const scopedId = workflow?.id ?? workflowId ?? "";
     setSelectedRunId(executionId);
+    rememberRunIoSource("overlay");
     setSelectedRunPending(true);
     setSelectedRunProblem(null);
     const result = await loadExecutionHistory(identity, executionId, scopedId);
@@ -572,11 +599,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       const node = yamlNodes.find((item) => item.id === currentId);
       setSelection({ kind: "node", id: currentId });
       setSelectionAnnouncement(
-        editorRunOverlayAnnouncement({
+        ndvRunIoAnnouncement({
           nodeId: currentId,
           nodeName: node?.name,
           nodeType: node?.type,
-          io: editorRunIoForNode(result.execution, currentId),
+          view: ndvRunIoView({
+            detail: result.execution,
+            nodeId: currentId,
+            source: "overlay",
+          }),
         }),
       );
       rememberInspectorOpen(true);
@@ -742,11 +773,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     warnings,
   });
   const runWaitingIds = editorRunWaitingNodeIds(selectedRunApprovals);
+  const overlayActive = runIoSource === "overlay" && Boolean(selectedRun);
   const canvasGraph =
-    graph && selectedRun
+    graph && overlayActive && selectedRun
       ? editorRunOverlayGraph(graph, selectedRun.steps, runWaitingIds)
       : graph;
-  const runCurrentNodeId = selectedRun
+  const runCurrentNodeId = overlayActive && selectedRun
     ? editorRunCurrentNodeId(selectedRun.steps, runWaitingIds) ?? undefined
     : undefined;
   const canSave = canSaveWorkflowEditor({ status, errors, localErrors });
@@ -757,6 +789,94 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     headerFallback,
   ) && hasWorkspaceLookup(identity);
   const dirty = Boolean(workflow && yaml !== savedYaml);
+
+  async function loadLatestPublishedRun(scopedId: string) {
+    if (runIoIsOverlay()) {
+      return;
+    }
+    if (!ndvRunIoCanLoad(permissions) && permissions != null) {
+      return;
+    }
+    setSelectedRunPending(true);
+    setSelectedRunProblem(null);
+    const list = await listWorkflowExecutions(identity, scopedId, { limit: 1 });
+    if (runIoIsOverlay()) {
+      return;
+    }
+    if (!list.ok) {
+      setSelectedRunPending(false);
+      setSelectedRunProblem(list.problem);
+      if (list.forbidden) {
+        setSelectedRun(null);
+        setSelectedRunLogs({});
+        setSelectedRunApprovals([]);
+        rememberRunIoSource(null);
+      }
+      return;
+    }
+    const latest = pickLatestPublishedRun(list.items);
+    if (!latest) {
+      setSelectedRunPending(false);
+      setSelectedRun(null);
+      setSelectedRunId(null);
+      setSelectedRunLogs({});
+      setSelectedRunApprovals([]);
+      setSelectedRunStrippedKeys(list.strippedKeys);
+      rememberRunIoSource(null);
+      return;
+    }
+    setSelectedRunId(latest.id);
+    rememberRunIoSource("latest");
+    const result = await loadExecutionHistory(identity, latest.id, scopedId);
+    if (runIoIsOverlay()) {
+      return;
+    }
+    setSelectedRunPending(false);
+    if (!result.ok) {
+      setSelectedRunProblem(result.problem);
+      if (result.forbidden) {
+        setSelectedRun(null);
+        setSelectedRunLogs({});
+        setSelectedRunApprovals([]);
+        rememberRunIoSource(null);
+      }
+      return;
+    }
+    setSelectedRun(result.execution);
+    setSelectedRunStrippedKeys([
+      ...list.strippedKeys,
+      ...result.strippedKeys,
+    ]);
+    void loadSelectedRunLogs(result.execution.id, result.execution.steps);
+    if (scopedId) {
+      const approvals = await listExecutionApprovals(
+        identity,
+        scopedId,
+        result.execution.id,
+      );
+      if (runIoIsOverlay()) {
+        return;
+      }
+      if (approvals.ok) {
+        setSelectedRunApprovals(approvals.items);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (runIoIsOverlay()) {
+      return;
+    }
+    const scopedId = workflow?.id ?? workflowId ?? "";
+    if (!scopedId || !canCall || !ndvRunIoCanLoad(permissions)) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadLatestPublishedRun(scopedId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- latest load closes over identity
+  }, [workflow?.id, workflowId, canCall, permissions, identity, latestNonce]);
 
   const clearGraph = useCallback(() => {
     setSummary(null);
@@ -1843,8 +1963,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           selection={selection}
           entries={library}
           currentNodeId={runCurrentNodeId}
-          heading={selectedRun ? "Canvas · last run" : undefined}
-          help={selectedRun ? EDITOR_RUN_OVERLAY_HELP : undefined}
+          heading={overlayActive ? "Canvas · last run" : undefined}
+          help={overlayActive ? EDITOR_RUN_OVERLAY_HELP : undefined}
           onSelect={applySelection}
           layout={history.present.layout}
           canUndo={canUndoCanvasHistory(history)}
@@ -1939,18 +2059,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             credentialRefreshNonce={credentialRefreshNonce}
             pendingCredentials={pendingCredentials}
             onAddCredential={setAddCredential}
-            lastRun={
-              selectedRunId
-                ? {
-                    detail: selectedRun,
-                    logsByStepId: selectedRunLogs,
-                    pending: selectedRunPending,
-                    problem: selectedRunProblem,
-                    strippedKeys: selectedRunStrippedKeys,
-                    onClear: clearSelectedRun,
-                  }
-                : null
-            }
+            lastRun={{
+              detail: selectedRun,
+              source: runIoSource,
+              logsByStepId: selectedRunLogs,
+              waitingApprovalNodeIds: runWaitingIds,
+              pending: selectedRunPending,
+              problem: selectedRunProblem,
+              strippedKeys: selectedRunStrippedKeys,
+              onClear: runIoSource === "overlay" ? clearSelectedRun : undefined,
+            }}
             validation={{
               status,
               errors: [...errors, ...mappingFieldErrors],
@@ -2040,7 +2158,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           selectedSteps={selectedRun?.steps}
           waitingApprovalNodeIds={runWaitingIds}
           overlayHighlightCount={
-            selectedRun
+            overlayActive && selectedRun
               ? editorRunsHighlightedNodeIds(selectedRun.steps, runWaitingIds)
                   .length
               : 0
@@ -2049,7 +2167,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           onOpen={() => setDrawerOpen("runs", true)}
           onStart={() => setStartOpen(true)}
           onSelectRun={(executionId) => void selectRun(executionId)}
-          onClearRun={clearSelectedRun}
+          onClearRun={runIoSource === "overlay" ? clearSelectedRun : undefined}
           onHighlightNode={(nodeId) => applySelection({ kind: "node", id: nodeId })}
         />
       }
