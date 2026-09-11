@@ -782,7 +782,6 @@ function CanvasNode({
       aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}${
         current ? " current node" : ""
       }${selected ? " selected" : ""}`}
-      aria-selected={selected}
       tabIndex={0}
       onPointerDown={(event) => {
         event.stopPropagation();
