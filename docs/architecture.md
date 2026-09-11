@@ -1,5 +1,7 @@
 # Architecture
 
+Rewrite planning draft (Jonny; fold into Gracie’s package — do not open epics from it): [control-plane / execution / credential contracts vs n8n-class parity](architecture/rewrite-n8n-parity-control-plane.md).
+
 ## Deployment shape
 
 ```mermaid

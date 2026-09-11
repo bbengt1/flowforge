@@ -3,6 +3,7 @@
 ## Start here
 
 - [Architecture](architecture.md): component boundaries, deployment model, and embedding contract.
+- [Rewrite draft — control-plane / execution / credential parity (Jonny)](architecture/rewrite-n8n-parity-control-plane.md): n8n-class UX/feature gap matrix vs current `/api/v1` contracts. **Draft** for Gracie fold-in; do not open epics from it.
 - [Master implementation plan](master-implementation-plan.md): agile epic and story backlog for implementation planning.
 - [MVP workflow model](reference/workflow-model.md): resources, node types, and acceptance criteria.
 - [Workflow YAML schema](reference/workflow-yaml-schema.md): canonical saved workflow definition and UI round-trip rules.

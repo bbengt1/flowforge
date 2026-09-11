@@ -5,6 +5,7 @@ The maintained technical reference starts with the [workflow model](workflow-mod
 Future implementation changes should add API, deployment, and runner references here, and update the security model when a trust boundary or control changes.
 
 - [Backend API map](backend-api-map.md): implemented control-plane routes and contracts.
+- [Rewrite draft — control-plane parity (Jonny)](../architecture/rewrite-n8n-parity-control-plane.md): n8n-class capability vs `/api/v1` contracts and keeps. **Draft** for Gracie; not an epic backlog.
 - [Embed SDK / contract](embed-sdk.md): E11.1 mint/exchange plus E11.2 validation, durable `jti`, key rotation, and tenancy propagation.
 - [CP Ops Portal adapter](portal-adapter.md): E11.3 Portal host wiring, capability map, and fail-closed integration boundary.
 - [E12.1 security verification suite](e12-security-verification.md): named harness, CI gate, last-run pointer, and Chloe map.
