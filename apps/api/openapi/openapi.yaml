@@ -7301,7 +7301,42 @@ components:
       properties:
         definitionYaml:
           type: string
-          description: Canonical flowforge/v1 YAML document
+          description: Canonical flowforge/v1 YAML document. Additive optional metadata.ui.layout (D1) is stored and returned; the executor ignores it.
+    WorkflowUILayoutNode:
+      type: object
+      required: [x, y]
+      additionalProperties: false
+      properties:
+        x:
+          type: number
+          description: Finite canvas X. Non-finite values are treated as absent (auto-layout).
+        y:
+          type: number
+          description: Finite canvas Y. Non-finite values are treated as absent (auto-layout).
+    WorkflowUILayout:
+      type: object
+      required: [version]
+      additionalProperties: false
+      description: >
+        Optional non-authoritative canvas positions (D1 / issue #238). Node keys
+        are a subset of spec.nodes[].id. Extra keys are stripped. Missing keys
+        auto-place. Layout never carries edges, types, with, credentials, or
+        ports. Executor, POST /policy/evaluate, port typing, and dispatch ignore
+        it. Chloe UI (#238) reads this field; missing/invalid → auto-layout.
+      properties:
+        version:
+          type: integer
+          enum: [1]
+        nodes:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/WorkflowUILayoutNode"
+    WorkflowUI:
+      type: object
+      additionalProperties: false
+      properties:
+        layout:
+          $ref: "#/components/schemas/WorkflowUILayout"
     WorkflowSummary:
       type: object
       required: [apiVersion, name, triggers, nodes, edges, outputs]
@@ -7312,6 +7347,8 @@ components:
           type: string
         description:
           type: string
+        ui:
+          $ref: "#/components/schemas/WorkflowUI"
         triggers:
           type: array
           items:

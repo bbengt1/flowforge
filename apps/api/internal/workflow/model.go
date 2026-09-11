@@ -3,6 +3,9 @@ package workflow
 // APIVersionV1 is the only supported document version.
 const APIVersionV1 = "flowforge/v1"
 
+// UILayoutVersion is the only accepted metadata.ui.layout.version.
+const UILayoutVersion = 1
+
 // KindWorkflow is the only supported document kind.
 const KindWorkflow = "Workflow"
 
@@ -217,10 +220,31 @@ type Document struct {
 	pos        positions
 }
 
-// Metadata is the workflow-local identifier and labels.
+// Metadata is the workflow-local identifier, labels, and optional UI hints.
 type Metadata struct {
 	Name   string
 	Labels map[string]string
+	UI     *UIMetadata
+}
+
+// UIMetadata is additive optional canvas metadata. The executor, policy
+// evaluate, port typing, and dispatch ignore it (D1 / #238).
+type UIMetadata struct {
+	Layout *UILayout
+}
+
+// UILayout is a non-authoritative node-position hint. Missing or invalid
+// layout is treated as absent (auto-layout). It never carries edges, types,
+// with, credentials, or ports, and never invents graph nodes.
+type UILayout struct {
+	Version int
+	Nodes   map[string]UINodePosition
+}
+
+// UINodePosition is a finite canvas coordinate for one spec.nodes[].id.
+type UINodePosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // Spec is the typed graph.
@@ -279,6 +303,19 @@ type Summary struct {
 	Nodes       []NodeSummary    `json:"nodes"`
 	Edges       []EdgeSummary    `json:"edges"`
 	Outputs     []OutputSummary  `json:"outputs"`
+	UI          *UISummary       `json:"ui,omitempty"`
+}
+
+// UISummary is the optional non-authoritative canvas hint projection.
+type UISummary struct {
+	Layout *UILayoutSummary `json:"layout,omitempty"`
+}
+
+// UILayoutSummary is returned on validate/normalize/draft/version so Chloe
+// can read D1 positions without re-parsing YAML. Executor paths ignore it.
+type UILayoutSummary struct {
+	Version int                        `json:"version"`
+	Nodes   map[string]UINodePosition  `json:"nodes,omitempty"`
 }
 
 // TriggerSummary is the catalog-facing trigger projection.
@@ -349,5 +386,69 @@ func (d *Document) Summary() Summary {
 	for _, o := range d.Spec.Outputs {
 		s.Outputs = append(s.Outputs, OutputSummary{Name: o.Name, From: o.From})
 	}
+	if layout := d.UILayout(); layout != nil {
+		nodes := map[string]UINodePosition{}
+		for id, pos := range layout.Nodes {
+			nodes[id] = pos
+		}
+		s.UI = &UISummary{Layout: &UILayoutSummary{Version: layout.Version, Nodes: nodes}}
+		if len(nodes) == 0 {
+			s.UI.Layout.Nodes = nil
+		}
+	}
 	return s
+}
+
+// UILayout returns the normalized optional layout, or nil when absent.
+func (d *Document) UILayout() *UILayout {
+	if d == nil || d.Metadata.UI == nil {
+		return nil
+	}
+	return d.Metadata.UI.Layout
+}
+
+// ExecutionGraph is the spec-only shape used by dispatch, policy, and port
+// typing. metadata.ui is intentionally omitted.
+type ExecutionGraph struct {
+	Triggers []Trigger
+	Nodes    []Node
+	Edges    []Edge
+	Outputs  []Output
+}
+
+// ExecutionGraph returns a deep-enough copy of spec triggers/nodes/edges/outputs
+// for bitwise comparison. Layout is not included.
+func (d *Document) ExecutionGraph() ExecutionGraph {
+	if d == nil {
+		return ExecutionGraph{}
+	}
+	g := ExecutionGraph{
+		Triggers: append([]Trigger(nil), d.Spec.Triggers...),
+		Nodes:    make([]Node, len(d.Spec.Nodes)),
+		Edges:    append([]Edge(nil), d.Spec.Edges...),
+		Outputs:  append([]Output(nil), d.Spec.Outputs...),
+	}
+	for i, n := range d.Spec.Nodes {
+		g.Nodes[i] = Node{
+			ID:     n.ID,
+			Type:   n.Type,
+			Name:   n.Name,
+			With:   cloneAnyMap(n.With),
+			Inputs: cloneAnyMap(n.Inputs),
+		}
+	}
+	for i := range g.Triggers {
+		g.Triggers[i].With = cloneAnyMap(d.Spec.Triggers[i].With)
+		g.Triggers[i].pos = loc{}
+	}
+	for i := range g.Nodes {
+		g.Nodes[i].pos = loc{}
+	}
+	for i := range g.Edges {
+		g.Edges[i].pos = loc{}
+	}
+	for i := range g.Outputs {
+		g.Outputs[i].pos = loc{}
+	}
+	return g
 }

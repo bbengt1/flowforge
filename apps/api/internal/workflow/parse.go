@@ -41,6 +41,7 @@ var topLevelKeys = map[string]bool{
 var metadataKeys = map[string]bool{
 	"name":   true,
 	"labels": true,
+	"ui":     true,
 }
 
 var specKeys = map[string]bool{
@@ -276,6 +277,8 @@ func decodeDocument(n *yaml.Node) (*Document, ErrorList) {
 		errs = append(errs, fieldError("spec", n.Line, n.Column, CodeMissingField, "spec is required."))
 	}
 
+	bindLayoutToSpec(doc)
+
 	if len(errs) > 0 {
 		return doc, errs
 	}
@@ -309,6 +312,11 @@ func decodeMetadata(n *yaml.Node) (Metadata, ErrorList) {
 		if len(md.Labels) > MaxLabels {
 			errs = append(errs, fieldError("metadata.labels", v.Line, v.Column, CodeNodeLimit, fmt.Sprintf("metadata.labels exceeds the limit of %d.", MaxLabels)))
 		}
+	}
+	if v, ok := mappingValue(n, "ui"); ok {
+		ui, uiErrs := decodeUI(v)
+		md.UI = ui
+		errs = append(errs, uiErrs...)
 	}
 	return md, errs
 }

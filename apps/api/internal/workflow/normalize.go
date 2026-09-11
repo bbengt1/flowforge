@@ -57,6 +57,9 @@ func encodeMetadata(md Metadata) *yaml.Node {
 		}
 		appendKV(n, "labels", labels)
 	}
+	if ui := encodeUI(md.UI); ui != nil {
+		appendKV(n, "ui", ui)
+	}
 	return n
 }
 

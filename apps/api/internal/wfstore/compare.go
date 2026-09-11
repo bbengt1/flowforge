@@ -1,7 +1,9 @@
 package wfstore
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -36,6 +38,7 @@ func compareDefinitions(leftRef, rightRef CompareRef, leftYAML, rightYAML, leftD
 	out.Changes = append(out.Changes, diffNodes(left.Nodes, right.Nodes)...)
 	out.Changes = append(out.Changes, diffEdges(left.Edges, right.Edges)...)
 	out.Changes = append(out.Changes, diffOutputs(left.Outputs, right.Outputs)...)
+	out.Changes = append(out.Changes, diffLayout(left.UI, right.UI)...)
 
 	if len(out.Changes) == 0 && !out.DigestMatch {
 		out.Changes = append(out.Changes, Change{
@@ -159,6 +162,39 @@ func diffOutputs(left, right []workflow.OutputSummary) []Change {
 		}
 	}
 	return changes
+}
+
+func diffLayout(left, right *workflow.UISummary) []Change {
+	lp := layoutPathValue(left)
+	rp := layoutPathValue(right)
+	if lp == rp {
+		return nil
+	}
+	if lp == "" {
+		return []Change{{Path: "metadata.ui.layout", Op: "add", Right: rp}}
+	}
+	if rp == "" {
+		return []Change{{Path: "metadata.ui.layout", Op: "remove", Left: lp}}
+	}
+	return []Change{{Path: "metadata.ui.layout", Op: "replace", Left: lp, Right: rp}}
+}
+
+func layoutPathValue(ui *workflow.UISummary) string {
+	if ui == nil || ui.Layout == nil {
+		return ""
+	}
+	ids := make([]string, 0, len(ui.Layout.Nodes))
+	for id := range ui.Layout.Nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids)+1)
+	parts = append(parts, fmt.Sprintf("v%d", ui.Layout.Version))
+	for _, id := range ids {
+		pos := ui.Layout.Nodes[id]
+		parts = append(parts, fmt.Sprintf("%s=%g,%g", id, pos.X, pos.Y))
+	}
+	return strings.Join(parts, ";")
 }
 
 func sortedKeys[T any](m map[string]T) []string {

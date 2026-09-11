@@ -55,6 +55,11 @@ kind: Workflow                            # required
 metadata:
   name: DNS-label                         # required, workflow-local identifier
   labels: string-to-string map            # optional
+  ui:                                     # optional; ignored by executor
+    layout:                               # optional; non-authoritative canvas hints (D1)
+      version: 1
+      nodes:
+        <node-id>: { x: number, y: number }  # keys are a subset of spec.nodes[].id
 spec:
   description: string                     # optional
   triggers: Trigger[]                     # one or more; each selects a published version at execution time
@@ -62,6 +67,8 @@ spec:
   edges: Edge[]                           # optional; graph must be acyclic in MVP
   outputs: Output[]                       # optional
 ```
+
+`metadata.ui.layout` is additive optional on `flowforge/v1` (D1 / issue #238). The API stores and returns it on validate, normalize, draft save/load, and published versions. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Node keys must match `spec.nodes[].id`; extra keys are stripped (never invent a node). Missing keys auto-place that node. Non-finite coordinates or a non-object layout are treated as absent (auto-layout). Layout never carries edges, types, `with`, credentials, or ports. Unknown keys under `metadata.ui` / `layout` besides `layout` / `version`+`nodes` still fail closed. Older documents without the field keep working. Chloe reads `summary.ui.layout` or the YAML field for canvas persist (#238 UI). Embed and standalone share this API.
 
 Each node requires `id`, `type`, and `name`; `with` contains type-specific configuration. An edge has `from` and `to` values in `nodeId.port` form. Node IDs use lower-case letters, numbers, and hyphens, begin with a letter, and remain stable when a node is renamed. Trigger, node, edge, and output IDs/references must be unique and resolvable. Resource references such as `clusterTargetId`, `sshTargetId`, `commandProfileId`, and `runtimeProfileId` are non-secret UUIDs and must resolve inside the workflow workspace; display names and hostnames are never used as authorization references.
 
@@ -236,7 +243,7 @@ Nodes are the composition unit. A larger workflow is a graph of typed node objec
 1. Parse YAML using a safe parser with depth, node-count, scalar-size, and total-document-size limits: reject custom tags, aliases, duplicate keys, and documents other than one workflow definition.
 2. Validate `apiVersion`, `kind`, structural shape, field types, node types, references, graph acyclicity, and type-specific `with` values.
 3. Validate node ports, edge references, input/output schemas, required inputs, and graph acyclicity. Enforce workspace policy before publish and again before execution. For example, a `kubernetes.apply` node must reference an allowed target/namespace and pass the Kubernetes manifest policy.
-4. Normalize ordering for deterministic output: top-level fields, metadata labels, triggers, nodes, edges, and outputs are emitted in stable ID/name order; retain literal block content such as manifests exactly except for trailing newline normalization.
+4. Normalize ordering for deterministic output: top-level fields, metadata labels, optional `metadata.ui.layout` node keys, triggers, nodes, edges, and outputs are emitted in stable ID/name order; retain literal block content such as manifests exactly except for trailing newline normalization.
 5. Compute a SHA-256 digest of normalized YAML. The digest and immutable YAML are pinned to each published version and execution.
 
 Formatting differences alone do not create a semantic version change: the API returns normalized YAML after validation. Unknown fields fail by default so a typo cannot silently change behavior.
@@ -244,7 +251,7 @@ Formatting differences alone do not create a semantic version change: the API re
 ## UI round-trip rules
 
 - YAML editor and canvas are two views of one draft, not separate sources of truth.
-- Opening a workflow parses the stored YAML into the canvas. If parse/validation fails, show a field-aware error and do not render a guessed graph.
+- Opening a workflow parses the stored YAML into the canvas. If parse/validation fails, show a field-aware error and do not render a guessed graph. Missing or invalid `metadata.ui.layout` is auto-layout; layout never invents nodes or edges.
 - Canvas edits update the typed in-memory model; Save serializes normalized YAML and sends it to `PUT /api/v1/workflows/{workflowId}/draft`.
 - YAML edits validate continuously with debounced feedback. Save is disabled while invalid.
 - The API responds with normalized YAML and digest. The UI replaces its local source with that response, then redraws the canvas.
