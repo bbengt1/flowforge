@@ -15,9 +15,11 @@ import {
   CREDENTIAL_VAULT_OPEN_LABEL,
   CREDENTIAL_VAULT_QUERY_KEYS,
   CREDENTIAL_VAULT_SOURCES,
+  CREDENTIAL_VAULT_STRIP_STOP_HELP,
   ISOLATION_CREDENTIAL_USE_PATH,
   R5_GUARDRAILS,
   R5_LATER_STORY_NOTES,
+  R5_SECURITY_LINE,
   R51_EPIC,
   R51_KEEP_STORY_OPEN,
   R51_STORY,
@@ -30,13 +32,17 @@ import {
   credentialVaultDoesNotReadKek,
   credentialVaultEmbedUnchanged,
   credentialVaultHasActiveFilters,
+  credentialVaultHoldsSecurityLine,
   credentialVaultHref,
+  credentialVaultIdentityIsDisplayNameAndUuid,
   credentialVaultIsolationUseIsNotProduct,
   credentialVaultKeyAction,
   credentialVaultLastTestLabel,
   credentialVaultListPath,
+  credentialVaultMustStopAfterStrip,
   credentialVaultOpenHref,
   credentialVaultPreservesMetadataOnly,
+  credentialVaultSecretsStayOutOfYamlSearchAnalytics,
   credentialVaultQueryNeverSentToList,
   credentialVaultTimeLabel,
   credentialVaultTypesUnchanged,
@@ -81,13 +87,21 @@ describe("R5.1 credential vault find", () => {
     assert.match(CREDENTIAL_VAULT_HELP, /display name/);
     assert.match(CREDENTIAL_VAULT_HELP, /\/credentials\/\{id\}/);
     assert.match(CREDENTIAL_VAULT_HELP, /CREDENTIAL_KEK/);
+    assert.match(CREDENTIAL_VAULT_HELP, /strip \+ stop/);
     assert.match(CREDENTIAL_VAULT_KEYBOARD_HELP, /opens the focused credential/);
+    assert.equal(R5_SECURITY_LINE.noKekInBrowser, true);
+    assert.equal(R5_SECURITY_LINE.displayNamePlusUuidOnly, true);
+    assert.equal(R5_SECURITY_LINE.secretsNeverInYamlSearchOrAnalytics, true);
+    assert.equal(R5_SECURITY_LINE.unexpectedPlaintextIsContractBug, true);
+    assert.equal(R5_SECURITY_LINE.stripAndStop, true);
     assert.equal(R5_GUARDRAILS.metadataOnly, true);
     assert.equal(R5_GUARDRAILS.noKekInBrowser, true);
     assert.equal(R5_GUARDRAILS.noConfigMerge, true);
     assert.equal(R5_GUARDRAILS.isolationUseIsNotProductVault, true);
     assert.match(R5_LATER_STORY_NOTES.r52, /#265/);
+    assert.match(R5_LATER_STORY_NOTES.r52, /R5 security line/);
     assert.match(R5_LATER_STORY_NOTES.r53, /#266/);
+    assert.match(R5_LATER_STORY_NOTES.r53, /R5 security line/);
     assert.ok(
       CREDENTIAL_VAULT_SOURCES.includes(
         "src/components/credentials/CredentialVault.tsx",
@@ -279,5 +293,36 @@ describe("R5.1 credential vault find", () => {
       true,
     );
     assert.equal(isCredentialForbidden(null), false);
+  });
+
+  it("bakes Gracie R5 security line for #265 / #266 to inherit", () => {
+    const row = credentialVaultDisplay([sampleRecord()])[0];
+    assert.ok(row);
+    assert.equal(credentialVaultIdentityIsDisplayNameAndUuid(row), true);
+    assert.equal(credentialVaultDoesNotReadKek(), true);
+    assert.equal(
+      credentialVaultSecretsStayOutOfYamlSearchAnalytics([sampleRecord()]),
+      true,
+    );
+    assert.equal(credentialVaultMustStopAfterStrip([]), false);
+    assert.equal(credentialVaultMustStopAfterStrip(["secret"]), true);
+    assert.match(CREDENTIAL_VAULT_STRIP_STOP_HELP, /Stop/);
+    assert.match(CREDENTIAL_VAULT_STRIP_STOP_HELP, /do not paste/);
+    assert.equal(parseCredentialVaultQuery("q=-----BEGIN OPENSSH PRIVATE KEY-----").q, "");
+    assert.equal(
+      serializeCredentialVaultQuery({
+        q: "-----BEGIN FAKE-----",
+        tag: "Bearer leaked",
+      }).toString(),
+      "",
+    );
+    assert.equal(credentialVaultHoldsSecurityLine([sampleRecord()]), true);
+    assert.equal(
+      credentialVaultHoldsSecurityLine([sampleRecord()], ["kubeconfig"]),
+      true,
+    );
+    assert.equal(CREDENTIAL_VAULT.displayNamePlusUuidOnly, true);
+    assert.equal(CREDENTIAL_VAULT.stripAndStop, true);
+    assert.equal(CREDENTIAL_VAULT.secretsNeverInYamlSearchOrAnalytics, true);
   });
 });

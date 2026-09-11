@@ -10,12 +10,14 @@
  * browser, or `/config` merge. Isolation hook
  * `POST /workspace/credentials/{id}/use` is not the product vault.
  *
- * Metadata only. Unexpected plaintext is a contract bug (strip +
- * stop). Display-name + UUID after submit. No secret material in
- * chrome. CSRF on mutations stays with existing vault clients.
- * ADV/RBAC/embed stay.
+ * Metadata only. Gracie R5 security line (inherit on R5.2 / #265 and
+ * R5.3 / #266): no KEK in the browser; display-name + UUID only;
+ * secrets never in YAML / search / analytics; unexpected plaintext
+ * on responses is a contract bug (strip + stop). CSRF on mutations
+ * stays with existing vault clients. ADV/RBAC/embed stay.
  */
 
+import { EDITOR_CREDENTIAL } from "./editor-credential.ts";
 import { maybeEmbedDeepLink } from "./embed-tenancy-contract.ts";
 import { EMBED_ROUTES } from "./embed-contract.ts";
 import { historyKeyAction } from "./execution-replay.ts";
@@ -29,8 +31,11 @@ import {
   credentialTypeLabel,
   filterCredentialList,
   isSecretFieldName,
+  matchesCredentialSearch,
   stripSecretFields,
 } from "./credential.ts";
+import { sanitizeNotification } from "./workspace-notifications.ts";
+import { looksLikeSecretValue } from "./workflow-yaml-nodes.ts";
 import {
   CREDENTIAL_MVP_TYPES,
   CREDENTIAL_STATUSES,
@@ -81,7 +86,15 @@ export const CREDENTIAL_VAULT_KEYBOARD_HELP =
   "Arrow keys move the vault. Enter or Space opens the focused credential on existing /credentials/{id} detail. Display-name search stays on this page.";
 
 export const CREDENTIAL_VAULT_HELP =
-  "Find credentials by display name. Filter type, tag, or status in the browser. GET /credentials returns metadata only — no list query params. Open a row into existing /credentials/{id} detail. Unexpected plaintext is a contract bug. The UI never reads CREDENTIAL_KEK.";
+  "Find credentials by display name. Filter type, tag, or status in the browser. GET /credentials returns metadata only — no list query params. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop). The UI never reads CREDENTIAL_KEK.";
+
+export const CREDENTIAL_VAULT_STRIP_STOP_HELP =
+  "Unexpected secret fields were stripped from the API response. This is a backend contract bug. Stop — do not paste the leaked material into chrome, tickets, or screenshots.";
+
+export const CREDENTIAL_VAULT_IDENTITY_KEYS = ["displayName", "id"] as const;
+
+export const CREDENTIAL_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const CREDENTIAL_VAULT_SOURCES: readonly string[] = [
   "src/lib/credential-vault.ts",
@@ -93,14 +106,23 @@ export const CREDENTIAL_VAULT_SOURCES: readonly string[] = [
   "src/app/credentials/page.tsx",
 ];
 
-/** Gracie / charter R5 guardrails — inherited by R5.2–R5.3. */
-export const R5_GUARDRAILS = {
-  metadataOnly: true,
+/**
+ * Gracie R5 security line — bake on R5.1, inherit on R5.2 / #265
+ * and R5.3 / #266. Do not weaken.
+ */
+export const R5_SECURITY_LINE = {
+  noKekInBrowser: true,
   displayNamePlusUuidOnly: true,
-  neverShowSecretMaterial: true,
+  secretsNeverInYamlSearchOrAnalytics: true,
   unexpectedPlaintextIsContractBug: true,
   stripAndStop: true,
-  noKekInBrowser: true,
+} as const;
+
+/** Broader R5 chrome/RBAC guardrails — inherited with the security line. */
+export const R5_GUARDRAILS = {
+  ...R5_SECURITY_LINE,
+  metadataOnly: true,
+  neverShowSecretMaterial: true,
   noConfigMerge: true,
   isolationUseIsNotProductVault: true,
   csrfOnMutations: true,
@@ -113,8 +135,8 @@ export const R5_GUARDRAILS = {
 } as const;
 
 export const R5_LATER_STORY_NOTES = {
-  r52: "R5.2 / #265: densify test/rotate/usage/deletion-impact on existing vault detail routes. Do not invent types or KEK-in-browser.",
-  r53: "R5.3 / #266: NDV add via masked wizard without leaving the graph (return-to-editor). Isolation POST /workspace/credentials/{id}/use is not the product vault.",
+  r52: "R5.2 / #265: densify test/rotate/usage/deletion-impact on existing vault detail routes. Inherit R5 security line — no KEK in the browser; display-name + UUID only; secrets never in YAML / search / analytics; unexpected plaintext is a contract bug (strip + stop).",
+  r53: "R5.3 / #266: NDV add via masked wizard without leaving the graph (return-to-editor). Inherit R5 security line — no KEK in the browser; display-name + UUID only; secrets never in YAML / search / analytics; unexpected plaintext is a contract bug (strip + stop). Isolation POST /workspace/credentials/{id}/use is not the product vault.",
 } as const;
 
 export const CREDENTIAL_VAULT = {
@@ -125,6 +147,10 @@ export const CREDENTIAL_VAULT = {
   openToDetailWithoutHunting: true,
   metadataOnly: true,
   neverShowSecretMaterial: true,
+  displayNamePlusUuidOnly: true,
+  secretsNeverInYamlSearchOrAnalytics: true,
+  unexpectedPlaintextIsContractBug: true,
+  stripAndStop: true,
   noKekInBrowser: true,
   noConfigMerge: true,
   noNewApiRoutes: true,
@@ -199,16 +225,22 @@ export function credentialVaultSearchParams(
   return params;
 }
 
+function vaultSearchTextIsSafe(value: string): boolean {
+  return !value || !looksLikeSecretValue(value);
+}
+
 export function parseCredentialVaultQuery(
   search: VaultSearchInput = "",
 ): CredentialListQuery {
   const params = credentialVaultSearchParams(search);
-  const q = params.get("q")?.trim() ?? "";
+  const qRaw = params.get("q")?.trim() ?? "";
+  const q = vaultSearchTextIsSafe(qRaw) ? qRaw : "";
   const typeRaw = params.get("type")?.trim() ?? "";
   const type = CREDENTIAL_MVP_TYPES.includes(typeRaw as CredentialType)
     ? (typeRaw as CredentialType)
     : "";
-  const tag = params.get("tag")?.trim() ?? "";
+  const tagRaw = params.get("tag")?.trim() ?? "";
+  const tag = vaultSearchTextIsSafe(tagRaw) ? tagRaw : "";
   const statusRaw = params.get("status")?.trim() ?? "";
   const status = CREDENTIAL_STATUSES.includes(statusRaw as CredentialStatus)
     ? (statusRaw as CredentialStatus)
@@ -224,13 +256,13 @@ export function serializeCredentialVaultQuery(
   const type = query.type?.trim();
   const tag = query.tag?.trim();
   const status = query.status?.trim();
-  if (q) {
+  if (q && vaultSearchTextIsSafe(q)) {
     params.set("q", q);
   }
   if (type && CREDENTIAL_MVP_TYPES.includes(type as CredentialType)) {
     params.set("type", type);
   }
-  if (tag) {
+  if (tag && vaultSearchTextIsSafe(tag)) {
     params.set("tag", tag);
   }
   if (status && CREDENTIAL_STATUSES.includes(status as CredentialStatus)) {
@@ -457,6 +489,7 @@ export function isCredentialForbidden(
 export function credentialVaultDoesNotReadKek(): boolean {
   const chromeIds = CREDENTIAL_VAULT_COLUMNS.map((column) => column.id);
   return (
+    R5_SECURITY_LINE.noKekInBrowser &&
     R5_GUARDRAILS.noKekInBrowser &&
     CREDENTIAL_VAULT.noKekInBrowser &&
     CREDENTIAL_KEK_ENV === "CREDENTIAL_KEK" &&
@@ -464,6 +497,95 @@ export function credentialVaultDoesNotReadKek(): boolean {
     !chromeIds.includes("kek" as CredentialVaultColumnId) &&
     /never reads CREDENTIAL_KEK/.test(CREDENTIAL_VAULT_HELP) &&
     !/process\.env/.test(CREDENTIAL_VAULT_HELP)
+  );
+}
+
+export function credentialVaultIdentityIsDisplayNameAndUuid(
+  row: CredentialVaultRow,
+): boolean {
+  return (
+    R5_SECURITY_LINE.displayNamePlusUuidOnly &&
+    Boolean(row.displayName.trim()) &&
+    CREDENTIAL_UUID_RE.test(row.id) &&
+    row.href.includes(row.id) &&
+    !looksLikeSecretValue(row.displayName) &&
+    !looksLikeSecretValue(row.id)
+  );
+}
+
+export function credentialVaultYamlRef(
+  record: Pick<CredentialRecord, "id" | "displayName">,
+): { credentialId: string } {
+  return { credentialId: record.id };
+}
+
+export function credentialVaultMustStopAfterStrip(
+  strippedKeys: readonly string[],
+): boolean {
+  return (
+    R5_SECURITY_LINE.unexpectedPlaintextIsContractBug &&
+    R5_SECURITY_LINE.stripAndStop &&
+    strippedKeys.length > 0
+  );
+}
+
+export function credentialVaultSecretsStayOutOfYamlSearchAnalytics(
+  items: readonly CredentialRecord[],
+  query: CredentialListQuery = {},
+): boolean {
+  const rows = credentialVaultDisplay(items, query);
+  const yamlRefs = rows.map((row) => credentialVaultYamlRef(row));
+  const searchHref = credentialVaultHref({
+    q: "-----BEGIN OPENSSH PRIVATE KEY-----",
+    tag: "Bearer leaked",
+  });
+  const note = sanitizeNotification({
+    kind: "info",
+    title: rows[0]?.displayName ?? "vault",
+    detail: rows[0]?.id ?? "",
+    href: rows[0]?.href,
+    token: "should-not-notify",
+    kubeconfig: "apiVersion: v1",
+  });
+  const leakedSearch = items.some((item) =>
+    matchesCredentialSearch(item, { q: "should-not-match-search" }),
+  );
+  return (
+    R5_SECURITY_LINE.secretsNeverInYamlSearchOrAnalytics &&
+    CREDENTIAL_VAULT.secretsNeverInYamlSearchOrAnalytics &&
+    EDITOR_CREDENTIAL.yamlStoresUuidOnly &&
+    EDITOR_CREDENTIAL.noSecretsInYamlSearchOrAnalytics &&
+    yamlRefs.every(
+      (ref) =>
+        CREDENTIAL_UUID_RE.test(ref.credentialId) &&
+        !("displayName" in ref) &&
+        !("secret" in ref),
+    ) &&
+    !searchHref.includes("BEGIN") &&
+    !searchHref.includes("Bearer") &&
+    !leakedSearch &&
+    Boolean(note) &&
+    !JSON.stringify(note).includes("should-not-notify") &&
+    rows.every(credentialVaultIdentityIsDisplayNameAndUuid)
+  );
+}
+
+export function credentialVaultHoldsSecurityLine(
+  items: readonly CredentialRecord[] = [],
+  strippedKeys: readonly string[] = [],
+): boolean {
+  const rows = credentialVaultDisplay(items);
+  return (
+    credentialVaultDoesNotReadKek() &&
+    R5_SECURITY_LINE.displayNamePlusUuidOnly &&
+    R5_SECURITY_LINE.secretsNeverInYamlSearchOrAnalytics &&
+    R5_SECURITY_LINE.stripAndStop &&
+    (items.length === 0 ||
+      rows.every(credentialVaultIdentityIsDisplayNameAndUuid)) &&
+    (items.length === 0 ||
+      credentialVaultSecretsStayOutOfYamlSearchAnalytics(items)) &&
+    (strippedKeys.length === 0 ||
+      credentialVaultMustStopAfterStrip(strippedKeys))
   );
 }
 

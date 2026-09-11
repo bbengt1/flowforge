@@ -10,9 +10,11 @@ import { getCredentialCatalog, listCredentials } from "@/lib/credential-client";
 import { FALLBACK_CREDENTIAL_CATALOG } from "@/lib/credential-contract";
 import {
   CREDENTIAL_VAULT_HELP,
+  CREDENTIAL_VAULT_STRIP_STOP_HELP,
   credentialVaultDisplay,
   credentialVaultHasActiveFilters,
   credentialVaultHref,
+  credentialVaultMustStopAfterStrip,
   isCredentialForbidden,
   parseCredentialVaultQuery,
 } from "@/lib/credential-vault";
@@ -73,6 +75,7 @@ export function CredentialVault() {
 
   const denied = ready && permissions != null && !canSeeCredentialsNav(permissions);
   const forbidden = isCredentialForbidden(problem);
+  const stopAfterStrip = credentialVaultMustStopAfterStrip(strippedKeys);
   const filtersActive = credentialVaultHasActiveFilters(query);
   const visible = useMemo(
     () =>
@@ -145,10 +148,10 @@ export function CredentialVault() {
           last request_id {lastRequestId}
         </p>
       ) : null}
-      {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+      {credentialVaultMustStopAfterStrip(strippedKeys) ? (
+        <p role="alert" className="text-sm text-amber-950">
+          {CREDENTIAL_VAULT_STRIP_STOP_HELP} Stripped keys:{" "}
+          {strippedKeys.join(", ")}.
         </p>
       ) : null}
 
@@ -276,12 +279,14 @@ export function CredentialVault() {
           <p className="text-sm text-zinc-500" aria-live="polite">
             {pending
               ? "Loading credentials…"
-              : `${visible.length} credential${visible.length === 1 ? "" : "s"}`}
+              : stopAfterStrip
+                ? "List stopped after unexpected plaintext"
+                : `${visible.length} credential${visible.length === 1 ? "" : "s"}`}
           </p>
         </div>
       </section>
 
-      {!ready || forbidden || denied ? null : visible.length === 0 ? (
+      {!ready || forbidden || denied || stopAfterStrip ? null : visible.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
           <h2 className="text-lg font-semibold">
             {filtersActive

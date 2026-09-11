@@ -165,7 +165,14 @@ Nothing selected: workflow tabs **Triggers / Versions / Pins** (already landed).
 
 ### Credentials
 
-`/credentials`, `/credentials/new`, `/credentials/{id}` remain the vault. R5.1 (#264 — **keep #264 open**) densifies `/credentials` find-by-display-name (search/filter, useful columns, open existing detail). NDV create reuses the masked wizard (return-to-editor). Types stay `kubernetes`, `ssh_private_key`, `token`, `webhook_secret`, `provider`. Metadata only after submit. Unexpected secret keys on responses stay stripped and are a contract bug.
+`/credentials`, `/credentials/new`, `/credentials/{id}` remain the vault. R5.1 (#264 — **keep #264 open**) densifies `/credentials` find-by-display-name (search/filter, useful columns, open existing detail). NDV create reuses the masked wizard (return-to-editor). Types stay `kubernetes`, `ssh_private_key`, `token`, `webhook_secret`, `provider`. Metadata only after submit.
+
+**R5 security line (Gracie — bake on R5.1; inherit on R5.2 / #265 and R5.3 / #266):**
+
+1. **No KEK in the browser.** `CREDENTIAL_KEK` is server-only. The UI never reads or sends it.
+2. **Display-name + UUID only** after submit. YAML stores UUID refs; chrome finds by display name.
+3. **Secrets never in YAML / search / analytics.** Find, global search, and notifications index metadata only.
+4. **Unexpected plaintext on responses is a contract bug (strip + stop).** Do not paste leaked material into chrome.
 
 ### Activations / triggers
 
