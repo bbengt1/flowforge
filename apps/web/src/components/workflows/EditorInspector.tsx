@@ -333,26 +333,6 @@ export function EditorInspector({
                 : undefined
             }
           />
-          {validation ? (
-            <div data-ndv-panel="validation">
-            <NdvValidationPanel
-              nodeId={selectedNode.id}
-              entry={selectedEntry}
-              status={validation.status}
-              errors={validation.errors}
-              warnings={validation.warnings}
-              nodes={nodes}
-              edges={yamlEdges}
-              problem={validation.problem}
-              evaluation={validation.evaluation}
-              evaluationPending={validation.evaluationPending}
-              evaluationProblem={validation.evaluationProblem}
-              publishedVersionId={validation.publishedVersionId}
-              waitingApprovals={validation.waitingApprovals}
-              onJumpYaml={validation.onJumpYaml}
-            />
-            </div>
-          ) : null}
           <SelectedNodePins
             node={selectedNode}
             entry={selectedEntry}
@@ -366,6 +346,26 @@ export function EditorInspector({
             onAddCredential={canEdit ? onAddCredential : undefined}
             onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
           />
+          {validation ? (
+            <div data-ndv-panel="validation">
+              <NdvValidationPanel
+                nodeId={selectedNode.id}
+                entry={selectedEntry}
+                status={validation.status}
+                errors={validation.errors}
+                warnings={validation.warnings}
+                nodes={nodes}
+                edges={yamlEdges}
+                problem={validation.problem}
+                evaluation={validation.evaluation}
+                evaluationPending={validation.evaluationPending}
+                evaluationProblem={validation.evaluationProblem}
+                publishedVersionId={validation.publishedVersionId}
+                waitingApprovals={validation.waitingApprovals}
+                onJumpYaml={validation.onJumpYaml}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
