@@ -152,6 +152,7 @@ describe("UX.1 editor chrome", () => {
       canvasFocus: true,
       zoomShortcuts: true,
       wizardEscape: true,
+      undoRedo: true,
     });
   });
 });

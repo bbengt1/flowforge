@@ -10,12 +10,14 @@ import {
   canSaveWorkflowEditor,
   canvasYamlRoundTrip,
   connectGraphEdge,
+  disconnectGraphEdge,
   groupValidationErrors,
   groupedValidationBuckets,
   parsePortRef,
   parseYamlGraph,
   portsCompatible,
   projectCanvasGraph,
+  removeGraphNode,
 } from "./workflow-graph.ts";
 import { INVALID_WORKFLOW_YAML, STARTER_WORKFLOW_YAML, canShowSummary } from "./workflow.ts";
 import type { WorkflowCatalog, WorkflowFieldError, WorkflowSummary } from "./workflow-types.ts";
@@ -219,6 +221,13 @@ describe("canvas YAML round-trip", () => {
     };
     const mapped = insertCoreNode(STARTER_WORKFLOW_YAML, "data.map");
     const rejected = connectGraphEdge(mapped.yaml, "done.input", "map.input", objectOnly);
+    const removed = removeGraphNode(connected.yaml, "condition");
+    assert.equal(listYamlNodes(removed).some((node) => node.id === "condition"), false);
+    const disconnected = disconnectGraphEdge(connected.yaml, "seed.result", "condition.value");
+    assert.equal(
+      listYamlEdges(disconnected).some((edge) => edge.to === "condition.value"),
+      false,
+    );
     assert.ok(rejected.errors.length > 0);
     assert.equal(portsCompatible({ name: "result", kind: "object" }, { name: "input", kind: "any" }), true);
     assert.equal(

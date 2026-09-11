@@ -4,6 +4,18 @@ import { useMemo, useRef, useState } from "react";
 import { ACTION_DRAG_MIME } from "@/components/workflows/ActionLibrary";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
+  EDITOR_CANVAS_HISTORY_HELP,
+  EDITOR_CANVAS_REDO_LABEL,
+  EDITOR_CANVAS_UNDO_LABEL,
+  canvasMovedEnough,
+  isCanvasDeleteShortcut,
+  isCanvasRedoShortcut,
+  isCanvasUndoShortcut,
+  mergeCanvasPositions,
+  type CanvasLayout,
+  type CanvasPoint,
+} from "@/lib/editor-canvas-history";
+import {
   canConnectPorts,
   canvasNodeStateIcon,
   canvasNodeStateLabel,
@@ -28,8 +40,15 @@ type WorkflowCanvasProps = {
   selection: EditorSelection;
   entries: ActionLibraryEntry[];
   onSelect: (selection: EditorSelection) => void;
-  onInsertType?: (type: string) => void;
+  onInsertType?: (type: string, position?: CanvasPoint) => void;
   onConnect?: (from: string, to: string) => string[];
+  onMove?: (id: string, position: CanvasPoint) => void;
+  onRemove?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  layout?: CanvasLayout;
   onOpenLibrary?: () => void;
   onAddAction?: () => void;
   readOnly?: boolean;
@@ -51,6 +70,13 @@ export function WorkflowCanvas({
   onSelect,
   onInsertType,
   onConnect,
+  onMove,
+  onRemove,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
+  layout = {},
   onOpenLibrary,
   onAddAction,
   readOnly = false,
@@ -64,11 +90,22 @@ export function WorkflowCanvas({
   const [dragging, setDragging] = useState<{ x: number; y: number } | null>(null);
   const [linkFrom, setLinkFrom] = useState<{ nodeId: string; port: string } | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [nodeDrag, setNodeDrag] = useState<{
+    id: string;
+    startClientX: number;
+    startClientY: number;
+    originX: number;
+    originY: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
 
-  const positions = useMemo(
-    () => (graph ? layoutGraphNodes(graph.nodes, graph.edges) : new Map()),
-    [graph],
-  );
+  const positions = useMemo(() => {
+    if (!graph) {
+      return new Map<string, CanvasPoint>();
+    }
+    return mergeCanvasPositions(layoutGraphNodes(graph.nodes, graph.edges), layout);
+  }, [graph, layout]);
   const addAffordance = canvasAddAffordance({
     invalid,
     readOnly,
@@ -76,7 +113,73 @@ export function WorkflowCanvas({
     selectedKind: selection.kind,
   });
 
+  function canvasPoint(event: { clientX: number; clientY: number }): CanvasPoint {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: (event.clientX - rect.left - pan.x) / pan.scale,
+      y: (event.clientY - rect.top - pan.y) / pan.scale,
+    };
+  }
+
+  function nodePosition(id: string): CanvasPoint {
+    const base = positions.get(id) ?? { x: 0, y: 0 };
+    if (nodeDrag?.id === id) {
+      return { x: nodeDrag.originX + nodeDrag.dx, y: nodeDrag.originY + nodeDrag.dy };
+    }
+    return base;
+  }
+
+  function startNodeDrag(id: string, event: React.PointerEvent) {
+    if (readOnly || !onMove || event.button !== 0) {
+      return;
+    }
+    if ((event.target as HTMLElement).closest("[data-port],button")) {
+      return;
+    }
+    const origin = positions.get(id) ?? { x: 0, y: 0 };
+    setNodeDrag({
+      id,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: origin.x,
+      originY: origin.y,
+      dx: 0,
+      dy: 0,
+    });
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+
+  function moveNodeDrag(event: React.PointerEvent) {
+    if (!nodeDrag) {
+      return;
+    }
+    setNodeDrag({
+      ...nodeDrag,
+      dx: (event.clientX - nodeDrag.startClientX) / pan.scale,
+      dy: (event.clientY - nodeDrag.startClientY) / pan.scale,
+    });
+  }
+
+  function endNodeDrag() {
+    if (!nodeDrag) {
+      return;
+    }
+    if (onMove && canvasMovedEnough(nodeDrag.dx, nodeDrag.dy)) {
+      onMove(nodeDrag.id, {
+        x: nodeDrag.originX + nodeDrag.dx,
+        y: nodeDrag.originY + nodeDrag.dy,
+      });
+    }
+    setNodeDrag(null);
+  }
+
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (nodeDrag) {
+      return;
+    }
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-canvas-node],[data-port]")) {
       return;
     }
@@ -104,7 +207,7 @@ export function WorkflowCanvas({
   }
 
   function portCenter(nodeId: string, port: string, direction: "in" | "out") {
-    const pos = positions.get(nodeId) ?? { x: 0, y: 0 };
+    const pos = nodePosition(nodeId);
     const node = graph?.nodes.find((item) => item.id === nodeId);
     const list = direction === "in" ? node?.inputs ?? [] : node?.outputs ?? [];
     const index = Math.max(0, list.findIndex((item) => item.name === port));
@@ -146,6 +249,18 @@ export function WorkflowCanvas({
           Invalid YAML is not projected onto the canvas. Fix the errors in
           the validation panel — the editor will not guess a graph.
         </p>
+        {!readOnly && canUndo && onUndo ? (
+          <button
+            type="button"
+            data-editor-history="undo"
+            title={EDITOR_CANVAS_UNDO_LABEL}
+            aria-keyshortcuts="Control+Z Meta+Z"
+            onClick={onUndo}
+            className="mt-4 rounded-md border border-amber-800 bg-white px-3 py-1.5 text-sm text-amber-950 hover:bg-amber-100"
+          >
+            {EDITOR_CANVAS_UNDO_LABEL}
+          </button>
+        ) : null}
       </section>
     );
   }
@@ -206,11 +321,37 @@ export function WorkflowCanvas({
             {help
               ?? (readOnly
                 ? "Read-only overlay of step status on the pinned published version. Pan, zoom, and select with the keyboard."
-                : "Pan, zoom (Ctrl+wheel), select. Connect output → compatible input.")}
+                : EDITOR_CANVAS_HISTORY_HELP)}
             {pending ? " Validating…" : ""}
           </p>
         </div>
         <div className="flex gap-2">
+          {!readOnly && onUndo ? (
+            <button
+              type="button"
+              data-editor-history="undo"
+              title={EDITOR_CANVAS_UNDO_LABEL}
+              aria-keyshortcuts="Control+Z Meta+Z"
+              onClick={onUndo}
+              disabled={!canUndo}
+              className="rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-60"
+            >
+              {EDITOR_CANVAS_UNDO_LABEL}
+            </button>
+          ) : null}
+          {!readOnly && onRedo ? (
+            <button
+              type="button"
+              data-editor-history="redo"
+              title={EDITOR_CANVAS_REDO_LABEL}
+              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+              onClick={onRedo}
+              disabled={!canRedo}
+              className="rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-60"
+            >
+              {EDITOR_CANVAS_REDO_LABEL}
+            </button>
+          ) : null}
           {addAffordance.addAction && onOpenLibrary ? (
             <button
               type="button"
@@ -284,10 +425,25 @@ export function WorkflowCanvas({
           const type = event.dataTransfer.getData(ACTION_DRAG_MIME);
           if (type) {
             event.preventDefault();
-            onInsertType(type);
+            onInsertType(type, canvasPoint(event));
           }
         }}
         onKeyDown={(event) => {
+          if (isCanvasUndoShortcut(event)) {
+            event.preventDefault();
+            onUndo?.();
+            return;
+          }
+          if (isCanvasRedoShortcut(event)) {
+            event.preventDefault();
+            onRedo?.();
+            return;
+          }
+          if (isCanvasDeleteShortcut(event) && !readOnly) {
+            event.preventDefault();
+            onRemove?.();
+            return;
+          }
           if (event.key === "Escape") {
             setLinkFrom(null);
             onSelect({ kind: "workflow" });
@@ -350,14 +506,18 @@ export function WorkflowCanvas({
               key={node.id}
               node={node}
               nodes={graph.nodes}
-              x={positions.get(node.id)?.x ?? 0}
-              y={positions.get(node.id)?.y ?? 0}
+              x={nodePosition(node.id).x}
+              y={nodePosition(node.id).y}
               selected={selection.kind === "node" && selection.id === node.id}
               current={currentNodeId === node.id}
               readOnly={readOnly}
+              dragging={nodeDrag?.id === node.id}
               linkFrom={linkFrom}
               entries={entries}
               onSelect={() => onSelect({ kind: "node", id: node.id })}
+              onDragStart={(event) => startNodeDrag(node.id, event)}
+              onDragMove={moveNodeDrag}
+              onDragEnd={endNodeDrag}
               onOutput={(port) => {
                 if (readOnly) {
                   return;
@@ -432,9 +592,13 @@ function CanvasNode({
   selected,
   current,
   readOnly,
+  dragging,
   linkFrom,
   entries,
   onSelect,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
   onOutput,
   onInput,
   onOpenLibrary,
@@ -446,9 +610,13 @@ function CanvasNode({
   selected: boolean;
   current?: boolean;
   readOnly?: boolean;
+  dragging?: boolean;
   linkFrom: { nodeId: string; port: string } | null;
   entries: ActionLibraryEntry[];
   onSelect: () => void;
+  onDragStart?: (event: React.PointerEvent) => void;
+  onDragMove?: (event: React.PointerEvent) => void;
+  onDragEnd?: () => void;
   onOutput: (port: string) => void;
   onInput: (port: string) => void;
   onOpenLibrary?: () => void;
@@ -466,7 +634,11 @@ function CanvasNode({
       onPointerDown={(event) => {
         event.stopPropagation();
         onSelect();
+        onDragStart?.(event);
       }}
+      onPointerMove={onDragMove}
+      onPointerUp={onDragEnd}
+      onPointerCancel={onDragEnd}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -474,6 +646,8 @@ function CanvasNode({
         }
       }}
       className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700 ${
+        dragging ? "cursor-grabbing" : "cursor-grab"
+      } ${
         selected || current
           ? "border-teal-800 ring-2 ring-teal-700/30"
           : node.state === "indeterminate"

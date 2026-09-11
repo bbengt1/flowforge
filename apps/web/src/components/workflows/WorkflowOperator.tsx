@@ -49,6 +49,21 @@ import {
   rememberInspectorOpen,
   subscribeInspectorOpenPreference,
 } from "@/lib/editor-ndv";
+import {
+  canRedoCanvasHistory,
+  canUndoCanvasHistory,
+  emptyCanvasHistory,
+  isCanvasRedoShortcut,
+  isCanvasUndoShortcut,
+  pruneCanvasLayout,
+  pushCanvasHistory,
+  redoCanvasHistory,
+  replaceCanvasHistoryPresent,
+  shortcutTargetIsEditable,
+  undoCanvasHistory,
+  type CanvasLayout,
+  type CanvasPoint,
+} from "@/lib/editor-canvas-history";
 import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
 import {
   EDITOR_RUN_OVERLAY_HELP,
@@ -92,8 +107,10 @@ import {
 import {
   canSaveWorkflowEditor,
   connectGraphEdge,
+  disconnectGraphEdge,
   editorHasLocalInvalidations,
   projectCanvasGraph,
+  removeGraphNode,
 } from "@/lib/workflow-graph";
 import {
   applyCoreNodeConfig,
@@ -208,6 +225,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   );
 
   const [yaml, setYaml] = useState(STARTER_WORKFLOW_YAML);
+  const [history, setHistory] = useState(() => emptyCanvasHistory(STARTER_WORKFLOW_YAML));
   const [savedYaml, setSavedYaml] = useState("");
   const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
   const [engineCatalog, setEngineCatalog] = useState<KubernetesEngineCatalog | null>(
@@ -328,6 +346,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const skipDebounce = useRef(false);
   const yamlRef = useRef(yaml);
   yamlRef.current = yaml;
+  const historyRef = useRef(history);
+  historyRef.current = history;
   const createdCredentialReturn = useRef<
     ReturnType<typeof parseInspectorCreatedCredential> | undefined
   >(undefined);
@@ -376,6 +396,82 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   function applySelection(next: EditorSelection) {
     setSelection(next);
     announceSelection(next);
+  }
+
+  function layoutForYaml(nextYaml: string, layout: CanvasLayout): CanvasLayout {
+    return pruneCanvasLayout(
+      layout,
+      listYamlNodes(nextYaml).map((node) => node.id),
+    );
+  }
+
+  function writeGraphYaml(nextYaml: string, layout?: CanvasLayout) {
+    setHistory((current) =>
+      pushCanvasHistory(current, {
+        yaml: nextYaml,
+        layout: layoutForYaml(nextYaml, layout ?? current.present.layout),
+      }),
+    );
+    if (nextYaml !== yamlRef.current) {
+      setDigest(null);
+      setYaml(nextYaml);
+    }
+  }
+
+  function syncHistoryYaml(nextYaml: string) {
+    setHistory((current) =>
+      replaceCanvasHistoryPresent(current, {
+        yaml: nextYaml,
+        layout: current.present.layout,
+      }),
+    );
+    setYaml(nextYaml);
+  }
+
+  function applyHistorySnapshot(nextYaml: string) {
+    if (nextYaml !== yamlRef.current) {
+      setDigest(null);
+      setYaml(nextYaml);
+    }
+  }
+
+  function undoGraph() {
+    const result = undoCanvasHistory(historyRef.current);
+    if (!result) {
+      return;
+    }
+    setHistory(result.state);
+    applyHistorySnapshot(result.applied.yaml);
+  }
+
+  function redoGraph() {
+    const result = redoCanvasHistory(historyRef.current);
+    if (!result) {
+      return;
+    }
+    setHistory(result.state);
+    applyHistorySnapshot(result.applied.yaml);
+  }
+
+  function moveCanvasNode(id: string, position: CanvasPoint) {
+    writeGraphYaml(yamlRef.current, {
+      ...historyRef.current.present.layout,
+      [id]: position,
+    });
+  }
+
+  function removeCanvasSelection() {
+    if (selection.kind === "node") {
+      writeGraphYaml(removeGraphNode(yamlRef.current, selection.id));
+      applySelection({ kind: "workflow" });
+      return;
+    }
+    if (selection.kind === "edge") {
+      writeGraphYaml(
+        disconnectGraphEdge(yamlRef.current, selection.from, selection.to),
+      );
+      applySelection({ kind: "workflow" });
+    }
   }
 
   function clearSelectedRun() {
@@ -579,8 +675,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           with: { ...returnedNode.with, ...sanitizeInspectorWithPatch(returnedPatch) },
         });
         if (nextYaml) {
-          setYaml(nextYaml);
           setDigest(null);
+          syncHistoryYaml(nextYaml);
           setCredentialRefreshNonce((current) => current + 1);
           applySelection({ kind: "node", id: pendingCreated.nodeId });
         }
@@ -637,6 +733,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       skipDebounce.current = true;
       validateSeq.current += 1;
       setYaml(next.yaml);
+      setHistory(emptyCanvasHistory(next.yaml));
       setDigest(next.digest);
       setSummary(next.summary);
       setWarnings(next.warnings);
@@ -752,6 +849,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     skipDebounce.current = false;
     setDigest(fixture.digest);
     setYaml(fixture.yaml);
+    setHistory(emptyCanvasHistory(fixture.yaml));
     setStatus(fixture.status);
     setErrors(fixture.errors);
     if (fixture.clearGraph) {
@@ -878,6 +976,25 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   runValidateRef.current = runValidate;
   const runNormalizeRef = useRef(runNormalize);
   runNormalizeRef.current = runNormalize;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (shortcutTargetIsEditable(event.target as HTMLElement | null)) {
+        return;
+      }
+      if (isCanvasUndoShortcut(event)) {
+        event.preventDefault();
+        undoGraph();
+        return;
+      }
+      if (isCanvasRedoShortcut(event)) {
+        event.preventDefault();
+        redoGraph();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     return subscribeWorkspaceCommands((name, detail) => {
@@ -1336,7 +1453,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setWizardFeedback("pending");
     try {
       setDigest(null);
-      setYaml(nextYaml);
+      writeGraphYaml(nextYaml);
       applySelection({ kind: "node", id: nodeId });
       setWizardFeedback("success");
       setWizardOpen(false);
@@ -1351,7 +1468,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
   }
 
-  function insertLibraryNode(entry: ActionLibraryEntry) {
+  function insertLibraryNode(entry: ActionLibraryEntry, position?: CanvasPoint) {
     const rejected = rejectDisabledActionType(entry.type, catalog);
     if (!rejected.ok) {
       setStatus("invalid");
@@ -1366,16 +1483,19 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       return;
     }
     const inserted = insertCatalogNode(yaml, entry.type, { name: entry.name });
-    setDigest(null);
-    setYaml(inserted.yaml);
+    writeGraphYaml(
+      inserted.yaml,
+      position
+        ? { ...historyRef.current.present.layout, [inserted.node.id]: position }
+        : undefined,
+    );
     applySelection({ kind: "node", id: inserted.node.id });
   }
 
   function connectPorts(from: string, to: string): string[] {
     const result = connectGraphEdge(yaml, from, to, catalog, library);
     if (result.errors.length === 0) {
-      setDigest(null);
-      setYaml(result.yaml);
+      writeGraphYaml(result.yaml);
     }
     return result.errors;
   }
@@ -1384,7 +1504,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     const result = applyCoreNodeConfig(yaml, id, name, config);
     if (result.yaml) {
       setDigest(null);
-      setYaml(result.yaml);
+      syncHistoryYaml(result.yaml);
     }
     return result.errors;
   }
@@ -1402,7 +1522,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     });
     if (next) {
       setDigest(null);
-      setYaml(next);
+      syncHistoryYaml(next);
     }
   }
 
@@ -1439,7 +1559,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     });
     if (next) {
       setDigest(null);
-      setYaml(next);
+      syncHistoryYaml(next);
     }
   }
 
@@ -1561,6 +1681,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           onToggleRuns={() => toggleDrawer("runs")}
           onToggleInspector={() => toggleDrawer("inspector")}
           onAddAction={() => openWizard()}
+          canUndo={canUndoCanvasHistory(history)}
+          canRedo={canRedoCanvasHistory(history)}
+          onUndo={undoGraph}
+          onRedo={redoGraph}
         />
       }
       banners={
@@ -1632,10 +1756,17 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           heading={selectedRun ? "Canvas · last run" : undefined}
           help={selectedRun ? EDITOR_RUN_OVERLAY_HELP : undefined}
           onSelect={applySelection}
-          onInsertType={(type) => {
+          layout={history.present.layout}
+          canUndo={canUndoCanvasHistory(history)}
+          canRedo={canRedoCanvasHistory(history)}
+          onUndo={undoGraph}
+          onRedo={redoGraph}
+          onMove={moveCanvasNode}
+          onRemove={removeCanvasSelection}
+          onInsertType={(type, position) => {
             const entry = library.find((item) => item.type === type);
             if (entry) {
-              insertLibraryNode(entry);
+              insertLibraryNode(entry, position);
             }
           }}
           onOpenLibrary={() => setDrawerOpen("library", true)}
@@ -1670,7 +1801,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             value={yaml}
             onChange={(next) => {
               setDigest(null);
-              setYaml(next);
+              syncHistoryYaml(next);
             }}
             focusLine={focusLine}
             focusColumn={focusColumn}

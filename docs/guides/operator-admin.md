@@ -112,8 +112,11 @@ so the canvas can take the viewport. Commands bind to this route id.
 
 1. **← Workflows** returns to product home.
 2. Read name, slug, status, revision, and **Unsaved** / **Saved**.
-3. **Add action** opens the wizard. **Library**, **YAML**, **Inspector**,
-   and **Runs** toggle drawers (`aria-pressed` / `aria-expanded`).
+3. **Add action** opens the wizard. **Undo (Ctrl+Z)** / **Redo
+   (Ctrl+Shift+Z)** reverse canvas graph edits (move/add/remove/connect)
+   before save. Relates to #236 / Part of #228. Keep #236 open.
+   **Library**, **YAML**, **Inspector**, and **Runs** toggle drawers
+   (`aria-pressed` / `aria-expanded`).
 4. **Save draft** normalizes then `PUT`s the draft and replaces the
    buffer with API YAML + digest. Disabled while invalid.
 5. **Publish** is last **saved** draft only. Optional publish note.
@@ -136,10 +139,13 @@ not hide-by-default only. Relates to #234 / Part of #228. Keep
    list fail closed. `/actions` is the catalog reference, not a third
    app.
 
-Canvas: pan, zoom, select, connect compatible ports. Invalid YAML never
-draws a guessed graph. State uses icon + text. Keyboard: focus the
-canvas, then Zoom in / Zoom out / Reset. Selecting a node announces
-enough to use the inspector — this is not a screen-reader graph rewrite.
+Canvas: pan, zoom, select, drag nodes, connect compatible ports.
+Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z) reverse graph edits before save.
+Delete removes the selected node or edge. Session positions are not
+persisted (D1 / #238). Invalid YAML never draws a guessed graph. State
+uses icon + text. Keyboard: focus the canvas, then Zoom in / Zoom out /
+Reset. Selecting a node announces enough to use the inspector — this is
+not a screen-reader graph rewrite.
 Esc on an open drawer restores focus to the matching top-bar control.
 On narrow viewports (`max-width: 767px`) the inspector stacks first —
 a documented breakpoint, not a mobile app.

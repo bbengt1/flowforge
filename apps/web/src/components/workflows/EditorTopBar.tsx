@@ -13,6 +13,10 @@ import {
   editorDrawerTriggerId,
   editorTopBarControlLabel,
 } from "@/lib/e12-accessibility-contract";
+import {
+  EDITOR_CANVAS_REDO_LABEL,
+  EDITOR_CANVAS_UNDO_LABEL,
+} from "@/lib/editor-canvas-history";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
@@ -39,6 +43,10 @@ type EditorTopBarProps = {
   onToggleRuns: () => void;
   onToggleInspector: () => void;
   onAddAction: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 };
 
 export function EditorTopBar({
@@ -64,6 +72,10 @@ export function EditorTopBar({
   onToggleRuns,
   onToggleInspector,
   onAddAction,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
@@ -123,6 +135,28 @@ export function EditorTopBar({
         className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900"
       >
         {editorTopBarControlLabel("add-action")}
+      </button>
+      <button
+        type="button"
+        data-editor-history="undo"
+        title={EDITOR_CANVAS_UNDO_LABEL}
+        aria-keyshortcuts="Control+Z Meta+Z"
+        onClick={onUndo}
+        disabled={!onUndo || !canUndo}
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60"
+      >
+        {editorTopBarControlLabel("undo")}
+      </button>
+      <button
+        type="button"
+        data-editor-history="redo"
+        title={EDITOR_CANVAS_REDO_LABEL}
+        aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+        onClick={onRedo}
+        disabled={!onRedo || !canRedo}
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60"
+      >
+        {editorTopBarControlLabel("redo")}
       </button>
       <button
         type="button"

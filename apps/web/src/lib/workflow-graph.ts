@@ -22,6 +22,7 @@ import {
   listYamlTriggers,
   readYamlWorkflowMeta,
   removeYamlEdge,
+  removeYamlNode,
   updateYamlNode,
   type YamlWorkflowEdge,
   type YamlWorkflowNode,
@@ -432,6 +433,10 @@ export function connectGraphEdge(
 
 export function disconnectGraphEdge(yaml: string, from: string, to: string): string {
   return removeYamlEdge(yaml, from, to);
+}
+
+export function removeGraphNode(yaml: string, id: string): string {
+  return removeYamlNode(yaml, id);
 }
 
 export function layoutGraphNodes(
