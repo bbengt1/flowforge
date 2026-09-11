@@ -430,12 +430,14 @@ Depends-on is sequential for operator-visible coherence, not a hard merge lock. 
 
 ### Chloe (UI / migration)
 
-- Can the current canvas implement undo/redo, multi-select, and (if D1) layout without a new graph engine?
-- Palette/NDV: persistent satellites vs remembered-open drawers — pick a FlowForge pattern, not an n8n column match.
-- Operator migration: what do we say on membership/isolation/settings so foundation exercises stop looking like the product?
-- Embed: which rewrite chrome is iframe-safe at `/embed/v1` without a second tree?
-- A11y: extend UX.10 (Esc, focus return, no nested `<main>`, icon+text) to NDV and palette; still no SR graph rewrite unless Brent files it.
-- Touch/narrow: keep breakpoint vs a real inspector-first path (`touch-inspector-first`).
+Answered in [§11.1](#111-chloe--ui-surfaces--operator-migration-notes). Summary:
+
+- Graph engine: try the current canvas in R2; greenfield only if a written spike fails ([D6](#d6--greenfield-ui-package)).
+- Palette/NDV: FlowForge satellites that stay available — not an n8n column match and not hide-by-default.
+- Foundation copy: Settings keeps session/health; Membership/Isolation stay grant-gated; Example context stays labeled and local-only.
+- Embed: same `/embed/v1` tree + `session.embed`. No second tree.
+- A11y: extend UX.10 to NDV and palette; still no SR graph rewrite unless Brent files it.
+- Touch/narrow: keep the inspector-first breakpoint (`touch-inspector-first`).
 
 ### jonny (contracts)
 
@@ -458,13 +460,94 @@ Paste drafts **under the matching heading**. Do not rename sections, do not move
 
 <!-- CHLOE: UI surfaces + operator migration notes -->
 
-_Stub._ Chloe: replace this paragraph with UI-surface notes (home, editor, palette, NDV, runs, vault, activations, embed) and operator migration (what we tell people who learned the #195 drawers and the E2–E5 foundation pages). Call out any disagreement with migrate-vs-greenfield or with D1–D6 defaults. Keep ADV-021/024, draft-never-runs, and “not an n8n clone” intact. If a sentence in §3–§6 is wrong about landed chrome, correct it here and patch the table in the same PR.
+Fold-in of the standalone UI-surface draft (`docs/reference/rewrite-ui-surfaces.md`, PR #221). **This subsection is the charter authority** for UI surfaces and operator migration. The standalone page is the expanded surface map — do not keep a second competing IA. Consume [§11.2](#112-jonny--control-plane--execution--credential-parity-gaps) contracts; do not invent routes.
+
+Docs-only. No `apps/web` change. **Do not open epics or issues from this fold-in.** Do not weaken ADV, E12, or the UX.10 a11y contract.
+
+n8n is a *behavior* reference only. Do not copy n8n chrome, assets, or product terms into the UI. “NDV” below is a parity *reference* for a focused node inspector — not a branded modal.
+
+§3–§6 already match landed #195 chrome (home, canvas-first editor, hidden-first-paint library/YAML/runs, inspector tabs, same-canvas overlay, vault by display name). No table patch.
+
+#### Lean (D1–D6)
+
+Matches Gracie’s [§7](#7-security-and-tenancy-invariants) / [§8](#8-data-and-contract-strategy) and jonny’s [§11.2](#112-jonny--control-plane--execution--credential-parity-gaps). **No conflict to record.** Brent still owns the reserved calls.
+
+| ID | Lean (UI; no conflict) | If Brent accepts |
+| --- | --- | --- |
+| **D1** | Optional non-authoritative layout hints only | Persist only via jonny’s `metadata.ui.layout`. Missing/invalid → auto-layout. Never a second canvas file. |
+| **D2** | “Active” = published version + enabled trigger | Home/editor *label* that compose. Never imply the draft is live. |
+| **D3** | **Triggers stay workflow-level** | Keep `spec.triggers`, inspector **Triggers** tab, and home `?webhooks=` / `?schedules=` / `?start=1`. Do **not** place `manual` / `webhook` / `schedule` on the canvas. |
+| **D4** | Keep `flowforge/v1` | Canvas remains a projection. YAML mode stays a mode, not the persist format. |
+| **D5** | One-gesture test-run only as a **published test version** | Same Start-published chrome. Drafts still never run. |
+| **D6** | **Migrate UI in place** | Same App Router routes and `/embed/v1` tree. Palette + NDV as satellites on `/workflows/{id}`. **No `/studio`.** Greenfield canvas package only if a written R2 spike fails (Brent + Chloe); that spike must not fork routes or contracts. |
+
+#### Surface map summary
+
+Behavior targets, not a visual spec. Full rows: [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
+
+| Surface | On `main` after #195 | Rewrite still needs (FlowForge chrome) |
+| --- | --- | --- |
+| **Home** | `/workflows` list/cards; client folder-prefix filters; create/import/duplicate/template all POST a **draft**; `?start=` / `?webhooks=` / `?schedules=` | Workbench density (activation, waiting, last run). First-class folder/tag UX only when an API exists. Empty state: create / template / import — no developer fixtures. |
+| **Editor / canvas** | `/workflows/{id}` viewport; auto-layout only; invalid YAML never guesses a graph | Palette + NDV available without hunting. Graph primitives (undo/redo, multi-select, fit/snap). Layout persist **only** if D1. Touch stays a breakpoint, not a mobile app. |
+| **Palette** | Left drawer, hidden on first paint; enabled catalog; **Add action** wizard; `/actions` is reference | Faster add-from-canvas on the **same** enabled catalog. No marketplace. No disabled next/provider types. Triggers excluded (`rules.triggersAreWorkflowLevel`). |
+| **NDV / inspector** | Right rail: `with` / pins / display-name credentials; workflow tabs Triggers / Versions / Pins; redacted last-run I/O | Focused node conversation (parameters, typed field-path mapping, credential pick/add, redacted I/O, validation/policy). No expression language. No `SecretField` in the rail. |
+| **Runs** | Hidden drawer; overlay on **this** canvas; **Open execution** → `/executions/{id}` | Overlay stays the editor “what just ran?” path (filter, skip-to-failed/`indeterminate`, cancel/retry when policy allows). No `/replay`. No second graph. |
+| **Vault** | `/credentials/*`; NDV add reuses masked wizard | Finish return-to-editor as the default. Usage/deletion-impact without a secret surface. |
+| **Activations** | Workflow-level admin on home drawers + Triggers tab | One “this published version is active” control once D2 is recorded. Drafts still never run. |
+| **Embed / settings** | Same pages at `/embed/v1`; Settings holds session/health/OpenAPI + disclosed Developer samples | Migrate chrome with standalone. Membership/isolation stay grant-gated and stop looking like the product. |
+
+**Satellites to preserve (do not re-home into a cloned IA):** workspace shell + Commands; `/actions`; `/templates` (always POST a draft); `/config`; `/executions` inbox; `/approvals/{id}/decide`; `/alerts` / `/audit`; ADV-024 `/membership` / `/isolation`; `/embed/v1` + `/portal/workflows`.
+
+#### Keep / replace / retire (UI only)
+
+Contracts stay. This table is chrome.
+
+| Disposition | Items |
+| --- | --- |
+| **Keep** | `flowforge/v1` as the only persisted definition; drafts never execute; vault display-name + UUID; ADV-021 / ADV-024 / host-issuer / CHIPS; RBAC fail-closed nav/search/Commands; workflow-level triggers; invalid YAML never guesses a graph; `/executions` inbox + editor overlay; approval resume = `POST /approvals/{id}/decide`; `/actions` as reference; labeled **Example context** + local seed path; icon+text status; skip link `#main-content` / single `<main>`; home query drawers and editor deep links |
+| **Replace (chrome)** | Hidden-first-paint library → available-without-hunting palette (same catalog). Inspector rail → focused NDV (not a branded modal). Auto-layout-only → primitives + optional D1 hints. Prefix-encoded folders / client-only filters → first-class UX when the API exists. Settings-as-foundation-dump → session + health + disclosed Developer samples |
+| **Retire from primary chrome** | Pre-#195 stacked operator page; starter/invalid YAML as primary buttons; Normalize as a Save peer; health/OpenAPI as `/` home; second replay graph / `/replay`; host query as workspace identity; unlabeled header-only login; color-only status / nested `<main>` / cloned icons; Membership/Isolation in embed nav without ADV-024; connector marketplace / disabled catalog types |
+
+Do **not** retire vault routes, the executions inbox, approvals decide, `/embed/v1` mounts, the Portal adapter boundary, or the YAML round-trip.
+
+#### Operator migration notes
+
+Migration is from **today’s #195 canvas-first chrome**, not from the pre-makeover stacked page.
+
+**Stays familiar:** `/workflows` home; `/workflows/{id}` and `/embed/v1/workflows/{id}`; Save draft / Publish / Start published; Library / Inspector / YAML / Runs as satellites (default-open and density may change; no second studio); Ctrl+Shift+K; home `?start=` / `?webhooks=` / `?schedules=` / `?import=1`; `/credentials/*` with return-to-editor; `/executions` as the workspace inbox; skip link `#main-content`.
+
+**Already changed in #195 — do not regress:** YAML is a mode; library is a drawer (not a permanent 18rem column); fixtures live under Settings → Developer; nav collapses on the editor; trigger/version/pin stacks are inspector tabs; health/OpenAPI left `/`. Putting YAML, fixtures, or foundation probes back into primary authoring chrome is a regression, not parity.
+
+**Warn operators (not shipped):** home density may grow activation/waiting columns; empty-canvas **+** / Add action stay the add path (never send people to `/actions` to place a node); last-run I/O stays in the NDV; “Open execution” still leaves for `/executions/{id}`; Membership / Isolation stay grant-gated — isolation success is still a **denial**.
+
+#### Must not regress
+
+| Constraint | Operator-visible rule |
+| --- | --- |
+| **YAML source of truth** | Canvas edits save as normalized `flowforge/v1`. Invalid YAML never guesses a graph. |
+| **Drafts never run** | Start / replay / overlay require a published `workflowVersionId`. |
+| **Vault** | Selectors show display names; YAML stores UUIDs. Unexpected plaintext is a contract bug — stop; do not paste it. |
+| **ADV / RBAC / embed / CHIPS** | Nav/search/Commands omit inaccessible capabilities. Chrome waits for `GET /session` `session.embed` (ADV-021). Membership/isolation only with the ADV-024 grant. Embed cookies stay `SameSite=None; Secure; Partitioned`. Host `?tenant=` / `?workbench=` is never authorization. No second embed tree. |
+| **Seed Example context** | Keep the labeled **Example context** (today on `/membership`) for issuer `https://idp.example`, subject `admin-1`, tenant `local`, workbench `default`. Do not promote it into production Settings copy. Do not treat header fallback as a rewrite login. Procedure: [deployment — local default tenant seed](../deployment.md#local-default-tenant-seed). |
+| **Catalog / mapping** | Disabled / next / provider types stay hidden. Mapping is field paths + `allowedWith` only — no expression language. |
+| **Approvals** | Requester cannot self-approve. Resume is decide. |
+
+#### Answers to [§10](#10-open-questions) Chloe questions
+
+1. **Graph engine** — try undo/redo, multi-select, and (if D1) layout on the current canvas in R2. Greenfield package only after a written spike fails; no route or contract fork ([D6](#d6--greenfield-ui-package)).
+2. **Palette / NDV pattern** — FlowForge satellites that stay available (remembered-open or persistent), not an n8n column match and not a hide-by-default hunt.
+3. **Foundation copy** — Settings keeps session/health/OpenAPI + disclosed Developer samples. Membership/Isolation stay grant-gated and exercise-shaped-off-primary. Example context stays labeled and local-only.
+4. **Embed** — rewrite chrome mounts on the existing `/embed/v1` tree with `session.embed`. No Portal-specific cookie. No host-query authz.
+5. **A11y** — extend UX.10 (Esc, focus return, no nested `<main>`, icon+text) to NDV and palette. Still no screen-reader graph rewrite unless Brent files it.
+6. **Touch** — keep the `max-width: 767px` inspector-first breakpoint (`touch-inspector-first`); not a mobile app.
+
+Full tables (landed mermaid, satellite list, embed must-keep rows): [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
 
 ### 11.2 jonny — control-plane / execution / credential parity gaps
 
 <!-- JONNY: control-plane / execution / credential parity gaps -->
 
-Fold-in of the standalone control-plane draft (`docs/architecture/rewrite-n8n-parity-control-plane.md`, PR #220). **This subsection is the charter authority** for control-plane / execution / credential gaps. The standalone page can be superseded (redirect or retire) once R1 accepts this file; do not keep a second competing contract. Chloe’s UI-surface notes (`docs/reference/rewrite-ui-surfaces.md`, PR #221, target [§11.1](#111-chloe--ui-surfaces--operator-migration-notes)) consume these contracts — they do not invent routes.
+Fold-in of the standalone control-plane draft (`docs/architecture/rewrite-n8n-parity-control-plane.md`, PR #220). **This subsection is the charter authority** for control-plane / execution / credential gaps. The standalone page can be superseded (redirect or retire) once R1 accepts this file; do not keep a second competing contract. Chloe’s UI-surface notes ([§11.1](#111-chloe--ui-surfaces--operator-migration-notes) and `docs/reference/rewrite-ui-surfaces.md`) consume these contracts — they do not invent routes.
 
 Docs-only. No OpenAPI / handler / worker change. **Do not open epics or issues from this fold-in.** Do not weaken ADV or E12.
 
@@ -609,4 +692,4 @@ In-place `/api/v1` evolution, not a dump-and-reload. Existing drafts, versions, 
 - [Embed SDK](../reference/embed-sdk.md)
 - [Release and operations](../operations/index.md)
 - Standalone jonny draft (source for §11.2; **can be superseded** after R1): `docs/architecture/rewrite-n8n-parity-control-plane.md` on PR #220 — not copied here, so this charter does not grow a second authority
-- Chloe UI-surface draft (source for §11.1): `docs/reference/rewrite-ui-surfaces.md` on PR #221
+- Chloe UI-surface draft (expanded tables for [§11.1](#111-chloe--ui-surfaces--operator-migration-notes)): [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md) (also PR #221)

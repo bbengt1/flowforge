@@ -1,6 +1,6 @@
 # Technical reference
 
-The maintained technical reference starts with the [workflow model](workflow-model.md), [workflow YAML schema](workflow-yaml-schema.md), [standard action catalog](action-catalog.md), [core neutral node contracts](core-node-contracts.md), [security model](security-model.md), [frontend UI](frontend-ui.md), [database specification](database.md), [Kubernetes API engine](kubernetes-engine.md), [SSH engine](ssh-engine.md), and [script engine](script-engine.md).
+The maintained technical reference starts with the [workflow model](workflow-model.md), [workflow YAML schema](workflow-yaml-schema.md), [standard action catalog](action-catalog.md), [core neutral node contracts](core-node-contracts.md), [security model](security-model.md), [frontend UI](frontend-ui.md), [rewrite UI surfaces](rewrite-ui-surfaces.md) (Chloe expanded map; charter §11.1 is the fold-in), [database specification](database.md), [Kubernetes API engine](kubernetes-engine.md), [SSH engine](ssh-engine.md), and [script engine](script-engine.md).
 
 Successor product charter (not a current-state contract): [rewrite — n8n-class parity](../architecture/flowforge-rewrite-n8n-class-parity.md).
 
@@ -15,4 +15,5 @@ Future implementation changes should add API, deployment, and runner references 
 - [E12.3 threat-model review](e12-threat-model-review.md): production-gate sign-off against existing controls (no new features).
 - [Release and operations](../operations/index.md): incident/recovery and retention/backup runbooks; Chloe UI/a11y landings.
 - [Operator / admin UI guide](../guides/operator-admin.md): Chloe E12.3 product-shell walkthroughs, including canvas-first authoring (not this API→UI map).
+- [Rewrite UI surfaces](rewrite-ui-surfaces.md): Chloe docs-only map of landed #195 chrome vs n8n-class parity, plus operator migration and keep/replace/retire. Folded into [charter §11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes); not a production UI change.
 - [E12.3 accessibility review](e12-accessibility-review.md): labels, focus, keyboard paths, and tracked gaps.
