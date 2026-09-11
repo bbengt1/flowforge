@@ -22,7 +22,7 @@ import type { ExecutionListRow } from "@/lib/execution-types";
 type ExecutionHistoryListboxProps = {
   rows: ExecutionListRow[];
   compact?: boolean;
-  layout?: "cards" | "inbox";
+  layout?: "cards" | "inbox" | "overlay";
   selectedId?: string;
   keyboardHelp?: string;
   onActivate?: (row: ExecutionListRow) => void;
@@ -43,7 +43,8 @@ export function ExecutionHistoryListbox({
   const router = useRouter();
   const safeIndex = rows.length === 0 ? 0 : Math.min(focusIndex, rows.length - 1);
   const inbox = layout === "inbox";
-  const pad = compact ? "p-3" : inbox ? "px-3 py-2.5" : "p-4";
+  const overlay = layout === "overlay";
+  const pad = overlay ? "p-2.5" : compact ? "p-3" : inbox ? "px-3 py-2.5" : "p-4";
   const help =
     keyboardHelp ?? (inbox ? EXECUTION_INBOX_KEYBOARD_HELP : KEYBOARD_HISTORY_HELP);
 
@@ -75,7 +76,9 @@ export function ExecutionHistoryListbox({
       ) : null}
       <ul
         role="listbox"
-        aria-label={inbox ? "Workspace executions" : "Execution history"}
+        aria-label={
+          inbox ? "Workspace executions" : overlay ? "Workflow runs" : "Execution history"
+        }
         tabIndex={0}
         onKeyDown={(event) => {
           const next = historyKeyAction(event.key, safeIndex, rows.length);
@@ -121,7 +124,40 @@ export function ExecutionHistoryListbox({
                         : `rounded-xl border border-zinc-200 bg-white ${pad} shadow-sm`
               }
             >
-              {inbox ? (
+              {overlay ? (
+                <>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[11px] text-zinc-700">{row.versionPin}</p>
+                      <p className="mt-1 font-mono text-[11px] text-zinc-500">
+                        {started} · {duration}
+                      </p>
+                      <p className="mt-1 font-mono text-[11px] break-all text-zinc-400">
+                        {row.id}
+                      </p>
+                    </div>
+                    <ExecutionStatusBadge status={row.status} />
+                  </div>
+                  {row.indeterminate ? (
+                    <p className="mt-2 text-[11px] font-medium text-amber-950">
+                      Indeterminate — do not assume the action did not run.
+                    </p>
+                  ) : null}
+                  {row.replayed ? (
+                    <p className="mt-1 text-[11px] text-zinc-600">Replayed</p>
+                  ) : null}
+                  <p className="mt-2 text-xs">
+                    <Link
+                      href={row.href}
+                      onClick={(event) => event.stopPropagation()}
+                      className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                    >
+                      {EXECUTION_INBOX_OPEN_LABEL}
+                    </Link>
+                    <span className="text-zinc-500"> — /executions/{"{id}"}</span>
+                  </p>
+                </>
+              ) : inbox ? (
                 <div className={INBOX_GRID}>
                   <div>
                     <ExecutionStatusBadge status={row.status} />

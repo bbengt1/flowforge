@@ -70,7 +70,13 @@ import {
   readYamlCanvasLayout,
   writeCanvasLayoutYaml,
 } from "@/lib/editor-canvas-layout";
-import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
+import {
+  EDITOR_RUNS_DEFAULT_OPEN,
+  editorRunsHighlightedNodeIds,
+  readRunsOpenPreference,
+  rememberRunsOpen,
+  subscribeRunsOpenPreference,
+} from "@/lib/editor-runs";
 import {
   EDITOR_RUN_OVERLAY_HELP,
   editorRunCurrentNodeId,
@@ -278,7 +284,11 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     () => EDITOR_LIBRARY_DEFAULT_OPEN,
   );
   const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
-  const [runsOpen, setRunsOpen] = useState(EDITOR_RUNS_OPEN_ON_FIRST_PAINT);
+  const runsOpen = useSyncExternalStore(
+    subscribeRunsOpenPreference,
+    readRunsOpenPreference,
+    () => EDITOR_RUNS_DEFAULT_OPEN,
+  );
   const inspectorOpen = useSyncExternalStore(
     subscribeInspectorOpenPreference,
     readInspectorOpenPreference,
@@ -570,8 +580,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         }),
       );
       rememberInspectorOpen(true);
+      rememberRunsOpen(true);
     } else {
       rememberInspectorOpen(true);
+      rememberRunsOpen(true);
     }
   }
 
@@ -583,7 +595,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       setYamlOpen(open);
     }
     if (id === "runs") {
-      setRunsOpen(open);
+      rememberRunsOpen(open);
     }
     if (id === "inspector") {
       rememberInspectorOpen(open);
@@ -2025,9 +2037,20 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           permissions={permissions}
           canCall={canCall}
           selectedExecutionId={selectedRunId ?? undefined}
+          selectedSteps={selectedRun?.steps}
+          waitingApprovalNodeIds={runWaitingIds}
+          overlayHighlightCount={
+            selectedRun
+              ? editorRunsHighlightedNodeIds(selectedRun.steps, runWaitingIds)
+                  .length
+              : 0
+          }
           onClose={() => setDrawerOpen("runs", false)}
+          onOpen={() => setDrawerOpen("runs", true)}
           onStart={() => setStartOpen(true)}
           onSelectRun={(executionId) => void selectRun(executionId)}
+          onClearRun={clearSelectedRun}
+          onHighlightNode={(nodeId) => applySelection({ kind: "node", id: nodeId })}
         />
       }
       overlays={
