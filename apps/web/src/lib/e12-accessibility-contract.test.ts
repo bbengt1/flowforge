@@ -253,7 +253,7 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
         from: "a.out",
         to: "b.in",
       }),
-      "Selected edge a.out to b.in. Inspector explains port compatibility.",
+      "Selected edge a.out to b.in. Inspector explains port compatibility and field-path mapping.",
     );
     assert.match(
       editorSelectionAnnouncement({ kind: "workflow" }),

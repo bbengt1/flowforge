@@ -78,6 +78,7 @@ export const EDITOR_INSPECTOR = {
 export const INSPECTOR_RAIL_SOURCES = [
   "src/components/workflows/NodeInspector.tsx",
   "src/components/workflows/NdvParameterEditors.tsx",
+  "src/components/workflows/NdvMappingPanel.tsx",
   "src/components/workflows/EditorInspector.tsx",
   "src/components/config/SshPinSelect.tsx",
 ] as const;

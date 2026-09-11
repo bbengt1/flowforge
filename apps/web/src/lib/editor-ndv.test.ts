@@ -100,9 +100,10 @@ describe("R2.2 NDV inspector satellite", () => {
     assert.equal(EDITOR_INSPECTOR.inspectorIsEdit, true);
   });
 
-  it("exposes parameters, with, pins, and credential display-name — not mapping depth", () => {
+  it("exposes parameters, mapping, with, pins, and credential display-name", () => {
     assert.deepEqual([...EDITOR_NDV_PANELS], [
       "parameters",
+      "mapping",
       "pins",
       "credentials",
       "last-run",
@@ -111,7 +112,8 @@ describe("R2.2 NDV inspector satellite", () => {
     assert.equal(EDITOR_NDV.noSecretFieldInRail, true);
     assert.equal(EDITOR_NDV.noExpressionLanguage, true);
     assert.equal(EDITOR_NDV.noBrandedNdvInUi, true);
-    assert.equal(EDITOR_NDV.deepMappingIsR3, true);
+    assert.equal(EDITOR_NDV.typedFieldPathMapping, true);
+    assert.equal(EDITOR_NDV.deepMappingIsR3, false);
     assert.equal(EDITOR_INSPECTOR.noSecretFieldInRail, true);
     assert.equal(EDITOR_INSPECTOR.displayNamePlusUuidOnly, true);
     assert.equal(ndvFocusesOnSelection("node"), true);
@@ -193,6 +195,7 @@ describe("R2.2 NDV inspector satellite", () => {
     assert.doesNotMatch(operator, /setInspectorOpen/);
     assert.match(inspector, /data-ndv-shell="node"/);
     assert.match(inspector, /data-ndv-panel="parameters"/);
+    assert.match(inspector, /NdvMappingPanel/);
     assert.match(inspector, /data-ndv-panel="pins"/);
     assert.match(inspector, /data-ndv-panel="credentials"/);
     assert.match(inspector, /data-ndv-panel="last-run"/);

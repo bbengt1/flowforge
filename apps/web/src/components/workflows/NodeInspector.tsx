@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { NdvParameterEditors } from "@/components/workflows/NdvParameterEditors";
+import {
+  ndvLooksLikeExpression,
+  validateNdvTypedMapping,
+} from "@/lib/editor-ndv-mapping";
 import type { HttpNotificationCatalog } from "@/lib/core-http-notification-contract";
 import {
   ndvHasTypeSpecificParameterEditors,
@@ -572,9 +576,21 @@ function MapFieldsEditor({
   mapping: MapPath[];
   onChange: (mapping: MapPath[]) => void;
 }) {
+  const validation = validateNdvTypedMapping(
+    mapping.filter(
+      (row) =>
+        (row.dest.trim() && row.from.trim()) ||
+        ndvLooksLikeExpression(row.dest) ||
+        ndvLooksLikeExpression(row.from),
+    ),
+    { fromKind: "object", destKind: "object" },
+  );
   return (
-    <fieldset className="space-y-2">
+    <fieldset className="space-y-2" data-ndv-field-path-editor="core-map">
       <legend className="text-sm text-zinc-600">mapping dest → from</legend>
+      <p className="text-xs text-zinc-500">
+        Dotted identifier paths only. Incompatible or template paths are blocked.
+      </p>
       {mapping.map((row, index) => (
         <div key={`${row.dest}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
           <input
@@ -631,6 +647,13 @@ function MapFieldsEditor({
       >
         Add mapping
       </button>
+      {validation.errors.length > 0 ? (
+        <ul className="space-y-1 text-sm text-amber-900" data-ndv-mapping-errors>
+          {validation.errors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      ) : null}
     </fieldset>
   );
 }

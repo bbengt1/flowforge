@@ -285,7 +285,7 @@ export function editorSelectionAnnouncement(input: {
       : `Selected ${title}. Inspector shows name, with fields, pins, and credentials.`;
   }
   if (input.kind === "edge") {
-    return `Selected edge ${input.from ?? "from"} to ${input.to ?? "to"}. Inspector explains port compatibility.`;
+    return `Selected edge ${input.from ?? "from"} to ${input.to ?? "to"}. Inspector explains port compatibility and field-path mapping.`;
   }
   return "Workflow selected. Inspector shows triggers, versions, and pins.";
 }
