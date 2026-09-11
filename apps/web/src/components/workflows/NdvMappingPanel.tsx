@@ -180,7 +180,7 @@ export function FieldPathMappingEditor({
   }
 
   return (
-    <fieldset className="space-y-2" data-ndv-field-path-editor="mapping">
+    <fieldset className="space-y-2" data-ndv-field-path-editor="mapping" data-ndv-field="mapping">
       <legend className="text-sm text-zinc-600">dest.path ← source.path</legend>
       <p className="text-xs text-zinc-500">{NDV_MAPPING_NO_EXPRESSION_HELP}</p>
       {list.map((row, index) => (
@@ -288,7 +288,7 @@ function ConditionPathField({
 }) {
   const error = value ? ndvFieldPathError(value, "path") : null;
   return (
-    <label className="mt-4 block text-sm" data-ndv-field-path-editor="path">
+    <label className="mt-4 block text-sm" data-ndv-field-path-editor="path" data-ndv-field="path">
       <span className="text-zinc-600">path into value</span>
       <input
         value={value}

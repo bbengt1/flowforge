@@ -199,7 +199,7 @@ function SelectedNodeIdentity({
     <div className="mt-4 space-y-3">
       <p className="font-mono text-xs text-zinc-500">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
-      <label className="block text-sm">
+      <label className="block text-sm" data-ndv-field="name">
         <span className="text-zinc-600">Name</span>
         <input
           value={name}
@@ -305,7 +305,7 @@ function NodeConfigForm({
     >
       <p className="font-mono text-xs text-zinc-500">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
-      <label className="block text-sm">
+      <label className="block text-sm" data-ndv-field="name">
         <span className="text-zinc-600">Name</span>
         <input
           value={name}
@@ -446,7 +446,10 @@ function ConfigFields({
             options={["object", "array", "string", "integer", "boolean"]}
             onChange={(schemaType) => onChange({ ...config, schemaType })}
           />
-          <label className="flex items-center gap-2 text-sm text-zinc-700">
+          <label
+            className="flex items-center gap-2 text-sm text-zinc-700"
+            data-ndv-field="additionalProperties"
+          >
             <input
               type="checkbox"
               checked={config.additionalProperties}
@@ -506,7 +509,7 @@ function SetFieldsEditor({
 }) {
   const kinds: SetFieldKind[] = ["string", "number", "boolean", "null"];
   return (
-    <fieldset className="space-y-2">
+    <fieldset className="space-y-2" data-ndv-field="fields">
       <legend className="text-sm text-zinc-600">value fields</legend>
       {fields.map((field, index) => (
         <div key={`${field.key}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
@@ -586,7 +589,7 @@ function MapFieldsEditor({
     { fromKind: "object", destKind: "object" },
   );
   return (
-    <fieldset className="space-y-2" data-ndv-field-path-editor="core-map">
+    <fieldset className="space-y-2" data-ndv-field-path-editor="core-map" data-ndv-field="mapping">
       <legend className="text-sm text-zinc-600">mapping dest → from</legend>
       <p className="text-xs text-zinc-500">
         Dotted identifier paths only. Incompatible or template paths are blocked.
@@ -670,7 +673,7 @@ function TextField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm">
+    <label className="block text-sm" data-ndv-field={label}>
       <span className="text-zinc-600">{label}</span>
       <input
         value={value}
@@ -694,7 +697,7 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm">
+    <label className="block text-sm" data-ndv-field={label === "schema.type" ? "schemaType" : label}>
       <span className="text-zinc-600">{label}</span>
       <select
         value={value}

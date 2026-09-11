@@ -711,14 +711,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     scriptCatalog,
     httpCatalog,
   );
+  const mappingFieldErrors = localNdvMappingErrors(
+    yamlNodes,
+    listYamlEdges(yaml),
+    catalog,
+    library,
+  );
   const localErrors = [
     ...editorHasLocalInvalidations(yaml, catalog, library),
-    ...localNdvMappingErrors(
-      yamlNodes,
-      listYamlEdges(yaml),
-      catalog,
-      library,
-    ).map((error) => error.message),
+    ...mappingFieldErrors.map((error) => error.message),
   ];
   const graph = projectCanvasGraph({
     errors,
@@ -1938,6 +1939,19 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
                   }
                 : null
             }
+            validation={{
+              status,
+              errors: [...errors, ...mappingFieldErrors],
+              warnings,
+              problem,
+              evaluation: policyEval,
+              evaluationPending: policyEvalPending,
+              evaluationProblem: policyEvalProblem,
+              publishedVersionId:
+                runVersionId || publishedVersion?.id || versions[0]?.id || null,
+              waitingApprovals: selectedRunApprovals,
+              onJumpYaml: jumpToYaml,
+            }}
             workflowAdmin={{
               workflowId: workflow?.id ?? workflowId,
               workflowName: workflow?.name,

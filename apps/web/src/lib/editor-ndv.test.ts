@@ -107,6 +107,7 @@ describe("R2.2 NDV inspector satellite", () => {
       "pins",
       "credentials",
       "last-run",
+      "validation",
     ]);
     assert.equal(EDITOR_NDV.parametersWithPinsCredentialDisplayName, true);
     assert.equal(EDITOR_NDV.noSecretFieldInRail, true);
@@ -199,6 +200,7 @@ describe("R2.2 NDV inspector satellite", () => {
     assert.match(inspector, /data-ndv-panel="pins"/);
     assert.match(inspector, /data-ndv-panel="credentials"/);
     assert.match(inspector, /data-ndv-panel="last-run"/);
+    assert.match(inspector, /data-ndv-panel="validation"/);
     assert.match(inspector, /EDITOR_NDV_SHELL_ID|editor-ndv-shell/);
     assert.match(nodeInspector, /Parameters/);
     assert.match(inspector, /Add action stays[\s\S]*guided wizard/);

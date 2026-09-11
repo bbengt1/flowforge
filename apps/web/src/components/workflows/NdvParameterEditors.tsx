@@ -79,7 +79,10 @@ function NdvParameterField({
   const label = editor.required ? editor.label + " *" : editor.label;
   if (editor.control === "boolean") {
     return (
-      <label className="flex items-center gap-2 text-sm text-zinc-700">
+      <label
+        className="flex items-center gap-2 text-sm text-zinc-700"
+        data-ndv-field={editor.name}
+      >
         <input
           type="checkbox"
           checked={value === true}
@@ -93,7 +96,11 @@ function NdvParameterField({
   if (editor.control === "retry-policy") {
     const policy = ndvParameterPatchValue(editor, value) as { maxAttempts: number };
     return (
-      <label className="block text-sm" data-ndv-parameter-control="retry-policy">
+      <label
+        className="block text-sm"
+        data-ndv-parameter-control="retry-policy"
+        data-ndv-field={editor.name}
+      >
         <span className="text-zinc-600">{label}</span>
         <input
           type="number"
@@ -122,6 +129,7 @@ function NdvParameterField({
       <fieldset
         className="space-y-2 rounded-lg border border-zinc-100 p-2"
         data-ndv-parameter-control="resource-identity"
+        data-ndv-field={editor.name}
       >
         <legend className="text-sm text-zinc-600">{label}</legend>
         <label className="block text-sm">
@@ -155,7 +163,7 @@ function NdvParameterField({
   if (editor.control === "enum") {
     const text = ndvSafeDisplayScalar(value) || ndvSafeDisplayScalar(editor.defaultValue);
     return (
-      <label className="block text-sm">
+      <label className="block text-sm" data-ndv-field={editor.name}>
         <span className="text-zinc-600">{label}</span>
         <select
           value={text}
@@ -177,7 +185,11 @@ function NdvParameterField({
   }
   if (editor.control === "object-lines") {
     return (
-      <label className="block text-sm" data-ndv-parameter-control="object-lines">
+      <label
+        className="block text-sm"
+        data-ndv-parameter-control="object-lines"
+        data-ndv-field={editor.name}
+      >
         <span className="text-zinc-600">{label}</span>
         <textarea
           value={ndvSafeDisplayObjectLines(value)}
@@ -197,7 +209,7 @@ function NdvParameterField({
   }
   if (editor.control === "textarea") {
     return (
-      <label className="block text-sm">
+      <label className="block text-sm" data-ndv-field={editor.name}>
         <span className="text-zinc-600">{label}</span>
         <textarea
           value={ndvSafeDisplayScalar(value)}
@@ -214,7 +226,7 @@ function NdvParameterField({
   }
   if (editor.control === "number") {
     return (
-      <label className="block text-sm">
+      <label className="block text-sm" data-ndv-field={editor.name}>
         <span className="text-zinc-600">{label}</span>
         <input
           type="number"
@@ -230,7 +242,7 @@ function NdvParameterField({
     );
   }
   return (
-    <label className="block text-sm">
+    <label className="block text-sm" data-ndv-field={editor.name}>
       <span className="text-zinc-600">{label}</span>
       <input
         value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
