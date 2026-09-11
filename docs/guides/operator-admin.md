@@ -286,10 +286,11 @@ E12.1 UI evidence: [approval-expired.svg](../reference/e12-security-evidence/app
    (`GET /executions` `status` / `workflowId` / `limit` — also in the
    URL). Columns are status, workflow, version, started, duration,
    correlation, and Open. Focus the listbox: Arrow keys move, Enter
-   opens detail. Do not expect cursor / time / trigger / actor
-   filters yet.
+   opens existing `/executions/{id}` detail — this inbox is not a
+   second replay graph. Do not expect cursor / time / trigger /
+   actor filters yet.
 2. `indeterminate` uses a stronger border plus icon + text — never
-   “it probably did not run.”
+   silent success, never “it probably did not run.”
 3. Start only a **published** version (home or the start panel).
    Duplicate idempotency key → `200` replay; same key + different
    input → `409`.

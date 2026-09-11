@@ -11,16 +11,23 @@ import {
   EXECUTION_INBOX_LIMITS,
   EXECUTION_INBOX_OPEN_LABEL,
   EXECUTION_INBOX_QUERY_KEYS,
+  EXECUTION_INBOX_DETAIL_PATH,
+  EXECUTION_INBOX_REPLAY_GRAPH_SOURCE,
   EXECUTION_INBOX_SOURCES,
   INVENTED_REPLAY_ROUTE,
+  R4_GUARDRAILS,
+  R4_LATER_STORY_NOTES,
   R41_EPIC,
   R41_KEEP_STORY_OPEN,
   R41_STORY,
   executionInboxColumnIds,
   executionInboxColumnText,
+  executionInboxCompareStaysClientSide,
   executionInboxDisplay,
   executionInboxDoesNotInventReplayRoute,
   executionInboxDraftsNeverRun,
+  executionInboxHasSingleOperatePath,
+  executionInboxIndeterminateIsLoud,
   executionInboxDurationLabel,
   executionInboxEmbedUnchanged,
   executionInboxHasActiveFilters,
@@ -78,7 +85,16 @@ describe("R4.1 execution inbox", () => {
     assert.equal(EXECUTION_INBOX.migrateInPlace, true);
     assert.equal(EXECUTION_INBOX.operateDensity, true);
     assert.match(EXECUTION_INBOX_HELP, /status, workflowId, and limit/);
+    assert.match(EXECUTION_INBOX_HELP, /\/executions\/\{id\}/);
     assert.match(EXECUTION_INBOX_KEYBOARD_HELP, /opens the focused run/);
+    assert.equal(R4_GUARDRAILS.oneOperatePath, true);
+    assert.equal(R4_GUARDRAILS.loudIndeterminate, true);
+    assert.equal(R4_GUARDRAILS.publishedWorkflowVersionIdOnly, true);
+    assert.equal(R4_GUARDRAILS.noReplayProductRoute, true);
+    assert.match(R4_LATER_STORY_NOTES.r42, /#255/);
+    assert.match(R4_LATER_STORY_NOTES.r43, /#256/);
+    assert.match(R4_LATER_STORY_NOTES.r44, /#257/);
+    assert.match(R4_LATER_STORY_NOTES.r45, /#258/);
     assert.ok(
       EXECUTION_INBOX_SOURCES.includes(
         "src/components/executions/ExecutionHistory.tsx",
@@ -246,6 +262,26 @@ describe("R4.1 execution inbox", () => {
     assert.equal(EXECUTION_INBOX.statusAndWorkflowFilters, true);
   });
 
+  it("keeps one operate path and opens existing detail, not an inbox graph", () => {
+    const row = executionInboxDisplay([
+      sampleRecord({ status: "indeterminate" }),
+    ])[0];
+    assert.equal(executionInboxHasSingleOperatePath(), true);
+    assert.equal(EXECUTION_INBOX_DETAIL_PATH, "/executions/{id}");
+    assert.equal(
+      EXECUTION_INBOX_SOURCES.includes(EXECUTION_INBOX_REPLAY_GRAPH_SOURCE),
+      false,
+    );
+    assert.equal(row?.indeterminate, true);
+    assert.equal(row?.href.startsWith("/executions/"), true);
+    assert.equal(row?.href.includes("/replay"), false);
+    assert.equal(executionInboxIndeterminateIsLoud(), true);
+    assert.equal(executionInboxIndeterminateIsLoud("succeeded"), false);
+    assert.equal(executionInboxCompareStaysClientSide(), true);
+    assert.equal(R4_GUARDRAILS.overlayStaysEditorOnly, true);
+    assert.equal(R4_GUARDRAILS.pingJonnyOnlyIfCompareNeedsProjection, true);
+  });
+
   it("preserves redaction, drafts-never-run, and existing ADV/embed contracts", () => {
     const leaked = sampleRecord({
       input: { password: REDACTED_MARKER, note: "safe" },
@@ -265,5 +301,6 @@ describe("R4.1 execution inbox", () => {
     assert.equal(EXECUTION_INBOX.rbacFailClosed, true);
     assert.equal(EXECUTION_INBOX.redactionPreserved, true);
     assert.equal(EXECUTION_INBOX.usesExistingListParamsOnly, true);
+    assert.equal(EXECUTION_INBOX.publishedWorkflowVersionIdOnly, true);
   });
 });

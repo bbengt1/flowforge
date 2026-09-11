@@ -9,10 +9,21 @@
  * Do not invent cursor / time range / triggerType / requestedBy /
  * correlationId filters, `/replay`, a compare route, or SSE.
  * Drafts never run. Secrets stay `[redacted]`. ADV/RBAC/embed stay.
+ *
+ * Gracie R4 guardrails (bake here; later stories inherit):
+ * 1. One operate path — inbox lists/filters and opens existing
+ *    `/executions/{id}` detail. Do not mount a second replay graph
+ *    on the inbox. R4.2 densifies the editor overlay only.
+ * 2. Loud `indeterminate` — never silent success when uncertain.
+ *    R4.4 densifies cancel/retry/stop; do not regress loud treatment.
+ * 3. Drafts never run — published `workflowVersionId` only.
+ * 4. Compare is existing client-side diff. Ping jonny only if a new
+ *    projection is required. No `/replay` product route.
  */
 
 import { maybeEmbedDeepLink } from "./embed-tenancy-contract.ts";
 import {
+  INDETERMINATE_STATUS_HELP,
   PRE_RUN_PUBLISHED_ONLY_HELP,
   REDACTED_HELP,
   executionHistoryHref,
@@ -23,8 +34,11 @@ import {
   documentedExecutionStatuses,
   executionListDisplay,
   executionListText,
+  executionStatusPresentation,
   containsUnredactedSecret,
+  isIndeterminateStatus,
 } from "./execution.ts";
+import { isIndeterminateUnmistakable } from "./execution-replay.ts";
 import {
   REDACTED_MARKER,
   type ExecutionListQuery,
@@ -63,12 +77,38 @@ export const EXECUTION_INBOX_DEFERRED_QUERY_KEYS = [
 export const INVENTED_REPLAY_ROUTE = "/replay";
 
 export const EXECUTION_INBOX_KEYBOARD_HELP =
-  "Arrow keys move the inbox. Enter or Space opens the focused run. Status and workflow filters stay on this page.";
+  "Arrow keys move the inbox. Enter or Space opens the focused run on existing /executions/{id} detail. Status and workflow filters stay on this page.";
 
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
 export const EXECUTION_INBOX_HELP =
-  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row for replay. Drafts never run. Secrets stay [redacted].";
+  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row into existing /executions/{id} detail — no second graph here. Drafts never run. Secrets stay [redacted].";
+
+export const EXECUTION_INBOX_DETAIL_PATH = "/executions/{id}";
+export const EXECUTION_INBOX_REPLAY_GRAPH_SOURCE =
+  "src/components/executions/ExecutionReplay.tsx";
+
+/** Gracie R4 guardrails — inherited by R4.2–R4.5. */
+export const R4_GUARDRAILS = {
+  oneOperatePath: true,
+  inboxOpensExistingDetail: true,
+  noInboxReplayGraph: true,
+  overlayStaysEditorOnly: true,
+  loudIndeterminate: true,
+  neverSilentSuccessWhenUncertain: true,
+  draftsNeverRun: true,
+  publishedWorkflowVersionIdOnly: true,
+  compareIsClientDiff: true,
+  pingJonnyOnlyIfCompareNeedsProjection: true,
+  noReplayProductRoute: true,
+} as const;
+
+export const R4_LATER_STORY_NOTES = {
+  r42: "R4.2 / #255: densify the editor same-canvas overlay only. Do not also mount a replay graph on the /executions inbox.",
+  r43: "R4.3 / #256: NDV last-run I/O stays on the editor inspector from GET /executions/{id}. Inbox still opens existing detail.",
+  r44: "R4.4 / #257: densify cancel/retry/stop. Keep loud indeterminate — never silent success when uncertain.",
+  r45: "R4.5 / #258: waiting → POST /approvals/{id}/decide. No invented resume or /replay route.",
+} as const;
 
 export const EXECUTION_INBOX = {
   operateDensity: true,
@@ -82,9 +122,14 @@ export const EXECUTION_INBOX = {
   noInventedRequestedByFilter: true,
   noInventedCorrelationIdFilter: true,
   draftsNeverRun: true,
+  publishedWorkflowVersionIdOnly: true,
   redactionPreserved: true,
+  oneOperatePath: true,
+  noInboxReplayGraph: true,
+  loudIndeterminate: true,
   noReplayRoute: true,
   noCompareRoute: true,
+  compareIsClientDiff: true,
   noSse: true,
   rbacFailClosed: true,
   embedUnchanged: true,
@@ -101,14 +146,14 @@ export const EXECUTION_INBOX_COLUMNS = [
   { id: "open", label: "Open" },
 ] as const;
 
-export const EXECUTION_INBOX_SOURCES = [
+export const EXECUTION_INBOX_SOURCES: readonly string[] = [
   "src/lib/execution-inbox.ts",
   "src/lib/execution-client.ts",
   "src/lib/execution-contract.ts",
   "src/components/executions/ExecutionHistory.tsx",
   "src/components/executions/ExecutionHistoryListbox.tsx",
   "src/app/executions/page.tsx",
-] as const;
+];
 
 export type ExecutionInboxColumnId =
   (typeof EXECUTION_INBOX_COLUMNS)[number]["id"];
@@ -353,7 +398,10 @@ export function executionInboxPreservesRedaction(
 export function executionInboxDraftsNeverRun(): boolean {
   return (
     EXECUTION_INBOX.draftsNeverRun &&
-    /drafts? are never/i.test(PRE_RUN_PUBLISHED_ONLY_HELP)
+    R4_GUARDRAILS.draftsNeverRun &&
+    R4_GUARDRAILS.publishedWorkflowVersionIdOnly &&
+    /drafts? are never/i.test(PRE_RUN_PUBLISHED_ONLY_HELP) &&
+    /workflowVersionId/.test(PRE_RUN_PUBLISHED_ONLY_HELP)
   );
 }
 
@@ -361,11 +409,59 @@ export function executionInboxDoesNotInventReplayRoute(): boolean {
   const invented = INVENTED_REPLAY_ROUTE;
   return (
     EXECUTION_INBOX.noReplayRoute &&
+    R4_GUARDRAILS.noReplayProductRoute &&
     !EMBED_ROUTES.some(
       (route) =>
         route.standalone.includes(invented) || route.embed.includes(invented),
     ) &&
-    !executionInboxOpenHref("id").includes(invented)
+    !executionInboxOpenHref("id").includes(invented) &&
+    !executionInboxHref().includes(invented)
+  );
+}
+
+export function executionInboxHasSingleOperatePath(): boolean {
+  const open = executionInboxOpenHref(
+    "33333333-3333-4333-8333-333333333333",
+    "11111111-1111-4111-8111-111111111111",
+  );
+  return (
+    R4_GUARDRAILS.oneOperatePath &&
+    R4_GUARDRAILS.inboxOpensExistingDetail &&
+    R4_GUARDRAILS.noInboxReplayGraph &&
+    EXECUTION_INBOX.oneOperatePath &&
+    !EXECUTION_INBOX_SOURCES.includes(EXECUTION_INBOX_REPLAY_GRAPH_SOURCE) &&
+    open.startsWith("/executions/") &&
+    !open.includes(INVENTED_REPLAY_ROUTE) &&
+    EXECUTION_INBOX_DETAIL_PATH === "/executions/{id}"
+  );
+}
+
+export function executionInboxIndeterminateIsLoud(
+  status = "indeterminate",
+): boolean {
+  const presentation = executionStatusPresentation(status);
+  return (
+    R4_GUARDRAILS.loudIndeterminate &&
+    R4_GUARDRAILS.neverSilentSuccessWhenUncertain &&
+    EXECUTION_INBOX.loudIndeterminate &&
+    isIndeterminateStatus(status) &&
+    isIndeterminateUnmistakable(presentation) &&
+    presentation.tone === "indeterminate" &&
+    /did not run/i.test(INDETERMINATE_STATUS_HELP)
+  );
+}
+
+export function executionInboxCompareStaysClientSide(): boolean {
+  return (
+    R4_GUARDRAILS.compareIsClientDiff &&
+    R4_GUARDRAILS.pingJonnyOnlyIfCompareNeedsProjection &&
+    EXECUTION_INBOX.compareIsClientDiff &&
+    EXECUTION_INBOX.noCompareRoute &&
+    !EMBED_ROUTES.some(
+      (route) =>
+        route.standalone.includes("/executions/compare") ||
+        route.embed.includes("/executions/compare"),
+    )
   );
 }
 

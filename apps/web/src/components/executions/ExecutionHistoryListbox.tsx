@@ -13,6 +13,7 @@ import {
 } from "@/lib/execution-inbox";
 import {
   IDEMPOTENCY_REPLAY_MESSAGE,
+  INDETERMINATE_STATUS_HELP,
   KEYBOARD_HISTORY_HELP,
 } from "@/lib/execution-contract";
 import { historyKeyAction } from "@/lib/execution-replay";
@@ -103,10 +104,11 @@ export function ExecutionHistoryListbox({
               role="option"
               aria-selected={focused}
               onClick={() => activate(row)}
+              title={row.indeterminate ? INDETERMINATE_STATUS_HELP : undefined}
               className={
                 inbox
                   ? row.indeterminate
-                    ? `${pad} cursor-pointer bg-amber-50`
+                    ? `${pad} cursor-pointer border-l-4 border-amber-700 bg-amber-50`
                     : focused
                       ? `${pad} cursor-pointer bg-teal-50`
                       : `${pad} cursor-pointer bg-white hover:bg-zinc-50`
@@ -137,6 +139,11 @@ export function ExecutionHistoryListbox({
                     <p className="font-mono text-[11px] break-all text-zinc-500">
                       {row.id}
                     </p>
+                    {row.indeterminate ? (
+                      <p className="mt-1 text-xs font-medium text-amber-950">
+                        Indeterminate — do not assume the action did not run.
+                      </p>
+                    ) : null}
                     {row.replayed ? (
                       <p className="mt-1 text-xs text-zinc-600">Replayed</p>
                     ) : null}

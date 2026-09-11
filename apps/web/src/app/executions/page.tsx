@@ -13,14 +13,18 @@ export default function ExecutionsPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Executions</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Operate workspace runs. Filter by status or workflow, then open a
-          row for replay — no hunting. Uses existing{" "}
-          <code className="font-mono text-sm">GET /executions</code>{" "}
+          row into existing{" "}
+          <code className="font-mono text-sm">/executions/{"{id}"}</code>{" "}
+          detail — no hunting and no second graph on this inbox. Uses
+          existing <code className="font-mono text-sm">GET /executions</code>{" "}
           <code className="font-mono text-sm">status</code>,{" "}
           <code className="font-mono text-sm">workflowId</code>, and{" "}
           <code className="font-mono text-sm">limit</code> only. Drafts never
-          run. Secrets stay{" "}
-          <code className="font-mono text-sm">[redacted]</code>. Cancel,
-          retry, and artifacts stay on the detail page.
+          run (published <code className="font-mono text-sm">workflowVersionId</code>{" "}
+          only). Secrets stay{" "}
+          <code className="font-mono text-sm">[redacted]</code>.{" "}
+          <code className="font-mono text-sm">indeterminate</code> stays loud.
+          Cancel, retry, and artifacts stay on the detail page.
         </p>
       </header>
       <Suspense

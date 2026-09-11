@@ -156,6 +156,13 @@ Nothing selected: workflow tabs **Triggers / Versions / Pins** (already landed).
 - Cancel, retry (only when policy/`result.retry.allowed`), emergency-stop (script policy), unmistakable `indeterminate`, approval decide via `POST /approvals/{id}/decide`.
 - Compare stays redacted. Server compare is a jonny gap, not a UI invention.
 
+**R4 guardrails (Gracie — inherit on R4.1–R4.5):**
+
+1. **One operate path.** Either the in-editor overlay **or** `/executions/{id}` detail as the dense operate surface — not both graphs duplicating chrome. R4.1 (#254 — **keep #254 open**) is list/filters that open existing detail; no inbox replay graph. R4.2 (#255) densifies the editor overlay only. R4.3 (#256) NDV I/O stays on the editor inspector.
+2. **Loud `indeterminate`.** Never silent success when uncertain. R4.4 (#257) densifies cancel/retry/stop; do not regress existing loud treatment on inbox or detail.
+3. **Drafts never run.** Published `workflowVersionId` only.
+4. **Compare is client-side** (`compareRedactedExecutions`). Ping jonny only if a new projection is required. No `/replay` product route. R4.5 (#258) waiting → `POST /approvals/{id}/decide`.
+
 ### Credentials
 
 `/credentials`, `/credentials/new`, `/credentials/{id}` remain the vault. NDV create reuses the masked wizard (return-to-editor). Types stay `kubernetes`, `ssh_private_key`, `token`, `webhook_secret`, `provider`. Metadata only after submit. Unexpected secret keys on responses stay stripped and are a contract bug.
@@ -523,7 +530,7 @@ Behavior targets, not a visual spec. Full rows: [rewrite-ui-surfaces.md](../refe
 | **Editor / canvas** | `/workflows/{id}` viewport; invalid YAML never guesses a graph; undo/redo (R2.3 / #236); multi-select / fit / snap (R2.4 / #237); optional `metadata.ui.layout` on draft save/load (R2.5 / #238 — keep #238 open) | Minimap/alignment if they do not steal viewport. Touch stays a breakpoint, not a mobile app. |
 | **Palette** | Left drawer, remembered-open satellite (R2.1 / #234); enabled catalog; **Add action** wizard; `/actions` is reference | Stronger category / recommended-from-upstream UX on the **same** enabled catalog. No marketplace. No disabled next/provider types. Triggers excluded (`rules.triggersAreWorkflowLevel`). |
 | **NDV / inspector** | Right rail, remembered-open satellite (R2.2 / #235): type-specific parameters / `with` for cataloged core / Kubernetes / SSH / script / HTTP (R3.1 / #246 — keep #246 open); typed field-path mapping between ports (R3.2 / #247 — keep #247 open); pins / display-name credentials; workflow tabs Triggers / Versions / Pins; redacted last-run I/O; validation/policy density for the selected node (R3.3 / #248 — keep #248 open) | Catalog fallback removal (R3.4 / #249). No expression language. No `SecretField` in the rail. No branded NDV modal. |
-| **Runs** | Hidden drawer; overlay on **this** canvas; **Open execution** → `/executions/{id}`. Workspace `/executions` inbox density (R4.1 / #254 — keep #254 open) on existing `status` / `workflowId` / `limit` | Overlay stays the editor “what just ran?” path (filter, skip-to-failed/`indeterminate`, cancel/retry when policy allows). No `/replay`. No second graph. |
+| **Runs** | Hidden drawer; overlay on **this** canvas; **Open execution** → `/executions/{id}`. Workspace `/executions` inbox density (R4.1 / #254 — keep #254 open) on existing `status` / `workflowId` / `limit`. One operate path (Gracie): inbox is not a second graph. | Overlay stays the editor “what just ran?” path (R4.2 / #255). Loud `indeterminate` (R4.4 / #257). No `/replay`. Client compare only. |
 | **Vault** | `/credentials/*`; NDV add reuses masked wizard | Finish return-to-editor as the default. Usage/deletion-impact without a secret surface. |
 | **Activations** | Workflow-level admin on home drawers + Triggers tab | One “this published version is active” control ([D2](#d2--activation-model) locked: enable triggers on a published version). Drafts still never run. |
 | **Embed / settings** | Same pages at `/embed/v1`; Settings holds session/health/OpenAPI + disclosed Developer samples | Migrate chrome with standalone. Membership/isolation stay grant-gated and stop looking like the product. |
@@ -558,6 +565,7 @@ Migration is from **today’s #195 canvas-first chrome**, not from the pre-makeo
 | --- | --- |
 | **YAML source of truth** | Canvas edits save as normalized `flowforge/v1`. Invalid YAML never guesses a graph. |
 | **Drafts never run** | Start / replay / overlay require a published `workflowVersionId`. |
+| **One R4 operate path** | Inbox opens `/executions/{id}`. Overlay stays on the editor canvas. Do not ship both graphs with the same chrome. No `/replay`. Loud `indeterminate`. |
 | **Vault** | Selectors show display names; YAML stores UUIDs. Unexpected plaintext is a contract bug — stop; do not paste it. |
 | **ADV / RBAC / embed / CHIPS** | Nav/search/Commands omit inaccessible capabilities. Chrome waits for `GET /session` `session.embed` (ADV-021). Membership/isolation only with the ADV-024 grant. Embed cookies stay `SameSite=None; Secure; Partitioned`. Host `?tenant=` / `?workbench=` is never authorization. No second embed tree. |
 | **Seed Example context** | Keep the labeled **Example context** (today on `/membership`) for issuer `https://idp.example`, subject `admin-1`, tenant `local`, workbench `default`. Do not promote it into production Settings copy. Do not treat header fallback as a rewrite login. Procedure: [deployment — local default tenant seed](../deployment.md#local-default-tenant-seed). |
