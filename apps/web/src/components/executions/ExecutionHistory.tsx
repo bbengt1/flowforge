@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
@@ -17,6 +18,14 @@ import {
   executionListDisplay,
   isExecutionForbidden,
 } from "@/lib/execution";
+import {
+  EXECUTION_INBOX_DEFAULT_LIMIT,
+  EXECUTION_INBOX_HELP,
+  EXECUTION_INBOX_LIMITS,
+  executionInboxHasActiveFilters,
+  executionInboxHref,
+  parseExecutionInboxQuery,
+} from "@/lib/execution-inbox";
 import { compareRedactedExecutions } from "@/lib/execution-replay";
 import type { ExecutionListQuery, ExecutionRecord } from "@/lib/execution-types";
 import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
@@ -34,8 +43,6 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { listWorkflows } from "@/lib/workflow-client";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
-const DEFAULT_LIMIT = 50;
-
 export function ExecutionHistory() {
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
@@ -52,14 +59,17 @@ export function ExecutionHistory() {
     loadHeaderFallback,
     () => false,
   );
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const embed = pathname.startsWith("/embed/v1");
+  const query = useMemo(
+    () => parseExecutionInboxQuery(searchParams.toString()),
+    [searchParams],
+  );
 
   const [items, setItems] = useState<ExecutionRecord[]>([]);
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
-  const [query, setQuery] = useState<ExecutionListQuery>({
-    workflowId: "",
-    status: "",
-    limit: DEFAULT_LIMIT,
-  });
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
@@ -87,13 +97,18 @@ export function ExecutionHistory() {
     [items, forbidden, denied],
   );
   const perWorkflow = Boolean(query.workflowId?.trim());
+  const filtersActive = executionInboxHasActiveFilters(query);
+
+  function replaceQuery(next: ExecutionListQuery) {
+    router.replace(executionInboxHref(next, embed), { scroll: false });
+  }
 
   async function refresh() {
     setPending(true);
     setProblem(null);
     const filter = {
       status: query.status,
-      limit: query.limit || DEFAULT_LIMIT,
+      limit: query.limit || EXECUTION_INBOX_DEFAULT_LIMIT,
     };
     const [list, workspace, workflowList] = await Promise.all([
       query.workflowId?.trim()
@@ -160,119 +175,183 @@ export function ExecutionHistory() {
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">
-              {perWorkflow ? "Workflow executions" : "Workspace executions"}
+              {perWorkflow ? "Workflow runs" : "Workspace runs"}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+            <p className="mt-1 max-w-3xl text-sm text-zinc-600">
+              {EXECUTION_INBOX_HELP}{" "}
               {perWorkflow ? (
                 <>
+                  This filter uses{" "}
                   <code className="font-mono text-xs">
                     GET /workflows/{"{id}"}/executions
                   </code>
+                  .
                 </>
               ) : (
                 <>
-                  <code className="font-mono text-xs">GET /executions</code>
+                  Workspace list is{" "}
+                  <code className="font-mono text-xs">GET /executions</code>.
                 </>
-              )}{" "}
-              · query <code className="font-mono text-xs">status</code>,{" "}
-              <code className="font-mono text-xs">limit</code>
-              {perWorkflow ? null : (
-                <>
-                  . Pick a workflow to use the per-workflow list.
-                </>
-              )}{" "}
-              Cards show safe metadata only. Secrets appear as{" "}
-              <code className="font-mono text-xs">[redacted]</code>.
+              )}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={pending || !ready || denied}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
-          >
-            {pending ? "Loading…" : "Refresh"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={() => replaceQuery({ limit: EXECUTION_INBOX_DEFAULT_LIMIT })}
+                disabled={denied}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Clear filters
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={pending || !ready || denied}
+              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            >
+              {pending ? "Loading…" : "Refresh"}
+            </button>
+          </div>
         </div>
 
-        <form
-          className="mt-5 grid gap-3 sm:grid-cols-3"
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <label className="text-sm">
-            <span className="font-medium">Workflow</span>
-            <select
-              value={query.workflowId ?? ""}
-              onChange={(event) =>
-                setQuery((current) => ({
-                  ...current,
-                  workflowId: event.target.value,
-                }))
-              }
-              disabled={denied}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+        <div className="mt-4 space-y-4">
+          <div>
+            <p className="text-sm font-medium">Status</p>
+            <div
+              role="group"
+              aria-label="Status"
+              className="mt-2 flex flex-wrap gap-2"
             >
-              <option value="">Workspace (all)</option>
-              {workflows.map((workflow) => (
-                <option key={workflow.id} value={workflow.id}>
-                  {workflow.name || workflow.slug}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="font-medium">Status</span>
-            <select
-              value={query.status ?? ""}
-              onChange={(event) =>
-                setQuery((current) => ({
-                  ...current,
-                  status: event.target.value,
-                }))
-              }
-              disabled={denied}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            >
-              <option value="">Any</option>
+              <StatusChip
+                label="Any"
+                active={!query.status}
+                disabled={denied}
+                onClick={() =>
+                  replaceQuery({
+                    ...query,
+                    status: "",
+                  })
+                }
+              />
               {documentedExecutionStatuses().map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
+                <StatusChip
+                  key={status}
+                  label={status}
+                  active={query.status === status}
+                  disabled={denied}
+                  onClick={() =>
+                    replaceQuery({
+                      ...query,
+                      status,
+                    })
+                  }
+                />
               ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="font-medium">Limit</span>
-            <select
-              value={String(query.limit ?? DEFAULT_LIMIT)}
-              onChange={(event) =>
-                setQuery((current) => ({
-                  ...current,
-                  limit: Number(event.target.value),
-                }))
-              }
-              disabled={denied}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            >
-              {[10, 25, 50, 100].map((limit) => (
-                <option key={limit} value={limit}>
-                  {limit}
-                </option>
-              ))}
-            </select>
-          </label>
-        </form>
+            </div>
+          </div>
+
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <label className="text-sm">
+              <span className="font-medium">Workflow</span>
+              <select
+                value={query.workflowId ?? ""}
+                onChange={(event) =>
+                  replaceQuery({
+                    ...query,
+                    workflowId: event.target.value,
+                  })
+                }
+                disabled={denied}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value="">Workspace (all)</option>
+                {workflows.map((workflow) => (
+                  <option key={workflow.id} value={workflow.id}>
+                    {workflow.name || workflow.slug}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="font-medium">Limit</span>
+              <select
+                value={String(query.limit ?? EXECUTION_INBOX_DEFAULT_LIMIT)}
+                onChange={(event) =>
+                  replaceQuery({
+                    ...query,
+                    limit: Number(event.target.value),
+                  })
+                }
+                disabled={denied}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                {EXECUTION_INBOX_LIMITS.map((limit) => (
+                  <option key={limit} value={limit}>
+                    {limit}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </form>
+          <p className="text-sm text-zinc-500" aria-live="polite">
+            {pending
+              ? "Loading runs…"
+              : `${visible.length} run${visible.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
       </section>
 
+      {forbidden || denied ? null : visible.length === 0 ? (
+        <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
+          <h2 className="text-lg font-semibold">
+            {filtersActive ? "No runs match these filters" : "No executions yet"}
+          </h2>
+          <p className="mt-2 text-sm text-zinc-600">
+            Start a published version from workflow home or the panel below.
+            Duplicate idempotency keys replay the existing run (
+            <code className="font-mono text-xs">200</code>). Same key +
+            different input is <code className="font-mono text-xs">409</code>.
+            Drafts never run.
+          </p>
+          <p className="mt-4 flex flex-wrap justify-center gap-4">
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={() => replaceQuery({ limit: EXECUTION_INBOX_DEFAULT_LIMIT })}
+                className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              >
+                Clear filters
+              </button>
+            ) : null}
+            <Link
+              href="/workflows?start=1"
+              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            >
+              Open authenticated manual start
+            </Link>
+          </p>
+        </section>
+      ) : (
+        <ExecutionHistoryListbox rows={visible} layout="inbox" />
+      )}
+
       {!forbidden && !denied && publishedWorkflows.length > 0 ? (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold">Start a published version</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Authenticated manual start from history. Drafts never run.
+        <details className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <summary className="cursor-pointer text-base font-semibold">
+            Start a published version
+          </summary>
+          <p className="mt-2 text-sm text-zinc-600">
+            Authenticated manual start from the inbox. Drafts never run.
           </p>
           <label className="mt-3 block text-sm">
             <span className="text-zinc-600">Workflow</span>
@@ -307,15 +386,18 @@ export function ExecutionHistory() {
               Start requires workflow.execute. This surface is fail-closed.
             </p>
           ) : null}
-        </section>
+        </details>
       ) : null}
 
       {forbidden || denied ? null : visible.length > 1 ? (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">Compare executions</h2>
-          <p className="mt-1 text-sm text-zinc-600">
+        <details className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <summary className="cursor-pointer text-base font-semibold">
+            Compare executions
+          </summary>
+          <p className="mt-2 text-sm text-zinc-600">
             Two redacted summaries. YAML compare uses the existing workflow
-            compare route when both pins share a workflow.
+            compare route when both pins share a workflow. No invented compare
+            route.
           </p>
           <form
             className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
@@ -402,30 +484,36 @@ export function ExecutionHistory() {
           <div className="mt-4">
             <ExecutionCompare result={compareResult} versionCompare={versionCompare} />
           </div>
-        </section>
+        </details>
       ) : null}
-
-      {forbidden || denied ? null : visible.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
-          <h2 className="text-lg font-semibold">No executions yet</h2>
-          <p className="mt-2 text-sm text-zinc-600">
-            Start a published version from workflow home or the panel above.
-            Duplicate idempotency keys replay the existing run (
-            <code className="font-mono text-xs">200</code>). Same key +
-            different input is <code className="font-mono text-xs">409</code>.
-          </p>
-          <p className="mt-4">
-            <Link
-              href="/workflows?start=1"
-              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
-            >
-              Open authenticated manual start
-            </Link>
-          </p>
-        </section>
-      ) : (
-        <ExecutionHistoryListbox rows={visible} />
-      )}
     </div>
+  );
+}
+
+function StatusChip({
+  label,
+  active,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        active
+          ? "rounded-full border border-teal-800 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-950 disabled:opacity-60"
+          : "rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+      }
+    >
+      {label}
+    </button>
   );
 }
