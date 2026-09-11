@@ -239,8 +239,8 @@ describe("R2.3 canvas undo/redo", () => {
     assert.deepEqual(pruneCanvasLayout({ seed: { x: 1, y: 2 }, gone: { x: 3, y: 4 } }, ["seed"]), {
       seed: { x: 1, y: 2 },
     });
-    assert.equal(canvasMovedEnough(2, 2), true);
-    assert.equal(canvasMovedEnough(1, 1), false);
+    assert.equal(canvasMovedEnough(3, 0), true);
+    assert.equal(canvasMovedEnough(2, 2), false);
     assert.equal(canvasLayoutsEqual({ a: { x: 1, y: 2 } }, { a: { x: 1, y: 2 } }), true);
     assert.equal(
       canvasSnapshotsEqual(

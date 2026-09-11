@@ -976,6 +976,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   runValidateRef.current = runValidate;
   const runNormalizeRef = useRef(runNormalize);
   runNormalizeRef.current = runNormalize;
+  const undoGraphRef = useRef(undoGraph);
+  undoGraphRef.current = undoGraph;
+  const redoGraphRef = useRef(redoGraph);
+  redoGraphRef.current = redoGraph;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -984,12 +988,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       }
       if (isCanvasUndoShortcut(event)) {
         event.preventDefault();
-        undoGraph();
+        undoGraphRef.current();
         return;
       }
       if (isCanvasRedoShortcut(event)) {
         event.preventDefault();
-        redoGraph();
+        redoGraphRef.current();
       }
     }
     window.addEventListener("keydown", onKeyDown);
