@@ -275,6 +275,10 @@ export function ExecutionHistory() {
                 className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
               >
                 <option value="">Workspace (all)</option>
+                {query.workflowId &&
+                !workflows.some((workflow) => workflow.id === query.workflowId) ? (
+                  <option value={query.workflowId}>{query.workflowId}</option>
+                ) : null}
                 {workflows.map((workflow) => (
                   <option key={workflow.id} value={workflow.id}>
                     {workflow.name || workflow.slug}
