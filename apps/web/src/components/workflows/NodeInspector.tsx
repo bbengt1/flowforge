@@ -1,6 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { NdvParameterEditors } from "@/components/workflows/NdvParameterEditors";
+import type { HttpNotificationCatalog } from "@/lib/core-http-notification-contract";
+import {
+  ndvHasTypeSpecificParameterEditors,
+  ndvParameterEditors,
+  ndvParameterFamily,
+  ndvParameterFields,
+  ndvParametersOwnedByCoreForm,
+  ndvParametersOwnedByScriptPanel,
+  type NdvParameterCatalogs,
+} from "@/lib/editor-ndv-parameters";
+import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
+import type { ScriptNodeCatalog } from "@/lib/script-contract";
+import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
 import {
   CONDITION_OPS,
   MAP_CONVERT_KINDS,
@@ -31,9 +45,15 @@ type NodeInspectorProps = {
   canEdit?: boolean;
   constraint?: string | null;
   showNodeList?: boolean;
+  catalogs?: NdvParameterCatalogs;
+  engineCatalog?: KubernetesEngineCatalog | null;
+  sshCatalog?: SshNodeCatalog | null;
+  scriptCatalog?: ScriptNodeCatalog | null;
+  httpCatalog?: HttpNotificationCatalog | null;
   onSelect: (id: string) => void;
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onRename?: (id: string, name: string) => void;
+  onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
 };
 
 export function NodeInspector({
@@ -45,9 +65,15 @@ export function NodeInspector({
   canEdit = true,
   constraint = null,
   showNodeList = true,
+  catalogs,
+  engineCatalog,
+  sshCatalog,
+  scriptCatalog,
+  httpCatalog,
   onSelect,
   onApply,
   onRename,
+  onPatchNodeWith,
 }: NodeInspectorProps) {
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
   const placeable = nodes.filter((node) => isCoreNeutralNodeType(node.type));
@@ -55,6 +81,12 @@ export function NodeInspector({
     selected && isCoreNeutralNodeType(selected.type)
       ? entries.find((entry) => entry.type === selected.type)
       : undefined;
+  const parameterCatalogs: NdvParameterCatalogs = catalogs ?? {
+    engineCatalog,
+    sshCatalog,
+    scriptCatalog,
+    httpCatalog,
+  };
 
   return (
     <section
@@ -65,11 +97,13 @@ export function NodeInspector({
         Parameters
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Inspector <span className="font-medium">edits</span> name and bounded{" "}
-        <code className="font-mono text-xs">with</code> fields from catalog{" "}
-        <code className="font-mono text-xs">allowedWith</code>. Add action
-        stays the guided wizard. No expression language and no secrets in
-        YAML.
+        Inspector <span className="font-medium">edits</span> name and
+        type-specific <code className="font-mono text-xs">with</code>{" "}
+        parameters from catalog{" "}
+        <code className="font-mono text-xs">allowedWith</code> — not a bare
+        JSON blob. Add action stays the guided wizard. Credentials are
+        display name + UUID only. No password field, rotate UI, or
+        plaintext secrets. No expression language.
       </p>
       {constraint ? (
         <p role="status" className="mt-2 text-sm text-amber-950">
@@ -109,7 +143,7 @@ export function NodeInspector({
         </p>
       ) : null}
 
-      {selected && isCoreNeutralNodeType(selected.type) ? (
+      {selected && ndvParametersOwnedByCoreForm(selected.type) ? (
         <NodeConfigForm
           key={selected.id}
           node={selected}
@@ -118,7 +152,18 @@ export function NodeInspector({
           canEdit={canEdit}
           onApply={onApply}
         />
-      ) : selected && !isCoreNeutralNodeType(selected.type) ? (
+      ) : selected && ndvHasTypeSpecificParameterEditors(selected.type) ? (
+        <SelectedCatalogedNode
+          key={selected.id}
+          node={selected}
+          entry={selectedEntry}
+          catalogs={parameterCatalogs}
+          canEdit={canEdit}
+          pending={pending}
+          onRename={onRename}
+          onPatchNodeWith={onPatchNodeWith}
+        />
+      ) : selected ? (
         <SelectedNodeIdentity
           key={selected.id}
           node={selected}
@@ -164,6 +209,57 @@ function SelectedNodeIdentity({
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
       </label>
+    </div>
+  );
+}
+
+function SelectedCatalogedNode({
+  node,
+  entry,
+  catalogs,
+  canEdit,
+  pending,
+  onRename,
+  onPatchNodeWith,
+}: {
+  node: YamlWorkflowNode;
+  entry?: ActionLibraryEntry;
+  catalogs: NdvParameterCatalogs;
+  canEdit: boolean;
+  pending: boolean;
+  onRename?: (id: string, name: string) => void;
+  onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
+}) {
+  const family = ndvParameterFamily(node.type);
+  const editors = ndvParameterEditors(
+    ndvParameterFields(entry, node.type, catalogs),
+    family,
+  );
+  return (
+    <div className="mt-4 space-y-3">
+      <SelectedNodeIdentity
+        node={node}
+        entry={entry}
+        canEdit={canEdit}
+        pending={pending}
+        onRename={onRename}
+      />
+      {ndvParametersOwnedByScriptPanel(node.type) ? (
+        <p className="text-xs text-zinc-500">
+          Script source, I/O schema, and retry controls stay type-specific
+          editors in this panel — not a JSON blob.
+        </p>
+      ) : (
+        <fieldset disabled={!canEdit || pending || !onPatchNodeWith}>
+          <NdvParameterEditors
+            family={family}
+            editors={editors}
+            values={node.with}
+            disabled={!canEdit || pending || !onPatchNodeWith}
+            onPatch={(patch) => onPatchNodeWith?.(node.id, patch)}
+          />
+        </fieldset>
+      )}
     </div>
   );
 }

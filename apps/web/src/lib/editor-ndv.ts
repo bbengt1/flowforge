@@ -10,9 +10,10 @@
  * No SecretField in the rail. No expression language. Workflow-level
  * Triggers / Versions / Pins tabs remain. Embed path unchanged.
  *
- * Deep mapping is R3 / #229. Preference is a non-secret "1"/"0"
- * chrome flag (never credentials or YAML). Do not brand the rail
- * "NDV" — that term is a parity reference only.
+ * Type-specific parameter editors are R3.1 / #246 (keep #246 open).
+ * Deep field-path mapping is R3.2 / #247. Preference is a non-secret
+ * "1"/"0" chrome flag (never credentials or YAML). Do not brand the
+ * rail "NDV" — that term is a parity reference only.
  */
 
 import { EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT } from "./e12-accessibility-contract.ts";
@@ -187,7 +188,7 @@ export function ndvConversationTitle(
 
 export function ndvConversationHelp(focus: InspectorFocus): string {
   if (focus === "node") {
-    return "Inspector edits this step. Add action stays the guided wizard. Parameters, with, pins, and credential display names — no SecretField and no expression language.";
+    return "Inspector edits this step. Add action stays the guided wizard. Type-specific parameters and with fields, pins, and credential display names — no SecretField and no expression language.";
   }
   if (focus === "edge") {
     return "Inspector explains whether these ports can connect. Mapping depth is a later story.";
