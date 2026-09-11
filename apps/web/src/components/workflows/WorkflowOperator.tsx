@@ -368,7 +368,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   );
   const [latestNonce, setLatestNonce] = useState(0);
   const runIoSourceRef = useRef<NdvRunIoContextSource | null>(null);
-  runIoSourceRef.current = runIoSource;
+
+  function rememberRunIoSource(source: NdvRunIoContextSource | null) {
+    runIoSourceRef.current = source;
+    setRunIoSource(source);
+  }
+
+  function runIoIsOverlay(): boolean {
+    return runIoSourceRef.current === "overlay";
+  }
   const { permissions } = useWorkspace();
   const inspectorFirst = useSyncExternalStore(
     subscribeInspectorFirstBreakpoint,
@@ -529,7 +537,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setSelectedRunStrippedKeys([]);
     setSelectedRunApprovals([]);
     setSelectedRunPending(false);
-    setRunIoSource(null);
+    rememberRunIoSource(null);
     setLatestNonce((current) => current + 1);
   }
 
@@ -554,7 +562,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   async function selectRun(executionId: string) {
     const scopedId = workflow?.id ?? workflowId ?? "";
     setSelectedRunId(executionId);
-    setRunIoSource("overlay");
+    rememberRunIoSource("overlay");
     setSelectedRunPending(true);
     setSelectedRunProblem(null);
     const result = await loadExecutionHistory(identity, executionId, scopedId);
@@ -783,7 +791,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const dirty = Boolean(workflow && yaml !== savedYaml);
 
   async function loadLatestPublishedRun(scopedId: string) {
-    if (runIoSourceRef.current === "overlay") {
+    if (runIoIsOverlay()) {
       return;
     }
     if (!ndvRunIoCanLoad(permissions) && permissions != null) {
@@ -792,7 +800,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setSelectedRunPending(true);
     setSelectedRunProblem(null);
     const list = await listWorkflowExecutions(identity, scopedId, { limit: 1 });
-    if (runIoSourceRef.current === "overlay") {
+    if (runIoIsOverlay()) {
       return;
     }
     if (!list.ok) {
@@ -802,7 +810,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         setSelectedRun(null);
         setSelectedRunLogs({});
         setSelectedRunApprovals([]);
-        setRunIoSource(null);
+        rememberRunIoSource(null);
       }
       return;
     }
@@ -814,13 +822,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       setSelectedRunLogs({});
       setSelectedRunApprovals([]);
       setSelectedRunStrippedKeys(list.strippedKeys);
-      setRunIoSource(null);
+      rememberRunIoSource(null);
       return;
     }
     setSelectedRunId(latest.id);
-    setRunIoSource("latest");
+    rememberRunIoSource("latest");
     const result = await loadExecutionHistory(identity, latest.id, scopedId);
-    if (runIoSourceRef.current === "overlay") {
+    if (runIoIsOverlay()) {
       return;
     }
     setSelectedRunPending(false);
@@ -830,7 +838,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         setSelectedRun(null);
         setSelectedRunLogs({});
         setSelectedRunApprovals([]);
-        setRunIoSource(null);
+        rememberRunIoSource(null);
       }
       return;
     }
@@ -846,7 +854,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         scopedId,
         result.execution.id,
       );
-      if (runIoSourceRef.current === "overlay") {
+      if (runIoIsOverlay()) {
         return;
       }
       if (approvals.ok) {
@@ -856,7 +864,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   }
 
   useEffect(() => {
-    if (runIoSourceRef.current === "overlay") {
+    if (runIoIsOverlay()) {
       return;
     }
     const scopedId = workflow?.id ?? workflowId ?? "";
