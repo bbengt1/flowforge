@@ -1,9 +1,10 @@
 "use client";
 
 import {
-  formatNdvObjectLines,
   ndvParameterPatchValue,
-  stringifyNdvScalar,
+  ndvSafeDisplayObjectLines,
+  ndvSafeDisplayScalar,
+  sanitizeNdvParameterPatch,
   type NdvParameterEditor,
   type NdvParameterFamily,
 } from "@/lib/editor-ndv-parameters";
@@ -39,7 +40,7 @@ export function NdvParameterEditors({
           editor={editor}
           value={values[editor.name]}
           disabled={disabled}
-          onChange={(value) => onPatch({ [editor.name]: value })}
+          onChange={(value) => onPatch(sanitizeNdvParameterPatch(editor.name, value))}
         />
       ))}
       {advanced.length > 0 ? (
@@ -54,7 +55,7 @@ export function NdvParameterEditors({
                 editor={editor}
                 value={values[editor.name]}
                 disabled={disabled}
-                onChange={(value) => onPatch({ [editor.name]: value })}
+                onChange={(value) => onPatch(sanitizeNdvParameterPatch(editor.name, value))}
               />
             ))}
           </div>
@@ -152,7 +153,7 @@ function NdvParameterField({
     );
   }
   if (editor.control === "enum") {
-    const text = stringifyNdvScalar(value) || stringifyNdvScalar(editor.defaultValue);
+    const text = ndvSafeDisplayScalar(value) || ndvSafeDisplayScalar(editor.defaultValue);
     return (
       <label className="block text-sm">
         <span className="text-zinc-600">{label}</span>
@@ -179,7 +180,7 @@ function NdvParameterField({
       <label className="block text-sm" data-ndv-parameter-control="object-lines">
         <span className="text-zinc-600">{label}</span>
         <textarea
-          value={formatNdvObjectLines(value)}
+          value={ndvSafeDisplayObjectLines(value)}
           disabled={disabled || editor.readOnly}
           onChange={(event) =>
             onChange(ndvParameterPatchValue(editor, event.target.value))
@@ -199,7 +200,7 @@ function NdvParameterField({
       <label className="block text-sm">
         <span className="text-zinc-600">{label}</span>
         <textarea
-          value={stringifyNdvScalar(value)}
+          value={ndvSafeDisplayScalar(value)}
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(event.target.value)}
           rows={editor.name === "manifests" || editor.name === "source" ? 8 : 4}
@@ -217,7 +218,7 @@ function NdvParameterField({
         <span className="text-zinc-600">{label}</span>
         <input
           type="number"
-          value={stringifyNdvScalar(value === undefined ? editor.defaultValue : value)}
+          value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(Number(event.target.value))}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
@@ -232,7 +233,7 @@ function NdvParameterField({
     <label className="block text-sm">
       <span className="text-zinc-600">{label}</span>
       <input
-        value={stringifyNdvScalar(value === undefined ? editor.defaultValue : value)}
+        value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
         readOnly={editor.readOnly}
         disabled={disabled || editor.readOnly}
         onChange={(event) => onChange(event.target.value)}

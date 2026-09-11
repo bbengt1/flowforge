@@ -19,7 +19,9 @@ import {
   EDITOR_INSPECTOR,
   inspectorShowsCoreWith,
   inspectorWithFields,
+  isInspectorCredentialRefField,
   isInspectorSecretSurfaceName,
+  sanitizeInspectorWithPatch,
 } from "./editor-inspector.ts";
 import { editorEmbedRouteUnchanged } from "./editor-chrome.ts";
 import { ndvInspectorIsEdit, ndvWizardStaysAdd } from "./editor-ndv.ts";
@@ -45,6 +47,7 @@ import {
   type WizardFieldControl,
 } from "./workflow-action-wizard.ts";
 import { isCoreNeutralNodeType } from "./workflow-core-nodes.ts";
+import { looksLikeSecretValue } from "./workflow-yaml-nodes.ts";
 import type {
   WorkflowFieldError,
   WorkflowSummary,
@@ -85,7 +88,10 @@ export const EDITOR_NDV_PARAMETERS = {
   beyondBareJson: true,
   catalogedFamilies: NDV_PARAMETER_FAMILIES,
   displayNameCredentialsOnly: true,
+  displayNamePlusUuidOnly: true,
+  noPlaintextSecretsInRail: true,
   noSecretField: true,
+  noRotateInRail: true,
   noExpressionLanguage: true,
   invalidYamlNeverGuessesGraph: true,
   noNewCredentialTypes: true,
@@ -104,7 +110,7 @@ export const NDV_PARAMETER_RAIL_SOURCES = [
 ] as const;
 
 const SECRET_SURFACE_IN_SOURCE =
-  /SecretField\b|type=["']password["']|rotateCredential|forgetSecretDraft/;
+  /SecretField\b|type=["']password["']|rotateCredential|forgetSecretDraft|rotateWebhookTrigger/;
 const EXPRESSION_LANGUAGE_IN_SOURCE =
   /\{\{|expression language|ExpressionEditor/i;
 const BARE_JSON_PRIMARY =
@@ -222,7 +228,11 @@ export function ndvParameterEditors(
   family: NdvParameterFamily,
 ): NdvParameterEditor[] {
   return fields
-    .filter((field) => !isInspectorSecretSurfaceName(field.name))
+    .filter(
+      (field) =>
+        !isInspectorSecretSurfaceName(field.name) &&
+        !isInspectorCredentialRefField(field.name),
+    )
     .map((field) => ({
       name: field.name,
       label: field.label || field.name,
@@ -258,6 +268,19 @@ export function ndvParametersAreEdit(): boolean {
   );
 }
 
+export function ndvRailForbidsPlaintextSecrets(): boolean {
+  return (
+    EDITOR_NDV_PARAMETERS.noPlaintextSecretsInRail &&
+    EDITOR_NDV_PARAMETERS.noSecretField &&
+    EDITOR_NDV_PARAMETERS.noRotateInRail &&
+    EDITOR_NDV_PARAMETERS.displayNamePlusUuidOnly &&
+    EDITOR_INSPECTOR.noSecretFieldInRail &&
+    EDITOR_INSPECTOR.noPlaintextInRail &&
+    EDITOR_INSPECTOR.noRotateUiInNodeInspector &&
+    EDITOR_INSPECTOR.displayNamePlusUuidOnly
+  );
+}
+
 export function ndvParametersEmbedUnchanged(): boolean {
   return (
     EDITOR_NDV_PARAMETERS.embedPathUnchanged && editorEmbedRouteUnchanged()
@@ -268,8 +291,15 @@ export function formatNdvObjectLines(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return "";
   }
-  return Object.entries(value as Record<string, unknown>)
-    .map(([key, nested]) => `${key}=${nested == null ? "" : String(nested)}`)
+  const safe = sanitizeInspectorWithPatch(value as Record<string, unknown>);
+  return Object.entries(safe)
+    .filter(([key, nested]) => {
+      if (isInspectorSecretSurfaceName(key) || isInspectorCredentialRefField(key)) {
+        return false;
+      }
+      return typeof nested !== "string" || !looksLikeSecretValue(nested);
+    })
+    .map(([key, nested]) => key + "=" + (nested == null ? "" : String(nested)))
     .join("\n");
 }
 
@@ -281,10 +311,16 @@ export function parseNdvObjectLines(text: string): Record<string, string> {
       continue;
     }
     const key = line.slice(0, cut).trim();
-    if (!key || isInspectorSecretSurfaceName(key)) {
+    const value = line.slice(cut + 1).trim();
+    if (
+      !key ||
+      isInspectorSecretSurfaceName(key) ||
+      isInspectorCredentialRefField(key) ||
+      looksLikeSecretValue(value)
+    ) {
       continue;
     }
-    next[key] = line.slice(cut + 1).trim();
+    next[key] = value;
   }
   return next;
 }
@@ -324,13 +360,40 @@ export function stringifyNdvScalar(value: unknown): string {
   if (typeof value === "object") {
     return "";
   }
-  return String(value);
+  const text = String(value);
+  return looksLikeSecretValue(text) ? "" : text;
+}
+
+/** Display-only: never echo plaintext secrets or credential material. */
+export function ndvSafeDisplayScalar(value: unknown): string {
+  return stringifyNdvScalar(value);
+}
+
+export function ndvSafeDisplayObjectLines(value: unknown): string {
+  return formatNdvObjectLines(value);
+}
+
+export function sanitizeNdvParameterPatch(
+  name: string,
+  value: unknown,
+): Record<string, unknown> {
+  if (
+    !name.trim() ||
+    isInspectorSecretSurfaceName(name) ||
+    isInspectorCredentialRefField(name)
+  ) {
+    return {};
+  }
+  return sanitizeInspectorWithPatch({ [name]: value });
 }
 
 export function ndvParameterPatchValue(
   editor: Pick<NdvParameterEditor, "control" | "name">,
   raw: unknown,
 ): unknown {
+  if (isInspectorSecretSurfaceName(editor.name) || isInspectorCredentialRefField(editor.name)) {
+    return undefined;
+  }
   if (editor.control === "retry-policy") {
     return parseNdvRetryPolicy(raw);
   }
@@ -351,6 +414,9 @@ export function ndvParameterPatchValue(
   }
   if (editor.control === "boolean") {
     return raw === true;
+  }
+  if (typeof raw === "string" && looksLikeSecretValue(raw)) {
+    return "";
   }
   return raw;
 }

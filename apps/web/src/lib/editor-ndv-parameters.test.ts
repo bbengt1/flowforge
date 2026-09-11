@@ -28,12 +28,17 @@ import {
   ndvParametersOwnedByCoreForm,
   ndvParametersOwnedByScriptPanel,
   ndvPrimaryEditorIsBareJson,
+  ndvRailForbidsPlaintextSecrets,
+  ndvSafeDisplayObjectLines,
+  ndvSafeDisplayScalar,
   ndvWizardRemainsAdd,
   parseNdvObjectLines,
   parseNdvResourceIdentity,
   parseNdvRetryPolicy,
+  sanitizeNdvParameterPatch,
   stringifyNdvScalar,
 } from "./editor-ndv-parameters.ts";
+import { EDITOR_INSPECTOR } from "./editor-inspector.ts";
 import type { WizardConfigField } from "./workflow-action-wizard.ts";
 import type { ActionLibraryEntry } from "./workflow-action-library.ts";
 
@@ -100,7 +105,15 @@ describe("R3.1 NDV type-specific parameter editors", () => {
     assert.equal(ndvWizardRemainsAdd(), true);
     assert.equal(ndvParametersAreEdit(), true);
     assert.equal(EDITOR_NDV_PARAMETERS.displayNameCredentialsOnly, true);
+    assert.equal(EDITOR_NDV_PARAMETERS.displayNamePlusUuidOnly, true);
     assert.equal(EDITOR_NDV_PARAMETERS.noSecretField, true);
+    assert.equal(EDITOR_NDV_PARAMETERS.noPlaintextSecretsInRail, true);
+    assert.equal(EDITOR_NDV_PARAMETERS.noRotateInRail, true);
+    assert.equal(ndvRailForbidsPlaintextSecrets(), true);
+    assert.equal(EDITOR_INSPECTOR.displayNamePlusUuidOnly, true);
+    assert.equal(EDITOR_INSPECTOR.noSecretFieldInRail, true);
+    assert.equal(EDITOR_INSPECTOR.noPlaintextInRail, true);
+    assert.equal(EDITOR_INSPECTOR.noRotateUiInNodeInspector, true);
     assert.equal(EDITOR_NDV_PARAMETERS.noExpressionLanguage, true);
     assert.equal(EDITOR_NDV_PARAMETERS.noNewCredentialTypes, true);
     assert.equal(EDITOR_NDV_PARAMETERS.noAppsApiChanges, true);
@@ -216,6 +229,70 @@ describe("R3.1 NDV type-specific parameter editors", () => {
     assert.equal(EDITOR_NDV_PARAMETERS.typeSpecificEditors, true);
   });
 
+  it("never shows or writes plaintext secrets; credential refs stay display-name + UUID", () => {
+    assert.equal(EDITOR_NDV_PARAMETERS.noPlaintextSecretsInRail, true);
+    assert.equal(ndvSafeDisplayScalar("-----BEGIN RSA PRIVATE KEY-----"), "");
+    assert.equal(ndvSafeDisplayScalar("Bearer tok-live"), "");
+    assert.equal(ndvSafeDisplayScalar("prod"), "prod");
+    assert.equal(
+      ndvSafeDisplayObjectLines({
+        service: "api",
+        password: "hunter2",
+        token: "tok-live",
+        kubeconfig: "apiVersion: v1",
+        env: "-----BEGIN OPENSSH PRIVATE KEY-----",
+      }),
+      "service=api",
+    );
+    assert.deepEqual(
+      parseNdvObjectLines(
+        "service=api\npassword=hunter2\ntoken=tok-live\nenv=-----BEGIN RSA PRIVATE KEY-----\n",
+      ),
+      { service: "api" },
+    );
+    assert.deepEqual(
+      sanitizeNdvParameterPatch("parameters", {
+        service: "api",
+        password: "hunter2",
+        token: "tok-live",
+      }),
+      { parameters: { service: "api" } },
+    );
+    assert.deepEqual(
+      sanitizeNdvParameterPatch("kubeconfig", "apiVersion: v1"),
+      {},
+    );
+    assert.deepEqual(
+      sanitizeNdvParameterPatch("credentialId", "33333333-3333-4333-8333-333333333333"),
+      {},
+    );
+    assert.deepEqual(
+      sanitizeNdvParameterPatch("privateKey", "-----BEGIN OPENSSH PRIVATE KEY-----"),
+      {},
+    );
+    assert.equal(
+      ndvParameterPatchValue(
+        { name: "path", control: "text" },
+        "-----BEGIN RSA PRIVATE KEY-----",
+      ),
+      "",
+    );
+    const editors = ndvParameterEditors(
+      [
+        field("timeoutSeconds", { control: "number" }),
+        field("credentialId"),
+        field("kubeconfig"),
+        field("privateKey"),
+        field("token"),
+      ],
+      "ssh",
+    );
+    assert.deepEqual(
+      editors.map((item) => item.name),
+      ["timeoutSeconds"],
+    );
+  });
+
   it("round-trips object-lines, retry policy, and resource identity without JSON blobs", () => {
     assert.equal(
       formatNdvObjectLines({ service: "api", replicas: 2 }),
@@ -276,6 +353,8 @@ describe("R3.1 NDV type-specific parameter editors", () => {
     assert.match(nodeInspector, /ndvParameterFamily/);
     assert.match(editors, /data-ndv-parameter-family/);
     assert.match(editors, /retry-policy|object-lines|resource-identity/);
+    assert.match(editors, /sanitizeNdvParameterPatch/);
+    assert.match(editors, /ndvSafeDisplay/);
     assert.match(inspector, /data-ndv-panel="parameters"[\s\S]*ScriptAuthoringPanel/);
     assert.doesNotMatch(
       inspector,

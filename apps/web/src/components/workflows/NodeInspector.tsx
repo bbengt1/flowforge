@@ -101,8 +101,9 @@ export function NodeInspector({
         type-specific <code className="font-mono text-xs">with</code>{" "}
         parameters from catalog{" "}
         <code className="font-mono text-xs">allowedWith</code> — not a bare
-        JSON blob. Add action stays the guided wizard. No expression language
-        and no secrets in YAML.
+        JSON blob. Add action stays the guided wizard. Credentials are
+        display name + UUID only. No password field, rotate UI, or
+        plaintext secrets. No expression language.
       </p>
       {constraint ? (
         <p role="status" className="mt-2 text-sm text-amber-950">
