@@ -3,6 +3,8 @@
  * selected from the editor drawer.
  *
  * Relates to #206 / Part of #195. Keep #206 open until merge.
+ * R4.3 / #256 densifies this panel to operate-a-run I/O (overlay or
+ * latest) in editor-ndv-run-io.ts. Keep #256 open.
  *
  * Chloe UI only. Product choice: overlay existing replay helpers on the
  * **same** editor canvas (do not mount ExecutionReplay and do not

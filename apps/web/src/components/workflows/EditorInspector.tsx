@@ -72,6 +72,7 @@ import {
   suggestNdvFieldPaths,
 } from "@/lib/editor-ndv-mapping";
 import { latestStepsByNode } from "@/lib/execution-replay";
+import type { NdvRunIoContextSource } from "@/lib/editor-ndv-run-io";
 import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -81,7 +82,9 @@ import Link from "next/link";
 
 export type EditorLastRunOverlay = {
   detail: ExecutionDetail | null;
+  source?: NdvRunIoContextSource | null;
   logsByStepId?: Readonly<Record<string, ExecutionLogSlice>>;
+  waitingApprovalNodeIds?: readonly string[];
   pending?: boolean;
   problem?: ProblemDetails | null;
   strippedKeys?: readonly string[];
@@ -198,16 +201,22 @@ export function EditorInspector({
             latestStepsByNode(lastRun.detail.steps).get(mappingNodeId)?.output,
         )
       : [];
-  const lastRunPanel = lastRun && (lastRun.detail || lastRun.pending || lastRun.problem) ? (
+  const lastRunActive =
+    focus === "node" ||
+    Boolean(lastRun?.detail || lastRun?.pending || lastRun?.problem);
+  const lastRunPanel = lastRunActive ? (
     <div data-ndv-panel="last-run">
       <LastRunIoPanel
-        detail={lastRun.detail}
+        detail={lastRun?.detail ?? null}
+        source={lastRun?.source ?? null}
         nodeId={selectedNodeId}
-        logs={selectedStepId ? lastRun.logsByStepId?.[selectedStepId] : null}
-        pending={lastRun.pending}
-        problem={lastRun.problem}
-        strippedKeys={lastRun.strippedKeys}
-        onClear={lastRun.onClear}
+        logs={selectedStepId ? lastRun?.logsByStepId?.[selectedStepId] : null}
+        waitingApprovalNodeIds={lastRun?.waitingApprovalNodeIds}
+        pending={lastRun?.pending}
+        problem={lastRun?.problem}
+        strippedKeys={lastRun?.strippedKeys}
+        onClear={lastRun?.onClear}
+        onJumpNode={onSelectNode}
       />
     </div>
   ) : null;

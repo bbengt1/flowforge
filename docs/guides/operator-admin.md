@@ -208,9 +208,13 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
    **Skip to indeterminate** jump to the matching run or step without
    leaving the graph. Arrow keys move; Enter / Space overlays the
    focused run on **this** canvas. Do not expect a second replay graph.
-3. Inspector shows redacted last-run I/O for the selected node.
+3. Inspector shows redacted last-run step I/O at operate density for the
+   selected node (overlay-selected run, or the latest published run when
+   no overlay is active). Failures and indeterminate steps jump to the
+   node. Secrets stay `[redacted]`.
 4. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
-   removes the overlay. Still no draft execute. Do not invent `/replay`.
+   removes the overlay and falls back to latest. Still no draft execute.
+   Do not invent `/replay`.
 
 Catalog library: `/actions`. Templates: `/templates`.
 

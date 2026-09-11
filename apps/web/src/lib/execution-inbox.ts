@@ -105,7 +105,7 @@ export const R4_GUARDRAILS = {
 
 export const R4_LATER_STORY_NOTES = {
   r42: "R4.2 / #255: densify the editor same-canvas overlay only. Do not also mount a replay graph on the /executions inbox.",
-  r43: "R4.3 / #256: NDV last-run I/O stays on the editor inspector from GET /executions/{id}. Inbox still opens existing detail.",
+  r43: "R4.3 / #256: NDV last-run I/O densifies on the editor inspector from GET /executions/{id} (overlay or latest). Inbox still opens existing detail.",
   r44: "R4.4 / #257: densify cancel/retry/stop. Keep loud indeterminate — never silent success when uncertain.",
   r45: "R4.5 / #258: waiting → POST /approvals/{id}/decide. No invented resume or /replay route.",
 } as const;
