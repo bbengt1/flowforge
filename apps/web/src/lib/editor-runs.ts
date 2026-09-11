@@ -127,6 +127,8 @@ export const EDITOR_RUNS = {
   noReplayRoute: true,
   compareIsClientDiff: true,
   compareNotShownInOverlay: true,
+  cancelRetryStopDensity: true,
+  retryGatedByResultRetryAllowed: true,
   noSse: true,
   preferenceStoresOpenFlagOnly: true,
   columnWidth: EDITOR_RUNS_COLUMN_WIDTH,
@@ -137,7 +139,7 @@ export const EDITOR_RUN_OVERLAY_KEYBOARD_HELP =
   "Arrow keys move through this workflow's runs. Enter or Space overlays the focused run on this canvas and highlights matching steps. Open execution still goes to /executions/{id}.";
 
 export const EDITOR_RUNS_OPERATE_HELP =
-  "Operate this workflow's runs without leaving the graph. Filter by status, skip to failed or indeterminate, and select a run to highlight matching steps on this canvas. Open execution still goes to /executions/{id}. Drafts never run.";
+  "Operate this workflow's runs without leaving the graph. Filter by status, skip to failed or indeterminate, and select a run to highlight matching steps on this canvas. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes. Retry stays gated by result.retry.allowed. Open execution still goes to /executions/{id}. Drafts never run.";
 
 export const EDITOR_RUNS_SKIP_FAILED_LABEL = "Skip to failed";
 export const EDITOR_RUNS_SKIP_INDETERMINATE_LABEL = "Skip to indeterminate";
@@ -150,6 +152,8 @@ export const EDITOR_RUNS_SOURCES: readonly string[] = [
   "src/components/executions/ExecutionStatusBadge.tsx",
   "src/components/workflows/RunControl.tsx",
   "src/components/workflows/ManualStartPanel.tsx",
+  "src/lib/execution-operate.ts",
+  "src/components/executions/ExecutionOperateActions.tsx",
 ];
 
 const listeners = new Set<() => void>();

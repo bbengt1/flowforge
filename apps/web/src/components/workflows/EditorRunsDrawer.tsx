@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
+import { ExecutionOperateActions } from "@/components/executions/ExecutionOperateActions";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -29,9 +30,14 @@ import {
   runsChromeMode,
   type EditorRunsSkipStatus,
 } from "@/lib/editor-runs";
-import { listWorkflowExecutions } from "@/lib/execution-client";
+import { listWorkflowExecutions, loadExecutionHistory } from "@/lib/execution-client";
 import { isExecutionForbidden } from "@/lib/execution";
-import type { ExecutionRecord, ExecutionStep } from "@/lib/execution-types";
+import { executionOperateShouldLoadDetail } from "@/lib/execution-operate";
+import type {
+  ExecutionDetail,
+  ExecutionRecord,
+  ExecutionStep,
+} from "@/lib/execution-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 
@@ -43,6 +49,7 @@ type EditorRunsDrawerProps = {
   permissions: readonly string[] | null | undefined;
   canCall: boolean;
   selectedExecutionId?: string;
+  selectedExecution?: ExecutionDetail | null;
   selectedSteps?: readonly ExecutionStep[];
   waitingApprovalNodeIds?: readonly string[];
   overlayHighlightCount?: number;
@@ -52,6 +59,7 @@ type EditorRunsDrawerProps = {
   onSelectRun?: (executionId: string) => void;
   onClearRun?: () => void;
   onHighlightNode?: (nodeId: string) => void;
+  onOperated?: (executionId: string) => void;
 };
 
 export function EditorRunsDrawer({
@@ -62,6 +70,7 @@ export function EditorRunsDrawer({
   permissions,
   canCall,
   selectedExecutionId,
+  selectedExecution,
   selectedSteps,
   waitingApprovalNodeIds = [],
   overlayHighlightCount = 0,
@@ -71,6 +80,7 @@ export function EditorRunsDrawer({
   onSelectRun,
   onClearRun,
   onHighlightNode,
+  onOperated,
 }: EditorRunsDrawerProps) {
   const embed = useEmbedMode();
   const [items, setItems] = useState<ExecutionRecord[]>([]);
@@ -78,6 +88,9 @@ export function EditorRunsDrawer({
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
+  const [operateDetails, setOperateDetails] = useState<
+    Record<string, ExecutionDetail>
+  >({});
   const denied = permissions != null && !editorRunsCanList(permissions);
   const forbidden = isExecutionForbidden(problem);
   const visible = useMemo(
@@ -109,6 +122,38 @@ export function EditorRunsDrawer({
     }
     setItems(list.items);
     setStrippedKeys(list.strippedKeys);
+    void loadOperateDetails(list.items);
+  }
+
+  async function loadOperateDetails(rows: readonly ExecutionRecord[]) {
+    const needed = rows.filter(executionOperateShouldLoadDetail);
+    if (needed.length === 0) {
+      return;
+    }
+    const results = await Promise.all(
+      needed.map((row) => loadExecutionHistory(identity, row.id, scopedId)),
+    );
+    setOperateDetails((current) => {
+      const next = { ...current };
+      for (const result of results) {
+        if (result.ok) {
+          next[result.execution.id] = result.execution;
+        }
+      }
+      return next;
+    });
+  }
+
+  function operateDetailFor(executionId: string): ExecutionDetail | undefined {
+    if (selectedExecution?.id === executionId) {
+      return selectedExecution;
+    }
+    return operateDetails[executionId];
+  }
+
+  function handleOperated(executionId: string) {
+    void refresh();
+    onOperated?.(executionId);
   }
 
   useEffect(() => {
@@ -346,6 +391,19 @@ export function EditorRunsDrawer({
                 </button>
               ) : null}
             </p>
+            <div className="mt-3">
+              <ExecutionOperateActions
+                identity={identity}
+                executionId={selectedRow.id}
+                workflowId={scopedId || undefined}
+                status={selectedRow.status}
+                permissions={permissions}
+                detail={operateDetailFor(selectedRow.id)}
+                surface="overlay"
+                compact
+                onOperated={() => handleOperated(selectedRow.id)}
+              />
+            </div>
           </section>
         ) : null}
 
@@ -381,6 +439,19 @@ export function EditorRunsDrawer({
                   ? (row) => onSelectRun(row.id)
                   : undefined
               }
+              operateActions={(row) => (
+                <ExecutionOperateActions
+                  identity={identity}
+                  executionId={row.id}
+                  workflowId={scopedId || undefined}
+                  status={row.status}
+                  permissions={permissions}
+                  detail={operateDetailFor(row.id)}
+                  surface="overlay"
+                  compact
+                  onOperated={() => handleOperated(row.id)}
+                />
+              )}
             />
           </div>
         )}

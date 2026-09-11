@@ -23,8 +23,12 @@ export default function ExecutionsPage() {
           run (published <code className="font-mono text-sm">workflowVersionId</code>{" "}
           only). Secrets stay{" "}
           <code className="font-mono text-sm">[redacted]</code>.{" "}
-          <code className="font-mono text-sm">indeterminate</code> stays loud.
-          Cancel, retry, and artifacts stay on the detail page.
+          <code className="font-mono text-sm">indeterminate</code> stays loud
+          (icon + text + explanation — never silent success). Cancel, retry,
+          and emergency stop sit on the inbox row using the existing E5/E8/E9
+          routes. Retry is shown only when{" "}
+          <code className="font-mono text-sm">result.retry.allowed</code> is
+          true. Artifacts stay on the detail page.
         </p>
       </header>
       <Suspense
