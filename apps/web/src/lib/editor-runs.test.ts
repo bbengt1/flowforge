@@ -226,6 +226,7 @@ describe("UX.6 editor runs drawer", () => {
     assert.equal(editorRunsCanList(["workflow.view"]), false);
     assert.equal(editorRunsCanList(["execution.view"]), true);
     assert.ok(editorRunsStatuses().includes("indeterminate"));
+    assert.ok(editorRunsStatuses().includes("waiting"));
     assert.equal(editorRunsEmbedRoutesUnchanged(), true);
     assert.equal(EDITOR_RUNS.noNewEmbedRoutes, true);
   });

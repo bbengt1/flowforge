@@ -82,7 +82,7 @@ export const EXECUTION_INBOX_KEYBOARD_HELP =
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
 export const EXECUTION_INBOX_HELP =
-  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by result.retry.allowed. Drafts never run. Secrets stay [redacted].";
+  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by result.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide. Drafts never run. Secrets stay [redacted].";
 
 export const EXECUTION_INBOX_DETAIL_PATH = "/executions/{id}";
 export const EXECUTION_INBOX_REPLAY_GRAPH_SOURCE =
@@ -205,7 +205,7 @@ export function parseExecutionInboxQuery(
 ): ExecutionListQuery {
   const params = executionInboxSearchParams(search);
   const statusRaw = params.get("status")?.trim() ?? "";
-  const status = documentedExecutionStatuses().includes(statusRaw)
+  const status = executionInboxStatuses().includes(statusRaw)
     ? statusRaw
     : "";
   const workflowId = params.get("workflowId")?.trim() ?? "";
@@ -229,7 +229,7 @@ export function serializeExecutionInboxQuery(
   if (workflowId) {
     params.set("workflowId", workflowId);
   }
-  if (status && documentedExecutionStatuses().includes(status)) {
+  if (status && executionInboxStatuses().includes(status)) {
     params.set("status", status);
   }
   if (
@@ -285,8 +285,22 @@ export function executionInboxHasActiveFilters(
   );
 }
 
+const EXECUTION_INBOX_WAITING_STATUS = "waiting";
+
 export function executionInboxStatuses(): readonly string[] {
-  return documentedExecutionStatuses();
+  const documented = documentedExecutionStatuses();
+  if (documented.includes(EXECUTION_INBOX_WAITING_STATUS)) {
+    return documented;
+  }
+  const runningAt = documented.indexOf("running");
+  if (runningAt === -1) {
+    return [...documented, EXECUTION_INBOX_WAITING_STATUS];
+  }
+  return [
+    ...documented.slice(0, runningAt + 1),
+    EXECUTION_INBOX_WAITING_STATUS,
+    ...documented.slice(runningAt + 1),
+  ];
 }
 
 export function executionInboxTimeLabel(iso: string): string {

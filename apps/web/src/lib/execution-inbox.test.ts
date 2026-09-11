@@ -257,6 +257,8 @@ describe("R4.1 execution inbox", () => {
       "1h 5m",
     );
     assert.ok(executionInboxStatuses().includes("indeterminate"));
+    assert.ok(executionInboxStatuses().includes("waiting"));
+    assert.equal(parseExecutionInboxQuery("status=waiting").status, "waiting");
     assert.equal(EXECUTION_INBOX.openToDetailWithoutHunting, true);
     assert.equal(EXECUTION_INBOX.usefulColumns, true);
     assert.equal(EXECUTION_INBOX.statusAndWorkflowFilters, true);

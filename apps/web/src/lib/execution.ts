@@ -12,7 +12,9 @@
  * or bucket credentials. Download grants are used once and discarded.
  */
 
+import { EXECUTION_WAITING_STATUSES } from "./approval-types.ts";
 import {
+  APPROVAL_RESUME_DISABLED_HELP,
   CANCEL_APPLIED_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
   DOWNLOAD_EXPIRED_MESSAGE,
@@ -429,7 +431,17 @@ export function executionStatusPresentation(
       description: "Legacy pin stub from before durable dispatch.",
       tone: "other",
     },
+    waiting: {
+      label: "Waiting",
+      icon: "⏸",
+      description: APPROVAL_RESUME_DISABLED_HELP,
+      tone: "claimed",
+    },
   };
+  if ((EXECUTION_WAITING_STATUSES as readonly string[]).includes(folded)) {
+    const waiting = catalog.waiting;
+    return { status: folded, indeterminate, ...waiting };
+  }
   const known = catalog[folded];
   if (known) {
     return { status: folded, indeterminate, ...known };

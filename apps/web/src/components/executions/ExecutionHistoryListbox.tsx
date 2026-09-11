@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
+import { isExecutionAwaitingApproval } from "@/lib/approval";
 import {
   EXECUTION_INBOX_COLUMNS,
   EXECUTION_INBOX_KEYBOARD_HELP,
@@ -104,6 +105,7 @@ export function ExecutionHistoryListbox({
           const focused = selectedId ? row.id === selectedId : index === safeIndex;
           const started = executionInboxTimeLabel(row.startedAt);
           const duration = executionInboxDurationLabel(row.startedAt, row.finishedAt);
+          const waiting = isExecutionAwaitingApproval(row.status);
           return (
             <li
               key={row.id}
@@ -115,11 +117,15 @@ export function ExecutionHistoryListbox({
                 inbox
                   ? row.indeterminate
                     ? `${pad} cursor-pointer border-l-4 border-amber-700 bg-amber-50`
-                    : focused
-                      ? `${pad} cursor-pointer bg-teal-50`
-                      : `${pad} cursor-pointer bg-white hover:bg-zinc-50`
+                    : waiting
+                      ? `${pad} cursor-pointer border-l-4 border-indigo-700 bg-indigo-50`
+                      : focused
+                        ? `${pad} cursor-pointer bg-teal-50`
+                        : `${pad} cursor-pointer bg-white hover:bg-zinc-50`
                   : row.indeterminate
                     ? `rounded-xl border-2 border-amber-700 bg-amber-50 ${pad} shadow-sm`
+                    : waiting
+                      ? `rounded-xl border-2 border-indigo-700 bg-indigo-50 ${pad} shadow-sm`
                     : row.id === selectedId
                       ? `rounded-xl border border-teal-800 bg-teal-50 ${pad} shadow-sm ring-2 ring-teal-700/20`
                       : index === safeIndex
@@ -144,6 +150,10 @@ export function ExecutionHistoryListbox({
                   {row.indeterminate ? (
                     <p className="mt-2 text-[11px] font-medium text-amber-950">
                       Indeterminate — do not assume the action did not run.
+                    </p>
+                  ) : waiting ? (
+                    <p className="mt-2 text-[11px] font-medium text-indigo-950">
+                      Waiting — decide the bound approval. Resume is decide.
                     </p>
                   ) : null}
                   {row.replayed ? (
@@ -185,6 +195,10 @@ export function ExecutionHistoryListbox({
                     {row.indeterminate ? (
                       <p className="mt-1 text-xs font-medium text-amber-950">
                         Indeterminate — do not assume the action did not run.
+                      </p>
+                    ) : waiting ? (
+                      <p className="mt-1 text-xs font-medium text-indigo-950">
+                        Waiting — decide the bound approval. Resume is decide.
                       </p>
                     ) : null}
                     {row.replayed ? (
