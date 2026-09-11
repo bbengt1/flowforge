@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { listApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
@@ -456,7 +456,9 @@ function WorkflowHomeSession() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
+      {!ready ? (
+        <SessionSetupHint purpose="before listing workflows." />
+      ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">

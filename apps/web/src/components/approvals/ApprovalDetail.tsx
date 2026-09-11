@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import {
@@ -98,8 +98,6 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       <p className="text-sm">
         <Link
           href="/approvals"
@@ -110,9 +108,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
       </p>
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and workspace lookup to load this approval.
-        </p>
+        <SessionSetupHint purpose="to load this approval." />
       ) : null}
 
       {problem ? (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AlertSeverityBadge } from "@/components/alerts/AlertSeverityBadge";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   alertKindLabel,
@@ -115,13 +115,8 @@ export function AlertList() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and workspace lookup to list operational
-          alerts.
-        </p>
+        <SessionSetupHint purpose="to list operational alerts." />
       ) : null}
 
       {denied ? (

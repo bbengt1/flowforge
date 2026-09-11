@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActionLibrary } from "@/components/workflows/ActionLibrary";
 import { ProblemBanner } from "@/components/ProblemBanner";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -103,7 +103,9 @@ export function ActionCatalogPage() {
           <code className="font-mono text-sm">/workflows/{"{id}"}</code>.
         </p>
       </header>
-      <IsolationIdentityPanel />
+      {!canCall ? (
+        <SessionSetupHint purpose="before loading the action catalog." />
+      ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       <ActionLibrary
         catalog={catalog}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import {
@@ -176,10 +177,9 @@ export function EditorRunsDrawer({
         </p>
 
         {!canCall ? (
-          <p className="mt-4 text-sm text-zinc-600">
-            Establish a cookie session and tenant + workbench before listing
-            executions.
-          </p>
+          <div className="mt-4">
+            <SessionSetupHint purpose="before listing executions." />
+          </div>
         ) : null}
 
         {!scopedId ? (

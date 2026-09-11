@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AlertSeverityBadge } from "@/components/alerts/AlertSeverityBadge";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   alertKindLabel,
@@ -121,8 +121,6 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       <p className="text-sm">
         <Link
           href="/alerts"
@@ -133,9 +131,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
       </p>
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and workspace lookup to load this alert.
-        </p>
+        <SessionSetupHint purpose="to load this alert." />
       ) : null}
 
       {problem ? <ProblemBanner problem={problem} /> : null}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -89,7 +89,9 @@ export function ConfigHub({ group }: ConfigHubProps) {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
+      {!ready ? (
+        <SessionSetupHint purpose="before browsing workspace config." />
+      ) : null}
 
       <nav aria-label="Config groups" className="flex flex-wrap gap-2">
         {GROUPS.map((item) => (

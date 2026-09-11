@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ConfigSpecForm } from "@/components/config/ConfigSpecForm";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -78,7 +78,9 @@ export function ConfigPublishedDetail({
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
+      {!ready ? (
+        <SessionSetupHint purpose="before reading published config." />
+      ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">

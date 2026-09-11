@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { CredentialCard } from "@/components/credentials/CredentialCard";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { filterCredentialList } from "@/lib/credential";
 import { getCredentialCatalog, listCredentials } from "@/lib/credential-client";
@@ -83,8 +83,6 @@ export function CredentialVault() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">
@@ -198,10 +196,7 @@ export function CredentialVault() {
       </section>
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and tenant + workbench before listing
-          credentials.
-        </p>
+        <SessionSetupHint purpose="before listing credentials." />
       ) : visible.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
           <h2 className="text-lg font-semibold">No credentials yet</h2>
