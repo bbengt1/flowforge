@@ -167,7 +167,7 @@ export function CredentialVault() {
               <button
                 type="button"
                 onClick={() => replaceQuery({})}
-                disabled={denied}
+                disabled={denied || !ready}
                 className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
               >
                 Clear filters
@@ -200,7 +200,7 @@ export function CredentialVault() {
               }
               placeholder="Find by display name"
               autoComplete="off"
-              disabled={denied}
+              disabled={denied || !ready}
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:opacity-60"
             />
           </label>
@@ -211,7 +211,7 @@ export function CredentialVault() {
               <FilterChip
                 label="Any"
                 active={!query.type}
-                disabled={denied}
+                disabled={denied || !ready}
                 onClick={() => replaceQuery({ ...query, type: "" })}
               />
               {catalog.types.map((item) => (
@@ -219,7 +219,7 @@ export function CredentialVault() {
                   key={item.type}
                   label={item.displayName}
                   active={query.type === item.type}
-                  disabled={denied}
+                  disabled={denied || !ready}
                   onClick={() =>
                     replaceQuery({
                       ...query,
@@ -241,7 +241,7 @@ export function CredentialVault() {
               <FilterChip
                 label="Any"
                 active={!query.status}
-                disabled={denied}
+                disabled={denied || !ready}
                 onClick={() => replaceQuery({ ...query, status: "" })}
               />
               {CREDENTIAL_STATUSES.map((status) => (
@@ -249,7 +249,7 @@ export function CredentialVault() {
                   key={status}
                   label={status === "disabled" ? "Disabled" : "Active"}
                   active={query.status === status}
-                  disabled={denied}
+                  disabled={denied || !ready}
                   onClick={() => replaceQuery({ ...query, status })}
                 />
               ))}
@@ -268,7 +268,7 @@ export function CredentialVault() {
                   replaceQuery({ ...query, tag: event.target.value })
                 }
                 autoComplete="off"
-                disabled={denied}
+                disabled={denied || !ready}
                 className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:opacity-60"
               />
             </label>
@@ -281,7 +281,7 @@ export function CredentialVault() {
         </div>
       </section>
 
-      {forbidden || denied ? null : visible.length === 0 ? (
+      {!ready || forbidden || denied ? null : visible.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
           <h2 className="text-lg font-semibold">
             {filtersActive

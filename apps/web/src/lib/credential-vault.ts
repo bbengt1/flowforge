@@ -249,8 +249,9 @@ export function credentialVaultHref(
 }
 
 export function credentialVaultListPath(
-  _query: CredentialListQuery = {},
+  query: CredentialListQuery = {},
 ): string {
+  void query;
   return credentialListPath();
 }
 
@@ -454,13 +455,14 @@ export function isCredentialForbidden(
 }
 
 export function credentialVaultDoesNotReadKek(): boolean {
+  const chromeIds = CREDENTIAL_VAULT_COLUMNS.map((column) => column.id);
   return (
     R5_GUARDRAILS.noKekInBrowser &&
     CREDENTIAL_VAULT.noKekInBrowser &&
     CREDENTIAL_KEK_ENV === "CREDENTIAL_KEK" &&
-    !CREDENTIAL_VAULT_COLUMNS.some(
-      (column) => column.id === "keyReference" || column.id === "kek",
-    ) &&
+    !chromeIds.includes("keyReference" as CredentialVaultColumnId) &&
+    !chromeIds.includes("kek" as CredentialVaultColumnId) &&
+    /never reads CREDENTIAL_KEK/.test(CREDENTIAL_VAULT_HELP) &&
     !/process\.env/.test(CREDENTIAL_VAULT_HELP)
   );
 }
