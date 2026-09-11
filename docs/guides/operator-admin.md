@@ -23,6 +23,7 @@ retention/backup, threat-model. Do not duplicate those here.
 | Route/RBAC contracts | [Backend API map](../reference/backend-api-map.md) |
 | Embed / Portal wiring | [Embed SDK](../reference/embed-sdk.md), [Portal adapter](../reference/portal-adapter.md) |
 | Accessibility review | [e12-accessibility-review.md](../reference/e12-accessibility-review.md) |
+| Rewrite surfaces (Chloe → charter §11.1) | [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md) — docs-only; not this walkthrough |
 
 Evidence is secret-free: no tokens, KEK material, webhook secrets, or
 assertion JWS.
@@ -79,6 +80,10 @@ not. This is **not** an n8n clone — n8n is a behavior reference only
 (canvas-first shell, left library, right inspector, executions drawer).
 Do not copy n8n assets or source. ADV/embed/membership meaning is
 unchanged.
+
+Rewrite surface map and operator migration notes (Chloe, docs only;
+charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes)):
+[rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
 
 1. Filter by search, folder (`ops/…`, `ops: …`, or slug `ops--name`),
    tag, owner, trigger, environment, status, last run, last modified.

@@ -3,7 +3,9 @@
 ## Start here
 
 - [Architecture](architecture.md): component boundaries, deployment model, and embedding contract.
-- [Master implementation plan](master-implementation-plan.md): agile epic and story backlog for implementation planning.
+- [Rewrite: n8n-class parity](architecture/flowforge-rewrite-n8n-class-parity.md): successor product charter after E1–E12 and epic #195 — parity of interaction and coverage, not an n8n clone. Chloe’s UI-surface fold-in is §11.1; jonny’s control-plane fold-in is §11.2. No issues from this doc until R1 is accepted.
+- [Rewrite UI surfaces](reference/rewrite-ui-surfaces.md): Chloe’s expanded surface map, operator migration notes, and keep/replace/retire (UI). Charter §11.1 is the fold-in authority.
+- [Master implementation plan](master-implementation-plan.md): agile epic and story backlog for the shipped MVP (E1–E12).
 - [MVP workflow model](reference/workflow-model.md): resources, node types, and acceptance criteria.
 - [Workflow YAML schema](reference/workflow-yaml-schema.md): canonical saved workflow definition and UI round-trip rules.
 - [Standard action catalog](reference/action-catalog.md): core workflow nodes and their safe contracts.

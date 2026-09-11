@@ -55,3 +55,7 @@ Each embedded instance is scoped by `(tenant_id, workbench_key)`. That identity 
 - SSH is key-only, known-host verified, target/command allowlisted, and time-bounded.
 - Python and Go artifacts are approved/signed and run without arbitrary dependency installation.
 - Privileged nodes require explicit policy/approval before dispatch.
+
+## Successor rewrite (charter)
+
+The shipped product on `main` is E1–E12 plus epic #195 canvas-first chrome. The next program is a **FlowForge rewrite aimed at n8n-class UX and feature coverage**, not a clone: [flowforge-rewrite-n8n-class-parity.md](architecture/flowforge-rewrite-n8n-class-parity.md). YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay unless that charter records an explicit safer replacement.
