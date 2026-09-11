@@ -33,7 +33,6 @@ import type { WorkflowGraph } from "@/lib/workflow-graph";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { CoreNodeWith, YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
 import { listYamlTriggers, readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
-import { wizardConfigFields, type WizardConfigField } from "@/lib/workflow-action-wizard";
 import {
   EDITOR_INSPECTOR,
   INSPECTOR_METADATA_ONLY_HELP,
@@ -44,8 +43,6 @@ import {
   inspectorCredentialTypes,
   inspectorEditConstraint,
   inspectorFocus,
-  inspectorWithFields,
-  isInspectorSecretSurfaceName,
 } from "@/lib/editor-inspector";
 import {
   EDITOR_NDV_HEADING_ID,
@@ -233,26 +230,33 @@ export function EditorInspector({
               canEdit={canEdit}
               constraint={constraint}
               showNodeList={false}
+              engineCatalog={engineCatalog}
+              sshCatalog={sshCatalog}
+              scriptCatalog={scriptCatalog}
+              httpCatalog={httpCatalog}
               onSelect={onSelectNode}
               onApply={onApply}
               onRename={onRename}
-            />
-          </div>
-          {isScriptConfigurableType(selectedNode.type) ? (
-            <ScriptAuthoringPanel
-              node={selectedNode}
-              identity={identity}
-              ready={canCall}
-              dirty={dirty}
-              hasPublishedVersion={hasPublishedVersion}
-              scriptCatalog={scriptCatalog}
-              scriptArtifacts={scriptArtifacts}
-              artifacts={scriptArtifactRecords}
-              permissions={permissions}
-              onArtifactChange={onScriptArtifactChange}
               onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
             />
-          ) : null}
+            {isScriptConfigurableType(selectedNode.type) ? (
+              <div className="mt-6">
+                <ScriptAuthoringPanel
+                  node={selectedNode}
+                  identity={identity}
+                  ready={canCall}
+                  dirty={dirty}
+                  hasPublishedVersion={hasPublishedVersion}
+                  scriptCatalog={scriptCatalog}
+                  scriptArtifacts={scriptArtifacts}
+                  artifacts={scriptArtifactRecords}
+                  permissions={permissions}
+                  onArtifactChange={onScriptArtifactChange}
+                  onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
+                />
+              </div>
+            ) : null}
+          </div>
           <SelectedNodePins
             node={selectedNode}
             entry={selectedEntry}
@@ -260,10 +264,6 @@ export function EditorInspector({
             canCall={canCall}
             canEdit={canEdit}
             constraint={constraint}
-            engineCatalog={engineCatalog}
-            sshCatalog={sshCatalog}
-            scriptCatalog={scriptCatalog}
-            httpCatalog={httpCatalog}
             workflowId={workflowId}
             credentialRefreshNonce={credentialRefreshNonce}
             pendingCredentials={pendingCredentials}
@@ -376,10 +376,6 @@ function SelectedNodePins({
   canCall,
   canEdit,
   constraint,
-  engineCatalog,
-  sshCatalog,
-  scriptCatalog,
-  httpCatalog,
   workflowId,
   credentialRefreshNonce,
   pendingCredentials,
@@ -392,10 +388,6 @@ function SelectedNodePins({
   canCall: boolean;
   canEdit: boolean;
   constraint: string | null;
-  engineCatalog?: KubernetesEngineCatalog | null;
-  sshCatalog?: SshNodeCatalog | null;
-  scriptCatalog?: ScriptNodeCatalog | null;
-  httpCatalog?: HttpNotificationCatalog | null;
   workflowId?: string;
   credentialRefreshNonce?: number;
   pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
@@ -404,26 +396,10 @@ function SelectedNodePins({
 }) {
   const embed = useEmbedMode();
   const credentialFields = inspectorCredentialFields(entry, node.type);
-  const withFields =
-    inspectorShowsScriptOwnedField(node.type) ||
-    inspectorShowsCoreOwnedField(node.type)
-      ? []
-      : inspectorWithFields(
-          wizardConfigFields(
-            entry,
-            node.type,
-            engineCatalog,
-            sshCatalog,
-            scriptCatalog,
-            httpCatalog,
-          ),
-          node.type,
-        );
   const showPins =
     isKubernetesActionType(node.type) ||
     isSshConfigurableType(node.type) ||
-    isHttpConfigurableType(node.type) ||
-    withFields.length > 0;
+    isHttpConfigurableType(node.type);
   const showCredentials = credentialFields.length > 0;
 
   if (!showPins && !showCredentials) {
@@ -469,19 +445,6 @@ function SelectedNodePins({
           {formatRedaction(entry.redaction) ? (
             <p>redaction: {formatRedaction(entry.redaction)}</p>
           ) : null}
-        </div>
-      ) : null}
-      {withFields.length > 0 ? (
-        <div className="mt-3 space-y-3">
-          {withFields.map((field) => (
-            <InspectorWithField
-              key={field.name}
-              field={field}
-              value={node.with[field.name]}
-              disabled={!canEdit || !onPatchNodeWith}
-              onChange={(value) => onPatchNodeWith?.(node.id, { [field.name]: value })}
-            />
-          ))}
         </div>
       ) : null}
       {isKubernetesActionType(node.type) ? (
@@ -626,161 +589,4 @@ function SelectedNodePins({
     ) : null}
     </>
   );
-}
-
-function inspectorShowsScriptOwnedField(type: string): boolean {
-  return isScriptConfigurableType(type);
-}
-
-function inspectorShowsCoreOwnedField(type: string): boolean {
-  return isCoreNeutralNodeType(type);
-}
-
-function InspectorWithField({
-  field,
-  value,
-  disabled,
-  onChange,
-}: {
-  field: WizardConfigField;
-  value: unknown;
-  disabled: boolean;
-  onChange: (value: unknown) => void;
-}) {
-  if (isInspectorSecretSurfaceName(field.name)) {
-    return null;
-  }
-  const text =
-    value == null || value === ""
-      ? field.readOnly
-        ? stringifyInspectorValue(field.defaultValue)
-        : ""
-      : stringifyInspectorValue(value);
-  const label = field.label || field.name;
-  if (field.readOnly || field.control === "boolean") {
-    if (field.control === "boolean") {
-      return (
-        <label className="flex items-center gap-2 text-sm text-zinc-700">
-          <input
-            type="checkbox"
-            checked={value === true}
-            disabled={disabled || field.readOnly}
-            onChange={(event) => onChange(event.target.checked)}
-          />
-          {label}
-        </label>
-      );
-    }
-    return (
-      <label className="block text-sm">
-        <span className="text-zinc-600">{label}</span>
-        <input
-          value={text}
-          readOnly
-          disabled
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm"
-        />
-      </label>
-    );
-  }
-  if (field.control === "enum") {
-    return (
-      <label className="block text-sm">
-        <span className="text-zinc-600">{label}</span>
-        <select
-          value={text}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
-        >
-          {(field.enumValues ?? []).map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
-    );
-  }
-  if (field.control === "textarea" || field.control === "object-lines" || field.control === "json") {
-    return (
-      <label className="block text-sm">
-        <span className="text-zinc-600">{label}</span>
-        <textarea
-          value={
-            field.control === "object-lines" && value && typeof value === "object"
-              ? Object.entries(value as Record<string, unknown>)
-                  .map(([key, nested]) => `${key}=${String(nested)}`)
-                  .join("\n")
-              : text
-          }
-          disabled={disabled}
-          onChange={(event) => {
-            if (field.control === "object-lines") {
-              const next: Record<string, string> = {};
-              for (const line of event.target.value.split("\n")) {
-                const cut = line.indexOf("=");
-                if (cut <= 0) {
-                  continue;
-                }
-                next[line.slice(0, cut).trim()] = line.slice(cut + 1).trim();
-              }
-              onChange(next);
-              return;
-            }
-            onChange(event.target.value);
-          }}
-          rows={field.name === "manifests" || field.name === "source" ? 8 : 4}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
-        />
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
-    );
-  }
-  if (field.control === "number") {
-    return (
-      <label className="block text-sm">
-        <span className="text-zinc-600">{label}</span>
-        <input
-          type="number"
-          value={text}
-          disabled={disabled}
-          onChange={(event) => onChange(Number(event.target.value))}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
-        />
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
-    );
-  }
-  return (
-    <label className="block text-sm">
-      <span className="text-zinc-600">{label}</span>
-      <input
-        value={text}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
-      />
-      {field.description ? (
-        <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-      ) : null}
-    </label>
-  );
-}
-
-function stringifyInspectorValue(value: unknown): string {
-  if (value == null) {
-    return "";
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
 }

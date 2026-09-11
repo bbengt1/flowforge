@@ -163,12 +163,14 @@ The inspector is a **right drawer** that opens with the editor
 not hide-by-default only. Selecting a node focuses the conversation
 shell. Relates to #235 / Part of #228. Keep #235 open.
 
-1. **Node** — conversation chrome for this step: parameters / `with` /
+1. **Node** — conversation chrome for this step: type-specific
+   parameters / `with` (cataloged core / Kubernetes / SSH / script /
+   HTTP — not a bare JSON blob; R3.1 / #246 — keep #246 open) /
    pins / credentials by **display name**. Pick an existing vault item
    or **add** one; secret entry stays in the masked wizard (modal or
    `/credentials/new` return-to-editor). The rail never shows
-   `SecretField` / plaintext / rotate. No expression language. Deep
-   mapping is R3.
+   `SecretField` / plaintext / rotate. No expression language. Field-path
+   mapping is R3.2 / #247.
 2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
    Pins**. Same webhook/schedule contracts as home. Restore creates a
    new draft. Pins are authorized metadata only.
