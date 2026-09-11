@@ -142,7 +142,7 @@ export const EDITOR_RUNS_OPERATE_HELP =
 export const EDITOR_RUNS_SKIP_FAILED_LABEL = "Skip to failed";
 export const EDITOR_RUNS_SKIP_INDETERMINATE_LABEL = "Skip to indeterminate";
 
-export const EDITOR_RUNS_SOURCES = [
+export const EDITOR_RUNS_SOURCES: readonly string[] = [
   "src/lib/editor-runs.ts",
   "src/components/workflows/EditorRunsDrawer.tsx",
   "src/components/executions/ExecutionHistory.tsx",
@@ -150,7 +150,7 @@ export const EDITOR_RUNS_SOURCES = [
   "src/components/executions/ExecutionStatusBadge.tsx",
   "src/components/workflows/RunControl.tsx",
   "src/components/workflows/ManualStartPanel.tsx",
-] as const;
+];
 
 const listeners = new Set<() => void>();
 
