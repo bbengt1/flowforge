@@ -4,7 +4,6 @@ import { useMemo, useRef, useState } from "react";
 import { ACTION_DRAG_MIME } from "@/components/workflows/ActionLibrary";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
-  EDITOR_CANVAS_HISTORY_HELP,
   EDITOR_CANVAS_REDO_LABEL,
   EDITOR_CANVAS_UNDO_LABEL,
   canvasMovedEnough,
@@ -15,6 +14,35 @@ import {
   type CanvasLayout,
   type CanvasPoint,
 } from "@/lib/editor-canvas-history";
+import {
+  CANVAS_GRID_SIZE,
+  CANVAS_MAX_SCALE,
+  CANVAS_MIN_SCALE,
+  CANVAS_NODE_HEIGHT,
+  CANVAS_NODE_WIDTH,
+  EDITOR_CANVAS_FIT_LABEL,
+  EDITOR_CANVAS_PRIMITIVES_HELP,
+  applyNodeMoves,
+  canvasSnapControlLabel,
+  fitCanvasViewport,
+  fitIdsForSelection,
+  isAdditiveSelectModifier,
+  isFitShortcut,
+  isNodeSelected,
+  isSelectAllShortcut,
+  isSnapShortcut,
+  nodeSelection,
+  nodesInMarquee,
+  normalizeCanvasRect,
+  selectNodes,
+  selectedNodeIds,
+  snapPoint,
+  toggleNodeInSelection,
+  unionNodeSelection,
+  type EditorSelection,
+} from "@/lib/editor-canvas-primitives";
+
+export type { EditorSelection };
 import {
   canConnectPorts,
   canvasNodeStateIcon,
@@ -28,11 +56,6 @@ import {
 import { canvasAddAffordance } from "@/lib/editor-library";
 import type { CatalogPort } from "@/lib/workflow-types";
 
-export type EditorSelection =
-  | { kind: "workflow" }
-  | { kind: "node"; id: string }
-  | { kind: "edge"; from: string; to: string };
-
 type WorkflowCanvasProps = {
   graph: WorkflowGraph | null;
   invalid: boolean;
@@ -42,7 +65,7 @@ type WorkflowCanvasProps = {
   onSelect: (selection: EditorSelection) => void;
   onInsertType?: (type: string, position?: CanvasPoint) => void;
   onConnect?: (from: string, to: string) => string[];
-  onMove?: (id: string, position: CanvasPoint) => void;
+  onMove?: (positions: CanvasLayout) => void;
   onRemove?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -58,8 +81,8 @@ type WorkflowCanvasProps = {
   fill?: boolean;
 };
 
-const NODE_W = 188;
-const NODE_H = 96;
+const NODE_W = CANVAS_NODE_WIDTH;
+const NODE_H = CANVAS_NODE_HEIGHT;
 
 export function WorkflowCanvas({
   graph,
@@ -90,12 +113,16 @@ export function WorkflowCanvas({
   const [dragging, setDragging] = useState<{ x: number; y: number } | null>(null);
   const [linkFrom, setLinkFrom] = useState<{ nodeId: string; port: string } | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [marquee, setMarquee] = useState<{ start: CanvasPoint; current: CanvasPoint } | null>(
+    null,
+  );
   const [nodeDrag, setNodeDrag] = useState<{
     id: string;
+    ids: string[];
     startClientX: number;
     startClientY: number;
-    originX: number;
-    originY: number;
+    origins: CanvasLayout;
     dx: number;
     dy: number;
   } | null>(null);
@@ -126,8 +153,12 @@ export function WorkflowCanvas({
 
   function nodePosition(id: string): CanvasPoint {
     const base = positions.get(id) ?? { x: 0, y: 0 };
-    if (nodeDrag?.id === id) {
-      return { x: nodeDrag.originX + nodeDrag.dx, y: nodeDrag.originY + nodeDrag.dy };
+    if (nodeDrag?.ids.includes(id)) {
+      const origin = nodeDrag.origins[id] ?? base;
+      return snapPoint(
+        { x: origin.x + nodeDrag.dx, y: origin.y + nodeDrag.dy },
+        snapEnabled,
+      );
     }
     return base;
   }
@@ -139,13 +170,20 @@ export function WorkflowCanvas({
     if ((event.target as HTMLElement).closest("[data-port],button")) {
       return;
     }
-    const origin = positions.get(id) ?? { x: 0, y: 0 };
+    if (isAdditiveSelectModifier(event)) {
+      return;
+    }
+    const ids = isNodeSelected(selection, id) ? selectedNodeIds(selection) : [id];
+    const origins: CanvasLayout = {};
+    for (const nodeId of ids) {
+      origins[nodeId] = positions.get(nodeId) ?? { x: 0, y: 0 };
+    }
     setNodeDrag({
       id,
+      ids,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      originX: origin.x,
-      originY: origin.y,
+      origins,
       dx: 0,
       dy: 0,
     });
@@ -168,12 +206,40 @@ export function WorkflowCanvas({
       return;
     }
     if (onMove && canvasMovedEnough(nodeDrag.dx, nodeDrag.dy)) {
-      onMove(nodeDrag.id, {
-        x: nodeDrag.originX + nodeDrag.dx,
-        y: nodeDrag.originY + nodeDrag.dy,
-      });
+      onMove(applyNodeMoves(nodeDrag.origins, nodeDrag.ids, nodeDrag.dx, nodeDrag.dy, snapEnabled));
     }
     setNodeDrag(null);
+  }
+
+  function selectCanvasNode(id: string, event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }) {
+    if (isAdditiveSelectModifier(event)) {
+      onSelect(toggleNodeInSelection(selection, id));
+      return;
+    }
+    if (!isNodeSelected(selection, id)) {
+      onSelect(nodeSelection(id));
+    }
+  }
+
+  function fitToView() {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (!rect || !graph || graph.nodes.length === 0) {
+      return;
+    }
+    setPan(
+      fitCanvasViewport({
+        positions,
+        ids: fitIdsForSelection(
+          selection,
+          graph.nodes.map((node) => node.id),
+        ),
+        viewport: { width: rect.width, height: rect.height },
+        nodeWidth: NODE_W,
+        nodeHeight: NODE_H,
+        minScale: CANVAS_MIN_SCALE,
+        maxScale: CANVAS_MAX_SCALE,
+      }),
+    );
   }
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
@@ -183,15 +249,38 @@ export function WorkflowCanvas({
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-canvas-node],[data-port]")) {
       return;
     }
+    if (isAdditiveSelectModifier(event)) {
+      const point = canvasPoint(event);
+      setMarquee({ start: point, current: point });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     setDragging({ x: event.clientX - pan.x, y: event.clientY - pan.y });
     onSelect({ kind: "workflow" });
   }
 
   function movePan(event: React.PointerEvent<HTMLDivElement>) {
+    if (marquee) {
+      setMarquee({ ...marquee, current: canvasPoint(event) });
+      return;
+    }
     if (!dragging) {
       return;
     }
     setPan((current) => ({ ...current, x: event.clientX - dragging.x, y: event.clientY - dragging.y }));
+  }
+
+  function endSurfacePointer() {
+    if (marquee && graph) {
+      const ids = nodesInMarquee(positions, marquee.start, marquee.current, NODE_W, NODE_H);
+      if (ids.length > 0) {
+        onSelect(unionNodeSelection(selection, ids));
+      }
+      setMarquee(null);
+      return;
+    }
+    setMarquee(null);
+    setDragging(null);
   }
 
   function wheelZoom(event: React.WheelEvent<HTMLDivElement>) {
@@ -202,7 +291,7 @@ export function WorkflowCanvas({
     const delta = event.deltaY > 0 ? 0.9 : 1.1;
     setPan((current) => ({
       ...current,
-      scale: Math.min(2.2, Math.max(0.4, current.scale * delta)),
+      scale: Math.min(CANVAS_MAX_SCALE, Math.max(CANVAS_MIN_SCALE, current.scale * delta)),
     }));
   }
 
@@ -320,12 +409,12 @@ export function WorkflowCanvas({
           <p className="text-xs text-zinc-500">
             {help
               ?? (readOnly
-                ? "Read-only overlay of step status on the pinned published version. Pan, zoom, and select with the keyboard."
-                : EDITOR_CANVAS_HISTORY_HELP)}
+                ? "Read-only overlay of step status on the pinned published version. Pan, zoom, Shift+click or Shift+drag to multi-select, Fit (F)."
+                : EDITOR_CANVAS_PRIMITIVES_HELP)}
             {pending ? " Validating…" : ""}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {!readOnly && onUndo ? (
             <button
               type="button"
@@ -374,18 +463,45 @@ export function WorkflowCanvas({
           ) : null}
           <button
             type="button"
-            onClick={() => setPan((current) => ({ ...current, scale: Math.min(2.2, current.scale * 1.1) }))}
+            onClick={() => setPan((current) => ({ ...current, scale: Math.min(CANVAS_MAX_SCALE, current.scale * 1.1) }))}
             className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
           >
             Zoom in
           </button>
           <button
             type="button"
-            onClick={() => setPan((current) => ({ ...current, scale: Math.max(0.4, current.scale * 0.9) }))}
+            onClick={() => setPan((current) => ({ ...current, scale: Math.max(CANVAS_MIN_SCALE, current.scale * 0.9) }))}
             className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
           >
             Zoom out
           </button>
+          <button
+            type="button"
+            data-editor-canvas="fit"
+            title={EDITOR_CANVAS_FIT_LABEL}
+            aria-keyshortcuts="f 1"
+            onClick={fitToView}
+            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+          >
+            {EDITOR_CANVAS_FIT_LABEL}
+          </button>
+          {!readOnly ? (
+            <button
+              type="button"
+              data-editor-canvas="snap"
+              title={canvasSnapControlLabel(snapEnabled)}
+              aria-pressed={snapEnabled}
+              aria-keyshortcuts="g"
+              onClick={() => setSnapEnabled((current) => !current)}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                snapEnabled
+                  ? "border-teal-800 bg-teal-50 text-teal-950"
+                  : "border-zinc-300"
+              }`}
+            >
+              {canvasSnapControlLabel(snapEnabled)}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setPan({ x: 0, y: 0, scale: 1 })}
@@ -404,11 +520,12 @@ export function WorkflowCanvas({
         ref={surfaceRef}
         role="application"
         aria-label="Workflow canvas"
+        data-canvas-grid={CANVAS_GRID_SIZE}
         tabIndex={0}
         onPointerDown={startPan}
         onPointerMove={movePan}
-        onPointerUp={() => setDragging(null)}
-        onPointerLeave={() => setDragging(null)}
+        onPointerUp={endSurfacePointer}
+        onPointerCancel={endSurfacePointer}
         onWheel={wheelZoom}
         onDragOver={(event) => {
           if (readOnly || !onInsertType) {
@@ -425,7 +542,7 @@ export function WorkflowCanvas({
           const type = event.dataTransfer.getData(ACTION_DRAG_MIME);
           if (type) {
             event.preventDefault();
-            onInsertType(type, canvasPoint(event));
+            onInsertType(type, snapPoint(canvasPoint(event), snapEnabled));
           }
         }}
         onKeyDown={(event) => {
@@ -444,15 +561,31 @@ export function WorkflowCanvas({
             onRemove?.();
             return;
           }
+          if (isSelectAllShortcut(event) && graph.nodes.length > 0) {
+            event.preventDefault();
+            onSelect(selectNodes(graph.nodes.map((node) => node.id)));
+            return;
+          }
+          if (isFitShortcut(event)) {
+            event.preventDefault();
+            fitToView();
+            return;
+          }
+          if (isSnapShortcut(event)) {
+            event.preventDefault();
+            setSnapEnabled((current) => !current);
+            return;
+          }
           if (event.key === "Escape") {
             setLinkFrom(null);
+            setMarquee(null);
             onSelect({ kind: "workflow" });
           }
           if (event.key === "+" || event.key === "=") {
-            setPan((current) => ({ ...current, scale: Math.min(2.2, current.scale * 1.1) }));
+            setPan((current) => ({ ...current, scale: Math.min(CANVAS_MAX_SCALE, current.scale * 1.1) }));
           }
           if (event.key === "-" || event.key === "_") {
-            setPan((current) => ({ ...current, scale: Math.max(0.4, current.scale * 0.9) }));
+            setPan((current) => ({ ...current, scale: Math.max(CANVAS_MIN_SCALE, current.scale * 0.9) }));
           }
           if (event.key === "ArrowLeft") {
             setPan((current) => ({ ...current, x: current.x + 24 }));
@@ -508,13 +641,13 @@ export function WorkflowCanvas({
               nodes={graph.nodes}
               x={nodePosition(node.id).x}
               y={nodePosition(node.id).y}
-              selected={selection.kind === "node" && selection.id === node.id}
+              selected={isNodeSelected(selection, node.id)}
               current={currentNodeId === node.id}
               readOnly={readOnly}
-              dragging={nodeDrag?.id === node.id}
+              dragging={Boolean(nodeDrag?.ids.includes(node.id))}
               linkFrom={linkFrom}
               entries={entries}
-              onSelect={() => onSelect({ kind: "node", id: node.id })}
+              onSelect={(event) => selectCanvasNode(node.id, event)}
               onDragStart={(event) => startNodeDrag(node.id, event)}
               onDragMove={moveNodeDrag}
               onDragEnd={endNodeDrag}
@@ -532,7 +665,10 @@ export function WorkflowCanvas({
                 tryConnect(node.id, port);
               }}
               onOpenLibrary={
-                addAffordance.selectedPlus && onOpenLibrary
+                addAffordance.selectedPlus &&
+                onOpenLibrary &&
+                selection.kind === "node" &&
+                selection.id === node.id
                   ? onOpenLibrary
                   : undefined
               }
@@ -552,6 +688,22 @@ export function WorkflowCanvas({
               {edge.from} → {edge.to}
             </button>
           ))}
+          {marquee ? (
+            <div
+              data-canvas-marquee
+              aria-hidden
+              className="pointer-events-none absolute border border-teal-700 bg-teal-700/10"
+              style={(() => {
+                const box = normalizeCanvasRect(marquee.start, marquee.current);
+                return {
+                  left: box.x,
+                  top: box.y,
+                  width: box.width,
+                  height: box.height,
+                };
+              })()}
+            />
+          ) : null}
         </div>
         {addAffordance.emptyPlus && onOpenLibrary ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -613,7 +765,7 @@ function CanvasNode({
   dragging?: boolean;
   linkFrom: { nodeId: string; port: string } | null;
   entries: ActionLibraryEntry[];
-  onSelect: () => void;
+  onSelect: (event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }) => void;
   onDragStart?: (event: React.PointerEvent) => void;
   onDragMove?: (event: React.PointerEvent) => void;
   onDragEnd?: () => void;
@@ -629,11 +781,11 @@ function CanvasNode({
       aria-current={current ? "true" : undefined}
       aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}${
         current ? " current node" : ""
-      }`}
+      }${selected ? " selected" : ""}`}
       tabIndex={0}
       onPointerDown={(event) => {
         event.stopPropagation();
-        onSelect();
+        onSelect(event);
         onDragStart?.(event);
       }}
       onPointerMove={onDragMove}
@@ -642,7 +794,7 @@ function CanvasNode({
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onSelect();
+          onSelect(event);
         }
       }}
       className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700 ${

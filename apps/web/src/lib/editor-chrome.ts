@@ -43,6 +43,7 @@ export const EDITOR_CHROME = {
     zoomShortcuts: true,
     wizardEscape: true,
     undoRedo: true,
+    multiSelectFitSnap: true,
   },
 } as const;
 

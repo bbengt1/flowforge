@@ -18,7 +18,8 @@ import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
 import { EditorYamlTools } from "@/components/workflows/EditorYamlTools";
 import { RunControl } from "@/components/workflows/RunControl";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
-import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
+import { WorkflowCanvas } from "@/components/workflows/WorkflowCanvas";
+import { selectedNodeIds, type EditorSelection } from "@/lib/editor-canvas-primitives";
 import { YamlEditor } from "@/components/workflows/YamlEditor";
 import { ScriptPublishStatus } from "@/components/workflows/ScriptPublishStatus";
 import {
@@ -373,6 +374,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             id: next.id,
             name: node?.name,
             type: node?.type,
+            count: selectedNodeIds(next).length,
           }),
         );
       }
@@ -453,16 +455,20 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     applyHistorySnapshot(result.applied.yaml);
   }
 
-  function moveCanvasNode(id: string, position: CanvasPoint) {
+  function moveCanvasNode(positions: CanvasLayout) {
     writeGraphYaml(yamlRef.current, {
       ...historyRef.current.present.layout,
-      [id]: position,
+      ...positions,
     });
   }
 
   function removeCanvasSelection() {
     if (selection.kind === "node") {
-      writeGraphYaml(removeGraphNode(yamlRef.current, selection.id));
+      let nextYaml = yamlRef.current;
+      for (const id of selectedNodeIds(selection)) {
+        nextYaml = removeGraphNode(nextYaml, id);
+      }
+      writeGraphYaml(nextYaml);
       applySelection({ kind: "workflow" });
       return;
     }

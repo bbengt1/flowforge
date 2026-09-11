@@ -270,10 +270,16 @@ export function editorSelectionAnnouncement(input: {
   id?: string | null;
   from?: string | null;
   to?: string | null;
+  count?: number;
 }): string {
   if (input.kind === "node") {
     const title = input.name?.trim() || input.id?.trim() || "node";
     const type = input.type?.trim();
+    const count = input.count ?? 1;
+    if (count > 1) {
+      const focus = type ? `${title} (${type})` : title;
+      return `Selected ${count} nodes. Inspector shows ${focus}. Shift+click or Shift+drag to adjust.`;
+    }
     return type
       ? `Selected ${title} (${type}). Inspector shows name, with fields, pins, and credentials.`
       : `Selected ${title}. Inspector shows name, with fields, pins, and credentials.`;

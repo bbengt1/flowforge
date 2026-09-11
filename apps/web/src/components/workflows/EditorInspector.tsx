@@ -9,7 +9,7 @@ import { SshPinsPanel } from "@/components/config/SshPinSelect";
 import { ScriptAuthoringPanel } from "@/components/workflows/ScriptAuthoringPanel";
 import { isHttpConfigurableType } from "@/lib/core-http-notification-contract";
 import type { HttpNotificationCatalog } from "@/lib/core-http-notification-contract";
-import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
+import { selectedNodeIds, type EditorSelection } from "@/lib/editor-canvas-primitives";
 import { isKubernetesActionType } from "@/lib/kubernetes";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
 import {
@@ -143,6 +143,7 @@ export function EditorInspector({
 }: EditorInspectorProps) {
   const focus = inspectorFocus(selection);
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
+  const selectedCount = selectedNodeIds(selection).length;
   const selectedNode = selectedNodeId
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
@@ -213,6 +214,13 @@ export function EditorInspector({
             <p className="mt-2 text-sm text-zinc-600">
               {ndvConversationHelp("node")}
             </p>
+            {selectedCount > 1 ? (
+              <p className="mt-2 text-sm text-zinc-700" data-canvas-multiselect>
+                {selectedCount} nodes selected. Inspector edits the last selected
+                node. Shift+click or Shift+drag to adjust. Delete removes the
+                selection.
+              </p>
+            ) : null}
           </header>
           {lastRunPanel}
           <div data-ndv-panel="parameters">

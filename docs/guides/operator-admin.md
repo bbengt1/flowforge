@@ -141,10 +141,13 @@ not hide-by-default only. Relates to #234 / Part of #228. Keep
 
 Canvas: pan, zoom, select, drag nodes, connect compatible ports.
 Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z) reverse graph edits before save.
-Delete removes the selected node or edge. Session positions are not
-persisted (D1 / #238). Invalid YAML never draws a guessed graph. State
-uses icon + text. Keyboard: focus the canvas, then Zoom in / Zoom out /
-Reset. Selecting a node announces enough to use the inspector — this is
+Shift+click or Shift+drag multi-selects nodes; Ctrl+A selects all.
+**Fit (F)** frames the selection (or the graph). **Snap (G)** locks
+drops to the 16px grid (R2.4 / #237 — **keep #237 open**). Delete
+removes the selection. Session positions are not persisted (D1 / #238).
+Invalid YAML never draws a guessed graph. State uses icon + text.
+Keyboard: focus the canvas, then Zoom in / Zoom out / Fit / Snap /
+Reset. Selecting nodes announces enough to use the inspector — this is
 not a screen-reader graph rewrite.
 Esc on an open drawer restores focus to the matching top-bar control.
 On narrow viewports (`max-width: 767px`) the inspector stacks first —
