@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -60,7 +60,6 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
         <p className="font-mono text-xs text-zinc-500">
@@ -102,10 +101,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
       </section>
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and tenant + workbench before listing
-          workspace config.
-        </p>
+        <SessionSetupHint purpose="before listing workspace config." />
       ) : items.length === 0 && !problem ? (
         <EmptyKindState descriptor={descriptor} />
       ) : items.length === 0 && problem ? (

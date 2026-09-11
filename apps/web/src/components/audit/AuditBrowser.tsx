@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { auditRowAffordances, canSeeAuditNav } from "@/lib/alert";
 import { listWorkspaceAuditEvents } from "@/lib/alert-client";
@@ -90,13 +90,8 @@ export function AuditBrowser() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and workspace lookup to browse workspace
-          audit events.
-        </p>
+        <SessionSetupHint purpose="to browse workspace audit events." />
       ) : null}
 
       {denied ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { TemplateGrid } from "@/components/home/WorkflowHome";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { optionalCreateFields } from "@/lib/workflow";
@@ -49,7 +49,9 @@ export default function TemplatesPage() {
           on main.
         </p>
       </header>
-      <IsolationIdentityPanel />
+      {!ready ? (
+        <SessionSetupHint purpose="before creating a draft from a template." />
+      ) : null}
       <TemplateGrid
         canCreate={canCreate}
         pending={false}

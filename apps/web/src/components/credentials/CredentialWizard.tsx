@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SecretField } from "@/components/credentials/SecretField";
 import {
@@ -189,7 +189,9 @@ export function CredentialWizard({
 
   return (
     <div className="space-y-6">
-      {modal ? null : <IsolationIdentityPanel />}
+      {!modal && !ready ? (
+        <SessionSetupHint purpose="before adding a credential." />
+      ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-amber-900">

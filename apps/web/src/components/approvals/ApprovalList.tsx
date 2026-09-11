@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   APPROVAL_BINDING_HELP,
@@ -109,12 +109,8 @@ export function ApprovalList() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and workspace lookup to list approvals.
-        </p>
+        <SessionSetupHint purpose="to list approvals." />
       ) : null}
 
       {denied ? (

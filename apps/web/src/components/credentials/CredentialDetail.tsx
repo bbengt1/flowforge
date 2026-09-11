@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CredentialTestDialog } from "@/components/credentials/CredentialTestDialog";
 import { DeleteImpactDialog } from "@/components/credentials/DeleteImpactDialog";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SecretField } from "@/components/credentials/SecretField";
 import {
@@ -306,7 +306,6 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
       <p>
         <Link
           href="/credentials"
@@ -323,10 +322,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       ) : null}
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and tenant + workbench before opening a
-          credential.
-        </p>
+        <SessionSetupHint purpose="before opening a credential." />
       ) : !record ? (
         <div className="flex flex-wrap gap-2">
           <button

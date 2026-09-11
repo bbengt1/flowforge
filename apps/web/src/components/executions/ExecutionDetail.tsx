@@ -9,7 +9,7 @@ import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionReplay } from "@/components/executions/ExecutionReplay";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { RolloutObservationPanel } from "@/components/executions/RolloutObservationPanel";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import {
@@ -534,8 +534,6 @@ export function ExecutionDetail({
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       <p>
         <Link
           href="/executions"
@@ -546,10 +544,7 @@ export function ExecutionDetail({
       </p>
 
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and tenant + workbench before reading an
-          execution.
-        </p>
+        <SessionSetupHint purpose="before reading an execution." />
       ) : null}
 
       {denied ? (

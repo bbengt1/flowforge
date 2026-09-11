@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { ConfigSpecForm } from "@/components/config/ConfigSpecForm";
 import { ConfigVersionHistory } from "@/components/config/ConfigVersionHistory";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
@@ -259,7 +259,9 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
+      {!ready ? (
+        <SessionSetupHint purpose="before editing workspace config." />
+      ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {hostProblem && !problem ? <ProblemBanner problem={hostProblem} /> : null}
       {publishGap ? (

@@ -73,10 +73,12 @@ Inaccessible capabilities never flash in nav or search.
 ## Workflow home and authoring
 
 `/workflows` is the **product home** (UX.8). `/` with `workflow.view`
-lands here. Health and OpenAPI live under Settings. This is **not** an
-n8n clone — n8n is a behavior reference only (canvas-first shell, left
-library, right inspector, executions drawer). Do not copy n8n assets or
-source. ADV/embed/membership meaning is unchanged.
+lands here. Health, OpenAPI, cookie session, and Example context live
+under Settings (or Membership). The list leads; session chrome does
+not. This is **not** an n8n clone — n8n is a behavior reference only
+(canvas-first shell, left library, right inspector, executions drawer).
+Do not copy n8n assets or source. ADV/embed/membership meaning is
+unchanged.
 
 1. Filter by search, folder (`ops/…`, `ops: …`, or slug `ops--name`),
    tag, owner, trigger, environment, status, last run, last modified.
@@ -333,6 +335,10 @@ headroom, queue-lag, or fencing dashboards.
 
 - Idle default **30m**, absolute **12h**. Refresh extends idle only;
   it cannot pass the absolute cap.
+- Product lists and wizards stay primary. Establish or debug the cookie
+  session from the session chip (`Settings` `#session`) or Membership
+  **Example context**. Do not expect BROWSER SESSION + WORKSPACE CONTEXT
+  blocks on `/workflows`, `/credentials`, or `/executions`.
 - Chip/banner warn in the last five minutes. Expired is `role="alert"`
   (`Session expired`); `401` latches `Stale session`.
 - Missing CSRF with a session cookie fails closed (`403`) before the

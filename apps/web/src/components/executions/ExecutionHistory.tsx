@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
-import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   listExecutions,
@@ -136,13 +136,8 @@ export function ExecutionHistory() {
 
   return (
     <div className="space-y-6">
-      <IsolationIdentityPanel />
-
       {!ready ? (
-        <p className="text-sm text-zinc-600">
-          Establish a cookie session and tenant + workbench before listing
-          executions.
-        </p>
+        <SessionSetupHint purpose="before listing executions." />
       ) : null}
 
       {denied ? (
