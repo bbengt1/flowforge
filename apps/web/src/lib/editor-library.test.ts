@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   ACTIONS_CATALOG_HREF,
   EDITOR_LIBRARY,
   EDITOR_LIBRARY_COLUMN_WIDTH,
+  EDITOR_LIBRARY_DEFAULT_OPEN,
   EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
+  EDITOR_LIBRARY_OPEN_STORAGE_KEY,
+  EDITOR_LIBRARY_SATELLITE_ID,
+  EDITOR_LIBRARY_SATELLITE_WIDTH,
+  R21_EPIC,
+  R21_KEEP_STORY_OPEN,
+  R21_STORY,
   UX3_EPIC,
   UX3_KEEP_STORY_OPEN,
   UX3_STORY,
@@ -13,12 +23,42 @@ import {
   actionsNavIsCatalogReference,
   canvasAddAffordance,
   catalogLibraryFailsClosed,
+  libraryChromeMode,
+  parseLibraryOpenPreference,
+  readLibraryOpenPreference,
+  rememberLibraryOpen,
+  rememberedLibraryOpen,
 } from "./editor-library.ts";
 import { EDITOR_CHROME } from "./editor-chrome.ts";
 import { sanitizeSearchSource } from "./workspace-search.ts";
 import { adaptActionLibrary, rejectDisabledActionType } from "./workflow-action-library.ts";
 import { WORKSPACE_NAV_ITEMS } from "./workspace-nav.ts";
 import type { WorkflowCatalog } from "./workflow-types.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+function source(relative: string): string {
+  return readFileSync(join(here, "..", relative), "utf8");
+}
+
+function mockSessionStorage(initial: Record<string, string> = {}) {
+  const store = new Map<string, string>(Object.entries(initial));
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem(key: string) {
+        return store.get(key) ?? null;
+      },
+      setItem(key: string, value: string) {
+        store.set(key, value);
+      },
+      removeItem(key: string) {
+        store.delete(key);
+      },
+    },
+  });
+  return store;
+}
 
 const enabledCatalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
@@ -36,14 +76,6 @@ describe("UX.3 editor library drawer", () => {
     assert.equal(UX3_STORY, 198);
     assert.equal(UX3_EPIC, 195);
     assert.equal(UX3_KEEP_STORY_OPEN, true);
-  });
-
-  it("hides the 18rem library column on first paint", () => {
-    assert.equal(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT, false);
-    assert.equal(EDITOR_LIBRARY.hiddenOnFirstPaint, true);
-    assert.equal(EDITOR_LIBRARY.columnWidth, "18rem");
-    assert.equal(EDITOR_LIBRARY_COLUMN_WIDTH, "18rem");
-    assert.equal(EDITOR_CHROME.yamlHiddenOnFirstPaint, true);
   });
 
   it("opens the existing library from + and the wizard from Add action", () => {
@@ -153,5 +185,71 @@ describe("UX.3 editor library drawer", () => {
     });
     assert.equal(empty.some((item) => item.type === "manual"), false);
     assert.equal(rejectDisabledActionType("workflow.call", { nodes: [] }).ok, false);
+  });
+});
+
+describe("R2.1 remembered-open library satellite", () => {
+  it("keeps #234 open and cites epic #228", () => {
+    assert.equal(R21_STORY, 234);
+    assert.equal(R21_EPIC, 228);
+    assert.equal(R21_KEEP_STORY_OPEN, true);
+  });
+
+  it("defaults the palette open and never hide-by-default only", () => {
+    assert.equal(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT, true);
+    assert.equal(EDITOR_LIBRARY_DEFAULT_OPEN, true);
+    assert.equal(EDITOR_LIBRARY.hiddenOnFirstPaint, false);
+    assert.equal(EDITOR_LIBRARY.rememberedOpen, true);
+    assert.equal(EDITOR_LIBRARY.persistentSatellite, true);
+    assert.equal(EDITOR_LIBRARY.defaultOpen, true);
+    assert.equal(EDITOR_LIBRARY.staysOpenAcrossInserts, true);
+    assert.equal(EDITOR_LIBRARY.columnWidth, "18rem");
+    assert.equal(EDITOR_LIBRARY_COLUMN_WIDTH, "18rem");
+    assert.equal(EDITOR_LIBRARY.satelliteWidth, "2.75rem");
+    assert.equal(EDITOR_LIBRARY_SATELLITE_WIDTH, "2.75rem");
+    assert.equal(EDITOR_LIBRARY_SATELLITE_ID, "editor-library-satellite");
+    assert.equal(EDITOR_CHROME.yamlHiddenOnFirstPaint, true);
+    assert.equal(EDITOR_CHROME.libraryHiddenOnFirstPaint, false);
+    assert.equal(libraryChromeMode(true), "drawer");
+    assert.equal(libraryChromeMode(false), "satellite");
+  });
+
+  it("remembers open/closed as a non-secret 1/0 flag", () => {
+    const store = mockSessionStorage();
+    assert.equal(parseLibraryOpenPreference(undefined), null);
+    assert.equal(parseLibraryOpenPreference("yes"), null);
+    assert.equal(parseLibraryOpenPreference("1"), true);
+    assert.equal(parseLibraryOpenPreference("0"), false);
+    assert.equal(rememberedLibraryOpen(null), true);
+    assert.equal(rememberedLibraryOpen(false), false);
+    assert.equal(readLibraryOpenPreference(), true);
+
+    rememberLibraryOpen(false);
+    assert.equal(store.get(EDITOR_LIBRARY_OPEN_STORAGE_KEY), "0");
+    assert.equal(readLibraryOpenPreference(), false);
+
+    rememberLibraryOpen(true);
+    assert.equal(store.get(EDITOR_LIBRARY_OPEN_STORAGE_KEY), "1");
+    assert.equal(readLibraryOpenPreference(), true);
+    assert.equal(EDITOR_LIBRARY.preferenceStoresOpenFlagOnly, true);
+    assert.equal(store.get(EDITOR_LIBRARY_OPEN_STORAGE_KEY)?.includes("secret"), false);
+  });
+
+  it("wires the same editor routes to remembered-open plus a satellite", () => {
+    const chrome = source("components/workflows/EditorChrome.tsx");
+    const operator = source("components/workflows/WorkflowOperator.tsx");
+    assert.match(chrome, /data-editor-library="satellite"/);
+    assert.match(chrome, /EDITOR_LIBRARY_SATELLITE_WIDTH/);
+    assert.match(chrome, /EDITOR_LIBRARY_SATELLITE_ID/);
+    assert.match(operator, /readLibraryOpenPreference/);
+    assert.match(operator, /rememberLibraryOpen/);
+    assert.match(operator, /subscribeLibraryOpenPreference/);
+    assert.doesNotMatch(operator, /setLibraryOpen/);
+    assert.match(operator, /insertLibraryNode/);
+    assert.doesNotMatch(
+      operator,
+      /function insertLibraryNode[\s\S]*rememberLibraryOpen\(false\)/,
+    );
+    assert.equal(actionsEmbedRouteUnchanged(), true);
   });
 });

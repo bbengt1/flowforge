@@ -10,7 +10,7 @@ The canvas must stay responsive while workflow validation, credential tests, imp
 
 ## Information architecture
 
-Landed UX.1–UX.11 chrome (Chloe, epic #195). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
+Landed UX.1–UX.11 chrome (Chloe, epic #195) plus R2.1 (#234 / Part of #228 — **keep #234 open**) remembered-open library satellite. This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
 
 ```mermaid
 flowchart TB
@@ -21,7 +21,7 @@ flowchart TB
   Inbox["/executions ops inbox"]
   Bar[Editor top bar]
   Canvas[Canvas]
-  Lib[Library drawer / palette]
+  Lib[Library satellite / palette]
   Insp[Inspector]
   Yaml[YAML mode]
   Runs[Runs drawer]
@@ -36,6 +36,7 @@ flowchart TB
   Home --> Editor
   Editor --> Bar
   Editor --> Canvas
+  Editor --> Lib
   Bar --> Lib
   Bar --> Insp
   Bar --> Yaml
@@ -66,7 +67,7 @@ Folded from the pre-makeover inventory (draft PR #194). Routes and keep/reshape 
 | --- | --- | --- |
 | Product home | `/workflows` | Operational list. `/` with `workflow.view` lands here. Health / OpenAPI live under Settings. |
 | Canvas editor | `/workflows/{id}` · same page `/embed/v1/workflows/{id}` | Viewport canvas + sticky top bar. Not a second studio app. |
-| Library / palette | Left drawer, hidden on first paint | **Library** or canvas **+** opens the enabled catalog. **Add action** opens the wizard. Drag still inserts defaults. `/actions` is the catalog reference, not a third app. |
+| Library / palette | Left drawer, remembered-open satellite | Opening `/workflows/{id}` (and embed) shows the enabled catalog or a persistent **Library** rail — not hide-by-default only. **Library** or canvas **+** opens the drawer; Hide remembers closed. **Add action** opens the wizard. Drag still inserts defaults. `/actions` is the catalog reference, not a third app. |
 | Inspector | Right rail | Selected **node**: name, `with`, pins, credentials (display names; add vault credential without leaving). **Workflow**: tabs Triggers / Versions / Pins. **Edge**: port compatibility. |
 | YAML mode | Drawer under the canvas, hidden on first paint | Validate / Normalize here (or Commands). Starter/invalid fixtures are Developer samples or Settings → Developer. Import stays on home. |
 | Runs drawer | Overlay, hidden on first paint | Scoped to the open workflow. Choosing a run overlays step status on the **same** canvas and shows redacted last-run I/O in the inspector. |
@@ -96,7 +97,7 @@ The editor is **canvas-first** (UX.1–UX.11). The graph takes the viewport. The
 
 **Editor top bar** (sticky): ← Workflows, name / slug / status / revision / Unsaved|Saved, Add action, Library, YAML, Inspector, Save draft, Publish, Runs, Start published, optional publish note. Publish is last **saved** draft only. Start lists **published** versions only.
 
-1. **Action library** (drawer, hidden on first paint): searchable, categorized enabled catalog — Kubernetes, SSH, scripts, control flow, data transforms, and notifications. Triggers stay **workflow-level**; they are not canvas nodes. Each card shows its safe name, required permissions, inputs, outputs, and policy restrictions. **Library** or canvas **+** opens the palette; **Add action** opens the wizard.
+1. **Action library** (remembered-open drawer + persistent satellite): searchable, categorized enabled catalog — Kubernetes, SSH, scripts, control flow, data transforms, and notifications. Triggers stay **workflow-level**; they are not canvas nodes. Each card shows its safe name, required permissions, inputs, outputs, and policy restrictions. First paint opens the palette unless the operator hid it (remembered). A **Library** satellite stays on the canvas when the drawer is closed. **Library** or canvas **+** opens the drawer; **Add action** opens the wizard.
 2. **Canvas**: pan, zoom, select, output→input connect, library drag-drop (defaults). Nodes use distinct shape/icon treatments by family plus text labels and status badges; color alone never conveys meaning. Fit-to-workflow, snap-to-grid, minimap, multi-select, alignment, undo/redo remain aspirational — **not** in the landed chrome. Positions are auto-layout until Chloe wires D1 `metadata.ui.layout` (#238). The API already stores and returns that optional non-authoritative field; missing/invalid layout is auto-layout. The canvas never invents a graph from layout.
 3. **Inspector** (right rail): selected **node** edits `with`, pins, and credentials by display name (pick or add a vault credential without leaving; secret entry stays in the masked wizard). Selected **workflow** shows tabs **Triggers / Versions / Pins**. Selected **edge** explains port compatibility. Validation groups errors and links to a node or YAML path.
 4. **YAML mode** (drawer, hidden on first paint): see [YAML editor and round-trip](#yaml-editor-and-round-trip).
@@ -187,7 +188,7 @@ E6.1 (Chloe) replaces the slim operator header with the product workspace shell.
 
 E6.2 (Chloe) extends the E3.1–E3.3 palette / inspector / YAML operator and the E6.1 shell. `apps/api` is unchanged. Session cookies + `X-CSRF-Token` and tenant + workbench identity stay the same. UX.1–UX.11 reshaped the **chrome** (library/YAML as drawers; inspector tabs; runs overlay) — the sync contract below is unchanged.
 
-- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Schedule admin is `triggers[type=schedule].admin`. `flow.approval` ships full ports/`allowedWith`/policy/bounds. Cards show ports and policy/bounds hints. The library is a left drawer (hidden on first paint), not a permanent 18rem column.
+- **Action library:** `GET /workflows/catalog` filtered to enabled implementations (`phase: core` by default; next/provider only when `enabled: true`). `rules.triggersAreWorkflowLevel` keeps `manual` / `webhook` / `schedule` off the canvas palette. Schedule admin is `triggers[type=schedule].admin`. `flow.approval` ships full ports/`allowedWith`/policy/bounds. Cards show ports and policy/bounds hints. The library is a left drawer that defaults open and remembers Hide (R2.1 / #234 — **keep #234 open**), not a hide-by-default hunt and not a permanent 18rem column. A thin satellite remains when closed.
 - **Canvas:** nodes and `nodeId.port` edges from a successful validate summary only. Invalid YAML never draws a guessed graph. Pan/zoom/select; incompatible ports are unavailable with text, not color alone. Node states use icon + label.
 - **Inspector:** selected workflow, node, or edge. Core-neutral `with` forms stay from E3.3. Credentials appear by display name only.
 - **YAML:** syntax highlighting, line/column jump, debounced `POST /workflows/validate`. Save serializes through `POST /workflows/normalize` then `PUT /workflows/{id}/draft` and replaces the buffer with the normalize YAML + digest.

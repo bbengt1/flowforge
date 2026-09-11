@@ -9,6 +9,8 @@ import {
 import {
   EDITOR_LIBRARY_COLUMN_WIDTH,
   EDITOR_LIBRARY_PANEL_ID,
+  EDITOR_LIBRARY_SATELLITE_ID,
+  EDITOR_LIBRARY_SATELLITE_WIDTH,
 } from "@/lib/editor-library";
 
 type EditorChromeProps = {
@@ -68,6 +70,7 @@ export function EditorChrome({
         {libraryOpen ? (
           <aside
             aria-label="Action library"
+            data-editor-library="drawer"
             className="flex w-full shrink-0 flex-col overflow-hidden border-zinc-200 bg-white max-md:!w-full max-md:border-b md:border-r"
             style={{ width: EDITOR_LIBRARY_COLUMN_WIDTH }}
           >
@@ -87,7 +90,25 @@ export function EditorChrome({
               {library}
             </div>
           </aside>
-        ) : null}
+        ) : (
+          <aside
+            aria-label="Action library"
+            data-editor-library="satellite"
+            className="flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:flex-col md:border-r"
+            style={{ width: EDITOR_LIBRARY_SATELLITE_WIDTH }}
+          >
+            <button
+              type="button"
+              id={EDITOR_LIBRARY_SATELLITE_ID}
+              onClick={onToggleLibrary}
+              aria-expanded={false}
+              aria-controls={EDITOR_LIBRARY_PANEL_ID}
+              className="rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:rotate-180 md:px-1 md:py-3"
+            >
+              Library
+            </button>
+          </aside>
+        )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{canvas}</div>
           {yaml}

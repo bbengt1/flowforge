@@ -1,12 +1,14 @@
 /**
- * UX.3: action library as a left drawer; canvas + / Add action
- * open the existing palette or wizard.
+ * UX.3 + R2.1: action library as a left drawer that stays available
+ * without a scavenger hunt (remembered-open + persistent satellite).
  *
- * Relates to #198 / Part of #195. Keep #198 open until merge.
+ * Relates to #234 / Part of #228. Keep #234 open until merge.
+ * Relates to #198 / Part of #195 (UX.3 drawer + Add action / +).
  *
  * Chloe UI only. Reuses ActionLibrary + ActionWizard — no third
  * catalog app, no API changes, no invented INTEGRATION_ACTIONS_ENABLED
- * toggle. 403 / empty catalog still fail closed.
+ * toggle. 403 / empty catalog still fail closed. Preference is a
+ * non-secret "1"/"0" chrome flag (never credentials or YAML).
  */
 
 import { EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT } from "./editor-chrome.ts";
@@ -24,15 +26,29 @@ export const UX3_STORY = 198;
 export const UX3_EPIC = 195;
 export const UX3_KEEP_STORY_OPEN = true;
 
+export const R21_STORY = 234;
+export const R21_EPIC = 228;
+export const R21_KEEP_STORY_OPEN = true;
+
 export const EDITOR_LIBRARY_COLUMN_WIDTH = "18rem";
+export const EDITOR_LIBRARY_SATELLITE_WIDTH = "2.75rem";
 export const EDITOR_LIBRARY_PANEL_ID = "editor-library-panel";
+export const EDITOR_LIBRARY_SATELLITE_ID = "editor-library-satellite";
+export const EDITOR_LIBRARY_OPEN_STORAGE_KEY =
+  "flowforge.editor.library-open.v1";
+export const EDITOR_LIBRARY_DEFAULT_OPEN = EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT;
 export const ACTIONS_CATALOG_HREF = "/actions";
 
 export { EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT };
 
 export const EDITOR_LIBRARY = {
-  hiddenOnFirstPaint: true,
+  hiddenOnFirstPaint: false,
+  rememberedOpen: true,
+  persistentSatellite: true,
+  defaultOpen: true,
+  staysOpenAcrossInserts: true,
   columnWidth: EDITOR_LIBRARY_COLUMN_WIDTH,
+  satelliteWidth: EDITOR_LIBRARY_SATELLITE_WIDTH,
   plusOpensLibrary: true,
   addActionOpensWizard: true,
   dragInsertDefaultsAllowed: true,
@@ -44,13 +60,87 @@ export const EDITOR_LIBRARY = {
   catalog403FailsClosed: true,
   emptyCatalogFailsClosed: true,
   noIntegrationActionsEnabledToggle: true,
+  preferenceStoresOpenFlagOnly: true,
 } as const;
+
+export type LibraryChromeMode = "drawer" | "satellite";
 
 export type CanvasAddAffordance = {
   emptyPlus: boolean;
   selectedPlus: boolean;
   addAction: boolean;
 };
+
+const listeners = new Set<() => void>();
+
+function emitLibraryOpenPreference() {
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+export function subscribeLibraryOpenPreference(
+  listener: () => void,
+): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Stored chrome flag is only "1" / "0". Anything else is treated as missing. */
+export function parseLibraryOpenPreference(
+  raw: string | null | undefined,
+): boolean | null {
+  if (raw === "1") {
+    return true;
+  }
+  if (raw === "0") {
+    return false;
+  }
+  return null;
+}
+
+export function rememberedLibraryOpen(
+  stored: boolean | null,
+  fallback = EDITOR_LIBRARY_DEFAULT_OPEN,
+): boolean {
+  return stored === null ? fallback : stored;
+}
+
+export function readLibraryOpenPreference(): boolean {
+  if (typeof sessionStorage === "undefined") {
+    return EDITOR_LIBRARY_DEFAULT_OPEN;
+  }
+  try {
+    return rememberedLibraryOpen(
+      parseLibraryOpenPreference(
+        sessionStorage.getItem(EDITOR_LIBRARY_OPEN_STORAGE_KEY),
+      ),
+    );
+  } catch {
+    return EDITOR_LIBRARY_DEFAULT_OPEN;
+  }
+}
+
+export function rememberLibraryOpen(open: boolean): void {
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      sessionStorage.setItem(
+        EDITOR_LIBRARY_OPEN_STORAGE_KEY,
+        open ? "1" : "0",
+      );
+    } catch {
+      // Private mode / quota — in-memory subscribers still update.
+    }
+  }
+  emitLibraryOpenPreference();
+}
+
+/** Closed library is still a satellite — never hide-by-default only. */
+export function libraryChromeMode(open: boolean): LibraryChromeMode {
+  return open ? "drawer" : "satellite";
+}
 
 export function canvasAddAffordance(input: {
   invalid: boolean;
