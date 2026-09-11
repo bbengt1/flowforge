@@ -165,7 +165,7 @@ describe("R4.5 waiting → decide density", () => {
     assert.equal(unloaded.waiting, true);
     assert.equal(unloaded.approvalsLoaded, false);
     assert.equal(unloaded.canDecide, false);
-    assert.match(unloaded.blockedReason, /Waiting/);
+    assert.match(unloaded.blockedReason, /waiting/i);
     assert.match(EXECUTION_DECIDE_WAITING_COPY, /decide/);
   });
 
