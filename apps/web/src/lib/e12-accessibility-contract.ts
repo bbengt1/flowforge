@@ -184,6 +184,8 @@ export const EDITOR_DRAWER_PANEL_IDS = {
 export const EDITOR_TOP_BAR_CONTROLS = [
   { id: "back", label: "← Workflows" },
   { id: "add-action", label: "Add action" },
+  { id: "undo", label: "Undo (Ctrl+Z)" },
+  { id: "redo", label: "Redo (Ctrl+Shift+Z)" },
   { id: "library", label: "Library", openLabel: "Hide library" },
   { id: "yaml", label: "YAML", openLabel: "Hide YAML" },
   { id: "inspector", label: "Inspector", openLabel: "Hide inspector" },

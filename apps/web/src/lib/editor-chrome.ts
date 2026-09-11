@@ -42,6 +42,7 @@ export const EDITOR_CHROME = {
     canvasFocus: true,
     zoomShortcuts: true,
     wizardEscape: true,
+    undoRedo: true,
   },
 } as const;
 

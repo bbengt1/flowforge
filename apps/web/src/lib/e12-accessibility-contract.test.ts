@@ -143,6 +143,8 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
     assert.equal(EDITOR_CHROME_A11Y.editorBarLabeled, true);
     assert.ok(E12_A11Y_FIXES.includes("editor-top-bar-labels"));
     assert.equal(editorTopBarControlLabel("add-action"), "Add action");
+    assert.equal(editorTopBarControlLabel("undo"), "Undo (Ctrl+Z)");
+    assert.equal(editorTopBarControlLabel("redo"), "Redo (Ctrl+Shift+Z)");
     assert.equal(editorTopBarControlLabel("library"), "Library");
     assert.equal(editorTopBarControlLabel("library", true), "Hide library");
     assert.equal(editorTopBarControlLabel("yaml"), "YAML");
