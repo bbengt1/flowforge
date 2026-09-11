@@ -121,10 +121,14 @@ so the canvas can take the viewport. Commands bind to this route id.
 
 ### Palette / library
 
-The action library is a **left drawer**, hidden on first paint.
+The action library is a **left drawer** that opens with the editor
+(remembered-open) and stays a **Library** satellite when hidden —
+not hide-by-default only. Relates to #234 / Part of #228. Keep
+#234 open.
 
 1. **Library** or a canvas **+** opens the enabled catalog. Triggers
-   stay workflow-level; they are not canvas nodes.
+   stay workflow-level; they are not canvas nodes. Hide remembers
+   closed for the next visit in this tab.
 2. **Add action** wizard — type → authorized target/credential →
    configure → map ports → review. Esc closes. Secrets never appear in
    selectors.

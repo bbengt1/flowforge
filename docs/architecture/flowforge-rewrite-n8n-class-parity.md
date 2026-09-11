@@ -90,7 +90,7 @@ Shipped on `main` at the time of this charter: **E1–E12** (platform through pr
 
 These are product gaps, not invitations to clone n8n chrome.
 
-1. **Discoverability.** Library, YAML, and runs are hidden on first paint. An n8n-class editor makes palette and node detail *available without hunting*. FlowForge can do that with its own persistent/satellite layout — it does not need n8n’s exact columns.
+1. **Discoverability.** YAML and runs stay hidden on first paint. R2.1 makes the palette a remembered-open satellite so it is *available without hunting*. Node detail (NDV) still follows. FlowForge uses its own persistent/satellite layout — it does not need n8n’s exact columns.
 2. **No spatial memory.** Positions are auto-layout only and are not a persisted UI format. Operators cannot arrange a graph and find it again. That is the largest canvas-parity hole. Fixing it requires an explicit layout contract (see [§8](#8-data--contract-strategy) and [D1](#d1--canvas-layout-persistence)).
 3. **Missing graph primitives.** Fit-to-workflow, snap-to-grid, minimap, multi-select, alignment, undo/redo are documented as aspirational in [frontend-ui](../reference/frontend-ui.md). n8n-class authoring assumes most of these.
 4. **Inspector ≠ NDV.** The right rail edits fields. An NDV owns the node conversation: parameters, typed port mapping, credential pick-by-display-name, redacted last-run I/O, validation, policy impact — without sending the operator to `/credentials` or `/executions` for the common path.
@@ -293,7 +293,7 @@ Against current `main`. “Replace” means replace the *surface or implementati
 | Ops surfaces | `/config`, OpenAPI, incident/retention docs | **Keep** | jonny authority. Not a product home. |
 | Action wizard | Guided add | **Reshape** | Keep policy/credential review; NDV becomes the everyday edit. |
 | Auto-layout-only positions | Not persisted | **Replace** ([D1](#d1--canvas-layout-persistence) locked; API landed, Chloe #238) | Persist optional non-authoritative `metadata.ui.layout`. Executor ignores it. Invalid/missing → auto-layout; never invent nodes/edges. |
-| Hidden-first-paint drawers | Library / YAML / runs | **Replace** the hide-by-default habit | YAML/runs may stay modes; palette/NDV should not. |
+| Hidden-first-paint drawers | YAML / runs (library is R2.1 remembered-open) | **Replace** remaining hide-by-default habit | YAML/runs may stay modes; palette/NDV should not. |
 | Foundation header fallback | Trusted-dev identity headers | **Retire** from product chrome when embed/OIDC is the only subject path | API flag stays local-only. |
 | Developer starter/invalid fixtures | Settings / developer disclosure | **Keep** off primary chrome (UX.2 already moved them) | |
 | Pre-#195 stacked operator page | Gone as product IA | **Retired** | Do not restore. PR #194 inventory is historical. |
@@ -498,7 +498,7 @@ Docs-only. No `apps/web` change. **Do not open epics or issues from this fold-in
 
 n8n is a *behavior* reference only. Do not copy n8n chrome, assets, or product terms into the UI. “NDV” below is a parity *reference* for a focused node inspector — not a branded modal.
 
-§3–§6 already match landed #195 chrome (home, canvas-first editor, hidden-first-paint library/YAML/runs, inspector tabs, same-canvas overlay, vault by display name). No table patch.
+§3–§6 already match landed #195 chrome (home, canvas-first editor, YAML/runs drawers, inspector tabs, same-canvas overlay, vault by display name). R2.1 (#234) replaces hide-by-default library with a remembered-open satellite. No table patch.
 
 #### Locked (D1–D6)
 
@@ -521,7 +521,7 @@ Behavior targets, not a visual spec. Full rows: [rewrite-ui-surfaces.md](../refe
 | --- | --- | --- |
 | **Home** | `/workflows` list/cards; client folder-prefix filters; create/import/duplicate/template all POST a **draft**; `?start=` / `?webhooks=` / `?schedules=` | Workbench density (activation, waiting, last run). First-class folder/tag UX only when an API exists. Empty state: create / template / import — no developer fixtures. |
 | **Editor / canvas** | `/workflows/{id}` viewport; auto-layout only; invalid YAML never guesses a graph | Palette + NDV available without hunting. Graph primitives (undo/redo, multi-select, fit/snap). Layout persist via [D1](#d1--canvas-layout-persistence) `metadata.ui.layout` (API landed; Chloe #238). Touch stays a breakpoint, not a mobile app. |
-| **Palette** | Left drawer, hidden on first paint; enabled catalog; **Add action** wizard; `/actions` is reference | Faster add-from-canvas on the **same** enabled catalog. No marketplace. No disabled next/provider types. Triggers excluded (`rules.triggersAreWorkflowLevel`). |
+| **Palette** | Left drawer, remembered-open satellite (R2.1 / #234); enabled catalog; **Add action** wizard; `/actions` is reference | Stronger category / recommended-from-upstream UX on the **same** enabled catalog. No marketplace. No disabled next/provider types. Triggers excluded (`rules.triggersAreWorkflowLevel`). |
 | **NDV / inspector** | Right rail: `with` / pins / display-name credentials; workflow tabs Triggers / Versions / Pins; redacted last-run I/O | Focused node conversation (parameters, typed field-path mapping, credential pick/add, redacted I/O, validation/policy). No expression language. No `SecretField` in the rail. |
 | **Runs** | Hidden drawer; overlay on **this** canvas; **Open execution** → `/executions/{id}` | Overlay stays the editor “what just ran?” path (filter, skip-to-failed/`indeterminate`, cancel/retry when policy allows). No `/replay`. No second graph. |
 | **Vault** | `/credentials/*`; NDV add reuses masked wizard | Finish return-to-editor as the default. Usage/deletion-impact without a secret surface. |

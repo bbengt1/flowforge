@@ -32,12 +32,17 @@ import {
   type EditorDrawerId,
 } from "@/lib/e12-accessibility-contract";
 import {
-  EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
   EDITOR_YAML_OPEN_ON_FIRST_PAINT,
   canPublishLastSavedDraft,
   editorCommandAppliesToRoute,
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
+import {
+  EDITOR_LIBRARY_DEFAULT_OPEN,
+  readLibraryOpenPreference,
+  rememberLibraryOpen,
+  subscribeLibraryOpenPreference,
+} from "@/lib/editor-library";
 import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
 import {
   EDITOR_RUN_OVERLAY_HELP,
@@ -231,7 +236,11 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [workflow, setWorkflow] = useState<WorkflowRecord | null>(null);
   const [revision, setRevision] = useState<number | null>(null);
   const [publishNote, setPublishNote] = useState("");
-  const [libraryOpen, setLibraryOpen] = useState(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT);
+  const libraryOpen = useSyncExternalStore(
+    subscribeLibraryOpenPreference,
+    readLibraryOpenPreference,
+    () => EDITOR_LIBRARY_DEFAULT_OPEN,
+  );
   const [yamlOpen, setYamlOpen] = useState(EDITOR_YAML_OPEN_ON_FIRST_PAINT);
   const [runsOpen, setRunsOpen] = useState(EDITOR_RUNS_OPEN_ON_FIRST_PAINT);
   const [inspectorOpen, setInspectorOpen] = useState(
@@ -443,7 +452,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
 
   function setDrawerOpen(id: EditorDrawerId, open: boolean) {
     if (id === "library") {
-      setLibraryOpen(open);
+      rememberLibraryOpen(open);
     }
     if (id === "yaml") {
       setYamlOpen(open);

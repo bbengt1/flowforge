@@ -59,8 +59,8 @@ describe("UX.1 editor chrome", () => {
     assert.equal(EDITOR_CHROME.workflowListInEditor, false);
     assert.equal(EDITOR_CHROME.createImportOnWorkflowsHome, true);
     assert.equal(EDITOR_WORKFLOWS_HREF, "/workflows");
-    assert.equal(EDITOR_CHROME.libraryHiddenOnFirstPaint, true);
-    assert.equal(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT, false);
+    assert.equal(EDITOR_CHROME.libraryHiddenOnFirstPaint, false);
+    assert.equal(EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT, true);
   });
 
   it("uses the workflow name as the single heading", () => {
