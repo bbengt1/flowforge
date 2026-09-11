@@ -116,8 +116,9 @@ so the canvas can take the viewport. Commands bind to this route id.
 3. **Add action** opens the wizard. **Undo (Ctrl+Z)** / **Redo
    (Ctrl+Shift+Z)** reverse canvas graph edits (move/add/remove/connect)
    before save. Relates to #236 / Part of #228. Keep #236 open.
-   **Library**, **YAML**, **Inspector**, and **Runs** toggle drawers
-   (`aria-pressed` / `aria-expanded`).
+   **Library**, **YAML**, **Inspector**, and **Runs** toggle satellites
+   (`aria-pressed` / `aria-expanded`). Library, Inspector, and Runs
+   remember open/closed; closed is still a rail.
 4. **Save draft** normalizes then `PUT`s the draft and replaces the
    buffer with API YAML + digest. Disabled while invalid.
 5. **Publish** is last **saved** draft only. Optional publish note.
@@ -183,7 +184,7 @@ shell. Relates to #235 / Part of #228. Keep #235 open.
    **Inspector** satellite stays on the canvas so the shell is never
    missing.
    Save stays disabled while invalid.
-5. **Last run** — when a run is selected in the Runs drawer, redacted
+5. **Last run** — when a run is selected in the Runs overlay, redacted
    input / output / logs for this node. Secrets stay `[redacted]`.
    `indeterminate` is icon + text.
 
@@ -198,12 +199,15 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
    Developer — not primary chrome.
 4. Import stays on `/workflows` and still validates before create.
 
-### Runs drawer
+### Runs overlay
 
-1. **Runs** opens a drawer scoped to this workflow (hidden on first
-   paint). `/executions` remains the workspace inbox.
-2. Arrow keys move; Enter / Space overlays the focused run on **this**
-   canvas. Do not expect a second replay graph.
+1. **Runs** is a remembered-open satellite scoped to this workflow
+   (closed still shows a **Runs** rail — it does not bury the canvas).
+   `/executions` remains the workspace inbox.
+2. Status chips filter this workflow’s runs. **Skip to failed** /
+   **Skip to indeterminate** jump to the matching run or step without
+   leaving the graph. Arrow keys move; Enter / Space overlays the
+   focused run on **this** canvas. Do not expect a second replay graph.
 3. Inspector shows redacted last-run I/O for the selected node.
 4. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
    removes the overlay. Still no draft execute. Do not invent `/replay`.
@@ -288,7 +292,8 @@ E12.1 UI evidence: [approval-expired.svg](../reference/e12-security-evidence/app
    correlation, and Open. Focus the listbox: Arrow keys move, Enter
    opens existing `/executions/{id}` detail — this inbox is not a
    second replay graph. Do not expect cursor / time / trigger /
-   actor filters yet.
+   actor filters yet. The editor **Runs** overlay (R4.2) filters and
+   highlights this workflow’s runs on the same canvas.
 2. `indeterminate` uses a stronger border plus icon + text — never
    silent success, never “it probably did not run.”
 3. Start only a **published** version (home or the start panel).
