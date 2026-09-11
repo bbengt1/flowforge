@@ -374,13 +374,16 @@ pnpm --filter @flowforge/web lint
 # Full stack: copy env-template.txt → .env, then
 docker compose up --build
 # UI http://localhost:3000  API health http://localhost:8080/api/v1/health
+# worker claims /api/v1/jobs/claim so Start published leaves queued
 ```
 
 Compose seeds tenant `local` / workbench `default` and demo vault
 credentials for `https://idp.example|admin-1` (opt out with
 `SEED_LOCAL_DEFAULTS=0`). How to point the membership form at that
 context: [deployment.md](../deployment.md#local-default-tenant-seed).
+The compose `worker` is required for published runs; opt out with
+`--scale worker=0` or `LOCAL_WORKER=0`.
 
 Compose and production env stay on [deployment.md](../deployment.md).
 Do not copy `TRUSTED_DEV_IDENTITY_HEADERS`, sample `PLATFORM_ADMINS`,
-`SEED_LOCAL_DEFAULTS`, or the compose local KEK into production.
+`SEED_LOCAL_DEFAULTS`, `LOCAL_WORKER`, or the compose local KEK into production.

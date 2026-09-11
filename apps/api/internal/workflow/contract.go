@@ -270,6 +270,13 @@ func coreNeutralTypes() map[string]NodeType {
 	}
 }
 
+// IsCoreNeutral reports whether typ is a core contract node the local
+// compose worker may evaluate in-process (data.* / flow.*). Provider
+// nodes stay fail-closed for that worker.
+func IsCoreNeutral(typ string) bool {
+	return isCoreNeutral(typ)
+}
+
 func isCoreNeutral(typ string) bool {
 	_, ok := coreNeutralTypes()[typ]
 	return ok

@@ -4,11 +4,19 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+)
+
+// Additive execution detail reason when queued jobs sit unclaimed.
+// Chloe can surface this; it does not change status or fencing.
+const (
+	StatusReasonNoWorker       = "no-worker"
+	DefaultQueuedNoWorkerAfter = 15 * time.Second
 )
 
 func (s *Server) listWorkspaceExecutions(w http.ResponseWriter, r *http.Request) {
@@ -179,13 +187,41 @@ func (s *Server) writeExecutionDetail(w http.ResponseWriter, r *http.Request, sc
 		return
 	}
 	writeJSON(w, status, executionResponse{
-		Execution:   exec,
-		Pins:        pins,
-		Steps:       wfstore.BoundSteps(steps),
-		Jobs:        jobs,
-		AuditEvents: audits,
-		Artifacts:   publicArtifacts(arts),
+		Execution:    exec,
+		StatusReason: queuedUnclaimedReason(exec, jobs, s.now()),
+		Pins:         pins,
+		Steps:        wfstore.BoundSteps(steps),
+		Jobs:         jobs,
+		AuditEvents:  audits,
+		Artifacts:    publicArtifacts(arts),
 	})
+}
+
+// queuedUnclaimedReason is an operator-visible hint when a run is still
+// queued and no worker has claimed any job after a short grace period.
+func queuedUnclaimedReason(exec wfstore.Execution, jobs []wfstore.ExecutionJob, now time.Time) string {
+	if exec.Status != wfstore.ExecutionQueued {
+		return ""
+	}
+	var oldest time.Time
+	for _, job := range jobs {
+		if job.Status != wfstore.JobQueued || strings.TrimSpace(job.WorkerID) != "" {
+			return ""
+		}
+		if oldest.IsZero() || job.AvailableAt.Before(oldest) {
+			oldest = job.AvailableAt
+		}
+	}
+	if oldest.IsZero() {
+		return ""
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if now.Sub(oldest) < DefaultQueuedNoWorkerAfter {
+		return ""
+	}
+	return StatusReasonNoWorker
 }
 
 func executionFilterFromQuery(r *http.Request) wfstore.ExecutionListFilter {

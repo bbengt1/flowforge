@@ -52,6 +52,13 @@ A claim returns `fencing_token` plus an HMAC job ticket
 (`JOB_BINDING_SECRET`) bound to workspace, workflow version/digest,
 policy digest, and expiry.
 
+Local compose starts a **dev-only** `worker` service that uses this
+same claim path so Start published can leave `queued`. It is not a
+production worker. `deploy/k8s` must not run `/usr/local/bin/worker`.
+See [deployment — local compose worker](../deployment.md#local-compose-worker).
+When jobs sit `queued` with no `workerId` for 15s, execution detail
+includes additive `statusReason: "no-worker"`.
+
 On lease expiry or a disconnected worker:
 
 1. `POST /api/v1/jobs/recover` (also runs on the next claim) marks

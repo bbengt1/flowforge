@@ -7689,6 +7689,13 @@ components:
           format: date-time
         replayed:
           type: boolean
+        statusReason:
+          type: string
+          enum: [no-worker]
+          description: >
+            Additive operator hint when status is still queued and no job has
+            been claimed after 15s. Does not change status or fencing.
+            Chloe can show “no worker is claiming jobs”.
         pins:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}

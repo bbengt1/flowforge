@@ -7,6 +7,10 @@
 #   api      — Go control plane. Build context ./apps/api; HTTP_ADDR=:8080.
 #              Hardening from E1.3 #10 (UID 65532, read-only, caps, tmpfs,
 #              mem/cpu/pid limits). Matches deploy/k8s.
+#   worker   — Local/dev job runner. Same image as api, command worker.
+#              Claims POST /api/v1/jobs/claim (lease + HMAC ticket + fence).
+#              Required for Start published to leave queued. Not a k8s service.
+#              Opt out: docker compose up --scale worker=0  or  LOCAL_WORKER=0
 #   postgres — local PostgreSQL. Password comes from .env only.
 #              Backup encryption + restore rehearsal: scripts/backup/.
 #
@@ -110,6 +114,43 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  # Local/dev only. Claims queued jobs so Start published can leave queued.
+  # Uses the same ADV fencing / lease / jobToken contract as any worker.
+  # Production/k8s must deploy a real isolated worker — do not copy this
+  # service. Opt out: --scale worker=0 or LOCAL_WORKER=0 (clean exit).
+  worker:
+    <<: *security
+    image: flowforge-api:local
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/worker"]
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=1777
+    mem_limit: 256m
+    cpus: "0.5"
+    pids_limit: 128
+    environment:
+      API_URL: http://api:8080
+      APP_ENV: ${APP_ENV:-development}
+      # Explicit 1 with production APP_ENV or REQUIRE_TLS=true is a boot-fail.
+      # Set 0/false/off to opt out (process exits 0 so compose stays healthy).
+      LOCAL_WORKER: ${LOCAL_WORKER:-}
+      WORKER_ID: ${WORKER_ID:-compose-local}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+      WORKER_LEASE: ${WORKER_LEASE:-30s}
+      # Same principal as the API trusted-dev / seed admin. Must have
+      # workflow.execute on the workspace (PLATFORM_ADMINS membership).
+      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
+      WORKER_ISSUER: ${WORKER_ISSUER:-}
+      WORKER_SUBJECT: ${WORKER_SUBJECT:-}
+    depends_on:
+      - api
+    # on-failure so LOCAL_WORKER=0 (exit 0) stays down. Crashes still retry.
+    restart: on-failure
 
   web:
     <<: *security

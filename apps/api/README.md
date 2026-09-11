@@ -149,6 +149,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint issuer allowlist. Empty fails closed (`403`). Merged into embed exchange verification. Production requires `https://` (ADV-018; boot-fail). |
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `WEB_EMBED_FRAME_ANCESTORS`). Published on `GET /api/v1/embed/catalog` and `GET /api/v1/portal/adapter` as `frameAncestors`. Empty fails closed. |
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, and demo vault credentials. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). |
 
 Suggested local URL (compose service hostname `postgres`):
 
@@ -165,6 +167,8 @@ From `apps/api`:
 go test ./...
 go run ./cmd/migrate
 go run ./cmd/api
+# Local/dev only (APP_ENV=development). Claims jobs against a running API.
+APP_ENV=development TRUSTED_DEV_IDENTITY_HEADERS=1 go run ./cmd/worker
 ```
 
 Integration coverage for a live database is skipped unless `TEST_DATABASE_URL` or `DATABASE_URL` is set.
@@ -203,6 +207,16 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
     depends_on:
       postgres:
         condition: service_healthy
+  worker:
+    image: flowforge-api:local
+    command: ["/usr/local/bin/worker"]
+    environment:
+      API_URL: http://api:8080
+      APP_ENV: ${APP_ENV:-development}
+      LOCAL_WORKER: ${LOCAL_WORKER:-}
+      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
+    depends_on:
+      - api
 ```
 
 Conventions:
@@ -211,6 +225,6 @@ Conventions:
 - Host/container port: `8080`
 - Build context: `apps/api` (this Dockerfile)
 - Image user: UID/GID `65532` (non-root). Compose and `deploy/k8s` also set a read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, and CPU/memory/PID limits.
-- Same image can run migrations as a one-shot. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` replaces the API process.
+- Same image can run migrations as a one-shot or the local worker. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` or `command: ["/usr/local/bin/worker"]` replaces the API process. The worker is local/dev only.
 - UI (`apps/web`) should call `http://api:8080` from the compose network, or `http://localhost:8080` from the host
 - Kubernetes / TLS / supply-chain foundation: [`deploy/`](../../deploy/)

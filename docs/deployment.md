@@ -8,15 +8,16 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
-2. Run `docker compose up --build`.
+2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)).
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
-Compose hardening (both services, UID/GID **65532**):
+Compose hardening (UID/GID **65532** except postgres):
 
 - **api** (`#10`): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, and CPU/memory/PID limits. Matches `deploy/k8s`.
+- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Not present in `deploy/k8s`.
 - **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`).
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 
@@ -87,6 +88,10 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
 | `JOB_BINDING_SECRET` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Unset = tickets die on API restart. **Set in production.** |
+| `LOCAL_WORKER` | unset (on in local/dev/test) | **Local/dev only.** Compose `worker` claims `/api/v1/jobs/claim`. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this or run `/usr/local/bin/worker`. |
+| `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. |
+| `WORKER_ID` | `compose-local` | Worker id sent on claim/heartbeat/complete. |
+| `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the worker presents. Must have `workflow.execute`. |
 | `SCRIPT_SIGNING_KEY` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Unset = signatures die on restart. **Set in production.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
 | `BACKUP_ENCRYPTION_KEY` | (scripts only) | Passphrase for `scripts/backup/*` (AES-256-CBC + PBKDF2). Wrap with KMS before production. Not an API process env. |
@@ -119,6 +124,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
 | `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` unset (ephemeral) | Durable secrets. Tickets and script signatures die on restart if unset. |
+| Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Production workers are isolated claim clients you deploy separately. The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
 | `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
@@ -199,6 +205,54 @@ lists memberships only after that workspace lookup is in tab
 `deploy/k8s/api-configmap.yaml` must not set `SEED_LOCAL_DEFAULTS`.
 Empty/`production` `APP_ENV` plus `REQUIRE_TLS=true` keeps the seed
 inactive even if someone copies the compose file.
+
+## Local compose worker
+
+Relates to #223. Fresh `docker compose up` starts a **local/dev**
+`worker` service that claims `POST /api/v1/jobs/claim` so **Start
+published** can leave `queued`. It uses the same lease, HMAC
+`jobToken` (`JOB_BINDING_SECRET`), and fencing token checks as any
+other worker. It does **not** bypass ADV fencing, drafts-never-run,
+or E12 suites.
+
+The binary is `/usr/local/bin/worker` in the API image
+(`apps/api/cmd/worker`). Compose runs that command; the API process
+does not start an in-process runner.
+
+### What it executes
+
+| Node | Local worker |
+| --- | --- |
+| Core `data.set` / `data.map` / `data.validate` / `flow.condition` / `flow.stop` / `flow.fail` | Evaluate via the existing Go contract, then `heartbeat` + `complete` / `fail`. Enough for the blank-draft smoke. |
+| `flow.approval` | API parks the claim as `waiting` (no lease). Worker skips. |
+| `flow.delay` | Fail-closed (`local-worker-unsupported`). Durable wait is not an in-worker sleep. |
+| Provider (`k8s.*`, `ssh.run`, `script.*`, `http.request`, …) | Fail-closed (`local-worker-unsupported`). Isolated production workers stay required. |
+
+Identity is the compose trusted-dev principal (`PLATFORM_ADMINS`,
+default `https://idp.example|admin-1`). The worker lists
+`GET /workspaces` and claims each membership. Host-supplied workspace
+ids are not sent (400).
+
+### Opt in / opt out
+
+| Setting | Effect |
+| --- | --- |
+| `APP_ENV=development\|dev\|local\|test` and `REQUIRE_TLS` false (compose default) | Worker runs. |
+| `LOCAL_WORKER=0` / `false` / `off` | Process exits 0 (`restart: on-failure` stays down). |
+| `docker compose up --scale worker=0` | Do not start the service. |
+| Host `go run ./cmd/worker` with `API_URL=http://127.0.0.1:8080` and `APP_ENV=development` | Same claim loop against a host API. |
+| `LOCAL_WORKER=1` with empty/`production`/unknown `APP_ENV` or `REQUIRE_TLS=true` | **Boot-fail.** |
+| Production-locked `APP_ENV` without the flag | Process **refuses to start** (exit 1). |
+
+`deploy/k8s` must not set `LOCAL_WORKER` or run `/usr/local/bin/worker`.
+
+### Unclaimed jobs
+
+When an execution stays `queued` and no job has a `workerId` for more
+than **15s**, `GET /api/v1/executions/{id}` includes additive
+`statusReason: "no-worker"`. Status stays `queued`. Chloe can show
+“no worker is claiming jobs”. Production without a worker surfaces
+the same hint.
 
 ## Metrics and OpenAPI scrape (ADV-020)
 

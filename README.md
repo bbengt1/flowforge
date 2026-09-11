@@ -7,7 +7,7 @@ This README only covers how to start the local stack. It does not define product
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password placeholder.
-2. Run `docker compose up --build`.
+2. Run `docker compose up --build` (starts `postgres`, `api`, `worker`, and `web`). The worker claims jobs so **Start published** can leave `queued`. Opt out with `--scale worker=0` or `LOCAL_WORKER=0`. Do not copy the worker into Kubernetes.
 3. Open the UI at [http://localhost:3000](http://localhost:3000).
 4. With the Go module from [PR #2](https://github.com/bbengt1/flowforge/pull/2) present, verify [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health) then [http://localhost:8080/api/v1/readiness](http://localhost:8080/api/v1/readiness).
 

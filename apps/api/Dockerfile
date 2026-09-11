@@ -14,7 +14,8 @@ RUN go mod download
 
 COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
- && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+ && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+ && go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 FROM alpine:3.20
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
@@ -23,6 +24,7 @@ RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
 
 COPY --from=build --chown=65532:65532 /out/api /usr/local/bin/api
 COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
+COPY --from=build --chown=65532:65532 /out/worker /usr/local/bin/worker
 
 USER 65532:65532
 EXPOSE 8080
@@ -31,7 +33,9 @@ LABEL org.opencontainers.image.source="https://github.com/bbengt1/flowforge" \
       org.opencontainers.image.title="flowforge-api" \
       org.opencontainers.image.description="FlowForge control-plane API"
 
-# CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate.
+# CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate
+# or /usr/local/bin/worker. The worker binary is local/dev only — do not
+# run it from deploy/k8s.
 # Run this image with a read-only root filesystem, dropped capabilities,
 # no-new-privileges, and resource limits (see docker-compose.yml and deploy/k8s).
 CMD ["/usr/local/bin/api"]
