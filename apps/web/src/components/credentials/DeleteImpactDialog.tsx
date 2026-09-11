@@ -42,9 +42,9 @@ export function DeleteImpactDialog({
           Confirm deletion
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Load{" "}
-          <code className="font-mono text-xs">GET .../deletion-impact</code>{" "}
-          first. Delete sends{" "}
+          Deletion-impact is already on the detail page from{" "}
+          <code className="font-mono text-xs">GET .../deletion-impact</code>.
+          Delete sends{" "}
           <code className="font-mono text-xs">{`{confirm:true}`}</code>. Active
           executions block delete. Secret values are never shown.
         </p>
