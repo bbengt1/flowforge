@@ -115,12 +115,18 @@ import {
   connectGraphEdge,
   disconnectGraphEdge,
   editorHasLocalInvalidations,
+  parsePortRef,
   projectCanvasGraph,
   removeGraphNode,
 } from "@/lib/workflow-graph";
 import {
+  localNdvMappingErrors,
+  ndvDestAcceptsFieldPathMapping,
+} from "@/lib/editor-ndv-mapping";
+import {
   applyCoreNodeConfig,
   insertCatalogNode,
+  listYamlEdges,
   listYamlNodes,
   updateYamlNode,
   type CoreNodeWith,
@@ -705,7 +711,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     scriptCatalog,
     httpCatalog,
   );
-  const localErrors = editorHasLocalInvalidations(yaml, catalog, library);
+  const localErrors = [
+    ...editorHasLocalInvalidations(yaml, catalog, library),
+    ...localNdvMappingErrors(
+      yamlNodes,
+      listYamlEdges(yaml),
+      catalog,
+      library,
+    ).map((error) => error.message),
+  ];
   const graph = projectCanvasGraph({
     errors,
     summary,
@@ -1524,8 +1538,43 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     const result = connectGraphEdge(yaml, from, to, catalog, library);
     if (result.errors.length === 0) {
       writeGraphYaml(result.yaml);
+      const toRef = parsePortRef(to);
+      const dest = toRef
+        ? listYamlNodes(result.yaml).find((node) => node.id === toRef.nodeId)
+        : undefined;
+      const destEntry = dest
+        ? library.find((item) => item.type === dest.type)
+        : undefined;
+      if (
+        dest &&
+        ndvDestAcceptsFieldPathMapping(dest.type, toRef?.port, destEntry?.allowedWith)
+      ) {
+        applySelection({ kind: "edge", from, to });
+      }
     }
     return result.errors;
+  }
+
+  function rewireInput(nodeId: string, toPort: string, from: string | null): string[] {
+    const to = `${nodeId}.${toPort}`;
+    const existing = listYamlEdges(yaml).find((edge) => edge.to === to);
+    let next = yaml;
+    if (existing) {
+      next = disconnectGraphEdge(next, existing.from, existing.to);
+    }
+    if (!from) {
+      if (next !== yaml) {
+        writeGraphYaml(next);
+      }
+      return [];
+    }
+    const result = connectGraphEdge(next, from, to, catalog, library);
+    if (result.errors.length > 0) {
+      return result.errors;
+    }
+    writeGraphYaml(result.yaml);
+    applySelection({ kind: "edge", from, to });
+    return [];
   }
 
   function applyNodeConfig(id: string, name: string, config: CoreNodeWith) {
@@ -1845,6 +1894,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             graph={canvasGraph}
             nodes={yamlNodes}
             entries={library}
+            catalog={catalog}
             selection={selection}
             pending={pending !== null}
             identity={identity}
@@ -1871,6 +1921,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             onApply={applyNodeConfig}
             onRename={applyNodeName}
             onPatchNodeWith={patchNodeWith}
+            onRewireInput={rewireInput}
             workflowId={workflow?.id ?? workflowId}
             credentialRefreshNonce={credentialRefreshNonce}
             pendingCredentials={pendingCredentials}

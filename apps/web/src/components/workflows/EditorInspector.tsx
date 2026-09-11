@@ -1,6 +1,7 @@
 "use client";
 
 import { LastRunIoPanel } from "@/components/workflows/LastRunIoPanel";
+import { NdvMappingPanel } from "@/components/workflows/NdvMappingPanel";
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { HttpNotificationPinsPanel } from "@/components/config/HttpNotificationPinSelect";
@@ -32,7 +33,7 @@ import {
 import type { WorkflowGraph } from "@/lib/workflow-graph";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { CoreNodeWith, YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
-import { listYamlTriggers, readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
+import { listYamlEdges, listYamlTriggers, readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
 import {
   EDITOR_INSPECTOR,
   INSPECTOR_METADATA_ONLY_HELP,
@@ -63,9 +64,16 @@ import {
   type WorkflowInspectorAdmin,
 } from "@/components/workflows/EditorWorkflowTabs";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
+import {
+  NDV_MAPPING_EDGE_PORT_ONLY_HELP,
+  ndvDestAcceptsFieldPathMapping,
+  ndvPortTypingIncomplete,
+  suggestNdvFieldPaths,
+} from "@/lib/editor-ndv-mapping";
 import { latestStepsByNode } from "@/lib/execution-replay";
 import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import type { ProblemDetails } from "@/lib/problem";
+import type { WorkflowCatalog } from "@/lib/workflow-types";
 import Link from "next/link";
 
 export type EditorLastRunOverlay = {
@@ -82,6 +90,7 @@ type EditorInspectorProps = {
   graph: WorkflowGraph | null;
   nodes: YamlWorkflowNode[];
   entries: ActionLibraryEntry[];
+  catalog?: WorkflowCatalog | null;
   selection: EditorSelection;
   pending: boolean;
   identity: DevIdentity;
@@ -100,6 +109,7 @@ type EditorInspectorProps = {
   onApply: (id: string, name: string, config: CoreNodeWith) => string[];
   onRename?: (id: string, name: string) => void;
   onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
+  onRewireInput?: (nodeId: string, toPort: string, from: string | null) => string[];
   workflowId?: string;
   credentialRefreshNonce?: number;
   pendingCredentials?: Readonly<Record<string, InspectorPendingCredential>>;
@@ -113,6 +123,7 @@ export function EditorInspector({
   graph,
   nodes,
   entries,
+  catalog,
   selection,
   pending,
   identity,
@@ -131,6 +142,7 @@ export function EditorInspector({
   onApply,
   onRename,
   onPatchNodeWith,
+  onRewireInput,
   workflowId,
   credentialRefreshNonce,
   pendingCredentials,
@@ -156,6 +168,20 @@ export function EditorInspector({
     selectedNodeId && lastRun?.detail
       ? latestStepsByNode(lastRun.detail.steps).get(selectedNodeId)?.id
       : undefined;
+  const yamlEdges = listYamlEdges(yaml);
+  const mappingNodeId =
+    selectedNodeId ??
+    (selection.kind === "edge"
+      ? graph?.edges.find((item) => item.from === selection.from && item.to === selection.to)
+          ?.toRef.nodeId ?? null
+      : null);
+  const lastRunSuggestions =
+    lastRun?.detail && mappingNodeId
+      ? suggestNdvFieldPaths(
+          latestStepsByNode(lastRun.detail.steps).get(mappingNodeId)?.input ??
+            latestStepsByNode(lastRun.detail.steps).get(mappingNodeId)?.output,
+        )
+      : [];
   const lastRunPanel = lastRun && (lastRun.detail || lastRun.pending || lastRun.problem) ? (
     <div data-ndv-panel="last-run">
       <LastRunIoPanel
@@ -189,7 +215,20 @@ export function EditorInspector({
       {focus === "edge" && selection.kind === "edge" ? (
         <>
           {lastRunPanel}
-          <EdgeInspect graph={graph} from={selection.from} to={selection.to} entries={entries} />
+          <EdgeInspect
+            graph={graph}
+            from={selection.from}
+            to={selection.to}
+            entries={entries}
+            catalog={catalog}
+            nodes={nodes}
+            edges={yamlEdges}
+            canEdit={canEdit}
+            pending={pending}
+            onRewireInput={canEdit ? onRewireInput : undefined}
+            onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
+            suggestedFromPaths={lastRunSuggestions}
+          />
         </>
       ) : null}
       {focus === "node" && selectedNode ? (
@@ -257,6 +296,27 @@ export function EditorInspector({
               </div>
             ) : null}
           </div>
+          <NdvMappingPanel
+            node={selectedNode}
+            nodes={nodes}
+            edges={yamlEdges}
+            entries={entries}
+            catalog={catalog}
+            canEdit={canEdit}
+            pending={pending}
+            suggestedFromPaths={lastRunSuggestions}
+            onRewireInput={canEdit ? onRewireInput : undefined}
+            onPatchMapping={
+              canEdit
+                ? (id, mapping) => onPatchNodeWith?.(id, { mapping })
+                : undefined
+            }
+            onPatchPath={
+              canEdit
+                ? (id, path) => onPatchNodeWith?.(id, { path })
+                : undefined
+            }
+          />
           <SelectedNodePins
             node={selectedNode}
             entry={selectedEntry}
@@ -322,18 +382,46 @@ function EdgeInspect({
   from,
   to,
   entries,
+  catalog,
+  nodes,
+  edges,
+  canEdit,
+  pending,
+  onRewireInput,
+  onPatchNodeWith,
+  suggestedFromPaths,
 }: {
   graph: WorkflowGraph | null;
   from: string;
   to: string;
   entries: ActionLibraryEntry[];
+  catalog?: WorkflowCatalog | null;
+  nodes: YamlWorkflowNode[];
+  edges: { from: string; to: string }[];
+  canEdit: boolean;
+  pending: boolean;
+  onRewireInput?: (nodeId: string, toPort: string, from: string | null) => string[];
+  onPatchNodeWith?: (id: string, patch: Record<string, unknown>) => void;
+  suggestedFromPaths: readonly string[];
 }) {
   const edge = graph?.edges.find((item) => item.from === from && item.to === to);
   const fromNode = graph?.nodes.find((node) => node.id === edge?.fromRef.nodeId);
-  const toNode = graph?.nodes.find((node) => node.id === edge?.toRef.nodeId);
+  const toGraphNode = graph?.nodes.find((node) => node.id === edge?.toRef.nodeId);
+  const toYamlNode = toGraphNode
+    ? nodes.find((node) => node.id === toGraphNode.id)
+    : null;
   const fromEntry = entries.find((entry) => entry.type === fromNode?.type);
-  const toEntry = entries.find((entry) => entry.type === toNode?.type);
+  const toEntry = entries.find((entry) => entry.type === toGraphNode?.type);
+  const typing = ndvPortTypingIncomplete(toEntry ?? fromEntry, toEntry?.type ?? fromEntry?.type ?? "");
+  const acceptsPaths = toYamlNode
+    ? ndvDestAcceptsFieldPathMapping(
+        toYamlNode.type,
+        edge?.toRef.port,
+        toEntry?.allowedWith,
+      )
+    : false;
   return (
+    <div className="space-y-4">
     <section
       aria-labelledby="edge-inspect-heading"
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
@@ -349,6 +437,12 @@ function EdgeInspect({
           ? "Ports are compatible."
           : edge?.reason || "Port compatibility could not be confirmed."}
       </p>
+      <p className="mt-2 text-xs text-zinc-500">{NDV_MAPPING_EDGE_PORT_ONLY_HELP}</p>
+      {typing.incomplete ? (
+        <p role="status" className="mt-2 text-sm text-amber-950" data-ndv-port-typing="incomplete">
+          {typing.reason}
+        </p>
+      ) : null}
       {fromEntry || toEntry ? (
         <div className="mt-3 space-y-2 text-xs text-zinc-600">
           {fromEntry ? (
@@ -366,6 +460,30 @@ function EdgeInspect({
         </div>
       ) : null}
     </section>
+    {toYamlNode && acceptsPaths ? (
+      <NdvMappingPanel
+        node={toYamlNode}
+        nodes={nodes}
+        edges={edges}
+        entries={entries}
+        catalog={catalog}
+        canEdit={canEdit}
+        pending={pending}
+        suggestedFromPaths={suggestedFromPaths}
+        onRewireInput={onRewireInput}
+        onPatchMapping={
+          onPatchNodeWith
+            ? (id, mapping) => onPatchNodeWith(id, { mapping })
+            : undefined
+        }
+        onPatchPath={
+          onPatchNodeWith
+            ? (id, path) => onPatchNodeWith(id, { path })
+            : undefined
+        }
+      />
+    ) : null}
+    </div>
   );
 }
 

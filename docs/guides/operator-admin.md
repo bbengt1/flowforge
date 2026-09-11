@@ -166,15 +166,18 @@ shell. Relates to #235 / Part of #228. Keep #235 open.
 1. **Node** — conversation chrome for this step: type-specific
    parameters / `with` (cataloged core / Kubernetes / SSH / script /
    HTTP — not a bare JSON blob; R3.1 / #246 — keep #246 open) /
-   pins / credentials by **display name**. Pick an existing vault item
-   or **add** one; secret entry stays in the masked wizard (modal or
-   `/credentials/new` return-to-editor). The rail never shows
-   `SecretField` / plaintext / rotate. No expression language. Field-path
-   mapping is R3.2 / #247.
+   typed field-path mapping between ports (`allowedWith` / catalog
+   port types; R3.2 / #247 — keep #247 open) / pins / credentials by
+   **display name**. Pick an existing vault item or **add** one; secret
+   entry stays in the masked wizard (modal or `/credentials/new`
+   return-to-editor). The rail never shows `SecretField` / plaintext /
+   rotate. No expression language. Incompatible mappings are blocked
+   or explained.
 2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
    Pins**. Same webhook/schedule contracts as home. Restore creates a
    new draft. Pins are authorized metadata only.
-3. **Edge** — port compatibility.
+3. **Edge** — port compatibility and field-path mapping. Edges stay
+   `nodeId.port`. Nested paths persist on `data.map` / `flow.condition`.
 4. **Validation** — live region; errors link to a node or YAML path.
 5. **Hide** remembers closed for the next visit in this tab. The
    **Inspector** satellite stays on the canvas so the shell is never
