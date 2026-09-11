@@ -59,6 +59,7 @@ export function ExecutionOperateActions({
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const resolvedStatus = detail?.status ?? status;
+  // Retry stays gated by GET /executions/{id} result.retry.allowed.
   const affordances = executionOperateAffordances({
     permissions,
     status: resolvedStatus,

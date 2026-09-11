@@ -164,6 +164,7 @@ export function ExecutionHistoryListbox({
                   ) : null}
                 </>
               ) : inbox ? (
+                <>
                 <div className={INBOX_GRID}>
                   <div>
                     <ExecutionStatusBadge status={row.status} />
@@ -211,6 +212,7 @@ export function ExecutionHistoryListbox({
                 {operateActions ? (
                   <div className="mt-2">{operateActions(row)}</div>
                 ) : null}
+                </>
               ) : (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-3">

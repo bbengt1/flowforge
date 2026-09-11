@@ -327,7 +327,7 @@ describe("R4.4 execution operate density", () => {
     assert.match(actions, /cancelExecution/);
     assert.match(actions, /retryExecution/);
     assert.match(actions, /emergencyStopExecution/);
-    assert.match(actions, /result\.retry\.allowed|executionOperateRetryAllowed/);
+    assert.match(actions, /result\.retry\.allowed|executionOperateAffordances/);
     assert.doesNotMatch(actions, /ExecutionReplay/);
     assert.doesNotMatch(actions, /\/jobs\/claim/);
     assert.doesNotMatch(actions, /\/replay/);
