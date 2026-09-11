@@ -255,8 +255,15 @@ denial, not a row of foreign data.
 
 `/credentials` → `/credentials/new` → `/credentials/{id}`.
 
-1. List/search is **metadata only** (display name, type, status, tags,
-   fingerprint, timestamps). Filter by name/tag/type/status.
+1. Workbench find (R5.1): **metadata only**. Search by **display name**
+   (type / status chips and exact tag). Columns are display name, type,
+   status, tags, last test, rotated, and Open. Focus the listbox: Arrow
+   keys move, Enter opens existing `/credentials/{id}` detail. Filters
+   stay on this page and are not sent to `GET /credentials`. Gracie
+   R5 security line (inherit R5.2 / #265, R5.3 / #266): no KEK in
+   the browser; display-name + UUID only; secrets never in YAML /
+   search / analytics; unexpected plaintext is a contract bug
+   (strip + stop — do not paste into chrome).
 2. **Add credential:** choose type from `GET /credentials/catalog`,
    enter display name/tags, paste into masked `SecretField`s. Submit
    once. Fields clear on success and unmount. Never in `localStorage`,
