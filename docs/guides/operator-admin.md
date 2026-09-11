@@ -101,9 +101,10 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
 Open a row → `/workflows/{id}` (same page under `/embed/v1`). YAML
 (`flowforge/v1`) is the only persisted definition; the canvas is a
 projection. Optional `metadata.ui.layout` is a non-authoritative
-position hint on that YAML (API already stores it; canvas persist is
-Chloe #238). Walkthrough: **home → editor top bar → palette → inspector
-→ YAML mode → runs drawer.**
+position hint on that YAML: the editor applies it on load and writes
+it back on Save draft (R2.5 / #238 — **keep #238 open**). Walkthrough:
+**home → editor top bar → palette → inspector → YAML mode → runs
+drawer.**
 
 ### Editor top bar
 
@@ -144,8 +145,10 @@ Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z) reverse graph edits before save.
 Shift+click or Shift+drag multi-selects nodes; Ctrl+A selects all.
 **Fit (F)** frames the selection (or the graph). **Snap (G)** locks
 drops to the 16px grid (R2.4 / #237 — **keep #237 open**). Delete
-removes the selection. Session positions are not persisted (D1 / #238).
-Invalid YAML never draws a guessed graph. State uses icon + text.
+removes the selection. Node positions persist as optional
+`metadata.ui.layout` on draft save/load (R2.5 / #238 — **keep #238
+open**). Missing or invalid layout uses auto-layout. Invalid YAML
+never draws a guessed graph. State uses icon + text.
 Keyboard: focus the canvas, then Zoom in / Zoom out / Fit / Snap /
 Reset. Selecting nodes announces enough to use the inspector — this is
 not a screen-reader graph rewrite.
