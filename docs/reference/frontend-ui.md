@@ -12,6 +12,8 @@ The canvas must stay responsive while workflow validation, credential tests, imp
 
 Landed UX.1–UX.11 chrome (Chloe, epic #195). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195 — **keep #207 open**) updates this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough only.
 
+Independent rewrite input (Chloe → Gracie’s master vision, docs only): [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md). n8n remains a behavior reference, not a clone target. That page does not replace this contract.
+
 ```mermaid
 flowchart TB
   Shell[Workspace shell + switcher]

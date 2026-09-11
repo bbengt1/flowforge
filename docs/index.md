@@ -9,6 +9,7 @@
 - [Standard action catalog](reference/action-catalog.md): core workflow nodes and their safe contracts.
 - [Core neutral node contracts](reference/core-node-contracts.md): E3.3 typed ports, `with` schemas, bounds, policy, and catalog deltas for the UI.
 - [Frontend UI](reference/frontend-ui.md): canvas-first editor chrome, action wizard, credential vault, and UX requirements.
+- [Rewrite UI surfaces](reference/rewrite-ui-surfaces.md): Chloe’s docs-only surface map, operator migration notes, and keep/replace/retire input for Gracie’s master rewrite vision (n8n-class parity, not a clone).
 - [Operator / admin UI guide](guides/operator-admin.md): shell, authoring, vault, executions, approvals, embed/Portal, ADV-024, session/CHIPS/CSRF (Chloe, E12.3).
 - [E12.3 accessibility review](reference/e12-accessibility-review.md): findings, fixes applied, and tracked gaps.
 - [Database specification](reference/database.md): PostgreSQL entities, isolation, execution durability, and retention.
