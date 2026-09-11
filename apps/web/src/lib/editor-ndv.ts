@@ -191,7 +191,7 @@ export function ndvConversationTitle(
 
 export function ndvConversationHelp(focus: InspectorFocus): string {
   if (focus === "node") {
-    return "Inspector edits this step. Add action stays the guided wizard. Type-specific parameters, typed field-path mapping, pins, credential display names, and validation/policy — no SecretField and no expression language.";
+    return "Inspector edits this step. Add action stays the guided wizard. Type-specific parameters, typed field-path mapping, pins, credential display names (add without leaving the graph), and validation/policy — no SecretField and no expression language.";
   }
   if (focus === "edge") {
     return "Inspector explains port compatibility and typed field-path mapping. Incompatible mappings are blocked. Edges stay nodeId.port.";

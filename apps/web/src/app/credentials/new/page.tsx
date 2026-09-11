@@ -1,5 +1,6 @@
 import { CredentialWizard } from "@/components/credentials/CredentialWizard";
 import { parseInspectorCredentialReturnTo } from "@/lib/editor-credential";
+import { CREDENTIAL_NDV_ADD_WIZARD_HELP } from "@/lib/credential-ndv-add";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export default async function NewCredentialPage({ searchParams }: PageProps) {
           safe metadata, and optional expiresAt. After create the secret
           inputs are emptied and only metadata is kept.
           {returnContext
-            ? " You will return to the workflow editor; the new display name is selected onto the node and YAML stores the UUID only."
+            ? ` ${CREDENTIAL_NDV_ADD_WIZARD_HELP}`
             : ""}
         </p>
       </header>

@@ -149,11 +149,14 @@ import {
   SELECT_CREDENTIAL_PARAM,
   createdCredentialSelectable,
   inspectorCreatedCredentialPatch,
-  parseInspectorCreatedCredential,
-  stripInspectorCredentialQuery,
   type InspectorAddCredentialRequest,
   type InspectorPendingCredential,
 } from "@/lib/editor-credential";
+import {
+  credentialNdvPendingFromCreated,
+  parseCredentialNdvCreated,
+  stripCredentialNdvQuery,
+} from "@/lib/credential-ndv-add";
 import { loadDevIdentity, emptyStoredIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -391,7 +394,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const historyRef = useRef(history);
   historyRef.current = history;
   const createdCredentialReturn = useRef<
-    ReturnType<typeof parseInspectorCreatedCredential> | undefined
+    ReturnType<typeof parseCredentialNdvCreated> | undefined
   >(undefined);
 
   const yamlNodes = listYamlNodes(yaml);
@@ -718,7 +721,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     createdCredentialReturn.current === undefined &&
     typeof window !== "undefined"
   ) {
-    createdCredentialReturn.current = parseInspectorCreatedCredential(
+    createdCredentialReturn.current = parseCredentialNdvCreated(
       window.location.search,
     );
   }
@@ -739,8 +742,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           with: { ...returnedNode.with, ...sanitizeInspectorWithPatch(returnedPatch) },
         });
         if (nextYaml) {
+          const pending = credentialNdvPendingFromCreated(pendingCreated);
           setDigest(null);
           syncHistoryYaml(nextYaml);
+          if (pending) {
+            setPendingCredentials((current) => ({
+              ...current,
+              [`${pendingCreated.nodeId}:${pendingCreated.field}`]: pending,
+            }));
+          }
           setCredentialRefreshNonce((current) => current + 1);
           applySelection({ kind: "node", id: pendingCreated.nodeId });
         }
@@ -1128,7 +1138,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     window.history.replaceState(
       null,
       "",
-      stripInspectorCredentialQuery(
+      stripCredentialNdvQuery(
         `${window.location.pathname}${window.location.search}${window.location.hash}`,
       ),
     );

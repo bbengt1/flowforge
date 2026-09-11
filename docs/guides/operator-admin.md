@@ -268,15 +268,21 @@ denial, not a row of foreign data.
    enter display name/tags, paste into masked `SecretField`s. Submit
    once. Fields clear on success and unmount. Never in `localStorage`,
    URL, or analytics.
-3. **Operate (R5.2):** test, rotate, usage, and deletion-impact sit on
+3. **NDV add (R5.3):** from the selected-node inspector, **Add
+   credential** opens the same guided masked wizard without abandoning
+   the graph (modal, or `/credentials/new` return-to-editor). After
+   add, the picker selects the new credential by **display name**; YAML
+   stores the UUID only. Wizard stays add; the NDV stays edit/pick.
+   No `SecretField` / plaintext in the rail.
+4. **Operate (R5.2):** test, rotate, usage, and deletion-impact sit on
    `/credentials/{id}` at operate density using existing vault routes.
    Test status is safe metadata. Rotate is mask-and-clear; after
    submit, chrome shows **display-name + UUID only**. Disable/enable
    stay explicit. CSRF on mutations. Unexpected plaintext is strip +
    stop — do not paste into chrome.
-4. **Delete:** deletion-impact is already on the page; type the
+5. **Delete:** deletion-impact is already on the page; type the
    display name, then `DELETE` with `{confirm:true}`.
-5. Workflow selectors show **display names** only. The UI never reads
+6. Workflow selectors show **display names** only. The UI never reads
    `CREDENTIAL_KEK`.
 
 If a response ever shows plaintext, treat it as a backend contract

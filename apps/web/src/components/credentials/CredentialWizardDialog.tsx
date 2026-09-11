@@ -63,8 +63,9 @@ export function CredentialWizardDialog({
           </button>
         </div>
         <p className="mt-2 text-sm text-zinc-600">
-          Secret fields stay in this wizard. After create they are cleared.
-          The inspector only receives the display name and workspace UUID —
+          Guided add on this graph — you return to the selected node.
+          Secret fields stay in this wizard and clear after create. The
+          inspector only receives the display name and workspace UUID —
           never plaintext, kubeconfig, or rotate UI.
         </p>
         <div className="mt-4">

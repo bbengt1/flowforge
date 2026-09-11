@@ -32,10 +32,12 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import { type InspectorCredentialReturnTo } from "@/lib/editor-credential";
 import {
-  inspectorEditorReturnHref,
-  type InspectorCredentialReturnTo,
-} from "@/lib/editor-credential";
+  CREDENTIAL_NDV_ADD_STRIP_STOP_HELP,
+  credentialNdvEditorReturnHref,
+  credentialNdvMustStopAfterStrip,
+} from "@/lib/credential-ndv-add";
 
 const STEP_LABEL: Record<WizardStep, string> = {
   identity: "Name and tags",
@@ -175,9 +177,11 @@ export function CredentialWizard({
     }
     if (returnContext) {
       router.replace(
-        inspectorEditorReturnHref({
+        credentialNdvEditorReturnHref({
           ...returnContext,
           credentialId: result.credential.id,
+          displayName: result.credential.displayName,
+          type: result.credential.type,
         }),
       );
       return;
@@ -193,9 +197,9 @@ export function CredentialWizard({
         <SessionSetupHint purpose="before adding a credential." />
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
-          Unexpected secret fields were stripped from the create response:{" "}
+      {credentialNdvMustStopAfterStrip(strippedKeys) ? (
+        <p role="alert" className="text-sm text-amber-950">
+          {CREDENTIAL_NDV_ADD_STRIP_STOP_HELP} Stripped keys:{" "}
           {strippedKeys.join(", ")}.
         </p>
       ) : null}
