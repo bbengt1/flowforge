@@ -599,7 +599,7 @@ Jonny's dispatch APIs are on `main` via **#53** (Relates to #47 / Part of #45 â€
 
 Suggested UI flow:
 
-1. Detail already from E5.1. Enable **Cancel** when `status` is `queued` or `running` and `GET /workspace` includes `execution.cancel`.
+1. Detail already from E5.1. Enable **Cancel** when `status` is `queued` or `running` and `GET /workspace` includes `execution.cancel`. If `status=queued` and `statusReason=no-worker`, show that no worker is claiming jobs (local compose: start the `worker` service). Do not call `/jobs/claim` from the UI.
 2. Cancel posts `{}`. On `200`, replace the detail with the response (`status=canceled`). A second click is safe.
 3. Enable **Retry** on a `failed` or `canceled` core `data.*` / `flow.*` step when the caller has `workflow.execute`. Hide/disable retry for `indeterminate` and provider node types â€” show copy that an unverified side effect must not be assumed absent.
 4. `indeterminate` remains unmistakable (badge + text, not color alone). Do not offer a silent re-run.

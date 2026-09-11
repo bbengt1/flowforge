@@ -139,7 +139,6 @@ func (m *Memory) HeartbeatJob(_ context.Context, scope isolation.Scope, now time
 		job.HeartbeatAt = &hb
 		job.UpdatedAt = now
 		applyStepStatus(step, ExecutionRunning, now)
-		applyExecutionStatus(&exec.record, ExecutionRunning, now)
 		return nil
 	}, "job.heartbeat", "heartbeat")
 }
@@ -157,7 +156,6 @@ func (m *Memory) ReleaseJob(_ context.Context, scope isolation.Scope, now time.T
 			job.Status = JobIndeterminate
 			job.UpdatedAt = now
 			applyStepStatus(step, ExecutionIndeterminate, now)
-			m.rollupLocked(exec, now)
 			return nil
 		}
 		job.Status = JobQueued
@@ -167,7 +165,6 @@ func (m *Memory) ReleaseJob(_ context.Context, scope isolation.Scope, now time.T
 		job.UpdatedAt = now
 		step.LeaseID = ""
 		applyStepStatus(step, ExecutionQueued, now)
-		m.rollupLocked(exec, now)
 		return nil
 	}, "job.release", "released")
 }
@@ -193,7 +190,6 @@ func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.
 			step.Output = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
-		m.rollupLocked(exec, now)
 		return nil
 	}, "job.complete", "succeeded")
 }
@@ -216,7 +212,6 @@ func (m *Memory) FailJob(_ context.Context, scope isolation.Scope, now time.Time
 			step.Error = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionFailed, now)
-		m.rollupLocked(exec, now)
 		return nil
 	}, "job.fail", "failed")
 }
@@ -596,6 +591,7 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}
 	exec.jobs[jobIdx] = job
 	exec.steps[stepIdx] = step
+	m.rollupLocked(&exec, now)
 	m.executions[execID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
 		Action:        action,

@@ -1004,7 +1004,7 @@ Suggested UI flow:
 2. Same `idempotencyKey` + same input/actor → `200` with the original `id` and `replayed: true`. Do not treat that as a second run.
 3. Same key + different `input` (or actor) → `409` `conflict`. Show a safe message; do not retry with a new key unless the operator intends a new run.
 4. Workspace history: `GET /executions?status=&workflowId=&limit=`. Per-workflow: `GET /workflows/{workflowId}/executions`.
-5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, bounded `steps[]` (`outputTruncated`), `jobs[]`, `pins[]`, and `artifacts[]` metadata (E5.3).
+5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, bounded `steps[]` (`outputTruncated`), `jobs[]`, `pins[]`, and `artifacts[]` metadata (E5.3). Additive `statusReason: "no-worker"` appears when status is still `queued` and no job has a `workerId` after 15s (compose without a worker). Status stays `queued`. Chloe can show “no worker is claiming jobs”.
 6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`, `/artifacts`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
@@ -1030,7 +1030,7 @@ Authenticated jobs, single active claim, heartbeat, fencing tokens, lease expiry
 
 Suggested UI flow:
 
-1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only.
+1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only. If `status=queued` and `statusReason=no-worker`, tell the operator no worker is claiming jobs (local compose: start the `worker` service).
 2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
 3. Retry: `failed` or `canceled` **core** `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Other provider nodes → `409`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
 4. Do **not** call `/jobs/claim` from the UI. That is the worker client.

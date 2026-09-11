@@ -95,6 +95,18 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # Set 0 to opt out. Explicit 1 with production APP_ENV or REQUIRE_TLS=true
 # is a boot-fail. Do not set in deploy/k8s.
 # SEED_LOCAL_DEFAULTS=1
+# Local/dev compose worker (claims /api/v1/jobs/claim). Required for
+# Start published to leave queued. Default on in local/dev/test.
+# Set 0 to opt out (or docker compose up --scale worker=0).
+# Explicit 1 with production APP_ENV or REQUIRE_TLS=true is a boot-fail.
+# Do not set in deploy/k8s or run /usr/local/bin/worker there.
+# LOCAL_WORKER=1
+# API_URL=http://api:8080
+# WORKER_ID=compose-local
+# WORKER_POLL_INTERVAL=1s
+# WORKER_LEASE=30s
+# WORKER_ISSUER=
+# WORKER_SUBJECT=
 
 # --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
 # Preferred: Ed25519 PKCS#8 PEM (crypto/x509.ParsePKCS8PrivateKey).
