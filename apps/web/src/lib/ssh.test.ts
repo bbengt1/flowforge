@@ -21,7 +21,7 @@ import {
   templateForbiddenHits,
   writeParameterSchema,
 } from "./ssh.ts";
-import { SSH_CONTRACT_FALLBACK_CATALOG } from "./ssh-contract.ts";
+import { SSH_ENGINE_UNAVAILABLE_CATALOG } from "./ssh-contract.ts";
 
 const RESOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
@@ -444,8 +444,8 @@ describe("ssh catalog (#86)", () => {
     assert.equal(engine.source, "ops-config-catalog");
     assert.equal(engine.retrySafeExposed, true);
     assert.equal(engine.notes, "from catalog");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, false);
+    assert.equal(SSH_ENGINE_UNAVAILABLE_CATALOG.source, "unavailable");
+    assert.equal(SSH_ENGINE_UNAVAILABLE_CATALOG.retrySafeExposed, false);
   });
 
   it("parses the #86 GET /ssh/catalog shape as ssh-catalog", () => {

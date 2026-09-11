@@ -22,6 +22,7 @@
  * Do not change `apps/api`.
  */
 
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import {
   SSH_CREDENTIAL_TYPE,
@@ -94,9 +95,6 @@ export const SSH_IMMUTABLE_PIN_HELP =
 export const SSH_KEY_ONLY_HELP =
   "Key-only authentication. Bind a workspace ssh_private_key vault credential. Password authentication is denied in MVP.";
 
-export const SSH_CONTRACT_FALLBACK_HELP =
-  "GET /ssh/catalog was empty or unauthorized. UI fails closed — no invented SSH engine toggles. Collections stay on /ssh-targets and /command-profiles.";
-
 export const SSH_FINGERPRINT_HELP =
   "sha256:<64 hex> or OpenSSH SHA256:<base64>. The API canonicalizes to sha256:<hex>.";
 
@@ -127,11 +125,8 @@ export const SSH_ENGINE_UNAVAILABLE_CATALOG: SshEngineCatalog = {
   templateForbidden: SSH_TEMPLATE_FORBIDDEN_TOKENS,
   parameterTypes: [],
   retrySafeExposed: false,
-  notes: SSH_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
-
-/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
-export const SSH_CONTRACT_FALLBACK_CATALOG = SSH_ENGINE_UNAVAILABLE_CATALOG;
 
 export function sshTargetsPath(): string {
   return `/${SSH_TARGET_UI_COLLECTION}`;

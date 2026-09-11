@@ -1,5 +1,7 @@
-import { isInventedCatalogSource } from "@/lib/catalog-fail-closed";
-import { SSH_CONTRACT_FALLBACK_HELP } from "@/lib/ssh-contract";
+import {
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+  isInventedCatalogSource,
+} from "@/lib/catalog-fail-closed";
 import { sshSafetyNotes } from "@/lib/ssh";
 import type { SshEngineCatalog } from "@/lib/ssh-types";
 
@@ -27,7 +29,7 @@ export function SshSafetyNotes({ extraNotes, catalog }: SshSafetyNotesProps) {
         ))}
       </ul>
       {fallback ? (
-        <p className="mt-3 text-xs text-teal-900/80">{SSH_CONTRACT_FALLBACK_HELP}</p>
+        <p className="mt-3 text-xs text-teal-900/80">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
       ) : null}
     </aside>
   );

@@ -20,7 +20,6 @@ import {
   catalogListsKubernetesType,
   defaultKubernetesWith,
   hasKubernetesNodeContract,
-  kubernetesFallbackNode,
   kubernetesForbiddenWithKeys,
   kubernetesLibraryTypes,
   kubernetesNodeWithFields,
@@ -158,14 +157,6 @@ describe("kubernetes node contract adapter", () => {
     assert.equal(hasKubernetesNodeContract(catalog.nodes[0]), false);
     assert.deepEqual(apply.allowedWith ?? [], []);
     assert.ok(merged.some((item) => item.type === "kubernetes.rolloutStatus"));
-    assert.match(
-      kubernetesFallbackNode("kubernetes.rolloutStatus").description ?? "",
-      /fails closed/i,
-    );
-    assert.deepEqual(
-      kubernetesFallbackNode("kubernetes.rolloutStatus").allowedWith,
-      [],
-    );
 
     const overlaid = adaptKubernetesNodeEntries(null, engineCatalog);
     const applyFromEngine = overlaid.find((item) => item.type === "kubernetes.apply");

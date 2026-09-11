@@ -101,6 +101,8 @@ describe("R3.4 live-catalog-only engine contracts", () => {
     assert.equal(rejectDisabledActionType("ssh.run", null).ok, false);
     assert.equal(rejectDisabledActionType("script.python", null).ok, false);
     assert.equal(rejectDisabledActionType("http.request", null).ok, false);
+    assert.equal(missing.some((item) => item.type === "servicenow.ticket"), false);
+    assert.equal(missing.some((item) => item.phase === "next" || item.phase === "provider"), false);
   });
 
   it("empty or unauthorized engine catalogs fail closed without invented fields", () => {
@@ -138,6 +140,26 @@ describe("R3.4 live-catalog-only engine contracts", () => {
     assert.deepEqual(adaptHttpNotificationEntries(null), []);
     assert.equal(httpNotificationActionsEnabled(null, null), false);
     assert.equal(isHttpNotificationNodeEnabled("http.request", null, null), false);
+  });
+
+  it("HTTP stays disabled when INTEGRATION_ACTIONS_ENABLED is off", () => {
+    const gated = {
+      apiVersion: "flowforge/v1" as const,
+      rules: { integrationActionsEnabled: false },
+      integrationGate: { enabled: false, nodes: ["http.request"] },
+      triggers: [],
+      nodes: [
+        { type: "http.request", phase: "core" as const, enabled: true },
+        { type: "notification.email", phase: "core" as const, enabled: true },
+      ],
+    };
+    assert.equal(httpNotificationActionsEnabled(gated, null), false);
+    assert.equal(isHttpNotificationNodeEnabled("http.request", null, gated), false);
+    assert.deepEqual(adaptHttpNotificationEntries(gated), []);
+    const library = adaptActionLibrary(gated);
+    assert.equal(library.some((item) => item.type === "http.request"), false);
+    assert.equal(library.some((item) => item.type === "notification.email"), false);
+    assert.equal(rejectDisabledActionType("http.request", gated).ok, false);
   });
 
   it("live catalogs still supply types and allowedWith", () => {

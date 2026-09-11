@@ -17,7 +17,11 @@ export const R34_KEEP_STORY_OPEN = true;
 export const CATALOG_SOURCE_UNAVAILABLE = "unavailable" as const;
 export type UnavailableCatalogSource = typeof CATALOG_SOURCE_UNAVAILABLE;
 
-/** Legacy invented-contract marker. Engine adapters must not emit this. */
+/**
+ * Legacy invented-contract marker. K8s / SSH / script / HTTP adapters
+ * must not emit this — those fallbacks are deleted. Core/trigger
+ * adapters may still use it.
+ */
 export const CATALOG_SOURCE_CONTRACT_FALLBACK = "contract-fallback" as const;
 
 export const ENGINE_CATALOG_UNAVAILABLE_HELP =

@@ -119,9 +119,6 @@ export const SSH_SECRET_WITH_MESSAGE =
 export const SSH_FREEFORM_SHELL_MESSAGE =
   "ssh.run is not a free-form shell. Use a published command profile with typed parameters.";
 
-export const SSH_CONTRACT_FALLBACK_NODE_HELP =
-  "Using the marked e82-#88 ssh.run map because GET /ssh/catalog isolation/nodes[] was unavailable. Collections stay on /ssh-targets and /command-profiles.";
-
 export type SshNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
@@ -638,19 +635,6 @@ export function validateSshParameters(
   return unique(errors);
 }
 
-export function sshFallbackNode(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: [],
-    allowedWith: [],
-  };
-}
-
 export function adaptSshNodeEntries(
   catalog: WorkflowCatalog | null | undefined,
   sshCatalog?: SshNodeCatalog | null,
@@ -770,9 +754,6 @@ export const SSH_NODE_UNAVAILABLE_CATALOG: SshNodeCatalog = {
   permissions: [],
   notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
-
-/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
-export const SSH_NODE_CONTRACT_FALLBACK_CATALOG = SSH_NODE_UNAVAILABLE_CATALOG;
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

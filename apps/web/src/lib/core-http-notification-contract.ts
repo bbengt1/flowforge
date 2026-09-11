@@ -191,9 +191,6 @@ export const HTTP_TEMPLATE_FAIL_CLOSED_MESSAGE =
 export const HTTP_SCHEMA_FAIL_CLOSED_MESSAGE =
   "Response schema selector failed closed. Only published workspace response schemas are listed.";
 
-export const HTTP_CONTRACT_FALLBACK_HELP =
-  "Using the marked e104-#118 HTTP/notification map because GET /http/catalog, GET /ops-config/catalog httpNotificationEngine, and GET /workflows/catalog allowedWith were unavailable. Collections stay on /connections, /recipient-lists, /message-templates, and /response-schemas. Relates to #109. Keep #109 open.";
-
 export const HTTP_PIN_ONLY_HELP =
   "Operators pick pinned authorized ops-config resources. The UI never offers a free-form URL, recipient address, or credential field.";
 
@@ -1011,19 +1008,6 @@ export function validateHttpNotificationConfig(
   return unique(errors);
 }
 
-export function httpNotificationFallbackNode(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: [],
-    allowedWith: [],
-  };
-}
-
 export function adaptHttpNotificationEntries(
   catalog: WorkflowCatalog | null | undefined,
   httpCatalog?: HttpNotificationCatalog | null,
@@ -1142,10 +1126,6 @@ export const HTTP_NOTIFICATION_UNAVAILABLE_CATALOG: HttpNotificationCatalog = {
   permissions: [],
   notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
-
-/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
-export const HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG =
-  HTTP_NOTIFICATION_UNAVAILABLE_CATALOG;
 
 /**
  * Extra delivery keys stripped from HTTP/notification execution

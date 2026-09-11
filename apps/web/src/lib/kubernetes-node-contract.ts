@@ -15,10 +15,6 @@
  */
 
 import {
-  ENGINE_CATALOG_UNAVAILABLE_HELP,
-} from "./catalog-fail-closed.ts";
-
-import {
   KUBERNETES_ROLLOUT_KINDS,
   KUBERNETES_ROLLOUT_NODE_TYPE,
   KUBERNETES_WAIT_READY_OBSERVED,
@@ -596,19 +592,6 @@ export function allowedNamespacesFromPinSpec(
     ...fromSpec,
     ...stringList(policy.allowedNamespaces ?? policy.namespaces),
   ]);
-}
-
-export function kubernetesFallbackNode(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: [],
-    allowedWith: [],
-  };
 }
 
 export function adaptKubernetesNodeEntries(

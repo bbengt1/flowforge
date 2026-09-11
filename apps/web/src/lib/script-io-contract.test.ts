@@ -3,8 +3,7 @@ import { describe, it } from "node:test";
 import {
   SCRIPT_IO_ALLOWLISTED_ENV,
   SCRIPT_IO_API_PR,
-  SCRIPT_IO_CONTRACT_FALLBACK_CATALOG,
-  SCRIPT_IO_CONTRACT_FALLBACK_HELP,
+  SCRIPT_IO_UNAVAILABLE_CATALOG,
   SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS,
   SCRIPT_IO_EPIC,
   SCRIPT_IO_HANDLE_HELP,
@@ -53,34 +52,31 @@ describe("script I/O contract adapter", () => {
     assert.equal(SCRIPT_IO_EPIC, 91);
     assert.equal(SCRIPT_IO_API_PR, 101);
     assert.equal(SCRIPT_IO_ROUTE_MAP_SOURCE, "e93-#101");
-    assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /e93-#101/);
-    assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /result\.retry\.allowed/);
-    assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /409 retry-denied/);
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.retry.blindRetry, false);
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.plaintextCredentials, false);
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.validateBeforeInject, true);
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.redactBeforePersist, true);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.source, "unavailable");
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.retry.blindRetry, false);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.io.plaintextCredentials, false);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.io.validateBeforeInject, true);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.io.redactBeforePersist, true);
     assert.equal(
-      SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.handleTTLSeconds,
+      SCRIPT_IO_UNAVAILABLE_CATALOG.io.handleTTLSeconds,
       SCRIPT_IO_HANDLE_TTL_SECONDS,
     );
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.handleMaxTTLSeconds, 300);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.io.handleMaxTTLSeconds, 300);
     assert.deepEqual(
-      [...SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.allowlistedEnv],
+      [...SCRIPT_IO_UNAVAILABLE_CATALOG.io.allowlistedEnv],
       [...SCRIPT_IO_ALLOWLISTED_ENV],
     );
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.probe.behavior, SCRIPT_IO_VERIFICATION_BEHAVIOR);
+    assert.equal(SCRIPT_IO_UNAVAILABLE_CATALOG.probe.behavior, SCRIPT_IO_VERIFICATION_BEHAVIOR);
     assert.equal(
-      SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.retry.defaultMaxAttempts,
+      SCRIPT_IO_UNAVAILABLE_CATALOG.retry.defaultMaxAttempts,
       SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS,
     );
     assert.equal(
-      SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.errors.some((item) => item.code === "typed-io-not-implemented"),
+      SCRIPT_IO_UNAVAILABLE_CATALOG.errors.some((item) => item.code === "typed-io-not-implemented"),
       false,
     );
-    assert.ok(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.errors.some((item) => item.code === "handle-forbidden"));
-    assert.ok(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.errors.some((item) => item.code === "env-denied"));
+    assert.ok(SCRIPT_IO_UNAVAILABLE_CATALOG.errors.some((item) => item.code === "handle-forbidden"));
+    assert.ok(SCRIPT_IO_UNAVAILABLE_CATALOG.errors.some((item) => item.code === "env-denied"));
     assert.equal(scriptIoBounds().maxInputBytes, SCRIPT_IO_MAX_INPUT_BYTES);
     assert.match(SCRIPT_IO_SCHEMA_HELP, /JSON Schema subset/);
     assert.match(SCRIPT_IO_SIZE_HELP, /16 KiB/);
@@ -271,7 +267,7 @@ describe("script I/O contract adapter", () => {
 
     const empty = parseScriptIoCatalog({});
     assert.equal(empty.source, "unavailable");
-    assert.equal(empty.notes, SCRIPT_IO_CONTRACT_FALLBACK_HELP);
+    assert.match(empty.notes ?? "", /fails closed/i);
     assert.equal(empty.io.handleTTLSeconds, 60);
   });
 

@@ -1,6 +1,8 @@
-import { isInventedCatalogSource } from "@/lib/catalog-fail-closed";
 import {
-  SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP,
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+  isInventedCatalogSource,
+} from "@/lib/catalog-fail-closed";
+import {
   runtimeProfileIsolationNotes,
   type ScriptRuntimeProfileMap,
 } from "@/lib/script-runtime-contract";
@@ -32,7 +34,7 @@ export function ScriptIsolationNotes({
       </ul>
       {fallback ? (
         <p className="mt-3 text-xs text-teal-900/80">
-          {SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP}
+          {ENGINE_CATALOG_UNAVAILABLE_HELP}
         </p>
       ) : null}
     </aside>

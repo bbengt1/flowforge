@@ -4,7 +4,6 @@ import {
   HTTP_CONNECTION_FAIL_CLOSED_MESSAGE,
   HTTP_CONNECTION_REQUIRED_MESSAGE,
   HTTP_CONNECTION_TYPE_MESSAGE,
-  HTTP_CONTRACT_FALLBACK_HELP,
   HTTP_DEFAULT_TIMEOUT_SECONDS,
   HTTP_DELIVERY_SECRET_KEYS,
   HTTP_EXISTING_API_PATHS,
@@ -26,8 +25,6 @@ import {
   connectionTypeForAction,
   defaultHttpNotificationWith,
   deliveryHasForbiddenSecret,
-  hasHttpNotificationContract,
-  httpNotificationFallbackNode,
   httpNotificationForbiddenWithKeys,
   httpNotificationLibraryTypes,
   httpNotificationNodeWithFields,
@@ -79,9 +76,6 @@ describe("core HTTP/notification contract adapter", () => {
     assert.ok(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("to"));
     assert.equal(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("host"), false);
     assert.ok(HTTP_DELIVERY_SECRET_KEYS.includes("set-cookie"));
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /e104-#118/);
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /#109/);
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /Keep #109 open/);
     assert.equal(HTTP_EXISTING_API_PATHS.httpCatalog, "/http/catalog");
     assert.equal(HTTP_EXISTING_API_PATHS.workflowCatalog, "/workflows/catalog");
     assert.equal(HTTP_EXISTING_API_PATHS.opsConfigCatalog, "/ops-config/catalog");
@@ -106,12 +100,6 @@ describe("core HTTP/notification contract adapter", () => {
     assert.equal(isHttpConfigurableType("ssh.run"), false);
     assert.equal(catalogListsHttpNotificationType(catalog, "http.request"), true);
     assert.deepEqual([...httpNotificationLibraryTypes(catalog)], ["http.request"]);
-    const fallback = httpNotificationFallbackNode("http.request");
-    assert.equal(fallback.title, "http.request");
-    assert.match(fallback.description ?? "", /fails closed/i);
-    assert.deepEqual(fallback.requiredWith, []);
-    assert.deepEqual(fallback.allowedWith, []);
-    assert.equal(hasHttpNotificationContract(fallback), false);
     assert.deepEqual(adaptHttpNotificationEntries(null), []);
     const thin = adaptHttpNotificationEntries(catalog);
     assert.equal(thin[0]?.type, "http.request");

@@ -17,6 +17,7 @@
  * + recovery). Do not change `apps/api`.
  */
 
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import { isSecretFieldName } from "./credential.ts";
 import type { ExecutionStatus } from "./execution-types.ts";
 import { isForbiddenYamlKey, looksLikeSecretValue } from "./workflow-yaml-nodes.ts";
@@ -128,9 +129,6 @@ export const SCRIPT_IO_HANDLE_KEYS = [
   "secretRef",
   "secretRefs",
 ] as const;
-
-export const SCRIPT_IO_CONTRACT_FALLBACK_HELP =
-  "Using marked e93-#101 typed I/O defaults because GET /scripts/catalog io / retry.ui / retry.probe was unavailable. Inputs and outputs are the documented JSON Schema subset (16 KiB, validated before inject). Retries default to 0. retrySafe requires idempotencyKey plus verification.behavior=declared-hook. Retry stays gated on result.retry.allowed. POST …/retry is 409 retry-denied when closed. Secrets are scoped handles only (TTL 60s, max 5m) — never YAML, env, schema, logs, or audit.";
 
 export const SCRIPT_IO_SCHEMA_HELP =
   "Declare inputSchema and outputSchema as the documented JSON Schema subset: type, properties, required, additionalProperties, items, enum, maxLength, maxItems, maxProperties, minimum, maximum, classification. Depth ≤ 8, ≤ 32 properties. No secrets or credential handles.";
@@ -441,7 +439,7 @@ export const DEFAULT_SCRIPT_IO_ERRORS: ScriptIoErrorShape[] = [
   },
 ];
 
-export const SCRIPT_IO_CONTRACT_FALLBACK_CATALOG: ScriptIoCatalog = {
+export const SCRIPT_IO_UNAVAILABLE_CATALOG: ScriptIoCatalog = {
   source: "unavailable",
   io: DEFAULT_SCRIPT_IO_RULES,
   bounds: DEFAULT_SCRIPT_IO_BOUNDS,
@@ -453,7 +451,7 @@ export const SCRIPT_IO_CONTRACT_FALLBACK_CATALOG: ScriptIoCatalog = {
   ui: DEFAULT_SCRIPT_IO_UI,
   probe: DEFAULT_SCRIPT_IO_PROBE,
   errors: DEFAULT_SCRIPT_IO_ERRORS,
-  notes: SCRIPT_IO_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
 const SCHEMA_KEYWORD_SET = new Set<string>(SCRIPT_IO_SCHEMA_KEYWORDS);
@@ -473,7 +471,7 @@ function isIndeterminateStatus(status?: string): boolean {
 export function scriptIoCatalog(
   catalog?: ScriptIoCatalog | null,
 ): ScriptIoCatalog {
-  return catalog ?? SCRIPT_IO_CONTRACT_FALLBACK_CATALOG;
+  return catalog ?? SCRIPT_IO_UNAVAILABLE_CATALOG;
 }
 
 export function scriptIoBounds(catalog?: ScriptIoCatalog | null): ScriptIoBounds {
@@ -1055,7 +1053,7 @@ export function parseScriptIoResult(
 
 export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...SCRIPT_IO_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_IO_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const nested =
@@ -1093,7 +1091,7 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
     Array.isArray(ioRaw.schemaKeywords) ||
     retryRaw !== null;
   if (!hasIoSignal) {
-    return { ...SCRIPT_IO_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_IO_UNAVAILABLE_CATALOG };
   }
   const errorsRaw = Array.isArray(nested.errors)
     ? nested.errors
@@ -1146,7 +1144,7 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
     errors: errors.length ? errors : DEFAULT_SCRIPT_IO_ERRORS,
     notes:
       String(nested.notes ?? rec.notes ?? ioRaw.note ?? ioRaw.notes ?? "").trim() ||
-      (source === "unavailable" ? SCRIPT_IO_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? ENGINE_CATALOG_UNAVAILABLE_HELP : undefined),
   };
 }
 

@@ -57,9 +57,6 @@ export const SCRIPT_MAX_SOURCE_BYTES = 64 * 1024;
 export const SCRIPT_DEFAULT_PYTHON_ENTRYPOINT = "main.py";
 export const SCRIPT_DEFAULT_GO_ENTRYPOINT = "main.go";
 
-export const SCRIPT_CONTRACT_FALLBACK_HELP =
-  "Using the marked e91-#97 script map because GET /scripts/catalog was unavailable. Prefer GET /scripts/catalog (or GET /ops-config/catalog scriptEngine) plus GET /workflows/catalog.";
-
 export const SCRIPT_PUBLISH_BOUNDARY_HELP =
   "Publish packages approved source, scans and signs the package, and pins an immutable content-addressed artifact on the workflow version. Draft save writes the same YAML schema only — it does not create an executable artifact.";
 
@@ -1054,19 +1051,6 @@ export function scriptArtifactStatus(input: {
   };
 }
 
-export function scriptFallbackNode(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: [],
-    allowedWith: [],
-  };
-}
-
 export function adaptScriptNodeEntries(
   catalog: WorkflowCatalog | null | undefined,
   scriptCatalog?: ScriptNodeCatalog | null,
@@ -1154,7 +1138,7 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
     hooks,
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (nodes.length ? undefined : SCRIPT_CONTRACT_FALLBACK_HELP),
+      (nodes.length ? undefined : ENGINE_CATALOG_UNAVAILABLE_HELP),
     io:
       nested.io && typeof nested.io === "object" && !Array.isArray(nested.io)
         ? (nested.io as Record<string, unknown>)
@@ -1199,9 +1183,6 @@ export const SCRIPT_NODE_UNAVAILABLE_CATALOG: ScriptNodeCatalog = {
   publish: DEFAULT_SCRIPT_PUBLISH_RULES,
   notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
-
-/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
-export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG = SCRIPT_NODE_UNAVAILABLE_CATALOG;
 
 function parseEngineNode(raw: unknown): ScriptNodeEngineContract | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

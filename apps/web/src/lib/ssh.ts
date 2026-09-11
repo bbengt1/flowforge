@@ -4,6 +4,7 @@
  * are stripped and never shown. Templates reject shell interpolation.
  */
 
+import { isInventedCatalogSource } from "./catalog-fail-closed.ts";
 import type { CredentialType } from "./credential-types.ts";
 import type { ProblemDetails } from "./problem.ts";
 import {
@@ -253,8 +254,11 @@ export function commandProfilePublishGap(spec: OpsConfigSpec): string | null {
 }
 
 export function sshCredentialTypes(
-  catalog: SshEngineCatalog = SSH_ENGINE_UNAVAILABLE_CATALOG,
+  catalog?: SshEngineCatalog | null,
 ): CredentialType[] {
+  if (!catalog || isInventedCatalogSource(catalog.source)) {
+    return [];
+  }
   const allowed = catalog.allowedCredentialTypes.length
     ? catalog.allowedCredentialTypes
     : [catalog.credentialType];
@@ -268,7 +272,7 @@ export function sshCredentialTypes(
       types.add(item);
     }
   }
-  return types.size > 0 ? [...types] : [SSH_CREDENTIAL_TYPE];
+  return [...types];
 }
 
 export function parseParameterSchema(
