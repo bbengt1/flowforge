@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
+import { ExecutionDecideActions } from "@/components/executions/ExecutionDecideActions";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
 import { ExecutionOperateActions } from "@/components/executions/ExecutionOperateActions";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
@@ -15,7 +16,6 @@ import {
 } from "@/lib/execution-client";
 import {
   canSeeExecutionsNav,
-  documentedExecutionStatuses,
   executionListDisplay,
   isExecutionForbidden,
 } from "@/lib/execution";
@@ -25,9 +25,13 @@ import {
   EXECUTION_INBOX_LIMITS,
   executionInboxHasActiveFilters,
   executionInboxHref,
+  executionInboxStatuses,
   parseExecutionInboxQuery,
 } from "@/lib/execution-inbox";
 import { compareRedactedExecutions } from "@/lib/execution-replay";
+import { listExecutionApprovals } from "@/lib/approval-client";
+import type { ApprovalRequest } from "@/lib/approval-types";
+import { executionDecideShouldLoadApprovals } from "@/lib/execution-decide";
 import { executionOperateShouldLoadDetail } from "@/lib/execution-operate";
 import type {
   ExecutionDetail,
@@ -81,6 +85,10 @@ export function ExecutionHistory() {
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [actorUserId, setActorUserId] = useState("");
+  const [decideApprovals, setDecideApprovals] = useState<
+    Record<string, ApprovalRequest[]>
+  >({});
   const [compareLeftId, setCompareLeftId] = useState("");
   const [compareRightId, setCompareRightId] = useState("");
   const [compareResult, setCompareResult] = useState<ReturnType<
@@ -130,8 +138,10 @@ export function ExecutionHistory() {
     setPending(false);
     if (workspace.ok) {
       setPermissions(workspace.data.permissions ?? []);
+      setActorUserId(workspace.data.principal?.id ?? "");
     } else if (workspace.statusCode === 403 || workspace.statusCode === 401) {
       setPermissions([]);
+      setActorUserId("");
     }
     if (workflowList.ok) {
       setWorkflows(workflowList.items);
@@ -146,6 +156,7 @@ export function ExecutionHistory() {
     setItems(list.items);
     setStrippedKeys(list.strippedKeys);
     void loadOperateDetails(list.items);
+    void loadDecideApprovals(list.items);
   }
 
   async function loadOperateDetails(rows: readonly ExecutionRecord[]) {
@@ -163,6 +174,28 @@ export function ExecutionHistory() {
       for (const result of results) {
         if (result.ok) {
           next[result.execution.id] = result.execution;
+        }
+      }
+      return next;
+    });
+  }
+
+  async function loadDecideApprovals(rows: readonly ExecutionRecord[]) {
+    const needed = rows.filter(executionDecideShouldLoadApprovals);
+    if (needed.length === 0) {
+      return;
+    }
+    const results = await Promise.all(
+      needed.map(async (row) => ({
+        id: row.id,
+        result: await listExecutionApprovals(identity, row.workflowId, row.id),
+      })),
+    );
+    setDecideApprovals((current) => {
+      const next = { ...current };
+      for (const { id, result } of results) {
+        if (result.ok) {
+          next[id] = result.items;
         }
       }
       return next;
@@ -271,7 +304,7 @@ export function ExecutionHistory() {
                   })
                 }
               />
-              {documentedExecutionStatuses().map((status) => (
+              {executionInboxStatuses().map((status) => (
                 <StatusChip
                   key={status}
                   label={status}
@@ -381,19 +414,31 @@ export function ExecutionHistory() {
           rows={visible}
           layout="inbox"
           operateActions={(row) => (
-            <ExecutionOperateActions
-              identity={identity}
-              executionId={row.id}
-              workflowId={
-                items.find((item) => item.id === row.id)?.workflowId ??
-                query.workflowId
-              }
-              status={row.status}
-              permissions={permissions}
-              detail={operateDetails[row.id]}
-              surface="inbox"
-              onOperated={() => void refresh()}
-            />
+            <>
+              <ExecutionDecideActions
+                identity={identity}
+                executionId={row.id}
+                status={row.status}
+                approvals={decideApprovals[row.id]}
+                actorUserId={actorUserId}
+                permissions={permissions}
+                surface="inbox"
+                onDecided={() => void refresh()}
+              />
+              <ExecutionOperateActions
+                identity={identity}
+                executionId={row.id}
+                workflowId={
+                  items.find((item) => item.id === row.id)?.workflowId ??
+                  query.workflowId
+                }
+                status={row.status}
+                permissions={permissions}
+                detail={operateDetails[row.id]}
+                surface="inbox"
+                onOperated={() => void refresh()}
+              />
+            </>
           )}
         />
       )}

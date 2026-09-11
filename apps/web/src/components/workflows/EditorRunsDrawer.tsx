@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ExecutionDecideActions } from "@/components/executions/ExecutionDecideActions";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
 import { ExecutionOperateActions } from "@/components/executions/ExecutionOperateActions";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
+import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { EDITOR_RUN_CLEAR_LABEL } from "@/lib/editor-run-io";
 import {
   EDITOR_RUNS_COLUMN_WIDTH,
@@ -30,8 +32,12 @@ import {
   runsChromeMode,
   type EditorRunsSkipStatus,
 } from "@/lib/editor-runs";
+import { isExecutionAwaitingApproval } from "@/lib/approval";
+import { listExecutionApprovals } from "@/lib/approval-client";
+import type { ApprovalRequest } from "@/lib/approval-types";
 import { listWorkflowExecutions, loadExecutionHistory } from "@/lib/execution-client";
 import { isExecutionForbidden } from "@/lib/execution";
+import { executionDecideShouldLoadApprovals } from "@/lib/execution-decide";
 import { executionOperateShouldLoadDetail } from "@/lib/execution-operate";
 import type {
   ExecutionDetail,
@@ -83,6 +89,8 @@ export function EditorRunsDrawer({
   onOperated,
 }: EditorRunsDrawerProps) {
   const embed = useEmbedMode();
+  const { current } = useWorkspace();
+  const actorUserId = current?.principal.id ?? "";
   const [items, setItems] = useState<ExecutionRecord[]>([]);
   const [status, setStatus] = useState("");
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -90,6 +98,9 @@ export function EditorRunsDrawer({
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
   const [operateDetails, setOperateDetails] = useState<
     Record<string, ExecutionDetail>
+  >({});
+  const [decideApprovals, setDecideApprovals] = useState<
+    Record<string, ApprovalRequest[]>
   >({});
   const denied = permissions != null && !editorRunsCanList(permissions);
   const forbidden = isExecutionForbidden(problem);
@@ -123,6 +134,7 @@ export function EditorRunsDrawer({
     setItems(list.items);
     setStrippedKeys(list.strippedKeys);
     void loadOperateDetails(list.items);
+    void loadDecideApprovals(list.items);
   }
 
   async function loadOperateDetails(rows: readonly ExecutionRecord[]) {
@@ -133,11 +145,33 @@ export function EditorRunsDrawer({
     const results = await Promise.all(
       needed.map((row) => loadExecutionHistory(identity, row.id, scopedId)),
     );
-    setOperateDetails((current) => {
-      const next = { ...current };
+    setOperateDetails((currentDetails) => {
+      const next = { ...currentDetails };
       for (const result of results) {
         if (result.ok) {
           next[result.execution.id] = result.execution;
+        }
+      }
+      return next;
+    });
+  }
+
+  async function loadDecideApprovals(rows: readonly ExecutionRecord[]) {
+    const needed = rows.filter(executionDecideShouldLoadApprovals);
+    if (needed.length === 0) {
+      return;
+    }
+    const results = await Promise.all(
+      needed.map(async (row) => ({
+        id: row.id,
+        result: await listExecutionApprovals(identity, scopedId, row.id),
+      })),
+    );
+    setDecideApprovals((currentApprovals) => {
+      const next = { ...currentApprovals };
+      for (const { id, result } of results) {
+        if (result.ok) {
+          next[id] = result.items;
         }
       }
       return next;
@@ -359,6 +393,8 @@ export function EditorRunsDrawer({
             className={
               selectedRow.indeterminate
                 ? "mt-4 rounded-xl border-2 border-amber-700 bg-amber-50 p-3"
+                : isExecutionAwaitingApproval(selectedRow.status)
+                  ? "mt-4 rounded-xl border-2 border-indigo-700 bg-indigo-50 p-3"
                 : "mt-4 rounded-xl border border-teal-800 bg-teal-50 p-3"
             }
           >
@@ -391,7 +427,18 @@ export function EditorRunsDrawer({
                 </button>
               ) : null}
             </p>
-            <div className="mt-3">
+            <div className="mt-3 space-y-2">
+              <ExecutionDecideActions
+                identity={identity}
+                executionId={selectedRow.id}
+                status={selectedRow.status}
+                approvals={decideApprovals[selectedRow.id]}
+                actorUserId={actorUserId}
+                permissions={permissions}
+                surface="overlay"
+                compact
+                onDecided={() => handleOperated(selectedRow.id)}
+              />
               <ExecutionOperateActions
                 identity={identity}
                 executionId={selectedRow.id}
@@ -440,17 +487,30 @@ export function EditorRunsDrawer({
                   : undefined
               }
               operateActions={(row) => (
-                <ExecutionOperateActions
-                  identity={identity}
-                  executionId={row.id}
-                  workflowId={scopedId || undefined}
-                  status={row.status}
-                  permissions={permissions}
-                  detail={operateDetailFor(row.id)}
-                  surface="overlay"
-                  compact
-                  onOperated={() => handleOperated(row.id)}
-                />
+                <>
+                  <ExecutionDecideActions
+                    identity={identity}
+                    executionId={row.id}
+                    status={row.status}
+                    approvals={decideApprovals[row.id]}
+                    actorUserId={actorUserId}
+                    permissions={permissions}
+                    surface="overlay"
+                    compact
+                    onDecided={() => handleOperated(row.id)}
+                  />
+                  <ExecutionOperateActions
+                    identity={identity}
+                    executionId={row.id}
+                    workflowId={scopedId || undefined}
+                    status={row.status}
+                    permissions={permissions}
+                    detail={operateDetailFor(row.id)}
+                    surface="overlay"
+                    compact
+                    onOperated={() => handleOperated(row.id)}
+                  />
+                </>
               )}
             />
           </div>

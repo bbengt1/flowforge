@@ -301,10 +301,13 @@ E12.1 UI evidence: [approval-expired.svg](../reference/e12-security-evidence/app
    opens existing `/executions/{id}` detail — this inbox is not a
    second replay graph. Cancel / Retry / Stop stay on the row (R4.4)
    using existing cancel, retry, and emergency-stop routes. Retry is
-   shown only when `result.retry.allowed` is true. Do not expect
-   cursor / time / trigger / actor filters yet. The editor **Runs**
-   overlay (R4.2) filters and highlights this workflow’s runs on the
-   same canvas.
+   shown only when `result.retry.allowed` is true. Waiting rows expose
+   Approve / Reject on the bound approval (`POST /approvals/{id}/decide`,
+   R4.5) — the requester cannot self-approve, and there is no invented
+   resume route. Do not expect cursor / time / trigger / actor filters
+   yet. The editor **Runs** overlay (R4.2) filters and highlights this
+   workflow’s runs on the same canvas; waiting overlay rows use the same
+   decide path.
 2. `indeterminate` uses a stronger border plus icon + text +
    explanation — never silent success, never “it probably did not run.”
 3. Start only a **published** version (home or the start panel).
