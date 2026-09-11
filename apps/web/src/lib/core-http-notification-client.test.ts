@@ -112,7 +112,7 @@ describe("core HTTP/notification client", () => {
     assert.equal(seen[1], "/api/v1/ops-config/catalog");
   });
 
-  it("falls back to the marked e104-#118 map when catalogs are thin", async () => {
+  it("fails closed when catalogs are empty — no invented HTTP nodes", async () => {
     withSession();
     globalThis.fetch = (async (input) => {
       const url = String(input);
@@ -132,9 +132,9 @@ describe("core HTTP/notification client", () => {
     const result = await getHttpNotificationCatalog(identity);
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.catalog.source, "contract-fallback");
-      assert.match(result.catalog.notes ?? "", /e104-#118/);
-      assert.equal(result.catalog.nodes.some((item) => item.type === "http.request"), true);
+      assert.equal(result.catalog.source, "unavailable");
+      assert.match(result.catalog.notes ?? "", /fails closed/i);
+      assert.deepEqual(result.catalog.nodes, []);
     }
   });
 

@@ -4,7 +4,7 @@ import {
   COMMAND_PROFILE_UI_COLLECTION,
   COMMAND_PROFILE_UPSTREAM_COLLECTION,
   SSH_API_PR,
-  SSH_CONTRACT_FALLBACK_CATALOG,
+  SSH_ENGINE_UNAVAILABLE_CATALOG,
   SSH_DENIED_FEATURES,
   SSH_EPIC,
   SSH_PROXY_ROUTES,
@@ -47,9 +47,10 @@ describe("ssh contract (#82 retarget adapter)", () => {
     assert.equal(COMMAND_PROFILE_UPSTREAM_COLLECTION, "command-profiles");
     assert.equal(sshOpsConfigCatalogPath(), "/ops-config/catalog");
     assert.equal(sshCatalogPath(), "/ssh/catalog");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, true);
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.quoting, "posix-single-quotes");
+    assert.equal(SSH_ENGINE_UNAVAILABLE_CATALOG.source, "unavailable");
+    assert.equal(SSH_ENGINE_UNAVAILABLE_CATALOG.retrySafeExposed, false);
+    assert.equal(SSH_ENGINE_UNAVAILABLE_CATALOG.quoting, undefined);
+    assert.deepEqual(SSH_ENGINE_UNAVAILABLE_CATALOG.authMethods, []);
   });
 
   it("builds REST paths consistent with ops-config draft/publish/versions", () => {

@@ -53,7 +53,7 @@ export function RuntimeProfileForm({
   const gap = runtimeProfilePublishGap(spec, map);
   const imagePinned = isPinnedImageDigest(spec.imageDigest);
   const lockPinned = isPinnedImageDigest(spec.dependencyLockDigest);
-  const showEgress = map?.egressExposed !== false;
+  const showEgress = map?.egressExposed === true;
 
   function patch(partial: Partial<OpsConfigSpec>) {
     onChange({ ...spec, ...partial });

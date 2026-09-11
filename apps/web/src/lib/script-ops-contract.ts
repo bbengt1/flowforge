@@ -14,6 +14,7 @@
  * Keep #95 open (this UI story). Do not change `apps/api`.
  */
 
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import {
   SCRIPT_ARTIFACT_SECRET_KEYS,
@@ -39,9 +40,6 @@ export const SCRIPT_REVOKE_AUDIT = "script.artifact.revoke" as const;
 export const SCRIPT_EMERGENCY_STOP_AUDIT = "script.emergency_stop" as const;
 export const SCRIPT_OPS_MAX_REASON_BYTES = 256;
 export const SCRIPT_OPS_POLICY_ALLOW_FIELD = "allowEmergencyStop" as const;
-
-export const SCRIPT_OPS_CONTRACT_FALLBACK_HELP =
-  "Using marked e94-#103 revoke/stop defaults because GET /scripts/catalog revocation / emergencyStop was unavailable. Prefer GET /scripts/catalog revocation + emergencyStop + errors[]. POST /scripts/{id}/revoke {reason?} requires script.revoke (idempotent, sets revokedAt). POST /executions/{id}/emergency-stop requires script.emergencyStop and is policy-gated (allowEmergencyStop; missing policy allows). Revoked artifacts cannot start (409 artifact-revoked at start/claim/heartbeat). Already-running runs are not auto-halted — use emergency stop. Queued → canceled; running/uncertain → loud indeterminate until verified. No blind retry after stop.";
 
 export const SCRIPT_REVOKE_HELP =
   "Revoke is idempotent and requires script.revoke (operator/admin). It sets revokedAt. New starts fail closed with 409 artifact-revoked. Dispatch rechecks signature, scan, and revocation at start, claim, and heartbeat-before-dispatch. Already-running executions are not auto-halted — use emergency stop.";
@@ -85,7 +83,7 @@ export const SCRIPT_OPS_AUDIT_SECRET_FREE_HELP =
 export type ScriptOpsCatalogSource =
   | "scripts-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type ScriptRevocationRules = {
   permission: string;
@@ -195,12 +193,15 @@ export const DEFAULT_SCRIPT_EMERGENCY_STOP: ScriptEmergencyStopRules = {
   note: SCRIPT_EMERGENCY_STOP_HELP,
 };
 
-export const SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG: ScriptOpsCatalog = {
-  source: "contract-fallback",
+export const SCRIPT_OPS_UNAVAILABLE_CATALOG: ScriptOpsCatalog = {
+  source: "unavailable",
   revocation: DEFAULT_SCRIPT_REVOCATION,
-  emergencyStop: DEFAULT_SCRIPT_EMERGENCY_STOP,
+  emergencyStop: {
+    ...DEFAULT_SCRIPT_EMERGENCY_STOP,
+    missingPolicyAllows: false,
+  },
   errors: DEFAULT_SCRIPT_OPS_ERRORS,
-  notes: SCRIPT_OPS_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
 export function scriptRevokePath(artifactId: string): string {
@@ -293,7 +294,7 @@ export const SCRIPT_OPS_PROXY_ROUTES: readonly ScriptOpsProxyRoute[] = [
 
 export function parseScriptOpsCatalog(raw: unknown): ScriptOpsCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_OPS_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const nested =
@@ -331,14 +332,14 @@ export function parseScriptOpsCatalog(raw: unknown): ScriptOpsCatalog {
     .map(parseOpsError)
     .filter((item): item is ScriptNodeErrorShape => item !== null);
   if (!revocationRaw && !stopRaw && errors.length === 0) {
-    return { ...SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_OPS_UNAVAILABLE_CATALOG };
   }
   const source: ScriptOpsCatalogSource =
     rec.scriptEngine && typeof rec.scriptEngine === "object"
       ? "ops-config-catalog"
       : revocationRaw || stopRaw
         ? "scripts-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
     revocation: parseRevocation(revocationRaw),
@@ -346,14 +347,14 @@ export function parseScriptOpsCatalog(raw: unknown): ScriptOpsCatalog {
     errors: mergeOpsErrors(errors),
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (source === "contract-fallback" ? SCRIPT_OPS_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? ENGINE_CATALOG_UNAVAILABLE_HELP : undefined),
   };
 }
 
 export function scriptOpsCatalog(
   catalog?: ScriptOpsCatalog | null,
 ): ScriptOpsCatalog {
-  return catalog ?? SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG;
+  return catalog ?? SCRIPT_OPS_UNAVAILABLE_CATALOG;
 }
 
 export function isArtifactRevoked(

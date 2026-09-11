@@ -17,7 +17,6 @@ import {
   allowedNamespacesFromPinSpec,
   defaultKubernetesWith,
   isKubernetesConfigurableType,
-  kubernetesNodeWithFields,
   overlayKubernetesFields,
   stripKubernetesForbiddenWith,
   validateKubernetesNodeConfig,
@@ -31,7 +30,6 @@ import {
   isExposedSshWithField,
   isSshConfigurableType,
   overlaySshFields,
-  sshNodeWithFields,
   stripSshForbiddenWith,
   validateSshNodeConfig,
   type SshNodeCatalog,
@@ -43,7 +41,6 @@ import {
   isExposedScriptWithField,
   isScriptConfigurableType,
   overlayScriptFields,
-  scriptNodeWithFields,
   stripScriptForbiddenWith,
   validateScriptNodeConfig,
   type ScriptNodeCatalog,
@@ -55,7 +52,6 @@ import {
   isExposedHttpNotificationField,
   isHttpConfigurableType,
   overlayHttpNotificationFields,
-  httpNotificationNodeWithFields,
   stripHttpNotificationForbiddenWith,
   validateHttpNotificationConfig,
   type HttpNotificationCatalog,
@@ -324,9 +320,9 @@ export function defaultWithForType(type: string): Record<string, unknown> {
 }
 
 /**
- * Prefer catalog `allowedWith`. When that is missing (E3.1 stubs),
- * infer fields from family / YAML schema. Mark inferred so the UI
- * can label the catalog gap.
+ * Prefer catalog `allowedWith`. K8s / SSH / script / HTTP fail closed
+ * when live catalogs omit fields — no invented toggles or config
+ * fields (R3.4 / #249). Core types may still infer from YAML schema.
  */
 export function wizardConfigFields(
   entry: ActionLibraryEntry | undefined,
@@ -350,9 +346,7 @@ export function wizardConfigFields(
         .filter((field) => isExposedHttpNotificationField(field.name))
         .map((field) => fromHttpNotificationWithField(field, false));
     }
-    return httpNotificationNodeWithFields(type, httpCatalog).map((field) =>
-      fromHttpNotificationWithField(field, entry?.source !== "catalog"),
-    );
+    return [];
   }
   if (isScriptConfigurableType(type)) {
     const engineFields = scriptCatalog?.nodes.find((item) => item.type === type)
@@ -368,9 +362,7 @@ export function wizardConfigFields(
         .filter((field) => isExposedScriptWithField(field.name))
         .map((field) => fromScriptWithField(field, false));
     }
-    return scriptNodeWithFields(type, scriptCatalog).map((field) =>
-      fromScriptWithField(field, entry?.source !== "catalog"),
-    );
+    return [];
   }
   if (isSshConfigurableType(type)) {
     const engineFields = sshCatalog?.nodes.find((item) => item.type === type)
@@ -386,9 +378,7 @@ export function wizardConfigFields(
         .filter((field) => isExposedSshWithField(field.name))
         .map((field) => fromSshWithField(field, false));
     }
-    return sshNodeWithFields(type, sshCatalog).map((field) =>
-      fromSshWithField(field, entry?.source !== "catalog"),
-    );
+    return [];
   }
   if (isKubernetesConfigurableType(type)) {
     const engineFields = engineCatalog?.nodes.find((item) => item.type === type)
@@ -408,9 +398,7 @@ export function wizardConfigFields(
         .filter((field) => isExposedKubernetesField(field.name))
         .map((field) => fromKubernetesWithField(field, false));
     }
-    return kubernetesNodeWithFields(type, engineCatalog).map((field) =>
-      fromKubernetesWithField(field, entry?.source !== "catalog"),
-    );
+    return [];
   }
   const catalogFields = (entry?.allowedWith ?? []).map((field) =>
     fromCatalogWithField(field),
@@ -1078,15 +1066,8 @@ function inferredFieldsForType(type: string, requiredWith: string[]): WizardConf
       field("memoryMiB", "integer", "number", { defaultValue: 128 }),
     ];
   }
-  if (type === "http.request") {
-    return httpNotificationNodeWithFields(type).map((item) =>
-      fromHttpNotificationWithField(item, true),
-    );
-  }
-  if (type === "notification.email" || type === "notification.webhook") {
-    return httpNotificationNodeWithFields(type).map((item) =>
-      fromHttpNotificationWithField(item, true),
-    );
+  if (type === "http.request" || type === "notification.email" || type === "notification.webhook") {
+    return [];
   }
   if (type === "flow.approval") {
     return [

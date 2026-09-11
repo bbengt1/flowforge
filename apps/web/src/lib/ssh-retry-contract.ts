@@ -13,6 +13,7 @@
  * Do not invent verify / resume routes. Do not change `apps/api`.
  */
 
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import { isIndeterminateStatus } from "./execution.ts";
 import type { ExecutionStatus } from "./execution-types.ts";
 
@@ -65,13 +66,10 @@ export const SSH_NO_BLIND_RETRY_HELP =
 export const SSH_PROBE_HELP =
   "spec.verification is an idempotent read-only probe using the same parameterSchema and POSIX quoting as the mutating template. It is never the mutating command. already-applied succeeds without re-run; safe-to-retry may re-run once; onError stays indeterminate.";
 
-export const SSH_RETRY_CONTRACT_FALLBACK_HELP =
-  "Using marked e83-#90 retry defaults because GET /ssh/catalog retry.ui / retry.probe was unavailable. maxAttempts defaults to 0; retrySafe defaults to false; Retry stays gated on result.retry.allowed.";
-
 export type SshRetryCatalogSource =
   | "ssh-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type SshRetryErrorShape = {
   code: string;
@@ -200,8 +198,8 @@ export const DEFAULT_SSH_RETRY_ERRORS: SshRetryErrorShape[] = [
   },
 ];
 
-export const SSH_RETRY_CONTRACT_FALLBACK_CATALOG: SshRetryCatalog = {
-  source: "contract-fallback",
+export const SSH_RETRY_UNAVAILABLE_CATALOG: SshRetryCatalog = {
+  source: "unavailable",
   defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   maxAttempts: SSH_MAX_RETRY_ATTEMPTS,
   retrySafeFlag: SSH_RETRY_SAFE_FLAG,
@@ -218,7 +216,7 @@ export const SSH_RETRY_CONTRACT_FALLBACK_CATALOG: SshRetryCatalog = {
   ui: DEFAULT_SSH_RETRY_UI,
   probe: DEFAULT_SSH_RETRY_PROBE,
   errors: DEFAULT_SSH_RETRY_ERRORS,
-  notes: SSH_RETRY_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
 export function isSshRunType(type: string | undefined): boolean {
@@ -303,7 +301,7 @@ export function validateSshVerificationSpec(input: {
  */
 export function parseSshRetryCatalog(raw: unknown): SshRetryCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...SSH_RETRY_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_RETRY_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const nested =
@@ -331,14 +329,14 @@ export function parseSshRetryCatalog(raw: unknown): SshRetryCatalog {
     retryRaw.ui !== undefined ||
     retryRaw.probe !== undefined;
   if (!hasRetry && errors.length === 0) {
-    return { ...SSH_RETRY_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_RETRY_UNAVAILABLE_CATALOG };
   }
   const source: SshRetryCatalogSource =
     rec.sshEngine && typeof rec.sshEngine === "object"
       ? "ops-config-catalog"
       : hasRetry
         ? "ssh-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
     defaultMaxAttempts: finiteInteger(
@@ -358,13 +356,13 @@ export function parseSshRetryCatalog(raw: unknown): SshRetryCatalog {
       String(retryRaw.verification ?? "").trim() || SSH_VERIFICATION_CONTRACT,
     whenRetryAllowed:
       String(retryRaw.whenRetryAllowed ?? "").trim() ||
-      SSH_RETRY_CONTRACT_FALLBACK_CATALOG.whenRetryAllowed,
+      SSH_RETRY_UNAVAILABLE_CATALOG.whenRetryAllowed,
     ui: parseRetryUI(retryRaw.ui),
     probe: parseRetryProbe(retryRaw.probe),
     errors: errors.length ? overlayRetryErrorMeanings(errors) : DEFAULT_SSH_RETRY_ERRORS,
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (source === "contract-fallback" ? SSH_RETRY_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? ENGINE_CATALOG_UNAVAILABLE_HELP : undefined),
   };
 }
 

@@ -28,7 +28,6 @@ import {
 import {
   HTTP_CONNECTION_FAIL_CLOSED_MESSAGE,
   HTTP_CONNECTION_REQUIRED_MESSAGE,
-  HTTP_DEFAULT_TIMEOUT_SECONDS,
   HTTP_RECIPIENT_REQUIRED_MESSAGE,
   HTTP_SECRET_WITH_MESSAGE,
   HTTP_TEMPLATE_REQUIRED_MESSAGE,
@@ -100,6 +99,21 @@ const catalog: WorkflowCatalog = {
       type: "ssh.run",
       phase: "core",
       requiredWith: ["sshTargetId", "commandProfileId"],
+    },
+    {
+      type: "kubernetes.rolloutStatus",
+      phase: "core",
+      title: "Rollout status",
+    },
+    {
+      type: "script.python",
+      phase: "core",
+      title: "Run Python script",
+    },
+    {
+      type: "http.request",
+      phase: "core",
+      title: "HTTP request",
     },
     { type: "workflow.call", phase: "next" },
   ],
@@ -198,9 +212,29 @@ describe("action wizard selectors", () => {
 });
 
 describe("action wizard catalog inference and recommendations", () => {
-  it("uses the E7.2 k8s contract for configure fields and never exposes force", () => {
+  it("uses live catalog allowedWith and fails closed without invented fields", () => {
     const apply = palette.find((item) => item.type === "kubernetes.apply");
-    const fields = wizardConfigFields(apply, "kubernetes.apply");
+    assert.ok(apply);
+    assert.deepEqual(wizardConfigFields(apply, "kubernetes.apply"), []);
+    assert.equal(defaultWithForType("kubernetes.apply").timeoutSeconds, KUBERNETES_DEFAULT_TIMEOUT_SECONDS);
+    assert.deepEqual(credentialTypesForAction("kubernetes.apply"), ["kubernetes"]);
+    assert.deepEqual(opsConfigKindsForAction("ssh.run"), ["ssh_target", "command_profile"]);
+    assert.equal(wizardNeedsTargetStep("flow.delay"), false);
+    assert.equal(wizardNeedsTargetStep("kubernetes.apply"), true);
+    assert.equal(defaultWithForType("kubernetes.apply").dryRun, "server");
+
+    const liveApply = {
+      ...apply,
+      source: "catalog" as const,
+      allowedWith: [
+        { name: "clusterTargetId", kind: "uuid", required: true },
+        { name: "namespace", kind: "string", required: true },
+        { name: "manifests", kind: "string" },
+        { name: "dryRun", kind: "enum", enum: ["client", "server"] },
+        { name: "fieldManager", kind: "string" },
+      ],
+    };
+    const fields = wizardConfigFields(liveApply, "kubernetes.apply");
     assert.equal(fields.some((field) => field.name === "clusterTargetId"), true);
     assert.equal(fields.some((field) => field.name === "namespace" && field.required), true);
     assert.equal(fields.some((field) => field.name === "manifests"), true);
@@ -209,123 +243,27 @@ describe("action wizard catalog inference and recommendations", () => {
     assert.equal(fields.some((field) => field.name === "kubeconfig"), false);
     assert.equal(fields.find((field) => field.name === "fieldManager")?.readOnly, true);
     assert.equal(fields.find((field) => field.name === "fieldManager")?.defaultValue, "flowforge");
-    assert.equal(defaultWithForType("kubernetes.apply").timeoutSeconds, KUBERNETES_DEFAULT_TIMEOUT_SECONDS);
-    assert.deepEqual(credentialTypesForAction("kubernetes.apply"), ["kubernetes"]);
-    assert.deepEqual(opsConfigKindsForAction("ssh.run"), ["ssh_target", "command_profile"]);
-    assert.equal(wizardNeedsTargetStep("flow.delay"), false);
-    assert.equal(wizardNeedsTargetStep("kubernetes.apply"), true);
-    assert.equal(defaultWithForType("kubernetes.apply").dryRun, "server");
 
     const fallbackLibrary = adaptActionLibrary(null);
-    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.apply"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.get"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.list"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.rolloutStatus"), true);
-    assert.equal(
-      fallbackLibrary.find((item) => item.type === "kubernetes.rolloutStatus")?.source,
-      "contract-fallback",
-    );
-    assert.equal(
-      fallbackLibrary.find((item) => item.type === "kubernetes.apply")?.source,
-      "contract-fallback",
-    );
-    assert.equal(fallbackLibrary.some((item) => item.type === "ssh.run"), true);
-    assert.equal(
-      fallbackLibrary.find((item) => item.type === "ssh.run")?.source,
-      "contract-fallback",
-    );
+    assert.equal(fallbackLibrary.some((item) => item.type === "kubernetes.apply"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "ssh.run"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "script.python"), false);
+    assert.equal(fallbackLibrary.some((item) => item.type === "http.request"), false);
     assert.equal(wizardNeedsTargetStep("ssh.run"), true);
     assert.equal(defaultWithForType("ssh.run").timeoutSeconds, SSH_DEFAULT_TIMEOUT_SECONDS);
     assert.deepEqual(defaultWithForType("ssh.run").retryPolicy, { maxAttempts: 0 });
-    const sshFields = wizardConfigFields(
-      fallbackLibrary.find((item) => item.type === "ssh.run"),
-      "ssh.run",
-    );
-    assert.equal(sshFields.some((field) => field.name === "sshTargetId" && field.required), true);
-    assert.equal(
-      sshFields.some((field) => field.name === "commandProfileId" && field.required),
-      true,
-    );
-    assert.equal(sshFields.some((field) => field.name === "timeoutSeconds"), true);
-    assert.equal(sshFields.some((field) => field.name === "retryPolicy"), true);
-    assert.equal(sshFields.some((field) => field.name === "policyId"), true);
-    assert.equal(sshFields.some((field) => field.name === "command"), false);
-    assert.equal(sshFields.some((field) => field.name === "privateKey"), false);
-    assert.equal(fallbackLibrary.some((item) => item.type === "script.python"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "script.go"), true);
-    assert.equal(
-      fallbackLibrary.find((item) => item.type === "script.python")?.source,
-      "contract-fallback",
-    );
+    assert.deepEqual(wizardConfigFields(undefined, "ssh.run"), []);
     assert.equal(wizardNeedsTargetStep("script.python"), true);
     assert.deepEqual(opsConfigKindsForAction("script.python"), ["runtime_profile"]);
     assert.equal(defaultWithForType("script.python").timeoutSeconds, SCRIPT_DEFAULT_TIMEOUT_SECONDS);
-    assert.equal(defaultWithForType("script.python").entrypoint, "main.py");
-    assert.equal(defaultWithForType("script.go").entrypoint, "main.go");
-    const scriptFields = wizardConfigFields(
-      fallbackLibrary.find((item) => item.type === "script.python"),
-      "script.python",
-    );
-    assert.equal(scriptFields.some((field) => field.name === "source" && field.required), true);
-    assert.equal(
-      scriptFields.some((field) => field.name === "runtimeProfileId" && field.required),
-      true,
-    );
-    assert.equal(
-      scriptFields.some((field) => field.name === "timeoutSeconds" && field.required),
-      true,
-    );
-    assert.equal(scriptFields.some((field) => field.name === "entrypoint"), true);
-    assert.equal(scriptFields.some((field) => field.name === "inputSchema"), true);
-    assert.equal(scriptFields.some((field) => field.name === "image"), false);
-    assert.equal(scriptFields.some((field) => field.name === "secret"), false);
-    assert.equal(fallbackLibrary.some((item) => item.type === "http.request"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "notification.webhook"), true);
-    assert.equal(fallbackLibrary.some((item) => item.type === "notification.email"), true);
-    assert.equal(
-      fallbackLibrary.find((item) => item.type === "http.request")?.source,
-      "contract-fallback",
-    );
+    assert.deepEqual(wizardConfigFields(undefined, "script.python"), []);
     assert.equal(wizardNeedsTargetStep("http.request"), true);
     assert.deepEqual(opsConfigKindsForAction("http.request"), [
       "connection",
       "response_schema",
     ]);
-    assert.deepEqual(opsConfigKindsForAction("notification.email"), [
-      "connection",
-      "recipient_list",
-      "message_template",
-    ]);
-    assert.equal(
-      defaultWithForType("http.request").timeoutSeconds,
-      HTTP_DEFAULT_TIMEOUT_SECONDS,
-    );
-    const httpFields = wizardConfigFields(
-      fallbackLibrary.find((item) => item.type === "http.request"),
-      "http.request",
-    );
-    assert.equal(
-      httpFields.some((field) => field.name === "connectionId" && field.required),
-      true,
-    );
-    assert.equal(httpFields.some((field) => field.name === "method" && field.required), false);
-    assert.equal(httpFields.some((field) => field.name === "path" && field.required), false);
-    assert.equal(httpFields.some((field) => field.name === "host"), true);
-    assert.equal(httpFields.some((field) => field.name === "url"), false);
-    assert.equal(httpFields.some((field) => field.name === "token"), false);
-    const emailFields = wizardConfigFields(
-      fallbackLibrary.find((item) => item.type === "notification.email"),
-      "notification.email",
-    );
-    assert.equal(
-      emailFields.some((field) => field.name === "recipientListId" && field.required),
-      true,
-    );
-    assert.equal(
-      emailFields.some((field) => field.name === "templateId" && field.required),
-      true,
-    );
-    assert.equal(emailFields.some((field) => field.name === "to"), false);
+    assert.deepEqual(wizardConfigFields(undefined, "http.request"), []);
+    assert.deepEqual(wizardConfigFields(undefined, "notification.email"), []);
   });
 
   it("recommends compatible enabled actions from upstream port and targets", () => {
@@ -371,8 +309,17 @@ describe("action wizard insert + redaction", () => {
   });
 
   it("inserts a kubernetes.rolloutStatus node with kind and name and no force", () => {
-    const entry = palette.find((item) => item.type === "kubernetes.rolloutStatus")
-      ?? adaptActionLibrary(null).find((item) => item.type === "kubernetes.rolloutStatus");
+    const listed = palette.find((item) => item.type === "kubernetes.rolloutStatus");
+    const entry = listed
+      ? {
+          ...listed,
+          source: "catalog" as const,
+          allowedWith: [
+            { name: "kind", kind: "enum", required: true, enum: ["Deployment"] },
+            { name: "name", kind: "string", required: true },
+          ],
+        }
+      : listed;
     const fields = wizardConfigFields(entry, "kubernetes.rolloutStatus");
     assert.equal(fields.some((field) => field.name === "kind" && field.required), true);
     assert.equal(fields.some((field) => field.name === "name" && field.required), true);
@@ -787,7 +734,14 @@ describe("action wizard insert + redaction", () => {
       wizardConfigFields(entry, "kubernetes.apply").some((field) => field.name === "force"),
       false,
     );
-    const manager = wizardConfigFields(entry, "kubernetes.apply").find(
+    const liveApply = entry
+      ? {
+          ...entry,
+          source: "catalog" as const,
+          allowedWith: [{ name: "fieldManager", kind: "string" }],
+        }
+      : entry;
+    const manager = wizardConfigFields(liveApply, "kubernetes.apply").find(
       (field) => field.name === "fieldManager",
     );
     assert.equal(manager?.readOnly, true);

@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  SSH_CONTRACT_FALLBACK_NODE_HELP,
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_DEFAULT_TIMEOUT_SECONDS,
   SSH_FORBIDDEN_WITH_KEYS,
   SSH_FREEFORM_SHELL_MESSAGE,
   SSH_NODE_API_PR,
-  SSH_NODE_CONTRACT_FALLBACK_CATALOG,
   SSH_NODE_EPIC,
   SSH_NODE_ROUTE_MAP_SOURCE,
   SSH_NODE_STORY,
@@ -23,12 +21,10 @@ import {
   commandProfileParameterConstraints,
   commandProfileRetrySafe,
   defaultSshWith,
-  hasSshNodeContract,
   isSshConfigurableType,
   isSshRunType,
   parseSshNodeCatalog,
   pruneSshParameters,
-  sshFallbackNode,
   sshForbiddenWithKeys,
   sshLibraryTypes,
   sshNodeWithFields,
@@ -64,36 +60,19 @@ describe("ssh node contract adapter", () => {
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("privateKey"));
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("command"));
     assert.ok(SSH_FORBIDDEN_WITH_KEYS.includes("password"));
-    assert.match(SSH_CONTRACT_FALLBACK_NODE_HELP, /e82-#88/);
   });
 
-  it("falls back to marked contract entries when catalog is thin or missing", () => {
-    assert.deepEqual([...sshLibraryTypes(null)], ["ssh.run"]);
+  it("fails closed when catalog is thin or missing — no invented ssh.run fields", () => {
+    assert.deepEqual([...sshLibraryTypes(null)], []);
     assert.equal(isSshRunType("ssh.run"), true);
     assert.equal(isSshConfigurableType("ssh.run"), true);
     assert.equal(isSshConfigurableType("kubernetes.apply"), false);
     assert.equal(catalogListsSshType(catalog, "ssh.run"), true);
-    const fallback = sshFallbackNode("ssh.run");
-    assert.equal(fallback.source, undefined);
-    assert.equal(fallback.title, "Run command profile");
-    assert.match(fallback.description ?? "", /ephemeral key handle/i);
-    assert.deepEqual(fallback.requiredWith, ["sshTargetId", "commandProfileId"]);
-    assert.equal(fallback.policy?.retrySafe, false);
-    assert.equal(fallback.policy?.defaultMaxAttempts, 0);
-    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "sshTargetId"));
-    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "retryPolicy"));
-    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "policyId"));
-    assert.equal(
-      (fallback.allowedWith ?? []).some((field) => field.name === "command"),
-      false,
-    );
-    assert.equal(hasSshNodeContract(fallback), true);
-    const missing = adaptSshNodeEntries(null);
-    assert.equal(missing[0]?.type, "ssh.run");
-    assert.equal(missing[0]?.title, "Run command profile");
+    assert.deepEqual([...sshLibraryTypes(catalog)], ["ssh.run"]);
+    assert.deepEqual(adaptSshNodeEntries(null), []);
     const thin = adaptSshNodeEntries(catalog);
-    assert.equal(thin[0]?.title, "Run command profile");
-    assert.ok((thin[0]?.allowedWith?.length ?? 0) > 0);
+    assert.equal(thin[0]?.type, "ssh.run");
+    assert.deepEqual(thin[0]?.allowedWith ?? [], []);
   });
 
   it("defaults timeout and zero-retry policy", () => {
@@ -268,8 +247,9 @@ describe("ssh node contract adapter", () => {
     assert.equal(fields.find((field) => field.name === "retryPolicy")?.readOnly, undefined);
 
     const empty = parseSshNodeCatalog({});
-    assert.equal(empty.source, "contract-fallback");
-    assert.equal(empty.notes, SSH_NODE_CONTRACT_FALLBACK_CATALOG.notes);
+    assert.equal(empty.source, "unavailable");
+    assert.deepEqual(empty.nodes, []);
+    assert.match(empty.notes ?? "", /fails closed/i);
 
     const adapted = adaptSshNodeEntries(catalog, parsed);
     assert.equal(adapted[0]?.title, "Approved remote command");

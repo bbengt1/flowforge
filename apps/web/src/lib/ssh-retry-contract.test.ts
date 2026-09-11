@@ -7,7 +7,7 @@ import {
   SSH_MAX_RETRY_ATTEMPTS,
   SSH_NO_BLIND_RETRY_HELP,
   SSH_RETRY_API_PR,
-  SSH_RETRY_CONTRACT_FALLBACK_CATALOG,
+  SSH_RETRY_UNAVAILABLE_CATALOG,
   SSH_RETRY_DENIED_MESSAGE,
   SSH_RETRY_EPIC,
   SSH_RETRY_ROUTE_MAP_SOURCE,
@@ -45,10 +45,10 @@ describe("ssh retry contract adapter", () => {
     assert.equal(SSH_RUN_NODE_TYPE, "ssh.run");
     assert.equal(SSH_DEFAULT_RETRY_MAX_ATTEMPTS, 0);
     assert.equal(SSH_MAX_RETRY_ATTEMPTS, 5);
-    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
-    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.retrySafeDefault, false);
-    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.ui.neverAssumeAbsent, true);
-    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.probe.requiredWhenRetrySafe, true);
+    assert.equal(SSH_RETRY_UNAVAILABLE_CATALOG.source, "unavailable");
+    assert.equal(SSH_RETRY_UNAVAILABLE_CATALOG.retrySafeDefault, false);
+    assert.equal(SSH_RETRY_UNAVAILABLE_CATALOG.ui.neverAssumeAbsent, true);
+    assert.equal(SSH_RETRY_UNAVAILABLE_CATALOG.probe.requiredWhenRetrySafe, true);
     assert.match(SSH_RETRY_SAFE_HELP, /idempotent verification probe/i);
     assert.match(SSH_RETRY_ZERO_MESSAGE, /default to zero/i);
   });
@@ -212,8 +212,8 @@ describe("ssh retry contract adapter", () => {
     assert.equal(parsed.errors.some((item) => item.code === "invalid-verification"), true);
 
     const empty = parseSshRetryCatalog({});
-    assert.equal(empty.source, "contract-fallback");
-    assert.match(empty.notes ?? "", /e83-#90/);
+    assert.equal(empty.source, "unavailable");
+    assert.match(empty.notes ?? "", /fails closed/i);
 
     const result = parseSshRetryResult({
       retry: {

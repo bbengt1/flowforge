@@ -104,7 +104,7 @@ export async function getScriptCatalog(
   );
   if (ops.ok) {
     const catalog = parseScriptNodeCatalog(ops.data);
-    if (catalog.source !== "contract-fallback") {
+    if (catalog.source !== "unavailable") {
       return {
         ok: true,
         statusCode: ops.statusCode,

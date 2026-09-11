@@ -190,9 +190,9 @@ describe("kubernetes policy parse / write", () => {
     assert.equal(catalog?.apply.fieldManager, "flowforge");
     assert.equal(catalog?.apply.force, false);
     assert.equal(catalog?.apply.serverDryRunAlways, true);
-    assert.equal(catalog?.apply.waitReady, "observed");
-    assert.equal(catalog?.observation?.waitReady, "observed");
-    assert.equal(catalog?.observation?.verb, "watch");
+    assert.equal(catalog?.apply.waitReady, "");
+    assert.equal(catalog?.observation?.waitReady, "");
+    assert.equal(catalog?.observation?.verb, "");
   });
 
   it("parses GET /kubernetes/catalog nodes[] / errors[] / apply / observation from #79", () => {

@@ -25,6 +25,7 @@
  * re-close #93; keep epic #91 open. Do not change `apps/api`.
  */
 
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import type {
   OpsConfigPin,
   OpsConfigSpec,
@@ -53,9 +54,6 @@ export const SCRIPT_RUNTIME_EPIC = 91;
 /** Jonny's E9.2 isolated-runner map on main. */
 export const SCRIPT_RUNTIME_API_PR = 98;
 export const SCRIPT_RUNTIME_ROUTE_MAP_SOURCE = "e92-#98" as const;
-
-export const SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP =
-  "Using the marked e92-#98 runtime-profile map because GET /scripts/catalog was unavailable. Prefer GET /scripts/catalog isolation (or GET /ops-config/catalog scriptEngine) plus existing /runtime-profiles draft/publish/select verbs.";
 
 export const SCRIPT_RUNTIME_ISOLATION_HELP =
   "Runners are non-root UID/GID 65532, read-only root filesystem, ephemeral /workspace, drop ALL capabilities, and no_new_privs. Egress is default-deny with constrained DNS. There is no Docker socket, cloud-instance metadata, Kubernetes SA mount, or arbitrary base image. CI uses HarnessRuntime (no live containers); production manifests are deploy/kubernetes/script-runner-*.yaml.";
@@ -135,7 +133,7 @@ export type ScriptRuntimeEgress = {
 };
 
 export type ScriptRuntimeProfileMap = {
-  source: "scripts-catalog" | "ops-config-catalog" | "contract-fallback";
+  source: "scripts-catalog" | "ops-config-catalog" | "unavailable";
   engine: typeof SCRIPT_RUNTIME_PROFILE_ENGINE;
   languages: readonly ScriptRuntimeLanguage[];
   requiredSpec: readonly string[];
@@ -155,18 +153,18 @@ const LIMIT_KEYS = Object.keys(
   SCRIPT_RUNTIME_LIMIT_BOUNDS,
 ) as ScriptRuntimeLimitKey[];
 
-export const SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK: ScriptRuntimeProfileMap = {
-  source: "contract-fallback",
+export const SCRIPT_RUNTIME_PROFILE_MAP_UNAVAILABLE: ScriptRuntimeProfileMap = {
+  source: "unavailable",
   engine: SCRIPT_RUNTIME_PROFILE_ENGINE,
   languages: SCRIPT_RUNTIME_LANGUAGES,
   requiredSpec: ["language", "imageDigest", "dependencyLockDigest", "limits"],
   allowedSpec: SCRIPT_RUNTIME_ALLOWED_SPEC_KEYS,
-  egressExposed: true,
+  egressExposed: false,
   isolation: {
     ...DEFAULT_SCRIPT_ISOLATION,
     note: SCRIPT_RUNTIME_ISOLATION_HELP,
   },
-  notes: SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
 export function emptyRuntimeProfileSpec(): OpsConfigSpec {
@@ -223,15 +221,17 @@ export function parseRuntimeProfileMap(raw: unknown): ScriptRuntimeProfileMap {
   const languages = stringList(declared.languages ?? catalog.languages).filter(
     isScriptRuntimeLanguage,
   );
-  const isolation = catalog.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK.isolation;
-  const egressExposed = runtimeProfileEgressExposed(declared, allowedSpec, isolation);
+  const isolation = catalog.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_UNAVAILABLE.isolation;
   const thin =
-    catalog.source === "contract-fallback" &&
+    catalog.source === "unavailable" &&
     Object.keys(declared).length === 0 &&
     !rec.scriptEngine;
+  const egressExposed = thin
+    ? false
+    : runtimeProfileEgressExposed(declared, allowedSpec);
   return {
     source: thin
-      ? "contract-fallback"
+      ? "unavailable"
       : catalog.source === "ops-config-catalog"
         ? "ops-config-catalog"
         : "scripts-catalog",
@@ -246,7 +246,7 @@ export function parseRuntimeProfileMap(raw: unknown): ScriptRuntimeProfileMap {
     egressExposed,
     isolation,
     notes: thin
-      ? SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP
+      ? ENGINE_CATALOG_UNAVAILABLE_HELP
       : String(declared.notes ?? nested.notes ?? catalog.notes ?? "").trim() ||
         SCRIPT_RUNTIME_ISOLATION_HELP,
   };
@@ -256,7 +256,7 @@ export function runtimeProfileMapFromCatalog(
   catalog: ScriptNodeCatalog | null | undefined,
 ): ScriptRuntimeProfileMap {
   if (!catalog) {
-    return { ...SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK };
+    return { ...SCRIPT_RUNTIME_PROFILE_MAP_UNAVAILABLE };
   }
   return parseRuntimeProfileMap({
     nodes: catalog.nodes,
@@ -341,7 +341,7 @@ export function forbiddenRuntimeProfileKeys(spec: OpsConfigSpec): string[] {
 export function runtimeProfileIsolationNotes(
   map?: ScriptRuntimeProfileMap | null,
 ): string[] {
-  const isolation = map?.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK.isolation;
+  const isolation = map?.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_UNAVAILABLE.isolation;
   const uid = isolation.uid ?? 65532;
   const workspace = isolation.ephemeralWorkspace ?? "/workspace";
   return [
@@ -551,15 +551,11 @@ function limitGap(key: ScriptRuntimeLimitKey, value: unknown): string | null {
 function runtimeProfileEgressExposed(
   declared: Record<string, unknown>,
   allowedSpec: string[],
-  isolation: ScriptIsolationRules,
 ): boolean {
-  if (declared.egressExposed === false) {
-    return false;
+  if (declared.egressExposed === true) {
+    return true;
   }
-  if (isolation.defaultDenyEgress === false && allowedSpec.length === 0) {
-    return false;
-  }
-  return true;
+  return allowedSpec.includes("egress");
 }
 
 function stringList(value: unknown): string[] {

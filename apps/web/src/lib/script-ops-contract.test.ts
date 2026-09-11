@@ -9,8 +9,7 @@ import {
   SCRIPT_EMERGENCY_STOP_PERMISSION,
   SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP,
   SCRIPT_OPS_API_PR,
-  SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG,
-  SCRIPT_OPS_CONTRACT_FALLBACK_HELP,
+  SCRIPT_OPS_UNAVAILABLE_CATALOG,
   SCRIPT_OPS_EPIC,
   SCRIPT_OPS_EXISTING_API_PATHS,
   SCRIPT_OPS_MAX_REASON_BYTES,
@@ -49,31 +48,26 @@ describe("script ops contract adapter", () => {
     assert.equal(SCRIPT_OPS_EPIC, 91);
     assert.equal(SCRIPT_OPS_API_PR, 103);
     assert.equal(SCRIPT_OPS_ROUTE_MAP_SOURCE, "e94-#103");
-    assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /e94-#103/);
-    assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /script\.revoke/);
-    assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /script\.emergencyStop/);
-    assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /allowEmergencyStop/);
-    assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /409 artifact-revoked/);
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
+    assert.equal(SCRIPT_OPS_UNAVAILABLE_CATALOG.source, "unavailable");
     assert.equal(
-      SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.revocation.permission,
+      SCRIPT_OPS_UNAVAILABLE_CATALOG.revocation.permission,
       SCRIPT_REVOKE_PERMISSION,
     );
     assert.equal(
-      SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.permission,
+      SCRIPT_OPS_UNAVAILABLE_CATALOG.emergencyStop.permission,
       SCRIPT_EMERGENCY_STOP_PERMISSION,
     );
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.revocation.idempotent, true);
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.revocation.failClosed, true);
+    assert.equal(SCRIPT_OPS_UNAVAILABLE_CATALOG.revocation.idempotent, true);
+    assert.equal(SCRIPT_OPS_UNAVAILABLE_CATALOG.revocation.failClosed, true);
     assert.equal(
-      SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.uncertainOutcome,
+      SCRIPT_OPS_UNAVAILABLE_CATALOG.emergencyStop.uncertainOutcome,
       "indeterminate",
     );
     assert.equal(
-      SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.beforeDispatch,
+      SCRIPT_OPS_UNAVAILABLE_CATALOG.emergencyStop.beforeDispatch,
       "canceled",
     );
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.missingPolicyAllows, true);
+    assert.equal(SCRIPT_OPS_UNAVAILABLE_CATALOG.emergencyStop.missingPolicyAllows, false);
     assert.equal(SCRIPT_OPS_EXISTING_API_PATHS.scriptsCatalog, "/scripts/catalog");
     assert.equal(scriptRevokePath(ARTIFACT_ID), `/scripts/${ARTIFACT_ID}/revoke`);
     assert.equal(
@@ -126,8 +120,8 @@ describe("script ops contract adapter", () => {
     assert.ok(parsed.errors.some((item) => item.code === "emergency-stop-denied"));
 
     const empty = parseScriptOpsCatalog({});
-    assert.equal(empty.source, "contract-fallback");
-    assert.equal(empty.notes, SCRIPT_OPS_CONTRACT_FALLBACK_HELP);
+    assert.equal(empty.source, "unavailable");
+    assert.match(empty.notes ?? "", /fails closed/i);
     assert.equal(empty.revocation.route, DEFAULT_SCRIPT_REVOCATION.route);
     assert.equal(empty.emergencyStop.route, DEFAULT_SCRIPT_EMERGENCY_STOP.route);
   });

@@ -4,7 +4,6 @@ import {
   HTTP_CONNECTION_FAIL_CLOSED_MESSAGE,
   HTTP_CONNECTION_REQUIRED_MESSAGE,
   HTTP_CONNECTION_TYPE_MESSAGE,
-  HTTP_CONTRACT_FALLBACK_HELP,
   HTTP_DEFAULT_TIMEOUT_SECONDS,
   HTTP_DELIVERY_SECRET_KEYS,
   HTTP_EXISTING_API_PATHS,
@@ -26,8 +25,6 @@ import {
   connectionTypeForAction,
   defaultHttpNotificationWith,
   deliveryHasForbiddenSecret,
-  hasHttpNotificationContract,
-  httpNotificationFallbackNode,
   httpNotificationForbiddenWithKeys,
   httpNotificationLibraryTypes,
   httpNotificationNodeWithFields,
@@ -79,9 +76,6 @@ describe("core HTTP/notification contract adapter", () => {
     assert.ok(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("to"));
     assert.equal(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("host"), false);
     assert.ok(HTTP_DELIVERY_SECRET_KEYS.includes("set-cookie"));
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /e104-#118/);
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /#109/);
-    assert.match(HTTP_CONTRACT_FALLBACK_HELP, /Keep #109 open/);
     assert.equal(HTTP_EXISTING_API_PATHS.httpCatalog, "/http/catalog");
     assert.equal(HTTP_EXISTING_API_PATHS.workflowCatalog, "/workflows/catalog");
     assert.equal(HTTP_EXISTING_API_PATHS.opsConfigCatalog, "/ops-config/catalog");
@@ -99,37 +93,17 @@ describe("core HTTP/notification contract adapter", () => {
     );
   });
 
-  it("falls back to marked contract entries when catalog is thin or missing", () => {
-    assert.deepEqual([...httpNotificationLibraryTypes(null)], [
-      "http.request",
-      "notification.webhook",
-      "notification.email",
-    ]);
+  it("fails closed when catalog is thin or missing — no invented HTTP nodes or fields", () => {
+    assert.deepEqual([...httpNotificationLibraryTypes(null)], []);
     assert.equal(isHttpNotificationType("http.request"), true);
     assert.equal(isHttpConfigurableType("notification.email"), true);
     assert.equal(isHttpConfigurableType("ssh.run"), false);
     assert.equal(catalogListsHttpNotificationType(catalog, "http.request"), true);
-    const fallback = httpNotificationFallbackNode("http.request");
-    assert.equal(fallback.title, "HTTP request");
-    assert.match(fallback.description ?? "", /pinned connection/i);
-    assert.deepEqual(fallback.requiredWith, ["connectionId"]);
-    assert.equal(fallback.policy?.retrySafe, false);
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "connectionId"),
-    );
-    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "path"));
-    assert.equal(
-      (fallback.allowedWith ?? []).some((field) => field.name === "url"),
-      false,
-    );
-    assert.equal(hasHttpNotificationContract(fallback), true);
-    const missing = adaptHttpNotificationEntries(null);
-    assert.equal(missing[0]?.type, "http.request");
-    assert.equal(missing[1]?.type, "notification.webhook");
-    assert.equal(missing[2]?.type, "notification.email");
+    assert.deepEqual([...httpNotificationLibraryTypes(catalog)], ["http.request"]);
+    assert.deepEqual(adaptHttpNotificationEntries(null), []);
     const thin = adaptHttpNotificationEntries(catalog);
-    assert.equal(thin[0]?.title, "HTTP request");
-    assert.ok((thin[0]?.allowedWith?.length ?? 0) > 0);
+    assert.equal(thin[0]?.type, "http.request");
+    assert.deepEqual(thin[0]?.allowedWith ?? [], []);
   });
 
   it("defaults method and timeout for http.request only", () => {
@@ -328,14 +302,7 @@ describe("core HTTP/notification contract adapter", () => {
   });
 
   it("overlays catalog allowedWith and parses GET /http/catalog + httpNotificationEngine", () => {
-    const fields = httpNotificationNodeWithFields("http.request");
-    assert.equal(fields.some((field) => field.name === "connectionId" && field.required), true);
-    assert.equal(fields.some((field) => field.name === "method" && field.required), false);
-    assert.equal(fields.some((field) => field.name === "path" && field.required), false);
-    assert.equal(fields.some((field) => field.name === "host"), true);
-    assert.equal(fields.some((field) => field.name === "responseSchemaRef"), true);
-    assert.equal(fields.some((field) => field.name === "url"), false);
-    assert.equal(fields.some((field) => field.name === "headers"), false);
+    assert.deepEqual(httpNotificationNodeWithFields("http.request"), []);
 
     const parsed = parseHttpNotificationCatalog({
       isolation: {
@@ -388,8 +355,9 @@ describe("core HTTP/notification contract adapter", () => {
     assert.equal(ops.nodes[0]?.title, "Call API");
 
     const empty = parseHttpNotificationCatalog({});
-    assert.equal(empty.source, "contract-fallback");
-    assert.match(empty.notes ?? "", /e104-#118/);
+    assert.equal(empty.source, "unavailable");
+    assert.match(empty.notes ?? "", /fails closed/i);
+    assert.deepEqual(empty.nodes, []);
 
     const gateOff = {
       apiVersion: "flowforge/v1",

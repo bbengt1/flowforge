@@ -167,8 +167,8 @@ export function CommandProfileForm({
         </p>
         {!retrySafeExposed ? (
           <p role="status" className="text-xs text-amber-950">
-            Catalog did not expose <code className="font-mono">retrySafe</code>.
-            Using the marked e83-#90 contract-fallback — the flag stays off.
+            Live catalog did not expose <code className="font-mono">retrySafe</code>.
+            The flag stays off (fail closed).
           </p>
         ) : null}
         {spec.retrySafe ? (

@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import {
-  SCRIPT_IO_CONTRACT_FALLBACK_HELP,
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+  isInventedCatalogSource,
+} from "@/lib/catalog-fail-closed";
+import {
   SCRIPT_IO_ENV_HELP,
   SCRIPT_IO_HANDLE_HELP,
   SCRIPT_IO_ROUTE_MAP_SOURCE,
@@ -46,8 +49,8 @@ export function ScriptIoFields({
         <code className="font-mono">{SCRIPT_IO_ROUTE_MAP_SOURCE}</code>
         {catalog?.source ? ` · ${catalog.source}` : ""}.
       </p>
-      {catalog?.source === "contract-fallback" || !catalog ? (
-        <p className="text-xs text-amber-950">{SCRIPT_IO_CONTRACT_FALLBACK_HELP}</p>
+      {isInventedCatalogSource(catalog?.source) ? (
+        <p className="text-xs text-amber-950">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
       ) : null}
       <SchemaEditor
         name="inputSchema"

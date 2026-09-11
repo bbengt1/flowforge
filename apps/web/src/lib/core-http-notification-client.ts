@@ -12,8 +12,8 @@ import type { DevIdentity } from "./identity-headers.ts";
 import { getOpsConfigCatalog, listOpsConfig, selectOpsConfig } from "./ops-config-client.ts";
 import type { OpsConfigKind, OpsConfigPin } from "./ops-config-types.ts";
 import type { ProblemDetails } from "./problem.ts";
+import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import {
-  HTTP_CONTRACT_FALLBACK_HELP,
   HTTP_EXISTING_API_PATHS,
   deliveryHasForbiddenSecret,
   parseHttpNotificationCatalog,
@@ -71,7 +71,7 @@ export async function getHttpNotificationCatalog(
   );
   if (http.ok) {
     const catalog = parseHttpNotificationCatalog(http.data);
-    if (catalog.source !== "contract-fallback") {
+    if (catalog.source !== "unavailable") {
       return {
         ok: true,
         statusCode: http.statusCode,
@@ -87,7 +87,7 @@ export async function getHttpNotificationCatalog(
       httpEngine: ops.catalog.httpEngine,
       notificationEngine: ops.catalog.notificationEngine,
     });
-    if (catalog.source !== "contract-fallback") {
+    if (catalog.source !== "unavailable") {
       return {
         ok: true,
         statusCode: ops.statusCode,
@@ -102,7 +102,7 @@ export async function getHttpNotificationCatalog(
   );
   if (workflow.ok) {
     const catalog = parseHttpNotificationCatalog(workflow.data);
-    if (catalog.source !== "contract-fallback") {
+    if (catalog.source !== "unavailable") {
       return {
         ok: true,
         statusCode: workflow.statusCode,
@@ -116,7 +116,7 @@ export async function getHttpNotificationCatalog(
       requestId: workflow.requestId,
       catalog: {
         ...catalog,
-        notes: catalog.notes || HTTP_CONTRACT_FALLBACK_HELP,
+        notes: catalog.notes || ENGINE_CATALOG_UNAVAILABLE_HELP,
       },
     };
   }

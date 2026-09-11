@@ -4,6 +4,7 @@
  * are stripped and never shown. Templates reject shell interpolation.
  */
 
+import { isInventedCatalogSource } from "./catalog-fail-closed.ts";
 import type { CredentialType } from "./credential-types.ts";
 import type { ProblemDetails } from "./problem.ts";
 import {
@@ -22,7 +23,7 @@ import type {
   OpsConfigSummary,
 } from "./ops-config-types.ts";
 import {
-  SSH_CONTRACT_FALLBACK_CATALOG,
+  SSH_ENGINE_UNAVAILABLE_CATALOG,
   SSH_FAIL_CLOSED_HELP,
   SSH_HOST_SUPPLIED_IDENTITY_DETAIL,
   SSH_PROBLEM_CODES,
@@ -37,6 +38,7 @@ import {
   SSH_MAX_PARAMETERS,
   SSH_PARAMETER_TYPES,
   SSH_PARAM_NAME_RE,
+  SSH_SECRET_FIELD_NAMES,
   SSH_TEMPLATE_FORBIDDEN_TOKENS,
   type SshEngineCatalog,
   type SshParameterConstraint,
@@ -252,8 +254,11 @@ export function commandProfilePublishGap(spec: OpsConfigSpec): string | null {
 }
 
 export function sshCredentialTypes(
-  catalog: SshEngineCatalog = SSH_CONTRACT_FALLBACK_CATALOG,
+  catalog?: SshEngineCatalog | null,
 ): CredentialType[] {
+  if (!catalog || isInventedCatalogSource(catalog.source)) {
+    return [];
+  }
   const allowed = catalog.allowedCredentialTypes.length
     ? catalog.allowedCredentialTypes
     : [catalog.credentialType];
@@ -267,7 +272,7 @@ export function sshCredentialTypes(
       types.add(item);
     }
   }
-  return types.size > 0 ? [...types] : [SSH_CREDENTIAL_TYPE];
+  return [...types];
 }
 
 export function parseParameterSchema(
@@ -438,7 +443,7 @@ export function parameterSchemaGaps(rows: SshParameterConstraint[]): string[] {
 
 export function parseSshEngineCatalog(catalog: unknown): SshEngineCatalog {
   if (!catalog || typeof catalog !== "object") {
-    return { ...SSH_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_ENGINE_UNAVAILABLE_CATALOG };
   }
   const rec = catalog as Record<string, unknown>;
   const nested =
@@ -458,7 +463,7 @@ export function parseSshEngineCatalog(catalog: unknown): SshEngineCatalog {
     (engine.render && typeof engine.render === "object") ||
     (engine.retry && typeof engine.retry === "object");
   if (!looksLikeEngine && !sshKind) {
-    return { ...SSH_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_ENGINE_UNAVAILABLE_CATALOG };
   }
   const render =
     engine.render && typeof engine.render === "object" && !Array.isArray(engine.render)
@@ -484,13 +489,19 @@ export function parseSshEngineCatalog(catalog: unknown): SshEngineCatalog {
       : [String(engine.credentialType ?? SSH_CREDENTIAL_TYPE)],
     credentialSecretFields: secrets.length
       ? secrets
-      : [...SSH_CONTRACT_FALLBACK_CATALOG.credentialSecretFields],
+      : [...SSH_SECRET_FIELD_NAMES],
     defaultPort: SSH_DEFAULT_PORT,
-    authMethods: SSH_CONTRACT_FALLBACK_CATALOG.authMethods,
+    authMethods: ["publickey"],
     denied: SSH_DENIED_FEATURES,
     templateForbidden: forbidden.length ? forbidden : SSH_TEMPLATE_FORBIDDEN_TOKENS,
     parameterTypes: paramTypes.length ? paramTypes : SSH_PARAMETER_TYPES,
-    retrySafeExposed: true,
+    // Live catalog only: expose the toggle when the catalog names it.
+    // Empty / 403 catalogs stay retrySafeExposed=false (fail closed).
+    retrySafeExposed:
+      engine.retrySafeExposed === true ||
+      retry.retrySafeExposed === true ||
+      (typeof retry.retrySafeFlag === "string" &&
+        retry.retrySafeFlag.trim().length > 0),
     retryNote: String(retry.note ?? "").trim() || undefined,
     renderOwner: String(render.owner ?? "").trim() || undefined,
     quoting: String(render.quoting ?? "").trim() || undefined,

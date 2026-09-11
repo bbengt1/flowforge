@@ -76,7 +76,7 @@ export type SshCommandProfileSpec = {
 export type SshCatalogSource =
   | "ssh-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type SshEngineCatalog = {
   source: SshCatalogSource;

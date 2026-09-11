@@ -47,7 +47,6 @@ import {
 } from "@/lib/ssh-node-contract";
 import { getHttpNotificationCatalog } from "@/lib/core-http-notification-client";
 import {
-  HTTP_CONTRACT_FALLBACK_HELP,
   HTTP_NOTIFICATION_NODE_POLICY_NOTES,
   HTTP_NOTIFICATION_ROUTE_MAP_SOURCE,
   HTTP_PIN_ONLY_HELP,
@@ -61,7 +60,6 @@ import {
 } from "@/lib/core-http-notification-contract";
 import { getScriptCatalog } from "@/lib/script-client";
 import {
-  SCRIPT_CONTRACT_FALLBACK_HELP,
   SCRIPT_DRAFT_NOT_EXECUTABLE_HELP,
   SCRIPT_EXECUTE_FAIL_CLOSED_HELP,
   SCRIPT_MUTABLE_REJECT_HELP,
@@ -803,7 +801,7 @@ function TypeCard({
         <span className="font-medium">{entry.name}</span>
         <span className="ml-2 font-mono text-xs text-zinc-600">{entry.type}</span>
         {entry.source === "contract-fallback" ? (
-          <span className="ml-2 text-xs text-zinc-500">contract-fallback</span>
+          <span className="ml-2 text-xs text-zinc-500">catalog fallback (core)</span>
         ) : null}
         {reason ? <span className="mt-1 block text-xs text-zinc-600">{reason}</span> : null}
       </button>
@@ -1066,54 +1064,12 @@ function ConfigureStep({
           richer (jonny follow-up).
         </p>
       ) : null}
-      {inferred && kubernetes ? (
+      {(kubernetes || ssh || script || http) && fields.length === 0 ? (
         <p className="text-xs text-zinc-500">
-          Kubernetes <code className="font-mono">with</code> fields prefer{" "}
-          <code className="font-mono">GET /kubernetes/catalog</code>{" "}
-          <code className="font-mono">nodes[]</code> from #78, then{" "}
-          <code className="font-mono">GET /workflows/catalog</code>, then the
-          marked contract fallback.
-        </p>
-      ) : null}
-      {inferred && ssh ? (
-        <p className="text-xs text-zinc-500">
-          SSH <code className="font-mono">with</code> fields prefer{" "}
-          <code className="font-mono">GET /ssh/catalog</code>{" "}
-          <code className="font-mono">nodes[]</code>, then{" "}
-          <code className="font-mono">GET /workflows/catalog</code>, then the
-          marked e82-#88 contract fallback. Overlay titles /{" "}
-          <code className="font-mono">allowedWith</code> / isolation from
-          jonny&apos;s map when the catalog is listed.
-        </p>
-      ) : null}
-      {inferred && script ? (
-        <p className="text-xs text-zinc-500">
-          Script <code className="font-mono">with</code> fields prefer{" "}
-          <code className="font-mono">GET /scripts/catalog</code>{" "}
-          <code className="font-mono">nodes[]</code> from #97 (
-          <code className="font-mono">{SCRIPT_ROUTE_MAP_SOURCE}</code>
-          ), then <code className="font-mono">GET /ops-config/catalog</code>{" "}
-          <code className="font-mono">scriptEngine</code>, then{" "}
-          <code className="font-mono">GET /workflows/catalog</code>.{" "}
-          {scriptCatalog && scriptCatalog.source !== "contract-fallback"
-            ? `Using ${scriptCatalog.source}.`
-            : SCRIPT_CONTRACT_FALLBACK_HELP}
-        </p>
-      ) : null}
-      {inferred && http ? (
-        <p className="text-xs text-zinc-500">
-          HTTP / notification <code className="font-mono">with</code> fields
-          prefer <code className="font-mono">GET /http/catalog</code>, then{" "}
-          <code className="font-mono">GET /ops-config/catalog</code>{" "}
-          <code className="font-mono">httpNotificationEngine</code>, then{" "}
-          <code className="font-mono">GET /workflows/catalog</code>{" "}
-          <code className="font-mono">allowedWith</code> /{" "}
-          <code className="font-mono">integrationGate</code> (
-          <code className="font-mono">{HTTP_NOTIFICATION_ROUTE_MAP_SOURCE}</code>
-          ). {httpCatalog && httpCatalog.source !== "contract-fallback"
-            ? `Using ${httpCatalog.source}.`
-            : HTTP_CONTRACT_FALLBACK_HELP}{" "}
-          {HTTP_PIN_ONLY_HELP}
+          Live catalog did not provide{" "}
+          <code className="font-mono">allowedWith</code> for this type.
+          Configuration fields are not invented. YAML remains the source of
+          truth. Empty or HTTP 403 catalogs fail closed.
         </p>
       ) : null}
       {isKubernetesRolloutType(draft.type) ? (

@@ -4,7 +4,6 @@ import { buildCreateBody, pickSafeSpec } from "./ops-config-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
 import {
   SCRIPT_RUNTIME_API_PR,
-  SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP,
   SCRIPT_RUNTIME_EPIC,
   SCRIPT_RUNTIME_FORBIDDEN_SURFACES,
   SCRIPT_RUNTIME_ISOLATION_HELP,
@@ -51,7 +50,6 @@ describe("script runtime contract adapter", () => {
     assert.equal(SCRIPT_RUNTIME_EPIC, 91);
     assert.equal(SCRIPT_RUNTIME_API_PR, 98);
     assert.equal(SCRIPT_RUNTIME_ROUTE_MAP_SOURCE, "e92-#98");
-    assert.match(SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP, /e92-#98/);
     assert.match(SCRIPT_RUNTIME_ISOLATION_HELP, /65532/);
     assert.match(SCRIPT_RUNTIME_ISOLATION_HELP, /Docker socket/);
     assert.match(SCRIPT_RUNTIME_ISOLATION_HELP, /HarnessRuntime/);
@@ -136,9 +134,9 @@ describe("script runtime contract adapter", () => {
 
   it("accepts optional #98 egress destinations and rejects metadata/loopback/*", () => {
     const fallback = parseRuntimeProfileMap(null);
-    assert.equal(fallback.source, "contract-fallback");
-    assert.equal(fallback.egressExposed, true);
-    assert.match(fallback.notes, /e92-#98/);
+    assert.equal(fallback.source, "unavailable");
+    assert.equal(fallback.egressExposed, false);
+    assert.match(fallback.notes, /fails closed/i);
     assert.equal(deniedEgressHost("169.254.169.254"), true);
     assert.equal(deniedEgressHost("localhost"), true);
     assert.equal(deniedEgressHost("*"), true);

@@ -8,18 +8,25 @@
  * (wired to jonny's #90 map: retry.ui / retry.probe / result.retry.allowed).
  *
  * Consume existing SSH-target + command-profile list + POST …/select
- * (E8.1). Do not invent routes. Do not change `apps/api`.
+ * (E8.1). Empty or unauthorized catalogs fail closed (R3.4 / #249) —
+ * no invented node types, ports, or config fields. Do not invent
+ * routes. Do not change `apps/api`.
  *
  * Relates to #83 / Part of #81. Keep #83 open — jonny owns isolation
- * + tests. Cookie session + `X-CSRF-Token`, camelCase, RFC 9457.
+ * + tests. Relates to #249 / Part of #229. Keep #249 open.
+ * Cookie session + `X-CSRF-Token`, camelCase, RFC 9457.
  */
 
+import {
+  CATALOG_SOURCE_UNAVAILABLE,
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+  isLiveCatalogSource,
+} from "./catalog-fail-closed.ts";
+
 import { parseParameterSchema } from "./ssh.ts";
-import { SSH_NOT_A_TERMINAL_HELP } from "./ssh-contract.ts";
 import {
   SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   SSH_INDETERMINATE_HELP,
-  SSH_MAX_RETRY_ATTEMPTS,
   SSH_RETRY_DENIED_MESSAGE,
   SSH_RETRY_ZERO_MESSAGE,
   defaultSshRetryPolicy,
@@ -35,10 +42,6 @@ import {
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
 import type {
   CatalogNode,
-  CatalogNodeBounds,
-  CatalogNodePolicy,
-  CatalogPort,
-  CatalogRedaction,
   CatalogWithField,
   WorkflowCatalog,
 } from "./workflow-types.ts";
@@ -116,9 +119,6 @@ export const SSH_SECRET_WITH_MESSAGE =
 export const SSH_FREEFORM_SHELL_MESSAGE =
   "ssh.run is not a free-form shell. Use a published command profile with typed parameters.";
 
-export const SSH_CONTRACT_FALLBACK_NODE_HELP =
-  "Using the marked e82-#88 ssh.run map because GET /ssh/catalog isolation/nodes[] was unavailable. Collections stay on /ssh-targets and /command-profiles.";
-
 export type SshNodeWithField = CatalogWithField & {
   label: string;
   advanced?: boolean;
@@ -173,7 +173,7 @@ export type SshIsolationRules = {
 export type SshNodeCatalogSource =
   | "ssh-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type SshNodeCatalog = {
   source: SshNodeCatalogSource;
@@ -293,9 +293,22 @@ export function isSshConfigurableType(type: string): boolean {
 
 export function sshLibraryTypes(
   catalog?: WorkflowCatalog | null,
+  sshCatalog?: SshNodeCatalog | null,
 ): readonly string[] {
-  void catalog;
-  return [...SSH_ACTION_TYPES];
+  const types = new Set<string>();
+  for (const node of catalog?.nodes ?? []) {
+    if (isSshConfigurableType(node.type) && isCatalogImplementationEnabled(node)) {
+      types.add(node.type);
+    }
+  }
+  if (sshCatalog && isLiveCatalogSource(sshCatalog.source)) {
+    for (const node of sshCatalog.nodes) {
+      if (isSshConfigurableType(node.type)) {
+        types.add(node.type);
+      }
+    }
+  }
+  return [...types];
 }
 
 export function catalogListsSshType(
@@ -358,81 +371,51 @@ export function sshNodeWithFields(
   sshCatalog?: SshNodeCatalog | null,
 ): SshNodeWithField[] {
   const engineNode = sshNodeContract(type, sshCatalog);
-  if (engineNode?.allowedWith.length) {
-    return overlaySshFields(engineNode.allowedWith, type);
-  }
-  if (!isSshConfigurableType(type)) {
+  if (!engineNode?.allowedWith.length) {
     return [];
   }
-  const retry = sshRetryRules(sshCatalog);
-  return [
-    {
-      name: "sshTargetId",
-      kind: "uuid",
-      required: true,
-      label: "SSH target",
-      controlHint: "uuid",
-      description:
-        "Published workspace SSH target (display name + id). The target binds a vault credential. Never a private key.",
-    },
-    {
-      name: "commandProfileId",
-      kind: "uuid",
-      required: true,
-      label: "Command profile",
-      controlHint: "uuid",
-      description:
-        "Published administrator-owned command profile. Typed parameters only — not a free-form shell.",
-    },
-    {
-      name: "parameters",
-      kind: "object",
-      label: "Parameters",
-      controlHint: "object-lines",
-      description:
-        "Typed profile parameter values. No raw shell, interpolation tokens, keys, or passwords.",
-    },
-    {
-      name: "timeoutSeconds",
-      kind: "integer",
-      label: "Timeout (seconds)",
-      controlHint: "number",
-      defaultValue: SSH_DEFAULT_TIMEOUT_SECONDS,
-      description: `Bounded connect + command timeout (${SSH_MIN_TIMEOUT_SECONDS}–${SSH_MAX_TIMEOUT_SECONDS}). Default ${SSH_DEFAULT_TIMEOUT_SECONDS}.`,
-    },
-    {
-      name: "retryPolicy",
-      kind: "object",
-      label: "Retry policy",
-      controlHint: "text",
-      defaultValue: defaultSshRetryPolicy(),
-      advanced: true,
-      description: `${SSH_RETRY_ZERO_MESSAGE} Optional {maxAttempts:0-${SSH_MAX_RETRY_ATTEMPTS}}. maxAttempts>0 requires retrySafe plus verification. ${SSH_INDETERMINATE_HELP} Catalog defaultMaxAttempts=${retry.defaultMaxAttempts}; semantics=${retry.semantics}.`,
-    },
-    {
-      name: "policyId",
-      kind: "uuid",
-      label: "Policy",
-      controlHint: "uuid",
-      advanced: true,
-      description: "Optional published kind=ssh policy UUID. Revalidated immediately before connect.",
-    },
-  ];
+  return overlaySshFields(engineNode.allowedWith, type);
+}
+
+function sshFieldChrome(name: string): Partial<SshNodeWithField> {
+  switch (name) {
+    case "sshTargetId":
+      return { label: "SSH target", controlHint: "uuid" };
+    case "commandProfileId":
+      return { label: "Command profile", controlHint: "uuid" };
+    case "parameters":
+      return { label: "Parameters", controlHint: "object-lines" };
+    case "timeoutSeconds":
+      return {
+        label: "Timeout (seconds)",
+        controlHint: "number",
+        defaultValue: SSH_DEFAULT_TIMEOUT_SECONDS,
+      };
+    case "retryPolicy":
+      return {
+        label: "Retry policy",
+        controlHint: "text",
+        defaultValue: defaultSshRetryPolicy(),
+        advanced: true,
+      };
+    case "policyId":
+      return { label: "Policy", controlHint: "uuid", advanced: true };
+    default:
+      return {};
+  }
 }
 
 export function overlaySshFields(
   fields: CatalogWithField[],
   type: string,
 ): SshNodeWithField[] {
-  const fallback = new Map(
-    sshNodeWithFields(type).map((field) => [field.name, field]),
-  );
+  void type;
   return fields
     .filter((field) => !sshForbiddenWithKeys({ [field.name]: true }).length)
     .map((field) => {
-      const base = fallback.get(field.name);
+      const chrome = sshFieldChrome(field.name);
       const controlHint =
-        base?.controlHint ??
+        chrome.controlHint ??
         (field.kind === "uuid"
           ? "uuid"
           : field.kind === "integer"
@@ -446,16 +429,19 @@ export function overlaySshFields(
         name: field.name,
         kind: field.kind,
         required: field.required === true,
-        enum: field.enum?.length ? field.enum : base?.enum,
-        description: field.description || base?.description || "",
-        label: base?.label || field.name,
-        advanced: field.name === "retryPolicy" || field.name === "policyId" || base?.advanced,
-        readOnly: base?.readOnly,
+        enum: field.enum?.length ? field.enum : chrome.enum,
+        description: field.description || chrome.description || "",
+        label: chrome.label || field.name,
+        advanced:
+          field.name === "retryPolicy" ||
+          field.name === "policyId" ||
+          chrome.advanced,
+        readOnly: chrome.readOnly,
         controlHint,
         defaultValue:
           field.name === "retryPolicy"
             ? defaultSshRetryPolicy()
-            : base?.defaultValue,
+            : chrome.defaultValue,
       };
     });
 }
@@ -649,61 +635,44 @@ export function validateSshParameters(
   return unique(errors);
 }
 
-export function sshFallbackNode(type: string): CatalogNode {
-  return SSH_CONTRACT_FALLBACK[type] ?? thinFallback(type);
-}
-
 export function adaptSshNodeEntries(
   catalog: WorkflowCatalog | null | undefined,
   sshCatalog?: SshNodeCatalog | null,
 ): CatalogNode[] {
-  return sshLibraryTypes(catalog).map((type) => {
+  return sshLibraryTypes(catalog, sshCatalog).flatMap((type) => {
     const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
-    const fallback = sshFallbackNode(type);
     const engine = sshNodeContract(type, sshCatalog);
+    if (!listed && !engine) {
+      return [];
+    }
     const engineAllowed = engine?.allowedWith.length
       ? engine.allowedWith
       : undefined;
-    if (!listed) {
-      if (!engine) {
-        return fallback;
-      }
-      return {
-        ...fallback,
-        title: engine.title || fallback.title,
-        description: engine.description || fallback.description,
-        requiredWith: engine.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-        allowedWith: engineAllowed ?? fallback.allowedWith,
-      };
-    }
-    return {
-      ...fallback,
-      ...listed,
-      title: listed.title || engine?.title || fallback.title,
-      description:
-        listed.description || engine?.description || fallback.description,
-      inputs: listed.inputs?.length ? listed.inputs : fallback.inputs,
-      outputs: listed.outputs?.length ? listed.outputs : fallback.outputs,
-      requiredWith: listed.requiredWith?.length
-        ? listed.requiredWith
-        : engine?.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-      allowedWith: listed.allowedWith?.length
-        ? listed.allowedWith
-        : engineAllowed ?? fallback.allowedWith,
-      policy: listed.policy ?? fallback.policy,
-      bounds: listed.bounds ?? fallback.bounds,
-      redaction: listed.redaction ?? fallback.redaction,
-    };
+    return [
+      {
+        type,
+        phase: listed?.phase ?? CATALOG_PHASE_CORE,
+        title: listed?.title || engine?.title || type,
+        description: listed?.description || engine?.description || "",
+        inputs: listed?.inputs ?? [],
+        outputs: listed?.outputs ?? [],
+        requiredWith: listed?.requiredWith?.length
+          ? listed.requiredWith
+          : engine?.requiredWith ?? [],
+        allowedWith: listed?.allowedWith?.length
+          ? listed.allowedWith
+          : engineAllowed ?? [],
+        policy: listed?.policy,
+        bounds: listed?.bounds,
+        redaction: listed?.redaction,
+      },
+    ];
   });
 }
 
 export function parseSshNodeCatalog(raw: unknown): SshNodeCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...SSH_NODE_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_NODE_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const nested =
@@ -748,161 +717,46 @@ export function parseSshNodeCatalog(raw: unknown): SshNodeCatalog {
     permissions.length === 0 &&
     !hasIsolation
   ) {
-    return { ...SSH_NODE_CONTRACT_FALLBACK_CATALOG };
+    return { ...SSH_NODE_UNAVAILABLE_CATALOG };
   }
   const source: SshNodeCatalogSource =
     rec.sshEngine && typeof rec.sshEngine === "object"
       ? "ops-config-catalog"
-      : hasNodeMap || hasIsolation
-        ? "ssh-catalog"
-        : "contract-fallback";
+      : "ssh-catalog";
   return {
     source,
-    nodes: hasNodeMap ? nodes : SSH_NODE_CONTRACT_FALLBACK_CATALOG.nodes,
-    errors: errors.length ? errors : DEFAULT_SSH_NODE_ERRORS,
+    nodes,
+    errors,
     retry: {
-      defaultMaxAttempts:
-        Number.isFinite(Number(retryRaw.defaultMaxAttempts))
-          ? Number(retryRaw.defaultMaxAttempts)
-          : SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
-      retrySafeFlag: retryRaw.retrySafeFlag !== false,
-      semantics: String(retryRaw.semantics ?? "").trim() || "E8.3",
-      note: String(retryRaw.note ?? "").trim() || DEFAULT_SSH_RETRY_RULES.note,
+      defaultMaxAttempts: Number.isFinite(Number(retryRaw.defaultMaxAttempts))
+        ? Number(retryRaw.defaultMaxAttempts)
+        : SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+      retrySafeFlag: retryRaw.retrySafeFlag === true,
+      semantics: String(retryRaw.semantics ?? "").trim(),
+      note: String(retryRaw.note ?? "").trim(),
     },
-    permissions: permissions.length ? permissions : [...SSH_NODE_PERMISSIONS],
-    isolation: isolation ?? DEFAULT_SSH_ISOLATION,
-    notes:
-      String(nested.notes ?? rec.notes ?? "").trim() ||
-      (hasNodeMap || hasIsolation ? undefined : SSH_CONTRACT_FALLBACK_NODE_HELP),
+    permissions,
+    isolation,
+    notes: String(nested.notes ?? rec.notes ?? "").trim() || undefined,
   };
 }
 
-export const SSH_NODE_CONTRACT_FALLBACK_CATALOG: SshNodeCatalog = {
-  source: "contract-fallback",
-  nodes: [
-    {
-      type: SSH_RUN_NODE_TYPE,
-      title: "Run command profile",
-      description:
-        "Run an approved command profile on a pinned SSH target. Uses an ephemeral key handle, verified known hosts, DNS/address allowlists, key-only auth, and a bounded non-interactive command.",
-      permissions: [...SSH_NODE_PERMISSIONS],
-      requiredWith: ["sshTargetId", "commandProfileId"],
-      allowedWith: [],
-      outputs: ["result", "stdout", "exitCode"],
-      sideEffects: true,
-      retrySafe: false,
-      defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
-    },
-  ],
-  errors: DEFAULT_SSH_NODE_ERRORS,
-  retry: DEFAULT_SSH_RETRY_RULES,
-  permissions: [...SSH_NODE_PERMISSIONS],
-  isolation: DEFAULT_SSH_ISOLATION,
-  notes: SSH_CONTRACT_FALLBACK_NODE_HELP,
+export const SSH_NODE_UNAVAILABLE_CATALOG: SshNodeCatalog = {
+  source: CATALOG_SOURCE_UNAVAILABLE,
+  nodes: [],
+  errors: [],
+  retry: {
+    defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
+    retrySafeFlag: false,
+    semantics: "",
+    note: ENGINE_CATALOG_UNAVAILABLE_HELP,
+  },
+  permissions: [],
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function inherit(
-  name: string,
-  kind: string,
-  required: boolean,
-  description: string,
-): CatalogPort {
-  return {
-    name,
-    kind,
-    required,
-    classification: "internal",
-    maxBytes: 16 * 1024,
-    description,
-  };
-}
-
-function sshPolicy(): CatalogNodePolicy {
-  return {
-    permissions: [...SSH_NODE_PERMISSIONS],
-    retrySafe: false,
-    sideEffects: true,
-    idempotent: false,
-    cancellation: "abort-command",
-    verification: "e8.3-stub",
-    defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
-  };
-}
-
-function defaultBounds(): CatalogNodeBounds {
-  return {
-    maxInputBytes: 16 * 1024,
-    maxOutputBytes: 64 * 1024,
-    maxWithBytes: 16 * 1024,
-    maxAggregationItems: SSH_MAX_PARAMETERS,
-    maxDurationSeconds: SSH_MAX_TIMEOUT_SECONDS,
-  };
-}
-
-function redaction(auditFields: string[]): CatalogRedaction {
-  return {
-    auditFields,
-    redactInputs: true,
-    redactOutputs: true,
-    strategy: "drop-secrets",
-  };
-}
-
-function fieldsToAllowed(type: string): CatalogWithField[] {
-  return sshNodeWithFields(type).map((field) => ({
-    name: field.name,
-    kind: field.kind,
-    required: field.required,
-    enum: field.enum,
-    description: field.description,
-  }));
-}
-
-function thinFallback(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: SSH_NOT_A_TERMINAL_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: ["sshTargetId", "commandProfileId"],
-    allowedWith: fieldsToAllowed(type),
-  };
-}
-
-const SSH_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
-  "ssh.run": {
-    type: SSH_RUN_NODE_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "Run command profile",
-    description:
-      "Run an approved command profile on a pinned SSH target. Uses an ephemeral key handle, verified known hosts, DNS/address allowlists, key-only auth, and a bounded non-interactive command.",
-    inputs: [
-      inherit("parameters", "object", false, "Optional typed parameters matching the pinned profile schema."),
-    ],
-    outputs: [
-      inherit("result", "object", false, "Redacted run summary. Never includes privateKey."),
-      inherit("stdout", "string", false, "Bounded, redacted command stdout."),
-      inherit("exitCode", "integer", false, "Remote process exit code."),
-    ],
-    requiredWith: ["sshTargetId", "commandProfileId"],
-    allowedWith: fieldsToAllowed(SSH_RUN_NODE_TYPE),
-    policy: sshPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction([
-      "sshTargetId",
-      "commandProfileId",
-      "parameterNames",
-      "exitCode",
-      "connectedAddress",
-      "correlationId",
-    ]),
-  },
-};
 
 function parseEngineNode(raw: unknown): SshNodeEngineContract | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

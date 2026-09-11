@@ -255,8 +255,8 @@ export function parseKubernetesEngineCatalog(
     credentialType: String(rec.credentialType ?? KUBERNETES_CREDENTIAL_TYPE),
     credentialSecretField:
       String(rec.credentialSecretField ?? "kubeconfig").trim() || "kubeconfig",
-    allowedKinds: kinds.length > 0 ? kinds : [...KUBERNETES_ALLOWED_KINDS],
-    allowedVerbs: verbs.length > 0 ? verbs : [...KUBERNETES_ALLOWED_VERBS],
+    allowedKinds: kinds,
+    allowedVerbs: verbs,
     evaluationKeys,
     serviceAccount: {
       defaultName: String(sa.defaultName ?? "").trim(),
@@ -374,7 +374,7 @@ function parseEngineApply(raw: unknown): KubernetesEngineApplyRules {
     serverDryRunAlways: rec.serverDryRunAlways !== false,
     clientDryRunAddsLocalValidationOnly:
       rec.clientDryRunAddsLocalValidationOnly !== false,
-    waitReady: String(rec.waitReady ?? "observed").trim() || "observed",
+    waitReady: String(rec.waitReady ?? "").trim(),
   };
 }
 
@@ -386,16 +386,12 @@ function parseEngineObservation(raw: unknown): KubernetesEngineObservationRules 
   const states = stringList(rec.states);
   const kinds = stringList(rec.kinds);
   return {
-    waitReady: String(rec.waitReady ?? "observed").trim() || "observed",
-    states: states.length
-      ? states
-      : ["ready", "failed", "timeout", "canceled", "skipped", "progressing"],
-    kinds: kinds.length
-      ? kinds
-      : ["Deployment", "StatefulSet", "DaemonSet", "Job"],
-    verb: String(rec.verb ?? "watch").trim() || "watch",
-    cancel: String(rec.cancel ?? "stop-wait").trim() || "stop-wait",
-    timeout: String(rec.timeout ?? "stop-wait").trim() || "stop-wait",
+    waitReady: String(rec.waitReady ?? "").trim(),
+    states,
+    kinds,
+    verb: String(rec.verb ?? "").trim(),
+    cancel: String(rec.cancel ?? "").trim(),
+    timeout: String(rec.timeout ?? "").trim(),
     neverDeletesOrRollsBack: rec.neverDeletesOrRollsBack !== false,
   };
 }

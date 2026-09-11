@@ -83,7 +83,7 @@ export const KUBERNETES_ROLLOUT_SKIPPED_HELP =
 export const KUBERNETES_ROLLOUT_IDENTITY_HELP =
   "Identify the workload with kind+name, or resource {kind,name}.";
 
-export type RolloutObservationSource = "catalog" | "contract-fallback";
+export type RolloutObservationSource = "catalog" | "unavailable";
 
 export type RolloutObservationMode = {
   live: boolean;
@@ -245,9 +245,9 @@ export function observationModeFromCatalog(
     return { live: true, token, source: "catalog" };
   }
   return {
-    live: true,
-    token: KUBERNETES_WAIT_READY_OBSERVED,
-    source: "contract-fallback",
+    live: false,
+    token: "",
+    source: "unavailable",
   };
 }
 
@@ -271,26 +271,27 @@ export function rolloutWaitReadyMessage(
 }
 
 export function rolloutNodeDescription(
-  _catalog?: KubernetesEngineCatalog | null,
+  catalog?: KubernetesEngineCatalog | null,
 ): string {
+  void catalog;
   return "Bounded watch of Deployment, StatefulSet, DaemonSet, or Job. Verb is watch and needs kubernetes.read. Identify the workload with kind+name or resource {kind,name}. Timeout or cancel stops waiting — never delete or rollback.";
 }
 
 export function rolloutKindsFromCatalog(
   catalog?: KubernetesEngineCatalog | null,
 ): readonly string[] {
-  const fromObservation = catalog?.observation?.kinds?.length
-    ? catalog.observation.kinds
-    : [...KUBERNETES_ROLLOUT_KINDS];
-  const allowed = catalog?.allowedKinds?.length
-    ? catalog.allowedKinds
-    : fromObservation;
-  const filtered = fromObservation.filter(
-    (kind) =>
-      isKubernetesRolloutKind(kind) &&
-      (allowed.length === 0 || allowed.includes(kind)),
-  );
-  return filtered.length > 0 ? filtered : [...KUBERNETES_ROLLOUT_KINDS];
+  const fromObservation = catalog?.observation?.kinds ?? [];
+  const allowed = catalog?.allowedKinds ?? [];
+  if (!fromObservation.length && !allowed.length) {
+    return [];
+  }
+  if (fromObservation.length && allowed.length) {
+    return fromObservation.filter(
+      (kind) => isKubernetesRolloutKind(kind) && allowed.includes(kind),
+    );
+  }
+  const pool = fromObservation.length ? fromObservation : allowed;
+  return pool.filter((kind) => isKubernetesRolloutKind(kind));
 }
 
 export function phaseLabel(phase: KubernetesRolloutPhase): string {
