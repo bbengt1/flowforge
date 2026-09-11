@@ -77,12 +77,12 @@ export const EXECUTION_INBOX_DEFERRED_QUERY_KEYS = [
 export const INVENTED_REPLAY_ROUTE = "/replay";
 
 export const EXECUTION_INBOX_KEYBOARD_HELP =
-  "Arrow keys move the inbox. Enter or Space opens the focused run on existing /executions/{id} detail. Status and workflow filters stay on this page.";
+  "Arrow keys move the inbox. Enter or Space opens the focused run on existing /executions/{id} detail. Cancel, Retry, and Stop stay on the row when the existing contracts allow them. Status and workflow filters stay on this page.";
 
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
 export const EXECUTION_INBOX_HELP =
-  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row into existing /executions/{id} detail — no second graph here. Drafts never run. Secrets stay [redacted].";
+  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by result.retry.allowed. Drafts never run. Secrets stay [redacted].";
 
 export const EXECUTION_INBOX_DETAIL_PATH = "/executions/{id}";
 export const EXECUTION_INBOX_REPLAY_GRAPH_SOURCE =
@@ -106,7 +106,7 @@ export const R4_GUARDRAILS = {
 export const R4_LATER_STORY_NOTES = {
   r42: "R4.2 / #255: densify the editor same-canvas overlay only. Do not also mount a replay graph on the /executions inbox.",
   r43: "R4.3 / #256: NDV last-run I/O densifies on the editor inspector from GET /executions/{id} (overlay or latest). Inbox still opens existing detail.",
-  r44: "R4.4 / #257: densify cancel/retry/stop. Keep loud indeterminate — never silent success when uncertain.",
+  r44: "R4.4 / #257: densify cancel/retry/stop on inbox rows and the overlay. Keep loud indeterminate — never silent success when uncertain.",
   r45: "R4.5 / #258: waiting → POST /approvals/{id}/decide. No invented resume or /replay route.",
 } as const;
 
@@ -127,6 +127,7 @@ export const EXECUTION_INBOX = {
   oneOperatePath: true,
   noInboxReplayGraph: true,
   loudIndeterminate: true,
+  cancelRetryStopDensity: true,
   noReplayRoute: true,
   noCompareRoute: true,
   compareIsClientDiff: true,
@@ -153,6 +154,8 @@ export const EXECUTION_INBOX_SOURCES: readonly string[] = [
   "src/components/executions/ExecutionHistory.tsx",
   "src/components/executions/ExecutionHistoryListbox.tsx",
   "src/app/executions/page.tsx",
+  "src/lib/execution-operate.ts",
+  "src/components/executions/ExecutionOperateActions.tsx",
 ];
 
 export type ExecutionInboxColumnId =

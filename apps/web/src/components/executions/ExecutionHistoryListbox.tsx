@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import {
@@ -26,6 +27,7 @@ type ExecutionHistoryListboxProps = {
   selectedId?: string;
   keyboardHelp?: string;
   onActivate?: (row: ExecutionListRow) => void;
+  operateActions?: (row: ExecutionListRow) => ReactNode;
 };
 
 const INBOX_GRID =
@@ -38,6 +40,7 @@ export function ExecutionHistoryListbox({
   selectedId,
   keyboardHelp,
   onActivate,
+  operateActions,
 }: ExecutionHistoryListboxProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const router = useRouter();
@@ -156,6 +159,9 @@ export function ExecutionHistoryListbox({
                     </Link>
                     <span className="text-zinc-500"> — /executions/{"{id}"}</span>
                   </p>
+                  {operateActions ? (
+                    <div className="mt-2">{operateActions(row)}</div>
+                  ) : null}
                 </>
               ) : inbox ? (
                 <div className={INBOX_GRID}>
@@ -202,6 +208,9 @@ export function ExecutionHistoryListbox({
                     </Link>
                   </p>
                 </div>
+                {operateActions ? (
+                  <div className="mt-2">{operateActions(row)}</div>
+                ) : null}
               ) : (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-3">

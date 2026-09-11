@@ -212,7 +212,11 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
    selected node (overlay-selected run, or the latest published run when
    no overlay is active). Failures and indeterminate steps jump to the
    node. Secrets stay `[redacted]`.
-4. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
+4. **Cancel / Retry / Stop** use the existing execution routes on the
+   selected overlay run. Retry appears only when
+   `result.retry.allowed` is true. `indeterminate` stays loud — never
+   silent success.
+5. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
    removes the overlay and falls back to latest. Still no draft execute.
    Do not invent `/replay`.
 
@@ -295,18 +299,21 @@ E12.1 UI evidence: [approval-expired.svg](../reference/e12-security-evidence/app
    URL). Columns are status, workflow, version, started, duration,
    correlation, and Open. Focus the listbox: Arrow keys move, Enter
    opens existing `/executions/{id}` detail — this inbox is not a
-   second replay graph. Do not expect cursor / time / trigger /
-   actor filters yet. The editor **Runs** overlay (R4.2) filters and
-   highlights this workflow’s runs on the same canvas.
-2. `indeterminate` uses a stronger border plus icon + text — never
-   silent success, never “it probably did not run.”
+   second replay graph. Cancel / Retry / Stop stay on the row (R4.4)
+   using existing cancel, retry, and emergency-stop routes. Retry is
+   shown only when `result.retry.allowed` is true. Do not expect
+   cursor / time / trigger / actor filters yet. The editor **Runs**
+   overlay (R4.2) filters and highlights this workflow’s runs on the
+   same canvas.
+2. `indeterminate` uses a stronger border plus icon + text +
+   explanation — never silent success, never “it probably did not run.”
 3. Start only a **published** version (home or the start panel).
    Duplicate idempotency key → `200` replay; same key + different
    input → `409`.
 4. Detail: graph replay, redacted logs, artifacts (short-lived
    authorized download), cancel (`execution.cancel`), safe retry when
-   policy allows. Skip-to-error / skip-to-indeterminate links are on
-   the detail page.
+   `result.retry.allowed`, and script emergency stop. Skip-to-error /
+   skip-to-indeterminate links are on the detail page.
 5. Compare two redacted runs or versions. Secrets stay redacted.
 
 Capacity, queue lag, and restore are **not** UI — read

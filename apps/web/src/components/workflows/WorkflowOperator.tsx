@@ -2155,6 +2155,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           permissions={permissions}
           canCall={canCall}
           selectedExecutionId={selectedRunId ?? undefined}
+          selectedExecution={selectedRun}
           selectedSteps={selectedRun?.steps}
           waitingApprovalNodeIds={runWaitingIds}
           overlayHighlightCount={
@@ -2167,6 +2168,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           onOpen={() => setDrawerOpen("runs", true)}
           onStart={() => setStartOpen(true)}
           onSelectRun={(executionId) => void selectRun(executionId)}
+          onOperated={(executionId) => void selectRun(executionId)}
           onClearRun={runIoSource === "overlay" ? clearSelectedRun : undefined}
           onHighlightNode={(nodeId) => applySelection({ kind: "node", id: nodeId })}
         />

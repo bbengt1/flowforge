@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
+import { ExecutionOperateActions } from "@/components/executions/ExecutionOperateActions";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
@@ -27,7 +28,12 @@ import {
   parseExecutionInboxQuery,
 } from "@/lib/execution-inbox";
 import { compareRedactedExecutions } from "@/lib/execution-replay";
-import type { ExecutionListQuery, ExecutionRecord } from "@/lib/execution-types";
+import { executionOperateShouldLoadDetail } from "@/lib/execution-operate";
+import type {
+  ExecutionDetail,
+  ExecutionListQuery,
+  ExecutionRecord,
+} from "@/lib/execution-types";
 import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
 import { canOfferManualStart } from "@/lib/manual-start-contract";
 import { compareWorkflow } from "@/lib/workflow-client";
@@ -83,6 +89,9 @@ export function ExecutionHistory() {
   const [versionCompare, setVersionCompare] =
     useState<CompareWorkflowResult | null>(null);
   const [startWorkflowId, setStartWorkflowId] = useState("");
+  const [operateDetails, setOperateDetails] = useState<
+    Record<string, ExecutionDetail>
+  >({});
 
   const ready =
     hasOperatorCaller(session.active, identity, headerFallback) &&
@@ -136,6 +145,28 @@ export function ExecutionHistory() {
     }
     setItems(list.items);
     setStrippedKeys(list.strippedKeys);
+    void loadOperateDetails(list.items);
+  }
+
+  async function loadOperateDetails(rows: readonly ExecutionRecord[]) {
+    const needed = rows.filter(executionOperateShouldLoadDetail);
+    if (needed.length === 0) {
+      return;
+    }
+    const results = await Promise.all(
+      needed.map((row) =>
+        loadExecutionHistory(identity, row.id, row.workflowId),
+      ),
+    );
+    setOperateDetails((current) => {
+      const next = { ...current };
+      for (const result of results) {
+        if (result.ok) {
+          next[result.execution.id] = result.execution;
+        }
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -346,7 +377,25 @@ export function ExecutionHistory() {
           </p>
         </section>
       ) : (
-        <ExecutionHistoryListbox rows={visible} layout="inbox" />
+        <ExecutionHistoryListbox
+          rows={visible}
+          layout="inbox"
+          operateActions={(row) => (
+            <ExecutionOperateActions
+              identity={identity}
+              executionId={row.id}
+              workflowId={
+                items.find((item) => item.id === row.id)?.workflowId ??
+                query.workflowId
+              }
+              status={row.status}
+              permissions={permissions}
+              detail={operateDetails[row.id]}
+              surface="inbox"
+              onOperated={() => void refresh()}
+            />
+          )}
+        />
       )}
 
       {!forbidden && !denied && publishedWorkflows.length > 0 ? (
