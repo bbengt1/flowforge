@@ -233,7 +233,8 @@ export type WorkflowUILayoutNode = {
  * D1 (#238): optional non-authoritative canvas layout on `metadata.ui.layout`.
  * API stores and returns it on validate/normalize/draft/version. Executor,
  * policy evaluate, port typing, and dispatch ignore it. Missing/invalid →
- * auto-layout. Never a second canvas file. Chloe wires persist UI on #238.
+ * auto-layout. Never a second canvas file. Chloe applies this on canvas
+ * load and writes it back on draft save (R2.5 / #238 — keep #238 open).
  */
 export type WorkflowUILayout = {
   version: 1 | number;

@@ -65,6 +65,11 @@ import {
   type CanvasLayout,
   type CanvasPoint,
 } from "@/lib/editor-canvas-history";
+import {
+  readPersistedCanvasLayout,
+  readYamlCanvasLayout,
+  writeCanvasLayoutYaml,
+} from "@/lib/editor-canvas-layout";
 import { EDITOR_RUNS_OPEN_ON_FIRST_PAINT } from "@/lib/editor-runs";
 import {
   EDITOR_RUN_OVERLAY_HELP,
@@ -408,23 +413,27 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   }
 
   function writeGraphYaml(nextYaml: string, layout?: CanvasLayout) {
-    setHistory((current) =>
-      pushCanvasHistory(current, {
-        yaml: nextYaml,
-        layout: layoutForYaml(nextYaml, layout ?? current.present.layout),
+    const current = historyRef.current;
+    const nextLayout = layoutForYaml(nextYaml, layout ?? current.present.layout);
+    const yamlWithLayout = writeCanvasLayoutYaml(nextYaml, nextLayout);
+    setHistory((hist) =>
+      pushCanvasHistory(hist, {
+        yaml: yamlWithLayout,
+        layout: nextLayout,
       }),
     );
-    if (nextYaml !== yamlRef.current) {
+    if (yamlWithLayout !== yamlRef.current) {
       setDigest(null);
-      setYaml(nextYaml);
+      setYaml(yamlWithLayout);
     }
   }
 
   function syncHistoryYaml(nextYaml: string) {
+    const fromYaml = readYamlCanvasLayout(nextYaml);
     setHistory((current) =>
       replaceCanvasHistoryPresent(current, {
         yaml: nextYaml,
-        layout: current.present.layout,
+        layout: fromYaml ?? current.present.layout,
       }),
     );
     setYaml(nextYaml);
@@ -739,7 +748,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       skipDebounce.current = true;
       validateSeq.current += 1;
       setYaml(next.yaml);
-      setHistory(emptyCanvasHistory(next.yaml));
+      setHistory(emptyCanvasHistory(next.yaml, readPersistedCanvasLayout(next.summary, next.yaml)));
       setDigest(next.digest);
       setSummary(next.summary);
       setWarnings(next.warnings);
@@ -1068,7 +1077,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setProblem(null);
     setConflictDraft(null);
     setConflictProblem(null);
-    const result = await saveCanonicalWorkflowDraft(identity, workflow.id, yaml, revision);
+    const yamlToSave = writeCanvasLayoutYaml(
+      yaml,
+      layoutForYaml(yaml, historyRef.current.present.layout),
+    );
+    const result = await saveCanonicalWorkflowDraft(
+      identity,
+      workflow.id,
+      yamlToSave,
+      revision,
+    );
     setLastRequestId(result.requestId);
     setPending(null);
     if (!result.ok) {
