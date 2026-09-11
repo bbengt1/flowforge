@@ -54,7 +54,7 @@ describe("script ops contract adapter", () => {
     assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /script\.emergencyStop/);
     assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /allowEmergencyStop/);
     assert.match(SCRIPT_OPS_CONTRACT_FALLBACK_HELP, /409 artifact-revoked/);
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
+    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
     assert.equal(
       SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.revocation.permission,
       SCRIPT_REVOKE_PERMISSION,
@@ -73,7 +73,7 @@ describe("script ops contract adapter", () => {
       SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.beforeDispatch,
       "canceled",
     );
-    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.missingPolicyAllows, true);
+    assert.equal(SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG.emergencyStop.missingPolicyAllows, false);
     assert.equal(SCRIPT_OPS_EXISTING_API_PATHS.scriptsCatalog, "/scripts/catalog");
     assert.equal(scriptRevokePath(ARTIFACT_ID), `/scripts/${ARTIFACT_ID}/revoke`);
     assert.equal(
@@ -126,7 +126,7 @@ describe("script ops contract adapter", () => {
     assert.ok(parsed.errors.some((item) => item.code === "emergency-stop-denied"));
 
     const empty = parseScriptOpsCatalog({});
-    assert.equal(empty.source, "contract-fallback");
+    assert.equal(empty.source, "unavailable");
     assert.equal(empty.notes, SCRIPT_OPS_CONTRACT_FALLBACK_HELP);
     assert.equal(empty.revocation.route, DEFAULT_SCRIPT_REVOCATION.route);
     assert.equal(empty.emergencyStop.route, DEFAULT_SCRIPT_EMERGENCY_STOP.route);

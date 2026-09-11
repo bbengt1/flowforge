@@ -16,6 +16,10 @@
  * Do not change `apps/api`.
  */
 
+import {
+  CATALOG_SOURCE_UNAVAILABLE,
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+} from "./catalog-fail-closed.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import { validateScriptIoNodeExtras } from "./script-io-contract.ts";
 import { CATALOG_PHASE_CORE } from "./workflow-types.ts";
@@ -271,7 +275,7 @@ export type ScriptNodeCatalogSource =
   | "scripts-catalog"
   | "ops-config-catalog"
   | "workflow-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type ScriptNodeCatalog = {
   source: ScriptNodeCatalogSource;
@@ -450,9 +454,25 @@ export function isScriptConfigurableType(type: string): boolean {
 
 export function scriptLibraryTypes(
   catalog?: WorkflowCatalog | null,
+  scriptCatalog?: ScriptNodeCatalog | null,
 ): readonly string[] {
-  void catalog;
-  return [...SCRIPT_ACTION_TYPES];
+  const types = new Set<string>();
+  for (const node of catalog?.nodes ?? []) {
+    if (
+      isScriptConfigurableType(node.type) &&
+      isCatalogImplementationEnabled(node)
+    ) {
+      types.add(node.type);
+    }
+  }
+  if (scriptCatalog && scriptCatalog.source !== "unavailable") {
+    for (const node of scriptCatalog.nodes) {
+      if (isScriptConfigurableType(node.type)) {
+        types.add(node.type);
+      }
+    }
+  }
+  return [...types];
 }
 
 export function catalogListsScriptType(
@@ -561,148 +581,76 @@ export function scriptNodeWithFields(
   scriptCatalog?: ScriptNodeCatalog | null,
 ): ScriptNodeWithField[] {
   const engineNode = scriptNodeContract(type, scriptCatalog);
-  if (engineNode?.allowedWith.length) {
-    return overlayScriptFields(engineNode.allowedWith, type);
-  }
-  if (!isScriptConfigurableType(type)) {
+  if (!engineNode?.allowedWith.length) {
     return [];
   }
-  const language = type === SCRIPT_GO_TYPE ? "Go" : "Python";
-  return [
-    {
-      name: "runtimeProfileId",
-      kind: "uuid",
-      required: true,
-      label: "Runtime profile",
-      controlHint: "uuid",
-      description:
-        "Published approved runtime/dependency profile (display name + id). Not an arbitrary image.",
-    },
-    {
-      name: "source",
-      kind: "string",
-      required: true,
-      label: `${language} source`,
-      controlHint: "textarea",
-      description:
-        "Visible, versioned source. Secrets and credential handles are injected at runtime — never write them here.",
-    },
-    {
-      name: "entrypoint",
-      kind: "string",
-      required: true,
-      label: "Entrypoint",
-      controlHint: "text",
-      defaultValue: defaultScriptEntrypoint(type),
-      description: `File the approved runtime executes. Default ${defaultScriptEntrypoint(type)}.`,
-    },
-    {
-      name: "timeoutSeconds",
-      kind: "integer",
-      required: true,
-      label: "Timeout (seconds)",
-      controlHint: "number",
-      defaultValue: SCRIPT_DEFAULT_TIMEOUT_SECONDS,
-      description: `Required. Bounded run timeout (${SCRIPT_MIN_TIMEOUT_SECONDS}–${SCRIPT_MAX_TIMEOUT_SECONDS}). Default ${SCRIPT_DEFAULT_TIMEOUT_SECONDS}.`,
-    },
-    {
-      name: "memoryMiB",
-      kind: "integer",
-      label: "Memory (MiB)",
-      controlHint: "number",
-      defaultValue: SCRIPT_DEFAULT_MEMORY_MIB,
-      description: `Optional. Bounded memory (${SCRIPT_MIN_MEMORY_MIB}–${SCRIPT_MAX_MEMORY_MIB}). Must not exceed the pinned profile.`,
-    },
-    {
-      name: "cpuMillis",
-      kind: "integer",
-      label: "CPU (millicores)",
-      controlHint: "number",
-      advanced: true,
-      description: `Optional CPU millicores (${SCRIPT_MIN_CPU_MILLIS}–${SCRIPT_MAX_CPU_MILLIS}). Must not exceed the pinned profile.`,
-    },
-    {
-      name: "processes",
-      kind: "integer",
-      label: "Processes",
-      controlHint: "number",
-      advanced: true,
-      description: `Optional process cap (${SCRIPT_MIN_PROCESSES}–${SCRIPT_MAX_PROCESSES}). Must not exceed the pinned profile.`,
-    },
-    {
-      name: "inputSchema",
-      kind: "object",
-      label: "Input schema",
-      controlHint: "json",
-      description:
-        "Optional declared input JSON Schema subset. Validated JSON only — 16 KiB bound. No secrets or handles.",
-    },
-    {
-      name: "outputSchema",
-      kind: "object",
-      label: "Output schema",
-      controlHint: "json",
-      description:
-        "Optional declared output JSON Schema subset. Outputs must meet schema and size limits. Redacted.",
-    },
-    {
-      name: "retrySafe",
-      kind: "boolean",
-      label: "Retry-safe",
-      controlHint: "boolean",
-      defaultValue: false,
-      description:
-        "Default false. When true, idempotencyKey and verification.behavior=declared-hook are required.",
-    },
-    {
-      name: "idempotencyKey",
-      kind: "string",
-      label: "Idempotency key",
-      controlHint: "text",
-      description:
-        "Required when retrySafe. 1–128 identifier starting with a letter (letters, digits, ._: -).",
-    },
-    {
-      name: "verification",
-      kind: "object",
-      label: "Verification hook",
-      controlHint: "json",
-      description:
-        "Required when retrySafe. {behavior:declared-hook, expect?, onMatch, onMismatch, onError}. Never a blind re-run.",
-    },
-    {
-      name: "retryPolicy",
-      kind: "object",
-      label: "Retry policy",
-      controlHint: "object-lines",
-      defaultValue: { maxAttempts: 0 },
-      description:
-        "Optional {maxAttempts:0-5}. Default 0. maxAttempts>0 requires retrySafe + idempotencyKey + verification.",
-    },
-    {
-      name: "policyId",
-      kind: "uuid",
-      label: "Policy",
-      controlHint: "uuid",
-      advanced: true,
-      description: "Optional published kind=script policy UUID.",
-    },
-  ];
+  return overlayScriptFields(engineNode.allowedWith, type);
+}
+
+function scriptFieldChrome(name: string, type: string): Partial<ScriptNodeWithField> {
+  switch (name) {
+    case "runtimeProfileId":
+      return { label: "Runtime profile", controlHint: "uuid" };
+    case "source":
+      return {
+        label: `${type === SCRIPT_GO_TYPE ? "Go" : "Python"} source`,
+        controlHint: "textarea",
+      };
+    case "entrypoint":
+      return {
+        label: "Entrypoint",
+        controlHint: "text",
+        defaultValue: defaultScriptEntrypoint(type),
+      };
+    case "timeoutSeconds":
+      return {
+        label: "Timeout (seconds)",
+        controlHint: "number",
+        defaultValue: SCRIPT_DEFAULT_TIMEOUT_SECONDS,
+      };
+    case "memoryMiB":
+      return {
+        label: "Memory (MiB)",
+        controlHint: "number",
+        defaultValue: SCRIPT_DEFAULT_MEMORY_MIB,
+      };
+    case "cpuMillis":
+      return { label: "CPU (millicores)", controlHint: "number", advanced: true };
+    case "processes":
+      return { label: "Processes", controlHint: "number", advanced: true };
+    case "inputSchema":
+      return { label: "Input schema", controlHint: "json" };
+    case "outputSchema":
+      return { label: "Output schema", controlHint: "json" };
+    case "retrySafe":
+      return { label: "Retry-safe", controlHint: "boolean", defaultValue: false };
+    case "idempotencyKey":
+      return { label: "Idempotency key", controlHint: "text" };
+    case "verification":
+      return { label: "Verification hook", controlHint: "json" };
+    case "retryPolicy":
+      return {
+        label: "Retry policy",
+        controlHint: "object-lines",
+        defaultValue: { maxAttempts: 0 },
+      };
+    case "policyId":
+      return { label: "Policy", controlHint: "uuid", advanced: true };
+    default:
+      return {};
+  }
 }
 
 export function overlayScriptFields(
   fields: CatalogWithField[],
   type: string,
 ): ScriptNodeWithField[] {
-  const fallback = new Map(
-    scriptNodeWithFields(type).map((field) => [field.name, field]),
-  );
   return fields
     .filter((field) => !scriptForbiddenWithKeys({ [field.name]: true }).length)
     .map((field) => {
-      const base = fallback.get(field.name);
+      const chrome = scriptFieldChrome(field.name, type);
       const controlHint =
-        base?.controlHint ??
+        chrome.controlHint ??
         (field.kind === "uuid"
           ? "uuid"
           : field.kind === "integer"
@@ -724,17 +672,17 @@ export function overlayScriptFields(
         name: field.name,
         kind: field.kind,
         required: field.required === true,
-        enum: field.enum?.length ? field.enum : base?.enum,
-        description: field.description || base?.description || "",
-        label: base?.label || field.name,
+        enum: field.enum?.length ? field.enum : chrome.enum,
+        description: field.description || chrome.description || "",
+        label: chrome.label || field.name,
         advanced:
           field.name === "policyId" ||
           field.name === "cpuMillis" ||
           field.name === "processes" ||
-          base?.advanced,
-        readOnly: base?.readOnly,
+          chrome.advanced,
+        readOnly: chrome.readOnly,
         controlHint,
-        defaultValue: base?.defaultValue,
+        defaultValue: chrome.defaultValue,
       };
     });
 }
@@ -1111,60 +1059,56 @@ export function scriptArtifactStatus(input: {
 }
 
 export function scriptFallbackNode(type: string): CatalogNode {
-  return SCRIPT_CONTRACT_FALLBACK[type] ?? thinFallback(type);
+  return {
+    type,
+    phase: CATALOG_PHASE_CORE,
+    title: type,
+    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
+    inputs: [],
+    outputs: [],
+    requiredWith: [],
+    allowedWith: [],
+  };
 }
 
 export function adaptScriptNodeEntries(
   catalog: WorkflowCatalog | null | undefined,
   scriptCatalog?: ScriptNodeCatalog | null,
 ): CatalogNode[] {
-  return scriptLibraryTypes(catalog).map((type) => {
+  return scriptLibraryTypes(catalog, scriptCatalog).flatMap((type) => {
     const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
-    const fallback = scriptFallbackNode(type);
     const engine = scriptNodeContract(type, scriptCatalog);
+    if (!listed && !engine) {
+      return [];
+    }
     const engineAllowed = engine?.allowedWith.length
       ? engine.allowedWith
       : undefined;
-    if (!listed) {
-      if (!engine) {
-        return fallback;
-      }
-      return {
-        ...fallback,
-        title: engine.title || fallback.title,
-        description: engine.description || fallback.description,
-        requiredWith: engine.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-        allowedWith: engineAllowed ?? fallback.allowedWith,
-      };
-    }
-    return {
-      ...fallback,
-      ...listed,
-      title: listed.title || engine?.title || fallback.title,
-      description:
-        listed.description || engine?.description || fallback.description,
-      inputs: listed.inputs?.length ? listed.inputs : fallback.inputs,
-      outputs: listed.outputs?.length ? listed.outputs : fallback.outputs,
-      requiredWith: listed.requiredWith?.length
-        ? listed.requiredWith
-        : engine?.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-      allowedWith: listed.allowedWith?.length
-        ? listed.allowedWith
-        : engineAllowed ?? fallback.allowedWith,
-      policy: listed.policy ?? fallback.policy,
-      bounds: listed.bounds ?? fallback.bounds,
-      redaction: listed.redaction ?? fallback.redaction,
-    };
+    return [
+      {
+        type,
+        phase: listed?.phase ?? CATALOG_PHASE_CORE,
+        title: listed?.title || engine?.title || type,
+        description: listed?.description || engine?.description || "",
+        inputs: listed?.inputs ?? [],
+        outputs: listed?.outputs ?? [],
+        requiredWith: listed?.requiredWith?.length
+          ? listed.requiredWith
+          : engine?.requiredWith ?? [],
+        allowedWith: listed?.allowedWith?.length
+          ? listed.allowedWith
+          : engineAllowed ?? [],
+        policy: listed?.policy ?? null,
+        bounds: listed?.bounds ?? null,
+        redaction: listed?.redaction ?? null,
+      },
+    ];
   });
 }
 
 export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_NODE_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const nested =
@@ -1195,20 +1139,20 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
   const isolation = parseIsolation(nested.isolation ?? rec.isolation);
   const hooks = parseHooks(nested.hooks ?? rec.hooks);
   if (nodes.length === 0 && errors.length === 0 && permissions.length === 0) {
-    return { ...SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG };
+    return { ...SCRIPT_NODE_UNAVAILABLE_CATALOG };
   }
   const source: ScriptNodeCatalogSource =
     rec.scriptEngine && typeof rec.scriptEngine === "object"
       ? "ops-config-catalog"
       : nodes.length > 0
         ? "scripts-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
-    languages: languages.length ? languages : ["python", "go"],
-    nodes: nodes.length ? nodes : SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG.nodes,
-    errors: errors.length ? errors : DEFAULT_SCRIPT_NODE_ERRORS,
-    permissions: permissions.length ? permissions : [...SCRIPT_NODE_PERMISSIONS],
+    languages,
+    nodes,
+    errors,
+    permissions,
     publish,
     isolation,
     hooks,
@@ -1250,171 +1194,18 @@ export function parseScriptNodeCatalog(raw: unknown): ScriptNodeCatalog {
   };
 }
 
-export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG: ScriptNodeCatalog = {
-  source: "contract-fallback",
-  languages: ["python", "go"],
-  nodes: [
-    {
-      type: SCRIPT_PYTHON_TYPE,
-      language: "python",
-      title: "Run Python script",
-      description:
-        "Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.",
-      permissions: [...SCRIPT_NODE_PERMISSIONS],
-      requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
-      allowedWith: [],
-      outputs: ["result"],
-      sideEffects: true,
-      retrySafe: false,
-      defaultMaxAttempts: 0,
-    },
-    {
-      type: SCRIPT_GO_TYPE,
-      language: "go",
-      title: "Run Go script",
-      description:
-        "Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.",
-      permissions: [...SCRIPT_NODE_PERMISSIONS],
-      requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
-      allowedWith: [],
-      outputs: ["result"],
-      sideEffects: true,
-      retrySafe: false,
-      defaultMaxAttempts: 0,
-    },
-  ],
-  errors: DEFAULT_SCRIPT_NODE_ERRORS,
-  permissions: [...SCRIPT_NODE_PERMISSIONS],
+export const SCRIPT_NODE_UNAVAILABLE_CATALOG: ScriptNodeCatalog = {
+  source: CATALOG_SOURCE_UNAVAILABLE,
+  languages: [],
+  nodes: [],
+  errors: [],
+  permissions: [],
   publish: DEFAULT_SCRIPT_PUBLISH_RULES,
-  isolation: DEFAULT_SCRIPT_ISOLATION,
-  hooks: {
-    "E9.2": "isolated runner (VerifyForDispatch then Execute)",
-    "E9.3": "typed I/O + scoped handles + output redaction + lease-loss recovery",
-    "E9.4": "artifact revocation + emergency stop (implemented)",
-  },
-  notes: SCRIPT_CONTRACT_FALLBACK_HELP,
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
 };
 
-function inherit(
-  name: string,
-  kind: string,
-  required: boolean,
-  description: string,
-): CatalogPort {
-  return {
-    name,
-    kind,
-    required,
-    classification: "internal",
-    maxBytes: 16 * 1024,
-    description,
-  };
-}
-
-function scriptPolicy(): CatalogNodePolicy {
-  return {
-    permissions: [...SCRIPT_NODE_PERMISSIONS],
-    retrySafe: false,
-    sideEffects: true,
-    idempotent: false,
-    cancellation: "abort-process",
-    verification: "node-declared-idempotent-hook",
-    defaultMaxAttempts: 0,
-  };
-}
-
-function defaultBounds(): CatalogNodeBounds {
-  return {
-    maxInputBytes: 16 * 1024,
-    maxOutputBytes: 16 * 1024,
-    maxWithBytes: 256 * 1024,
-    maxAggregationItems: 32,
-    maxDurationSeconds: SCRIPT_MAX_TIMEOUT_SECONDS,
-  };
-}
-
-function redaction(auditFields: string[]): CatalogRedaction {
-  return {
-    auditFields,
-    redactInputs: true,
-    redactOutputs: true,
-    strategy: "drop-secrets",
-  };
-}
-
-function fieldsToAllowed(type: string): CatalogWithField[] {
-  return scriptNodeWithFields(type).map((field) => ({
-    name: field.name,
-    kind: field.kind,
-    required: field.required,
-    enum: field.enum,
-    description: field.description,
-  }));
-}
-
-function thinFallback(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: SCRIPT_PUBLISH_BOUNDARY_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
-    allowedWith: fieldsToAllowed(type),
-  };
-}
-
-const SCRIPT_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
-  "script.python": {
-    type: SCRIPT_PYTHON_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "Run Python script",
-    description:
-      "Publish approved Python source as a signed, scanned, content-addressed artifact. Execution uses the pinned digest, not draft source.",
-    inputs: [
-      inherit("input", "object", false, "Validated JSON input. Secrets are scoped handles, never plaintext."),
-    ],
-    outputs: [
-      inherit("result", "object", false, "Redacted result matching the declared output schema."),
-    ],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
-    allowedWith: fieldsToAllowed(SCRIPT_PYTHON_TYPE),
-    policy: scriptPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction([
-      "runtimeProfileId",
-      "entrypoint",
-      "artifactDigest",
-      "scanStatus",
-      "correlationId",
-    ]),
-  },
-  "script.go": {
-    type: SCRIPT_GO_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "Run Go script",
-    description:
-      "Publish approved Go source as a signed, scanned, content-addressed artifact. The E9.2 runner builds a signed binary from this digest.",
-    inputs: [
-      inherit("input", "object", false, "Validated JSON input. Secrets are scoped handles, never plaintext."),
-    ],
-    outputs: [
-      inherit("result", "object", false, "Redacted result matching the declared output schema."),
-    ],
-    requiredWith: ["source", "entrypoint", "runtimeProfileId", "timeoutSeconds"],
-    allowedWith: fieldsToAllowed(SCRIPT_GO_TYPE),
-    policy: scriptPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction([
-      "runtimeProfileId",
-      "entrypoint",
-      "artifactDigest",
-      "scanStatus",
-      "correlationId",
-    ]),
-  },
-};
+/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
+export const SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG = SCRIPT_NODE_UNAVAILABLE_CATALOG;
 
 function parseEngineNode(raw: unknown): ScriptNodeEngineContract | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

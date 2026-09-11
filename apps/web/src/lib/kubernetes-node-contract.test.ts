@@ -6,7 +6,6 @@ import {
   KUBERNETES_FORCE_APPLY,
   KUBERNETES_FORCE_DENIED_MESSAGE,
   KUBERNETES_FORBIDDEN_WITH_KEYS,
-  KUBERNETES_MVP_NODE_TYPES,
   KUBERNETES_NAMESPACE_REQUIRED_MESSAGE,
   KUBERNETES_NODE_API_PR,
   KUBERNETES_NODE_EPIC,
@@ -146,35 +145,26 @@ describe("kubernetes node contract adapter", () => {
     );
   });
 
-  it("falls back to marked contract entries when catalog is thin or missing", () => {
-    assert.deepEqual([...kubernetesLibraryTypes(null)], [...KUBERNETES_MVP_NODE_TYPES]);
-    assert.ok(kubernetesLibraryTypes(null).includes("kubernetes.rolloutStatus"));
+  it("fails closed when catalog is thin or missing — no invented Kubernetes nodes or fields", () => {
+    assert.deepEqual([...kubernetesLibraryTypes(null)], []);
     assert.equal(catalogListsKubernetesType(catalog, "kubernetes.rolloutStatus"), true);
     assert.ok(kubernetesLibraryTypes(catalog).includes("kubernetes.rolloutStatus"));
 
-    const missing = adaptKubernetesNodeEntries(null);
-    assert.deepEqual(
-      missing.map((item) => item.type),
-      [...KUBERNETES_MVP_NODE_TYPES],
-    );
-    assert.equal(
-      missing.every((item) => (item.allowedWith?.length ?? 0) > 0),
-      true,
-    );
+    assert.deepEqual(adaptKubernetesNodeEntries(null), []);
 
     const merged = adaptKubernetesNodeEntries(catalog);
     const apply = merged.find((item) => item.type === "kubernetes.apply");
     assert.ok(apply);
     assert.equal(hasKubernetesNodeContract(catalog.nodes[0]), false);
-    assert.ok((apply.allowedWith ?? []).some((field) => field.name === "manifests"));
-    assert.equal(
-      (apply.allowedWith ?? []).some((field) => field.name === "force"),
-      false,
-    );
+    assert.deepEqual(apply.allowedWith ?? [], []);
     assert.ok(merged.some((item) => item.type === "kubernetes.rolloutStatus"));
     assert.match(
       kubernetesFallbackNode("kubernetes.rolloutStatus").description ?? "",
-      /bounded watch/i,
+      /fails closed/i,
+    );
+    assert.deepEqual(
+      kubernetesFallbackNode("kubernetes.rolloutStatus").allowedWith,
+      [],
     );
 
     const overlaid = adaptKubernetesNodeEntries(null, engineCatalog);
@@ -212,7 +202,8 @@ describe("kubernetes node contract adapter", () => {
 
 describe("kubernetes node config validation", () => {
   it("requires namespace and a published cluster target", () => {
-    const fields = kubernetesNodeWithFields("kubernetes.apply");
+    assert.deepEqual(kubernetesNodeWithFields("kubernetes.apply"), []);
+    const fields = kubernetesNodeWithFields("kubernetes.apply", engineCatalog);
     assert.equal(
       fields.some((field) => field.name === "force"),
       false,
@@ -326,7 +317,9 @@ describe("kubernetes node config validation", () => {
       timeoutSeconds: 60,
     });
     assert.deepEqual(ready, []);
-    assert.match(waitReadyMessage(), /waitReady=observed/);
+    assert.match(waitReadyMessage(), /waitReady=\./);
+    assert.equal(waitReadyMessage().includes("waitReady=observed"), false);
+    assert.match(waitReadyMessage(engineCatalog), /waitReady=observed/);
     const viaResource = validateKubernetesNodeConfig("kubernetes.rolloutStatus", {
       clusterTargetId: TARGET_ID,
       namespace: "app",
@@ -355,10 +348,11 @@ describe("kubernetes node config validation", () => {
       kind: "Job",
     });
     assert.ok(rolloutName.some((error) => /name is required/.test(error)));
-    const fields = kubernetesNodeWithFields("kubernetes.rolloutStatus");
-    assert.equal(fields.some((field) => field.name === "force"), false);
-    assert.equal(fields.find((field) => field.name === "kind")?.required, true);
-    assert.equal(fields.find((field) => field.name === "name")?.required, true);
+    assert.deepEqual(kubernetesNodeWithFields("kubernetes.rolloutStatus"), []);
+    assert.deepEqual(
+      kubernetesNodeWithFields("kubernetes.rolloutStatus", engineCatalog),
+      [],
+    );
 
     const manager = validateKubernetesNodeConfig("kubernetes.get", {
       clusterTargetId: TARGET_ID,

@@ -115,56 +115,23 @@ describe("script contract adapter", () => {
     );
   });
 
-  it("falls back to marked contract entries when catalog is thin or missing", () => {
-    assert.deepEqual([...scriptLibraryTypes(null)], [
-      "script.python",
-      "script.go",
-    ]);
+  it("fails closed when catalog is thin or missing — no invented script nodes or fields", () => {
+    assert.deepEqual([...scriptLibraryTypes(null)], []);
     assert.equal(isScriptActionType("script.python"), true);
     assert.equal(isScriptConfigurableType("script.go"), true);
     assert.equal(isScriptConfigurableType("ssh.run"), false);
     assert.equal(catalogListsScriptType(catalog, "script.python"), true);
+    assert.deepEqual([...scriptLibraryTypes(catalog)], ["script.python"]);
     const fallback = scriptFallbackNode("script.python");
-    assert.equal(fallback.title, "Run Python script");
-    assert.match(fallback.description ?? "", /signed, scanned/i);
-    assert.deepEqual(fallback.requiredWith, [
-      "source",
-      "entrypoint",
-      "runtimeProfileId",
-      "timeoutSeconds",
-    ]);
-    assert.equal(fallback.policy?.retrySafe, false);
-    assert.ok((fallback.allowedWith ?? []).some((field) => field.name === "source"));
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "runtimeProfileId"),
-    );
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "inputSchema"),
-    );
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "retrySafe"),
-    );
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "idempotencyKey"),
-    );
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "verification"),
-    );
-    assert.ok(
-      (fallback.allowedWith ?? []).some((field) => field.name === "retryPolicy"),
-    );
-    assert.equal(fallback.policy?.verification, "node-declared-idempotent-hook");
-    assert.equal(
-      (fallback.allowedWith ?? []).some((field) => field.name === "image"),
-      false,
-    );
-    assert.equal(hasScriptNodeContract(fallback), true);
-    const missing = adaptScriptNodeEntries(null);
-    assert.equal(missing[0]?.type, "script.python");
-    assert.equal(missing[1]?.type, "script.go");
+    assert.equal(fallback.title, "script.python");
+    assert.match(fallback.description ?? "", /fails closed/i);
+    assert.deepEqual(fallback.requiredWith, []);
+    assert.deepEqual(fallback.allowedWith, []);
+    assert.equal(hasScriptNodeContract(fallback), false);
+    assert.deepEqual(adaptScriptNodeEntries(null), []);
     const thin = adaptScriptNodeEntries(catalog);
-    assert.equal(thin[0]?.title, "Run Python script");
-    assert.ok((thin[0]?.allowedWith?.length ?? 0) > 0);
+    assert.equal(thin[0]?.type, "script.python");
+    assert.deepEqual(thin[0]?.allowedWith ?? [], []);
   });
 
   it("defaults entrypoint, timeout, and memory", () => {
@@ -466,7 +433,7 @@ describe("script contract adapter", () => {
     assert.equal(fields.some((field) => field.name === "secret"), false);
 
     const empty = parseScriptNodeCatalog({});
-    assert.equal(empty.source, "contract-fallback");
+    assert.equal(empty.source, "unavailable");
     assert.equal(empty.notes, SCRIPT_NODE_CONTRACT_FALLBACK_CATALOG.notes);
 
     const adapted = adaptScriptNodeEntries(catalog, parsed);

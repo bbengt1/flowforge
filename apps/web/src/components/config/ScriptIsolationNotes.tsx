@@ -1,3 +1,4 @@
+import { isInventedCatalogSource } from "@/lib/catalog-fail-closed";
 import {
   SCRIPT_RUNTIME_CONTRACT_FALLBACK_HELP,
   runtimeProfileIsolationNotes,
@@ -17,7 +18,7 @@ export function ScriptIsolationNotes({
     ...runtimeProfileIsolationNotes(map),
     ...(extraNotes ?? []).filter((note) => note.trim()),
   ];
-  const fallback = !map || map.source === "contract-fallback";
+  const fallback = !map || isInventedCatalogSource(map.source);
   return (
     <aside
       aria-label="Script runtime isolation notes"

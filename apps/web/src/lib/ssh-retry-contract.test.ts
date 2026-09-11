@@ -45,7 +45,7 @@ describe("ssh retry contract adapter", () => {
     assert.equal(SSH_RUN_NODE_TYPE, "ssh.run");
     assert.equal(SSH_DEFAULT_RETRY_MAX_ATTEMPTS, 0);
     assert.equal(SSH_MAX_RETRY_ATTEMPTS, 5);
-    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
+    assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
     assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.retrySafeDefault, false);
     assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.ui.neverAssumeAbsent, true);
     assert.equal(SSH_RETRY_CONTRACT_FALLBACK_CATALOG.probe.requiredWhenRetrySafe, true);
@@ -212,7 +212,7 @@ describe("ssh retry contract adapter", () => {
     assert.equal(parsed.errors.some((item) => item.code === "invalid-verification"), true);
 
     const empty = parseSshRetryCatalog({});
-    assert.equal(empty.source, "contract-fallback");
+    assert.equal(empty.source, "unavailable");
     assert.match(empty.notes ?? "", /e83-#90/);
 
     const result = parseSshRetryResult({

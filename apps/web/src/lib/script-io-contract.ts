@@ -175,7 +175,7 @@ export type ScriptIoCatalogSource =
   | "scripts-catalog"
   | "ops-config-catalog"
   | "workflow-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type ScriptIoErrorShape = {
   code: string;
@@ -442,7 +442,7 @@ export const DEFAULT_SCRIPT_IO_ERRORS: ScriptIoErrorShape[] = [
 ];
 
 export const SCRIPT_IO_CONTRACT_FALLBACK_CATALOG: ScriptIoCatalog = {
-  source: "contract-fallback",
+  source: "unavailable",
   io: DEFAULT_SCRIPT_IO_RULES,
   bounds: DEFAULT_SCRIPT_IO_BOUNDS,
   schemaKeywords: SCRIPT_IO_SCHEMA_KEYWORDS,
@@ -1108,7 +1108,7 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
       ? "ops-config-catalog"
       : rec.io || rec.retry
         ? "scripts-catalog"
-        : "contract-fallback";
+        : "unavailable";
   const io = parseIoRules(ioRaw, boundsRaw);
   const retry = parseRetry(retryRaw);
   const probe = parseProbe(retryRaw?.probe ?? nested.probe ?? rec.probe);
@@ -1146,7 +1146,7 @@ export function parseScriptIoCatalog(raw: unknown): ScriptIoCatalog {
     errors: errors.length ? errors : DEFAULT_SCRIPT_IO_ERRORS,
     notes:
       String(nested.notes ?? rec.notes ?? ioRaw.note ?? ioRaw.notes ?? "").trim() ||
-      (source === "contract-fallback" ? SCRIPT_IO_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? SCRIPT_IO_CONTRACT_FALLBACK_HELP : undefined),
   };
 }
 

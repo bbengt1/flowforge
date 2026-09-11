@@ -23,6 +23,10 @@
  *   notification.webhook  connectionId
  *   notification.email    connectionId + recipientListId + templateId
  *
+ * Relates to #249 / Part of #229. Keep #249 open.
+ * Empty or unauthorized catalogs fail closed — no invented node types,
+ * allowedWith, ports, or config fields.
+ *
  * Optional `with` is overlaid from the live catalog — not invented:
  *   http.request          method, path, host, timeoutSeconds,
  *                         responseSchemaRef, policyId
@@ -42,6 +46,10 @@
  * Relates to #109 / Part of #105. Keep #109 open. Do not change `apps/api`.
  */
 
+import {
+  CATALOG_SOURCE_UNAVAILABLE,
+  ENGINE_CATALOG_UNAVAILABLE_HELP,
+} from "./catalog-fail-closed.ts";
 import { isSecretFieldName } from "./credential.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import type { ConnectionType, OpsConfigPin, OpsConfigSpec } from "./ops-config-types.ts";
@@ -250,7 +258,7 @@ export type HttpNotificationCatalogSource =
   | "http-catalog"
   | "workflow-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type HttpNotificationIntegrationGate = {
   name?: string;
@@ -383,20 +391,27 @@ export function isHttpConfigurableType(type: string): boolean {
   return isHttpNotificationType(type);
 }
 
+export function httpNotificationGateClosed(
+  catalog?: WorkflowCatalog | null,
+  httpCatalog?: HttpNotificationCatalog | null,
+): boolean {
+  return (
+    catalog?.rules?.integrationActionsEnabled === false ||
+    catalog?.integrationGate?.enabled === false ||
+    httpCatalog?.integrationGate?.enabled === false
+  );
+}
+
 export function httpNotificationActionsEnabled(
   catalog?: WorkflowCatalog | null,
   httpCatalog?: HttpNotificationCatalog | null,
 ): boolean {
-  if (catalog?.rules?.integrationActionsEnabled === false) {
+  if (httpNotificationGateClosed(catalog, httpCatalog)) {
     return false;
   }
-  if (catalog?.integrationGate?.enabled === false) {
-    return false;
-  }
-  if (httpCatalog?.integrationGate?.enabled === false) {
-    return false;
-  }
-  return true;
+  return HTTP_NOTIFICATION_ACTION_TYPES.some((type) =>
+    isHttpNotificationNodeEnabled(type, httpCatalog, catalog),
+  );
 }
 
 export function isHttpNotificationNodeEnabled(
@@ -407,32 +422,39 @@ export function isHttpNotificationNodeEnabled(
   if (!isHttpNotificationType(type)) {
     return false;
   }
-  if (!httpNotificationActionsEnabled(catalog, httpCatalog)) {
+  if (httpNotificationGateClosed(catalog, httpCatalog)) {
     return false;
   }
-  if (
+  const listed = catalogListsHttpNotificationType(catalog, type);
+  const engineListed = Boolean(
     httpCatalog &&
-    (httpCatalog.source === "http-catalog" ||
-      httpCatalog.source === "ops-config-catalog")
-  ) {
-    const node = httpCatalog.nodes.find((item) => item.type === type);
-    if (!node || node.enabled === false) {
-      return false;
-    }
-  }
-  return true;
+      httpCatalog.source !== "unavailable" &&
+      httpCatalog.nodes.some((item) => item.type === type && item.enabled !== false),
+  );
+  return listed || engineListed;
 }
 
 export function httpNotificationLibraryTypes(
   catalog?: WorkflowCatalog | null,
   httpCatalog?: HttpNotificationCatalog | null,
 ): readonly string[] {
-  if (!httpNotificationActionsEnabled(catalog, httpCatalog)) {
+  if (httpNotificationGateClosed(catalog, httpCatalog)) {
     return [];
   }
-  return HTTP_NOTIFICATION_ACTION_TYPES.filter((type) =>
-    isHttpNotificationNodeEnabled(type, httpCatalog, catalog),
-  );
+  const types = new Set<string>();
+  for (const node of catalog?.nodes ?? []) {
+    if (isHttpNotificationNodeEnabled(node.type, httpCatalog, catalog)) {
+      types.add(node.type);
+    }
+  }
+  if (httpCatalog && httpCatalog.source !== "unavailable") {
+    for (const node of httpCatalog.nodes) {
+      if (isHttpNotificationNodeEnabled(node.type, httpCatalog, catalog)) {
+        types.add(node.type);
+      }
+    }
+  }
+  return [...types];
 }
 
 export function catalogListsHttpNotificationType(
@@ -510,160 +532,63 @@ export function httpNotificationNodeWithFields(
   httpCatalog?: HttpNotificationCatalog | null,
 ): HttpNotificationWithField[] {
   const engineNode = httpNotificationNodeContract(type, httpCatalog);
-  if (engineNode?.allowedWith.length) {
-    return overlayHttpNotificationFields(engineNode.allowedWith, type);
-  }
-  if (!isHttpNotificationType(type)) {
+  if (!engineNode?.allowedWith.length) {
     return [];
   }
-  const connection: HttpNotificationWithField = {
-    name: "connectionId",
-    kind: "uuid",
-    required: true,
-    label: "Connection",
-    controlHint: "uuid",
-    description:
-      type === NOTIFICATION_EMAIL_TYPE
-        ? "Published SMTP connection (display name + id). Credentials stay in the vault."
-        : type === NOTIFICATION_WEBHOOK_TYPE
-          ? "Published webhook connection. Host, TLS, redirect, and destination-IP policy are pinned on the connection — never a URL."
-          : "Published HTTP connection. Host, method, path prefix, TLS, redirect, and destination-IP policy are pinned — never a URL.",
-  };
-  const policyId: HttpNotificationWithField = {
-    name: "policyId",
-    kind: "uuid",
-    label: "Policy",
-    controlHint: "uuid",
-    advanced: true,
-    description: `Optional published kind=${type === HTTP_REQUEST_TYPE ? "http" : "notification"} policy UUID.`,
-  };
-  if (type === HTTP_REQUEST_TYPE) {
-    return [
-      connection,
-      {
-        name: "method",
-        kind: "enum",
-        enum: [...HTTP_METHODS],
+  return overlayHttpNotificationFields(engineNode.allowedWith, type);
+}
+
+
+function httpNotificationFieldChrome(
+  name: string,
+  type: string,
+): Partial<HttpNotificationWithField> {
+  switch (name) {
+    case "connectionId":
+      return { label: "Connection", controlHint: "uuid" };
+    case "method":
+      return {
         label: "Method",
         controlHint: "enum",
         defaultValue: HTTP_DEFAULT_METHOD,
-        description:
-          "Must be on the pinned connection endpointPolicy.methods. Default GET.",
-      },
-      {
-        name: "path",
-        kind: "string",
-        label: "Path",
-        controlHint: "text",
-        description:
-          "Relative URL path. Must match endpointPolicy.pathPrefixes. Full URLs are denied.",
-      },
-      {
-        name: "host",
-        kind: "string",
-        label: "Host",
-        controlHint: "text",
-        advanced: true,
-        description:
-          "Optional host from the pinned connection allowlist when the connection has more than one host.",
-      },
-      {
-        name: "timeoutSeconds",
-        kind: "integer",
+        enum: [...HTTP_METHODS],
+      };
+    case "path":
+      return { label: "Path", controlHint: "text" };
+    case "host":
+      return { label: "Host", controlHint: "text", advanced: true };
+    case "timeoutSeconds":
+      return {
         label: "Timeout (seconds)",
         controlHint: "number",
         defaultValue: HTTP_DEFAULT_TIMEOUT_SECONDS,
-        description: `Bounded 1–${HTTP_MAX_TIMEOUT_SECONDS}. Default ${HTTP_DEFAULT_TIMEOUT_SECONDS}.`,
-      },
-      {
-        name: "responseSchemaRef",
-        kind: "uuid",
-        label: "Response schema",
-        controlHint: "uuid",
-        description:
-          "Optional published response-schema pin. Bounds and redacts the provider body.",
-      },
-      policyId,
-    ];
+      };
+    case "responseSchemaRef":
+      return { label: "Response schema", controlHint: "uuid" };
+    case "recipientListId":
+      return { label: "Recipient list", controlHint: "uuid" };
+    case "templateId":
+      return { label: "Message template", controlHint: "uuid" };
+    case "idempotencyKey":
+      return { label: "Idempotency key", controlHint: "text", advanced: true };
+    case "policyId":
+      return { label: "Policy", controlHint: "uuid", advanced: true };
+    default:
+      void type;
+      return {};
   }
-  if (type === NOTIFICATION_EMAIL_TYPE) {
-    return [
-      connection,
-      {
-        name: "recipientListId",
-        kind: "uuid",
-        required: true,
-        label: "Recipient list",
-        controlHint: "uuid",
-        description:
-          "Published recipient-list revision. Approved emails and domains only — not a free-form To field.",
-      },
-      {
-        name: "templateId",
-        kind: "uuid",
-        required: true,
-        label: "Message template",
-        controlHint: "uuid",
-        description:
-          "Published message-template revision. Body and subject come from the template, not YAML.",
-      },
-      policyId,
-    ];
-  }
-  return [
-    connection,
-    {
-      name: "path",
-      kind: "string",
-      label: "Path",
-      controlHint: "text",
-      defaultValue: HTTP_WEBHOOK_DEFAULT_PATH,
-      description:
-        "Relative path under the pinned webhook host. Default /.",
-    },
-    {
-      name: "host",
-      kind: "string",
-      label: "Host",
-      controlHint: "text",
-      advanced: true,
-      description: "Optional host from the pinned connection allowlist.",
-    },
-    {
-      name: "timeoutSeconds",
-      kind: "integer",
-      label: "Timeout (seconds)",
-      controlHint: "number",
-      defaultValue: HTTP_DEFAULT_TIMEOUT_SECONDS,
-      advanced: true,
-      description: `Bounded 1–${HTTP_MAX_TIMEOUT_SECONDS}. Default ${HTTP_DEFAULT_TIMEOUT_SECONDS}.`,
-    },
-    {
-      name: "idempotencyKey",
-      kind: "string",
-      label: "Idempotency key",
-      controlHint: "text",
-      advanced: true,
-      description:
-        "Optional Idempotency-Key value. Default is the execution correlation id.",
-    },
-    policyId,
-  ];
 }
 
 export function overlayHttpNotificationFields(
   fields: CatalogWithField[],
   type: string,
 ): HttpNotificationWithField[] {
-  const fallback = new Map(
-    httpNotificationNodeWithFields(type).map((field) => [field.name, field]),
-  );
   return fields
     .filter((field) => isExposedHttpNotificationField(field.name))
     .map((field) => {
-      const base = fallback.get(field.name);
+      const chrome = httpNotificationFieldChrome(field.name, type);
       const controlHint =
-        base?.controlHint ??
+        chrome.controlHint ??
         (field.kind === "uuid"
           ? "uuid"
           : field.kind === "integer"
@@ -677,17 +602,17 @@ export function overlayHttpNotificationFields(
         name: field.name,
         kind: field.kind,
         required: field.required === true,
-        enum: field.enum?.length ? field.enum : base?.enum,
-        description: field.description || base?.description || "",
-        label: base?.label || field.name,
+        enum: field.enum?.length ? field.enum : chrome.enum,
+        description: field.description || chrome.description || "",
+        label: chrome.label || field.name,
         advanced:
           field.name === "policyId" ||
           field.name === "host" ||
           field.name === "idempotencyKey" ||
-          base?.advanced,
-        readOnly: base?.readOnly,
+          chrome.advanced,
+        readOnly: chrome.readOnly,
         controlHint,
-        defaultValue: base?.defaultValue,
+        defaultValue: chrome.defaultValue,
       };
     });
 }
@@ -876,9 +801,7 @@ export function validateHttpNotificationConfig(
     return [];
   }
   const errors: string[] = [];
-  if (
-    !isHttpNotificationNodeEnabled(type, context.httpCatalog, context.workflowCatalog)
-  ) {
+  if (httpNotificationGateClosed(context.workflowCatalog, context.httpCatalog)) {
     errors.push(HTTP_INTEGRATION_GATE_MESSAGE);
   }
   if (context.connectionSelectorClosed) {
@@ -1093,54 +1016,50 @@ export function validateHttpNotificationConfig(
 }
 
 export function httpNotificationFallbackNode(type: string): CatalogNode {
-  return HTTP_CONTRACT_FALLBACK[type] ?? thinFallback(type);
+  return {
+    type,
+    phase: CATALOG_PHASE_CORE,
+    title: type,
+    description: ENGINE_CATALOG_UNAVAILABLE_HELP,
+    inputs: [],
+    outputs: [],
+    requiredWith: [],
+    allowedWith: [],
+  };
 }
 
 export function adaptHttpNotificationEntries(
   catalog: WorkflowCatalog | null | undefined,
   httpCatalog?: HttpNotificationCatalog | null,
 ): CatalogNode[] {
-  return httpNotificationLibraryTypes(catalog, httpCatalog).map((type) => {
+  return httpNotificationLibraryTypes(catalog, httpCatalog).flatMap((type) => {
     const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
-    const fallback = httpNotificationFallbackNode(type);
     const engine = httpNotificationNodeContract(type, httpCatalog);
+    if (!listed && !engine) {
+      return [];
+    }
     const engineAllowed = engine?.allowedWith.length
       ? engine.allowedWith
       : undefined;
-    if (!listed) {
-      if (!engine) {
-        return fallback;
-      }
-      return {
-        ...fallback,
-        title: engine.title || fallback.title,
-        description: engine.description || fallback.description,
-        requiredWith: engine.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-        allowedWith: engineAllowed ?? fallback.allowedWith,
-      };
-    }
-    return {
-      ...fallback,
-      ...listed,
-      title: listed.title || engine?.title || fallback.title,
-      description:
-        listed.description || engine?.description || fallback.description,
-      inputs: listed.inputs?.length ? listed.inputs : fallback.inputs,
-      outputs: listed.outputs?.length ? listed.outputs : fallback.outputs,
-      requiredWith: listed.requiredWith?.length
-        ? listed.requiredWith
-        : engine?.requiredWith.length
-          ? engine.requiredWith
-          : fallback.requiredWith,
-      allowedWith: listed.allowedWith?.length
-        ? listed.allowedWith
-        : engineAllowed ?? fallback.allowedWith,
-      policy: listed.policy ?? fallback.policy,
-      bounds: listed.bounds ?? fallback.bounds,
-      redaction: listed.redaction ?? fallback.redaction,
-    };
+    return [
+      {
+        type,
+        phase: listed?.phase ?? CATALOG_PHASE_CORE,
+        title: listed?.title || engine?.title || type,
+        description: listed?.description || engine?.description || "",
+        inputs: listed?.inputs ?? [],
+        outputs: listed?.outputs ?? [],
+        requiredWith: listed?.requiredWith?.length
+          ? listed.requiredWith
+          : engine?.requiredWith ?? [],
+        allowedWith: listed?.allowedWith?.length
+          ? listed.allowedWith
+          : engineAllowed ?? [],
+        policy: listed?.policy ?? null,
+        bounds: listed?.bounds ?? null,
+        redaction: listed?.redaction ?? null,
+      },
+    ];
   });
 }
 
@@ -1148,7 +1067,7 @@ export function parseHttpNotificationCatalog(
   raw: unknown,
 ): HttpNotificationCatalog {
   if (!raw || typeof raw !== "object") {
-    return { ...HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG };
+    return { ...HTTP_NOTIFICATION_UNAVAILABLE_CATALOG };
   }
   const rec = raw as Record<string, unknown>;
   const hasHttpNotificationEngine = Boolean(firstRecord(rec.httpNotificationEngine));
@@ -1199,7 +1118,7 @@ export function parseHttpNotificationCatalog(
     permissions.length === 0 &&
     !integrationGate
   ) {
-    return { ...HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG };
+    return { ...HTTP_NOTIFICATION_UNAVAILABLE_CATALOG };
   }
   const source: HttpNotificationCatalogSource = hasHttpNotificationEngine || hasLegacyEngine
     ? "ops-config-catalog"
@@ -1207,90 +1126,30 @@ export function parseHttpNotificationCatalog(
       ? "http-catalog"
       : nodes.length > 0
         ? "workflow-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
-    nodes: nodes.length
-      ? nodes
-      : HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG.nodes,
-    errors: errors.length ? errors : DEFAULT_HTTP_NOTIFICATION_ERRORS,
+    nodes,
+    errors,
     policy: policy ?? DEFAULT_HTTP_POLICY,
-    permissions: permissions.length
-      ? permissions
-      : [...HTTP_NOTIFICATION_PERMISSIONS],
+    permissions,
     integrationGate,
-    notes:
-      String(engineBlob.notes ?? rec.notes ?? "").trim() ||
-      (source === "contract-fallback"
-        ? HTTP_CONTRACT_FALLBACK_HELP
-        : undefined),
+    notes: String(engineBlob.notes ?? rec.notes ?? "").trim() || undefined,
   };
 }
 
-export const HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG: HttpNotificationCatalog =
-  {
-    source: "contract-fallback",
-    nodes: [
-      {
-        type: HTTP_REQUEST_TYPE,
-        title: "HTTP request",
-        description:
-          "Call an approved HTTP API through a pinned connection. Host, method, path, TLS, redirect, and destination-IP policy stay on the connection.",
-        permissions: [
-          "workflow.execute",
-          "http.request",
-          "connection.use",
-          "responseSchema.use",
-        ],
-        requiredWith: ["connectionId"],
-        allowedWith: [],
-        outputs: ["result"],
-        sideEffects: true,
-        retrySafe: false,
-        defaultMaxAttempts: 1,
-      },
-      {
-        type: NOTIFICATION_WEBHOOK_TYPE,
-        title: "Notification webhook",
-        description:
-          "Deliver a safe event to a pinned webhook connection. No free-form URL.",
-        permissions: [
-          "workflow.execute",
-          "notification.webhook",
-          "connection.use",
-        ],
-        requiredWith: ["connectionId"],
-        allowedWith: [],
-        outputs: ["result"],
-        sideEffects: true,
-        retrySafe: false,
-        defaultMaxAttempts: 1,
-      },
-      {
-        type: NOTIFICATION_EMAIL_TYPE,
-        title: "Notification email",
-        description:
-          "Send mail through a pinned SMTP connection using approved recipient-list and template revisions.",
-        permissions: [
-          "workflow.execute",
-          "notification.email",
-          "connection.use",
-          "recipientList.use",
-          "messageTemplate.use",
-        ],
-        requiredWith: ["connectionId", "recipientListId", "templateId"],
-        allowedWith: [],
-        outputs: ["result"],
-        sideEffects: true,
-        retrySafe: false,
-        defaultMaxAttempts: 1,
-      },
-    ],
-    errors: DEFAULT_HTTP_NOTIFICATION_ERRORS,
-    policy: DEFAULT_HTTP_POLICY,
-    permissions: [...HTTP_NOTIFICATION_PERMISSIONS],
-    notes: HTTP_CONTRACT_FALLBACK_HELP,
-  };
+export const HTTP_NOTIFICATION_UNAVAILABLE_CATALOG: HttpNotificationCatalog = {
+  source: CATALOG_SOURCE_UNAVAILABLE,
+  nodes: [],
+  errors: [],
+  policy: DEFAULT_HTTP_POLICY,
+  permissions: [],
+  notes: ENGINE_CATALOG_UNAVAILABLE_HELP,
+};
+
+/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
+export const HTTP_NOTIFICATION_CONTRACT_FALLBACK_CATALOG =
+  HTTP_NOTIFICATION_UNAVAILABLE_CATALOG;
 
 /**
  * Extra delivery keys stripped from HTTP/notification execution
@@ -1356,205 +1215,6 @@ function isHttpDeliverySecretKey(key: string): boolean {
     (item) => item.toLowerCase().replace(/[-_]/g, "") === compact,
   );
 }
-
-function inherit(
-  name: string,
-  kind: string,
-  required: boolean,
-  description: string,
-): CatalogPort {
-  return {
-    name,
-    kind,
-    required,
-    classification: "internal",
-    maxBytes: 16 * 1024,
-    description,
-  };
-}
-
-function httpPolicy(): CatalogNodePolicy {
-  return {
-    permissions: [
-      "workflow.execute",
-      "http.request",
-      "connection.use",
-      "responseSchema.use",
-    ],
-    retrySafe: false,
-    sideEffects: true,
-    idempotent: false,
-    cancellation: "abort-request",
-    verification: "e10.4-stub",
-    defaultMaxAttempts: 1,
-  };
-}
-
-function webhookPolicy(): CatalogNodePolicy {
-  return {
-    permissions: [
-      "workflow.execute",
-      "notification.webhook",
-      "connection.use",
-    ],
-    retrySafe: false,
-    sideEffects: true,
-    idempotent: true,
-    cancellation: "abort-delivery",
-    verification: "e10.4-stub",
-    defaultMaxAttempts: 1,
-  };
-}
-
-function emailPolicy(): CatalogNodePolicy {
-  return {
-    permissions: [
-      "workflow.execute",
-      "notification.email",
-      "connection.use",
-      "recipientList.use",
-      "messageTemplate.use",
-    ],
-    retrySafe: false,
-    sideEffects: true,
-    idempotent: true,
-    cancellation: "abort-delivery",
-    verification: "e10.4-stub",
-    defaultMaxAttempts: 1,
-  };
-}
-
-function defaultBounds(): CatalogNodeBounds {
-  return {
-    maxInputBytes: 16 * 1024,
-    maxOutputBytes: 64 * 1024,
-    maxWithBytes: 16 * 1024,
-    maxAggregationItems: 32,
-    maxDurationSeconds: HTTP_MAX_TIMEOUT_SECONDS,
-  };
-}
-
-function redaction(auditFields: string[]): CatalogRedaction {
-  return {
-    auditFields,
-    redactInputs: true,
-    redactOutputs: true,
-    strategy: "drop-secrets",
-  };
-}
-
-function fieldsToAllowed(type: string): CatalogWithField[] {
-  return httpNotificationNodeWithFields(type).map((field) => ({
-    name: field.name,
-    kind: field.kind,
-    required: field.required,
-    enum: field.enum,
-    description: field.description,
-  }));
-}
-
-function thinFallback(type: string): CatalogNode {
-  return {
-    type,
-    phase: CATALOG_PHASE_CORE,
-    title: type,
-    description: HTTP_PIN_ONLY_HELP,
-    inputs: [],
-    outputs: [],
-    requiredWith: ["connectionId"],
-    allowedWith: fieldsToAllowed(type),
-  };
-}
-
-const resultPort = inherit(
-  "result",
-  "object",
-  false,
-  "Redacted delivery result. Never includes credentials or raw provider bodies.",
-);
-
-const HTTP_CONTRACT_FALLBACK: Record<string, CatalogNode> = {
-  "http.request": {
-    type: HTTP_REQUEST_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "HTTP request",
-    description:
-      "Call an approved HTTP API through a pinned connection. Host, method, path, TLS, redirect, and destination-IP policy stay on the connection.",
-    inputs: [
-      inherit(
-        "parameters",
-        "object",
-        false,
-        "Optional typed parameters. Secret-bearing keys need connection-policy authorization.",
-      ),
-      inherit("body", "object", false, "Optional request body matching the connection schema."),
-    ],
-    outputs: [
-      resultPort,
-      inherit("status", "integer", false, "HTTP status code."),
-    ],
-    requiredWith: ["connectionId"],
-    allowedWith: fieldsToAllowed(HTTP_REQUEST_TYPE),
-    policy: httpPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction([
-      "connectionId",
-      "method",
-      "path",
-      "status",
-      "responseSchemaRef",
-      "correlationId",
-    ]),
-  },
-  "notification.webhook": {
-    type: NOTIFICATION_WEBHOOK_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "Notification webhook",
-    description:
-      "Deliver a safe event to a pinned webhook connection. No free-form URL.",
-    inputs: [
-      inherit(
-        "payload",
-        "object",
-        false,
-        "Bounded event payload. Secret-shaped fields are dropped.",
-      ),
-    ],
-    outputs: [resultPort],
-    requiredWith: ["connectionId"],
-    allowedWith: fieldsToAllowed(NOTIFICATION_WEBHOOK_TYPE),
-    policy: webhookPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction(["connectionId", "status", "correlationId"]),
-  },
-  "notification.email": {
-    type: NOTIFICATION_EMAIL_TYPE,
-    phase: CATALOG_PHASE_CORE,
-    title: "Notification email",
-    description:
-      "Send mail through a pinned SMTP connection using approved recipient-list and template revisions.",
-    inputs: [
-      inherit(
-        "inputs",
-        "object",
-        false,
-        "Typed template inputs. Sensitive values are excluded by default.",
-      ),
-    ],
-    outputs: [resultPort],
-    requiredWith: ["connectionId", "recipientListId", "templateId"],
-    allowedWith: fieldsToAllowed(NOTIFICATION_EMAIL_TYPE),
-    policy: emailPolicy(),
-    bounds: defaultBounds(),
-    redaction: redaction([
-      "connectionId",
-      "recipientListId",
-      "templateId",
-      "status",
-      "correlationId",
-    ]),
-  },
-};
 
 function parseEngineNode(raw: unknown): HttpNotificationEngineNode | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

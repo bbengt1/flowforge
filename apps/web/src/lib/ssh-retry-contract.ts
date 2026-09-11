@@ -71,7 +71,7 @@ export const SSH_RETRY_CONTRACT_FALLBACK_HELP =
 export type SshRetryCatalogSource =
   | "ssh-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type SshRetryErrorShape = {
   code: string;
@@ -201,7 +201,7 @@ export const DEFAULT_SSH_RETRY_ERRORS: SshRetryErrorShape[] = [
 ];
 
 export const SSH_RETRY_CONTRACT_FALLBACK_CATALOG: SshRetryCatalog = {
-  source: "contract-fallback",
+  source: "unavailable",
   defaultMaxAttempts: SSH_DEFAULT_RETRY_MAX_ATTEMPTS,
   maxAttempts: SSH_MAX_RETRY_ATTEMPTS,
   retrySafeFlag: SSH_RETRY_SAFE_FLAG,
@@ -338,7 +338,7 @@ export function parseSshRetryCatalog(raw: unknown): SshRetryCatalog {
       ? "ops-config-catalog"
       : hasRetry
         ? "ssh-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
     defaultMaxAttempts: finiteInteger(
@@ -364,7 +364,7 @@ export function parseSshRetryCatalog(raw: unknown): SshRetryCatalog {
     errors: errors.length ? overlayRetryErrorMeanings(errors) : DEFAULT_SSH_RETRY_ERRORS,
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (source === "contract-fallback" ? SSH_RETRY_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? SSH_RETRY_CONTRACT_FALLBACK_HELP : undefined),
   };
 }
 

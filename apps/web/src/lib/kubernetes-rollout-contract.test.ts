@@ -148,8 +148,9 @@ describe("kubernetes rollout contract adapter", () => {
     assert.deepEqual([...rolloutKindsFromCatalog(live)], ["Deployment"]);
 
     const fallback = observationModeFromCatalog(null);
-    assert.equal(fallback.token, "observed");
-    assert.equal(fallback.source, "contract-fallback");
+    assert.equal(fallback.token, "");
+    assert.equal(fallback.live, false);
+    assert.equal(fallback.source, "unavailable");
   });
 
   it("parses result.observation, status.progress[], and result.audit from #79", () => {

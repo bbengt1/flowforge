@@ -96,7 +96,7 @@ export const SSH_KEY_ONLY_HELP =
   "Key-only authentication. Bind a workspace ssh_private_key vault credential. Password authentication is denied in MVP.";
 
 export const SSH_CONTRACT_FALLBACK_HELP =
-  "Using local #86 catalog defaults because GET /ssh/catalog was unavailable. Collections stay on /ssh-targets and /command-profiles.";
+  "GET /ssh/catalog was empty or unauthorized. UI fails closed — no invented SSH engine toggles. Collections stay on /ssh-targets and /command-profiles.";
 
 export const SSH_FINGERPRINT_HELP =
   "sha256:<64 hex> or OpenSSH SHA256:<base64>. The API canonicalizes to sha256:<hex>.";
@@ -114,26 +114,25 @@ export const SSH_SAFETY_NOTES = [
 ] as const;
 
 /**
- * Local #86 defaults when GET /ssh/catalog is unavailable.
- * Overlay catalog `sshEngine` / GET /ssh/catalog when present.
+ * Empty fail-closed catalog when GET /ssh/catalog is missing or 403.
+ * Secret-field names stay so unexpected plaintext can still be stripped.
  */
-export const SSH_CONTRACT_FALLBACK_CATALOG: SshEngineCatalog = {
-  source: "contract-fallback",
+export const SSH_ENGINE_UNAVAILABLE_CATALOG: SshEngineCatalog = {
+  source: "unavailable",
   credentialType: SSH_CREDENTIAL_TYPE,
-  allowedCredentialTypes: [SSH_CREDENTIAL_TYPE],
+  allowedCredentialTypes: [],
   credentialSecretFields: [...SSH_SECRET_FIELD_NAMES],
   defaultPort: SSH_DEFAULT_PORT,
-  authMethods: ["publickey"],
+  authMethods: [],
   denied: SSH_DENIED_FEATURES,
   templateForbidden: SSH_TEMPLATE_FORBIDDEN_TOKENS,
-  parameterTypes: SSH_PARAMETER_TYPES,
-  retrySafeExposed: true,
-  retryNote: SSH_RETRY_SAFE_HELP,
-  renderOwner: "reviewed-profile-renderer",
-  quoting: "posix-single-quotes",
-  placeholderSyntax: "{name}",
+  parameterTypes: [],
+  retrySafeExposed: false,
   notes: SSH_CONTRACT_FALLBACK_HELP,
 };
+
+/** @deprecated R3.4 — empty fail-closed catalog. Kept for import compatibility. */
+export const SSH_CONTRACT_FALLBACK_CATALOG = SSH_ENGINE_UNAVAILABLE_CATALOG;
 
 export function sshTargetsPath(): string {
   return `/${SSH_TARGET_UI_COLLECTION}`;

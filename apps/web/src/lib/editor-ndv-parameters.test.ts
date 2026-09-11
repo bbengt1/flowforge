@@ -147,7 +147,13 @@ describe("R3.1 NDV type-specific parameter editors", () => {
 
   it("exposes type-specific with fields and drops pins, credentials, and secrets", () => {
     const kubernetes = ndvParameterFields(
-      entry("kubernetes.apply"),
+      entry("kubernetes.apply", {
+        allowedWith: [
+          { name: "namespace", kind: "string", required: true },
+          { name: "manifests", kind: "string" },
+          { name: "dryRun", kind: "enum", enum: ["client", "server"] },
+        ],
+      }),
       "kubernetes.apply",
     );
     assert.ok(kubernetes.some((item) => item.name === "namespace"));
@@ -159,7 +165,15 @@ describe("R3.1 NDV type-specific parameter editors", () => {
     );
     assert.equal(kubernetes.some((item) => item.name === "kubeconfig"), false);
 
-    const ssh = ndvParameterFields(entry("ssh.run"), "ssh.run");
+    const ssh = ndvParameterFields(
+      entry("ssh.run", {
+        allowedWith: [
+          { name: "timeoutSeconds", kind: "integer" },
+          { name: "parameters", kind: "object" },
+        ],
+      }),
+      "ssh.run",
+    );
     assert.ok(ssh.some((item) => item.name === "timeoutSeconds"));
     assert.ok(ssh.some((item) => item.name === "parameters"));
     assert.equal(ssh.some((item) => item.name === "sshTargetId"), false);
@@ -167,7 +181,16 @@ describe("R3.1 NDV type-specific parameter editors", () => {
     assert.equal(ssh.some((item) => item.name === "credentialId"), false);
     assert.equal(ssh.some((item) => item.name === "privateKey"), false);
 
-    const http = ndvParameterFields(entry("http.request"), "http.request");
+    const http = ndvParameterFields(
+      entry("http.request", {
+        allowedWith: [
+          { name: "method", kind: "string" },
+          { name: "path", kind: "string" },
+          { name: "timeoutSeconds", kind: "integer" },
+        ],
+      }),
+      "http.request",
+    );
     assert.ok(http.some((item) => item.name === "method"));
     assert.ok(http.some((item) => item.name === "path"));
     assert.ok(http.some((item) => item.name === "timeoutSeconds"));

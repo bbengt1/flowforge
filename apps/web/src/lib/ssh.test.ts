@@ -411,12 +411,11 @@ describe("authorized SSH selectors", () => {
 });
 
 describe("ssh catalog (#86)", () => {
-  it("uses marked contract-fallback until sshEngine or GET /ssh/catalog is present", () => {
+  it("fails closed until sshEngine or GET /ssh/catalog is present", () => {
     const fallback = parseSshEngineCatalog({ kinds: [] });
-    assert.equal(fallback.source, "contract-fallback");
-    assert.equal(fallback.retrySafeExposed, true);
-    assert.deepEqual(sshCredentialTypes(fallback), ["ssh_private_key"]);
-    assert.equal(fallback.authMethods.includes("publickey"), true);
+    assert.equal(fallback.source, "unavailable");
+    assert.equal(fallback.retrySafeExposed, false);
+    assert.deepEqual(fallback.authMethods, []);
     assert.ok(fallback.denied.some((item) => /password/i.test(item)));
 
     const fromKinds = parseSshEngineCatalog({
@@ -445,8 +444,8 @@ describe("ssh catalog (#86)", () => {
     assert.equal(engine.source, "ops-config-catalog");
     assert.equal(engine.retrySafeExposed, true);
     assert.equal(engine.notes, "from catalog");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
-    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, true);
+    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
+    assert.equal(SSH_CONTRACT_FALLBACK_CATALOG.retrySafeExposed, false);
   });
 
   it("parses the #86 GET /ssh/catalog shape as ssh-catalog", () => {

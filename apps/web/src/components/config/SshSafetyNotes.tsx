@@ -1,3 +1,4 @@
+import { isInventedCatalogSource } from "@/lib/catalog-fail-closed";
 import { SSH_CONTRACT_FALLBACK_HELP } from "@/lib/ssh-contract";
 import { sshSafetyNotes } from "@/lib/ssh";
 import type { SshEngineCatalog } from "@/lib/ssh-types";
@@ -13,7 +14,7 @@ export function SshSafetyNotes({ extraNotes, catalog }: SshSafetyNotesProps) {
     ...(extraNotes ?? []).filter((note) => note.trim()),
     ...(catalog?.notes ? [catalog.notes] : []),
   ];
-  const fallback = !catalog || catalog.source === "contract-fallback";
+  const fallback = !catalog || isInventedCatalogSource(catalog.source);
   return (
     <aside
       aria-label="SSH safety notes"

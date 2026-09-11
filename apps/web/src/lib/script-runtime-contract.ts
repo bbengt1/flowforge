@@ -135,7 +135,7 @@ export type ScriptRuntimeEgress = {
 };
 
 export type ScriptRuntimeProfileMap = {
-  source: "scripts-catalog" | "ops-config-catalog" | "contract-fallback";
+  source: "scripts-catalog" | "ops-config-catalog" | "unavailable";
   engine: typeof SCRIPT_RUNTIME_PROFILE_ENGINE;
   languages: readonly ScriptRuntimeLanguage[];
   requiredSpec: readonly string[];
@@ -156,12 +156,12 @@ const LIMIT_KEYS = Object.keys(
 ) as ScriptRuntimeLimitKey[];
 
 export const SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK: ScriptRuntimeProfileMap = {
-  source: "contract-fallback",
+  source: "unavailable",
   engine: SCRIPT_RUNTIME_PROFILE_ENGINE,
   languages: SCRIPT_RUNTIME_LANGUAGES,
   requiredSpec: ["language", "imageDigest", "dependencyLockDigest", "limits"],
   allowedSpec: SCRIPT_RUNTIME_ALLOWED_SPEC_KEYS,
-  egressExposed: true,
+  egressExposed: false,
   isolation: {
     ...DEFAULT_SCRIPT_ISOLATION,
     note: SCRIPT_RUNTIME_ISOLATION_HELP,
@@ -224,14 +224,16 @@ export function parseRuntimeProfileMap(raw: unknown): ScriptRuntimeProfileMap {
     isScriptRuntimeLanguage,
   );
   const isolation = catalog.isolation ?? SCRIPT_RUNTIME_PROFILE_MAP_FALLBACK.isolation;
-  const egressExposed = runtimeProfileEgressExposed(declared, allowedSpec, isolation);
   const thin =
-    catalog.source === "contract-fallback" &&
+    catalog.source === "unavailable" &&
     Object.keys(declared).length === 0 &&
     !rec.scriptEngine;
+  const egressExposed = thin
+    ? false
+    : runtimeProfileEgressExposed(declared, allowedSpec);
   return {
     source: thin
-      ? "contract-fallback"
+      ? "unavailable"
       : catalog.source === "ops-config-catalog"
         ? "ops-config-catalog"
         : "scripts-catalog",
@@ -551,15 +553,11 @@ function limitGap(key: ScriptRuntimeLimitKey, value: unknown): string | null {
 function runtimeProfileEgressExposed(
   declared: Record<string, unknown>,
   allowedSpec: string[],
-  isolation: ScriptIsolationRules,
 ): boolean {
-  if (declared.egressExposed === false) {
-    return false;
+  if (declared.egressExposed === true) {
+    return true;
   }
-  if (isolation.defaultDenyEgress === false && allowedSpec.length === 0) {
-    return false;
-  }
-  return true;
+  return allowedSpec.includes("egress");
 }
 
 function stringList(value: unknown): string[] {

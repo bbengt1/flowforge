@@ -5,33 +5,25 @@
 
 import {
   adaptKubernetesNodeEntries,
-  hasKubernetesNodeContract,
   isKubernetesConfigurableType,
-  kubernetesFallbackNode,
   kubernetesLibraryTypes,
 } from "./kubernetes-node-contract.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   adaptSshNodeEntries,
-  hasSshNodeContract,
   isSshConfigurableType,
-  sshFallbackNode,
   sshLibraryTypes,
   type SshNodeCatalog,
 } from "./ssh-node-contract.ts";
 import {
   adaptScriptNodeEntries,
-  hasScriptNodeContract,
   isScriptConfigurableType,
-  scriptFallbackNode,
   scriptLibraryTypes,
   type ScriptNodeCatalog,
 } from "./script-contract.ts";
 import {
   HTTP_NOTIFICATION_ACTION_TYPES,
   adaptHttpNotificationEntries,
-  hasHttpNotificationContract,
-  httpNotificationFallbackNode,
   httpNotificationLibraryTypes,
   isHttpConfigurableType,
   isHttpNotificationNodeEnabled,
@@ -152,7 +144,11 @@ export function rejectDisabledActionType(
     };
   }
   const listed = (catalog?.nodes ?? []).find((item) => item.type === type);
-  if (isHttpConfigurableType(type) && catalog && !isHttpNotificationNodeEnabled(type, null, catalog)) {
+  if (
+    isHttpConfigurableType(type) &&
+    (catalog?.rules?.integrationActionsEnabled === false ||
+      catalog?.integrationGate?.enabled === false)
+  ) {
     return {
       ok: false,
       reason: `${type} is disabled by the catalog integration gate.`,
@@ -187,51 +183,33 @@ function fromCatalogNode(node: CatalogNode): ActionLibraryEntry {
         nodes: [node],
       }).find((entry) => entry.type === node.type)
     : undefined;
-  const k8sFallback = isKubernetesConfigurableType(node.type)
-    ? kubernetesFallbackNode(node.type)
-    : undefined;
-  const sshFallback = isSshConfigurableType(node.type)
-    ? sshFallbackNode(node.type)
-    : undefined;
-  const scriptFallback = isScriptConfigurableType(node.type)
-    ? scriptFallbackNode(node.type)
-    : undefined;
-  const httpFallback = isHttpConfigurableType(node.type)
-    ? httpNotificationFallbackNode(node.type)
-    : undefined;
-  const familyFallback = k8sFallback ?? sshFallback ?? scriptFallback ?? httpFallback;
-  const fallbackName = coreFallback?.name || familyFallback?.title;
-  const fallbackDescription = coreFallback?.description || familyFallback?.description || "";
-  const k8sCatalog = k8sFallback ? hasKubernetesNodeContract(node) : false;
-  const sshCatalogued = sshFallback ? hasSshNodeContract(node) : false;
-  const scriptCatalogued = scriptFallback ? hasScriptNodeContract(node) : false;
-  const httpCatalogued = httpFallback ? hasHttpNotificationContract(node) : false;
+  const engineFamily =
+    isKubernetesConfigurableType(node.type) ||
+    isSshConfigurableType(node.type) ||
+    isScriptConfigurableType(node.type) ||
+    isHttpConfigurableType(node.type);
+  const fallbackName = coreFallback?.name;
+  const fallbackDescription = coreFallback?.description || "";
   return {
     type: node.type,
     name: node.title || fallbackName || node.type,
     description: node.description || fallbackDescription,
     phase: isCorePhase(node.phase) ? "core" : String(node.phase),
     family: actionFamilyForType(node.type),
-    inputs: node.inputs?.length ? node.inputs : coreFallback?.inputs ?? familyFallback?.inputs ?? [],
-    outputs: node.outputs?.length ? node.outputs : coreFallback?.outputs ?? familyFallback?.outputs ?? [],
+    inputs: node.inputs?.length ? node.inputs : coreFallback?.inputs ?? [],
+    outputs: node.outputs?.length ? node.outputs : coreFallback?.outputs ?? [],
     requiredWith: node.requiredWith?.length
       ? node.requiredWith
-      : coreFallback?.requiredWith ?? familyFallback?.requiredWith ?? [],
+      : coreFallback?.requiredWith ?? [],
     allowedWith: node.allowedWith?.length
       ? node.allowedWith
-      : coreFallback?.allowedWith ?? familyFallback?.allowedWith ?? [],
-    policy: node.policy ?? coreFallback?.policy ?? familyFallback?.policy ?? null,
-    bounds: node.bounds ?? coreFallback?.bounds ?? familyFallback?.bounds ?? null,
-    redaction: node.redaction ?? coreFallback?.redaction ?? familyFallback?.redaction ?? null,
-    source:
-      (k8sFallback && k8sCatalog) ||
-      (sshFallback && sshCatalogued) ||
-      (scriptFallback && scriptCatalogued) ||
-      (httpFallback && httpCatalogued) ||
-      coreFallback?.source === "catalog" ||
-      (!familyFallback && Boolean(node.title || node.policy))
-        ? "catalog"
-        : "contract-fallback",
+      : coreFallback?.allowedWith ?? [],
+    policy: node.policy ?? coreFallback?.policy ?? null,
+    bounds: node.bounds ?? coreFallback?.bounds ?? null,
+    redaction: node.redaction ?? coreFallback?.redaction ?? null,
+    source: engineFamily || coreFallback?.source === "catalog" || Boolean(node.title || node.policy)
+      ? "catalog"
+      : "contract-fallback",
     enabled: isCatalogImplementationEnabled(node),
     placeable: !isTriggerActionType(node.type),
   };
@@ -251,41 +229,13 @@ export function adaptActionLibrary(
   const enabled = filterEnabledActionNodes(catalog?.nodes);
   const byType = new Map(enabled.map((item) => [item.type, fromCatalogNode(item)]));
   if (!catalog) {
-    return sortLibraryEntries([
-      ...adaptCoreNeutralPalette(null).map((entry) => ({
+    return sortLibraryEntries(
+      adaptCoreNeutralPalette(null).map((entry) => ({
         ...entry,
         type: entry.type,
         enabled: true,
         placeable: true,
       })),
-      ...adaptKubernetesNodeEntries(null, engineCatalog).map((node) => ({
-        ...fromCatalogNode(node),
-        source: "contract-fallback" as const,
-      })),
-      ...adaptSshNodeEntries(null, sshCatalog).map((node) => ({
-        ...fromCatalogNode(node),
-        source: sshCatalog?.source === "contract-fallback" || !sshCatalog
-          ? ("contract-fallback" as const)
-          : ("catalog" as const),
-      })),
-      ...adaptScriptNodeEntries(null, scriptCatalog).map((node) => ({
-        ...fromCatalogNode(node),
-        source:
-          scriptCatalog && scriptCatalog.source !== "contract-fallback"
-            ? ("catalog" as const)
-            : ("contract-fallback" as const),
-      })),
-      ...adaptHttpNotificationEntries(null, httpCatalog).map((node) => ({
-        ...fromCatalogNode(node),
-        source:
-          httpCatalog && httpCatalog.source !== "contract-fallback"
-            ? ("catalog" as const)
-            : ("contract-fallback" as const),
-      })),
-    ]).filter(
-      (entry) =>
-        !isHttpConfigurableType(entry.type) ||
-        isHttpNotificationNodeEnabled(entry.type, httpCatalog, null),
     );
   }
   for (const type of CORE_NEUTRAL_NODE_TYPES) {
@@ -297,28 +247,16 @@ export function adaptActionLibrary(
     }
   }
   for (const node of adaptKubernetesNodeEntries(catalog, engineCatalog)) {
-    mergeLibraryNode(byType, node, engineCatalog ? "catalog" : "contract-fallback");
+    mergeLibraryNode(byType, node, "catalog");
   }
   for (const node of adaptSshNodeEntries(catalog, sshCatalog)) {
-    const source =
-      sshCatalog && sshCatalog.source !== "contract-fallback"
-        ? "catalog"
-        : "contract-fallback";
-    mergeLibraryNode(byType, node, source);
+    mergeLibraryNode(byType, node, "catalog");
   }
   for (const node of adaptScriptNodeEntries(catalog, scriptCatalog)) {
-    const source =
-      scriptCatalog && scriptCatalog.source !== "contract-fallback"
-        ? "catalog"
-        : "contract-fallback";
-    mergeLibraryNode(byType, node, source);
+    mergeLibraryNode(byType, node, "catalog");
   }
   for (const node of adaptHttpNotificationEntries(catalog, httpCatalog)) {
-    const source =
-      httpCatalog && httpCatalog.source !== "contract-fallback"
-        ? "catalog"
-        : "contract-fallback";
-    mergeLibraryNode(byType, node, source);
+    mergeLibraryNode(byType, node, "catalog");
   }
   for (const type of HTTP_NOTIFICATION_ACTION_TYPES) {
     if (!isHttpNotificationNodeEnabled(type, httpCatalog, catalog)) {

@@ -136,8 +136,8 @@ describe("script runtime contract adapter", () => {
 
   it("accepts optional #98 egress destinations and rejects metadata/loopback/*", () => {
     const fallback = parseRuntimeProfileMap(null);
-    assert.equal(fallback.source, "contract-fallback");
-    assert.equal(fallback.egressExposed, true);
+    assert.equal(fallback.source, "unavailable");
+    assert.equal(fallback.egressExposed, false);
     assert.match(fallback.notes, /e92-#98/);
     assert.equal(deniedEgressHost("169.254.169.254"), true);
     assert.equal(deniedEgressHost("localhost"), true);

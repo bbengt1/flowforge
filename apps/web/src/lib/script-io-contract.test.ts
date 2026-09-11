@@ -56,7 +56,7 @@ describe("script I/O contract adapter", () => {
     assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /e93-#101/);
     assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /result\.retry\.allowed/);
     assert.match(SCRIPT_IO_CONTRACT_FALLBACK_HELP, /409 retry-denied/);
-    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.source, "contract-fallback");
+    assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.source, "unavailable");
     assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.retry.blindRetry, false);
     assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.plaintextCredentials, false);
     assert.equal(SCRIPT_IO_CONTRACT_FALLBACK_CATALOG.io.validateBeforeInject, true);
@@ -270,7 +270,7 @@ describe("script I/O contract adapter", () => {
     assert.equal(parsed.errors[0]?.code, "invalid-schema");
 
     const empty = parseScriptIoCatalog({});
-    assert.equal(empty.source, "contract-fallback");
+    assert.equal(empty.source, "unavailable");
     assert.equal(empty.notes, SCRIPT_IO_CONTRACT_FALLBACK_HELP);
     assert.equal(empty.io.handleTTLSeconds, 60);
   });

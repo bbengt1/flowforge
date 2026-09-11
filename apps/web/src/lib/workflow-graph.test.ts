@@ -141,34 +141,22 @@ describe("action library catalog filter", () => {
     assert.equal(rejectDisabledActionType("flow.switch", catalog).ok, true);
     assert.equal(rejectDisabledActionType("kubernetes.apply", catalog).ok, true);
     const fallback = adaptActionLibrary(null);
-    assert.equal(fallback.some((item) => item.type === "kubernetes.apply"), true);
-    assert.equal(fallback.some((item) => item.type === "kubernetes.get"), true);
-    assert.equal(fallback.some((item) => item.type === "kubernetes.list"), true);
-    assert.equal(fallback.some((item) => item.type === "kubernetes.rolloutStatus"), true);
-    assert.equal(fallback.some((item) => item.type === "ssh.run"), true);
-    assert.equal(
-      fallback.find((item) => item.type === "ssh.run")?.source,
-      "contract-fallback",
-    );
-    assert.equal(fallback.some((item) => item.type === "script.python"), true);
-    assert.equal(fallback.some((item) => item.type === "script.go"), true);
-    assert.equal(
-      fallback.find((item) => item.type === "script.python")?.source,
-      "contract-fallback",
-    );
-    assert.equal(rejectDisabledActionType("kubernetes.apply", null).ok, true);
-    assert.equal(rejectDisabledActionType("ssh.run", null).ok, true);
-    assert.equal(rejectDisabledActionType("script.python", null).ok, true);
-    assert.equal(rejectDisabledActionType("script.go", null).ok, true);
-    assert.equal(fallback.some((item) => item.type === "http.request"), true);
-    assert.equal(fallback.some((item) => item.type === "notification.webhook"), true);
-    assert.equal(fallback.some((item) => item.type === "notification.email"), true);
-    assert.equal(
-      fallback.find((item) => item.type === "http.request")?.source,
-      "contract-fallback",
-    );
-    assert.equal(rejectDisabledActionType("http.request", null).ok, true);
-    assert.equal(rejectDisabledActionType("notification.email", null).ok, true);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.apply"), false);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.get"), false);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.list"), false);
+    assert.equal(fallback.some((item) => item.type === "kubernetes.rolloutStatus"), false);
+    assert.equal(fallback.some((item) => item.type === "ssh.run"), false);
+    assert.equal(fallback.some((item) => item.type === "script.python"), false);
+    assert.equal(fallback.some((item) => item.type === "script.go"), false);
+    assert.equal(rejectDisabledActionType("kubernetes.apply", null).ok, false);
+    assert.equal(rejectDisabledActionType("ssh.run", null).ok, false);
+    assert.equal(rejectDisabledActionType("script.python", null).ok, false);
+    assert.equal(rejectDisabledActionType("script.go", null).ok, false);
+    assert.equal(fallback.some((item) => item.type === "http.request"), false);
+    assert.equal(fallback.some((item) => item.type === "notification.webhook"), false);
+    assert.equal(fallback.some((item) => item.type === "notification.email"), false);
+    assert.equal(rejectDisabledActionType("http.request", null).ok, false);
+    assert.equal(rejectDisabledActionType("notification.email", null).ok, false);
     assert.equal(
       rejectDisabledActionType("http.request", {
         apiVersion: "flowforge/v1",

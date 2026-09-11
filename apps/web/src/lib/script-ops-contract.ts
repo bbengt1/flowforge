@@ -85,7 +85,7 @@ export const SCRIPT_OPS_AUDIT_SECRET_FREE_HELP =
 export type ScriptOpsCatalogSource =
   | "scripts-catalog"
   | "ops-config-catalog"
-  | "contract-fallback";
+  | "unavailable";
 
 export type ScriptRevocationRules = {
   permission: string;
@@ -196,9 +196,12 @@ export const DEFAULT_SCRIPT_EMERGENCY_STOP: ScriptEmergencyStopRules = {
 };
 
 export const SCRIPT_OPS_CONTRACT_FALLBACK_CATALOG: ScriptOpsCatalog = {
-  source: "contract-fallback",
+  source: "unavailable",
   revocation: DEFAULT_SCRIPT_REVOCATION,
-  emergencyStop: DEFAULT_SCRIPT_EMERGENCY_STOP,
+  emergencyStop: {
+    ...DEFAULT_SCRIPT_EMERGENCY_STOP,
+    missingPolicyAllows: false,
+  },
   errors: DEFAULT_SCRIPT_OPS_ERRORS,
   notes: SCRIPT_OPS_CONTRACT_FALLBACK_HELP,
 };
@@ -338,7 +341,7 @@ export function parseScriptOpsCatalog(raw: unknown): ScriptOpsCatalog {
       ? "ops-config-catalog"
       : revocationRaw || stopRaw
         ? "scripts-catalog"
-        : "contract-fallback";
+        : "unavailable";
   return {
     source,
     revocation: parseRevocation(revocationRaw),
@@ -346,7 +349,7 @@ export function parseScriptOpsCatalog(raw: unknown): ScriptOpsCatalog {
     errors: mergeOpsErrors(errors),
     notes:
       String(nested.notes ?? rec.notes ?? "").trim() ||
-      (source === "contract-fallback" ? SCRIPT_OPS_CONTRACT_FALLBACK_HELP : undefined),
+      (source === "unavailable" ? SCRIPT_OPS_CONTRACT_FALLBACK_HELP : undefined),
   };
 }
 
