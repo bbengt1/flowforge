@@ -27,6 +27,7 @@ export const EDITOR_HEADING_FALLBACK = "Workflow editor";
 export const EDITOR_CHROME = {
   yamlHiddenOnFirstPaint: true,
   libraryHiddenOnFirstPaint: false,
+  inspectorHiddenOnFirstPaint: false,
   workflowListInEditor: false,
   createImportOnWorkflowsHome: true,
   publishLastSavedDraftOnly: true,

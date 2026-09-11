@@ -48,6 +48,13 @@ import {
   isInspectorSecretSurfaceName,
 } from "@/lib/editor-inspector";
 import {
+  EDITOR_NDV_HEADING_ID,
+  EDITOR_NDV_SHELL_ID,
+  ndvConversationEyebrow,
+  ndvConversationHelp,
+  ndvConversationTitle,
+} from "@/lib/editor-ndv";
+import {
   editorPathForWorkflow,
   inspectorAddCredentialHref,
   vaultHomeHref,
@@ -152,22 +159,24 @@ export function EditorInspector({
       ? latestStepsByNode(lastRun.detail.steps).get(selectedNodeId)?.id
       : undefined;
   const lastRunPanel = lastRun && (lastRun.detail || lastRun.pending || lastRun.problem) ? (
-    <LastRunIoPanel
-      detail={lastRun.detail}
-      nodeId={selectedNodeId}
-      logs={selectedStepId ? lastRun.logsByStepId?.[selectedStepId] : null}
-      pending={lastRun.pending}
-      problem={lastRun.problem}
-      strippedKeys={lastRun.strippedKeys}
-      onClear={lastRun.onClear}
-    />
+    <div data-ndv-panel="last-run">
+      <LastRunIoPanel
+        detail={lastRun.detail}
+        nodeId={selectedNodeId}
+        logs={selectedStepId ? lastRun.logsByStepId?.[selectedStepId] : null}
+        pending={lastRun.pending}
+        problem={lastRun.problem}
+        strippedKeys={lastRun.strippedKeys}
+        onClear={lastRun.onClear}
+      />
+    </div>
   ) : null;
 
   return (
     <div className="space-y-6">
-      {lastRunPanel}
       {focus === "workflow" ? (
         <>
+          {lastRunPanel}
           <WorkflowInspect yaml={yaml} graph={graph} />
           {workflowAdmin ? (
             <EditorWorkflowTabs
@@ -180,23 +189,47 @@ export function EditorInspector({
         </>
       ) : null}
       {focus === "edge" && selection.kind === "edge" ? (
-        <EdgeInspect graph={graph} from={selection.from} to={selection.to} entries={entries} />
+        <>
+          {lastRunPanel}
+          <EdgeInspect graph={graph} from={selection.from} to={selection.to} entries={entries} />
+        </>
       ) : null}
       {focus === "node" && selectedNode ? (
-        <>
-          <NodeInspector
-            nodes={nodes}
-            selectedId={selectedNode.id}
-            entries={palette}
-            selectedEntry={selectedEntry}
-            pending={pending}
-            canEdit={canEdit}
-            constraint={constraint}
-            showNodeList={false}
-            onSelect={onSelectNode}
-            onApply={onApply}
-            onRename={onRename}
-          />
+        <div
+          id={EDITOR_NDV_SHELL_ID}
+          data-ndv-shell="node"
+          className="space-y-6"
+        >
+          <header className="border-b border-zinc-200 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              {ndvConversationEyebrow("node")}
+            </p>
+            <h2 id={EDITOR_NDV_HEADING_ID} className="text-base font-semibold">
+              {ndvConversationTitle("node", selectedNode)}
+            </h2>
+            <p className="mt-1 font-mono text-xs text-zinc-500">
+              {selectedNode.id} · {selectedNode.type}
+            </p>
+            <p className="mt-2 text-sm text-zinc-600">
+              {ndvConversationHelp("node")}
+            </p>
+          </header>
+          {lastRunPanel}
+          <div data-ndv-panel="parameters">
+            <NodeInspector
+              nodes={nodes}
+              selectedId={selectedNode.id}
+              entries={palette}
+              selectedEntry={selectedEntry}
+              pending={pending}
+              canEdit={canEdit}
+              constraint={constraint}
+              showNodeList={false}
+              onSelect={onSelectNode}
+              onApply={onApply}
+              onRename={onRename}
+            />
+          </div>
           {isScriptConfigurableType(selectedNode.type) ? (
             <ScriptAuthoringPanel
               node={selectedNode}
@@ -229,7 +262,7 @@ export function EditorInspector({
             onAddCredential={canEdit ? onAddCredential : undefined}
             onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
           />
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -382,10 +415,10 @@ function SelectedNodePins({
     isKubernetesActionType(node.type) ||
     isSshConfigurableType(node.type) ||
     isHttpConfigurableType(node.type) ||
-    credentialFields.length > 0 ||
     withFields.length > 0;
+  const showCredentials = credentialFields.length > 0;
 
-  if (!showPins) {
+  if (!showPins && !showCredentials) {
     return null;
   }
 
@@ -395,12 +428,15 @@ function SelectedNodePins({
       : "";
 
   return (
+    <>
+    {showPins ? (
     <section
+      data-ndv-panel="pins"
       aria-labelledby="node-pins-heading"
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <h2 id="node-pins-heading" className="text-base font-semibold">
-        Pins and credentials
+        Pins
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
         Inspector is <span className="font-medium">edit</span>. Add action stays
@@ -486,6 +522,25 @@ function SelectedNodePins({
           />
         </div>
       ) : null}
+    </section>
+    ) : null}
+    {showCredentials ? (
+    <section
+      data-ndv-panel="credentials"
+      aria-labelledby="node-credentials-heading"
+      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+    >
+      <h2 id="node-credentials-heading" className="text-base font-semibold">
+        Credentials
+      </h2>
+      <p className="mt-1 text-sm text-zinc-600">
+        Display name + UUID only. Secret entry stays in the masked wizard.
+      </p>
+      {constraint && !showPins ? (
+        <p role="status" className="mt-2 text-sm text-amber-950">
+          {constraint}
+        </p>
+      ) : null}
       {credentialFields.map((fieldName) => {
         const editorPath = workflowId ? editorPathForWorkflow(workflowId, embed) : null;
         const returnTo =
@@ -560,6 +615,8 @@ function SelectedNodePins({
         );
       })}
     </section>
+    ) : null}
+    </>
   );
 }
 
