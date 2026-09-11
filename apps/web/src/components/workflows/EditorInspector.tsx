@@ -2,6 +2,7 @@
 
 import { LastRunIoPanel } from "@/components/workflows/LastRunIoPanel";
 import { NdvMappingPanel } from "@/components/workflows/NdvMappingPanel";
+import { NdvValidationPanel } from "@/components/workflows/NdvValidationPanel";
 import { NodeInspector } from "@/components/workflows/NodeInspector";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { HttpNotificationPinsPanel } from "@/components/config/HttpNotificationPinSelect";
@@ -72,8 +73,10 @@ import {
 } from "@/lib/editor-ndv-mapping";
 import { latestStepsByNode } from "@/lib/execution-replay";
 import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
+import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import type { ProblemDetails } from "@/lib/problem";
-import type { WorkflowCatalog } from "@/lib/workflow-types";
+import type { WorkflowCatalog, WorkflowFieldError } from "@/lib/workflow-types";
+import type { NdvValidationStatus } from "@/lib/editor-ndv-validation";
 import Link from "next/link";
 
 export type EditorLastRunOverlay = {
@@ -116,6 +119,18 @@ type EditorInspectorProps = {
   onAddCredential?: (request: InspectorAddCredentialRequest) => void;
   workflowAdmin?: WorkflowInspectorAdmin;
   lastRun?: EditorLastRunOverlay | null;
+  validation?: {
+    status: NdvValidationStatus;
+    errors: WorkflowFieldError[];
+    warnings?: WorkflowFieldError[];
+    problem?: ProblemDetails | null;
+    evaluation?: PolicyEvaluation | null;
+    evaluationPending?: boolean;
+    evaluationProblem?: ProblemDetails | null;
+    publishedVersionId?: string | null;
+    waitingApprovals?: readonly ApprovalRequest[];
+    onJumpYaml?: (line: number, column?: number) => void;
+  };
 };
 
 export function EditorInspector({
@@ -149,6 +164,7 @@ export function EditorInspector({
   onAddCredential,
   workflowAdmin,
   lastRun,
+  validation,
 }: EditorInspectorProps) {
   const focus = inspectorFocus(selection);
   const selectedNodeId = selection.kind === "node" ? selection.id : null;
@@ -330,6 +346,26 @@ export function EditorInspector({
             onAddCredential={canEdit ? onAddCredential : undefined}
             onPatchNodeWith={canEdit ? onPatchNodeWith : undefined}
           />
+          {validation ? (
+            <div data-ndv-panel="validation">
+              <NdvValidationPanel
+                nodeId={selectedNode.id}
+                entry={selectedEntry}
+                status={validation.status}
+                errors={validation.errors}
+                warnings={validation.warnings}
+                nodes={nodes}
+                edges={yamlEdges}
+                problem={validation.problem}
+                evaluation={validation.evaluation}
+                evaluationPending={validation.evaluationPending}
+                evaluationProblem={validation.evaluationProblem}
+                publishedVersionId={validation.publishedVersionId}
+                waitingApprovals={validation.waitingApprovals}
+                onJumpYaml={validation.onJumpYaml}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -566,7 +602,7 @@ function SelectedNodePins({
         </div>
       ) : null}
       {isKubernetesActionType(node.type) ? (
-        <div className="mt-3">
+        <div className="mt-3" data-ndv-field="clusterTargetId">
           <KubernetesTargetSelect
             identity={identity}
             ready={canCall}
@@ -588,7 +624,8 @@ function SelectedNodePins({
         </div>
       ) : null}
       {isSshConfigurableType(node.type) ? (
-        <div className="mt-3">
+        <div className="mt-3" data-ndv-field="sshTargetId">
+          <span hidden data-ndv-field="commandProfileId" />
           <SshPinsPanel
             type={node.type}
             identity={identity}
@@ -600,7 +637,10 @@ function SelectedNodePins({
         </div>
       ) : null}
       {isHttpConfigurableType(node.type) ? (
-        <div className="mt-3">
+        <div className="mt-3" data-ndv-field="connectionId">
+          <span hidden data-ndv-field="recipientListId" />
+          <span hidden data-ndv-field="templateId" />
+          <span hidden data-ndv-field="responseSchemaRef" />
           <HttpNotificationPinsPanel
             type={node.type}
             identity={identity}
@@ -642,7 +682,7 @@ function SelectedNodePins({
               }
             : null;
         return (
-        <div key={fieldName} className="mt-3">
+        <div key={fieldName} className="mt-3" data-ndv-field={fieldName}>
           <p className="text-xs font-medium text-zinc-600">{fieldName}</p>
           <CredentialRefSelect
             identity={identity}
