@@ -100,7 +100,9 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
 
 Open a row → `/workflows/{id}` (same page under `/embed/v1`). YAML
 (`flowforge/v1`) is the only persisted definition; the canvas is a
-projection. Walkthrough: **home → editor top bar → palette → inspector
+projection. Optional `metadata.ui.layout` is a non-authoritative
+position hint on that YAML (API already stores it; canvas persist is
+Chloe #238). Walkthrough: **home → editor top bar → palette → inspector
 → YAML mode → runs drawer.**
 
 ### Editor top bar

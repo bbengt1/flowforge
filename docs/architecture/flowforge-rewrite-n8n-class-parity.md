@@ -126,7 +126,7 @@ Express n8n-class *surfaces* as FlowForge capabilities. Names below are FlowForg
 - Graph is the viewport. Top bar: identity, unsaved/saved, save draft, publish, activation ([D2](#d2--activation-model) locked: enable triggers on a published version), start published, palette / NDV / YAML / runs toggles.
 - Palette available without a scavenger hunt (persistent satellite or one-click that stays open across node adds — Chloe specifies the FlowForge pattern in [§11](#111-chloe--ui-surfaces--operator-migration-notes)).
 - Canvas: pan, zoom, select, connect compatible ports, insert from palette/wizard. Invalid YAML still never draws a guessed graph. State is icon + text, never color-only.
-- Spatial layout: see [D1](#d1--canvas-layout-persistence). Persist optional non-authoritative `metadata.ui.layout`; invalid or missing layout → auto-layout. Never invent nodes or edges. The executor ignores layout.
+- Spatial layout: see [D1](#d1--canvas-layout-persistence). Persist optional non-authoritative `metadata.ui.layout` (API stores/returns; executor ignores). Invalid or missing layout → auto-layout. Never invent nodes or edges. Never a second canvas file. Chloe wires the canvas on #238.
 - Graph primitives (phase R2): undo/redo, multi-select, fit, snap; minimap/alignment if they do not steal viewport. Keyboard remains the MVP path.
 
 ### Node palette
@@ -292,7 +292,7 @@ Against current `main`. “Replace” means replace the *surface or implementati
 | Local seed (#191) | `local` / `default` + demo vault in non-prod | **Keep** | Production boot-fail if forced on. Rewrite must not copy seed into k8s. |
 | Ops surfaces | `/config`, OpenAPI, incident/retention docs | **Keep** | jonny authority. Not a product home. |
 | Action wizard | Guided add | **Reshape** | Keep policy/credential review; NDV becomes the everyday edit. |
-| Auto-layout-only positions | Not persisted | **Replace** ([D1](#d1--canvas-layout-persistence) locked) | Persist optional non-authoritative `metadata.ui.layout`. Executor ignores it. Invalid/missing → auto-layout; never invent nodes/edges. |
+| Auto-layout-only positions | Not persisted | **Replace** ([D1](#d1--canvas-layout-persistence) locked; API landed, Chloe #238) | Persist optional non-authoritative `metadata.ui.layout`. Executor ignores it. Invalid/missing → auto-layout; never invent nodes/edges. |
 | Hidden-first-paint drawers | Library / YAML / runs | **Replace** the hide-by-default habit | YAML/runs may stay modes; palette/NDV should not. |
 | Foundation header fallback | Trusted-dev identity headers | **Retire** from product chrome when embed/OIDC is the only subject path | API flag stays local-only. |
 | Developer starter/invalid fixtures | Settings / developer disclosure | **Keep** off primary chrome (UX.2 already moved them) | |
@@ -327,7 +327,7 @@ Must-keep unless a numbered decision below replaces the control with a **safer e
 
 | ID | Proposal | Default | Risk if reversed |
 | --- | --- | --- | --- |
-| D1 | Persist canvas positions | **Locked.** Optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges) | A second source of truth; invalid layout must never invent nodes/edges |
+| D1 | Persist canvas positions | **Locked.** Optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges). Schema/API landed; Chloe still wires UI on #238. | A second source of truth; invalid layout must never invent nodes/edges |
 | D2 | Single “active” control | **Locked.** “Active” = enable triggers on a **published** version | Operators confuse active with “draft is live” |
 | D3 | Triggers as canvas nodes | **Locked.** Triggers stay **workflow-level** (not canvas nodes) | YAML + catalog + palette rewrite; easy to leak trigger secrets onto the graph |
 | D4 | Replace `flowforge/v1` | **Locked.** Keep `flowforge/v1` — additive fields only; no replacement | Migration of every draft/version/export; dual-run risk |
@@ -346,7 +346,7 @@ Recording a reversal: update this table, the security model, and the E12 suite i
 
 - **Stay.** `apiVersion: flowforge/v1` remains the portable document. UI parse → edit → normalize → save is unchanged in kind: `POST /workflows/validate`, `POST /workflows/normalize`, `PUT /workflows/{id}/draft`, replace buffer with API YAML + digest.
 - **Additive only** inside v1 (optional fields, ignored by older executors). Unsupported versions still fail validation.
-- **D1 locked — persist layout:** add an optional, non-authoritative `metadata.ui.layout` object that the API stores and returns but **does not** use for dispatch, policy, or port typing. Missing/invalid layout → auto-layout; never a guessed graph. jonny specifies the field in [§11.2](#112-jonny--control-plane--execution--credential-parity-gaps).
+- **D1 locked — persist layout:** optional, non-authoritative `metadata.ui.layout` is stored and returned but **is not** used for dispatch, policy, or port typing. Missing/invalid layout → auto-layout; never a guessed graph. Field spec: [§11.2](#112-jonny--control-plane--execution--credential-parity-gaps). Schema/API landed; Chloe consumes it on #238.
 - **D4 locked — do not replace:** stay on `flowforge/v1`. A new `apiVersion`, dual-read, export/import migration, and a versioned epic are out of scope unless Brent records a reversal here.
 
 ### Publish model
@@ -369,7 +369,7 @@ Prefer existing E5/E10 routes:
 - Execution-vs-execution compare
 - Optional replay projection (version YAML + steps as one payload)
 - Activation chrome composes trigger `status` + version pin ([D2](#d2--activation-model) locked; no new activation aggregate)
-- Layout field on draft/version ([D1](#d1--canvas-layout-persistence) locked: `metadata.ui.layout`)
+- Layout field on draft/version ([D1](#d1--canvas-layout-persistence) locked; schema/API landed: `metadata.ui.layout`)
 
 Workers, leases, fencing, redaction, and `indeterminate` stay as specified.
 
@@ -402,7 +402,7 @@ Depends-on is sequential for operator-visible coherence, not a hard merge lock. 
 | Epic | Outcome | Boundaries | Owner | Depends on |
 | --- | --- | --- | --- | --- |
 | **R1 — Charter freeze** | Brent decisions D1–D6 recorded in this doc; Chloe/jonny stubs filled; this file is the rewrite source of truth | Docs + decision log only. No `apps/*`. R1 can close when this D1–D6 lock lands | Brent + Chloe + jonny; Arie tracks | Charter PR #222; this lock |
-| **R2 — Editor interaction** | Opening a workflow feels like an n8n-class graph tool: palette and NDV available, graph primitives (undo/redo, multi-select, fit/snap), same `/workflows/{id}` + embed page | `apps/web` editor chrome/graph only. No draft execute. No YAML replacement. Layout persist via [D1](#d1--canvas-layout-persistence) `metadata.ui.layout` (jonny’s field). Greenfield canvas package only if a written spike fails ([D6](#d6--greenfield-ui-package)) | Chloe; jonny for D1 field | R1 |
+| **R2 — Editor interaction** | Opening a workflow feels like an n8n-class graph tool: palette and NDV available, graph primitives (undo/redo, multi-select, fit/snap), same `/workflows/{id}` + embed page | `apps/web` editor chrome/graph only. No draft execute. No YAML replacement. Layout persist via [D1](#d1--canvas-layout-persistence) `metadata.ui.layout` (schema/API landed). Greenfield canvas package only if a written spike fails ([D6](#d6--greenfield-ui-package)) | Chloe; jonny D1 field landed | R1 |
 | **R3 — NDV and mapping** | Selected node is a FlowForge NDV: parameters, typed ports, credential pick/add, redacted last-run, validation/policy. Wizard remains the guided add | Inspector/wizard/adapters. Catalog fallback removal only when catalogs are complete. No vault plaintext. No new credential types | Chloe; jonny catalog gaps | R2 |
 | **R4 — Executions density** | Workspace inbox + in-editor overlay match n8n-class operate-a-run: filter, overlay, NDV I/O, cancel/retry/stop, `indeterminate`, waiting → decide | Existing execution/approval routes. No `/replay`. Compare uses existing client diff until jonny ships a compare route | Chloe; jonny optional compare/replay projection | R3 (overlay/NDV), E5/E10 already on main |
 | **R5 — Credentials in the workbench** | Vault is the credential store operators expect: find by display name, test/rotate/usage, NDV add without leaving the graph | `/credentials/*` + NDV wizard. No KEK in the browser. No `/config` merge unless Brent asks | Chloe | R3 |
@@ -425,7 +425,7 @@ Locked 2026-09-11 by Brent (via Arie in Flowforge development group); charter PR
 
 | ID | Decision | Status |
 | --- | --- | --- |
-| [D1](#d1--canvas-layout-persistence) | Persist canvas layout as optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges) | **Locked** |
+| [D1](#d1--canvas-layout-persistence) | Persist canvas layout as optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges). Schema/API landed; #238 stays open for Chloe UI. | **Locked** |
 | [D2](#d2--activation-model) | “Active” = enable triggers on a **published** version | **Locked** |
 | [D3](#d3--trigger-placement) | Triggers stay **workflow-level** (not canvas nodes) | **Locked** |
 | [D4](#d4--yaml-replacement) | Keep `flowforge/v1` — additive fields only; no replacement | **Locked** |
@@ -434,7 +434,7 @@ Locked 2026-09-11 by Brent (via Arie in Flowforge development group); charter PR
 
 #### D1 — Canvas layout persistence
 
-**Locked.** Persist canvas layout as optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges).
+**Locked.** Persist canvas layout as optional non-authoritative `metadata.ui.layout` (executor ignores; invalid/missing → auto-layout; never invent nodes/edges). Schema/API landed; Chloe wires the canvas on #238.
 
 #### D2 — Activation model
 
@@ -457,7 +457,6 @@ Locked 2026-09-11 by Brent (via Arie in Flowforge development group); charter PR
 **Locked.** Migrate UI in place — no greenfield package unless a written R2 spike fails.
 
 Still open (not D1–D6):
-
 - How much n8n-class *coverage* beyond engines already on `main` (HTTP/notification are gated by `INTEGRATION_ACTIONS_ENABLED`)? Marketplace remains out.
 - Is CP Ops Portal the primary production shell, or standalone `/workflows`? Embed contracts stay either way.
 
@@ -476,7 +475,7 @@ Answered in [§11.1](#111-chloe--ui-surfaces--operator-migration-notes). Summary
 
 Answered in [§11.2](#112-jonny--control-plane--execution--credential-parity-gaps). Summary:
 
-- D1 locked: field shape, validation, and “layout ignored by executor” tests for `metadata.ui.layout`; executor/policy/ports ignore it.
+- D1 locked: field shape, validation, and “layout ignored by executor” tests for `metadata.ui.layout` (schema/API landed); executor/policy/ports ignore it. Chloe: #238 UI.
 - D2 locked: compose existing enable + version pin; no new activation aggregate.
 - Execution compare and/or replay projection: ship or keep client-side? → keep client-side through R4; optional additive routes, not a UI invention.
 - Catalog fallback: when can Chloe delete `contract-fallback` for K8s/SSH/script/HTTP? → R3, when she ships against live catalogs only; those catalogs are already complete on `main`.
@@ -507,7 +506,7 @@ Matches Gracie’s [§7](#7-security-and-tenancy-invariants) / [§8](#8-data-and
 
 | ID | Locked (UI; no conflict) | Consequence |
 | --- | --- | --- |
-| **D1** | Optional non-authoritative `metadata.ui.layout` | Persist only via jonny’s `metadata.ui.layout`. Missing/invalid → auto-layout. Never a second canvas file. Never invent nodes/edges. Executor ignores layout. |
+| **D1** | Optional non-authoritative `metadata.ui.layout` | Persist only via jonny’s `metadata.ui.layout` (API landed). Missing/invalid → auto-layout. Never a second canvas file. Never invent nodes/edges. Executor ignores layout. Chloe #238 wires the canvas. |
 | **D2** | “Active” = enable triggers on a **published** version | Home/editor *label* that compose. Never imply the draft is live. |
 | **D3** | **Triggers stay workflow-level** (not canvas nodes) | Keep `spec.triggers`, inspector **Triggers** tab, and home `?webhooks=` / `?schedules=` / `?start=1`. Do **not** place `manual` / `webhook` / `schedule` on the canvas. |
 | **D4** | Keep `flowforge/v1` — additive fields only; no replacement | Canvas remains a projection. YAML mode stays a mode, not the persist format. |
@@ -521,7 +520,7 @@ Behavior targets, not a visual spec. Full rows: [rewrite-ui-surfaces.md](../refe
 | Surface | On `main` after #195 | Rewrite still needs (FlowForge chrome) |
 | --- | --- | --- |
 | **Home** | `/workflows` list/cards; client folder-prefix filters; create/import/duplicate/template all POST a **draft**; `?start=` / `?webhooks=` / `?schedules=` | Workbench density (activation, waiting, last run). First-class folder/tag UX only when an API exists. Empty state: create / template / import — no developer fixtures. |
-| **Editor / canvas** | `/workflows/{id}` viewport; auto-layout only; invalid YAML never guesses a graph | Palette + NDV available without hunting. Graph primitives (undo/redo, multi-select, fit/snap). Layout persist via [D1](#d1--canvas-layout-persistence) `metadata.ui.layout`. Touch stays a breakpoint, not a mobile app. |
+| **Editor / canvas** | `/workflows/{id}` viewport; auto-layout only; invalid YAML never guesses a graph | Palette + NDV available without hunting. Graph primitives (undo/redo, multi-select, fit/snap). Layout persist via [D1](#d1--canvas-layout-persistence) `metadata.ui.layout` (API landed; Chloe #238). Touch stays a breakpoint, not a mobile app. |
 | **Palette** | Left drawer, hidden on first paint; enabled catalog; **Add action** wizard; `/actions` is reference | Faster add-from-canvas on the **same** enabled catalog. No marketplace. No disabled next/provider types. Triggers excluded (`rules.triggersAreWorkflowLevel`). |
 | **NDV / inspector** | Right rail: `with` / pins / display-name credentials; workflow tabs Triggers / Versions / Pins; redacted last-run I/O | Focused node conversation (parameters, typed field-path mapping, credential pick/add, redacted I/O, validation/policy). No expression language. No `SecretField` in the rail. |
 | **Runs** | Hidden drawer; overlay on **this** canvas; **Open execution** → `/executions/{id}` | Overlay stays the editor “what just ran?” path (filter, skip-to-failed/`indeterminate`, cancel/retry when policy allows). No `/replay`. No second graph. |
@@ -567,7 +566,7 @@ Migration is from **today’s #195 canvas-first chrome**, not from the pre-makeo
 
 #### Answers to [§10](#10-open-questions) Chloe questions
 
-1. **Graph engine** — try undo/redo, multi-select, and [D1](#d1--canvas-layout-persistence) layout on the current canvas in R2. Greenfield package only after a written spike fails; no route or contract fork ([D6](#d6--greenfield-ui-package)).
+1. **Graph engine** — try undo/redo, multi-select, and [D1](#d1--canvas-layout-persistence) `metadata.ui.layout` on the current canvas in R2. Greenfield package only after a written spike fails; no route or contract fork ([D6](#d6--greenfield-ui-package)).
 2. **Palette / NDV pattern** — FlowForge satellites that stay available (remembered-open or persistent), not an n8n column match and not a hide-by-default hunt.
 3. **Foundation copy** — Settings keeps session/health/OpenAPI + disclosed Developer samples. Membership/Isolation stay grant-gated and exercise-shaped-off-primary. Example context stays labeled and local-only.
 4. **Embed** — rewrite chrome mounts on the existing `/embed/v1` tree with `session.embed`. No Portal-specific cookie. No host-query authz.
@@ -624,14 +623,14 @@ Matches Gracie’s [§7](#7-security-and-tenancy-invariants) / [§8](#8-data-and
 
 | ID | Locked (no conflict with Gracie) | Contract |
 | --- | --- | --- |
-| **D1** | Optional non-authoritative `metadata.ui.layout` | Additive optional object on `flowforge/v1`. API stores and returns it. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Missing/invalid → auto-layout; never a guessed graph; never invent nodes/edges. See field spec below. **Required for R2.** |
+| **D1** | Optional non-authoritative `metadata.ui.layout` | Additive optional object on `flowforge/v1`. API stores and returns it. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Missing/invalid → auto-layout; never a guessed graph; never invent nodes/edges. See field spec below. **Landed (schema/API).** Chloe wires canvas persist on #238. |
 | **D2** | “Active” = **enable triggers on a published version** | Compose existing trigger `status` + `workflowVersionId` pin (`POST /triggers/{id}/enable` / `/disable`, schedule equivalents). **No new activation aggregate.** Optional later: computed `activation` summary on `GET /workflows` / `GET /workflows/{id}` (read model only). Drafts still never run. **R6 chrome; no new resource.** |
 | **D3** | Triggers stay **workflow-level** (not canvas nodes) | Keep `spec.triggers` + catalog `rules.triggersAreWorkflowLevel`. Secrets, HMAC, limits stay admin/API, not YAML. **No schema change.** |
 | **D4** | Keep `flowforge/v1` — additive fields only; no replacement | Unsupported `apiVersion` still fails validation. Unknown fields still fail closed. **No `/api/v2`.** |
 | **D5** | One-gesture test-run = mint **published test version** then start | Shortcut is a publish *flavor* (test note, maybe shorter retention) then `POST /workflows/{id}/executions` with that `workflowVersionId`. **Drafts still never run.** Not a run-draft flag, pin-data, or “execute the unsaved buffer.” **Required for the test-run gesture.** |
 | **D6** | Migrate UI in place — no greenfield package unless a written R2 spike fails | Keep the families in [backend-api-map](../reference/backend-api-map.md). Rewrite UI retargets; it does not invent twins or a new public API family. |
 
-**D1 field spec** (locked; implement with the schema PR):
+**D1 field spec** (locked; schema/API landed, extra node keys **stripped**):
 
 ```yaml
 metadata:
@@ -644,12 +643,12 @@ metadata:
         restart: { x: 120, y: 80 }   # keys MUST match spec.nodes[].id
 ```
 
-- `metadata.ui` / `metadata.ui.layout` are additive optional. Older executors ignore unknown *optional* metadata only after validate/normalize accept the field; until the schema PR lands, unknown fields remain fail-closed.
-- Node keys are a **subset** of `spec.nodes[].id`. Extra keys are stripped (or `400` on validate — pick one in the schema PR; never invent a node). Missing keys → auto-place that node.
+- `metadata.ui` / `metadata.ui.layout` are additive optional. Validate/normalize accept this field; other unknown metadata still fails closed. Older documents without the field keep working.
+- Node keys are a **subset** of `spec.nodes[].id`. Extra keys are **stripped** (never invent a node). Missing keys → auto-place that node.
 - `x` / `y` are finite numbers. Non-finite / non-object layout → treat as absent (auto-layout). Layout never carries edges, types, `with`, credentials, or ports.
 - Viewport/zoom hints, if added later, are the same class: ignored by the executor.
 - Layout-only draft save is fine. Layout-only publish is a new immutable version (same as any YAML change). Activation pins stay on the previously published version until the operator republishes / re-enables.
-- Tests required with the schema PR (not this docs fold-in): validate/normalize persist-and-return; dispatch + policy + port typing **bitwise-identical** with and without `metadata.ui`; invalid layout does not render a guessed graph.
+- Tests required (landed with the schema PR): validate/normalize persist-and-return; dispatch + policy + port typing **identical** with and without `metadata.ui`; invalid layout does not invent a graph.
 
 **D2 compose (no new resource):** a workflow is “active” when a **published** version has at least one enabled webhook or schedule pin. Manual start is on-demand, not activation. Home/editor chrome may *label* that compose; it must not imply the draft is live.
 
@@ -661,7 +660,7 @@ How to read **Gap**: extension = additive `/api/v1` field/resource; catalog enab
 
 | Capability class | Gap | R# | Notes |
 | --- | --- | --- | --- |
-| Canvas layout persist | Extension: `metadata.ui.layout` | **R2** ([D1](#d1--canvas-layout-persistence) locked) | Field spec above. No second persisted format. |
+| Canvas layout persist | Extension: `metadata.ui.layout` | **R2** ([D1](#d1--canvas-layout-persistence) locked) | Field spec above. Schema/API landed. Chloe #238 UI still open. No second persisted format. |
 | Graph primitives / NDV chrome | None (API) | R2 / R3 | Chloe. Catalogs already typed. |
 | Catalog `contract-fallback` | None (API). UI may drop fallback in R3 | **R3** | Core/K8s/SSH/script/HTTP metadata is complete on `main`. Chloe deletes fallback when she ships live-catalog-only. No new credential types. |
 | NDV add credential | **Keep** existing vault routes | R3 / R5 | `POST /credentials` + rotate/test + ops-config `select` + pin. No generic `credentialId` on every node that bypasses target/connection policy. |
@@ -704,7 +703,7 @@ In-place `/api/v1` evolution, not a dump-and-reload. Existing drafts, versions, 
 
 #### Answers to [§10](#10-open-questions) jonny questions
 
-1. **D1 field** — `metadata.ui.layout` as specified above; executor-ignore tests land with the schema PR.
+1. **D1 field** — `metadata.ui.layout` as specified above; executor-ignore tests landed with the schema PR. Chloe: read `summary.ui.layout` / YAML `metadata.ui.layout` on #238. Do not close #238 from the API PR.
 2. **D2 resource** — trigger `status` + version pin is enough. No new activation resource.
 3. **Compare / replay** — keep client-side through R4; optional redacted additive routes later.
 4. **Catalog fallback** — Chloe may delete `contract-fallback` for K8s/SSH/script/HTTP in R3; API metadata is already on `main`.

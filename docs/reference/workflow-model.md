@@ -41,7 +41,7 @@ caller to another.
 
 ## Canonical workflow definition
 
-Every draft and version stores its workflow graph as the versioned YAML document defined in the [workflow YAML schema](workflow-yaml-schema.md). The web editor projects that document into a canvas and serializes edits back into the same schema; it must not maintain an incompatible UI-only graph format.
+Every draft and version stores its workflow graph as the versioned YAML document defined in the [workflow YAML schema](workflow-yaml-schema.md). The web editor projects that document into a canvas and serializes edits back into the same schema; it must not maintain an incompatible UI-only graph format. Optional `metadata.ui.layout` (D1) is a non-authoritative position hint on that same document — never a second canvas file — and is ignored by the executor.
 
 The graph is composable: Kubernetes, SSH, script, condition, and notification nodes all expose typed ports. Edges explicitly pass a validated output from one YAML object into a compatible input of another, producing larger workflows without implicit shared state.
 

@@ -223,6 +223,27 @@ export type OutputSummary = {
   from: string;
 };
 
+/** D1 (#238): finite canvas coordinate. Non-finite values are treated as absent. */
+export type WorkflowUILayoutNode = {
+  x: number;
+  y: number;
+};
+
+/**
+ * D1 (#238): optional non-authoritative canvas layout on `metadata.ui.layout`.
+ * API stores and returns it on validate/normalize/draft/version. Executor,
+ * policy evaluate, port typing, and dispatch ignore it. Missing/invalid →
+ * auto-layout. Never a second canvas file. Chloe wires persist UI on #238.
+ */
+export type WorkflowUILayout = {
+  version: 1 | number;
+  nodes?: Record<string, WorkflowUILayoutNode>;
+};
+
+export type WorkflowUI = {
+  layout?: WorkflowUILayout;
+};
+
 export type WorkflowSummary = {
   apiVersion: string;
   name: string;
@@ -231,6 +252,7 @@ export type WorkflowSummary = {
   nodes: NodeSummary[];
   edges: EdgeSummary[];
   outputs: OutputSummary[];
+  ui?: WorkflowUI;
 };
 
 export type ValidateResponse = {
