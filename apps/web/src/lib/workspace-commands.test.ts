@@ -15,12 +15,14 @@ describe("workspace commands", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     dispatchWorkspaceCommand("validate", { workflowId: id });
     dispatchWorkspaceCommand("publish", { workflowId: id });
+    dispatchWorkspaceCommand("test-run", { workflowId: id });
     dispatchWorkspaceCommand("run-published", { workflowId: id });
     stop();
     dispatchWorkspaceCommand("publish", { workflowId: "ignored-after-unsubscribe" });
     assert.deepEqual(seen, [
       { name: "validate", workflowId: id },
       { name: "publish", workflowId: id },
+      { name: "test-run", workflowId: id },
       { name: "run-published", workflowId: id },
     ]);
   });

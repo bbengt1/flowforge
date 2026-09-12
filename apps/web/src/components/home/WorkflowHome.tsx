@@ -77,6 +77,8 @@ import {
   SCHEDULE_TRIGGER_QUERY,
   canViewScheduleTriggers,
 } from "@/lib/schedule-trigger-contract";
+import { TEST_RUN_HELP, canOfferHomeTestRun } from "@/lib/editor-test-run";
+import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 
@@ -112,6 +114,7 @@ function WorkflowHomeSession() {
   const rowCapabilities = productHomeCapabilities(ready ? permissions : null);
   const canExecute =
     ready && canOfferManualStart(permissions) && rowCapabilities.canExecute;
+  const canPublish = ready && rowCapabilities.canPublish;
   const canViewWebhooks =
     ready && canViewWebhookTriggers(permissions) && rowCapabilities.canViewWebhooks;
   const canViewSchedules =
@@ -466,6 +469,48 @@ function WorkflowHomeSession() {
     );
   }
 
+  async function testRunItem(item: WorkflowHomeItem) {
+    const gate = canOfferHomeTestRun({
+      draftRevision: item.draftRevision,
+      permissions,
+    });
+    if (!gate.ok) {
+      setProblem({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Cannot test-run",
+        status: gate.reason === "forbidden" ? 403 : 400,
+        detail: gate.help,
+        instance: `/workflows/${item.id}`,
+        code: gate.reason === "forbidden" ? "forbidden" : "invalid-request",
+        request_id: "local-home-test-run-16",
+      });
+      return;
+    }
+    setPending("test-run");
+    setProblem(null);
+    // D5 hard line: last saved draftRevision only — not editor YAML.
+    const result = await runPublishedTestVersion(identity, {
+      workflowId: item.id,
+      revision: item.draftRevision,
+      dirty: false,
+      permissions,
+    });
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    pushNotification({
+      kind: "execution",
+      title: result.execution.replayed
+        ? "Test run replayed"
+        : "Test run started",
+      detail: `Published test v${result.version.versionNumber} · ${result.execution.status}`,
+      href: `/executions/${result.execution.id}`,
+    });
+    await refresh();
+  }
+
   async function exportItem(item: WorkflowHomeItem) {
     if (!item.latestVersionId) {
       return;
@@ -525,6 +570,7 @@ function WorkflowHomeSession() {
             >
               {HOME_ACTIVATION_HELP}
             </p>
+            <p className="mt-2 text-sm text-zinc-600">{TEST_RUN_HELP}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -758,10 +804,12 @@ function WorkflowHomeSession() {
           pending={pending !== null}
           canCreate={canCreate}
           canExecute={canExecute}
+          canPublish={canPublish}
           canViewWebhooks={canViewWebhooks}
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
           onStart={(item) => setStartWorkflowId(item.id)}
+          onTestRun={(item) => void testRunItem(item)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onSchedules={(item) => setScheduleWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
@@ -773,10 +821,12 @@ function WorkflowHomeSession() {
           pending={pending !== null}
           canCreate={canCreate}
           canExecute={canExecute}
+          canPublish={canPublish}
           canViewWebhooks={canViewWebhooks}
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
           onStart={(item) => setStartWorkflowId(item.id)}
+          onTestRun={(item) => void testRunItem(item)}
           onWebhooks={(item) => setWebhookWorkflowId(item.id)}
           onSchedules={(item) => setScheduleWorkflowId(item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
@@ -866,10 +916,12 @@ function WorkflowActions({
   pending,
   canCreate,
   canExecute,
+  canPublish,
   canViewWebhooks,
   canViewSchedules,
   canSeeLastRun,
   onStart,
+  onTestRun,
   onWebhooks,
   onSchedules,
   onDuplicate,
@@ -879,17 +931,30 @@ function WorkflowActions({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canPublish: boolean;
   canViewWebhooks: boolean;
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onTestRun: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
 }) {
+  const showTestRun = canPublish && canExecute;
   return (
     <div className="flex flex-wrap gap-2">
+      {showTestRun ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onTestRun(item)}
+          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+        >
+          Test run
+        </button>
+      ) : null}
       {item.latestVersionId ? (
         canExecute ? (
           <button
@@ -972,10 +1037,12 @@ function WorkflowHomeList({
   pending,
   canCreate,
   canExecute,
+  canPublish,
   canViewWebhooks,
   canViewSchedules,
   canSeeLastRun,
   onStart,
+  onTestRun,
   onWebhooks,
   onSchedules,
   onDuplicate,
@@ -985,10 +1052,12 @@ function WorkflowHomeList({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canPublish: boolean;
   canViewWebhooks: boolean;
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onTestRun: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
@@ -1055,10 +1124,12 @@ function WorkflowHomeList({
               pending={pending}
               canCreate={canCreate}
               canExecute={canExecute}
+              canPublish={canPublish}
               canViewWebhooks={canViewWebhooks}
               canViewSchedules={canViewSchedules}
               canSeeLastRun={canSeeLastRun}
               onStart={onStart}
+              onTestRun={onTestRun}
               onWebhooks={onWebhooks}
               onSchedules={onSchedules}
               onDuplicate={onDuplicate}
@@ -1076,10 +1147,12 @@ function WorkflowHomeCards({
   pending,
   canCreate,
   canExecute,
+  canPublish,
   canViewWebhooks,
   canViewSchedules,
   canSeeLastRun,
   onStart,
+  onTestRun,
   onWebhooks,
   onSchedules,
   onDuplicate,
@@ -1089,10 +1162,12 @@ function WorkflowHomeCards({
   pending: boolean;
   canCreate: boolean;
   canExecute: boolean;
+  canPublish: boolean;
   canViewWebhooks: boolean;
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
   onStart: (item: WorkflowHomeItem) => void;
+  onTestRun: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
@@ -1124,10 +1199,12 @@ function WorkflowHomeCards({
               pending={pending}
               canCreate={canCreate}
               canExecute={canExecute}
+              canPublish={canPublish}
               canViewWebhooks={canViewWebhooks}
               canViewSchedules={canViewSchedules}
               canSeeLastRun={canSeeLastRun}
               onStart={onStart}
+              onTestRun={onTestRun}
               onWebhooks={onWebhooks}
               onSchedules={onSchedules}
               onDuplicate={onDuplicate}

@@ -466,6 +466,8 @@ Locked 2026-09-11 by Brent (via Arie in Flowforge development group); charter PR
 
 **Locked.** One-gesture test-run = mint **published test version** then start (drafts still never run).
 
+**Gracie D5 hard line (R6.3 / #272):** one gesture may mint a published test version then start it — **never** run the unsaved/draft buffer. No draft execute path. No silent “test the open editor YAML.”
+
 #### D6 — Greenfield UI package
 
 **Locked.** Migrate UI in place — no greenfield package unless a written R2 spike fails.
@@ -539,7 +541,7 @@ Behavior targets, not a visual spec. Full rows: [rewrite-ui-surfaces.md](../refe
 | **NDV / inspector** | Right rail, remembered-open satellite (R2.2 / #235): type-specific parameters / `with` for cataloged core / Kubernetes / SSH / script / HTTP (R3.1 / #246 — keep #246 open); typed field-path mapping between ports (R3.2 / #247 — keep #247 open); pins / display-name credentials; workflow tabs Triggers / Versions / Pins; redacted last-run I/O at operate density when a run/step is in context (overlay or latest; R4.3 / #256 — **keep #256 open**; failures jump to the node); validation/policy density for the selected node (R3.3 / #248 — keep #248 open) | Catalog fallback removal (R3.4 / #249). No expression language. No `SecretField` in the rail. No branded NDV modal. |
 | **Runs** | Remembered-open satellite (R4.2 / #255 — **keep #255 open**); overlay on **this** canvas; filter/list this workflow’s runs; skip-to-failed / skip-to-indeterminate; cancel / retry / emergency stop on inbox rows and the overlay (R4.4 / #257 — **keep #257 open**; Retry gated by `result.retry.allowed`; loud `indeterminate`); waiting → decide on inbox rows and the overlay (R4.5 / #258 — **keep #258 open**; `POST /approvals/{id}/decide`; no self-approval; no invented resume); **Open execution** → `/executions/{id}`. Workspace `/executions` inbox density (R4.1 / #254 — keep #254 open) on existing `status` / `workflowId` / `limit`. One operate path (Gracie): inbox is not a second graph; overlay does not mount `ExecutionReplay`. NDV I/O (R4.3 / #256 — **keep #256 open**) stays on the editor inspector. | No `/replay`. Client compare only. |
 | **Vault** | `/credentials/*` workbench find by display name (R5.1 / #264 — **keep #264 open**); detail test/rotate/usage/deletion-impact at operate density (R5.2 / #265 — **keep #265 open**); selected-node NDV add via masked wizard without leaving the graph (R5.3 / #266 — **keep #266 open**; return-to-editor; picker selects display name; YAML stores UUID) | Usage/deletion-impact without a secret surface in the inspector. Keep rotate/disable/test on vault routes. |
-| **Activations** | Editor top bar + Triggers tab (R6.1 / #270 — **keep #270 open**) and `/workflows` home column (R6.2 / #271 — **keep #271 open**) compose “this published version is active” from enable + version pin. Home drawers still work. Drafts never look live. | One-gesture test-run (R6.3). No new activation resource. |
+| **Activations** | Editor top bar + Triggers tab (R6.1 / #270 — **keep #270 open**) and `/workflows` home column (R6.2 / #271 — **keep #271 open**) compose “this published version is active” from enable + version pin. Home drawers still work. Drafts never look live. One-gesture **Test run** (R6.3 / #272 — **keep #272 open**) mints a published test version then starts it (D5 hard line: never the unsaved/draft buffer; no silent test of the open editor YAML). | No new activation resource. Drafts still never run. |
 | **Embed / settings** | Same pages at `/embed/v1`; Settings holds session/health/OpenAPI + disclosed Developer samples | Migrate chrome with standalone. Membership/isolation stay grant-gated and stop looking like the product. |
 
 **Satellites to preserve (do not re-home into a cloned IA):** workspace shell + Commands; `/actions`; `/templates` (always POST a draft); `/config`; `/executions` inbox; `/approvals/{id}/decide`; `/alerts` / `/audit`; ADV-024 `/membership` / `/isolation`; `/embed/v1` + `/portal/workflows`.
@@ -560,7 +562,7 @@ Do **not** retire vault routes, the executions inbox, approvals decide, `/embed/
 
 Migration is from **today’s #195 canvas-first chrome**, not from the pre-makeover stacked page.
 
-**Stays familiar:** `/workflows` home; `/workflows/{id}` and `/embed/v1/workflows/{id}`; Save draft / Publish / Start published; Library / Inspector / YAML / Runs as satellites (default-open and density may change; no second studio); Ctrl+Shift+K; home `?start=` / `?webhooks=` / `?schedules=` / `?import=1`; `/credentials/*` with return-to-editor; `/executions` as the workspace inbox; skip link `#main-content`.
+**Stays familiar:** `/workflows` home; `/workflows/{id}` and `/embed/v1/workflows/{id}`; Save draft / Publish / Start published / Test run; Library / Inspector / YAML / Runs as satellites (default-open and density may change; no second studio); Ctrl+Shift+K; home `?start=` / `?webhooks=` / `?schedules=` / `?import=1`; `/credentials/*` with return-to-editor; `/executions` as the workspace inbox; skip link `#main-content`.
 
 **Already changed in #195 — do not regress:** YAML is a mode; library is a drawer (not a permanent 18rem column); fixtures live under Settings → Developer; nav collapses on the editor; trigger/version/pin stacks are inspector tabs; health/OpenAPI left `/`. Putting YAML, fixtures, or foundation probes back into primary authoring chrome is a regression, not parity.
 
@@ -642,7 +644,7 @@ Matches Gracie’s [§7](#7-security-and-tenancy-invariants) / [§8](#8-data-and
 | **D2** | “Active” = **enable triggers on a published version** | Compose existing trigger `status` + `workflowVersionId` pin (`POST /triggers/{id}/enable` / `/disable`, schedule equivalents). **No new activation aggregate.** Optional later: computed `activation` summary on `GET /workflows` / `GET /workflows/{id}` (read model only). Drafts still never run. **R6 chrome; no new resource.** |
 | **D3** | Triggers stay **workflow-level** (not canvas nodes) | Keep `spec.triggers` + catalog `rules.triggersAreWorkflowLevel`. Secrets, HMAC, limits stay admin/API, not YAML. **No schema change.** |
 | **D4** | Keep `flowforge/v1` — additive fields only; no replacement | Unsupported `apiVersion` still fails validation. Unknown fields still fail closed. **No `/api/v2`.** |
-| **D5** | One-gesture test-run = mint **published test version** then start | Shortcut is a publish *flavor* (test note, maybe shorter retention) then `POST /workflows/{id}/executions` with that `workflowVersionId`. **Drafts still never run.** Not a run-draft flag, pin-data, or “execute the unsaved buffer.” **Required for the test-run gesture.** |
+| **D5** | One-gesture test-run = mint **published test version** then start | Shortcut is a publish *flavor* (test note, maybe shorter retention) then `POST /workflows/{id}/executions` with that `workflowVersionId`. **Drafts still never run.** Not a run-draft flag, pin-data, or “execute the unsaved buffer.” **Gracie hard line:** never the unsaved/draft buffer; no draft execute path; no silent “test the open editor YAML.” **Required for the test-run gesture.** |
 | **D6** | Migrate UI in place — no greenfield package unless a written R2 spike fails | Keep the families in [backend-api-map](../reference/backend-api-map.md). Rewrite UI retargets; it does not invent twins or a new public API family. |
 
 **D1 field spec** (locked; schema/API landed, extra node keys **stripped**):
@@ -667,7 +669,7 @@ metadata:
 
 **D2 compose (no new resource):** a workflow is “active” when a **published** version has at least one enabled webhook or schedule pin. Manual start is on-demand, not activation. Home/editor chrome may *label* that compose; it must not imply the draft is live. Gracie + jonny confirmed this for R6 — bake on R6.1 / #270; inherit on #271 / #272.
 
-**D5 publish flavor (locked):** `POST /workflows/{id}/publish` may take an additive `kind: test` (or equivalent). The version is still immutable, digest-pinned, and the only thing `POST /executions` may start. Retention may be shorter; redaction, fencing, and RBAC stay identical.
+**D5 publish flavor (locked):** `POST /workflows/{id}/publish` may take an additive `kind: test` (or equivalent). The version is still immutable, digest-pinned, and the only thing `POST /executions` may start. Retention may be shorter; redaction, fencing, and RBAC stay identical. One gesture may mint that published test version then start it — never the unsaved/draft buffer, never a draft execute path, never a silent test of the open editor YAML.
 
 #### Key gaps aligned to R2–R7
 

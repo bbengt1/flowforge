@@ -80,6 +80,7 @@ describe("UX.8 product home", () => {
   it("gates home rows and sends last run to /executions/{id} or ?workflowId=", () => {
     const viewer = productHomeCapabilities(["workflow.view"]);
     assert.equal(viewer.canExecute, false);
+    assert.equal(viewer.canPublish, false);
     assert.equal(viewer.canViewWebhooks, true);
     assert.equal(viewer.canViewSchedules, true);
     assert.equal(viewer.canSeeLastRun, false);
@@ -97,6 +98,7 @@ describe("UX.8 product home", () => {
     });
     assert.equal(published.openEditor, `/workflows/${WORKFLOW_ID}`);
     assert.equal(published.startPublished, true);
+    assert.equal(published.testRun, false);
     assert.equal(published.webhooks, true);
     assert.equal(published.schedules, true);
     assert.equal(published.lastRunHref, `/executions/${EXECUTION_ID}`);
@@ -108,6 +110,7 @@ describe("UX.8 product home", () => {
       capabilities: editor,
     });
     assert.equal(draft.startPublished, false);
+    assert.equal(draft.testRun, false);
     assert.equal(
       draft.lastRunHref,
       listExecutionsPath({ workflowId: WORKFLOW_ID }),
@@ -124,10 +127,25 @@ describe("UX.8 product home", () => {
       capabilities: viewer,
     });
     assert.equal(locked.startPublished, false);
+    assert.equal(locked.testRun, false);
     assert.equal(locked.lastRunHref, null);
+
+    const publisher = productHomeCapabilities([
+      "workflow.view",
+      "workflow.publish",
+      "workflow.execute",
+    ]);
+    const unpublishedTest = workflowHomeRowActions({
+      published: false,
+      workflowId: WORKFLOW_ID,
+      capabilities: publisher,
+    });
+    assert.equal(unpublishedTest.startPublished, false);
+    assert.equal(unpublishedTest.testRun, true);
 
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.match(home, /Start published/);
+    assert.match(home, /Test run/);
     assert.match(home, /workflowHomeLastRunHref/);
     assert.match(home, /canViewWebhooks/);
     assert.match(home, /canViewSchedules/);
