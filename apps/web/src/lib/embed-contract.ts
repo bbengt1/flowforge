@@ -165,8 +165,8 @@ export const EMBED_ROUTES: readonly EmbedRoute[] = [
   { id: "alert", standalone: "/alerts/{id}", embed: "/embed/v1/alerts/{id}", description: "Alert detail" },
   { id: "audit", standalone: "/audit", embed: "/embed/v1/audit", description: "Audit browse" },
   { id: "settings", standalone: "/settings", embed: "/embed/v1/settings", description: "Settings" },
-  { id: "membership", standalone: "/membership", embed: "/embed/v1/membership", description: "Membership operator", grant: "membership-isolation" },
-  { id: "isolation", standalone: "/isolation", embed: "/embed/v1/isolation", description: "Isolation exercise", grant: "membership-isolation" },
+  { id: "membership", standalone: "/membership", embed: "/embed/v1/membership", description: "Workspace members (ADV-024)", grant: "membership-isolation" },
+  { id: "isolation", standalone: "/isolation", embed: "/embed/v1/isolation", description: "Isolation check — success is a denial (ADV-024)", grant: "membership-isolation" },
 ];
 
 /** Caps that disclose membership/isolation on embed/portal catalogs. */

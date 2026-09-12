@@ -106,7 +106,7 @@ describe("E12.3 accessibility contract", () => {
     );
     assert.deepEqual(
       e12A11yMembershipIsolationNavIds(["workspace.administer"]),
-      ["membership", "isolation"],
+      [],
     );
     assert.equal(
       e12A11yMembershipIsolationVisible(["platform.administer"]),

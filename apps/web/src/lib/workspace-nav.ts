@@ -249,7 +249,8 @@ function itemVisible(
   permissions: readonly string[] | null | undefined,
 ): boolean {
   if (item.id === "membership" || item.id === "isolation") {
-    return canSeeMembershipIsolationNav(permissions);
+    // R7.2: off product chrome. Settings / Commands still grant-gate.
+    return false;
   }
   if (item.permission == null) {
     return true;
@@ -287,8 +288,9 @@ export function visibleWorkspaceNav(
 
 /**
  * Editor / embed chrome nav. Same fail-closed visibility as the
- * product shell. Embed remaps to `/embed/v1/…` and omits ADV-024
- * membership/isolation items unless a grant cap is present.
+ * product shell. Embed remaps to `/embed/v1/…`. R7.2 takes ADV-024
+ * membership/isolation off product chrome; Settings / Commands still
+ * grant-gate them.
  */
 export function editorWorkspaceNav(
   permissions: readonly string[] | null | undefined,

@@ -325,9 +325,12 @@ export function rewriteEmbedNavOmitsAdv024WithoutGrant(): boolean {
   );
   return (
     !denied.some((item) => item.id === "membership" || item.id === "isolation") &&
-    granted.some((item) => item.id === "membership") &&
-    granted.find((item) => item.id === "isolation")?.href ===
-      `${EMBED_MOUNT_PREFIX}/isolation`
+    !granted.some((item) => item.id === "membership" || item.id === "isolation") &&
+    grantsMembershipIsolationCatalog(["workspace.administer"]) &&
+    catalogRoutesForGrant(true).some((route) => route.id === "membership") &&
+    catalogRoutesForGrant(true).some(
+      (route) => route.id === "isolation" && route.embed === `${EMBED_MOUNT_PREFIX}/isolation`,
+    )
   );
 }
 

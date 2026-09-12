@@ -156,5 +156,20 @@ describe("buildSearchIndex", () => {
       0,
     );
     assert.equal(querySearchIndex(index, "Deploy").length, 1);
+    assert.equal(querySearchIndex(index, "membership").length, 0);
+    assert.equal(querySearchIndex(index, "isolation").length, 0);
+  });
+
+  it("indexes membership/isolation docs only with the ADV-024 grant", () => {
+    const denied = buildSearchIndex({}, viewer);
+    assert.equal(querySearchIndex(denied, "membership").length, 0);
+    assert.equal(querySearchIndex(denied, "isolation").length, 0);
+    const granted = buildSearchIndex({}, [...viewer, "workspace.administer"]);
+    assert.equal(querySearchIndex(granted, "membership")[0]?.href, "/membership");
+    assert.equal(querySearchIndex(granted, "isolation")[0]?.href, "/isolation");
+    assert.match(
+      querySearchIndex(granted, "isolation")[0]?.subtitle ?? "",
+      /denial/,
+    );
   });
 });

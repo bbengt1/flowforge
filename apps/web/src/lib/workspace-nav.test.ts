@@ -49,8 +49,9 @@ describe("visibleWorkspaceNav", () => {
       ...viewer,
       "workspace.administer",
     ]).map((item) => item.id);
-    assert.ok(admin.includes("membership"));
-    assert.ok(admin.includes("isolation"));
+    assert.equal(canSeeMembershipIsolationNav([...viewer, "workspace.administer"]), true);
+    assert.equal(admin.includes("membership"), false);
+    assert.equal(admin.includes("isolation"), false);
   });
 
   it("hides inaccessible capabilities for a viewer", () => {
@@ -123,7 +124,8 @@ describe("editorWorkspaceNav", () => {
   it("remaps embed hrefs to /embed/v1 and omits ADV-024 items without grant", () => {
     const admin = [...viewer, "workspace.administer"];
     const standalone = editorWorkspaceNav(admin);
-    assert.ok(standalone.some((item) => item.id === "membership"));
+    assert.equal(standalone.some((item) => item.id === "membership"), false);
+    assert.equal(canSeeMembershipIsolationNav(admin), true);
     assert.equal(
       standalone.find((item) => item.id === "workflows")?.href,
       "/workflows",
@@ -138,10 +140,7 @@ describe("editorWorkspaceNav", () => {
     );
 
     const embedGranted = editorWorkspaceNav(admin, { embed: true });
-    assert.ok(embedGranted.some((item) => item.id === "membership"));
-    assert.equal(
-      embedGranted.find((item) => item.id === "isolation")?.href,
-      "/embed/v1/isolation",
-    );
+    assert.equal(embedGranted.some((item) => item.id === "membership"), false);
+    assert.equal(embedGranted.some((item) => item.id === "isolation"), false);
   });
 });

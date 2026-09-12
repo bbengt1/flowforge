@@ -13,6 +13,7 @@ import { canSeeApprovalsNav } from "@/lib/approval";
 import { canSeeExecutionsNav } from "@/lib/execution";
 import { canSeeOpsConfigNav } from "@/lib/ops-config";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import { canSeeMembershipIsolationNav } from "@/lib/workspace-nav";
 
 const linkClass =
   "text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600";
@@ -68,6 +69,9 @@ export function OperatorNav() {
   const showExecutions = canSeeExecutionsNav(ready ? permissions : null);
   const showAlerts = canSeeAlertsNav(ready ? permissions : null);
   const showAudit = canSeeAuditNav(ready ? permissions : null);
+  const showMembershipIsolation = canSeeMembershipIsolationNav(
+    ready ? permissions : null,
+  );
 
   return (
     <nav aria-label="Operator" className="flex flex-wrap items-center gap-4">
@@ -111,12 +115,16 @@ export function OperatorNav() {
           Audit
         </Link>
       ) : null}
-      <Link href="/membership" className={linkClass}>
-        Membership
-      </Link>
-      <Link href="/isolation" className={linkClass}>
-        Isolation
-      </Link>
+      {showMembershipIsolation ? (
+        <>
+          <Link href="/membership" className={linkClass}>
+            Workspace members
+          </Link>
+          <Link href="/isolation" className={linkClass}>
+            Isolation check
+          </Link>
+        </>
+      ) : null}
       <Link href="/settings" className={linkClass}>
         Health / OpenAPI
       </Link>

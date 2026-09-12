@@ -14,6 +14,7 @@ import {
   canExecuteWorkflows,
   canPublishWorkflows,
   canSeeCredentialsNav,
+  canSeeMembershipIsolationNav,
   canSeeWorkflowsNav,
 } from "./workspace-nav.ts";
 
@@ -245,11 +246,27 @@ export function paletteCommands(
       action: { type: "navigate", href: "/alerts" },
     });
   }
+  if (allowed(permissions, canSeeMembershipIsolationNav)) {
+    commands.push({
+      id: "nav-membership",
+      label: "Workspace members",
+      hint: "Grant-gated admin — not product home",
+      keywords: ["membership", "members", "roles", "admin"],
+      action: { type: "navigate", href: "/membership" },
+    });
+    commands.push({
+      id: "nav-isolation",
+      label: "Isolation check",
+      hint: "Success is a denial",
+      keywords: ["isolation", "tenancy", "deny"],
+      action: { type: "navigate", href: "/isolation" },
+    });
+  }
   commands.push({
     id: "nav-settings",
     label: "Open settings",
     hint: "Session and workspace",
-    keywords: ["settings", "session", "membership", "developer"],
+    keywords: ["settings", "session", "developer"],
     action: { type: "navigate", href: "/settings" },
   });
   commands.push({

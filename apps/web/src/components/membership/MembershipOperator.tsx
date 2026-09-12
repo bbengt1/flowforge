@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState, useSyncExternalStore } from "react";
-import { IsolationExercise } from "@/components/isolation/IsolationExercise";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { IdentityBootstrap } from "@/components/membership/IdentityBootstrap";
 import { MembersPanel } from "@/components/membership/MembersPanel";
@@ -29,6 +30,11 @@ import {
   LOCAL_SEED_WORKBENCH_KEY,
   LOCAL_SEED_WORKSPACE_NAME,
 } from "@/lib/local-seed-example";
+import { embedDeepLink } from "@/lib/embed-tenancy-contract";
+import {
+  ISOLATION_CHECK_HELP,
+  ISOLATION_CHECK_HREF,
+} from "@/lib/membership-isolation-chrome";
 import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import type {
@@ -44,6 +50,10 @@ import type {
 import type { ProblemDetails } from "@/lib/problem";
 
 export function MembershipOperator() {
+  const embed = useEmbedMode();
+  const isolationHref = embed
+    ? embedDeepLink(ISOLATION_CHECK_HREF)
+    : ISOLATION_CHECK_HREF;
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -286,9 +296,12 @@ export function MembershipOperator() {
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Create tenant and workspace</h2>
-        <p className="mt-1 text-sm text-zinc-600">
+      <details className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <summary className="cursor-pointer text-lg font-semibold">
+          Create tenant or workspace
+        </summary>
+        <p className="mt-2 text-sm text-zinc-600">
+          Platform-admin bootstrap — not a product-home action.{" "}
           <code className="font-mono text-xs">POST /api/v1/tenants</code> then{" "}
           <code className="font-mono text-xs">POST /api/v1/workspaces</code>.
           Create binds the caller as <code className="font-mono text-xs">admin</code>.
@@ -384,7 +397,7 @@ export function MembershipOperator() {
             </button>
           </div>
         </form>
-      </section>
+      </details>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -515,7 +528,13 @@ export function MembershipOperator() {
         onRefresh={() => void loadMatrix()}
       />
 
-      <IsolationExercise />
+      <p className="text-sm text-zinc-600">
+        <Link href={isolationHref} className="text-teal-800 underline">
+          Isolation check
+        </Link>
+        {" — "}
+        {ISOLATION_CHECK_HELP}
+      </p>
     </div>
   );
 }

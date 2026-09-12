@@ -126,6 +126,7 @@ export function e12A11yMembershipIsolationVisible(
   return canSeeMembershipIsolationNav(permissions);
 }
 
+/** Product nav ids. R7.2 takes membership/isolation off product chrome. */
 export function e12A11yMembershipIsolationNavIds(
   permissions: readonly string[] | null | undefined,
 ): string[] {

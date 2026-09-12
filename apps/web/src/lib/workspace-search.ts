@@ -16,6 +16,7 @@ import {
   CREDENTIAL_VIEW_PERMISSION,
   WORKFLOW_VIEW_PERMISSION,
   canSeeCredentialsNav,
+  canSeeMembershipIsolationNav,
   canSeeWorkflowsNav,
 } from "./workspace-nav.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
@@ -270,8 +271,37 @@ function alertHits(
   });
 }
 
-function docHits(): TokenizedHit[] {
+function adminDocHits(
+  permissions: readonly string[] | null | undefined,
+): TokenizedHit[] {
+  if (!canSeeMembershipIsolationNav(permissions)) {
+    return [];
+  }
   return [
+    {
+      kind: "doc",
+      id: "doc-membership",
+      title: "Workspace members",
+      subtitle: "Grant-gated admin — not product home",
+      href: "/membership",
+      tokens: ["membership", "members", "roles", "admin"],
+    },
+    {
+      kind: "doc",
+      id: "doc-isolation",
+      title: "Isolation check",
+      subtitle: "Success is a denial — not a product surface",
+      href: "/isolation",
+      tokens: ["isolation", "tenancy", "deny"],
+    },
+  ];
+}
+
+function docHits(
+  permissions: readonly string[] | null | undefined,
+): TokenizedHit[] {
+  return [
+    ...adminDocHits(permissions),
     {
       kind: "doc",
       id: "doc-health",
@@ -334,7 +364,7 @@ export function buildSearchIndex(
     ...credentialHits(sources.credentials ?? [], permissions),
     ...executionHits(sources.executions ?? [], permissions),
     ...alertHits(sources.alerts ?? [], permissions),
-    ...docHits(),
+    ...docHits(permissions),
   ];
 }
 
