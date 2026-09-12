@@ -3,22 +3,13 @@
  *
  * Relates to #270 / Part of #232. Keep #270 open.
  *
- * Chloe UI only. “Active” = enable triggers on a **published** version
- * by composing existing webhook/schedule `status` + `workflowVersionId`
- * pin (`POST /triggers/{id}/enable|disable`, schedule equivalents).
- * No new activation aggregate or resource. Triggers stay workflow-level
- * (D3), not canvas nodes. Drafts never run and never look live.
+ * Chloe UI only. Bake the Gracie + jonny R6 confirmation here and
+ * inherit it on R6.2 / #271 and R6.3 / #272. Do not weaken.
  *
  * Densify the Triggers tab / editor chrome in place (D6). The common
  * path is the editor — do not teach home `?webhooks=` / `?schedules=` /
  * `?start=1` drawers for activation. Those query drawers still work
  * (R6.2 owns the home column).
- *
- * jonny standby: no read-model gap blocked this story. The editor
- * composes `GET /workflows/{id}/triggers`, `GET /schedules?workflowId=`,
- * and `GET /workflows/{id}/versions`. An optional later computed
- * `activation` summary on `GET /workflows` would be a read model only
- * — do not invent a resource here.
  */
 
 import { isDraftRunSelection, publishedRunVersions } from "./execution-replay.ts";
@@ -72,7 +63,31 @@ export const EDITOR_ACTIVATION_MANUAL_HELP =
 export const EDITOR_ACTIVATION_COMMON_PATH_HELP =
   "Activation lives on this editor (top bar + Triggers tab). Home ?webhooks= / ?schedules= still work; do not teach those drawers for the common path.";
 
+/**
+ * Gracie + jonny R6 confirmation — bake hard on R6.1 / #270.
+ * Inherit on R6.2 / #271 and R6.3 / #272. Do not weaken.
+ */
+export const R6_CONFIRMATION = {
+  d2ActiveIsEnableOnPublishedVersion: true,
+  d2ComposeEnablePlusVersionPin: true,
+  d2NoNewActivationResource: true,
+  d2NoNewActivationAggregate: true,
+  d3TriggersStayWorkflowLevel: true,
+  d3NotCanvasNodes: true,
+  draftsNeverRun: true,
+  draftsNeverLookLive: true,
+  jonnyStandbyOnlyIfReadModelGap: true,
+  doNotInventActivationResource: true,
+} as const;
+
+export const R6_LATER_STORY_NOTES = {
+  r62: "R6.2 / #271: home activation column. Inherit R6 confirmation — D2 compose enable + version pin; no new activation resource/aggregate; D3 triggers stay workflow-level; drafts never run / never look live. Ping jonny only if compose has a real read-model gap — document it; do not invent a resource.",
+  r63: "R6.3 / #272: one-gesture test-run via a published test version (D5). Inherit R6 confirmation — drafts still never run / never look live. Do not invent draft execute or an activation resource.",
+} as const;
+
 export const EDITOR_ACTIVATION = {
+  ...R6_CONFIRMATION,
+  inheritR6Confirmation: true,
   composeEnablePlusVersionPin: true,
   noNewActivationResource: true,
   noInventedActivationApi: true,
@@ -84,6 +99,8 @@ export const EDITOR_ACTIVATION = {
   homeDrawersStillWork: true,
   homeActivationColumnOutOfScope: true,
   oneGestureTestRunOutOfScope: true,
+  r62HomeColumnIs271: true,
+  r63TestRunIs272: true,
   manualStartIsNotActivation: true,
   noCanvasTriggerNodes: true,
   noAppsApiChanges: true,
@@ -437,6 +454,44 @@ export function editorActivationHref(workflowId: string): string {
     return "/workflows";
   }
   return `/workflows/${workflowId}#${EDITOR_ACTIVATION_HASH}`;
+}
+
+export function editorActivationHoldsR6Confirmation(): boolean {
+  return (
+    R6_CONFIRMATION.d2ActiveIsEnableOnPublishedVersion &&
+    R6_CONFIRMATION.d2ComposeEnablePlusVersionPin &&
+    R6_CONFIRMATION.d2NoNewActivationResource &&
+    R6_CONFIRMATION.d2NoNewActivationAggregate &&
+    R6_CONFIRMATION.d3TriggersStayWorkflowLevel &&
+    R6_CONFIRMATION.d3NotCanvasNodes &&
+    R6_CONFIRMATION.draftsNeverRun &&
+    R6_CONFIRMATION.draftsNeverLookLive &&
+    R6_CONFIRMATION.jonnyStandbyOnlyIfReadModelGap &&
+    R6_CONFIRMATION.doNotInventActivationResource &&
+    EDITOR_ACTIVATION.inheritR6Confirmation &&
+    EDITOR_ACTIVATION.readModelGap === false &&
+    editorActivationUsesExistingEnableRoutes()
+  );
+}
+
+export function editorActivationLeavesLaterStories(): boolean {
+  return (
+    EDITOR_ACTIVATION.homeActivationColumnOutOfScope &&
+    EDITOR_ACTIVATION.oneGestureTestRunOutOfScope &&
+    EDITOR_ACTIVATION.r62HomeColumnIs271 &&
+    EDITOR_ACTIVATION.r63TestRunIs272 &&
+    R6_LATER_STORY_NOTES.r62.includes("#271") &&
+    R6_LATER_STORY_NOTES.r63.includes("#272")
+  );
+}
+
+export function editorActivationPlacesCanvasTriggerNodes(
+  source: string,
+): boolean {
+  return (
+    /placeTrigger|triggerNode|canvasTrigger/.test(source) ||
+    source.includes('type: "webhook"') && source.includes("addCanvasNode")
+  );
 }
 
 export function editorActivationUsesExistingEnableRoutes(): boolean {

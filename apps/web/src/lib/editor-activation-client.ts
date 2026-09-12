@@ -3,8 +3,11 @@
  *
  * Relates to #270 / Part of #232. Keep #270 open.
  *
- * No new activation collection. CSRF stays on the existing webhook and
- * schedule clients. Secrets are never read or shown.
+ * Inherits the Gracie + jonny R6 confirmation (D2 compose, D3
+ * workflow-level, drafts never look live). No new activation
+ * collection. CSRF stays on the existing webhook and schedule
+ * clients. Secrets are never read or shown. jonny: no read-model
+ * gap — do not invent a resource.
  */
 
 import type { DevIdentity } from "./identity-headers.ts";

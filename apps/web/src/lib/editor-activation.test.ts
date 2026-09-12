@@ -20,6 +20,8 @@ import {
   R61_EPIC,
   R61_KEEP_STORY_OPEN,
   R61_STORY,
+  R6_CONFIRMATION,
+  R6_LATER_STORY_NOTES,
   activationPinsFromRecords,
   activationTogglePlan,
   canManageEditorActivation,
@@ -30,9 +32,12 @@ import {
   editorActivationCommonPathUsesHomeDrawers,
   editorActivationCsrfOnMutations,
   editorActivationHomeDrawersStillWork,
+  editorActivationHoldsR6Confirmation,
   editorActivationHref,
   editorActivationInventedRoute,
+  editorActivationLeavesLaterStories,
   editorActivationLooksLive,
+  editorActivationPlacesCanvasTriggerNodes,
   editorActivationTopBarLabel,
   editorActivationUsesExistingEnableRoutes,
   pinsForPublishedVersion,
@@ -119,10 +124,22 @@ function schedule(
 }
 
 describe("R6.1 editor activation chrome", () => {
-  it("keeps #270 open and cites epic #232", () => {
+  it("bakes the Gracie + jonny R6 confirmation and keeps #270 open", () => {
     assert.equal(R61_STORY, 270);
     assert.equal(R61_EPIC, 232);
     assert.equal(R61_KEEP_STORY_OPEN, true);
+    assert.equal(R6_CONFIRMATION.d2ActiveIsEnableOnPublishedVersion, true);
+    assert.equal(R6_CONFIRMATION.d2ComposeEnablePlusVersionPin, true);
+    assert.equal(R6_CONFIRMATION.d2NoNewActivationResource, true);
+    assert.equal(R6_CONFIRMATION.d2NoNewActivationAggregate, true);
+    assert.equal(R6_CONFIRMATION.d3TriggersStayWorkflowLevel, true);
+    assert.equal(R6_CONFIRMATION.d3NotCanvasNodes, true);
+    assert.equal(R6_CONFIRMATION.draftsNeverRun, true);
+    assert.equal(R6_CONFIRMATION.draftsNeverLookLive, true);
+    assert.equal(R6_CONFIRMATION.jonnyStandbyOnlyIfReadModelGap, true);
+    assert.equal(R6_CONFIRMATION.doNotInventActivationResource, true);
+    assert.equal(editorActivationHoldsR6Confirmation(), true);
+    assert.equal(EDITOR_ACTIVATION.inheritR6Confirmation, true);
     assert.equal(EDITOR_ACTIVATION.composeEnablePlusVersionPin, true);
     assert.equal(EDITOR_ACTIVATION.noNewActivationResource, true);
     assert.equal(EDITOR_ACTIVATION.noInventedActivationApi, true);
@@ -134,6 +151,11 @@ describe("R6.1 editor activation chrome", () => {
     assert.equal(EDITOR_ACTIVATION.homeDrawersStillWork, true);
     assert.equal(EDITOR_ACTIVATION.homeActivationColumnOutOfScope, true);
     assert.equal(EDITOR_ACTIVATION.oneGestureTestRunOutOfScope, true);
+    assert.equal(EDITOR_ACTIVATION.r62HomeColumnIs271, true);
+    assert.equal(EDITOR_ACTIVATION.r63TestRunIs272, true);
+    assert.equal(editorActivationLeavesLaterStories(), true);
+    assert.match(R6_LATER_STORY_NOTES.r62, /#271/);
+    assert.match(R6_LATER_STORY_NOTES.r63, /#272/);
     assert.equal(EDITOR_ACTIVATION.manualStartIsNotActivation, true);
     assert.equal(EDITOR_ACTIVATION.noCanvasTriggerNodes, true);
     assert.equal(EDITOR_ACTIVATION.noAppsApiChanges, true);
@@ -330,7 +352,8 @@ describe("R6.1 editor activation chrome", () => {
     assert.match(chrome, /draftLooksLive/);
     assert.equal(editorActivationCommonPathUsesHomeDrawers(chrome), false);
     assert.equal(editorActivationInventedRoute(chrome), false);
-    assert.equal(chrome.includes("manual") && chrome.includes("canvas"), false);
+    assert.equal(editorActivationPlacesCanvasTriggerNodes(chrome), false);
+    assert.match(chrome, /R6_CONFIRMATION|D2 compose|published version is active/);
 
     const topBar = source("src/components/workflows/EditorTopBar.tsx");
     assert.match(topBar, /EditorActivationChrome/);
@@ -358,6 +381,8 @@ describe("R6.1 editor activation chrome", () => {
 
     const inspectorUi = source("src/components/workflows/EditorInspector.tsx");
     assert.match(inspectorUi, /not canvas nodes/);
+    assert.equal(editorActivationPlacesCanvasTriggerNodes(inspectorUi), false);
+    assert.equal(editorActivationPlacesCanvasTriggerNodes(operator), false);
 
     assert.deepEqual([...EDITOR_ACTIVATION_SOURCES], [
       "src/lib/editor-activation.ts",

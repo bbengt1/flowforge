@@ -741,7 +741,16 @@ Operator surfaces: `/workflows` (Schedules / `?schedules=`) and `/workflows/{id}
 
 ## R6.1 editor activation chrome (Chloe UI)
 
-Relates to #270 / Part of #232 — **Keep #270 open**. Chloe UI only. `apps/api` is unchanged. Adapter: `apps/web/src/lib/editor-activation.ts` plus `editor-activation-client.ts`. [D2](../architecture/flowforge-rewrite-n8n-class-parity.md#d2--activation-model) locked: “Active” = enable triggers on a **published** version by composing existing webhook/schedule `status` + `workflowVersionId` pin (`POST /triggers/{id}/enable` / `/disable`, schedule equivalents). **No new activation resource.** Triggers stay workflow-level (D3). Drafts never run and never look live. Manual start is on-demand, not activation.
+Relates to #270 / Part of #232 — **Keep #270 open**. Chloe UI only. `apps/api` is unchanged. Adapter: `apps/web/src/lib/editor-activation.ts` plus `editor-activation-client.ts`.
+
+**Gracie + jonny R6 confirmation** (bake hard here; inherit on R6.2 / #271 and R6.3 / #272 — do not weaken):
+
+1. **D2:** “Active” = enable triggers on a **published** version — compose existing enable + version pin (`POST /triggers/{id}/enable` / `/disable`, schedule equivalents). **No new activation resource/aggregate.**
+2. **D3:** Triggers stay **workflow-level** (not canvas nodes).
+3. Drafts still never run / never look live.
+4. Ping jonny only if compose enable + version pin has a real read-model gap — document it; do not invent a resource.
+
+[D2](../architecture/flowforge-rewrite-n8n-class-parity.md#d2--activation-model) / [D3](../architecture/flowforge-rewrite-n8n-class-parity.md#d3--trigger-placement) stay locked. Manual start is on-demand, not activation. Home activation column is #271. One-gesture test-run is #272.
 
 The editor is the common path (D6, in place):
 

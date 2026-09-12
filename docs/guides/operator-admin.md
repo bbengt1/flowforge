@@ -125,9 +125,12 @@ so the canvas can take the viewport. Commands bind to this route id.
 6. **Start published** lists published versions only. Drafts never run.
 7. **Activation** (R6.1 / #270 — **keep #270 open**) shows whether a
    **published** version is active (at least one enabled webhook or
-   schedule pin). **Draft — not live** when nothing is published.
-   Opening **Activation** focuses the inspector Triggers tab — not the
-   home webhook/schedule drawers. The open draft never looks live.
+   schedule pin). Gracie + jonny R6 confirmation: D2 compose of enable
+   + version pin (no new resource); D3 triggers stay workflow-level;
+   drafts never run / never look live. **Draft — not live** when
+   nothing is published. Opening **Activation** focuses the inspector
+   Triggers tab — not the home webhook/schedule drawers. Home column
+   is #271; one-gesture test-run is #272.
 
 ### Palette / library
 

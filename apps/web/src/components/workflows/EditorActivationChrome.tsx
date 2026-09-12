@@ -7,6 +7,7 @@ import {
   EDITOR_ACTIVATION_HEADING_ID,
   EDITOR_ACTIVATION_MANUAL_HELP,
   EDITOR_ACTIVATION_PANEL_ID,
+  R6_CONFIRMATION,
   canManageEditorActivation,
   canViewEditorActivation,
   composeEditorActivation,
@@ -144,6 +145,9 @@ export function EditorActivationChrome({
       id={EDITOR_ACTIVATION_PANEL_ID}
       aria-labelledby={EDITOR_ACTIVATION_HEADING_ID}
       data-editor-activation="panel"
+      data-r6-d2={R6_CONFIRMATION.d2ComposeEnablePlusVersionPin}
+      data-r6-d3={R6_CONFIRMATION.d3TriggersStayWorkflowLevel}
+      data-r6-draft-live={R6_CONFIRMATION.draftsNeverLookLive}
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -279,6 +283,9 @@ function CompactActivation({
   return (
     <div
       data-editor-activation="compact"
+      data-r6-d2={R6_CONFIRMATION.d2ComposeEnablePlusVersionPin}
+      data-r6-d3={R6_CONFIRMATION.d3TriggersStayWorkflowLevel}
+      data-r6-draft-live={R6_CONFIRMATION.draftsNeverLookLive}
       className="flex items-center gap-2"
     >
       <p
