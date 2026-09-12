@@ -569,6 +569,9 @@ function WorkflowHomeSession() {
       revision: item.draftRevision,
       dirty: false,
       permissions,
+      draftDigest: item.draftDigest,
+      latestVersionDigest: item.latestVersionDigest,
+      latestVersionId: item.latestVersionId,
     });
     setPending(null);
     if (!result.ok) {

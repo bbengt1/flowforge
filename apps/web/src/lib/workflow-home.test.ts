@@ -146,6 +146,7 @@ describe("workflow home list/filter", () => {
     );
     assert.equal(item?.environment, "ops");
     assert.equal(item?.latestVersionNumber, 2);
+    assert.equal(item?.draftDigest, "sha256:aaaa");
   });
 
   it("filters by search, owner, trigger, status, and last run", () => {

@@ -2,14 +2,20 @@
  * R6.3: One-gesture test-run (D5) from editor/home.
  *
  * Relates to #272 / Part of #232. Keep #272 open.
+ * Follow-up #284 (Terry QA): unchanged digest / 409 already-published
+ * starts the existing published version. Keep #284 open.
  *
  * Chloe UI only. Inherit the Gracie + jonny R6 confirmation from
  * R6.1 (`editor-activation.ts`). Do not weaken.
  *
  * D5 locked: one-gesture test-run = mint a **published test version**
- * then start it. Drafts still never run. Reuse existing
- * `publishWorkflow` + `startWorkflowExecution`. No invented
- * resume/`/replay`. No draft execute. Densify in place (D6).
+ * then start it. When the saved draft digest already equals the
+ * latest published digest, start that existing published version
+ * instead of forcing a publish that 409s. Drafts still never run.
+ * Reuse existing `publishWorkflow` + `startWorkflowExecution` plus
+ * GET workflow/version clients to resolve the published id. No
+ * invented resume/`/replay` or idempotent test-run endpoint. No
+ * draft execute. Densify in place (D6).
  *
  * Gracie D5 hard line (bake here): one gesture may mint a published
  * test version then start it — never run the unsaved/draft buffer.
@@ -19,7 +25,8 @@
  * That is not a blocking gap — the locked equivalent is the existing
  * publish `note` (test note). `kind: "test"` is sent as additive and
  * is ignored by today's decoder. Retention is unchanged. Do not
- * invent draft-run.
+ * invent draft-run. Do not ping jonny for an idempotent test-run
+ * endpoint — UI composes existing clients first.
  */
 
 import { R6_CONFIRMATION } from "./editor-activation.ts";
@@ -40,6 +47,8 @@ import {
 export const R63_STORY = 272;
 export const R63_EPIC = 232;
 export const R63_KEEP_STORY_OPEN = true;
+export const TEST_RUN_FOLLOWUP_ISSUE = 284;
+export const TEST_RUN_KEEP_FOLLOWUP_OPEN = true;
 
 export const TEST_RUN_PUBLISH_NOTE = "test";
 export const TEST_RUN_PUBLISH_KIND = "test" as const;
@@ -61,7 +70,13 @@ export const D5_HARD_LINE_HELP =
   "One gesture may mint a published test version then start it — never run the unsaved/draft buffer. No draft execute path. No silent test of the open editor YAML.";
 
 export const TEST_RUN_HELP =
-  "Test run publishes a test version from the last saved draft, then starts that published version. Never the unsaved/draft buffer. No silent test of the open editor YAML. Drafts never run.";
+  "Test run publishes a test version from the last saved draft, then starts that published version. If the saved digest is already published, start that existing published version. Never the unsaved/draft buffer. No silent test of the open editor YAML. Drafts never run.";
+
+export const TEST_RUN_ALREADY_PUBLISHED_HELP =
+  "This normalized definition is already published. Start the existing published version — drafts never run.";
+
+export const TEST_RUN_ALREADY_PUBLISHED_UNRESOLVED_HELP =
+  "This definition is already published, but no published workflowVersionId could be resolved. Drafts never run.";
 
 export const TEST_RUN_SAVE_FIRST_HELP =
   "Save the draft before a test run. Publish uses the last saved draft — never the unsaved buffer or open editor YAML. Drafts never run.";
@@ -122,6 +137,10 @@ export const EDITOR_TEST_RUN = {
   doNotTeachStartDrawerAsTestRun: true,
   lastSavedDraftOnly: true,
   startUsesMintedWorkflowVersionId: true,
+  preferDetectUnchangedDigestBeforePublish: true,
+  unchangedDigestStartsExistingPublished: true,
+  alreadyPublished409StartsLatestPublished: true,
+  doNotInventIdempotentTestRunEndpoint: true,
   publishKindFieldOnApi: false,
   publishKindIsAdditiveIgnored: true,
   equivalentIsPublishNote: true,
@@ -144,6 +163,9 @@ export const EDITOR_TEST_RUN_SOURCES = [
 export const EDITOR_TEST_RUN_REUSED = [
   "publishWorkflow",
   "startWorkflowExecution",
+  "getWorkflow",
+  "getWorkflowVersion",
+  "listWorkflowVersions",
 ] as const;
 
 export const INVENTED_TEST_RUN_ROUTES = [
@@ -264,6 +286,56 @@ export function testRunStartUsesPublishedVersion(
   );
 }
 
+export function testRunDigestUnchanged(
+  draftDigest: string | null | undefined,
+  latestVersionDigest: string | null | undefined,
+): boolean {
+  const draft = draftDigest?.trim() ?? "";
+  const published = latestVersionDigest?.trim() ?? "";
+  return draft.length > 0 && draft === published;
+}
+
+export function testRunCanReusePublishedVersion(input: {
+  draftDigest?: string | null;
+  latestVersionDigest?: string | null;
+  latestVersionId?: string | null;
+}): boolean {
+  return (
+    testRunDigestUnchanged(input.draftDigest, input.latestVersionDigest) &&
+    testRunStartUsesPublishedVersion(input.latestVersionId)
+  );
+}
+
+export function isAlreadyPublishedTestRunConflict(problem: {
+  status?: number;
+  code?: string | null;
+  detail?: string | null;
+  title?: string | null;
+}): boolean {
+  const status = problem.status ?? 0;
+  const code = (problem.code ?? "").toLowerCase();
+  if (status !== 409 && code !== "conflict") {
+    return false;
+  }
+  const haystack = `${problem.detail ?? ""} ${problem.title ?? ""}`.toLowerCase();
+  return haystack.includes("already published");
+}
+
+export function latestPublishedTestVersion<
+  T extends { id: string; versionNumber: number },
+>(items: readonly T[]): T | null {
+  let best: T | null = null;
+  for (const item of items) {
+    if (!testRunStartUsesPublishedVersion(item.id)) {
+      continue;
+    }
+    if (!best || item.versionNumber > best.versionNumber) {
+      best = item;
+    }
+  }
+  return best;
+}
+
 export function editorTestRunHoldsR6Confirmation(): boolean {
   return (
     EDITOR_TEST_RUN.inheritR6Confirmation &&
@@ -298,7 +370,11 @@ export function editorTestRunHoldsD5HardLine(): boolean {
     EDITOR_TEST_RUN.d5NotUnsavedBuffer &&
     EDITOR_TEST_RUN.noDraftExecutePath &&
     EDITOR_TEST_RUN.lastSavedDraftOnly &&
-    EDITOR_TEST_RUN.startUsesMintedWorkflowVersionId
+    EDITOR_TEST_RUN.startUsesMintedWorkflowVersionId &&
+    EDITOR_TEST_RUN.preferDetectUnchangedDigestBeforePublish &&
+    EDITOR_TEST_RUN.unchangedDigestStartsExistingPublished &&
+    EDITOR_TEST_RUN.alreadyPublished409StartsLatestPublished &&
+    EDITOR_TEST_RUN.doNotInventIdempotentTestRunEndpoint
   );
 }
 
