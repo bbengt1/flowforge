@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { CredentialWizard } from "@/components/credentials/CredentialWizard";
 import type { CredentialRecord, CredentialType } from "@/lib/credential-types";
+import {
+  captureSatelliteOverlayTrigger,
+  restoreSatelliteOverlayFocus,
+  satelliteOverlayAfterEscape,
+  satelliteOverlayTriggerId,
+} from "@/lib/rewrite-satellite-a11y";
 
 type CredentialWizardDialogProps = {
   open: boolean;
@@ -17,13 +23,26 @@ export function CredentialWizardDialog({
   onCreated,
   onClose,
 }: CredentialWizardDialogProps) {
+  const overlayTrigger = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) {
+      overlayTrigger.current = null;
       return;
     }
+    overlayTrigger.current =
+      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      const next = satelliteOverlayAfterEscape();
+      onClose();
+      if (next.restoreFocus) {
+        restoreSatelliteOverlayFocus(
+          overlayTrigger.current ?? satelliteOverlayTriggerId("ndv-credential"),
+        );
       }
     }
     window.addEventListener("keydown", onKey);

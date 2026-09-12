@@ -13,6 +13,7 @@ import {
   editorDrawerTriggerId,
   editorTopBarControlLabel,
 } from "@/lib/e12-accessibility-contract";
+import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import {
   EDITOR_CANVAS_REDO_LABEL,
   EDITOR_CANVAS_UNDO_LABEL,
@@ -143,6 +144,7 @@ export function EditorTopBar({
       </label>
       <button
         type="button"
+        id={satelliteOverlayTriggerId("action-wizard")}
         onClick={onAddAction}
         className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900"
       >
@@ -242,6 +244,7 @@ export function EditorTopBar({
       </div>
       <button
         type="button"
+        id={satelliteOverlayTriggerId("start-published")}
         onClick={onStart}
         disabled={!workflow}
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"

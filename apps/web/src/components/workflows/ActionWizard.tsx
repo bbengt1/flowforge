@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthorizedResourceSelect } from "@/components/config/AuthorizedResourceSelect";
 import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { listCredentials } from "@/lib/credential-client";
@@ -133,6 +133,12 @@ import {
 } from "@/lib/workflow-action-wizard";
 import type { CatalogPort, WorkflowCatalog } from "@/lib/workflow-types";
 import type { YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
+import {
+  captureSatelliteOverlayTrigger,
+  restoreSatelliteOverlayFocus,
+  satelliteOverlayAfterEscape,
+  satelliteOverlayTriggerId,
+} from "@/lib/rewrite-satellite-a11y";
 
 const STEP_LABEL: Record<ActionWizardStep, string> = {
   type: "Choose type",
@@ -181,6 +187,7 @@ export function ActionWizard({
   onClose,
   onAdd,
 }: ActionWizardProps) {
+  const overlayTrigger = useRef<HTMLElement | null>(null);
   const [step, setStep] = useState<ActionWizardStep>("type");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<ActionWizardDraft>(() =>
@@ -339,12 +346,22 @@ export function ActionWizard({
 
   useEffect(() => {
     if (!open) {
+      overlayTrigger.current = null;
       return;
     }
+    overlayTrigger.current =
+      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      const next = satelliteOverlayAfterEscape();
+      onClose();
+      if (next.restoreFocus) {
+        restoreSatelliteOverlayFocus(
+          overlayTrigger.current ?? satelliteOverlayTriggerId("action-wizard"),
+        );
       }
     }
     window.addEventListener("keydown", onKey);

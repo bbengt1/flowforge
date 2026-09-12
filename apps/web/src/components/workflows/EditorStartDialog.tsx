@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import {
+  captureSatelliteOverlayTrigger,
+  restoreSatelliteOverlayFocus,
+  satelliteOverlayAfterEscape,
+  satelliteOverlayTriggerId,
+} from "@/lib/rewrite-satellite-a11y";
 
 type EditorStartDialogProps = {
   open: boolean;
@@ -13,14 +19,27 @@ export function EditorStartDialog({
   onClose,
   children,
 }: EditorStartDialogProps) {
+  const overlayTrigger = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) {
+      overlayTrigger.current = null;
       return;
     }
+    overlayTrigger.current =
+      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      const next = satelliteOverlayAfterEscape();
+      onClose();
+      if (next.restoreFocus) {
+        restoreSatelliteOverlayFocus(
+          overlayTrigger.current ??
+            satelliteOverlayTriggerId("start-published"),
+        );
       }
     }
     window.addEventListener("keydown", onKey);

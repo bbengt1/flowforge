@@ -23,6 +23,10 @@ import {
   loadEditorActivation,
 } from "@/lib/editor-activation-client";
 import { editorTopBarControlLabel } from "@/lib/e12-accessibility-contract";
+import {
+  activationStatusPresentation,
+  satelliteOverlayTriggerId,
+} from "@/lib/rewrite-satellite-a11y";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import type { WorkflowVersion } from "@/lib/workflow-types";
@@ -198,7 +202,7 @@ export function EditorActivationChrome({
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
         className="mt-3 text-sm font-medium text-zinc-900"
       >
-        {state.label}
+        <ActivationStatusText state={state} />
       </p>
       <p className="mt-1 text-sm text-zinc-600">{state.help}</p>
       <p className="mt-2 text-xs text-zinc-500">{EDITOR_ACTIVATION_MANUAL_HELP}</p>
@@ -294,10 +298,18 @@ function CompactActivation({
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
         className={`text-xs ${live ? "font-medium text-teal-900" : "text-zinc-600"}`}
       >
-        {loading ? "Activation…" : editorActivationTopBarLabel(state)}
+        {loading ? (
+          "Activation…"
+        ) : (
+          <ActivationStatusText
+            state={state}
+            label={editorActivationTopBarLabel(state)}
+          />
+        )}
       </p>
       <button
         type="button"
+        id={satelliteOverlayTriggerId("activation")}
         data-editor-activation="open"
         onClick={onOpenTriggers}
         disabled={disabled || !onOpenTriggers}
@@ -311,15 +323,41 @@ function CompactActivation({
 
 function ActivationStatus({ state }: { state: EditorActivationState }) {
   const live = editorActivationLooksLive(state);
+  const presentation = activationStatusPresentation({
+    live,
+    label: live ? "Active" : "Not live",
+  });
   return (
     <p
-      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
         live
           ? "bg-teal-50 text-teal-900"
           : "bg-zinc-100 text-zinc-700"
       }`}
     >
-      {live ? "Active" : "Not live"}
+      <span aria-hidden="true">{presentation.icon}</span>
+      <span>{presentation.label}</span>
+      <span className="sr-only">{presentation.description}</span>
     </p>
+  );
+}
+
+function ActivationStatusText({
+  state,
+  label,
+}: {
+  state: EditorActivationState;
+  label?: string;
+}) {
+  const presentation = activationStatusPresentation({
+    live: editorActivationLooksLive(state),
+    label: label ?? state.label,
+  });
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden="true">{presentation.icon}</span>
+      <span>{presentation.label}</span>
+      <span className="sr-only">{presentation.description}</span>
+    </span>
   );
 }

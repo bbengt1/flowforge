@@ -62,6 +62,8 @@ export const E12_A11Y_FIXES = [
   "editor-top-bar-labels",
   "editor-drawer-escape",
   "editor-selection-announce",
+  "rewrite-satellite-escape-focus",
+  "rewrite-satellite-icon-text",
 ] as const;
 
 export const E12_A11Y_GAPS = [

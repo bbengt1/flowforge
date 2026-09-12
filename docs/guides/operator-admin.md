@@ -3,6 +3,7 @@
 Relates to #184 / Part of #181. **Keep #184 open.**
 Relates to #207 / Part of #195. **Keep #207 open.**
 Relates to #278 / Part of #233. **Keep #278 open.**
+Relates to #279 / Part of #233. **Keep #279 open.**
 
 Product-shell walkthrough for operators and workspace admins using
 the Next.js UI (`apps/web`). This is the Chloe E12.3 **UI** guide.
@@ -147,7 +148,8 @@ so the canvas can take the viewport. Commands bind to this route id.
    drafts never run / never look live. **Draft — not live** when
    nothing is published. Opening **Activation** focuses the inspector
    Triggers tab — not the home webhook/schedule drawers. Home column
-   is #271; one-gesture test-run is #272.
+   is #271; one-gesture test-run is #272. Live / not-live stays
+   icon + text (R7.4 / #279 — **Keep #279 open.**).
 
 ### Palette / library
 
@@ -160,7 +162,8 @@ not hide-by-default only. Relates to #234 / Part of #228. Keep
    stay workflow-level; they are not canvas nodes. Hide remembers
    closed for the next visit in this tab.
 2. **Add action** wizard — type → authorized target/credential →
-   configure → map ports → review. Esc closes. Secrets never appear in
+   configure → map ports → review. Esc closes and restores focus
+   (R7.4 / #279 — **Keep #279 open.**). Secrets never appear in
    selectors.
 3. Drag from the library still inserts defaults. Catalog 403 / empty
    list fail closed. `/actions` is the catalog reference, not a third
@@ -179,8 +182,12 @@ Keyboard: focus the canvas, then Zoom in / Zoom out / Fit / Snap /
 Reset. Selecting nodes announces enough to use the inspector — this is
 not a screen-reader graph rewrite.
 Esc on an open drawer restores focus to the matching top-bar control.
+The same Esc + focus return contract applies to the Add action wizard,
+NDV add-credential modal, Start published dialog, and home Start /
+Webhooks / Schedules drawers (R7.4 / #279 — **Keep #279 open.**).
 On narrow viewports (`max-width: 767px`) the inspector stacks first —
-a documented breakpoint, not a mobile app.
+a documented breakpoint (`touch-inspector-first`), not a mobile app.
+Still no screen-reader graph rewrite.
 
 ### Inspector
 
@@ -196,7 +203,8 @@ shell. Relates to #235 / Part of #228. Keep #235 open.
    port types; R3.2 / #247 — keep #247 open) / pins / credentials by
    **display name**. Pick an existing vault item or **add** one; secret
    entry stays in the masked wizard (modal or `/credentials/new`
-   return-to-editor). The rail never shows `SecretField` / plaintext /
+   return-to-editor). Esc on the modal restores focus to **Add
+   credential**. The rail never shows `SecretField` / plaintext /
    rotate. No expression language. Incompatible mappings are blocked
    or explained.
 2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
@@ -230,7 +238,9 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
 
 1. **Runs** is a remembered-open satellite scoped to this workflow
    (closed still shows a **Runs** rail — it does not bury the canvas).
-   `/executions` remains the workspace inbox.
+   `/executions` remains the workspace inbox. Esc closes the drawer
+   and restores focus to **Runs** (R7.4 / #279 — **Keep #279 open.**).
+   Status stays icon + text.
 2. Status chips filter this workflow’s runs. **Skip to failed** /
    **Skip to indeterminate** jump to the matching run or step without
    leaving the graph. Arrow keys move; Enter / Space overlays the
