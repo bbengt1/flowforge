@@ -1,6 +1,7 @@
 # Release and operations
 
 Relates to #184 / Part of #181. **Keep #184 open.**
+Relates to #278 / Part of #233. **Keep #278 open.**
 
 Control-plane / ops slice (**jonny**, #188) plus operator/admin **UI**
 and accessibility landings (**Chloe**, this PR). These pages publish
@@ -12,11 +13,11 @@ weaken E12.1 / E12.2 harnesses.
 | Guide | Audience | Contents |
 | --- | --- | --- |
 | [API / OpenAPI](../reference/openapi.md) | Platform admins, integrators | How the published spec is obtained, `/api/v1` versioning, auth/session at high level |
-| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (#191), production env inventory, local-vs-prod pitfalls, deploy manifests |
+| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (#191 / R7.3 #278 — labeled Example context stays local-only; trusted-dev is never rewrite login), production env inventory, local-vs-prod pitfalls, deploy manifests |
 | [Incident and recovery](incident-recovery.md) | On-call / ops | Health vs readiness, worker-loss/fencing, restore rehearsal, escalation signals |
 | [Retention and backup](retention-backup.md) | Ops / compliance | Encrypted backups, restore cadence, retention purge, legal hold |
 | [E12.3 threat-model review](../reference/e12-threat-model-review.md) | Production-gate reviewers | Trust boundaries, embed, credentials, SSRF, tenancy; sign-off checklist |
-| [Operator / admin UI](../guides/operator-admin.md) | Operators, workspace admins | Product-shell walkthroughs: membership, vault, approvals, executions, alerts, embed chrome, admin screens |
+| [Operator / admin UI](../guides/operator-admin.md) | Operators, workspace admins | Product-shell walkthroughs after R2–R7: home/editor, grant-gated membership off product chrome, labeled Example context, vault, approvals, executions, alerts, embed chrome, admin screens |
 | [Accessibility review](../reference/e12-accessibility-review.md) | Production-gate reviewers | Keyboard, contrast, assistive-tech findings and cheap `apps/web` fixes |
 
 Related evidence (do not re-run as a substitute for these guides):

@@ -10,7 +10,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
 2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. `/membership` is the E2.1 operator for tenant/workspace membership (requires the E2.1 API from PR #17). `/isolation` is the E2.2 negative isolation exercise (requires the E2.2 API from PR #19). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so the membership bootstrap still works; do not copy those into production. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
@@ -139,7 +139,8 @@ NetworkPolicy, TLS at the ingress/proxy boundary. See
 
 ## Local default tenant seed
 
-Relates to #191. Fresh `docker compose up` seeds one tenant, one workbench,
+Relates to #191. Relates to #278 / Part of #233. **Keep #278 open.**
+Fresh `docker compose up` seeds one tenant, one workbench,
 and placeholder vault credentials so the UI can be exercised without a
 manual `POST /tenants` / `POST /workspaces` bootstrap.
 
@@ -188,16 +189,21 @@ is set.
 
 `GET /api/v1/workspaces` and `GET /api/v1/credentials` already return
 the seeded rows for `admin-1` once workspace lookup is
-`tenant slug=local` + `workbench_key=default`. Trusted-dev header
-identity (or a cookie session for that principal) is still required —
-the seed does not change authentication.
+`tenant slug=local` + `workbench_key=default`. A cookie session for
+that principal is the path — the seed does not change authentication
+and does not invent a rewrite login.
 
-On `/membership`, click **Example context** to fill issuer
+On `/membership` (Settings → Workspace members when ADV-024 is
+granted), click the labeled **Example context** to fill issuer
 `https://idp.example`, subject `admin-1`, tenant slug `local`, and
-workbench key `default`. Enable the temporary header fallback if you
-are not using a session (cookie-session establish uses the same seed
-principal). Then list workspaces / open Credentials. The switcher
-lists memberships only after that workspace lookup is in tab
+workbench key `default`. That button is local-only compose localseed —
+do not promote it into production Settings copy.
+
+Trusted-dev identity headers and `POST /session` remain a labeled
+local fallback when compose has `TRUSTED_DEV_IDENTITY_HEADERS=1`.
+They are **never rewrite login**. Production identity is
+`POST /embed/exchange`. Then list workspaces / open Credentials. The
+switcher lists memberships only after that workspace lookup is in tab
 `sessionStorage`.
 
 ### Production

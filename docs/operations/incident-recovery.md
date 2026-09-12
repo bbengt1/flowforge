@@ -141,6 +141,7 @@ tickets or alert payloads.
 **Do not**
 
 - Enable `TRUSTED_DEV_IDENTITY_HEADERS` to “unblock” production identity.
+  Trusted-dev headers are never rewrite login.
 - Point scrapers at OpenAPI/metrics without a platform-admin session.
 - Retry `indeterminate` provider steps without verification.
 - Treat compose `/health` 200 as “ready to dump.”

@@ -14,9 +14,10 @@ export default function MembershipPage() {
           Workspace members
         </h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          {MEMBERSHIP_ADMIN_HELP} Cookie session is preferred; header
-          identity is a labeled local-dev fallback. ADV-024 still
-          requires <code className="font-mono text-sm">workspace.administer</code>{" "}
+          {MEMBERSHIP_ADMIN_HELP} Cookie session is preferred; trusted-dev
+          header identity is a labeled local-dev fallback — never rewrite
+          login. ADV-024 still requires{" "}
+          <code className="font-mono text-sm">workspace.administer</code>{" "}
           or <code className="font-mono text-sm">platform.administer</code>.
         </p>
       </header>

@@ -52,24 +52,38 @@ export function IdentityBootstrap({
             key — not a workspace UUID. Cookie session is the subject. These
             fields stay in this tab (
             <code className="font-mono text-xs">sessionStorage</code>
-            ) and are not secrets.
+            ) and are not secrets. Labeled Example context is the compose
+            localseed only — not production Settings copy.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onExample}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
-          >
-            Example context
-          </button>
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-          >
-            Clear
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onExample}
+              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+            >
+              Example context
+            </button>
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            >
+              Clear
+            </button>
+          </div>
+          <p className="max-w-xs text-right text-xs leading-5 text-zinc-500">
+            Local-only compose localseed (
+            <code className="font-mono">{LOCAL_SEED_ISSUER}</code>
+            {" / "}
+            <code className="font-mono">{LOCAL_SEED_SUBJECT}</code>
+            {" / "}
+            <code className="font-mono">{LOCAL_SEED_TENANT_SLUG}</code>
+            {" / "}
+            <code className="font-mono">{LOCAL_SEED_WORKBENCH_KEY}</code>
+            ). Not production Settings copy.
+          </p>
         </div>
       </div>
 
@@ -136,6 +150,7 @@ export function IdentityBootstrap({
           sends <code className="font-mono text-xs">X-FlowForge-Issuer</code>{" "}
           / <code className="font-mono text-xs">X-FlowForge-Subject</code> as
           in E2.1. Do not put secrets here. This fallback will be removed.
+          It is never rewrite login.
         </p>
         <label className="mt-3 flex items-start gap-2 text-sm">
           <input

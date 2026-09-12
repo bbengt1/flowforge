@@ -2,8 +2,12 @@ import type { DevIdentity } from "./identity-headers.ts";
 
 /**
  * Compose localseed values (#191 / `internal/localseed`).
- * UI placeholders and "Example context" prefills only — not an API
- * contract and not used in production fail-closed paths.
+ * UI placeholders and labeled "Example context" prefills only — not an
+ * API contract and not used in production fail-closed paths.
+ *
+ * R7.3 / #278 (keep #278 open): stays labeled and local-only. Do not
+ * promote into production Settings copy. Trusted-dev header fallback
+ * is never rewrite login. Seed crypto/defaults stay unchanged.
  */
 export const LOCAL_SEED_ISSUER = "https://idp.example";
 export const LOCAL_SEED_SUBJECT = "admin-1";
