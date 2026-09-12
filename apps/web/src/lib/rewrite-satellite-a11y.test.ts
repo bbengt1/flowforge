@@ -165,7 +165,7 @@ describe("R7.4 rewrite satellite a11y", () => {
     );
     assert.match(credential, /satelliteOverlayAfterEscape/);
     assert.match(credential, /restoreSatelliteOverlayFocus/);
-    assert.match(credential, /ndv-add-credential|SATELLITE_OVERLAY_TRIGGERS/);
+    assert.match(credential, /satelliteOverlayTriggerId\("ndv-credential"\)/);
 
     const start = webSource("src/components/workflows/EditorStartDialog.tsx");
     assert.match(start, /satelliteOverlayAfterEscape/);
