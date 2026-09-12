@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
+import { FoundationAdminLinks } from "@/components/settings/FoundationAdminLinks";
 import {
   getPublicHealthUrl,
   getPublicOpenApiJsonUrl,
@@ -29,8 +29,9 @@ export default async function SettingsPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Session, workspace context, control-plane health, and OpenAPI.
-          Cookie session + CSRF are unchanged. Membership and isolation
-          remain the E2 surfaces.
+          Cookie session + CSRF are unchanged. Members and isolation
+          stay ADV-024 grant-gated — Settings may link carefully; they
+          are not product destinations.
         </p>
       </header>
       <IsolationIdentityPanel />
@@ -50,26 +51,7 @@ export default async function SettingsPage() {
         />
       </div>
       <DeveloperSettings />
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold">Foundation operators</h2>
-        <ul className="mt-3 space-y-2 text-sm">
-          <li>
-            <Link href="/membership" className="text-teal-800 underline">
-              Membership and roles
-            </Link>
-          </li>
-          <li>
-            <Link href="/isolation" className="text-teal-800 underline">
-              Isolation exercise
-            </Link>
-          </li>
-          <li>
-            <Link href="/audit" className="text-teal-800 underline">
-              Workspace audit
-            </Link>
-          </li>
-        </ul>
-      </section>
+      <FoundationAdminLinks />
     </main>
   );
 }

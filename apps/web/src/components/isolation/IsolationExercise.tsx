@@ -214,22 +214,22 @@ export function IsolationExercise() {
       className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
     >
       <div>
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E2.2 · Chloe UI
+        <p className="text-sm font-medium tracking-wide text-zinc-500 uppercase">
+          Negative check
         </p>
         <h2 id="isolation-heading" className="mt-1 text-lg font-semibold">
-          Negative isolation exercise
+          Isolation check
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600">
           Same cookie session (or temporary header fallback) and tenant +
-          workbench lookup as membership. These calls hit jonny&apos;s
-          isolation hook routes. The story succeeds when cross-workspace
-          access <strong>fails</strong> and problem+json (
+          workbench lookup as members admin. These calls hit isolation hook
+          routes. <strong>Success is a denial</strong> — cross-workspace
+          access must fail closed and problem+json (
           <code className="font-mono text-xs">code</code>,{" "}
-          <code className="font-mono text-xs">request_id</code>) is visible.
+          <code className="font-mono text-xs">request_id</code>) stay visible.
           Host-supplied{" "}
           <code className="font-mono text-xs">X-FlowForge-Workspace-ID</code>{" "}
-          is never the workspace selector.
+          is never the workspace selector. This is not a product surface.
         </p>
       </div>
 
@@ -394,7 +394,7 @@ export function IsolationExercise() {
             disabled={pending !== null || !ready}
             className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
           >
-            {pending === "all" ? "Running…" : "Run fail-closed exercises"}
+            {pending === "all" ? "Running…" : "Run fail-closed checks"}
           </button>
         </div>
         <ul className="mt-3 grid gap-2">
@@ -415,7 +415,7 @@ export function IsolationExercise() {
                 disabled={pending !== null || !ready}
                 className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
               >
-                {pending === exercise.id ? "Calling…" : "Exercise"}
+                {pending === exercise.id ? "Calling…" : "Check"}
               </button>
             </li>
           ))}
@@ -425,8 +425,9 @@ export function IsolationExercise() {
       <div aria-live="polite">
         <h3 className="font-medium">Results</h3>
         <p className="mt-1 text-sm text-zinc-600">
-          Fail-closed (403/404/400 with problem details) is the expected
-          outcome for foreign-id and host-supplied identity attempts.
+          Fail-closed (403/404/400 with problem details) is a denial —
+          the expected success for foreign-id and host-supplied identity
+          attempts. A 2xx on a fail-closed check did not hold.
         </p>
         {results.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-600">No exercises run yet.</p>

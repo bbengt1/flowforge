@@ -41,6 +41,26 @@ describe("paletteCommands", () => {
     assert.equal(ids.includes("run-published"), false);
     assert.equal(ids.includes("manual-start"), false);
     assert.equal(ids.includes("nav-vault"), false);
+    assert.equal(ids.includes("nav-membership"), false);
+    assert.equal(ids.includes("nav-isolation"), false);
+  });
+
+  it("omits membership/isolation commands without the ADV-024 grant", () => {
+    const viewerIds = paletteCommands(viewer).map((item) => item.id);
+    assert.equal(viewerIds.includes("nav-membership"), false);
+    assert.equal(viewerIds.includes("nav-isolation"), false);
+    const adminIds = paletteCommands([
+      ...viewer,
+      "workspace.administer",
+    ]).map((item) => item.id);
+    assert.ok(adminIds.includes("nav-membership"));
+    assert.ok(adminIds.includes("nav-isolation"));
+    assert.equal(
+      paletteCommands([...viewer, "workspace.administer"]).find(
+        (item) => item.id === "nav-isolation",
+      )?.hint,
+      "Success is a denial",
+    );
   });
 
   it("includes authoring commands for an editor with execute", () => {
