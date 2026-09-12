@@ -16,6 +16,8 @@ import {
   R71_EPIC,
   R71_KEEP_STORY_OPEN,
   R71_STORY,
+  R7_HARD_LINE,
+  R7_HARD_LINE_HELP,
   R7_LATER_STORY_NOTES,
   REWRITE_EMBED_FAIL_CLOSED_HELP,
   REWRITE_EMBED_MOUNT,
@@ -31,6 +33,8 @@ import {
   rewriteEmbedBoundaryMoved,
   rewriteEmbedChipsUnchanged,
   rewriteEmbedChromeMayMount,
+  rewriteEmbedFrameAncestorFailClosedUnchanged,
+  rewriteEmbedHoldsR7HardLine,
   rewriteEmbedHostIssuerBindUnchanged,
   rewriteEmbedHostQueryNeverAuthorizes,
   rewriteEmbedInventedTree,
@@ -73,6 +77,18 @@ describe("R7.1 rewrite chrome on /embed/v1 + session.embed", () => {
     assert.equal(R71_STORY, 276);
     assert.equal(R71_EPIC, 233);
     assert.equal(R71_KEEP_STORY_OPEN, true);
+    assert.equal(rewriteEmbedHoldsR7HardLine(), true);
+    assert.equal(REWRITE_EMBED_MOUNT.inheritR7HardLine, true);
+    assert.equal(R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly, true);
+    assert.equal(R7_HARD_LINE.adv021FailClosedWithoutSessionEmbedOnEmbedV1, true);
+    assert.equal(R7_HARD_LINE.adv024MembershipIsolationStayGrantGated, true);
+    assert.equal(R7_HARD_LINE.adv024ReshapeIsR72DoNotWeakenGrant, true);
+    assert.equal(R7_HARD_LINE.hostQueryDisplayOnlyNeverAuthorization, true);
+    assert.equal(R7_HARD_LINE.noSecondEmbedTreeSameMountsAsStandalone, true);
+    assert.equal(R7_HARD_LINE.doNotWeakenIssuerFailClosed, true);
+    assert.equal(R7_HARD_LINE.doNotWeakenFrameAncestorFailClosed, true);
+    assert.match(R7_HARD_LINE_HELP, /session\.embed only/);
+    assert.match(R7_HARD_LINE_HELP, /do not weaken the grant/);
     assert.equal(REWRITE_EMBED_MOUNT.d6MigrateInPlace, true);
     assert.equal(REWRITE_EMBED_MOUNT.sameMountsAsStandalone, true);
     assert.equal(REWRITE_EMBED_MOUNT.noSecondEmbedTree, true);
@@ -215,6 +231,7 @@ describe("R7.1 rewrite chrome on /embed/v1 + session.embed", () => {
     assert.equal(rewriteEmbedChipsUnchanged(), true);
     assert.equal(EMBED_CHIPS_SET_COOKIE, "SameSite=None; Secure; Partitioned");
     assert.equal(rewriteEmbedHostIssuerBindUnchanged(), true);
+    assert.equal(rewriteEmbedFrameAncestorFailClosedUnchanged(), true);
     assert.equal(rewriteEmbedBoundaryMoved(), false);
     assert.match(JONNY_R71_NOTE, /No embed boundary moved/);
     assert.match(JONNY_R71_NOTE, /Do not invent/);

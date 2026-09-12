@@ -39,11 +39,13 @@ import {
   EMBED_CHIPS_SET_COOKIE,
   EMBED_CHROME_FROM_SESSION_RULES,
   EMBED_CHROME_MISSING_SESSION_MESSAGE,
+  EMBED_HOST_ALLOWLIST_RULES,
   EMBED_HOST_ISSUER_RULES,
   EMBED_MEMBERSHIP_ISOLATION_GRANT_CAPS,
   EMBED_MOUNT_PREFIX,
   EMBED_ROUTES,
   catalogRoutesForGrant,
+  frameAncestorsForPath,
   grantsMembershipIsolationCatalog,
 } from "./embed-contract.ts";
 import { executionInboxEmbedUnchanged } from "./execution-inbox.ts";
@@ -74,15 +76,37 @@ export const JONNY_R71_NOTE =
   "No embed boundary moved. CHIPS, host-issuer bind, ADV-021 session.embed, and ADV-024 grant gating stay. Chrome migrates in place on the existing /embed/v1 rewrite. Do not invent a second tree, Portal cookie, or host-query authz.";
 
 /**
- * Later R7 stories. Do not pull them into this mount.
+ * Gracie + jonny R7 hard line — bake into R7.1 / #276.
+ * Inherit on R7.2 / #277, R7.3 / #278, and R7.4 / #279. Do not weaken.
+ */
+export const R7_HARD_LINE = {
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv021FailClosedWithoutSessionEmbedOnEmbedV1: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  adv024ReshapeIsR72DoNotWeakenGrant: true,
+  hostQueryDisplayOnlyNeverAuthorization: true,
+  noSecondEmbedTreeSameMountsAsStandalone: true,
+  doNotWeakenIssuerFailClosed: true,
+  doNotWeakenFrameAncestorFailClosed: true,
+  jonnyOnlyIfBoundaryMoves: true,
+  boundaryMustNotMove: true,
+} as const;
+
+export const R7_HARD_LINE_HELP =
+  "ADV-021: embed chrome from session.embed only — fail closed without it on /embed/v1. ADV-024: membership/isolation stay grant-gated (reshape is R7.2; do not weaken the grant). Host query (?tenant= / ?workbench=) is display-only — never authorization. No second embed tree — same /embed/v1 mounts as standalone. Do not weaken issuer / frame-ancestor fail-closed. Ping jonny only if an embed/ADV boundary actually moves — it should not.";
+
+/**
+ * Later R7 stories inherit the hard line. Do not pull them into this mount.
  */
 export const R7_LATER_STORY_NOTES = {
-  r72: "R7.2 / #277: membership reshape. Do not weaken ADV-024 grant gating here.",
-  r73: "R7.3 / #278: local seed and ops docs. Out of scope for this mount.",
-  r74: "R7.4 / #279: E12.3 a11y extend. Out of scope for this mount.",
+  r72: "R7.2 / #277: membership reshape. Inherit R7 hard line — ADV-024 stays grant-gated; do not weaken the grant.",
+  r73: "R7.3 / #278: local seed and ops docs. Inherit R7 hard line. Out of scope for this mount.",
+  r74: "R7.4 / #279: E12.3 a11y extend. Inherit R7 hard line. Out of scope for this mount.",
 } as const;
 
 export const REWRITE_EMBED_MOUNT = {
+  ...R7_HARD_LINE,
+  inheritR7HardLine: true,
   d6MigrateInPlace: true,
   sameMountsAsStandalone: true,
   noSecondEmbedTree: true,
@@ -96,6 +120,7 @@ export const REWRITE_EMBED_MOUNT = {
   chipsSameSiteNoneSecurePartitioned: true,
   chipsUnchanged: true,
   hostIssuerBindUnchanged: true,
+  frameAncestorFailClosedUnchanged: true,
   adv024GrantGatingUnchanged: true,
   adv024ReshapeIsR72: true,
   mountSearchAndCommandsAfterSessionEmbed: true,
@@ -233,7 +258,38 @@ export function rewriteEmbedHostIssuerBindUnchanged(): boolean {
     EMBED_HOST_ISSUER_RULES.headersAreOptionalConsistency &&
     EMBED_HOST_ISSUER_RULES.wrongIssuerForHostIs403 &&
     EMBED_HOST_ISSUER_RULES.nextPublicIsNotASource &&
+    R7_HARD_LINE.doNotWeakenIssuerFailClosed &&
     REWRITE_EMBED_MOUNT.hostIssuerBindUnchanged
+  );
+}
+
+export function rewriteEmbedFrameAncestorFailClosedUnchanged(): boolean {
+  return (
+    EMBED_HOST_ALLOWLIST_RULES.emptyFailsClosed &&
+    EMBED_HOST_ALLOWLIST_RULES.noWildcard &&
+    EMBED_HOST_ALLOWLIST_RULES.nextPublicIsNotASource &&
+    frameAncestorsForPath("/embed/v1", {}) === "'none'" &&
+    frameAncestorsForPath("/workflows", {
+      WEB_EMBED_FRAME_ANCESTORS: "https://evil.example",
+    }) === "'none'" &&
+    R7_HARD_LINE.doNotWeakenFrameAncestorFailClosed &&
+    REWRITE_EMBED_MOUNT.frameAncestorFailClosedUnchanged
+  );
+}
+
+export function rewriteEmbedHoldsR7HardLine(): boolean {
+  return (
+    REWRITE_EMBED_MOUNT.inheritR7HardLine &&
+    R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly &&
+    R7_HARD_LINE.adv021FailClosedWithoutSessionEmbedOnEmbedV1 &&
+    R7_HARD_LINE.adv024MembershipIsolationStayGrantGated &&
+    R7_HARD_LINE.adv024ReshapeIsR72DoNotWeakenGrant &&
+    R7_HARD_LINE.hostQueryDisplayOnlyNeverAuthorization &&
+    R7_HARD_LINE.noSecondEmbedTreeSameMountsAsStandalone &&
+    R7_HARD_LINE.doNotWeakenIssuerFailClosed &&
+    R7_HARD_LINE.doNotWeakenFrameAncestorFailClosed &&
+    R7_HARD_LINE.jonnyOnlyIfBoundaryMoves &&
+    R7_HARD_LINE.boundaryMustNotMove
   );
 }
 
