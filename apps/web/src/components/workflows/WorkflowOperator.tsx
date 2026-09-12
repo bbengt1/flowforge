@@ -38,7 +38,7 @@ import {
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
 import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
-import { canOfferEditorTestRun } from "@/lib/editor-test-run";
+import { canOfferEditorTestRun, testRunVersionHints } from "@/lib/editor-test-run";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import {
   EDITOR_LIBRARY_DEFAULT_OPEN,
@@ -1372,11 +1372,18 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setProblem(null);
     // D5 hard line: mint published test version then start it.
     // Never pass the open editor YAML / unsaved buffer.
+    // Matching saved/published digests start the existing published version.
     const result = await runPublishedTestVersion(identity, {
       workflowId: workflow.id,
       revision,
       dirty,
       permissions,
+      ...testRunVersionHints({
+        draftDigest: workflow.draftDigest,
+        latestVersionDigest:
+          workflow.latestVersionDigest ?? publishedVersion?.digest ?? null,
+        latestVersionId: workflow.latestVersionId ?? publishedVersion?.id ?? null,
+      }),
     });
     setLastRequestId(result.requestId);
     setPending(null);

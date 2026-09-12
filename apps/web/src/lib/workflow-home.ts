@@ -63,6 +63,7 @@ export type WorkflowHomeItem = {
   name: string;
   status: string;
   draftRevision: number;
+  draftDigest?: string;
   latestVersionNumber: number;
   latestVersionId?: string;
   latestVersionDigest?: string;
@@ -175,6 +176,7 @@ export function toWorkflowHomeItem(
     name: record.name,
     status: record.status,
     draftRevision: record.draftRevision,
+    draftDigest: record.draftDigest || draft?.digest,
     latestVersionNumber: record.latestVersionNumber,
     latestVersionId: record.latestVersionId,
     latestVersionDigest: record.latestVersionDigest,

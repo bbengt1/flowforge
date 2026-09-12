@@ -27,6 +27,10 @@ import {
   TEST_RUN_PUBLISH_KIND,
   TEST_RUN_PUBLISH_KIND_GAP,
   TEST_RUN_PUBLISH_NOTE,
+  TEST_RUN_ALREADY_PUBLISHED_HELP,
+  TEST_RUN_ALREADY_PUBLISHED_UNRESOLVED_HELP,
+  TEST_RUN_FOLLOWUP_ISSUE,
+  TEST_RUN_KEEP_FOLLOWUP_OPEN,
   TEST_RUN_REVISION_HELP,
   TEST_RUN_SAVE_FIRST_HELP,
   canOfferEditorTestRun,
@@ -41,6 +45,13 @@ import {
   editorTestRunStartPath,
   editorTestRunStartSendsYaml,
   editorTestRunUsesExistingClients,
+  isAlreadyPublishedTestRunConflict,
+  latestPublishedTestVersion,
+  testRunCanReusePublishedVersion,
+  testRunDigestUnchanged,
+  testRunHasLocalDigestPair,
+  testRunKnownDigestChanged,
+  testRunVersionHints,
   testRunInputUsesOpenEditorYaml,
   testRunPublishBody,
   testRunStartUsesPublishedVersion,
@@ -62,6 +73,8 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(R63_STORY, 272);
     assert.equal(R63_EPIC, 232);
     assert.equal(R63_KEEP_STORY_OPEN, true);
+    assert.equal(TEST_RUN_FOLLOWUP_ISSUE, 284);
+    assert.equal(TEST_RUN_KEEP_FOLLOWUP_OPEN, true);
     assert.equal(editorTestRunHoldsR6Confirmation(), true);
     assert.equal(EDITOR_TEST_RUN.inheritR6Confirmation, true);
     assert.equal(R6_CONFIRMATION.d2ComposeEnablePlusVersionPin, true);
@@ -95,6 +108,12 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(EDITOR_TEST_RUN.homeWhereNatural, true);
     assert.equal(EDITOR_TEST_RUN.lastSavedDraftOnly, true);
     assert.equal(EDITOR_TEST_RUN.startUsesMintedWorkflowVersionId, true);
+    assert.equal(EDITOR_TEST_RUN.preferDetectUnchangedDigestBeforePublish, true);
+    assert.equal(EDITOR_TEST_RUN.unchangedDigestStartsExistingPublished, true);
+    assert.equal(EDITOR_TEST_RUN.alreadyPublished409StartsLatestPublished, true);
+    assert.equal(EDITOR_TEST_RUN.homeTestRunSameAsEditor, true);
+    assert.equal(EDITOR_TEST_RUN.probeWorkflowWhenLocalDigestsIncomplete, true);
+    assert.equal(EDITOR_TEST_RUN.doNotInventIdempotentTestRunEndpoint, true);
     assert.equal(EDITOR_TEST_RUN.noAppsApiChanges, true);
     assert.equal(EDITOR_TEST_RUN.publishFlavorGapBlocking, false);
     assert.equal(EDITOR_TEST_RUN.doNotInventDraftRun, true);
@@ -200,6 +219,121 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(homeDraft.ok, true);
   });
 
+  it("reuses the latest published version when the saved digest is unchanged", () => {
+    assert.equal(
+      testRunDigestUnchanged("sha256:same", "sha256:same"),
+      true,
+    );
+    assert.equal(testRunDigestUnchanged("sha256:a", "sha256:b"), false);
+    assert.equal(testRunDigestUnchanged("", "sha256:same"), false);
+    assert.equal(testRunDigestUnchanged("sha256:same", ""), false);
+    assert.deepEqual(
+      testRunVersionHints({
+        draftDigest: " sha256:same ",
+        latestVersionDigest: "sha256:same",
+        latestVersionId: VERSION_ID,
+      }),
+      {
+        draftDigest: "sha256:same",
+        latestVersionDigest: "sha256:same",
+        latestVersionId: VERSION_ID,
+      },
+    );
+    assert.equal(
+      testRunHasLocalDigestPair({
+        draftDigest: "sha256:same",
+        latestVersionDigest: "sha256:same",
+      }),
+      true,
+    );
+    assert.equal(
+      testRunHasLocalDigestPair({
+        draftDigest: "sha256:same",
+        latestVersionDigest: undefined,
+      }),
+      false,
+    );
+    assert.equal(
+      testRunKnownDigestChanged({
+        draftDigest: "sha256:new",
+        latestVersionDigest: "sha256:old",
+      }),
+      true,
+    );
+    assert.equal(
+      testRunKnownDigestChanged({
+        draftDigest: "sha256:same",
+        latestVersionDigest: undefined,
+      }),
+      false,
+    );
+    assert.equal(
+      testRunCanReusePublishedVersion({
+        draftDigest: "sha256:same",
+        latestVersionDigest: "sha256:same",
+        latestVersionId: VERSION_ID,
+      }),
+      true,
+    );
+    assert.equal(
+      testRunCanReusePublishedVersion({
+        draftDigest: "sha256:same",
+        latestVersionDigest: "sha256:same",
+        latestVersionId: "draft",
+      }),
+      false,
+    );
+    assert.equal(
+      testRunCanReusePublishedVersion({
+        draftDigest: "sha256:new",
+        latestVersionDigest: "sha256:old",
+        latestVersionId: VERSION_ID,
+      }),
+      false,
+    );
+    assert.equal(
+      isAlreadyPublishedTestRunConflict({
+        status: 409,
+        code: "conflict",
+        detail: "This normalized definition is already published.",
+      }),
+      true,
+    );
+    assert.equal(
+      isAlreadyPublishedTestRunConflict({
+        status: 409,
+        code: "conflict",
+        detail: "Draft revision does not match the current saved revision.",
+      }),
+      false,
+    );
+    assert.equal(
+      latestPublishedTestVersion([
+        { id: "draft", versionNumber: 9 },
+        { id: VERSION_ID, versionNumber: 2 },
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          versionNumber: 1,
+        },
+      ])?.id,
+      VERSION_ID,
+    );
+    assert.match(TEST_RUN_ALREADY_PUBLISHED_HELP, /already published/);
+    assert.match(TEST_RUN_ALREADY_PUBLISHED_UNRESOLVED_HELP, /Drafts never run/);
+    assert.match(
+      source("src/lib/editor-test-run-client.ts"),
+      /isAlreadyPublishedTestRunConflict/,
+    );
+    assert.match(
+      source("src/lib/editor-test-run-client.ts"),
+      /testRunCanReusePublishedVersion/,
+    );
+    assert.doesNotMatch(
+      source("src/lib/editor-test-run-client.ts"),
+      /Fixes #284|Closes #284|Close #284/,
+    );
+  });
+
   it("starts only the minted published workflowVersionId — never a draft", () => {
     assert.equal(testRunStartUsesPublishedVersion(VERSION_ID), true);
     assert.equal(testRunStartUsesPublishedVersion("draft"), false);
@@ -208,6 +342,7 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(testRunStartUsesPublishedVersion(null), false);
     assert.equal(EDITOR_TEST_RUN.noDraftExecute, true);
     assert.match(TEST_RUN_HELP, /Drafts never run/);
+    assert.match(TEST_RUN_HELP, /already published/);
     assert.match(TEST_RUN_HELP, /Never the unsaved\/draft buffer/);
     assert.match(TEST_RUN_HELP, /No silent test of the open editor YAML/);
     assert.match(TEST_RUN_SAVE_FIRST_HELP, /never the unsaved buffer/);
@@ -264,6 +399,9 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.deepEqual([...EDITOR_TEST_RUN_REUSED], [
       "publishWorkflow",
       "startWorkflowExecution",
+      "getWorkflow",
+      "getWorkflowVersion",
+      "listWorkflowVersions",
     ]);
 
     const client = source("src/lib/editor-test-run-client.ts");
@@ -294,12 +432,19 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     const operator = source("src/components/workflows/WorkflowOperator.tsx");
     assert.match(operator, /runPublishedTestVersion/);
     assert.match(operator, /onTestRun/);
+    assert.match(operator, /testRunVersionHints/);
+    assert.match(operator, /draftDigest:\s*workflow\.draftDigest/);
+    assert.match(operator, /latestVersionId:\s*workflow\.latestVersionId/);
     assert.equal(operator.includes("/replay"), false);
     assert.equal(editorTestRunInventedRoute(operator), false);
 
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.match(home, /Test run/);
     assert.match(home, /onTestRun|runPublishedTestVersion/);
+    assert.match(home, /testRunVersionHints/);
+    assert.match(home, /draftDigest:\s*item\.draftDigest/);
+    assert.match(home, /latestVersionId:\s*item\.latestVersionId/);
+    assert.match(home, /identical digest starts latest published/);
     assert.equal(home.includes("?test-run="), false);
     assert.equal(EDITOR_TEST_RUN.doNotTeachStartDrawerAsTestRun, true);
     assert.equal(EDITOR_TEST_RUN.homeDrawersStillWork, true);
