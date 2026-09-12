@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
+import { CommandPalette } from "@/components/shell/CommandPalette";
+import { GlobalSearch } from "@/components/shell/GlobalSearch";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
 import { SessionStatusChip } from "@/components/session/SessionStatusChip";
@@ -20,6 +22,11 @@ import {
   embedVerifiedLabel,
   hostDisplayConflictsWithVerified,
 } from "@/lib/embed-tenancy-contract";
+import {
+  REWRITE_EMBED_MOUNT_HELP,
+  rewriteEmbedMountState,
+  rewriteEmbedShellToolsVisible,
+} from "@/lib/rewrite-embed-mount";
 import {
   EMBED_CHROME_MISSING_SESSION_MESSAGE,
   SESSION_EMBED_CHROME_HELP,
@@ -43,6 +50,7 @@ type EmbedChromeProps = {
   rejectedAssertion: boolean;
   sessionActive: boolean;
   sessionChecked?: boolean;
+  swaggerUrl?: string;
 };
 
 export function EmbedChrome({
@@ -51,12 +59,19 @@ export function EmbedChrome({
   rejectedAssertion,
   sessionActive,
   sessionChecked = true,
+  swaggerUrl = "",
 }: EmbedChromeProps) {
   const pathname = usePathname();
   const { permissions, tenancyMismatch, current } = useWorkspace();
+  const mountState = rewriteEmbedMountState({
+    sessionChecked,
+    sessionActive,
+    sessionEmbed,
+  });
   const chrome =
     sessionActive && isSessionEmbedMode(sessionEmbed) ? sessionEmbed : null;
   const chromeOpen = chrome !== null;
+  const shellTools = rewriteEmbedShellToolsVisible(mountState);
   const verified = chrome ? sessionEmbedAsVerifiedWorkspace(chrome) : null;
   const items = useMemo(
     () =>
@@ -81,7 +96,10 @@ export function EmbedChrome({
     sessionChecked && !chromeOpen;
 
   return (
-    <header className="border-b border-zinc-200 bg-white/80">
+    <header
+      className="border-b border-zinc-200 bg-white/80"
+      data-rewrite-embed-mount={mountState}
+    >
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <Link
           href={EMBED_MOUNT_PREFIX}
@@ -110,13 +128,23 @@ export function EmbedChrome({
             {SESSION_EMBED_WAITING_HELP}
           </p>
         )}
-        <div className="ml-auto">
+        <div
+          className="ml-auto flex flex-wrap items-center gap-2"
+          data-rewrite-embed-tools={shellTools ? "search commands" : undefined}
+        >
+          {shellTools ? (
+            <>
+              <GlobalSearch swaggerUrl={swaggerUrl} />
+              <CommandPalette />
+            </>
+          ) : null}
           <SessionStatusChip />
         </div>
       </div>
       {chrome ? (
         <p className="px-4 pb-2 text-[11px] text-zinc-500">
-          {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}
+          {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}{" "}
+          {REWRITE_EMBED_MOUNT_HELP}
         </p>
       ) : missingEmbed ? (
         <p role="alert" className="px-4 pb-2 text-[11px] text-red-800">
