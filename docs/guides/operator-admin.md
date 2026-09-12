@@ -2,6 +2,7 @@
 
 Relates to #184 / Part of #181. **Keep #184 open.**
 Relates to #207 / Part of #195. **Keep #207 open.**
+Relates to #278 / Part of #233. **Keep #278 open.**
 
 Product-shell walkthrough for operators and workspace admins using
 the Next.js UI (`apps/web`). This is the Chloe E12.3 **UI** guide.
@@ -55,10 +56,11 @@ shell.
 3. Use **left nav** — fail-closed from `GET /workspace`. Authoring:
    Workflows, Actions, Credentials, Targets, Profiles, Config.
    Operations: Executions, Templates, Approvals, Alerts, Audit.
-   Foundation: Settings always; **Membership / Isolation only** with
-   `workspace.administer` or `platform.administer` (ADV-024); Portal
-   host is the E11.3 demo. On `/workflows/{id}` the nav collapses to
-   an icon-rail (or overlay) so the canvas can take the viewport.
+   Foundation: Settings always. Membership / Isolation stay ADV-024
+   grant-gated and are **off product chrome** (R7.2 / #277 — **keep
+   #277 open**); Settings may link carefully. Portal host is the E11.3
+   demo. On `/workflows/{id}` the nav collapses to an icon-rail (or
+   overlay) so the canvas can take the viewport.
 4. **Search** indexes workflows, catalog action types, credential
    **display names/tags**, execution IDs, alert identifiers, and docs.
    Unexpected secret fields are stripped and never searchable.
@@ -74,12 +76,13 @@ Inaccessible capabilities never flash in nav or search.
 ## Workflow home and authoring
 
 `/workflows` is the **product home** (UX.8). `/` with `workflow.view`
-lands here. Health, OpenAPI, cookie session, and Example context live
-under Settings (or Membership). The list leads; session chrome does
-not. This is **not** an n8n clone — n8n is a behavior reference only
-(canvas-first shell, left library, right inspector, executions drawer).
-Do not copy n8n assets or source. ADV/embed/membership meaning is
-unchanged.
+lands here. Health, OpenAPI, and cookie session live under Settings.
+Labeled **Example context** stays on `/membership` (and the isolation
+identity panel) for the compose localseed — local-only, not production
+Settings copy. The list leads; session chrome does not. This is
+**not** an n8n clone — n8n is a behavior reference only (canvas-first
+shell, left library, right inspector, executions drawer). Do not copy
+n8n assets or source. ADV/embed/membership meaning is unchanged.
 
 Rewrite surface map and operator migration notes (Chloe, docs only;
 charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes)):
@@ -248,26 +251,34 @@ Catalog library: `/actions`. Templates: `/templates`.
 
 ## Membership
 
-`/membership` — foundation **admin** surface (ADV-024). Nav shows it
-only when `GET /workspace` grants `workspace.administer` or
-`platform.administer`. Embed catalog omits the route unless the peeked
-session grants the same (`rules.membershipIsolationGranted`).
+`/membership` — grant-gated workspace members admin (ADV-024). It is
+**not** product chrome (R7.2 / #277 — **keep #277 open**). Nav, search,
+and Commands omit it without `workspace.administer` or
+`platform.administer`. Settings may link carefully. Embed catalog
+omits the route unless the peeked session grants the same
+(`rules.membershipIsolationGranted`).
 
 Walkthrough (admin session required):
 
-1. Open **Membership** from left nav (or Settings → Membership).
-2. Confirm cookie session via the session chip. Local-only header
-   identity is a labeled fallback — not production.
-3. Tenant + workbench live in tab `sessionStorage` (not secrets). The
+1. Open **Workspace members** from Settings → Workspace administration
+   (not from product left nav).
+2. Confirm cookie session via the session chip. Trusted-dev
+   `POST /session` and identity-header fallback are **local only** —
+   never rewrite login. Production identity is `POST /embed/exchange`.
+3. Click labeled **Example context** to fill the compose localseed:
+   issuer `https://idp.example`, subject `admin-1`, tenant slug
+   `local`, workbench key `default`. That button stays labeled and
+   local-only. Do not expect it on production Settings copy.
+4. Tenant + workbench live in tab `sessionStorage` (not secrets). The
    UI never sends `X-FlowForge-Workspace-ID` as the lookup key.
-4. Create tenant / workspace only with `platform.administer`. Creating
+5. Create tenant / workspace only with `platform.administer`. Creating
    a workspace makes the caller workspace admin.
-5. List members, add/update/remove (`GET|PUT /workspace/members`,
+6. List members, add/update/remove (`GET|PUT /workspace/members`,
    `DELETE /workspace/members/{userID}`). Last-admin conflict is a
    problem+json — do not force-remove the last admin.
-6. Read the permission matrix (`GET /permission-matrix`) — captions
+7. Read the permission matrix (`GET /permission-matrix`) — captions
    and `sr-only` cell text, not color ticks alone.
-7. Soft-delete (`DELETE /workspace`) revokes bound embed sessions
+8. Soft-delete (`DELETE /workspace`) revokes bound embed sessions
    including CHIPS. Later cookies are `401`. Use existing stale-session
    chrome (ADV-019) — no “workspace deleted” banner.
 
@@ -420,9 +431,9 @@ operator chrome.
 
 | Screen | Route | When it appears | What to do |
 | --- | --- | --- | --- |
-| Settings | `/settings` | Always | Session panel (`#session`), foundation links, OpenAPI links (ADV-020: `platform.administer` or the link 403s) |
-| Membership | `/membership` | ADV-024 grant | Members, roles, matrix — [Membership](#membership) |
-| Isolation | `/isolation` | ADV-024 grant | Negative cross-workspace clicks; expect denials |
+| Settings | `/settings` | Always | Session panel (`#session`), health/OpenAPI, disclosed Developer samples. Grant-gated Workspace administration links are not product destinations |
+| Membership | `/membership` | ADV-024 grant; **off product chrome** | Members, roles, matrix — [Membership](#membership). Open from Settings. Labeled **Example context** is local-only |
+| Isolation | `/isolation` | ADV-024 grant; **off product chrome** | Negative cross-workspace clicks; expect denials |
 | Config / Targets / Profiles | `/config`, `?group=` | `opsconfig.view` | Draft → publish versioned cluster/SSH/runtime/policy/connection resources. Selectors are authorized metadata only |
 | Audit | `/audit` | `alert.view` | Append-only `GET /audit-events`. No edit/delete. Not the isolation stub `GET /workspace/audit-events` |
 | Portal host | `/portal/workflows` | Demo entry | Portal RBAC → mint → embed iframe. Not FlowForge authorization |
@@ -440,9 +451,11 @@ headroom, queue-lag, or fencing dashboards.
 - Idle default **30m**, absolute **12h**. Refresh extends idle only;
   it cannot pass the absolute cap.
 - Product lists and wizards stay primary. Establish or debug the cookie
-  session from the session chip (`Settings` `#session`) or Membership
-  **Example context**. Do not expect BROWSER SESSION + WORKSPACE CONTEXT
-  blocks on `/workflows`, `/credentials`, or `/executions`.
+  session from the session chip (`Settings` `#session`). On
+  `/membership`, labeled **Example context** fills the local seed
+  lookup — it is not a rewrite login. Do not expect BROWSER SESSION +
+  WORKSPACE CONTEXT blocks on `/workflows`, `/credentials`, or
+  `/executions`.
 - Chip/banner warn in the last five minutes. Expired is `role="alert"`
   (`Session expired`); `401` latches `Stale session`.
 - Missing CSRF with a session cookie fails closed (`403`) before the
@@ -450,7 +463,8 @@ headroom, queue-lag, or fencing dashboards.
 - Hostile `Origin` is `403` with no CORS grant.
 - Bearer tokens are never stored in `localStorage` or the URL.
 - Trusted-dev `POST /session` + identity headers are **local only**.
-  Production identity is `POST /embed/exchange`.
+  They are never rewrite login. Production identity is
+  `POST /embed/exchange`.
 
 Cookie flags and session API:
 [Frontend UI — E2.3](../reference/frontend-ui.md#e23-browser-session-contract-api--ui).

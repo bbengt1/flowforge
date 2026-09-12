@@ -144,6 +144,9 @@ export function SessionPanel() {
             at <code className="font-mono text-xs">Path=/api/v1</code>.
             Mutations send <code className="font-mono text-xs">X-CSRF-Token</code>.
             Bearer tokens are never placed in localStorage or the URL.
+            Trusted-dev <code className="font-mono text-xs">POST /session</code>{" "}
+            is local/dev only — never rewrite login. Production identity is{" "}
+            <code className="font-mono text-xs">POST /embed/exchange</code>.
           </p>
         </div>
         {snapshot.active ? (
