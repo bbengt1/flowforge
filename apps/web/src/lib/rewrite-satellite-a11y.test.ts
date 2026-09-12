@@ -27,6 +27,7 @@ import {
   SATELLITE_RAIL_IDS,
   activationStatusPresentation,
   homeSatelliteOverlayTriggerId,
+  ndvCredentialOverlayTriggerId,
   rewriteSatelliteA11yBoundaryMoved,
   rewriteSatelliteA11yHoldsR7HardLine,
   rewriteSatelliteA11yInheritsUx10,
@@ -98,6 +99,14 @@ describe("R7.4 rewrite satellite a11y", () => {
     });
     assert.equal(satelliteOverlayTriggerId("action-wizard"), "editor-topbar-add-action");
     assert.equal(satelliteOverlayTriggerId("ndv-credential"), "ndv-add-credential");
+    assert.equal(
+      ndvCredentialOverlayTriggerId("kubeconfig"),
+      "ndv-add-credential-kubeconfig",
+    );
+    assert.notEqual(
+      ndvCredentialOverlayTriggerId("token"),
+      ndvCredentialOverlayTriggerId("kubeconfig"),
+    );
     assert.equal(satelliteOverlayTriggerId("start-published"), "editor-topbar-start");
     assert.equal(satelliteOverlayTriggerId("activation"), "editor-topbar-activation");
     assert.deepEqual([...SATELLITE_OVERLAY_IDS], [
@@ -176,7 +185,7 @@ describe("R7.4 rewrite satellite a11y", () => {
     assert.match(topBar, /editor-topbar-start|satelliteOverlayTriggerId\("start-published"\)/);
 
     const inspector = webSource("src/components/workflows/EditorInspector.tsx");
-    assert.match(inspector, /ndv-add-credential|satelliteOverlayTriggerId\("ndv-credential"\)/);
+    assert.match(inspector, /ndvCredentialOverlayTriggerId/);
 
     const home = webSource("src/components/home/WorkflowHome.tsx");
     assert.match(home, /satelliteOverlayAfterEscape/);

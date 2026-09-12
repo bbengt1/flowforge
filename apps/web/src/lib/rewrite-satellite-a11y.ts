@@ -187,6 +187,12 @@ export function satelliteOverlayTriggerId(id: SatelliteOverlayId): string {
   return SATELLITE_OVERLAY_TRIGGERS[id];
 }
 
+export function ndvCredentialOverlayTriggerId(field?: string): string {
+  const base = SATELLITE_OVERLAY_TRIGGERS["ndv-credential"];
+  const trimmed = field?.trim();
+  return trimmed ? `${base}-${trimmed}` : base;
+}
+
 export function homeSatelliteOverlayTriggerId(
   kind: HomeSatelliteOverlayId,
   workflowId: string,

@@ -33,7 +33,7 @@ import {
 } from "@/lib/workflow-core-nodes";
 import type { WorkflowGraph } from "@/lib/workflow-graph";
 import type { DevIdentity } from "@/lib/identity-headers";
-import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
+import { ndvCredentialOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import type { CoreNodeWith, YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
 import { listYamlEdges, listYamlTriggers, readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
 import {
@@ -721,7 +721,7 @@ function SelectedNodePins({
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             <button
               type="button"
-              id={satelliteOverlayTriggerId("ndv-credential")}
+              id={ndvCredentialOverlayTriggerId(fieldName)}
               disabled={!canEdit || !onAddCredential}
               onClick={() =>
                 onAddCredential?.({
