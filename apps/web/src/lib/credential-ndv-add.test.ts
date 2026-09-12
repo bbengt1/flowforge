@@ -198,7 +198,7 @@ describe("R5.3 NDV add credential without leaving the graph", () => {
       credentialNdvPickerSelection(sampleRecord({ status: "disabled" })),
       null,
     );
-    assert.equal(
+    assert.deepEqual(
       parseCredentialNdvCreated({
         selectCredential: CREDENTIAL_ID,
         node: "ssh-run",
