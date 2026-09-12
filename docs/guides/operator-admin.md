@@ -384,7 +384,8 @@ screen.
 
 ## Embed chrome
 
-`/embed/v1/…` — thin chrome on the same product routes. Do not treat
+`/embed/v1/…` — the same R2–R6 rewrite chrome on the same product
+routes, after `GET /session` `session.embed`. Do not treat
 this section as the host contract; wire from
 [embed-sdk](../reference/embed-sdk.md) and
 [portal-adapter](../reference/portal-adapter.md).
@@ -397,7 +398,9 @@ Operator expectations:
    exchange form). `POST /embed/exchange` uses `credentials: include`.
 3. Chrome waits for `GET /session` `session.embed` (ADV-021): mode,
    tenant/workbench/workspace, capped capabilities, subject. Host
-   `?tenant=` / `?workbench=` is never authorization.
+   `?tenant=` / `?workbench=` is never authorization. After that bind,
+   the same R2–R6 rewrite chrome mounts (editor satellites, home
+   activation, vault/inbox density, Commands + Search).
 4. Missing `session.embed` is an **alert** (`EMBED_CHROME_MISSING_SESSION_MESSAGE`).
 5. Replay of the same assertion is `409`. Existing ProblemBanner
    (`Conflict (409)`) — forget the JWS.

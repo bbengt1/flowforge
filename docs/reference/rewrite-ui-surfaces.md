@@ -45,9 +45,10 @@ Do:
 
 Epic #195 (closed) reshaped **chrome**, not contracts. UX.1–UX.11
 shipped the canvas-first editor; UX.12 (#219) updated the IA
-diagram and authoring walkthrough. ADV-021/024, `session.embed`,
-grant-gated membership/isolation, and **drafts never run** are
-unchanged.
+diagram and authoring walkthrough. R7.1 (#276 — **keep #276 open**)
+mounts the landed R2–R6 rewrite chrome on `/embed/v1` after
+`session.embed`. ADV-021/024, `session.embed`, grant-gated
+membership/isolation, and **drafts never run** are unchanged.
 
 ```mermaid
 flowchart TB
@@ -82,7 +83,10 @@ flowchart TB
 
 Authoring path today: **home → editor top bar → palette → inspector
 → YAML mode → runs drawer.** The same editor page mounts under
-`/embed/v1/workflows/{id}`.
+`/embed/v1/workflows/{id}`. R7.1 (#276 / Part of #233 — **keep #276 open**)
+mounts the same R2–R6 rewrite chrome on that tree after `GET /session`
+`session.embed` (ADV-021). Commands + Search join embed chrome once the
+bind is present. No second embed tree.
 
 ## Surface map: today vs n8n-class parity
 
@@ -117,7 +121,7 @@ re-home them into a cloned IA.
 | Approvals | `/approvals`, `/{id}` | Resume is `POST /approvals/{id}/decide`. No self-approval. No invented resume route. |
 | Alerts / Audit | `/alerts`, `/audit` | Secret-free identifiers. Audit is append-only browse. |
 | Membership / Isolation | `/membership`, `/isolation` | ADV-024 grant only. Isolation is a **negative** exercise. |
-| Embed / Portal | `/embed/v1/…`, `/portal/workflows` | Same product pages. Portal RBAC is not FlowForge authorization. |
+| Embed / Portal | `/embed/v1/…`, `/portal/workflows` | R7.1 (#276 — **keep #276 open**): same product pages + rewrite chrome after `session.embed`. Portal RBAC is not FlowForge authorization. |
 
 ## Operator migration notes
 
@@ -216,7 +220,11 @@ Do not:
 
 ### Embed and Portal constraints (must not regress)
 
-Same product routes under `/embed/v1`. Thin chrome. Host contract
+Same product routes under `/embed/v1`. R7.1 mounts R2–R6 rewrite chrome
+(including Commands + Search) after `session.embed`. Gracie + jonny R7
+hard line is baked on #276 and inherited on #277–#279 — do not weaken
+ADV-021 / ADV-024 / host-query display-only / one embed tree / issuer
+and frame-ancestor fail-closed. Host contract
 stays in [embed-sdk.md](embed-sdk.md) and
 [portal-adapter.md](portal-adapter.md).
 

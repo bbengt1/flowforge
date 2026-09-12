@@ -145,6 +145,7 @@ export function WorkspaceShell({
             rejectedAssertion={rejectedAssertion}
             sessionActive={session.active}
             sessionChecked={sessionChecked}
+            swaggerUrl={swaggerUrl}
           />
           <div id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto outline-none">
             {!sessionChecked ? (
