@@ -64,12 +64,14 @@ describe("R7.3 local seed + ops docs", () => {
     const bootstrap = webSource("src/components/membership/IdentityBootstrap.tsx");
     assert.match(bootstrap, /Example context/);
     assert.match(bootstrap, /Local-only/);
-    assert.match(bootstrap, /https:\/\/idp\.example/);
-    assert.match(bootstrap, /admin-1/);
+    assert.match(bootstrap, /LOCAL_SEED_ISSUER/);
+    assert.match(bootstrap, /LOCAL_SEED_SUBJECT/);
+    assert.match(bootstrap, /LOCAL_SEED_TENANT_SLUG/);
+    assert.match(bootstrap, /LOCAL_SEED_WORKBENCH_KEY/);
     assert.match(bootstrap, /Temporary local-dev header identity \(not for production\)/);
 
     const membershipPage = webSource("src/app/membership/page.tsx");
-    assert.match(membershipPage, /never rewrite login/);
+    assert.match(membershipPage, /never rewrite[\s\S]+login/);
 
     const membership = webSource(
       "src/components/membership/MembershipOperator.tsx",
