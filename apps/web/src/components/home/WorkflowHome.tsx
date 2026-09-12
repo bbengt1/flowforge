@@ -77,7 +77,11 @@ import {
   SCHEDULE_TRIGGER_QUERY,
   canViewScheduleTriggers,
 } from "@/lib/schedule-trigger-contract";
-import { TEST_RUN_HELP, canOfferHomeTestRun } from "@/lib/editor-test-run";
+import {
+  TEST_RUN_HELP,
+  canOfferHomeTestRun,
+  testRunVersionHints,
+} from "@/lib/editor-test-run";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
@@ -564,14 +568,17 @@ function WorkflowHomeSession() {
     setPending("test-run");
     setProblem(null);
     // D5 hard line: last saved draftRevision only — not editor YAML.
+    // Same compose as editor: identical digest starts latest published.
     const result = await runPublishedTestVersion(identity, {
       workflowId: item.id,
       revision: item.draftRevision,
       dirty: false,
       permissions,
-      draftDigest: item.draftDigest,
-      latestVersionDigest: item.latestVersionDigest,
-      latestVersionId: item.latestVersionId,
+      ...testRunVersionHints({
+        draftDigest: item.draftDigest,
+        latestVersionDigest: item.latestVersionDigest,
+        latestVersionId: item.latestVersionId,
+      }),
     });
     setPending(null);
     if (!result.ok) {

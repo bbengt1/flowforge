@@ -38,7 +38,7 @@ import {
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
 import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
-import { canOfferEditorTestRun } from "@/lib/editor-test-run";
+import { canOfferEditorTestRun, testRunVersionHints } from "@/lib/editor-test-run";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import {
   EDITOR_LIBRARY_DEFAULT_OPEN,
@@ -1378,10 +1378,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       revision,
       dirty,
       permissions,
-      draftDigest: workflow.draftDigest,
-      latestVersionDigest:
-        workflow.latestVersionDigest ?? publishedVersion?.digest ?? null,
-      latestVersionId: workflow.latestVersionId ?? publishedVersion?.id ?? null,
+      ...testRunVersionHints({
+        draftDigest: workflow.draftDigest,
+        latestVersionDigest:
+          workflow.latestVersionDigest ?? publishedVersion?.digest ?? null,
+        latestVersionId: workflow.latestVersionId ?? publishedVersion?.id ?? null,
+      }),
     });
     setLastRequestId(result.requestId);
     setPending(null);

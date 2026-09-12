@@ -269,7 +269,7 @@ describe("R6.3 test-run client", () => {
     }
   });
 
-  it("treats publish 409 already-published as start latest published — not a draft conflict", async () => {
+  it("home-shaped hints (list omitempty digest) probe GET and start existing published", async () => {
     withSession();
     const seen = { urls: [] as string[], bodies: [] as string[] };
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -277,11 +277,7 @@ describe("R6.3 test-run client", () => {
       seen.urls.push(url);
       seen.bodies.push(typeof init?.body === "string" ? init.body : "");
       const kind = classify(url);
-      if (kind === "publish") {
-        const headers = new Headers(init?.headers);
-        assert.equal(headers.get(CSRF_HEADER), "csrf-ok");
-        return problemResponse("This normalized definition is already published.");
-      }
+      assert.notEqual(kind, "publish");
       if (kind === "workflow") {
         return jsonResponse(workflowRecord());
       }
@@ -299,11 +295,68 @@ describe("R6.3 test-run client", () => {
     const result = await runPublishedTestVersion(identity, {
       workflowId: WORKFLOW_ID,
       revision: 2,
+      dirty: false,
+      permissions: ALLOWED,
+      idempotencyKey: "test-run-home",
+      latestVersionId: VERSION_ID,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}/publish`), false);
+    assert.equal(seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}`), true);
+    assert.equal(
+      seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}/executions`),
+      true,
+    );
+    if (result.ok) {
+      assert.equal(result.reusedExistingPublished, true);
+      assert.equal(result.version.id, VERSION_ID);
+      assert.equal(result.execution.workflowVersionId, VERSION_ID);
+    }
+  });
+
+  it("treats publish 409 already-published as start latest published — not a draft conflict", async () => {
+    withSession();
+    const seen = { urls: [] as string[], bodies: [] as string[] };
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      seen.urls.push(url);
+      seen.bodies.push(typeof init?.body === "string" ? init.body : "");
+      const kind = classify(url);
+      if (kind === "publish") {
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get(CSRF_HEADER), "csrf-ok");
+        return problemResponse("This normalized definition is already published.");
+      }
+      if (kind === "workflow") {
+        return jsonResponse(
+          workflowRecord({
+            draftDigest: "sha256:new",
+            latestVersionDigest: "sha256:old",
+          }),
+        );
+      }
+      if (kind === "version") {
+        return jsonResponse(versionRecord({ digest: "sha256:old" }));
+      }
+      if (kind === "start") {
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get(CSRF_HEADER), "csrf-ok");
+        return jsonResponse(executionRecord(), 201);
+      }
+      throw new Error(`unexpected ${url}`);
+    }) as typeof fetch;
+
+    const result = await runPublishedTestVersion(identity, {
+      workflowId: WORKFLOW_ID,
+      revision: 2,
       permissions: ALLOWED,
       idempotencyKey: "test-run-409",
     });
     assert.equal(result.ok, true);
-    assert.equal(seen.urls[0], `/api/v1/workflows/${WORKFLOW_ID}/publish`);
+    assert.equal(
+      seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}/publish`),
+      true,
+    );
     assert.equal(seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}`), true);
     assert.equal(
       seen.urls.includes(`/api/v1/workflows/${WORKFLOW_ID}/versions/${VERSION_ID}`),
@@ -336,6 +389,8 @@ describe("R6.3 test-run client", () => {
       workflowId: WORKFLOW_ID,
       revision: 2,
       permissions: ALLOWED,
+      draftDigest: "sha256:new",
+      latestVersionDigest: "sha256:old",
     });
     assert.equal(result.ok, false);
     if (!result.ok) {

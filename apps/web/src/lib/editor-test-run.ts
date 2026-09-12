@@ -2,8 +2,9 @@
  * R6.3: One-gesture test-run (D5) from editor/home.
  *
  * Relates to #272 / Part of #232. Keep #272 open.
- * Follow-up #284 (Terry QA): unchanged digest / 409 already-published
- * starts the existing published version. Keep #284 open.
+ * Follow-up #284 (Terry QA: editor + home): unchanged digest / 409
+ * already-published starts the existing published version. Keep #284
+ * open.
  *
  * Chloe UI only. Inherit the Gracie + jonny R6 confirmation from
  * R6.1 (`editor-activation.ts`). Do not weaken.
@@ -140,6 +141,8 @@ export const EDITOR_TEST_RUN = {
   preferDetectUnchangedDigestBeforePublish: true,
   unchangedDigestStartsExistingPublished: true,
   alreadyPublished409StartsLatestPublished: true,
+  homeTestRunSameAsEditor: true,
+  probeWorkflowWhenLocalDigestsIncomplete: true,
   doNotInventIdempotentTestRunEndpoint: true,
   publishKindFieldOnApi: false,
   publishKindIsAdditiveIgnored: true,
@@ -295,6 +298,34 @@ export function testRunDigestUnchanged(
   return draft.length > 0 && draft === published;
 }
 
+export type TestRunVersionHints = {
+  draftDigest: string | null;
+  latestVersionDigest: string | null;
+  latestVersionId: string | null;
+};
+
+/** Editor + home pass the same saved-draft / published-version hints. */
+export function testRunVersionHints(input: {
+  draftDigest?: string | null;
+  latestVersionDigest?: string | null;
+  latestVersionId?: string | null;
+}): TestRunVersionHints {
+  return {
+    draftDigest: input.draftDigest?.trim() || null,
+    latestVersionDigest: input.latestVersionDigest?.trim() || null,
+    latestVersionId: input.latestVersionId?.trim() || null,
+  };
+}
+
+export function testRunHasLocalDigestPair(input: {
+  draftDigest?: string | null;
+  latestVersionDigest?: string | null;
+}): boolean {
+  return Boolean(
+    input.draftDigest?.trim() && input.latestVersionDigest?.trim(),
+  );
+}
+
 export function testRunCanReusePublishedVersion(input: {
   draftDigest?: string | null;
   latestVersionDigest?: string | null;
@@ -303,6 +334,16 @@ export function testRunCanReusePublishedVersion(input: {
   return (
     testRunDigestUnchanged(input.draftDigest, input.latestVersionDigest) &&
     testRunStartUsesPublishedVersion(input.latestVersionId)
+  );
+}
+
+export function testRunKnownDigestChanged(input: {
+  draftDigest?: string | null;
+  latestVersionDigest?: string | null;
+}): boolean {
+  return (
+    testRunHasLocalDigestPair(input) &&
+    !testRunDigestUnchanged(input.draftDigest, input.latestVersionDigest)
   );
 }
 
@@ -318,7 +359,10 @@ export function isAlreadyPublishedTestRunConflict(problem: {
     return false;
   }
   const haystack = `${problem.detail ?? ""} ${problem.title ?? ""}`.toLowerCase();
-  return haystack.includes("already published");
+  return (
+    haystack.includes("already published") ||
+    haystack.includes("definition already published")
+  );
 }
 
 export function latestPublishedTestVersion<
@@ -374,6 +418,8 @@ export function editorTestRunHoldsD5HardLine(): boolean {
     EDITOR_TEST_RUN.preferDetectUnchangedDigestBeforePublish &&
     EDITOR_TEST_RUN.unchangedDigestStartsExistingPublished &&
     EDITOR_TEST_RUN.alreadyPublished409StartsLatestPublished &&
+    EDITOR_TEST_RUN.homeTestRunSameAsEditor &&
+    EDITOR_TEST_RUN.probeWorkflowWhenLocalDigestsIncomplete &&
     EDITOR_TEST_RUN.doNotInventIdempotentTestRunEndpoint
   );
 }

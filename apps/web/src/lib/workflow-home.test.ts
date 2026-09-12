@@ -147,6 +147,11 @@ describe("workflow home list/filter", () => {
     assert.equal(item?.environment, "ops");
     assert.equal(item?.latestVersionNumber, 2);
     assert.equal(item?.draftDigest, "sha256:aaaa");
+    const [fromDraft] = buildWorkflowHomeItems(
+      [record({ draftDigest: "" })],
+      { drafts: new Map([[record().id, draft]]) },
+    );
+    assert.equal(fromDraft?.draftDigest, "sha256:aaaa");
   });
 
   it("filters by search, owner, trigger, status, and last run", () => {

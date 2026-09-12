@@ -2,8 +2,9 @@
  * R6.3 test-run client — mint a published test version, then start it.
  *
  * Relates to #272 / Part of #232. Keep #272 open.
- * Follow-up #284: identical digest / 409 already-published starts the
- * existing published version. Keep #284 open.
+ * Follow-up #284 (Terry: editor + home): identical digest / 409
+ * already-published starts the existing published version. Keep #284
+ * open.
  *
  * Inherits the Gracie + jonny R6 confirmation (D5 publish flavor then
  * start; drafts never run) and the D5 hard line: mint a published
@@ -45,7 +46,9 @@ import {
   isAlreadyPublishedTestRunConflict,
   latestPublishedTestVersion,
   testRunCanReusePublishedVersion,
+  testRunDigestUnchanged,
   testRunInputUsesOpenEditorYaml,
+  testRunKnownDigestChanged,
   testRunPublishBody,
   testRunStartUsesPublishedVersion,
 } from "./editor-test-run.ts";
@@ -108,15 +111,15 @@ function notConflict(
   return { ...failure, step, conflict: false };
 }
 
-async function resolveLatestPublishedTestVersion(
+async function lookupLatestPublishedTestVersion(
   identity: DevIdentity,
   workflowId: string,
   preferredVersionId?: string | null,
 ): Promise<
-  | { ok: true; workflow: WorkflowRecord; version: WorkflowVersion }
+  | { ok: true; found: true; workflow: WorkflowRecord; version: WorkflowVersion }
+  | { ok: true; found: false }
   | TestRunClientFailure
 > {
-  const path = `/workflows/${workflowId}`;
   const record = await getWorkflow(identity, workflowId);
   if (!record.ok) {
     return notConflict(record, "resolve");
@@ -130,7 +133,12 @@ async function resolveLatestPublishedTestVersion(
   if (testRunStartUsesPublishedVersion(versionId)) {
     const version = await getWorkflowVersion(identity, workflowId, versionId!);
     if (version.ok) {
-      return { ok: true, workflow: record.workflow, version: version.version };
+      return {
+        ok: true,
+        found: true,
+        workflow: record.workflow,
+        version: version.version,
+      };
     }
   }
 
@@ -140,9 +148,42 @@ async function resolveLatestPublishedTestVersion(
   }
   const latest = latestPublishedTestVersion(listed.items);
   if (!latest) {
+    return { ok: true, found: false };
+  }
+  return { ok: true, found: true, workflow: record.workflow, version: latest };
+}
+
+function publishedDigestMatchesDraft(
+  workflow: WorkflowRecord,
+  version: WorkflowVersion,
+): boolean {
+  return testRunDigestUnchanged(
+    workflow.draftDigest,
+    version.digest || workflow.latestVersionDigest,
+  );
+}
+
+async function resolveLatestPublishedTestVersion(
+  identity: DevIdentity,
+  workflowId: string,
+  preferredVersionId?: string | null,
+): Promise<
+  | { ok: true; workflow: WorkflowRecord; version: WorkflowVersion }
+  | TestRunClientFailure
+> {
+  const path = `/workflows/${workflowId}`;
+  const looked = await lookupLatestPublishedTestVersion(
+    identity,
+    workflowId,
+    preferredVersionId,
+  );
+  if (!looked.ok) {
+    return looked;
+  }
+  if (!looked.found) {
     return gateFailure(TEST_RUN_ALREADY_PUBLISHED_UNRESOLVED_HELP, path);
   }
-  return { ok: true, workflow: record.workflow, version: latest };
+  return { ok: true, workflow: looked.workflow, version: looked.version };
 }
 
 async function startPublishedTestVersion(
@@ -232,6 +273,27 @@ export async function runPublishedTestVersion(
       return resolved;
     }
     return startPublishedTestVersion(identity, input, resolved, true);
+  }
+
+  // Home list often omits latestVersionDigest (omitempty). Probe GET
+  // /workflows/{id} before publish so identical digest still starts
+  // the existing published version from either call site.
+  if (!testRunKnownDigestChanged(input)) {
+    const probed = await lookupLatestPublishedTestVersion(
+      identity,
+      input.workflowId,
+      input.latestVersionId,
+    );
+    if (!probed.ok) {
+      return probed;
+    }
+    if (
+      probed.found &&
+      publishedDigestMatchesDraft(probed.workflow, probed.version) &&
+      testRunStartUsesPublishedVersion(probed.version.id)
+    ) {
+      return startPublishedTestVersion(identity, input, probed, true);
+    }
   }
 
   const published = await publishWorkflow(
