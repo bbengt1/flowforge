@@ -221,7 +221,10 @@ Do not:
 ### Embed and Portal constraints (must not regress)
 
 Same product routes under `/embed/v1`. R7.1 mounts R2–R6 rewrite chrome
-(including Commands + Search) after `session.embed`. Host contract
+(including Commands + Search) after `session.embed`. Gracie + jonny R7
+hard line is baked on #276 and inherited on #277–#279 — do not weaken
+ADV-021 / ADV-024 / host-query display-only / one embed tree / issuer
+and frame-ancestor fail-closed. Host contract
 stays in [embed-sdk.md](embed-sdk.md) and
 [portal-adapter.md](portal-adapter.md).
 
