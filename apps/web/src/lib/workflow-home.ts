@@ -1,12 +1,21 @@
 /**
  * E6.1 workflow home: client-side list/filter on safe metadata.
  * GET /workflows has no search query params. Trigger, last run,
- * validation, and approvals are joined from existing list/draft
- * /execution/approval responses when those capabilities are present.
+ * validation, approvals, and R6.2 activation (D2 compose of trigger
+ * status + version pin) are joined from existing list/draft
+ * /execution/approval/trigger/version responses when those
+ * capabilities are present. GET /workflows has no computed
+ * activation field — that is not a real list-projection gap.
  */
 
 import type { ApprovalRequest } from "./approval-types.ts";
 import type { ExecutionRecord } from "./execution-types.ts";
+import {
+  homeActivationFromListHint,
+  matchesHomeActivationFilter,
+  type HomeActivationColumn,
+  type HomeActivationFilter,
+} from "./home-activation.ts";
 import type { WorkflowDraft, WorkflowRecord } from "./workflow-types.ts";
 
 export type WorkflowHomeView = "list" | "card";
@@ -32,6 +41,7 @@ export type WorkflowHomeFilters = {
   status: string;
   lastRun: LastRunFilter;
   lastModified: LastModifiedFilter;
+  activation: HomeActivationFilter;
 };
 
 export const EMPTY_WORKFLOW_HOME_FILTERS: WorkflowHomeFilters = {
@@ -44,6 +54,7 @@ export const EMPTY_WORKFLOW_HOME_FILTERS: WorkflowHomeFilters = {
   status: "",
   lastRun: "",
   lastModified: "",
+  activation: "",
 };
 
 export type WorkflowHomeItem = {
@@ -68,6 +79,7 @@ export type WorkflowHomeItem = {
   lastRunStatus: string | null;
   lastRunId: string | null;
   lastRunKnown: boolean;
+  activation: HomeActivationColumn;
 };
 
 function readOwner(record: WorkflowRecord): string {
@@ -141,6 +153,7 @@ export function toWorkflowHomeItem(
     executions?: readonly ExecutionRecord[];
     approvals?: readonly ApprovalRequest[];
     lastRunKnown?: boolean;
+    activation?: HomeActivationColumn;
   } = {},
 ): WorkflowHomeItem {
   const draft = extras.draft ?? null;
@@ -178,6 +191,13 @@ export function toWorkflowHomeItem(
     lastRunStatus: last?.status ?? null,
     lastRunId: last?.id ?? null,
     lastRunKnown,
+    activation:
+      extras.activation ??
+      homeActivationFromListHint({
+        id: record.id,
+        latestVersionNumber: record.latestVersionNumber,
+        latestVersionId: record.latestVersionId,
+      }),
   };
 }
 
@@ -189,6 +209,7 @@ export function buildWorkflowHomeItems(
     executions?: readonly ExecutionRecord[];
     approvals?: readonly ApprovalRequest[];
     lastRunKnownIds?: ReadonlySet<string>;
+    activations?: ReadonlyMap<string, HomeActivationColumn>;
   } = {},
 ): WorkflowHomeItem[] {
   return records.map((record) =>
@@ -198,6 +219,7 @@ export function buildWorkflowHomeItems(
       executions: extras.executions,
       approvals: extras.approvals,
       lastRunKnown: extras.lastRunKnownIds?.has(record.id) ?? false,
+      activation: extras.activations?.get(record.id),
     }),
   );
 }
@@ -226,6 +248,7 @@ export function matchesWorkflowHomeFilters(
       item.owner,
       item.status,
       item.folder,
+      item.activation.label,
       ...item.tags,
       ...item.triggers,
     ]
@@ -251,6 +274,9 @@ export function matchesWorkflowHomeFilters(
     return false;
   }
   if (filters.status && item.status !== filters.status) {
+    return false;
+  }
+  if (!matchesHomeActivationFilter(item.activation, filters.activation)) {
     return false;
   }
   const lastRun = filters.lastRun;

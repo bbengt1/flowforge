@@ -30,6 +30,21 @@ import {
 } from "@/lib/workflow-client";
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
+import { HomeActivationStatus } from "@/components/home/HomeActivationStatus";
+import {
+  EDITOR_ACTIVATION_CHANGED_EVENT,
+  canViewEditorActivation,
+} from "@/lib/editor-activation";
+import {
+  HOME_ACTIVATION,
+  HOME_ACTIVATION_FILTERS,
+  HOME_ACTIVATION_HEADING_ID,
+  HOME_ACTIVATION_HELP,
+  WORKFLOW_HOME_LIST_COLUMNS,
+  type HomeActivationColumn,
+  type HomeActivationFilter,
+} from "@/lib/home-activation";
+import { loadHomeActivationStates } from "@/lib/home-activation-client";
 import {
   EMPTY_WORKFLOW_HOME_FILTERS,
   buildWorkflowHomeItems,
@@ -82,6 +97,9 @@ function WorkflowHomeSession() {
   const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
   const [lastRunKnownIds, setLastRunKnownIds] = useState<Set<string>>(new Set());
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [activations, setActivations] = useState<
+    Map<string, HomeActivationColumn>
+  >(new Map());
   const [filters, setFilters] = useState<WorkflowHomeFilters>(EMPTY_WORKFLOW_HOME_FILTERS);
   const [view, setView] = useState<WorkflowHomeView>("list");
   const [pending, setPending] = useState<string | null>(null);
@@ -101,6 +119,7 @@ function WorkflowHomeSession() {
     canViewScheduleTriggers(permissions) &&
     rowCapabilities.canViewSchedules;
   const canSeeLastRun = ready && rowCapabilities.canSeeLastRun;
+  const canViewActivation = ready && canViewEditorActivation(permissions);
   const denied = ready && permissions != null && !canSeeWorkflowsNav(permissions);
   const [startWorkflowId, setStartWorkflowId] = useState("");
   const [webhookWorkflowId, setWebhookWorkflowId] = useState("");
@@ -114,8 +133,9 @@ function WorkflowHomeSession() {
         executions,
         approvals,
         lastRunKnownIds,
+        activations,
       }),
-    [records, environment, drafts, executions, approvals, lastRunKnownIds],
+    [records, environment, drafts, executions, approvals, lastRunKnownIds, activations],
   );
   const visible = useMemo(
     () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
@@ -176,6 +196,7 @@ function WorkflowHomeSession() {
       setExecutions([]);
       setLastRunKnownIds(new Set());
       setApprovals([]);
+      setActivations(new Map());
       setPending(null);
       return;
     }
@@ -245,10 +266,23 @@ function WorkflowHomeSession() {
     } else {
       setApprovals([]);
     }
+    if (canViewActivation) {
+      const nextActivations = await loadHomeActivationStates(
+        identity,
+        list.items,
+        { canView: canViewActivation },
+      );
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
+      }
+      setActivations(nextActivations);
+    } else {
+      setActivations(new Map());
+    }
     if (refreshGate.current.isCurrent(token)) {
       setPending(null);
     }
-  }, [canView, identity, permissions]);
+  }, [canView, canViewActivation, identity, permissions]);
 
   useEffect(() => {
     const gate = refreshGate.current;
@@ -258,6 +292,19 @@ function WorkflowHomeSession() {
     return () => {
       window.clearTimeout(timer);
       gate.begin();
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    function onActivationChanged() {
+      void refresh();
+    }
+    window.addEventListener(EDITOR_ACTIVATION_CHANGED_EVENT, onActivationChanged);
+    return () => {
+      window.removeEventListener(
+        EDITOR_ACTIVATION_CHANGED_EVENT,
+        onActivationChanged,
+      );
     };
   }, [refresh]);
 
@@ -471,6 +518,13 @@ function WorkflowHomeSession() {
               or <code className="font-mono text-xs">ops: …</code>) or a slug like{" "}
               <code className="font-mono text-xs">ops--name</code>.
             </p>
+            <p
+              id={HOME_ACTIVATION_HEADING_ID}
+              className="mt-2 text-sm text-zinc-600"
+              data-r6-d2={HOME_ACTIVATION.d2ComposeEnablePlusVersionPin}
+            >
+              {HOME_ACTIVATION_HELP}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -554,6 +608,25 @@ function WorkflowHomeSession() {
             options={options.statuses}
             onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
           />
+          <label className="block text-sm">
+            <span className="text-zinc-600">Activation</span>
+            <select
+              value={filters.activation}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  activation: event.target.value as HomeActivationFilter,
+                }))
+              }
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+            >
+              {HOME_ACTIVATION_FILTERS.map((option) => (
+                <option key={option.value || "any"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="block text-sm">
             <span className="text-zinc-600">Last run</span>
             <select
@@ -922,40 +995,79 @@ function WorkflowHomeList({
   onExport: (item: WorkflowHomeItem) => void;
 }) {
   return (
-    <ul className="divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      {items.map((item) => (
-        <li key={item.id} className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
-          <div>
-            <Link
-              href={`/workflows/${item.id}`}
-              className="text-base font-medium text-zinc-900 hover:underline"
-            >
-              {item.name}
-            </Link>
-            <p className="font-mono text-xs text-zinc-500">
-              {item.slug}
-              {item.folder ? ` · ${item.folder}` : ""}
-              {item.owner ? ` · ${item.owner}` : ""}
-            </p>
-            <WorkflowMeta item={item} />
-          </div>
-          <WorkflowActions
-            item={item}
-            pending={pending}
-            canCreate={canCreate}
-            canExecute={canExecute}
-            canViewWebhooks={canViewWebhooks}
-            canViewSchedules={canViewSchedules}
-            canSeeLastRun={canSeeLastRun}
-            onStart={onStart}
-            onWebhooks={onWebhooks}
-            onSchedules={onSchedules}
-            onDuplicate={onDuplicate}
-            onExport={onExport}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <div
+        className="mb-0 hidden min-w-[52rem] gap-3 border-b border-zinc-100 px-5 py-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[minmax(12rem,1.5fr)_minmax(10rem,1.1fr)_minmax(9rem,1fr)_minmax(7rem,0.8fr)_minmax(12rem,1.3fr)]"
+        aria-hidden="true"
+      >
+        {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
+          <span key={column.id}>{column.label}</span>
+        ))}
+      </div>
+      <ul className="min-w-0 divide-y divide-zinc-100">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(12rem,1.5fr)_minmax(10rem,1.1fr)_minmax(9rem,1fr)_minmax(7rem,0.8fr)_minmax(12rem,1.3fr)] sm:items-start"
+          >
+            <div className="min-w-0">
+              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
+                Workflow
+              </p>
+              <Link
+                href={`/workflows/${item.id}`}
+                className="text-base font-medium text-zinc-900 hover:underline"
+              >
+                {item.name}
+              </Link>
+              <p className="font-mono text-xs text-zinc-500">
+                {item.slug}
+                {item.folder ? ` · ${item.folder}` : ""}
+                {item.owner ? ` · ${item.owner}` : ""}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
+                Activation
+              </p>
+              <HomeActivationStatus column={item.activation} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
+                Status
+              </p>
+              <WorkflowMeta item={item} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
+                Last run
+              </p>
+              <p className="text-xs text-zinc-600">
+                {item.lastRunStatus
+                  ? item.lastRunStatus
+                  : item.lastRunKnown
+                    ? "Never run"
+                    : "—"}
+              </p>
+            </div>
+            <WorkflowActions
+              item={item}
+              pending={pending}
+              canCreate={canCreate}
+              canExecute={canExecute}
+              canViewWebhooks={canViewWebhooks}
+              canViewSchedules={canViewSchedules}
+              canSeeLastRun={canSeeLastRun}
+              onStart={onStart}
+              onWebhooks={onWebhooks}
+              onSchedules={onSchedules}
+              onDuplicate={onDuplicate}
+              onExport={onExport}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -993,12 +1105,15 @@ function WorkflowHomeCards({
           key={item.id}
           className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
         >
-          <Link
-            href={`/workflows/${item.id}`}
-            className="text-lg font-semibold text-zinc-900 hover:underline"
-          >
-            {item.name}
-          </Link>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <Link
+              href={`/workflows/${item.id}`}
+              className="text-lg font-semibold text-zinc-900 hover:underline"
+            >
+              {item.name}
+            </Link>
+            <HomeActivationStatus column={item.activation} />
+          </div>
           <p className="mt-1 font-mono text-xs text-zinc-500">{item.slug}</p>
           <div className="mt-3">
             <WorkflowMeta item={item} />

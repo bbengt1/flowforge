@@ -100,6 +100,7 @@ describe("UX.8 product home", () => {
     assert.equal(published.webhooks, true);
     assert.equal(published.schedules, true);
     assert.equal(published.lastRunHref, `/executions/${EXECUTION_ID}`);
+    assert.equal(published.activationHref, `/workflows/${WORKFLOW_ID}#activation`);
 
     const draft = workflowHomeRowActions({
       published: false,
