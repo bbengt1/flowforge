@@ -197,7 +197,7 @@ export function homeActivationFromEditorState(
   workflowId: string,
   state: EditorActivationState,
   loadedOk = true,
-  listHint?: Pick<HomeActivationListHint, "latestVersionNumber">,
+  listHint?: { latestVersionNumber?: number },
 ): HomeActivationColumn {
   const publishedOnList = (listHint?.latestVersionNumber ?? 0) > 0;
   if (!loadedOk && publishedOnList && state.kind === "no-published") {
