@@ -10,7 +10,7 @@ The canvas must stay responsive while workflow validation, credential tests, imp
 
 ## Information architecture
 
-Landed UX.1–UX.11 chrome (Chloe, epic #195) plus R2.1 (#234 / Part of #228 — **keep #234 open**) remembered-open library satellite, R2.2 (#235 / Part of #228 — **keep #235 open**) NDV-style inspector satellite, R2.3 (#236 / Part of #228 — **keep #236 open**) canvas undo/redo, R3.1 (#246 / Part of #229 — **keep #246 open**) type-specific NDV parameter editors, R3.2 (#247 / Part of #229 — **keep #247 open**) typed field-path mapping, R3.3 (#248 / Part of #229 — **keep #248 open**) NDV validation/policy, R4.1 (#254 / Part of #230 — **keep #254 open**) `/executions` inbox density, R4.2 (#255 / Part of #230 — **keep #255 open**) in-editor Runs overlay operate density, R4.3 (#256 / Part of #230 — **keep #256 open**) selected-node NDV redacted last-run I/O density, R5.1 (#264 / Part of #231 — **keep #264 open**) `/credentials` display-name find density, R5.2 (#265 / Part of #231 — **keep #265 open**) credential-detail test/rotate/usage/deletion-impact density, R5.3 (#266 / Part of #231 — **keep #266 open**) selected-node NDV add-credential without leaving the graph, and R6.1 (#270 / Part of #232 — **keep #270 open**) editor activation chrome (D2 compose: enable + version pin; no new resource). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
+Landed UX.1–UX.11 chrome (Chloe, epic #195) plus R2.1 (#234 / Part of #228 — **keep #234 open**) remembered-open library satellite, R2.2 (#235 / Part of #228 — **keep #235 open**) NDV-style inspector satellite, R2.3 (#236 / Part of #228 — **keep #236 open**) canvas undo/redo, R3.1 (#246 / Part of #229 — **keep #246 open**) type-specific NDV parameter editors, R3.2 (#247 / Part of #229 — **keep #247 open**) typed field-path mapping, R3.3 (#248 / Part of #229 — **keep #248 open**) NDV validation/policy, R4.1 (#254 / Part of #230 — **keep #254 open**) `/executions` inbox density, R4.2 (#255 / Part of #230 — **keep #255 open**) in-editor Runs overlay operate density, R4.3 (#256 / Part of #230 — **keep #256 open**) selected-node NDV redacted last-run I/O density, R5.1 (#264 / Part of #231 — **keep #264 open**) `/credentials` display-name find density, R5.2 (#265 / Part of #231 — **keep #265 open**) credential-detail test/rotate/usage/deletion-impact density, R5.3 (#266 / Part of #231 — **keep #266 open**) selected-node NDV add-credential without leaving the graph, R6.1 (#270 / Part of #232 — **keep #270 open**) editor activation chrome (D2 compose: enable + version pin; no new resource), and R6.2 (#271 / Part of #232 — **keep #271 open**) `/workflows` home activation column/status. This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
 
 ```mermaid
 flowchart TB
@@ -65,7 +65,7 @@ Folded from the pre-makeover inventory (draft PR #194). Routes and keep/reshape 
 
 | Surface | Routes / chrome | Landed behavior |
 | --- | --- | --- |
-| Product home | `/workflows` | Operational list. `/` with `workflow.view` lands here. Health / OpenAPI live under Settings. |
+| Product home | `/workflows` | Operational list. `/` with `workflow.view` lands here. First-class **Activation** column/status (R6.2 / #271 — **keep #271 open**) composes published-version trigger enable + version pin; drafts never look live. Health / OpenAPI live under Settings. |
 | Canvas editor | `/workflows/{id}` · same page `/embed/v1/workflows/{id}` | Viewport canvas + sticky top bar. Undo/redo for graph edits (R2.3 / #236 — **keep #236 open**). Top bar shows published-version activation (R6.1 / #270 — **keep #270 open**) without implying the draft is live. Not a second studio app. |
 | Library / palette | Left drawer, remembered-open satellite | Opening `/workflows/{id}` (and embed) shows the enabled catalog or a persistent **Library** rail — not hide-by-default only. **Library** or canvas **+** opens the drawer; Hide remembers closed. **Add action** opens the wizard. Drag still inserts defaults. `/actions` is the catalog reference, not a third app. |
 | Inspector | Right rail, remembered-open satellite | Selected **node** focuses a conversation shell: parameters / `with` / typed field-path mapping / pins / credential display names (add vault credential without leaving) / redacted last-run step I/O at operate density when a run is in context (overlay or latest; R4.3 / #256 — **keep #256 open**; failures jump to the node). Hide remembers closed; an **Inspector** satellite stays on the canvas. **Workflow**: tabs Triggers / Versions / Pins. Triggers tab leads with “this **published** version is active” (R6.1 / #270 — **keep #270 open**; D2 compose of existing enable + version pin). **Edge**: port compatibility and field-path mapping. No SecretField. No expression language. |
@@ -84,12 +84,12 @@ Folded from the pre-makeover inventory (draft PR #194). Routes and keep/reshape 
 
 Workflow home prioritizes operational work over dashboard decoration:
 
-- Search, folders/tags, owner, trigger, environment, status, last run, and last modified filters.
+- Search, folders/tags, owner, trigger, environment, status, activation, last run, and last modified filters.
 - Compact list and card views; pinned/high-frequency workflows surface first.
 - Create workflow, import YAML, duplicate, archive, export immutable version, and open run history.
-- Draft/published state, version, validation health, and required approvals are visible without opening the editor.
+- Draft/published state, **activation** (published version active for webhook/schedule), version, validation health, and required approvals are visible without opening the editor or three drawers.
 - Templates provide reviewed starting points for Kubernetes rollout, SSH maintenance, Python/Go automation, and common compositions. Creating from a template always creates an editable draft in the current workspace, then opens `/workflows/{id}`.
-- Row actions: Open editor, Start published (when a published version exists), Webhooks / Schedules when the role can see those triggers, Last run. Home query drawers (`?start=`, `?webhooks=`, `?schedules=`) still work.
+- Row actions: Open editor, Start published (when a published version exists), Webhooks / Schedules when the role can see those triggers, Last run. Activation status opens `/workflows/{id}#activation`. Home query drawers (`?start=`, `?webhooks=`, `?schedules=`) still work.
 
 ## Canvas editor
 
@@ -758,9 +758,26 @@ The editor is the common path (D6, in place):
 | --- | --- |
 | Top bar | Compact status (`Active · published vN` / `Not active` / `Draft — not live`). **Activation** opens the inspector Triggers tab (`#activation`). Does not send operators to home drawers. |
 | Triggers tab | Leads with “this published version is active” control/status. Activate / Deactivate enable or disable pins on the selected published version. Webhook and schedule admin stay below for create/rotate/limits. |
-| Home drawers | `?webhooks=` / `?schedules=` / `?start=1` still work. Home activation column is R6.2. Do not teach three drawers for the common path. |
+| Home drawers | `?webhooks=` / `?schedules=` / `?start=1` still work. Home activation column landed in R6.2 / #271. Do not teach three drawers for the common path. |
 
 jonny standby: no read-model gap. The UI composes `GET /workflows/{id}/triggers`, `GET /schedules?workflowId=`, and `GET /workflows/{id}/versions`. An optional later computed `activation` summary on `GET /workflows` would be a read model only.
+
+## R6.2 home activation column (Chloe UI)
+
+Relates to #271 / Part of #232 — **Keep #271 open**. Chloe UI only. `apps/api` is unchanged. Adapter: `apps/web/src/lib/home-activation.ts` plus `home-activation-client.ts`. Inherits the Gracie + jonny R6 confirmation from R6.1 — do not weaken.
+
+`/workflows` surfaces activation as a first-class list column and card status (D6, densify in place):
+
+| Surface | Behavior |
+| --- | --- |
+| List column | **Activation** after the workflow name: `Active · published vN` / `Not active` / `Draft — not live`. Opens `/workflows/{id}#activation`. Never paints a draft as live. |
+| Cards | Same status chip. |
+| Filter | Client-side Active / Not active / Draft — not live. |
+| Row actions | Still role-gated (Start published, Webhooks, Schedules, Last run). Drawers still work; they are not the activation path. |
+
+**List projection:** `GET /workflows` has no computed `activation` field. That is **not** a real gap — the UI joins existing `GET /workflows/{id}/versions`, `GET /workflows/{id}/triggers`, and `GET /schedules?workflowId=` (same compose as R6.1). Unpublished rows short-circuit from `latestVersionNumber`. Optional later computed summary on `GET /workflows` would be a read model only. Do not invent a resource or ping jonny.
+
+One-gesture test-run stays R6.3 / #272. ADV/RBAC/embed unchanged.
 
 ## E10.4 HTTP and notification action config (Chloe UI)
 

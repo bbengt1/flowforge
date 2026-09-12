@@ -86,17 +86,22 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
 [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
 
 1. Filter by search, folder (`ops/…`, `ops: …`, or slug `ops--name`),
-   tag, owner, trigger, environment, status, last run, last modified.
-2. Toggle **List** / **Cards** (`aria-pressed`).
+   tag, owner, trigger, environment, status, **activation**, last run,
+   last modified.
+2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
+   column/status (R6.2 / #271 — **keep #271 open**) shows whether a
+   published version is active for webhook/schedule. Drafts read
+   **Draft — not live**. Opening the status goes to the editor
+   Triggers tab (`#activation`), not the three home drawers.
 3. Create, import YAML, duplicate, and templates all `POST` a **draft**.
    Templates then open the editor. Export is the immutable published
    version.
 4. Drafts never execute. Start a **published** version from home
    (`?start=1` or Commands → Start published version) with typed input
    and an idempotency key.
-5. Webhook and schedule admin open from home when the role can see
-   those triggers (`?webhooks=`, `?schedules=`). Webhook secrets are
-   shown **once**, then discarded.
+5. Webhook and schedule admin still open from home when the role can
+   see those triggers (`?webhooks=`, `?schedules=`). They are not the
+   activation path. Webhook secrets are shown **once**, then discarded.
 
 Open a row → `/workflows/{id}` (same page under `/embed/v1`). YAML
 (`flowforge/v1`) is the only persisted definition; the canvas is a

@@ -11,6 +11,7 @@
  * Deep links to `/workflows/{id}` stay valid standalone and embed.
  */
 
+import { editorActivationHref } from "./editor-activation.ts";
 import { editorEmbedWorkflowPath, isWorkflowEditorPath } from "./editor-chrome.ts";
 import { listExecutionsPath } from "./execution-contract.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
@@ -114,6 +115,7 @@ export function workflowHomeRowActions(input: {
   webhooks: boolean;
   schedules: boolean;
   lastRunHref: string | null;
+  activationHref: string;
 } {
   return {
     openEditor: workflowEditorHref(input.workflowId),
@@ -126,6 +128,7 @@ export function workflowHomeRowActions(input: {
           lastRunId: input.lastRunId,
         })
       : null,
+    activationHref: editorActivationHref(input.workflowId),
   };
 }
 
