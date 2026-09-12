@@ -49,6 +49,9 @@ diagram and authoring walkthrough. R7.1 (#276 — **keep #276 open**)
 mounts the landed R2–R6 rewrite chrome on `/embed/v1` after
 `session.embed`. ADV-021/024, `session.embed`, grant-gated
 membership/isolation, and **drafts never run** are unchanged.
+R7.4 (#279 — **Keep #279 open.**) extends UX.10 / E12.3 a11y
+(Esc, focus return, no nested `<main>`, icon+text) to those
+satellites. Still no screen-reader graph rewrite.
 
 ```mermaid
 flowchart TB
@@ -269,7 +272,7 @@ scope here.
 | `/actions` as catalog reference | Not a third app. |
 | Example context + local seed path | Local compose onboarding. Production-locked env must not seed. |
 | Icon+text status (`indeterminate` loud) | Never color alone. |
-| Skip link `#main-content`, single `<main>` | UX.10 contract. Not a screen-reader graph rewrite. |
+| Skip link `#main-content`, single `<main>` | UX.10 contract, extended to rewrite satellites (R7.4 / #279 — **Keep #279 open.**). Not a screen-reader graph rewrite. |
 | Home query drawers and editor deep links | Bookmark and embed mounts stay stable. |
 
 ### Replace (chrome only)
@@ -331,4 +334,4 @@ permission to open production UI PRs or to close #195-era stories.
 | [deployment.md](../deployment.md) | Seed, Example context, local-vs-prod pitfalls. |
 | [flowforge-rewrite-n8n-class-parity.md](../architecture/flowforge-rewrite-n8n-class-parity.md) | Rewrite charter. **§11.1** is the fold-in authority for this page. |
 | [master-implementation-plan.md](../master-implementation-plan.md) | MVP epic backlog (E1–E12). Rewrite vision is the charter; Arie/Gracie open epics later. |
-| [e12-accessibility-review.md](e12-accessibility-review.md) | Landed a11y + tracked gaps (`touch-inspector-first`). |
+| [e12-accessibility-review.md](e12-accessibility-review.md) | Landed a11y + tracked gaps (`touch-inspector-first`). R7.4 / #279 — **Keep #279 open.** extends UX.10 to rewrite satellites. |

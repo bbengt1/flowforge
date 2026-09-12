@@ -24,7 +24,7 @@ Evidence is secret-free.
 | Command palette | `CommandPalette` | Ctrl+Shift+K. Labeled filter, listbox + highlight, Esc restores focus to Commands. |
 | Session chrome | `SessionStatusChip`, `SessionExpiryBanner` | Accessible chip name; stale/expired are `role="alert"`; warning stays `status`. |
 | Workflow home | `/workflows` · `WorkflowHome` | Page `h1`. Filters labeled. List/Cards `aria-pressed`. Import input `sr-only`. |
-| Authoring | `/workflows/{id}` · canvas, YAML, wizard, validation | Canvas `role="application"` + node/edge labels. YAML `htmlFor`. Validation `aria-live`. Wizard dialog + Esc. UX.10: labeled editor bar; library / YAML / runs / (narrow) inspector Esc closes + focus return; selection `status` announcement. UX.11: last-run I/O is redacted; `indeterminate` stays icon+text in the inspector. |
+| Authoring | `/workflows/{id}` · canvas, YAML, wizard, validation | Canvas `role="application"` + node/edge labels. YAML `htmlFor`. Validation `aria-live`. Wizard dialog + Esc. UX.10: labeled editor bar; library / YAML / runs / (narrow) inspector Esc closes + focus return; selection `status` announcement. UX.11: last-run I/O is redacted; `indeterminate` stays icon+text in the inspector. R7.4 / #279 — **Keep #279 open.**: same Esc / focus return / no nested `<main>` / icon+text contract on NDV, palette, Runs overlay, activation chrome, and other R2–R6 satellites. Still no SR graph rewrite. |
 | Credentials | `/credentials` · vault, wizard, `SecretField` | Labeled filters. Secret fields described; never plaintext in list. |
 | Executions | `/executions` · `ExecutionHistory` | Focusable listbox, Arrow/Enter, status icon + `sr-only` description. Skip-to-error links on detail. |
 | Approvals | `/approvals` | Labeled filters. Expired banner `alert`; decide disabled. |
@@ -66,7 +66,24 @@ No screen-reader graph rewrite.
 15. **Status never color-only** — canvas node state stays icon + text;
     dirty/saved and workflow status stay words.
 
+R7.4 rewrite satellites (Relates to #279 / Part of #233.
+**Keep #279 open.**) Inherit `R7_HARD_LINE`. No SR graph rewrite.
+Touch stays `touch-inspector-first`.
+
+16. **Palette / Add action wizard** — Esc closes and restores focus
+    to the opening control (`Add action` or the library/canvas +).
+17. **NDV add-credential wizard** — Esc closes the masked modal and
+    returns focus to **Add credential** on the inspector rail.
+18. **Runs overlay** — same drawer Esc + focus return as UX.10;
+    status stays `ExecutionStatusBadge` icon + text.
+19. **Activation chrome** (editor + home column) — live/not-live is
+    icon + text, never color alone. **Activation** is labeled.
+20. **Start published + home drawers** — Esc closes Start / Webhooks
+    / Schedules and restores focus to the matching control. No nested
+    `<main>` on those satellites.
+
 Contract tests: `apps/web/src/lib/e12-accessibility-contract.test.ts`
+and `apps/web/src/lib/rewrite-satellite-a11y.test.ts`
 (picked up by `pnpm --filter @flowforge/web test`).
 
 ## Already in good shape

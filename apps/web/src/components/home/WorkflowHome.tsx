@@ -81,6 +81,12 @@ import { TEST_RUN_HELP, canOfferHomeTestRun } from "@/lib/editor-test-run";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
+import {
+  homeSatelliteOverlayTriggerId,
+  restoreSatelliteOverlayFocus,
+  satelliteOverlayAfterEscape,
+  type HomeSatelliteOverlayId,
+} from "@/lib/rewrite-satellite-a11y";
 
 export function WorkflowHome() {
   const { identity } = useWorkspace();
@@ -127,6 +133,10 @@ function WorkflowHomeSession() {
   const [startWorkflowId, setStartWorkflowId] = useState("");
   const [webhookWorkflowId, setWebhookWorkflowId] = useState("");
   const [scheduleWorkflowId, setScheduleWorkflowId] = useState("");
+  const lastHomeOverlay = useRef<{
+    kind: HomeSatelliteOverlayId;
+    id: string;
+  } | null>(null);
 
   const items = useMemo(
     () =>
@@ -394,19 +404,84 @@ function WorkflowHomeSession() {
       }
       if (startParam) {
         consumedQuery.current = true;
+        lastHomeOverlay.current = { kind: "start", id: startParam };
         setStartWorkflowId(startParam);
       }
       if (webhookParam) {
         consumedQuery.current = true;
+        lastHomeOverlay.current = { kind: "webhooks", id: webhookParam };
         setWebhookWorkflowId(webhookParam);
       }
       if (scheduleParam) {
         consumedQuery.current = true;
+        lastHomeOverlay.current = { kind: "schedules", id: scheduleParam };
         setScheduleWorkflowId(scheduleParam);
       }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [searchParams, createFromYaml, createName, createSlug]);
+
+  function openHomeOverlay(kind: HomeSatelliteOverlayId, workflowId: string) {
+    lastHomeOverlay.current = { kind, id: workflowId };
+    if (kind === "start") {
+      setStartWorkflowId(workflowId);
+      return;
+    }
+    if (kind === "webhooks") {
+      setWebhookWorkflowId(workflowId);
+      return;
+    }
+    setScheduleWorkflowId(workflowId);
+  }
+
+  useEffect(() => {
+    const open =
+      Boolean(startWorkflowId) ||
+      Boolean(webhookWorkflowId) ||
+      Boolean(scheduleWorkflowId);
+    if (!open) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      const last = lastHomeOverlay.current;
+      const kind: HomeSatelliteOverlayId | null =
+        last?.kind ??
+        (scheduleWorkflowId
+          ? "schedules"
+          : webhookWorkflowId
+            ? "webhooks"
+            : startWorkflowId
+              ? "start"
+              : null);
+      if (!kind) {
+        return;
+      }
+      event.preventDefault();
+      const id =
+        last?.id ??
+        (kind === "start"
+          ? startWorkflowId
+          : kind === "webhooks"
+            ? webhookWorkflowId
+            : scheduleWorkflowId);
+      const next = satelliteOverlayAfterEscape();
+      if (kind === "start") {
+        setStartWorkflowId("");
+      } else if (kind === "webhooks") {
+        setWebhookWorkflowId("");
+      } else {
+        setScheduleWorkflowId("");
+      }
+      if (next.restoreFocus) {
+        restoreSatelliteOverlayFocus(homeSatelliteOverlayTriggerId(kind, id));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scheduleWorkflowId, startWorkflowId, webhookWorkflowId]);
 
   async function createFromTemplate(template: WorkflowTemplate) {
     await createFromYaml(template.definitionYaml, template.name, template.slugHint);
@@ -808,10 +883,10 @@ function WorkflowHomeSession() {
           canViewWebhooks={canViewWebhooks}
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
-          onStart={(item) => setStartWorkflowId(item.id)}
+          onStart={(item) => openHomeOverlay("start", item.id)}
           onTestRun={(item) => void testRunItem(item)}
-          onWebhooks={(item) => setWebhookWorkflowId(item.id)}
-          onSchedules={(item) => setScheduleWorkflowId(item.id)}
+          onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
+          onSchedules={(item) => openHomeOverlay("schedules", item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -825,10 +900,10 @@ function WorkflowHomeSession() {
           canViewWebhooks={canViewWebhooks}
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
-          onStart={(item) => setStartWorkflowId(item.id)}
+          onStart={(item) => openHomeOverlay("start", item.id)}
           onTestRun={(item) => void testRunItem(item)}
-          onWebhooks={(item) => setWebhookWorkflowId(item.id)}
-          onSchedules={(item) => setScheduleWorkflowId(item.id)}
+          onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
+          onSchedules={(item) => openHomeOverlay("schedules", item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
         />
@@ -959,6 +1034,7 @@ function WorkflowActions({
         canExecute ? (
           <button
             type="button"
+            id={homeSatelliteOverlayTriggerId("start", item.id)}
             disabled={pending}
             onClick={() => onStart(item)}
             className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
@@ -974,6 +1050,7 @@ function WorkflowActions({
       {canViewWebhooks ? (
         <button
           type="button"
+          id={homeSatelliteOverlayTriggerId("webhooks", item.id)}
           disabled={pending}
           onClick={() => onWebhooks(item)}
           className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
@@ -984,6 +1061,7 @@ function WorkflowActions({
       {canViewSchedules ? (
         <button
           type="button"
+          id={homeSatelliteOverlayTriggerId("schedules", item.id)}
           disabled={pending}
           onClick={() => onSchedules(item)}
           className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
