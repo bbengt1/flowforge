@@ -241,7 +241,7 @@ export function rewriteEmbedAdv021Unchanged(): boolean {
   return (
     EMBED_CHROME_FROM_SESSION_RULES.sessionIsAuthority &&
     EMBED_CHROME_FROM_SESSION_RULES.failClosedWithoutEmbedBinding &&
-    EMBED_CHROME_FROM_SESSION_RULES.ignoreHostQuery &&
+    EMBED_CHROME_FROM_SESSION_RULES.noHostQueryAuthority &&
     REWRITE_EMBED_MOUNT.adv021WaitForSessionEmbed &&
     REWRITE_EMBED_MOUNT.adv021FailClosedWithoutSessionEmbed
   );
