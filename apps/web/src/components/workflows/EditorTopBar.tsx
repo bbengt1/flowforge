@@ -18,6 +18,8 @@ import {
   EDITOR_CANVAS_UNDO_LABEL,
 } from "@/lib/editor-canvas-history";
 import { embedDeepLink } from "@/lib/embed-tenancy-contract";
+import { EditorActivationChrome } from "@/components/workflows/EditorActivationChrome";
+import type { DevIdentity } from "@/lib/identity-headers";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 
 type EditorTopBarProps = {
@@ -34,10 +36,13 @@ type EditorTopBarProps = {
   runsOpen: boolean;
   inspectorOpen: boolean;
   publishNote: string;
+  identity: DevIdentity;
+  permissions: string[] | null;
   onPublishNote: (value: string) => void;
   onSave: () => void;
   onPublish: () => void;
   onStart: () => void;
+  onOpenActivation: () => void;
   onToggleYaml: () => void;
   onToggleLibrary: () => void;
   onToggleRuns: () => void;
@@ -63,10 +68,13 @@ export function EditorTopBar({
   runsOpen,
   inspectorOpen,
   publishNote,
+  identity,
+  permissions,
   onPublishNote,
   onSave,
   onPublish,
   onStart,
+  onOpenActivation,
   onToggleYaml,
   onToggleLibrary,
   onToggleRuns,
@@ -219,6 +227,15 @@ export function EditorTopBar({
       >
         {editorTopBarControlLabel("runs", runsOpen)}
       </button>
+      <div data-editor-topbar="activation">
+        <EditorActivationChrome
+          variant="compact"
+          identity={identity}
+          workflowId={workflow?.id}
+          permissions={permissions}
+          onOpenTriggers={onOpenActivation}
+        />
+      </div>
       <button
         type="button"
         onClick={onStart}

@@ -40,6 +40,7 @@ export const WORKFLOW_INSPECTOR_TABLIST_ID = "workflow-inspector-tabs";
 export const WORKFLOW_INSPECTOR_TABLIST_LABEL = "Workflow inspector";
 
 export const WORKFLOW_INSPECTOR_HASH: Record<string, WorkflowInspectorTab> = {
+  activation: "triggers",
   "webhook-triggers": "triggers",
   "schedule-triggers": "triggers",
   "version-history": "versions",

@@ -49,6 +49,7 @@ import {
 } from "@/lib/webhook-trigger-contract";
 import { fetchWorkflowCatalog, listWorkflowVersions } from "@/lib/workflow-client";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
+import { notifyEditorActivationChanged } from "@/lib/editor-activation";
 import { pushNotification } from "@/lib/workspace-notifications";
 
 type WebhookTriggerPanelProps = {
@@ -179,6 +180,7 @@ export function WebhookTriggerPanel({
     if (result.trigger) {
       setItems((current) => upsertTrigger(current, result.trigger));
     }
+    notifyEditorActivationChanged();
     void refresh();
   }
 
@@ -205,6 +207,7 @@ export function WebhookTriggerPanel({
     if (result.trigger) {
       setItems((current) => upsertTrigger(current, result.trigger));
     }
+    notifyEditorActivationChanged();
     setEditingId(null);
   }
 
@@ -251,6 +254,7 @@ export function WebhookTriggerPanel({
       return;
     }
     noteOutcome(result.message, result.leak.leaked);
+    notifyEditorActivationChanged();
     if (result.trigger) {
       setItems((current) => upsertTrigger(current, result.trigger));
     } else {
@@ -279,6 +283,7 @@ export function WebhookTriggerPanel({
     if (editingId === triggerId) {
       setEditingId(null);
     }
+    notifyEditorActivationChanged();
     noteOutcome(result.message);
   }
 
@@ -310,6 +315,8 @@ export function WebhookTriggerPanel({
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
             {workflowName ? `${workflowName}. ` : null}
+            Pin a published version and enable it. Activation above composes
+            that enable + pin — this form is create, rotate, and limits.{" "}
             {webhookTriggerHelp(catalog)}
           </p>
         </div>

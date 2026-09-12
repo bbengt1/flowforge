@@ -193,6 +193,7 @@ export const EDITOR_TOP_BAR_CONTROLS = [
   { id: "publish", label: "Publish" },
   { id: "runs", label: "Runs", openLabel: "Hide runs" },
   { id: "start", label: "Start published" },
+  { id: "activation", label: "Activation" },
   { id: "publish-note", label: "Publish note" },
 ] as const;
 

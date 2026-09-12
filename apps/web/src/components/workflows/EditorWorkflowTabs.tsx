@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EditorActivationChrome } from "@/components/workflows/EditorActivationChrome";
 import { ScheduleTriggerPanel } from "@/components/workflows/ScheduleTriggerPanel";
 import { VersionHistory } from "@/components/workflows/VersionHistory";
 import { WebhookTriggerPanel } from "@/components/workflows/WebhookTriggerPanel";
@@ -141,31 +142,39 @@ export function EditorWorkflowTabs({
         className="space-y-4"
       >
         {tab === "triggers" ? (
-          workflowId ? (
-            <>
-              <WebhookTriggerPanel
-                identity={identity}
-                workflowId={workflowId}
-                workflowName={workflowName}
-                yaml={yaml}
-                permissions={permissions}
-              />
-              <ScheduleTriggerPanel
-                identity={identity}
-                workflowId={workflowId}
-                workflowName={workflowName}
-                yaml={yaml}
-                permissions={permissions}
-              />
-            </>
-          ) : (
-            <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
-              Open a workflow to administer webhook and schedule triggers
-              without scrolling past YAML. Contracts stay{" "}
-              <code className="font-mono text-xs">/triggers</code> and{" "}
-              <code className="font-mono text-xs">/schedules</code>.
-            </p>
-          )
+          <>
+            <EditorActivationChrome
+              variant="panel"
+              identity={identity}
+              workflowId={workflowId}
+              permissions={permissions}
+            />
+            {workflowId ? (
+              <>
+                <WebhookTriggerPanel
+                  identity={identity}
+                  workflowId={workflowId}
+                  workflowName={workflowName}
+                  yaml={yaml}
+                  permissions={permissions}
+                />
+                <ScheduleTriggerPanel
+                  identity={identity}
+                  workflowId={workflowId}
+                  workflowName={workflowName}
+                  yaml={yaml}
+                  permissions={permissions}
+                />
+              </>
+            ) : (
+              <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
+                Open a workflow to administer webhook and schedule triggers
+                without scrolling past YAML. Contracts stay{" "}
+                <code className="font-mono text-xs">/triggers</code> and{" "}
+                <code className="font-mono text-xs">/schedules</code>.
+              </p>
+            )}
+          </>
         ) : null}
 
         {tab === "versions" ? (

@@ -10,7 +10,7 @@ The canvas must stay responsive while workflow validation, credential tests, imp
 
 ## Information architecture
 
-Landed UX.1–UX.11 chrome (Chloe, epic #195) plus R2.1 (#234 / Part of #228 — **keep #234 open**) remembered-open library satellite, R2.2 (#235 / Part of #228 — **keep #235 open**) NDV-style inspector satellite, R2.3 (#236 / Part of #228 — **keep #236 open**) canvas undo/redo, R3.1 (#246 / Part of #229 — **keep #246 open**) type-specific NDV parameter editors, R3.2 (#247 / Part of #229 — **keep #247 open**) typed field-path mapping, R3.3 (#248 / Part of #229 — **keep #248 open**) NDV validation/policy, R4.1 (#254 / Part of #230 — **keep #254 open**) `/executions` inbox density, R4.2 (#255 / Part of #230 — **keep #255 open**) in-editor Runs overlay operate density, R4.3 (#256 / Part of #230 — **keep #256 open**) selected-node NDV redacted last-run I/O density, R5.1 (#264 / Part of #231 — **keep #264 open**) `/credentials` display-name find density, R5.2 (#265 / Part of #231 — **keep #265 open**) credential-detail test/rotate/usage/deletion-impact density, and R5.3 (#266 / Part of #231 — **keep #266 open**) selected-node NDV add-credential without leaving the graph. This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
+Landed UX.1–UX.11 chrome (Chloe, epic #195) plus R2.1 (#234 / Part of #228 — **keep #234 open**) remembered-open library satellite, R2.2 (#235 / Part of #228 — **keep #235 open**) NDV-style inspector satellite, R2.3 (#236 / Part of #228 — **keep #236 open**) canvas undo/redo, R3.1 (#246 / Part of #229 — **keep #246 open**) type-specific NDV parameter editors, R3.2 (#247 / Part of #229 — **keep #247 open**) typed field-path mapping, R3.3 (#248 / Part of #229 — **keep #248 open**) NDV validation/policy, R4.1 (#254 / Part of #230 — **keep #254 open**) `/executions` inbox density, R4.2 (#255 / Part of #230 — **keep #255 open**) in-editor Runs overlay operate density, R4.3 (#256 / Part of #230 — **keep #256 open**) selected-node NDV redacted last-run I/O density, R5.1 (#264 / Part of #231 — **keep #264 open**) `/credentials` display-name find density, R5.2 (#265 / Part of #231 — **keep #265 open**) credential-detail test/rotate/usage/deletion-impact density, R5.3 (#266 / Part of #231 — **keep #266 open**) selected-node NDV add-credential without leaving the graph, and R6.1 (#270 / Part of #232 — **keep #270 open**) editor activation chrome (D2 compose: enable + version pin; no new resource). This is the **current product IA** — not the pre-makeover operator stacked page (draft PR #194 inventory), and not the rewrite end state. Successor charter: [n8n-class parity rewrite](../architecture/flowforge-rewrite-n8n-class-parity.md) ([§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes) UI fold-in; expanded tables: [rewrite-ui-surfaces.md](rewrite-ui-surfaces.md)). ADV-021/024, embed `session.embed`, grant-gated membership/isolation, and the draft-never-runs rule are unchanged. UX.12 (#207 / Part of #195) updated this diagram and the [operator-admin](../guides/operator-admin.md) authoring walkthrough.
 
 ```mermaid
 flowchart TB
@@ -66,9 +66,9 @@ Folded from the pre-makeover inventory (draft PR #194). Routes and keep/reshape 
 | Surface | Routes / chrome | Landed behavior |
 | --- | --- | --- |
 | Product home | `/workflows` | Operational list. `/` with `workflow.view` lands here. Health / OpenAPI live under Settings. |
-| Canvas editor | `/workflows/{id}` · same page `/embed/v1/workflows/{id}` | Viewport canvas + sticky top bar. Undo/redo for graph edits (R2.3 / #236 — **keep #236 open**). Not a second studio app. |
+| Canvas editor | `/workflows/{id}` · same page `/embed/v1/workflows/{id}` | Viewport canvas + sticky top bar. Undo/redo for graph edits (R2.3 / #236 — **keep #236 open**). Top bar shows published-version activation (R6.1 / #270 — **keep #270 open**) without implying the draft is live. Not a second studio app. |
 | Library / palette | Left drawer, remembered-open satellite | Opening `/workflows/{id}` (and embed) shows the enabled catalog or a persistent **Library** rail — not hide-by-default only. **Library** or canvas **+** opens the drawer; Hide remembers closed. **Add action** opens the wizard. Drag still inserts defaults. `/actions` is the catalog reference, not a third app. |
-| Inspector | Right rail, remembered-open satellite | Selected **node** focuses a conversation shell: parameters / `with` / typed field-path mapping / pins / credential display names (add vault credential without leaving) / redacted last-run step I/O at operate density when a run is in context (overlay or latest; R4.3 / #256 — **keep #256 open**; failures jump to the node). Hide remembers closed; an **Inspector** satellite stays on the canvas. **Workflow**: tabs Triggers / Versions / Pins. **Edge**: port compatibility and field-path mapping. No SecretField. No expression language. |
+| Inspector | Right rail, remembered-open satellite | Selected **node** focuses a conversation shell: parameters / `with` / typed field-path mapping / pins / credential display names (add vault credential without leaving) / redacted last-run step I/O at operate density when a run is in context (overlay or latest; R4.3 / #256 — **keep #256 open**; failures jump to the node). Hide remembers closed; an **Inspector** satellite stays on the canvas. **Workflow**: tabs Triggers / Versions / Pins. Triggers tab leads with “this **published** version is active” (R6.1 / #270 — **keep #270 open**; D2 compose of existing enable + version pin). **Edge**: port compatibility and field-path mapping. No SecretField. No expression language. |
 | YAML mode | Drawer under the canvas, hidden on first paint | Validate / Normalize here (or Commands). Starter/invalid fixtures are Developer samples or Settings → Developer. Import stays on home. |
 | Runs overlay | Remembered-open satellite (R4.2 / #255 — **keep #255 open**) | Scoped to the open workflow. Status chips + skip-to-failed / skip-to-indeterminate. Choosing a run overlays step status on the **same** canvas and shows redacted last-run I/O in the inspector. Closed stays a **Runs** rail — not hide-by-default only. |
 | Credential vault | `/credentials`, `/new`, `/{id}` | Workbench find (R5.1 / #264 — **keep #264 open**): display-name search + type/status/tag filters, useful columns, open-to-detail. Detail operate (R5.2 / #265 — **keep #265 open**): test / rotate / usage / deletion-impact on existing vault routes; disable/enable stay clear; rotate returns display-name + UUID only. Selected-node NDV add (R5.3 / #266 — **keep #266 open**): guided masked wizard without abandoning the graph (return-to-editor); picker selects the new display name; YAML stores UUID only. Gracie R5 security line: no KEK in the browser; display-name + UUID only; secrets never in YAML / search / analytics; unexpected plaintext is a contract bug (strip + stop). Dedicated routes remain. Wizard stays add; NDV stays edit/pick. |
@@ -738,6 +738,29 @@ Schedule fields:
 | CSRF | `X-CSRF-Token` | Fail closed on admin writes |
 
 Operator surfaces: `/workflows` (Schedules / `?schedules=`) and `/workflows/{id}#schedule-triggers`. Approval decide reuses E4.3 `POST /approvals/{id}/decide`. Mid-run wait parks as `waiting` (survives recover). SoD + fresh auth; expire/invalidate → `expired`. Waiting jobs hold no worker lease — do not claim them from the browser.
+
+## R6.1 editor activation chrome (Chloe UI)
+
+Relates to #270 / Part of #232 — **Keep #270 open**. Chloe UI only. `apps/api` is unchanged. Adapter: `apps/web/src/lib/editor-activation.ts` plus `editor-activation-client.ts`.
+
+**Gracie + jonny R6 confirmation** (bake hard here; inherit on R6.2 / #271 and R6.3 / #272 — do not weaken):
+
+1. **D2:** “Active” = enable triggers on a **published** version — compose existing enable + version pin (`POST /triggers/{id}/enable` / `/disable`, schedule equivalents). **No new activation resource/aggregate.**
+2. **D3:** Triggers stay **workflow-level** (not canvas nodes).
+3. Drafts still never run / never look live.
+4. Ping jonny only if compose enable + version pin has a real read-model gap — document it; do not invent a resource.
+
+[D2](../architecture/flowforge-rewrite-n8n-class-parity.md#d2--activation-model) / [D3](../architecture/flowforge-rewrite-n8n-class-parity.md#d3--trigger-placement) stay locked. Manual start is on-demand, not activation. Home activation column is #271. One-gesture test-run is #272.
+
+The editor is the common path (D6, in place):
+
+| Surface | Behavior |
+| --- | --- |
+| Top bar | Compact status (`Active · published vN` / `Not active` / `Draft — not live`). **Activation** opens the inspector Triggers tab (`#activation`). Does not send operators to home drawers. |
+| Triggers tab | Leads with “this published version is active” control/status. Activate / Deactivate enable or disable pins on the selected published version. Webhook and schedule admin stay below for create/rotate/limits. |
+| Home drawers | `?webhooks=` / `?schedules=` / `?start=1` still work. Home activation column is R6.2. Do not teach three drawers for the common path. |
+
+jonny standby: no read-model gap. The UI composes `GET /workflows/{id}/triggers`, `GET /schedules?workflowId=`, and `GET /workflows/{id}/versions`. An optional later computed `activation` summary on `GET /workflows` would be a read model only.
 
 ## E10.4 HTTP and notification action config (Chloe UI)
 

@@ -156,6 +156,7 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
     assert.equal(editorTopBarControlLabel("runs"), "Runs");
     assert.equal(editorTopBarControlLabel("runs", true), "Hide runs");
     assert.equal(editorTopBarControlLabel("start"), "Start published");
+    assert.equal(editorTopBarControlLabel("activation"), "Activation");
     assert.equal(editorTopBarControlLabel("publish-note"), "Publish note");
     assert.equal(editorDrawerTriggerId("library"), "editor-topbar-library");
     assert.equal(EDITOR_DRAWER_PANEL_IDS.yaml, "editor-yaml-drawer");

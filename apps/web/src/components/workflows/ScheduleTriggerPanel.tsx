@@ -55,6 +55,7 @@ import {
 } from "@/lib/schedule-trigger-contract";
 import { fetchWorkflowCatalog, listWorkflowVersions } from "@/lib/workflow-client";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
+import { notifyEditorActivationChanged } from "@/lib/editor-activation";
 import { pushNotification } from "@/lib/workspace-notifications";
 
 type ScheduleTriggerPanelProps = {
@@ -182,6 +183,7 @@ export function ScheduleTriggerPanel({
     }
     setItems((current) => upsertTrigger(current, result.trigger));
     setMessage(result.message);
+    notifyEditorActivationChanged();
     pushNotification({
       kind: "success",
       title: "Schedule trigger created",
@@ -211,6 +213,7 @@ export function ScheduleTriggerPanel({
     }
     setItems((current) => upsertTrigger(current, result.trigger));
     setMessage(result.message);
+    notifyEditorActivationChanged();
     setEditingId(null);
   }
 
@@ -240,6 +243,7 @@ export function ScheduleTriggerPanel({
     }
     setItems((current) => upsertTrigger(current, result.trigger));
     setMessage(result.message);
+    notifyEditorActivationChanged();
   }
 
   async function onDelete(triggerId: string) {
@@ -259,6 +263,7 @@ export function ScheduleTriggerPanel({
     }
     setItems((current) => current.filter((item) => item.id !== triggerId));
     setMessage(result.message);
+    notifyEditorActivationChanged();
     if (editingId === triggerId) {
       setEditingId(null);
     }
@@ -316,7 +321,9 @@ export function ScheduleTriggerPanel({
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
             {workflowName ? `${workflowName}. ` : null}
-            {scheduleTriggerHelp(catalog, scheduleCatalog)}
+            Pin a published version and enable it. Activation above composes
+            that enable + pin — this form is timezone, expression, and
+            overlap. {scheduleTriggerHelp(catalog, scheduleCatalog)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
