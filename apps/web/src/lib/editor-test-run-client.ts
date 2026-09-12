@@ -4,11 +4,13 @@
  * Relates to #272 / Part of #232. Keep #272 open.
  *
  * Inherits the Gracie + jonny R6 confirmation (D5 publish flavor then
- * start; drafts never run). Reuses `publishWorkflow` +
- * `startWorkflowExecution`. CSRF stays on those existing clients.
- * No invented resume or replay route. jonny: kind: test is not on the
- * publish API; the equivalent is the existing note. Not a blocking
- * gap. Do not invent draft-run.
+ * start; drafts never run) and the D5 hard line: mint a published
+ * test version then start it — never the unsaved/draft buffer. No
+ * draft execute path. No silent test of the open editor YAML.
+ * Reuses `publishWorkflow` + `startWorkflowExecution`. CSRF stays
+ * on those existing clients. No invented resume or replay route.
+ * jonny: kind: test is not on the publish API; the equivalent is
+ * the existing note. Not a blocking gap. Do not invent draft-run.
  */
 
 import type { DevIdentity } from "./identity-headers.ts";
@@ -24,12 +26,22 @@ import {
 } from "./workflow-client.ts";
 import {
   TEST_RUN_FORBIDDEN_HELP,
+  TEST_RUN_OPEN_EDITOR_YAML_HELP,
   TEST_RUN_REVISION_HELP,
   TEST_RUN_SAVE_FIRST_HELP,
   canOfferEditorTestRun,
+  testRunInputUsesOpenEditorYaml,
   testRunPublishBody,
   testRunStartUsesPublishedVersion,
 } from "./editor-test-run.ts";
+
+export type TestRunClientInput = {
+  workflowId: string;
+  revision: number | null;
+  dirty?: boolean;
+  permissions?: readonly string[] | null;
+  idempotencyKey?: string;
+};
 
 export type TestRunClientSuccess = {
   ok: true;
@@ -72,15 +84,12 @@ function gateFailure(
 
 export async function runPublishedTestVersion(
   identity: DevIdentity,
-  input: {
-    workflowId: string;
-    revision: number | null;
-    dirty?: boolean;
-    permissions?: readonly string[] | null;
-    idempotencyKey?: string;
-  },
+  input: TestRunClientInput,
 ): Promise<TestRunClientSuccess | TestRunClientFailure> {
   const path = `/workflows/${input.workflowId}`;
+  if (testRunInputUsesOpenEditorYaml(input)) {
+    return gateFailure(TEST_RUN_OPEN_EDITOR_YAML_HELP, path);
+  }
   if (!isResourceId(input.workflowId)) {
     return gateFailure("workflowId must be a workspace resource UUID.", path);
   }

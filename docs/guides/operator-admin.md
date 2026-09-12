@@ -98,9 +98,10 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    version.
 4. Drafts never execute. **Test run** (R6.3 / #272 — **keep #272 open**)
    mints a published test version from the last saved draft, then starts
-   it. Start an existing **published** version from home (`?start=1` or
-   Commands → Start published version) with typed input and an
-   idempotency key.
+   it — never the unsaved/draft buffer, never a silent test of the open
+   editor YAML. Start an existing **published** version from home
+   (`?start=1` or Commands → Start published version) with typed input
+   and an idempotency key.
 5. Webhook and schedule admin still open from home when the role can
    see those triggers (`?webhooks=`, `?schedules=`). They are not the
    activation path. Webhook secrets are shown **once**, then discarded.
@@ -132,9 +133,10 @@ so the canvas can take the viewport. Commands bind to this route id.
 6. **Start published** lists published versions only. Drafts never run.
 7. **Test run** (R6.3 / #272 — **keep #272 open**) is one gesture:
    publish a test version from the last saved draft, then start that
-   published version. Save first if the buffer is unsaved. Requires
-   `workflow.publish` and `workflow.execute`. Commands → **Test run**
-   does the same on this editor.
+   published version. Never the unsaved/draft buffer. No silent test
+   of the open editor YAML. Save first if the buffer is unsaved.
+   Requires `workflow.publish` and `workflow.execute`. Commands →
+   **Test run** does the same on this editor.
 8. **Activation** (R6.1 / #270 — **keep #270 open**) shows whether a
    **published** version is active (at least one enabled webhook or
    schedule pin). Gracie + jonny R6 confirmation: D2 compose of enable

@@ -11,6 +11,10 @@
  * `publishWorkflow` + `startWorkflowExecution`. No invented
  * resume/`/replay`. No draft execute. Densify in place (D6).
  *
+ * Gracie D5 hard line (bake here): one gesture may mint a published
+ * test version then start it — never run the unsaved/draft buffer.
+ * No draft execute path. No silent “test the open editor YAML.”
+ *
  * jonny: `POST /workflows/{id}/publish` has no `kind: test` field.
  * That is not a blocking gap — the locked equivalent is the existing
  * publish `note` (test note). `kind: "test"` is sent as additive and
@@ -42,17 +46,42 @@ export const TEST_RUN_PUBLISH_KIND = "test" as const;
 export const TEST_RUN_CONTROL_ID = "test-run";
 export const TEST_RUN_LABEL = "Test run";
 
+/**
+ * Gracie D5 hard line — bake into R6.3 / #272.
+ * Inherit R6_CONFIRMATION (D2/D3/drafts-never-live). Do not weaken.
+ */
+export const D5_HARD_LINE = {
+  oneGestureMintsPublishedTestVersionThenStarts: true,
+  neverRunUnsavedDraftBuffer: true,
+  noDraftExecutePath: true,
+  noSilentTestOpenEditorYaml: true,
+} as const;
+
+export const D5_HARD_LINE_HELP =
+  "One gesture may mint a published test version then start it — never run the unsaved/draft buffer. No draft execute path. No silent test of the open editor YAML.";
+
 export const TEST_RUN_HELP =
-  "Test run publishes a test version from the last saved draft, then starts that published version. Drafts never run.";
+  "Test run publishes a test version from the last saved draft, then starts that published version. Never the unsaved/draft buffer. No silent test of the open editor YAML. Drafts never run.";
 
 export const TEST_RUN_SAVE_FIRST_HELP =
-  "Save the draft before a test run. Publish uses the last saved draft. Drafts never run.";
+  "Save the draft before a test run. Publish uses the last saved draft — never the unsaved buffer or open editor YAML. Drafts never run.";
+
+export const TEST_RUN_OPEN_EDITOR_YAML_HELP =
+  "Test run never executes the open editor YAML. Save the draft, then mint a published test version. No silent test of the unsaved buffer.";
 
 export const TEST_RUN_FORBIDDEN_HELP =
   "Test run requires workflow.publish and workflow.execute. Drafts never run.";
 
 export const TEST_RUN_REVISION_HELP =
-  "Test run needs a saved draft revision so it can mint a published test version. Drafts never run.";
+  "Test run needs a saved draft revision so it can mint a published test version. The open editor YAML is never started. Drafts never run.";
+
+export const TEST_RUN_OPEN_EDITOR_YAML_KEYS = [
+  "yaml",
+  "definitionYaml",
+  "draftYaml",
+  "unsavedYaml",
+  "bufferYaml",
+] as const;
 
 export const TEST_RUN_FLAVOR_HELP =
   "D5 publish flavor is a test note on POST /workflows/{id}/publish (additive kind: test is sent and ignored today). The minted version is still immutable and digest-pinned. Retention is unchanged. Start is POST /workflows/{id}/executions with that workflowVersionId.";
@@ -65,15 +94,21 @@ export const TEST_RUN_PUBLISH_KIND_GAP =
  */
 export const EDITOR_TEST_RUN = {
   ...R6_CONFIRMATION,
+  ...D5_HARD_LINE,
   inheritR6Confirmation: true,
+  inheritD5HardLine: true,
   d5OneGestureMintsPublishedTestVersionThenStarts: true,
   d5PublishFlavorThenStart: true,
   d5NotRunDraftFlag: true,
   d5NotPinData: true,
   d5NotUnsavedBuffer: true,
+  d5NeverRunUnsavedDraftBuffer: true,
+  d5NoDraftExecutePath: true,
+  d5NoSilentTestOpenEditorYaml: true,
   draftsNeverRun: true,
   draftsNeverLookLive: true,
   noDraftExecute: true,
+  noDraftExecutePath: true,
   reusePublishAndStartClients: true,
   noInventedResume: true,
   noInventedReplayRoute: true,
@@ -249,6 +284,30 @@ export function editorTestRunHoldsR6Confirmation(): boolean {
   );
 }
 
+export function editorTestRunHoldsD5HardLine(): boolean {
+  return (
+    editorTestRunHoldsR6Confirmation() &&
+    EDITOR_TEST_RUN.inheritD5HardLine &&
+    D5_HARD_LINE.oneGestureMintsPublishedTestVersionThenStarts &&
+    D5_HARD_LINE.neverRunUnsavedDraftBuffer &&
+    D5_HARD_LINE.noDraftExecutePath &&
+    D5_HARD_LINE.noSilentTestOpenEditorYaml &&
+    EDITOR_TEST_RUN.d5NeverRunUnsavedDraftBuffer &&
+    EDITOR_TEST_RUN.d5NoDraftExecutePath &&
+    EDITOR_TEST_RUN.d5NoSilentTestOpenEditorYaml &&
+    EDITOR_TEST_RUN.d5NotUnsavedBuffer &&
+    EDITOR_TEST_RUN.noDraftExecutePath &&
+    EDITOR_TEST_RUN.lastSavedDraftOnly &&
+    EDITOR_TEST_RUN.startUsesMintedWorkflowVersionId
+  );
+}
+
+export function testRunInputUsesOpenEditorYaml(input: object): boolean {
+  return TEST_RUN_OPEN_EDITOR_YAML_KEYS.some((key) =>
+    Object.prototype.hasOwnProperty.call(input, key),
+  );
+}
+
 export function editorTestRunUsesExistingClients(): boolean {
   return (
     EDITOR_TEST_RUN.reusePublishAndStartClients &&
@@ -273,10 +332,32 @@ export function editorTestRunInventedRoute(source: string): boolean {
 export function editorTestRunDraftExecute(source: string): boolean {
   return (
     /draft:\s*true/.test(source) ||
-    source.includes('workflowDraftId') ||
-    source.includes("executeDraft") ||
-    source.includes("runDraft")
+    source.includes("workflowDraftId") ||
+    /\bexecuteDraft\b/.test(source) ||
+    /\brunDraft\b/.test(source) ||
+    /\brunUnsaved\b/.test(source) ||
+    /\bdraftExecute\s*[(:]/.test(source)
   );
+}
+
+export function editorTestRunSilentOpenEditorYaml(source: string): boolean {
+  const calls = source.match(/runPublishedTestVersion\s*\(([\s\S]*?)\)\s*;/g) ?? [];
+  return calls.some((call) => {
+    return TEST_RUN_OPEN_EDITOR_YAML_KEYS.some((key) =>
+      new RegExp(`\\b${key}\\s*:`).test(call),
+    );
+  });
+}
+
+export function editorTestRunStartSendsYaml(source: string): boolean {
+  const calls = source.match(/startWorkflowExecution\s*\(([\s\S]*?)\)\s*;/g) ?? [];
+  return calls.some((call) => {
+    return (
+      /\bdefinitionYaml\s*:/.test(call) ||
+      /\byaml\s*:/.test(call) ||
+      /\bdraftYaml\s*:/.test(call)
+    );
+  });
 }
 
 export function editorTestRunPublishPath(workflowId: string): string {

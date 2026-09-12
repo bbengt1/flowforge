@@ -1370,6 +1370,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
     setPending("test-run");
     setProblem(null);
+    // D5 hard line: mint published test version then start it.
+    // Never pass the open editor YAML / unsaved buffer.
     const result = await runPublishedTestVersion(identity, {
       workflowId: workflow.id,
       revision,

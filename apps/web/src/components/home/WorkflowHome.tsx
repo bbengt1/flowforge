@@ -488,6 +488,7 @@ function WorkflowHomeSession() {
     }
     setPending("test-run");
     setProblem(null);
+    // D5 hard line: last saved draftRevision only — not editor YAML.
     const result = await runPublishedTestVersion(identity, {
       workflowId: item.id,
       revision: item.draftRevision,

@@ -9,6 +9,8 @@ import {
   R6_LATER_STORY_NOTES,
 } from "./editor-activation.ts";
 import {
+  D5_HARD_LINE,
+  D5_HARD_LINE_HELP,
   EDITOR_TEST_RUN,
   EDITOR_TEST_RUN_REUSED,
   EDITOR_TEST_RUN_SOURCES,
@@ -21,6 +23,7 @@ import {
   TEST_RUN_FORBIDDEN_HELP,
   TEST_RUN_HELP,
   TEST_RUN_LABEL,
+  TEST_RUN_OPEN_EDITOR_YAML_HELP,
   TEST_RUN_PUBLISH_KIND,
   TEST_RUN_PUBLISH_KIND_GAP,
   TEST_RUN_PUBLISH_NOTE,
@@ -30,11 +33,15 @@ import {
   canOfferHomeTestRun,
   editorTestRunCsrfOnMutations,
   editorTestRunDraftExecute,
+  editorTestRunHoldsD5HardLine,
   editorTestRunHoldsR6Confirmation,
   editorTestRunInventedRoute,
   editorTestRunPublishPath,
+  editorTestRunSilentOpenEditorYaml,
   editorTestRunStartPath,
+  editorTestRunStartSendsYaml,
   editorTestRunUsesExistingClients,
+  testRunInputUsesOpenEditorYaml,
   testRunPublishBody,
   testRunStartUsesPublishedVersion,
 } from "./editor-test-run.ts";
@@ -67,8 +74,18 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(EDITOR_TEST_RUN.d5NotRunDraftFlag, true);
     assert.equal(EDITOR_TEST_RUN.d5NotPinData, true);
     assert.equal(EDITOR_TEST_RUN.d5NotUnsavedBuffer, true);
+    assert.equal(EDITOR_TEST_RUN.inheritD5HardLine, true);
+    assert.equal(editorTestRunHoldsD5HardLine(), true);
+    assert.equal(D5_HARD_LINE.neverRunUnsavedDraftBuffer, true);
+    assert.equal(D5_HARD_LINE.noDraftExecutePath, true);
+    assert.equal(D5_HARD_LINE.noSilentTestOpenEditorYaml, true);
+    assert.match(D5_HARD_LINE_HELP, /never run the unsaved\/draft buffer/);
+    assert.match(D5_HARD_LINE_HELP, /No silent test of the open editor YAML/);
+    assert.match(R6_LATER_STORY_NOTES.r63, /D5 hard line/);
     assert.equal(EDITOR_TEST_RUN.draftsNeverRun, true);
     assert.equal(EDITOR_TEST_RUN.noDraftExecute, true);
+    assert.equal(EDITOR_TEST_RUN.noDraftExecutePath, true);
+    assert.equal(EDITOR_TEST_RUN.d5NoSilentTestOpenEditorYaml, true);
     assert.equal(EDITOR_TEST_RUN.reusePublishAndStartClients, true);
     assert.equal(EDITOR_TEST_RUN.noInventedResume, true);
     assert.equal(EDITOR_TEST_RUN.noInventedReplayRoute, true);
@@ -191,6 +208,53 @@ describe("R6.3 one-gesture test-run (D5)", () => {
     assert.equal(testRunStartUsesPublishedVersion(null), false);
     assert.equal(EDITOR_TEST_RUN.noDraftExecute, true);
     assert.match(TEST_RUN_HELP, /Drafts never run/);
+    assert.match(TEST_RUN_HELP, /Never the unsaved\/draft buffer/);
+    assert.match(TEST_RUN_HELP, /No silent test of the open editor YAML/);
+    assert.match(TEST_RUN_SAVE_FIRST_HELP, /never the unsaved buffer/);
+    assert.match(TEST_RUN_OPEN_EDITOR_YAML_HELP, /never executes the open editor YAML/);
+  });
+
+  it("bakes the D5 hard line — never the unsaved buffer or open editor YAML", () => {
+    assert.equal(editorTestRunHoldsD5HardLine(), true);
+    assert.equal(
+      testRunInputUsesOpenEditorYaml({
+        workflowId: WORKFLOW_ID,
+        revision: 2,
+      }),
+      false,
+    );
+    assert.equal(
+      testRunInputUsesOpenEditorYaml({
+        workflowId: WORKFLOW_ID,
+        revision: 2,
+        yaml: "name: unsaved-buffer",
+      }),
+      true,
+    );
+    assert.equal(
+      testRunInputUsesOpenEditorYaml({
+        workflowId: WORKFLOW_ID,
+        revision: 2,
+        definitionYaml: "apiVersion: flowforge/v1\n",
+      }),
+      true,
+    );
+
+    const client = source("src/lib/editor-test-run-client.ts");
+    const operator = source("src/components/workflows/WorkflowOperator.tsx");
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.equal(editorTestRunSilentOpenEditorYaml(client), false);
+    assert.equal(editorTestRunSilentOpenEditorYaml(operator), false);
+    assert.equal(editorTestRunSilentOpenEditorYaml(home), false);
+    assert.equal(editorTestRunStartSendsYaml(client), false);
+    assert.equal(editorTestRunStartSendsYaml(operator), false);
+    assert.equal(editorTestRunDraftExecute(client), false);
+    assert.equal(editorTestRunDraftExecute(operator), false);
+    assert.equal(editorTestRunDraftExecute(home), false);
+    assert.match(client, /testRunInputUsesOpenEditorYaml/);
+    assert.match(client, /TEST_RUN_OPEN_EDITOR_YAML_HELP/);
+    assert.match(operator, /Never pass the open editor YAML/);
+    assert.match(home, /not editor YAML/);
   });
 
   it("reuses existing publish + start clients and requires CSRF", () => {

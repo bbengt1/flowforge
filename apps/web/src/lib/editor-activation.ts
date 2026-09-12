@@ -82,7 +82,7 @@ export const R6_CONFIRMATION = {
 
 export const R6_LATER_STORY_NOTES = {
   r62: "R6.2 / #271: home activation column. Inherit R6 confirmation — D2 compose enable + version pin; no new activation resource/aggregate; D3 triggers stay workflow-level; drafts never run / never look live. Ping jonny only if compose has a real read-model gap — document it; do not invent a resource.",
-  r63: "R6.3 / #272: one-gesture test-run via a published test version (D5). Inherit R6 confirmation — drafts still never run / never look live. Do not invent draft execute or an activation resource.",
+  r63: "R6.3 / #272: one-gesture test-run via a published test version (D5). Inherit R6 confirmation — drafts still never run / never look live. D5 hard line: one gesture may mint a published test version then start it — never run the unsaved/draft buffer. No draft execute path. No silent test of the open editor YAML. Do not invent draft execute or an activation resource.",
 } as const;
 
 export const EDITOR_ACTIVATION = {

@@ -120,6 +120,18 @@ describe("R6.3 test-run client", () => {
     if (!badId.ok) {
       assert.match(badId.problem.detail ?? "", /workflowId/);
     }
+
+    const openYaml = await runPublishedTestVersion(identity, {
+      workflowId: WORKFLOW_ID,
+      revision: 2,
+      permissions: ALLOWED,
+      yaml: "name: unsaved-buffer\n",
+    } as Parameters<typeof runPublishedTestVersion>[1] & { yaml: string });
+    assert.equal(openYaml.ok, false);
+    if (!openYaml.ok) {
+      assert.equal(openYaml.step, "gate");
+      assert.match(openYaml.problem.detail ?? "", /never executes the open editor YAML/);
+    }
   });
 
   it("publishes a test note then starts that workflowVersionId — never draft: true", async () => {
