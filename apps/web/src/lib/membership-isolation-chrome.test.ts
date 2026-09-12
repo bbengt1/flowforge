@@ -119,7 +119,7 @@ describe("R7.2 membership/isolation off product chrome", () => {
 
     const isolationPage = source("src/app/isolation/page.tsx");
     assert.doesNotMatch(isolationPage, /E2\.2 · Chloe UI/);
-    assert.match(isolationPage, /Success is a denial|denial/);
+    assert.match(isolationPage, /ISOLATION_CHECK_HELP/);
     assert.match(isolationPage, /IsolationExercise/);
 
     const exercise = source("src/components/isolation/IsolationExercise.tsx");
