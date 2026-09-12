@@ -37,6 +37,7 @@ import {
   editorCommandAppliesToRoute,
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
+import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
 import {
   EDITOR_LIBRARY_DEFAULT_OPEN,
   readLibraryOpenPreference,
@@ -636,6 +637,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
     if (open) {
       setLastOpenedDrawer(id);
+    }
+  }
+
+  function openActivationChrome() {
+    applySelection({ kind: "workflow" });
+    if (!inspectorOpen) {
+      setDrawerOpen("inspector", true);
+    }
+    if (typeof window !== "undefined") {
+      window.location.hash = EDITOR_ACTIVATION_HASH;
     }
   }
 
@@ -1892,10 +1903,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           runsOpen={runsOpen}
           inspectorOpen={inspectorOpen}
           publishNote={publishNote}
+          identity={identity}
+          permissions={permissions}
           onPublishNote={setPublishNote}
           onSave={() => void saveDraft()}
           onPublish={() => void publishDraft()}
           onStart={() => setStartOpen(true)}
+          onOpenActivation={openActivationChrome}
           onToggleYaml={() => toggleDrawer("yaml")}
           onToggleLibrary={() => toggleDrawer("library")}
           onToggleRuns={() => toggleDrawer("runs")}

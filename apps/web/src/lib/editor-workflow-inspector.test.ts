@@ -91,11 +91,13 @@ describe("UX.9 workflow inspector tabs", () => {
 
   it("opens editor anchors without below-fold stacks and reuses existing panels", () => {
     assert.deepEqual(WORKFLOW_INSPECTOR_HASH, {
+      activation: "triggers",
       "webhook-triggers": "triggers",
       "schedule-triggers": "triggers",
       "version-history": "versions",
       "config-pins": "pins",
     });
+    assert.equal(workflowInspectorTabFromHash("#activation"), "triggers");
     assert.equal(workflowInspectorTabFromHash("#webhook-triggers"), "triggers");
     assert.equal(workflowInspectorTabFromHash("#schedule-triggers"), "triggers");
     assert.equal(workflowInspectorTabFromHash("#version-history"), "versions");

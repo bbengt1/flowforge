@@ -123,6 +123,11 @@ so the canvas can take the viewport. Commands bind to this route id.
    buffer with API YAML + digest. Disabled while invalid.
 5. **Publish** is last **saved** draft only. Optional publish note.
 6. **Start published** lists published versions only. Drafts never run.
+7. **Activation** (R6.1 / #270 — **keep #270 open**) shows whether a
+   **published** version is active (at least one enabled webhook or
+   schedule pin). **Draft — not live** when nothing is published.
+   Opening **Activation** focuses the inspector Triggers tab — not the
+   home webhook/schedule drawers. The open draft never looks live.
 
 ### Palette / library
 
@@ -175,8 +180,10 @@ shell. Relates to #235 / Part of #228. Keep #235 open.
    rotate. No expression language. Incompatible mappings are blocked
    or explained.
 2. **Workflow** (nothing selected) — tabs **Triggers / Versions /
-   Pins**. Same webhook/schedule contracts as home. Restore creates a
-   new draft. Pins are authorized metadata only.
+   Pins**. Triggers leads with “this published version is active”
+   (enable + version pin; R6.1 / #270 — **keep #270 open**). Same
+   webhook/schedule contracts as home. Restore creates a new draft.
+   Pins are authorized metadata only.
 3. **Edge** — port compatibility and field-path mapping. Edges stay
    `nodeId.port`. Nested paths persist on `data.map` / `flow.condition`.
 4. **Validation** — live region; errors link to a node or YAML path.
