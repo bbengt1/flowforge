@@ -6,7 +6,7 @@
  * Inherits the Gracie + jonny R6 confirmation (D5 publish flavor then
  * start; drafts never run). Reuses `publishWorkflow` +
  * `startWorkflowExecution`. CSRF stays on those existing clients.
- * No invented resume/`/replay`. jonny: kind: test is not on the
+ * No invented resume or replay route. jonny: kind: test is not on the
  * publish API; the equivalent is the existing note. Not a blocking
  * gap. Do not invent draft-run.
  */
