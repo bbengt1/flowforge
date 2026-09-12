@@ -55,11 +55,15 @@ import {
 } from "@/lib/editor-ndv";
 import {
   editorPathForWorkflow,
-  inspectorAddCredentialHref,
   vaultHomeHref,
   type InspectorAddCredentialRequest,
   type InspectorPendingCredential,
 } from "@/lib/editor-credential";
+import {
+  CREDENTIAL_NDV_ADD_HELP,
+  CREDENTIAL_NDV_ADD_OPEN_LABEL,
+  credentialNdvAddHref,
+} from "@/lib/credential-ndv-add";
 import {
   EditorWorkflowTabs,
   type WorkflowInspectorAdmin,
@@ -672,7 +676,7 @@ function SelectedNodePins({
         Credentials
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Display name + UUID only. Secret entry stays in the masked wizard.
+        {CREDENTIAL_NDV_ADD_HELP}
       </p>
       {constraint && !showPins ? (
         <p role="status" className="mt-2 text-sm text-amber-950">
@@ -730,10 +734,10 @@ function SelectedNodePins({
             </button>
             {returnTo ? (
               <Link
-                href={inspectorAddCredentialHref(returnTo, embed)}
+                href={credentialNdvAddHref(returnTo, embed)}
                 className="text-xs text-zinc-600 underline decoration-zinc-200 underline-offset-2 hover:text-zinc-900"
               >
-                Open /credentials/new
+                {CREDENTIAL_NDV_ADD_OPEN_LABEL}
               </Link>
             ) : null}
             <Link
@@ -744,10 +748,9 @@ function SelectedNodePins({
             </Link>
           </div>
           <p className="mt-1 text-xs text-zinc-500">
-            Credentials are selected by display name only. YAML stores the
-            workspace UUID; secret values are never shown. Add credential
-            opens the existing masked wizard — not a secret field in this
-            rail.
+            Add credential opens the guided masked wizard on this graph.
+            After add, the picker selects the new display name; YAML stores
+            the UUID only. Wizard stays add; this rail stays edit/pick.
           </p>
         </div>
         );

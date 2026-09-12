@@ -3,6 +3,9 @@
  * without leaving the editor.
  *
  * Relates to #202 / Part of #195. Keep #202 open until merge.
+ * R5.3 / #266 densifies this add path in place (return-to-editor
+ * default; picker selects display name; YAML stores UUID only) and
+ * inherits the Gracie R5 security line.
  *
  * Chloe UI only. Reuses CredentialWizard, CredentialRefSelect, and
  * vault clients. Secret entry stays in the existing masked wizard
