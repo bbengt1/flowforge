@@ -38,6 +38,8 @@ import {
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
 import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
+import { canOfferEditorTestRun } from "@/lib/editor-test-run";
+import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import {
   EDITOR_LIBRARY_DEFAULT_OPEN,
   readLibraryOpenPreference,
@@ -1341,6 +1343,80 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     await refreshVersions(workflow.id);
   }
 
+  async function runTestVersion() {
+    if (!workflow || revision === null) {
+      return;
+    }
+    if (!editorCommandAppliesToRoute(workflowId, workflow.id)) {
+      return;
+    }
+    const gate = canOfferEditorTestRun({
+      dirty,
+      hasWorkflow: true,
+      revision,
+      permissions,
+    });
+    if (!gate.ok) {
+      setProblem({
+        type: "urn:flowforge:problem:invalid-request",
+        title: "Cannot test-run",
+        status: gate.reason === "forbidden" ? 403 : 400,
+        detail: gate.help,
+        instance: `/workflows/${workflow.id}`,
+        code: gate.reason === "forbidden" ? "forbidden" : "invalid-request",
+        request_id: "local-test-run-16",
+      });
+      return;
+    }
+    setPending("test-run");
+    setProblem(null);
+    const result = await runPublishedTestVersion(identity, {
+      workflowId: workflow.id,
+      revision,
+      dirty,
+      permissions,
+    });
+    setLastRequestId(result.requestId);
+    setPending(null);
+    if (!result.ok) {
+      if (result.conflict) {
+        await handleConflict(workflow.id, result.problem);
+        setProblem(result.problem);
+        return;
+      }
+      setProblem(result.problem);
+      return;
+    }
+    setWorkflow(result.workflow);
+    setPublishedVersion(result.version);
+    setPublishNote("");
+    setRunVersionId(result.version.id);
+    if (result.pins.length) {
+      setVersionPins((current) => ({
+        ...current,
+        [result.version.id]: result.pins,
+      }));
+    }
+    if (result.scriptArtifacts.length) {
+      setScriptArtifacts((current) => ({
+        ...current,
+        [result.version.id]: result.scriptArtifacts,
+      }));
+    }
+    await refreshVersions(workflow.id);
+    setExecution(result.execution);
+    rememberRunsOpen(true);
+    pushNotification({
+      kind: "execution",
+      title: result.execution.replayed
+        ? "Test run replayed"
+        : "Test run started",
+      detail: `Published test v${result.version.versionNumber} · ${result.execution.status}`,
+      href: `/executions/${result.execution.id}`,
+    });
+    await loadExecutionApprovals(workflow.id, result.execution);
+  }
+
   async function exportVersion(version: WorkflowVersion) {
     if (!workflow) {
       return;
@@ -1605,6 +1681,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   publishDraftRef.current = publishDraft;
   const runPublishedRef = useRef(runPublished);
   runPublishedRef.current = runPublished;
+  const runTestVersionRef = useRef(runTestVersion);
+  runTestVersionRef.current = runTestVersion;
 
   useEffect(() => {
     return subscribeWorkspaceCommands((name, detail) => {
@@ -1615,6 +1693,9 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       }
       if (name === "publish") {
         void publishDraftRef.current();
+      }
+      if (name === "test-run") {
+        void runTestVersionRef.current();
       }
       if (name === "run-published") {
         void runPublishedRef.current();
@@ -1803,6 +1884,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     hasWorkflow: Boolean(workflow),
     revision,
   });
+  const canTestRun = canOfferEditorTestRun({
+    dirty,
+    hasWorkflow: Boolean(workflow),
+    revision,
+    permissions,
+  }).ok;
 
   function jumpToYaml(line: number, column?: number) {
     setDrawerOpen("yaml", true);
@@ -1898,6 +1985,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           pending={pending}
           canSave={canSave}
           canPublish={canPublish}
+          canTestRun={canTestRun}
           yamlOpen={yamlOpen}
           libraryOpen={libraryOpen}
           runsOpen={runsOpen}
@@ -1909,6 +1997,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           onSave={() => void saveDraft()}
           onPublish={() => void publishDraft()}
           onStart={() => setStartOpen(true)}
+          onTestRun={() => void runTestVersion()}
           onOpenActivation={openActivationChrome}
           onToggleYaml={() => toggleDrawer("yaml")}
           onToggleLibrary={() => toggleDrawer("library")}

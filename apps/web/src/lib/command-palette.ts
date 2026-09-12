@@ -25,6 +25,7 @@ export type CommandAction =
   | { type: "validate" }
   | { type: "normalize" }
   | { type: "publish" }
+  | { type: "test-run" }
   | { type: "run-published" }
   | { type: "open-execution"; executionId?: string };
 
@@ -124,6 +125,19 @@ export function paletteCommands(
       hint: "Publish the last saved draft",
       keywords: ["publish", "version"],
       action: { type: "publish" },
+    });
+  }
+  if (
+    context.workflowId &&
+    allowed(permissions, canPublishWorkflows) &&
+    allowed(permissions, canExecuteWorkflows)
+  ) {
+    commands.push({
+      id: "test-run",
+      label: "Test run",
+      hint: "Publish a test version from the last saved draft, then start it",
+      keywords: ["test", "run", "execute", "start"],
+      action: { type: "test-run" },
     });
   }
   if (context.workflowId && allowed(permissions, canExecuteWorkflows)) {
@@ -318,6 +332,7 @@ export function commandHref(action: CommandAction): string | null {
     action.type === "validate" ||
     action.type === "normalize" ||
     action.type === "publish" ||
+    action.type === "test-run" ||
     action.type === "run-published"
   ) {
     return null;

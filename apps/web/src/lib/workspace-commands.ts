@@ -10,6 +10,7 @@ export type WorkspaceCommandName =
   | "validate"
   | "normalize"
   | "publish"
+  | "test-run"
   | "run-published"
   | "new-workflow"
   | "import-yaml";

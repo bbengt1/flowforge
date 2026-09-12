@@ -102,6 +102,12 @@ export function CommandPalette() {
       }
       return;
     }
+    if (action.type === "test-run") {
+      if (workflowId) {
+        dispatchWorkspaceCommand("test-run", { workflowId });
+      }
+      return;
+    }
     if (action.type === "run-published") {
       if (workflowId) {
         dispatchWorkspaceCommand("run-published", { workflowId });

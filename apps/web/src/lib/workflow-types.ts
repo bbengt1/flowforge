@@ -350,6 +350,8 @@ export type SaveDraftBody = {
 export type PublishWorkflowBody = {
   revision?: number;
   note?: string;
+  /** D5 additive publish flavor. Current API ignores this; note is the equivalent. */
+  kind?: "test";
 };
 
 export type PublishWorkflowResult = {

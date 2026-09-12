@@ -37,6 +37,7 @@ describe("paletteCommands", () => {
     assert.ok(ids.includes("nav-alerts"));
     assert.equal(ids.includes("new-workflow"), false);
     assert.equal(ids.includes("publish"), false);
+    assert.equal(ids.includes("test-run"), false);
     assert.equal(ids.includes("run-published"), false);
     assert.equal(ids.includes("manual-start"), false);
     assert.equal(ids.includes("nav-vault"), false);
@@ -56,6 +57,7 @@ describe("paletteCommands", () => {
     const ids = commands.map((item) => item.id);
     assert.ok(ids.includes("new-workflow"));
     assert.ok(ids.includes("publish"));
+    assert.ok(ids.includes("test-run"));
     assert.ok(ids.includes("run-published"));
     assert.ok(ids.includes("validate"));
     assert.ok(ids.includes("normalize"));
@@ -86,6 +88,7 @@ describe("paletteCommands", () => {
     const ids = commands.map((item) => item.id);
     assert.ok(ids.includes("new-workflow"));
     assert.equal(ids.includes("publish"), false);
+    assert.equal(ids.includes("test-run"), false);
     assert.equal(ids.includes("run-published"), false);
     assert.equal(ids.includes("manual-start"), true);
     assert.equal(ids.includes("validate"), false);

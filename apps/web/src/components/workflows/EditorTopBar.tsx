@@ -31,6 +31,7 @@ type EditorTopBarProps = {
   pending: string | null;
   canSave: boolean;
   canPublish: boolean;
+  canTestRun: boolean;
   yamlOpen: boolean;
   libraryOpen: boolean;
   runsOpen: boolean;
@@ -42,6 +43,7 @@ type EditorTopBarProps = {
   onSave: () => void;
   onPublish: () => void;
   onStart: () => void;
+  onTestRun: () => void;
   onOpenActivation: () => void;
   onToggleYaml: () => void;
   onToggleLibrary: () => void;
@@ -63,6 +65,7 @@ export function EditorTopBar({
   pending,
   canSave,
   canPublish,
+  canTestRun,
   yamlOpen,
   libraryOpen,
   runsOpen,
@@ -74,6 +77,7 @@ export function EditorTopBar({
   onSave,
   onPublish,
   onStart,
+  onTestRun,
   onOpenActivation,
   onToggleYaml,
   onToggleLibrary,
@@ -243,6 +247,17 @@ export function EditorTopBar({
         className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
       >
         {editorTopBarControlLabel("start")}
+      </button>
+      <button
+        type="button"
+        onClick={onTestRun}
+        disabled={!canCall || pending !== null || !canTestRun}
+        title={editorTopBarControlLabel("test-run")}
+        className="rounded-md border border-teal-800 bg-white px-2.5 py-1 text-sm font-medium text-teal-900 hover:bg-teal-50 disabled:opacity-60"
+      >
+        {pending === "test-run"
+          ? "Test run…"
+          : editorTopBarControlLabel("test-run")}
       </button>
     </header>
   );

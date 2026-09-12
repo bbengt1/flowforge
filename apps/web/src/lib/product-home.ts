@@ -17,7 +17,11 @@ import { listExecutionsPath } from "./execution-contract.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
 import { canViewScheduleTriggers } from "./schedule-trigger-contract.ts";
 import { canViewWebhookTriggers } from "./webhook-trigger-contract.ts";
-import { canExecuteWorkflows, canSeeWorkflowsNav } from "./workspace-nav.ts";
+import {
+  canExecuteWorkflows,
+  canPublishWorkflows,
+  canSeeWorkflowsNav,
+} from "./workspace-nav.ts";
 
 export const UX8_STORY = 203;
 export const UX8_EPIC = 195;
@@ -50,6 +54,7 @@ export const PRODUCT_HOME_SOURCES = [
 
 export type WorkflowHomeRowCapabilities = {
   canExecute: boolean;
+  canPublish: boolean;
   canViewWebhooks: boolean;
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
@@ -60,6 +65,7 @@ export function productHomeCapabilities(
 ): WorkflowHomeRowCapabilities {
   return {
     canExecute: canExecuteWorkflows(permissions),
+    canPublish: canPublishWorkflows(permissions),
     canViewWebhooks: canViewWebhookTriggers(permissions),
     canViewSchedules: canViewScheduleTriggers(permissions),
     canSeeLastRun: canSeeExecutionsNav(permissions ?? []),
@@ -112,6 +118,7 @@ export function workflowHomeRowActions(input: {
 }): {
   openEditor: string;
   startPublished: boolean;
+  testRun: boolean;
   webhooks: boolean;
   schedules: boolean;
   lastRunHref: string | null;
@@ -120,6 +127,7 @@ export function workflowHomeRowActions(input: {
   return {
     openEditor: workflowEditorHref(input.workflowId),
     startPublished: input.published && input.capabilities.canExecute,
+    testRun: input.capabilities.canPublish && input.capabilities.canExecute,
     webhooks: input.capabilities.canViewWebhooks,
     schedules: input.capabilities.canViewSchedules,
     lastRunHref: input.capabilities.canSeeLastRun
