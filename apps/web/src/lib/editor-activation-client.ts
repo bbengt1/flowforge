@@ -3,7 +3,7 @@
  *
  * Relates to #270 / Part of #232. Keep #270 open.
  *
- * No `/activations` resource. CSRF stays on the existing webhook and
+ * No new activation collection. CSRF stays on the existing webhook and
  * schedule clients. Secrets are never read or shown.
  */
 
@@ -74,6 +74,7 @@ function emptyActivationProblem(detail: string): ProblemDetails {
     detail,
     instance: "/workflows/{workflowId}/triggers",
     code: "invalid-request",
+    request_id: "",
   };
 }
 
@@ -176,7 +177,7 @@ export async function applyEditorActivationToggle(
       ),
     };
   }
-  if (!isResourceId(versionId)) {
+  if (!isResourceId(versionId ?? undefined)) {
     return {
       ok: false,
       applied: [],

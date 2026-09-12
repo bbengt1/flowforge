@@ -221,7 +221,7 @@ export function pinsForPublishedVersion(
   pins: readonly EditorActivationPin[],
   versionId: string | null | undefined,
 ): EditorActivationPin[] {
-  if (!isResourceId(versionId) || isDraftRunSelection(versionId)) {
+  if (!isResourceId(versionId ?? undefined) || isDraftRunSelection(versionId)) {
     return [];
   }
   return pins.filter((pin) => pin.workflowVersionId === versionId);
@@ -462,7 +462,9 @@ export function editorActivationCsrfOnMutations(): boolean {
 }
 
 export function editorActivationInventedRoute(source: string): boolean {
-  return INVENTED_ACTIVATION_ROUTES.some((route) => source.includes(route));
+  return INVENTED_ACTIVATION_ROUTES.some((route) => {
+    return source.includes(`"${route}"`) || source.includes(`\`${route}\``);
+  });
 }
 
 export function editorActivationCommonPathUsesHomeDrawers(
