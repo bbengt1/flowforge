@@ -4,6 +4,7 @@
 
 - [Architecture](architecture.md): component boundaries, deployment model, and embedding contract.
 - [Rewrite: n8n-class parity](architecture/flowforge-rewrite-n8n-class-parity.md): successor product charter after E1–E12 and epic #195 — parity of interaction and coverage, not an n8n clone. Chloe’s UI-surface fold-in is §11.1; jonny’s control-plane fold-in is §11.2. No issues from this doc until R1 is accepted.
+- [FlowForge UX Laws](architecture/flowforge-ux-laws.md): post-R1–R7 chrome polish using [Laws of UX](https://lawsofux.com/) — selective Must / Should / already-covered / out-of-scope. Docs-only; Arie opens the epic. Not a security/product-model redesign.
 - [Rewrite UI surfaces](reference/rewrite-ui-surfaces.md): Chloe’s expanded surface map, operator migration notes, and keep/replace/retire (UI). Charter §11.1 is the fold-in authority.
 - [Master implementation plan](master-implementation-plan.md): agile epic and story backlog for the shipped MVP (E1–E12).
 - [MVP workflow model](reference/workflow-model.md): resources, node types, and acceptance criteria.
