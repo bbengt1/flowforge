@@ -38,6 +38,8 @@ import type {
   WorkflowExecution,
   WorkflowVersion,
 } from "@/lib/workflow-types";
+import { dohertyBegin, type DohertyChrome } from "@/lib/doherty-pending-chrome";
+import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 
 type RunControlProps = {
   versions: WorkflowVersion[];
@@ -49,6 +51,7 @@ type RunControlProps = {
   onTriggerInput: (value: string) => void;
   execution: WorkflowExecution | null;
   pending: boolean;
+  doherty?: DohertyChrome;
   dirty: boolean;
   runBlocked: boolean;
   runBlockReason?: string;
@@ -79,6 +82,7 @@ export function RunControl({
   onTriggerInput,
   execution,
   pending,
+  doherty,
   dirty,
   runBlocked,
   runBlockReason,
@@ -218,10 +222,20 @@ export function RunControl({
               type="button"
               onClick={onRun}
               disabled={!canRun}
+              aria-busy={pending}
               className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
             >
               {pending ? "Starting…" : "Start"}
             </button>
+            <DohertyStatus
+              chrome={
+                doherty?.gesture === "start"
+                  ? doherty
+                  : pending
+                    ? dohertyBegin("start")
+                    : { gesture: null, phase: "idle" }
+              }
+            />
           </div>
           {authMessage ? (
             <p role="status" className="text-sm font-medium text-rose-950">

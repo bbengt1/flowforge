@@ -15,6 +15,11 @@ import {
   formatRedaction,
 } from "@/lib/workflow-core-nodes";
 import type { WorkflowCatalog } from "@/lib/workflow-types";
+import {
+  dohertyBegin,
+  type DohertyChrome,
+} from "@/lib/doherty-pending-chrome";
+import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 
 export const ACTION_DRAG_MIME = "application/x-flowforge-action";
 
@@ -23,6 +28,7 @@ type ActionLibraryProps = {
   entries: ActionLibraryEntry[];
   query: string;
   pending: boolean;
+  doherty?: DohertyChrome;
   onQuery: (value: string) => void;
   onRefresh: () => void;
   onInsert?: (entry: ActionLibraryEntry) => void;
@@ -35,6 +41,7 @@ export function ActionLibrary({
   entries,
   query,
   pending,
+  doherty,
   onQuery,
   onRefresh,
   onInsert,
@@ -44,6 +51,11 @@ export function ActionLibrary({
   const visible = filterActionLibrary(entries, query);
   const triggersWorkflowLevel = catalogExcludesTriggerNodes(catalog);
   const fromCatalog = entries.some((entry) => entry.source === "catalog");
+  const catalogChrome: DohertyChrome | undefined = doherty?.gesture === "catalog"
+    ? doherty
+    : pending
+      ? dohertyBegin("catalog")
+      : undefined;
 
   return (
     <section
@@ -87,12 +99,18 @@ export function ActionLibrary({
             type="button"
             onClick={onRefresh}
             disabled={pending}
+            aria-busy={pending}
             className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
           >
             {pending ? "Loading…" : catalog ? "Refresh catalog" : "Load catalog"}
           </button>
         </div>
       </div>
+      {catalogChrome ? (
+        <div className="mt-2" data-doherty-chrome="catalog">
+          <DohertyStatus chrome={catalogChrome} />
+        </div>
+      ) : null}
 
       <label className="mt-4 block text-sm">
         <span className="text-zinc-600">Search</span>

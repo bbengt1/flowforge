@@ -47,6 +47,13 @@ import type {
 } from "@/lib/workflow-types";
 import { pushNotification } from "@/lib/workspace-notifications";
 import { ManualStartFields } from "@/components/workflows/ManualStartFields";
+import {
+  DOHERTY_IDLE,
+  dohertyBegin,
+  dohertyFinish,
+  type DohertyChrome,
+} from "@/lib/doherty-pending-chrome";
+import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 
 type ManualStartPanelProps = {
   identity: DevIdentity;
@@ -79,6 +86,7 @@ export function ManualStartPanel({
     generateManualStartIdempotencyKey,
   );
   const [pending, setPending] = useState(false);
+  const [doherty, setDoherty] = useState<DohertyChrome>(DOHERTY_IDLE);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [evaluation, setEvaluation] = useState<PolicyEvaluation | null>(null);
   const [evaluationProblem, setEvaluationProblem] =
@@ -209,6 +217,7 @@ export function ManualStartPanel({
     ) {
       return;
     }
+    setDoherty(dohertyBegin("start"));
     setPending(true);
     setProblem(null);
     const result = await startWorkflowExecution(
@@ -222,6 +231,13 @@ export function ManualStartPanel({
     );
     setLastStartStatus(result.statusCode);
     setPending(false);
+    setDoherty(
+      dohertyFinish(
+        "start",
+        result.ok,
+        result.ok ? result.execution.status : undefined,
+      ),
+    );
     if (!result.ok) {
       setProblem(result.problem);
       return;
@@ -409,10 +425,12 @@ export function ManualStartPanel({
               type="button"
               onClick={() => void onStart()}
               disabled={!canExecute || pending || !selectedVersionId || !preview.ok}
+              aria-busy={pending}
               className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
             >
               {pending ? "Starting…" : "Start"}
             </button>
+            <DohertyStatus chrome={doherty} />
             <Link
               href={editorManualStartHref(workflowId)}
               className="text-sm text-teal-800 underline"

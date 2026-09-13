@@ -20,6 +20,8 @@ import {
 import {
   editorWorkingMemoryChrome,
 } from "@/lib/editor-working-memory";
+import type { DohertyChrome } from "@/lib/doherty-pending-chrome";
+import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import {
   EDITOR_CANVAS_REDO_LABEL,
@@ -37,6 +39,7 @@ type EditorTopBarProps = {
   dirty: boolean;
   canCall: boolean;
   pending: string | null;
+  doherty?: DohertyChrome;
   canSave: boolean;
   canPublish: boolean;
   canTestRun: boolean;
@@ -80,6 +83,7 @@ export function EditorTopBar({
   dirty,
   canCall,
   pending,
+  doherty,
   canSave,
   canPublish,
   canTestRun,
@@ -146,21 +150,24 @@ export function EditorTopBar({
             </p>
           )}
         </div>
-        <p className="shrink-0 text-xs text-zinc-600" role="status">
-          {workflow ? (
-            <>
-              <span data-editor-working-memory="draft">{memory.draft}</span>
-              {" · "}
-              {editorRevisionLabel(revision)}
-              {" · "}
-              <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
-                {dirtyLabel}
-              </span>
-            </>
-          ) : (
-            context.status
-          )}
-        </p>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <p className="text-xs text-zinc-600" role="status">
+            {workflow ? (
+              <>
+                <span data-editor-working-memory="draft">{memory.draft}</span>
+                {" · "}
+                {editorRevisionLabel(revision)}
+                {" · "}
+                <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
+                  {dirtyLabel}
+                </span>
+              </>
+            ) : (
+              context.status
+            )}
+          </p>
+          {doherty ? <DohertyStatus chrome={doherty} /> : null}
+        </div>
       </div>
       <div
         role="group"
@@ -181,6 +188,7 @@ export function EditorTopBar({
           type="button"
           onClick={onSave}
           disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
+          aria-busy={pending === "save"}
           className={`rounded-md border border-teal-800 bg-teal-800 ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-white hover:bg-teal-900 disabled:opacity-60`}
         >
           {pending === "save" ? "Saving…" : editorTopBarControlLabel("save")}
@@ -189,6 +197,7 @@ export function EditorTopBar({
           type="button"
           onClick={onPublish}
           disabled={!canCall || pending !== null || !canPublish}
+          aria-busy={pending === "publish"}
           className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
         >
           {pending === "publish" ? "Publishing…" : editorTopBarControlLabel("publish")}
@@ -300,15 +309,19 @@ export function EditorTopBar({
               id={satelliteOverlayTriggerId("start-published")}
               onClick={onStart}
               disabled={!workflow || !memory.canStartPublished}
+              aria-busy={pending === "run"}
               title={memory.startHelp}
               className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
             >
-              {editorTopBarControlLabel("start")}
+              {pending === "run"
+                ? "Starting…"
+                : editorTopBarControlLabel("start")}
             </button>
             <button
               type="button"
               onClick={onTestRun}
               disabled={!canCall || pending !== null || !canTestRun}
+              aria-busy={pending === "test-run"}
               title={memory.testRunHelp}
               className={`rounded-md border border-teal-800 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-teal-900 hover:bg-teal-50 disabled:opacity-60`}
             >

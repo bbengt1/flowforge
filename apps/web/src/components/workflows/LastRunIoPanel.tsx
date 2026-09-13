@@ -162,7 +162,13 @@ export function LastRunIoPanel({
       ) : null}
 
       {pending ? (
-        <p role="status" className="mt-3 text-sm text-zinc-600">
+        <p
+          role="status"
+          data-doherty-chrome="last-run"
+          data-doherty-phase="pending"
+          aria-busy
+          className="mt-3 text-sm text-zinc-600"
+        >
           {EDITOR_RUN_IO_PENDING_HELP}
         </p>
       ) : null}
