@@ -290,3 +290,4 @@ Check after the matching stories land. Secret-free evidence. Do not treat this p
 | [Embed SDK](../reference/embed-sdk.md) / [Portal adapter](../reference/portal-adapter.md) | Host contracts. ADV-021 / display-only query stay. |
 | [Security model](../reference/security-model.md) | Trust boundaries. UX polish cannot move them. |
 | [Laws of UX](https://lawsofux.com/) | External catalog. Product chrome says FlowForge, not the catalog’s branding. |
+| [Workflows home folder hierarchy](flowforge-workflow-folders.md) | Brent-promoted folder API + home tree. This polish brief still does not implement it. |
