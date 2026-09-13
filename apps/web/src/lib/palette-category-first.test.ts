@@ -3,6 +3,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  ACTIONS_CATALOG_HREF,
+  EDITOR_LIBRARY,
+  EDITOR_LIBRARY_DEFAULT_OPEN,
+  EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
+  EDITOR_LIBRARY_OPEN_STORAGE_KEY,
+  R21_KEEP_STORY_OPEN,
+  R21_STORY,
+  actionsCommandIsCatalogReference,
+  actionsEmbedRouteUnchanged,
+  actionsNavIsCatalogReference,
+} from "./editor-library.ts";
 import { adaptActionLibrary } from "./workflow-action-library.ts";
 import { recommendActions } from "./workflow-action-wizard.ts";
 import type { ActionLibraryEntry } from "./workflow-action-library.ts";
@@ -320,8 +332,29 @@ describe("UXL.7 palette category-first", () => {
   });
 
   it("keeps /actions as the catalog reference and remembered-open satellite", () => {
-    assert.equal(actionsRemainsCatalogReference(), true);
-    assert.equal(rememberedOpenLibraryUnchanged(), true);
+    assert.equal(
+      actionsRemainsCatalogReference({
+        href: ACTIONS_CATALOG_HREF,
+        navIsReference: actionsNavIsCatalogReference(),
+        commandIsReference: actionsCommandIsCatalogReference(),
+        embedUnchanged: actionsEmbedRouteUnchanged(),
+        noThirdApp: EDITOR_LIBRARY.noThirdCatalogApp,
+      }),
+      true,
+    );
+    assert.equal(
+      rememberedOpenLibraryUnchanged({
+        rememberedOpen: EDITOR_LIBRARY.rememberedOpen,
+        persistentSatellite: EDITOR_LIBRARY.persistentSatellite,
+        hiddenOnFirstPaint: EDITOR_LIBRARY.hiddenOnFirstPaint,
+        openOnFirstPaint: EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
+        defaultOpen: EDITOR_LIBRARY_DEFAULT_OPEN,
+        storageKey: EDITOR_LIBRARY_OPEN_STORAGE_KEY,
+        r21Story: R21_STORY,
+        r21KeepOpen: R21_KEEP_STORY_OPEN,
+      }),
+      true,
+    );
     assert.equal(PALETTE_CATEGORY_FIRST.noThirdCatalogApp, true);
     assert.equal(PALETTE_CATEGORY_FIRST.noNewApiEndpoints, true);
     const actions = source("src/components/workflows/ActionCatalogPage.tsx");

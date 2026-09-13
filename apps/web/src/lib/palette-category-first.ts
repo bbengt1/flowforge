@@ -23,19 +23,6 @@
 
 import { CATALOG_SOURCE_UNAVAILABLE } from "./catalog-fail-closed.ts";
 import {
-  ACTIONS_CATALOG_HREF,
-  EDITOR_LIBRARY,
-  EDITOR_LIBRARY_DEFAULT_OPEN,
-  EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT,
-  EDITOR_LIBRARY_OPEN_STORAGE_KEY,
-  R21_KEEP_STORY_OPEN,
-  R21_STORY,
-  actionsCommandIsCatalogReference,
-  actionsEmbedRouteUnchanged,
-  actionsNavIsCatalogReference,
-} from "./editor-library.ts";
-import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
-import {
   filterActionLibrary,
   filterEnabledActionNodes,
   isTriggerActionType,
@@ -50,6 +37,10 @@ import type {
   CatalogWithField,
   WorkflowCatalog,
 } from "./workflow-types.ts";
+
+export const PALETTE_ACTIONS_CATALOG_HREF = "/actions";
+export const PALETTE_LIBRARY_OPEN_STORAGE_KEY =
+  "flowforge.editor.library-open.v1";
 
 export const UXL7_STORY = 294;
 export const UXL7_EPIC = 287;
@@ -112,7 +103,6 @@ export const PALETTE_CATEGORY_FIRST_HELP =
   "First paint is categories from the enabled catalog. Search still reaches any enabled type. Triggers, disabled, next, and provider types stay hidden.";
 
 export const PALETTE_CATEGORY_FIRST = {
-  ...R7_HARD_LINE,
   inheritR7HardLine: true,
   inheritR21RememberedOpen: true,
   d6MigrateInPlace: true,
@@ -463,28 +453,42 @@ export function paletteMissingCatalogFailsClosed(
   );
 }
 
-export function rememberedOpenLibraryUnchanged(): boolean {
+export function rememberedOpenLibraryUnchanged(input: {
+  rememberedOpen: boolean;
+  persistentSatellite: boolean;
+  hiddenOnFirstPaint: boolean;
+  openOnFirstPaint: boolean;
+  defaultOpen: boolean;
+  storageKey: string;
+  r21Story: number;
+  r21KeepOpen: boolean;
+}): boolean {
   return (
-    EDITOR_LIBRARY.rememberedOpen &&
-    EDITOR_LIBRARY.persistentSatellite &&
-    EDITOR_LIBRARY.hiddenOnFirstPaint === false &&
-    EDITOR_LIBRARY_OPEN_ON_FIRST_PAINT &&
-    EDITOR_LIBRARY_DEFAULT_OPEN &&
-    EDITOR_LIBRARY_OPEN_STORAGE_KEY === "flowforge.editor.library-open.v1" &&
-    R21_STORY === 234 &&
-    R21_KEEP_STORY_OPEN &&
+    input.rememberedOpen &&
+    input.persistentSatellite &&
+    input.hiddenOnFirstPaint === false &&
+    input.openOnFirstPaint &&
+    input.defaultOpen &&
+    input.storageKey === PALETTE_LIBRARY_OPEN_STORAGE_KEY &&
+    input.r21Story === 234 &&
+    input.r21KeepOpen &&
     PALETTE_CATEGORY_FIRST.rememberedOpenSatelliteUnchanged
   );
 }
 
-export function actionsRemainsCatalogReference(): boolean {
+export function actionsRemainsCatalogReference(input: {
+  href: string;
+  navIsReference: boolean;
+  commandIsReference: boolean;
+  embedUnchanged: boolean;
+  noThirdApp: boolean;
+}): boolean {
   return (
-    ACTIONS_CATALOG_HREF === "/actions" &&
-    EDITOR_LIBRARY.actionsRouteIsCatalogReference &&
-    EDITOR_LIBRARY.noThirdCatalogApp &&
-    actionsNavIsCatalogReference() &&
-    actionsCommandIsCatalogReference() &&
-    actionsEmbedRouteUnchanged()
+    input.href === PALETTE_ACTIONS_CATALOG_HREF &&
+    input.navIsReference &&
+    input.commandIsReference &&
+    input.embedUnchanged &&
+    input.noThirdApp
   );
 }
 
@@ -516,8 +520,8 @@ export function paletteCategoryFirstHoldsHardLines(): boolean {
     PALETTE_CATEGORY_FIRST.missingCatalogFailsClosed &&
     PALETTE_CATEGORY_FIRST.noInventedTypes &&
     CATALOG_SOURCE_UNAVAILABLE === "unavailable" &&
-    rememberedOpenLibraryUnchanged() &&
-    actionsRemainsCatalogReference()
+    PALETTE_ACTIONS_CATALOG_HREF === "/actions" &&
+    PALETTE_LIBRARY_OPEN_STORAGE_KEY === "flowforge.editor.library-open.v1"
   );
 }
 
