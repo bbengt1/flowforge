@@ -117,13 +117,17 @@ export function EmbedChrome({
         ) : missingEmbed ? (
           <p
             role="alert"
+            data-doherty-wait="session-embed"
             className="text-xs text-red-800"
             title={SESSION_EMBED_CHROME_HELP}
           >
             {EMBED_CHROME_MISSING_SESSION_MESSAGE}
           </p>
         ) : (
-          <p className="text-xs text-zinc-500">
+          <p
+            data-doherty-wait="session-embed"
+            className="text-xs text-zinc-500"
+          >
             {EMBED_MOUNT_PREFIX} · {SESSION_EMBED_ROUTE_MAP_SOURCE} ·{" "}
             {SESSION_EMBED_WAITING_HELP}
           </p>
@@ -147,7 +151,11 @@ export function EmbedChrome({
           {REWRITE_EMBED_MOUNT_HELP}
         </p>
       ) : missingEmbed ? (
-        <p role="alert" className="px-4 pb-2 text-[11px] text-red-800">
+        <p
+          role="alert"
+          data-doherty-wait="session-embed"
+          className="px-4 pb-2 text-[11px] text-red-800"
+        >
           {EMBED_CHROME_MISSING_SESSION_MESSAGE}
         </p>
       ) : null}
@@ -207,7 +215,10 @@ export function EmbedChrome({
         </div>
       ) : null}
       {hostPreview ? (
-        <p className="px-4 pb-3 text-xs text-zinc-500">
+        <p
+          data-doherty-wait="host-query"
+          className="px-4 pb-3 text-xs text-zinc-500"
+        >
           {EMBED_HOST_DISPLAY_HELP} Host shows{" "}
           {[
             hostDisplay.tenant || hostDisplay.tenantId,
@@ -219,7 +230,12 @@ export function EmbedChrome({
         </p>
       ) : null}
       {!sessionActive && !hostPreview ? (
-        <p className="px-4 pb-3 text-xs text-zinc-500">{EMBED_HOST_DISPLAY_HELP}</p>
+        <p
+          data-doherty-wait="host-query"
+          className="px-4 pb-3 text-xs text-zinc-500"
+        >
+          {EMBED_HOST_DISPLAY_HELP}
+        </p>
       ) : null}
     </header>
   );

@@ -62,6 +62,13 @@ import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallba
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import {
+  DOHERTY_IDLE,
+  dohertyBegin,
+  dohertyFinish,
+  type DohertyChrome,
+} from "@/lib/doherty-pending-chrome";
+import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 
 type CredentialDetailProps = {
   credentialId: string;
@@ -104,6 +111,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   const [mutatedIdentity, setMutatedIdentity] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  const [doherty, setDoherty] = useState<DohertyChrome>(DOHERTY_IDLE);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
 
@@ -223,6 +231,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     if (!record || !recordHasAction(record, "rotate")) {
       return;
     }
+    setDoherty(dohertyBegin("vault-rotate"));
     setPending("rotate");
     setProblem(null);
     const result = await rotateCredential(
@@ -234,6 +243,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     );
     setSecret(clearSecretDraftAfterSubmit(secret));
     setPending(null);
+    setDoherty(dohertyFinish("vault-rotate", result.ok));
     if (!result.ok) {
       setProblem(result.problem);
       mergeStripped(result.strippedKeys);
@@ -268,11 +278,13 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     if (!record || !recordHasAction(record, "test")) {
       return;
     }
+    setDoherty(dohertyBegin("vault-test"));
     setPending("test");
     setProblem(null);
     const result = await testCredential(identity, credentialId);
     setSecret(clearSecretDraftAfterSubmit(secret));
     setPending(null);
+    setDoherty(dohertyFinish("vault-test", result.ok));
     if (!result.ok) {
       setProblem(result.problem);
       mergeStripped(result.strippedKeys);
@@ -414,6 +426,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     type="button"
                     onClick={() => void runTest()}
                     disabled={pending === "test" || !recordHasAction(record, "test")}
+                    aria-busy={pending === "test"}
                     className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
                   >
                     {pending === "test" ? "Testing…" : "Test"}
@@ -435,6 +448,9 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                       : disableEnableLabel}
                   </button>
                 </div>
+                {doherty.gesture === "vault-test" ? (
+                  <DohertyStatus chrome={doherty} className="mt-3" />
+                ) : null}
                 <dl className="mt-4 grid gap-1 text-sm">
                   <div>
                     <dt className="inline text-zinc-500">test status </dt>
@@ -478,10 +494,14 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     type="button"
                     onClick={() => void rotate()}
                     disabled={pending === "rotate" || !recordHasAction(record, "rotate")}
+                    aria-busy={pending === "rotate"}
                     className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
                   >
                     {pending === "rotate" ? "Rotating…" : "Rotate"}
                   </button>
+                  {doherty.gesture === "vault-rotate" ? (
+                    <DohertyStatus chrome={doherty} />
+                  ) : null}
                 </div>
               </section>
 

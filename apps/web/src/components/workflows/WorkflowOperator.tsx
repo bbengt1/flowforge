@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import {
+  DOHERTY_IDLE,
+  dohertyBegin,
+  dohertyFinish,
+  type DohertyChrome,
+} from "@/lib/doherty-pending-chrome";
 import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
@@ -284,6 +290,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [digest, setDigest] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [doherty, setDoherty] = useState<DohertyChrome>(DOHERTY_IDLE);
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
@@ -992,6 +999,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   }, [canCall]);
 
   async function loadCatalog() {
+    setDoherty(dohertyBegin("catalog"));
     setPending("catalog");
     setProblem(null);
     const [result, engine, ssh, script, http] = await Promise.all([
@@ -1003,6 +1011,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     ]);
     setLastRequestId(result.requestId);
     setPending(null);
+    setDoherty(dohertyFinish("catalog", result.ok));
     setEngineCatalog(engine && engine.ok ? engine.catalog : null);
     setSshCatalog(ssh && ssh.ok ? ssh.nodeCatalog : null);
     setScriptCatalog(script && script.ok ? script.catalog : null);
@@ -1244,6 +1253,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     if (!workflow || revision === null) {
       return;
     }
+    setDoherty(dohertyBegin("save"));
     setPending("save");
     setProblem(null);
     setConflictDraft(null);
@@ -1260,6 +1270,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     );
     setLastRequestId(result.requestId);
     setPending(null);
+    setDoherty(dohertyFinish("save", result.ok));
     if (!result.ok) {
       if (result.conflict) {
         await handleConflict(workflow.id, result.problem);
@@ -1303,6 +1314,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     if (!editorCommandAppliesToRoute(workflowId, workflow.id)) {
       return;
     }
+    setDoherty(dohertyBegin("publish"));
     setPending("publish");
     setProblem(null);
     const result = await publishWorkflow(identity, workflow.id, {
@@ -1311,6 +1323,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     });
     setLastRequestId(result.requestId);
     setPending(null);
+    setDoherty(dohertyFinish("publish", result.ok));
     if (!result.ok) {
       if (result.conflict) {
         await handleConflict(workflow.id, result.problem);
@@ -1369,6 +1382,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       });
       return;
     }
+    setDoherty(dohertyBegin("test-run"));
     setPending("test-run");
     setProblem(null);
     // D5 hard line: mint published test version then start it.
@@ -1388,6 +1402,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     });
     setLastRequestId(result.requestId);
     setPending(null);
+    setDoherty(
+      dohertyFinish(
+        "test-run",
+        result.ok,
+        result.ok ? result.execution.status : undefined,
+      ),
+    );
     if (!result.ok) {
       if (result.conflict) {
         await handleConflict(workflow.id, result.problem);
@@ -1620,6 +1641,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       });
       return;
     }
+    setDoherty(dohertyBegin("start"));
     setPending("run");
     setProblem(null);
     const evaluation = await evaluatePolicyForRun(identity, {
@@ -1636,6 +1658,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         staleLocalApproved: true,
       })) {
         setPending(null);
+        setDoherty(dohertyFinish("start", false));
         return;
       }
     } else {
@@ -1648,6 +1671,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         })
       ) {
         setPending(null);
+        setDoherty(dohertyFinish("start", false));
         return;
       }
     }
@@ -1663,6 +1687,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setLastRequestId(result.requestId);
     setLastStartStatus(result.statusCode);
     setPending(null);
+    setDoherty(
+      dohertyFinish(
+        "start",
+        result.ok,
+        result.ok ? result.execution.status : undefined,
+      ),
+    );
     if (!result.ok) {
       setProblem(
         isManualStartAuthFailure(result.problem)
@@ -1930,6 +1961,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       onTriggerInput={setRunTriggerInput}
       execution={execution}
       pending={pending === "run" || pending === "pin"}
+      doherty={doherty.gesture === "start" ? doherty : undefined}
       dirty={dirty}
       runBlocked={
         shouldBlockRun({
@@ -1994,6 +2026,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           dirty={dirty}
           canCall={canCall}
           pending={pending}
+          doherty={doherty}
           canSave={canSave}
           canPublish={canPublish}
           canTestRun={canTestRun}
@@ -2073,6 +2106,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           entries={library}
           query={paletteQuery}
           pending={pending === "catalog"}
+          doherty={doherty.gesture === "catalog" ? doherty : undefined}
           onQuery={setPaletteQuery}
           onRefresh={() => void loadCatalog()}
           onInsert={insertLibraryNode}
