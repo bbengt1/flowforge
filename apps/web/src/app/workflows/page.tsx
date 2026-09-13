@@ -19,7 +19,9 @@ export default function WorkflowsPage() {
         </p>
         <h1 className={TYPE_HEADING_CLASS}>Workflows</h1>
         <p className={TYPE_PAGE_HELP_CLASS}>
-          Product home for drafts and published versions. Empty home
+          Product home for drafts and published versions. The left rail
+          lists Unfiled and this workspace&apos;s folders; the main list
+          is the selected folder. Empty home
           teaches Create, Import YAML, or a reviewed template — each
           creates a draft. Drafts do not run. List and card
           scan ends are activation (published version active for webhook

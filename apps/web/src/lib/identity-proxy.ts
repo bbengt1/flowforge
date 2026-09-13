@@ -66,6 +66,7 @@ import {
   isSessionEmbedProxySegments,
   retargetSessionEmbedApiPath,
 } from "./session-embed-contract.ts";
+import { WORKFLOW_FOLDER_PROXY_ROUTES } from "./workflow-folder.ts";
 
 export { isResourceId } from "./identity-proxy-ids.ts";
 
@@ -155,6 +156,9 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
   { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },
   { methods: ["GET", "POST"], match: (s) => eq(s, ["workflows"]) },
+  // F.1 folder resource (#308 / #315). Paths live in workflow-folder.ts.
+  // F.2 GETs the collection; writes stay allowlisted for F.3/F.4.
+  ...WORKFLOW_FOLDER_PROXY_ROUTES,
   {
     methods: ["GET"],
     match: (s) => s.length === 2 && s[0] === "workflows" && isResourceId(s[1]),

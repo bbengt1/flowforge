@@ -127,7 +127,18 @@ describe("workflow home list/filter", () => {
         lastRunKnownIds: new Set([record().id]),
       },
     );
-    assert.equal(item?.folder, "ops");
+    assert.equal(item?.folder, "");
+    assert.equal(item?.folderId, null);
+    const [filed] = buildWorkflowHomeItems(
+      [record({ folderId: "11111111-1111-4111-8111-111111111111" })],
+      {
+        folderNames: new Map([
+          ["11111111-1111-4111-8111-111111111111", "Ops / On-call"],
+        ]),
+      },
+    );
+    assert.equal(filed?.folderId, "11111111-1111-4111-8111-111111111111");
+    assert.equal(filed?.folder, "Ops / On-call");
     assert.equal(item?.validationHealth, "valid");
     assert.equal(item?.triggers[0], "manual");
     assert.equal(item?.pendingApprovals, 1);

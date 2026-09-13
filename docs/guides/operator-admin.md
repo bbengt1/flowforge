@@ -89,9 +89,10 @@ Rewrite surface map and operator migration notes (Chloe, docs only;
 charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes)):
 [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
 
-1. Filter by search, folder (`ops/…`, `ops: …`, or slug `ops--name`),
-   tag, owner, trigger, environment, status, **activation**, last run,
-   last modified.
+1. Select **Unfiled** or a folder in the left rail (`?folder=` deep
+   link). Then filter by search, tag, owner, trigger, environment,
+   status, **activation**, last run, last modified. Prefix-in-name is
+   no longer the primary organizer (F.2 / #309 — **keep #309 open**).
 2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
    column/status (R6.2 / #271 — **keep #271 open**) shows whether a
    published version is active for webhook/schedule. Drafts read

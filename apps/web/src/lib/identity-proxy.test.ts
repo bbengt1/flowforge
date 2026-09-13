@@ -100,6 +100,28 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["workflows", "normalize"], "/api/v1/workflows/normalize"],
       ["GET", ["workflows"], "/api/v1/workflows"],
       ["POST", ["workflows"], "/api/v1/workflows"],
+      ["GET", ["workflow-folders"], "/api/v1/workflow-folders"],
+      ["POST", ["workflow-folders"], "/api/v1/workflow-folders"],
+      [
+        "GET",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "DELETE",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "folder"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/folder",
+      ],
       [
         "GET",
         ["workflows", "11111111-1111-4111-8111-111111111111"],
@@ -531,6 +553,64 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal(
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
+    );
+    assert.equal(
+      withRequestSearch(
+        "/api/v1/workflows",
+        "http://localhost/api/control-plane/workflows?folderId=unfiled",
+      ),
+      "/api/v1/workflows?folderId=unfiled",
+    );
+  });
+
+  it("allowlists F.1 workflow-folder routes and folderId list query", () => {
+    const folderId = "11111111-1111-4111-8111-111111111111";
+    const allowed: Array<[string, string[], string]> = [
+      ["GET", ["workflow-folders"], "/api/v1/workflow-folders"],
+      ["POST", ["workflow-folders"], "/api/v1/workflow-folders"],
+      ["GET", ["workflow-folders", folderId], `/api/v1/workflow-folders/${folderId}`],
+      ["PATCH", ["workflow-folders", folderId], `/api/v1/workflow-folders/${folderId}`],
+      ["DELETE", ["workflow-folders", folderId], `/api/v1/workflow-folders/${folderId}`],
+      ["PATCH", ["workflows", folderId, "folder"], `/api/v1/workflows/${folderId}/folder`],
+      ["GET", ["workflows"], "/api/v1/workflows"],
+    ];
+    for (const [method, segments, apiPath] of allowed) {
+      const target = resolveIdentityProxyTarget(method, segments);
+      assert.equal("apiPath" in target, true, `${method} ${segments.join("/")}`);
+      if ("apiPath" in target) {
+        assert.equal(target.apiPath, apiPath);
+      }
+    }
+
+    const putCollection = resolveIdentityProxyTarget("PUT", ["workflow-folders"]);
+    assert.equal("status" in putCollection, true);
+    if ("status" in putCollection) {
+      assert.equal(putCollection.status, 405);
+    }
+
+    const getMove = resolveIdentityProxyTarget("GET", [
+      "workflows",
+      folderId,
+      "folder",
+    ]);
+    assert.equal("status" in getMove, true);
+    if ("status" in getMove) {
+      assert.equal(getMove.status, 405);
+    }
+
+    assert.equal(
+      withRequestSearch(
+        "/api/v1/workflows",
+        `http://localhost/api/control-plane/workflows?folderId=${folderId}`,
+      ),
+      `/api/v1/workflows?folderId=${folderId}`,
+    );
+    assert.equal(
+      withRequestSearch(
+        "/api/v1/workflows",
+        "http://localhost/api/control-plane/workflows?folderId=unfiled",
+      ),
+      "/api/v1/workflows?folderId=unfiled",
     );
   });
 
