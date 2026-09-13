@@ -30,6 +30,7 @@ import {
   homeFolderRailNestsMain,
   homeUsesPrefixInNameAsPrimaryOrganizer,
   isWorkflowFolder,
+  isWorkflowFolderProxySegments,
   listWorkflowsPath,
   parseFolderQuery,
   readExpandedFolderIds,
@@ -239,6 +240,24 @@ describe("F.2 home folder rail + select", () => {
     assert.doesNotMatch(client, /method:\s*"(POST|PATCH|DELETE)"/);
     assert.match(client, /WORKFLOW_FOLDERS_PATH/);
     assert.doesNotMatch(client, /\/workflows\/.+\/folder/);
+    assert.equal(isWorkflowFolderProxySegments(["workflow-folders"]), true);
+    assert.equal(
+      isWorkflowFolderProxySegments([
+        "workflow-folders",
+        "11111111-1111-4111-8111-111111111111",
+      ]),
+      true,
+    );
+    assert.equal(
+      isWorkflowFolderProxySegments([
+        "workflows",
+        "11111111-1111-4111-8111-111111111111",
+        "folder",
+      ]),
+      true,
+    );
+    const proxy = source("src/lib/identity-proxy.ts");
+    assert.match(proxy, /WORKFLOW_FOLDER_PROXY_ROUTES/);
     for (const path of F2_HOME_FOLDER_SOURCES) {
       assert.equal(source(path).length > 0, true);
     }

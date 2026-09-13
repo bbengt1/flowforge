@@ -101,6 +101,7 @@ export const F2_HOME_FOLDER_SOURCES = [
   "src/lib/workflow-client.ts",
   "src/lib/workflow-types.ts",
   "src/lib/workflow-home.ts",
+  "src/lib/identity-proxy.ts",
   "src/components/home/WorkflowHome.tsx",
   "src/app/workflows/page.tsx",
 ] as const;
@@ -360,4 +361,49 @@ export function homeUsesPrefixInNameAsPrimaryOrganizer(source: string): boolean 
 
 export function homeFolderRailNestsMain(source: string): boolean {
   return /<main[\s>]/.test(source);
+}
+
+export type WorkflowFolderProxyRoute = {
+  methods: readonly string[];
+  match: (segments: string[]) => boolean;
+};
+
+/**
+ * F.1 folder routes through the same-origin identity proxy.
+ * F.2 only GETs the collection; POST/PATCH/DELETE stay allowlisted
+ * so F.3/F.4 do not 404 the proxy. Paths live here so a retarget
+ * only edits this adapter.
+ */
+export const WORKFLOW_FOLDER_PROXY_ROUTES: readonly WorkflowFolderProxyRoute[] =
+  [
+    {
+      methods: ["GET", "POST"],
+      match: (s) => eqSegments(s, ["workflow-folders"]),
+    },
+    {
+      methods: ["GET", "PATCH", "DELETE"],
+      match: (s) =>
+        s.length === 2 &&
+        s[0] === "workflow-folders" &&
+        isResourceId(s[1]),
+    },
+    {
+      methods: ["PATCH"],
+      match: (s) =>
+        s.length === 3 &&
+        s[0] === "workflows" &&
+        isResourceId(s[1]) &&
+        s[2] === "folder",
+    },
+  ];
+
+function eqSegments(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+export function isWorkflowFolderProxySegments(segments: string[]): boolean {
+  return WORKFLOW_FOLDER_PROXY_ROUTES.some((route) => route.match(segments));
 }

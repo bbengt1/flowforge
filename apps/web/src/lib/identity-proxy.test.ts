@@ -100,6 +100,28 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["workflows", "normalize"], "/api/v1/workflows/normalize"],
       ["GET", ["workflows"], "/api/v1/workflows"],
       ["POST", ["workflows"], "/api/v1/workflows"],
+      ["GET", ["workflow-folders"], "/api/v1/workflow-folders"],
+      ["POST", ["workflow-folders"], "/api/v1/workflow-folders"],
+      [
+        "GET",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "DELETE",
+        ["workflow-folders", "11111111-1111-4111-8111-111111111111"],
+        "/api/v1/workflow-folders/11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "PATCH",
+        ["workflows", "11111111-1111-4111-8111-111111111111", "folder"],
+        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/folder",
+      ],
       [
         "GET",
         ["workflows", "11111111-1111-4111-8111-111111111111"],
@@ -531,6 +553,13 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal(
       withRequestSearch("/api/v1/workspace/jobs", "http://localhost/api/control-plane/workspace/jobs"),
       "/api/v1/workspace/jobs",
+    );
+    assert.equal(
+      withRequestSearch(
+        "/api/v1/workflows",
+        "http://localhost/api/control-plane/workflows?folderId=unfiled",
+      ),
+      "/api/v1/workflows?folderId=unfiled",
     );
   });
 
