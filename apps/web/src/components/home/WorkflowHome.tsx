@@ -124,8 +124,13 @@ import {
   FOLDER_MUTATE_IDLE,
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
+  FOLDER_PATH_REVEAL_LABEL,
   FOLDER_QUERY,
+  FOLDER_RAIL_FILTER_LABEL,
   FOLDER_RAIL_LABEL,
+  FOLDER_SEARCH_ACROSS_LABEL,
+  FOLDER_SEARCH_HELP,
+  FOLDER_SEARCH_IN_FOLDER_LABEL,
   NEW_FOLDER_LABEL,
   RENAME_FOLDER_LABEL,
   UNFILED_EMPTY_FILED_HELP,
@@ -143,27 +148,36 @@ import {
   canMutateWorkflowFolders,
   childFolderCount,
   consumeFolderWorkspaceChange,
+  constrainItemsToFolderSelection,
   createFolderParentId,
   defaultWorkflowMoveTarget,
   emptyFolderDeleteAllowed,
+  filterFolderTreeByName,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
   folderHomeEmptyKind,
   folderIdForMove,
+  folderIdsToExpandForFilter,
   folderMutateBegin,
   folderMutateFinish,
   folderMutateLabel,
   folderNameSubmitError,
   folderNotEmptyDetail,
   folderQueryValue,
-  folderSelectionsEqual,
+  folderSearchListsAcrossFolders,
+  intendedFolderSelectionFromUrl,
+  matchesWorkflowNameOrSlug,
   parseFolderQuery,
   parseWorkflowMoveDragPayload,
   readExpandedFolderIds,
   resolveFolderSelection,
   selectionAfterFolderDelete,
+  selectionForWorkflowFolder,
+  shouldDropFolderQueryOnWorkspaceMemory,
+  shouldRewriteFolderDeepLink,
   unfiledEmptyUsesHomeVerbs,
   workflowAlreadyInFolder,
+  workflowFolderPathLabel,
   workflowMoveDragPayload,
   workflowMoveTargets,
   workflowsFolderIdQuery,
@@ -224,6 +238,8 @@ function WorkflowHomeSession() {
     Map<string, HomeActivationColumn>
   >(new Map());
   const [filters, setFilters] = useState<WorkflowHomeFilters>(EMPTY_WORKFLOW_HOME_FILTERS);
+  const [searchInThisFolder, setSearchInThisFolder] = useState(false);
+  const [railFilter, setRailFilter] = useState("");
   const [view, setView] = useState<WorkflowHomeView>("list");
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
@@ -278,22 +294,34 @@ function WorkflowHomeSession() {
   const folderParam = searchParams.get(FOLDER_QUERY);
   const intendedSelection = useMemo<FolderSelection>(
     () =>
-      dropPreviousFolder
-        ? { kind: "unfiled" }
-        : parseFolderQuery(folderParam),
+      intendedFolderSelectionFromUrl(folderParam, {
+        dropPreviousFolder,
+      }),
     [dropPreviousFolder, folderParam],
   );
   const selection = foldersReady
     ? resolveFolderSelection(intendedSelection, folders)
     : intendedSelection;
+  const acrossFolderSearch = folderSearchListsAcrossFolders(
+    filters.query,
+    searchInThisFolder,
+  );
+  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+  const visibleFolderTree = useMemo(
+    () => filterFolderTreeByName(folderTree, railFilter),
+    [folderTree, railFilter],
+  );
   const visibleExpandedIds = useMemo(
     () => [
       ...new Set([
         ...expandedIds,
         ...ancestorIdsForSelection(folders, selection),
+        ...(railFilter.trim()
+          ? folderIdsToExpandForFilter(visibleFolderTree)
+          : []),
       ]),
     ],
-    [expandedIds, folders, selection],
+    [expandedIds, folders, railFilter, selection, visibleFolderTree],
   );
   const folderNames = useMemo(() => {
     const names = new Map<string, string>();
@@ -305,15 +333,17 @@ function WorkflowHomeSession() {
     }
     return names;
   }, [folders]);
-  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
   const crumbs = useMemo(
     () => breadcrumbSegments(folders, selection),
     [folders, selection],
   );
 
+  const displayRecords = acrossFolderSearch
+    ? (workspaceWorkflows ?? records)
+    : records;
   const items = useMemo(
     () =>
-      buildWorkflowHomeItems(records, {
+      buildWorkflowHomeItems(displayRecords, {
         environment,
         drafts,
         executions,
@@ -323,7 +353,7 @@ function WorkflowHomeSession() {
         folderNames,
       }),
     [
-      records,
+      displayRecords,
       environment,
       drafts,
       executions,
@@ -333,15 +363,24 @@ function WorkflowHomeSession() {
       folderNames,
     ],
   );
-  const visible = useMemo(
-    () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
-    [items, filters],
-  );
+  const visible = useMemo(() => {
+    const named = items.filter((item) =>
+      matchesWorkflowNameOrSlug(item, filters.query),
+    );
+    const scoped = searchInThisFolder
+      ? constrainItemsToFolderSelection(named, selection)
+      : named;
+    return sortWorkflowHomeItems(
+      filterWorkflowHomeItems(scoped, { ...filters, query: "" }),
+    );
+  }, [items, filters, searchInThisFolder, selection]);
   const workspaceWorkflowCount = workspaceWorkflows?.length ?? records.length;
   const emptyKind = folderHomeEmptyKind({
     selection,
     folderCount: folders.length,
-    scopedRecordCount: records.length,
+    scopedRecordCount: acrossFolderSearch
+      ? (workspaceWorkflows?.length ?? 0)
+      : records.length,
     visibleCount: visible.length,
     workspaceWorkflowCount,
   });
@@ -431,7 +470,9 @@ function WorkflowHomeSession() {
     const token = refreshGate.current.begin();
     if (!canView) {
       setFolders([]);
-      setFoldersReady(true);
+      if (ready) {
+        setFoldersReady(true);
+      }
       setRecords([]);
       setWorkspaceWorkflows(null);
       setDrafts(new Map());
@@ -456,17 +497,25 @@ function WorkflowHomeSession() {
       setFolders(folderList.items);
       setFoldersReady(true);
     }
+    const intended = selectionOverride ?? intendedSelection;
     const resolved = resolveFolderSelection(
-      selectionOverride ?? intendedSelection,
+      intended,
       folderList.ok ? folderList.items : [],
     );
-    if (!folderSelectionsEqual(resolved, intendedSelection)) {
+    if (
+      shouldRewriteFolderDeepLink({
+        intended,
+        resolved,
+        folderListOk: folderList.ok,
+      })
+    ) {
       replaceFolderQuery(resolved, {
         drop: resolved.kind === "unfiled",
       });
     }
+    const listSelection = folderList.ok ? resolved : intended;
     let list = await listWorkflows(identity, {
-      folderId: workflowsFolderIdQuery(resolved),
+      folderId: workflowsFolderIdQuery(listSelection),
     });
     if (!refreshGate.current.isCurrent(token)) {
       return;
@@ -485,15 +534,11 @@ function WorkflowHomeSession() {
       return;
     }
     setRecords(list.items);
-    if (list.items.length === 0) {
-      const all = await listWorkflows(identity);
-      if (!refreshGate.current.isCurrent(token)) {
-        return;
-      }
-      setWorkspaceWorkflows(all.ok ? all.items : []);
-    } else {
-      setWorkspaceWorkflows(null);
+    const all = await listWorkflows(identity);
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
     }
+    setWorkspaceWorkflows(all.ok ? all.items : []);
     const draftEntries = await Promise.all(
       list.items.map(async (item) => {
         const draft = await getWorkflowDraft(identity, item.id);
@@ -570,6 +615,7 @@ function WorkflowHomeSession() {
     identity,
     intendedSelection,
     permissions,
+    ready,
     replaceFolderQuery,
   ]);
 
@@ -772,11 +818,13 @@ function WorkflowHomeSession() {
   }
 
   useEffect(() => {
-    if (!dropPreviousFolder) {
+    if (
+      !shouldDropFolderQueryOnWorkspaceMemory(folderParam, dropPreviousFolder)
+    ) {
       return;
     }
     replaceFolderQuery({ kind: "unfiled" }, { drop: true });
-  }, [dropPreviousFolder, replaceFolderQuery]);
+  }, [dropPreviousFolder, folderParam, replaceFolderQuery]);
 
   useEffect(() => {
     const gate = refreshGate.current;
@@ -1133,7 +1181,7 @@ function WorkflowHomeSession() {
 
       <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
       <FolderRail
-        tree={folderTree}
+        tree={visibleFolderTree}
         folders={folders}
         selection={selection}
         expandedIds={visibleExpandedIds}
@@ -1145,6 +1193,8 @@ function WorkflowHomeSession() {
         nameError={folderNameError}
         chrome={folderChrome}
         dragging={dragging}
+        railFilter={railFilter}
+        onRailFilter={setRailFilter}
         onSelect={selectFolder}
         onToggle={toggleFolderExpanded}
         onNameDraft={setFolderNameDraft}
@@ -1274,9 +1324,8 @@ function WorkflowHomeSession() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Workflow home</h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              Filter safe metadata in the selected folder. Secrets and YAML
-              payloads are never searched here. Folder membership is not in YAML.
+            <p className="mt-1 text-sm text-zinc-600" data-f6="search-help">
+              {FOLDER_SEARCH_HELP} Folder membership is not in YAML.
             </p>
             <p
               id={HOME_ACTIVATION_HEADING_ID}
@@ -1333,12 +1382,31 @@ function WorkflowHomeSession() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <FilterInput
-            label="Search"
-            value={filters.query}
-            onChange={(value) => setFilters((current) => ({ ...current, query: value }))}
-          />
+        <div
+          className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          data-f6="search"
+          data-home-folder-search={
+            searchInThisFolder ? "folder" : "across"
+          }
+        >
+          <div className="space-y-2">
+            <FilterInput
+              label={FOLDER_SEARCH_ACROSS_LABEL}
+              value={filters.query}
+              onChange={(value) =>
+                setFilters((current) => ({ ...current, query: value }))
+              }
+            />
+            <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={searchInThisFolder}
+                data-home-folder-search-scope="in-folder"
+                onChange={(event) => setSearchInThisFolder(event.target.checked)}
+              />
+              {FOLDER_SEARCH_IN_FOLDER_LABEL}
+            </label>
+          </div>
           <FilterSelect
             label="Tag"
             value={filters.tag}
@@ -1569,7 +1637,10 @@ function WorkflowHomeSession() {
         />
       ) : emptyKind === "filtered" ? (
         <HomeFilteredEmpty
-          onClear={() => setFilters(EMPTY_WORKFLOW_HOME_FILTERS)}
+          onClear={() => {
+            setFilters(EMPTY_WORKFLOW_HOME_FILTERS);
+            setSearchInThisFolder(false);
+          }}
         />
       ) : view === "list" ? (
         <WorkflowHomeList
@@ -1589,6 +1660,9 @@ function WorkflowHomeSession() {
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
           onMove={openMoveDialog}
+          onRevealFolder={(item) =>
+            selectFolder(selectionForWorkflowFolder(item.folderId))
+          }
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
         />
@@ -1610,6 +1684,9 @@ function WorkflowHomeSession() {
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
           onMove={openMoveDialog}
+          onRevealFolder={(item) =>
+            selectFolder(selectionForWorkflowFolder(item.folderId))
+          }
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
         />
@@ -1674,6 +1751,8 @@ function FolderRail({
   nameError,
   chrome,
   dragging,
+  railFilter,
+  onRailFilter,
   onSelect,
   onToggle,
   onNameDraft,
@@ -1696,6 +1775,8 @@ function FolderRail({
   nameError: string | null;
   chrome: FolderMutateChrome;
   dragging: WorkflowMoveDragPayload | null;
+  railFilter: string;
+  onRailFilter: (value: string) => void;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
   onNameDraft: (value: string) => void;
@@ -1805,6 +1886,16 @@ function FolderRail({
           </div>
         </form>
       ) : null}
+      <label className="mt-3 block px-2 text-sm">
+        <span className="text-zinc-600">{FOLDER_RAIL_FILTER_LABEL}</span>
+        <input
+          value={railFilter}
+          onChange={(event) => onRailFilter(event.target.value)}
+          data-home-folder-rail-filter=""
+          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+          autoComplete="off"
+        />
+      </label>
       <ul className="mt-2 space-y-1">
         <li>
           <button
@@ -2271,6 +2362,26 @@ function WorkflowActions({
   );
 }
 
+function WorkflowFolderPath({
+  item,
+  onReveal,
+}: {
+  item: WorkflowHomeItem;
+  onReveal: (item: WorkflowHomeItem) => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-home-folder-path=""
+      title={FOLDER_PATH_REVEAL_LABEL}
+      onClick={() => onReveal(item)}
+      className="text-left text-xs font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+    >
+      {workflowFolderPathLabel(item)}
+    </button>
+  );
+}
+
 function WorkflowHomeList({
   items,
   pending,
@@ -2288,6 +2399,7 @@ function WorkflowHomeList({
   onDuplicate,
   onExport,
   onMove,
+  onRevealFolder,
   onDragStart,
   onDragEnd,
 }: {
@@ -2307,6 +2419,7 @@ function WorkflowHomeList({
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
   onMove: (item: WorkflowHomeItem) => void;
+  onRevealFolder: (item: WorkflowHomeItem) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
 }) {
@@ -2349,8 +2462,13 @@ function WorkflowHomeList({
                     </Link>
                     <p className="font-mono text-xs text-zinc-500">
                       {item.slug}
-                      {item.folder ? ` · ${item.folder}` : ""}
                       {item.owner ? ` · ${item.owner}` : ""}
+                    </p>
+                    <p className="mt-1">
+                      <WorkflowFolderPath
+                        item={item}
+                        onReveal={onRevealFolder}
+                      />
                     </p>
                   </>
                 ) : null}
@@ -2404,6 +2522,7 @@ function WorkflowHomeCards({
   onDuplicate,
   onExport,
   onMove,
+  onRevealFolder,
   onDragStart,
   onDragEnd,
 }: {
@@ -2423,6 +2542,7 @@ function WorkflowHomeCards({
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
   onMove: (item: WorkflowHomeItem) => void;
+  onRevealFolder: (item: WorkflowHomeItem) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
 }) {
@@ -2445,6 +2565,9 @@ function WorkflowHomeCards({
             {item.name}
           </Link>
           <p className="mt-1 font-mono text-xs text-zinc-500">{item.slug}</p>
+          <p className="mt-2">
+            <WorkflowFolderPath item={item} onReveal={onRevealFolder} />
+          </p>
           <div className="mt-3">
             <WorkflowMeta item={item} />
           </div>

@@ -1,26 +1,37 @@
 /**
  * F.2 home folder rail + select, F.3 create / rename / delete,
- * F.4 move workflows, F.5 empty states + Unfiled (Chloe UI).
+ * F.4 move workflows, F.5 empty states + Unfiled, F.6 search /
+ * filter across folders (Chloe UI). #320 cold-load `?folder=`
+ * honors the URL on first paint/fetch.
  *
- * Relates to #309 / #310 / #311 / #312 / Part of #307. Keep #309,
- * #310, #311, and #312 open.
+ * Relates to #309 / #310 / #311 / #312 / #313 / #320 / Part of
+ * #307. Keep #309, #310, #311, #312, #313, and #320 open.
  *
- * Tree comes from GET /workflow-folders. The list uses
- * GET /workflows?folderId=. Unfiled is virtual (folderId == null),
- * not a persisted row — always in the rail. `?folder=` is the deep
- * link. Workspace / tenant+workbench change drops the
- * previous-workspace folder query. Prefix-in-name is no longer the
- * primary organizer. Viewers can select; they do not get New folder
- * / Rename folder / Delete folder / Move. Editors mutate folders
- * through POST / PATCH / DELETE /workflow-folders. Workflow move is
- * PATCH /workflows/{id}/folder (drag onto a folder or Unfiled, and
+ * Tree comes from GET /workflow-folders. The selected-folder list
+ * uses GET /workflows?folderId=. Across-folders search omits
+ * folderId (today's full list) and filters name/slug in the
+ * browser — do not invent `q`. Unfiled is virtual (folderId ==
+ * null), not a persisted row — always in the rail. `?folder=` is
+ * the deep link and must survive cold load / refresh / paste.
+ * Workspace / tenant+workbench change drops previous-workspace
+ * folder state after folders load; an explicit `?folder=<uuid>`
+ * is not stripped because identity flickered to "||".
+ * Prefix-in-name is no longer the primary organizer. Viewers can
+ * select; they do not get New folder / Rename folder / Delete
+ * folder / Move. Editors mutate folders through POST / PATCH /
+ * DELETE /workflow-folders. Workflow move is PATCH
+ * /workflows/{id}/folder (drag onto a folder or Unfiled, and
  * row-menu Move…). Folder re-parent drag is not this story.
  *
  * F.5 empty chrome: empty home keeps UXL.6 Create / Import YAML /
  * reviewed template (+ optional New folder). Empty folder is create
  * here / move / delete (delete only when no workflows and no child
  * folders). Unfiled-empty points at the tree or empty-home verbs.
- * F.6 search across folders is out of scope.
+ *
+ * F.6: default search is across folders and shows folder path.
+ * Optional “in this folder.” Rail can filter folder names; Unfiled
+ * stays visible. No secret search. No marketplace. Commands do
+ * not file via /actions.
  *
  * Folders are not in YAML. Drafts never run. Move does not bump
  * draftRevision, YAML, or activation. No cascade delete.
@@ -51,6 +62,14 @@ export const F5_EPIC = 307;
 export const F5_KEEP_STORY_OPEN = true;
 export const F5_ID = "F.5-empty-states-unfiled" as const;
 export const F5_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F6_STORY = 313;
+export const F6_EPIC = 307;
+export const F6_KEEP_STORY_OPEN = true;
+export const F6_ID = "F.6-search-filter-across-folders" as const;
+export const F6_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F320_BUG = 320;
+export const F320_KEEP_OPEN = true;
+export const F320_ID = "cold-load-folder-deep-link" as const;
 export const MAX_FOLDER_DEPTH = 4;
 export const MAX_FOLDER_NAME_GRAPHEMES = 64;
 export const FOLDER_NAME_RULES_HELP =
@@ -95,6 +114,12 @@ export const UNFILED_EMPTY_FILED_HELP =
 export const UNFILED_EMPTY_NONE_HELP =
   "Create, Import YAML, or pick a reviewed template. Each creates a draft. Drafts do not run — publish, then start a published version.";
 export const UNFILED_EMPTY_TREE_LABEL = "Open the folder rail";
+export const FOLDER_SEARCH_HELP =
+  "Search across folders by name or slug. Secrets and YAML payloads are never searched here.";
+export const FOLDER_SEARCH_IN_FOLDER_LABEL = "in this folder";
+export const FOLDER_SEARCH_ACROSS_LABEL = "Search across folders";
+export const FOLDER_RAIL_FILTER_LABEL = "Filter folders";
+export const FOLDER_PATH_REVEAL_LABEL = "Show in folder";
 
 export const FOLDER_MUTATE_VERBS = [
   ...FOLDER_ORGANIZE_VERBS,
@@ -283,6 +308,34 @@ export const F5_HOME_FOLDER = {
   keep312Open: true,
 } as const;
 
+export const F6_HOME_FOLDER = {
+  yamlIsSourceOfTruth: true,
+  foldersNotInYaml: true,
+  draftsNeverRun: true,
+  vaultDisplayNameUuidOnly: true,
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  isolationSuccessIsDenial: true,
+  noCascadeDelete: true,
+  notAnN8nClone: true,
+  noKekInBrowser: true,
+  defaultSearchAcrossFolders: true,
+  resultsShowFolderPath: true,
+  optionalInThisFolder: true,
+  railFiltersFolderNames: true,
+  unfiledAlwaysVisibleInRailFilter: true,
+  noSecretSearch: true,
+  noMarketplace: true,
+  commandsDoNotFileViaActions: true,
+  clientNameSlugFilterFirst: true,
+  noInventedQApi: true,
+  noNewApi: true,
+  d6MigrateInPlace: true,
+  keep313Open: true,
+  keep320Open: true,
+  coldLoadHonorsFolderQuery: true,
+} as const;
+
 export const F2_HOME_FOLDER_SOURCES = [
   "src/lib/workflow-folder.ts",
   "src/lib/workflow-folder-client.ts",
@@ -464,6 +517,155 @@ export function breadcrumbSegments(
   }));
 }
 
+/**
+ * Cold load / refresh / paste of `?folder=<uuid>` must honor the URL
+ * on first paint. Do not force Unfiled just because workspace memory
+ * flickered (empty identity key "||" vs a stored lookup).
+ */
+export function intendedFolderSelectionFromUrl(
+  folderParam: string | null | undefined,
+  options: { dropPreviousFolder?: boolean } = {},
+): FolderSelection {
+  const fromUrl = parseFolderQuery(folderParam);
+  if (fromUrl.kind === "folder") {
+    return fromUrl;
+  }
+  if (options.dropPreviousFolder) {
+    return { kind: "unfiled" };
+  }
+  return fromUrl;
+}
+
+export function shouldDropFolderQueryOnWorkspaceMemory(
+  folderParam: string | null | undefined,
+  workspaceChanged: boolean,
+): boolean {
+  if (parseFolderQuery(folderParam).kind === "folder") {
+    return false;
+  }
+  return workspaceChanged;
+}
+
+export function shouldRewriteFolderDeepLink(options: {
+  intended: FolderSelection;
+  resolved: FolderSelection;
+  folderListOk: boolean;
+}): boolean {
+  if (!options.folderListOk) {
+    return false;
+  }
+  return !folderSelectionsEqual(options.intended, options.resolved);
+}
+
+/**
+ * First GET /workflows?folderId= for a cold-load `?folder=`.
+ * Honors the UUID before folders are known; only falls back to
+ * Unfiled after a successful folder list proves the id is gone.
+ */
+export function coldLoadListFolderId(
+  folderParam: string | null | undefined,
+  folders: readonly WorkflowFolder[],
+  folderListOk: boolean,
+): string {
+  const intended = parseFolderQuery(folderParam);
+  if (!folderListOk) {
+    return workflowsFolderIdQuery(intended);
+  }
+  return workflowsFolderIdQuery(resolveFolderSelection(intended, folders));
+}
+
+export function folderSearchListsAcrossFolders(
+  query: string,
+  inThisFolder: boolean,
+): boolean {
+  return query.trim().length > 0 && !inThisFolder;
+}
+
+export function matchesWorkflowNameOrSlug(
+  item: { name?: string | null; slug?: string | null },
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return true;
+  }
+  const name = (item.name ?? "").toLowerCase();
+  const slug = (item.slug ?? "").toLowerCase();
+  return name.includes(needle) || slug.includes(needle);
+}
+
+export function constrainItemsToFolderSelection<
+  T extends { folderId?: string | null },
+>(items: readonly T[], selection: FolderSelection): T[] {
+  if (selection.kind === "unfiled") {
+    return items.filter((item) => item.folderId == null);
+  }
+  return items.filter((item) => item.folderId === selection.id);
+}
+
+export function workflowFolderPathLabel(
+  item: { folderId?: string | null; folder?: string | null },
+): string {
+  if (item.folderId == null) {
+    return UNFILED_FOLDER_LABEL;
+  }
+  const path = (item.folder ?? "").trim();
+  return path || UNFILED_FOLDER_LABEL;
+}
+
+export function selectionForWorkflowFolder(
+  folderId: string | null | undefined,
+): FolderSelection {
+  if (!folderId) {
+    return { kind: "unfiled" };
+  }
+  return { kind: "folder", id: folderId };
+}
+
+export function filterFolderTreeByName(
+  tree: readonly FolderTreeNode[],
+  query: string,
+): FolderTreeNode[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return [...tree];
+  }
+  const walk = (nodes: readonly FolderTreeNode[]): FolderTreeNode[] => {
+    const out: FolderTreeNode[] = [];
+    for (const node of nodes) {
+      const children = walk(node.children);
+      if (node.name.toLowerCase().includes(needle) || children.length > 0) {
+        out.push({ ...node, children });
+      }
+    }
+    return out;
+  };
+  return walk(tree);
+}
+
+export function folderIdsToExpandForFilter(
+  filtered: readonly FolderTreeNode[],
+): string[] {
+  const ids: string[] = [];
+  const walk = (nodes: readonly FolderTreeNode[]) => {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        ids.push(node.id);
+        walk(node.children);
+      }
+    }
+  };
+  walk(filtered);
+  return ids;
+}
+
+export function railFilterKeepsUnfiled(source: string): boolean {
+  return (
+    source.includes('data-home-folder-rail="unfiled"') &&
+    source.includes("UNFILED_FOLDER_LABEL")
+  );
+}
+
 export function folderExpandStorageKey(workspaceKey: string): string {
   return `${FOLDER_EXPAND_STORAGE_PREFIX}${workspaceKey}`;
 }
@@ -479,12 +681,32 @@ function memoryStorage(): Pick<Storage, "getItem" | "setItem"> | null {
   }
 }
 
+/**
+ * Empty identity joins to "||". That is not a workspace lookup and
+ * must not overwrite session memory or look like a workspace change
+ * (#320 cold-load flicker).
+ */
+export function isCompleteWorkspaceLookupKey(workspaceKey: string): boolean {
+  const key = workspaceKey.trim();
+  if (!key) {
+    return false;
+  }
+  const parts = key.split("|");
+  if (parts.length === 3) {
+    const [tenantId, tenantSlug, workbench] = parts;
+    return Boolean(
+      workbench.trim() && (tenantId.trim() || tenantSlug.trim()),
+    );
+  }
+  return parts.some((part) => part.trim().length > 0);
+}
+
 export function consumeFolderWorkspaceChange(
   workspaceKey: string,
   storage: Pick<Storage, "getItem" | "setItem"> | null = memoryStorage(),
 ): boolean {
   const key = workspaceKey.trim();
-  if (!storage || !key) {
+  if (!storage || !isCompleteWorkspaceLookupKey(key)) {
     return false;
   }
   const previous = storage.getItem(FOLDER_WORKSPACE_MEMORY) ?? "";
