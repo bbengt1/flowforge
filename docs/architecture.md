@@ -62,4 +62,4 @@ The shipped product on `main` is E1–E12 plus epic #195 canvas-first chrome. Th
 
 Post-R1–R7 chrome polish (Laws of UX, selective; docs-only): [flowforge-ux-laws.md](architecture/flowforge-ux-laws.md).
 
-Workflows home folder hierarchy (nested, server-backed, per workspace; docs-only IA; Brent-promoted): [flowforge-workflow-folders.md](architecture/flowforge-workflow-folders.md).
+Workflows home folder hierarchy (nested, server-backed, per workspace; F.1 API landed, chrome F.2+): [flowforge-workflow-folders.md](architecture/flowforge-workflow-folders.md).
