@@ -1,6 +1,6 @@
 # Workflows home: folder hierarchy
 
-Status: **docs-only IA**. Does not change application code, contracts, or shipped behavior. Does **not** open GitHub issues.
+Status: **F.1 API landed** (this page remains the IA). Chrome / rail is F.2+. Folder membership is not in YAML.
 
 **Product ask (Brent):** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
 

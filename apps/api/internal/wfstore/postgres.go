@@ -52,19 +52,34 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 		return Workflow{}, Draft{}, ErrInvalid
 	}
 
+	folderID := strings.TrimSpace(in.FolderID)
+	var folderArg any
+	if folderID != "" {
+		if !authz.ValidUUID(folderID) {
+			return Workflow{}, Draft{}, ErrNotFound
+		}
+		folderArg = folderID
+	}
+
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
 		return Workflow{}, Draft{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 
+	if folderID != "" {
+		if err := requireFolder(ctx, tx, folderID); err != nil {
+			return Workflow{}, Draft{}, err
+		}
+	}
+
 	var wf Workflow
 	err = tx.QueryRow(ctx, `
-		INSERT INTO workflows (workspace_id, slug, name, status, draft_revision, created_by, updated_by)
-		VALUES ($1::uuid, $2, $3, 'draft', 1, $4::uuid, $4::uuid)
+		INSERT INTO workflows (workspace_id, slug, name, status, draft_revision, created_by, updated_by, folder_id)
+		VALUES ($1::uuid, $2, $3, 'draft', 1, $4::uuid, $4::uuid, $5::uuid)
 		RETURNING id::text, slug, name, status, draft_revision,
 		          COALESCE(created_by::text, ''), COALESCE(updated_by::text, ''), created_at, updated_at
-	`, scope.WorkspaceID(), slug, name, actorArg(scope)).Scan(
+	`, scope.WorkspaceID(), slug, name, actorArg(scope), folderArg).Scan(
 		&wf.ID, &wf.Slug, &wf.Name, &wf.Status, &wf.DraftRevision,
 		&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
 	)
@@ -77,13 +92,14 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 		return Workflow{}, Draft{}, err
 	}
 	wf.DraftDigest = draft.Digest
+	wf.FolderID = optionalID(folderID)
 	if err := tx.Commit(ctx); err != nil {
 		return Workflow{}, Draft{}, mapDBErr(err)
 	}
 	return wf, draft, nil
 }
 
-func (p *Postgres) List(ctx context.Context, scope isolation.Scope) ([]Workflow, error) {
+func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error) {
 	if scope.Zero() {
 		return nil, ErrNoScope
 	}
@@ -93,7 +109,8 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope) ([]Workflow,
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, listWorkflowSQL)
+	q := listWorkflowSQL + listWorkflowFolderClause(filter)
+	rows, err := tx.Query(ctx, q, listWorkflowFolderArgs(filter)...)
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -689,7 +706,8 @@ const listWorkflowSQL = `
 SELECT w.id::text, w.slug, w.name, w.status, w.draft_revision,
        COALESCE(w.created_by::text, ''), COALESCE(w.updated_by::text, ''), w.created_at, w.updated_at,
        d.definition_digest,
-       COALESCE(v.version_number, 0), COALESCE(v.id::text, ''), COALESCE(v.definition_digest, '')
+       COALESCE(v.version_number, 0), COALESCE(v.id::text, ''), COALESCE(v.definition_digest, ''),
+       w.folder_id::text
 FROM workflows w
 JOIN workflow_drafts d ON d.workspace_id = w.workspace_id AND d.workflow_id = w.id
 LEFT JOIN LATERAL (
@@ -699,14 +717,14 @@ LEFT JOIN LATERAL (
     ORDER BY version_number DESC
     LIMIT 1
 ) v ON true
-ORDER BY w.updated_at DESC, w.slug
 `
 
 const getWorkflowSQL = `
 SELECT w.id::text, w.slug, w.name, w.status, w.draft_revision,
        COALESCE(w.created_by::text, ''), COALESCE(w.updated_by::text, ''), w.created_at, w.updated_at,
        d.definition_digest,
-       COALESCE(v.version_number, 0), COALESCE(v.id::text, ''), COALESCE(v.definition_digest, '')
+       COALESCE(v.version_number, 0), COALESCE(v.id::text, ''), COALESCE(v.definition_digest, ''),
+       w.folder_id::text
 FROM workflows w
 JOIN workflow_drafts d ON d.workspace_id = w.workspace_id AND d.workflow_id = w.id
 LEFT JOIN LATERAL (
@@ -808,6 +826,7 @@ func scanWorkflow(row rowScanner) (Workflow, error) {
 		&wf.ID, &wf.Slug, &wf.Name, &wf.Status, &wf.DraftRevision,
 		&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
 		&wf.DraftDigest, &wf.LatestVersionNumber, &wf.LatestVersionID, &wf.LatestVersionDigest,
+		&wf.FolderID,
 	); err != nil {
 		return Workflow{}, mapDBErr(err)
 	}

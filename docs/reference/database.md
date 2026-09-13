@@ -46,7 +46,8 @@ Host/embed identity assertions are validated before a transaction starts. The da
 
 | Table | Key columns | Invariants |
 | --- | --- | --- |
-| `workflows` | `id`, `workspace_id`, `slug`, `name`, `status`, `draft_revision`, `created_by`, `updated_by` | Unique `(workspace_id, slug)`; one action remains a one-node workflow, never a separate action resource. |
+| `workflows` | `id`, `workspace_id`, `slug`, `name`, `status`, `draft_revision`, `folder_id`, `created_by`, `updated_by` | Unique `(workspace_id, slug)`; one action remains a one-node workflow, never a separate action resource. Nullable `folder_id` is Unfiled; composite FK to `workflow_folders` is `ON DELETE RESTRICT` (no cascade delete of workflows). Folder membership is not stored in YAML. |
+| `workflow_folders` | `id`, `workspace_id`, `parent_id`, `name`, `created_by`, `updated_by` | F.1 (`000023_workflow_folders.sql`). Nested organizer, not a tenancy axis. `PRIMARY KEY (workspace_id, id)`; composite parent FK to self (`ON DELETE RESTRICT`); unique sibling names case-insensitive under `(workspace_id, parent_id)` (`NULLS NOT DISTINCT`); index `(workspace_id, parent_id)`. FORCE RLS. Max depth 4 is enforced in the write path. Unfiled is not a row. |
 | `workflow_drafts` | `workflow_id`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `validation_state`, `revision` | Exactly one mutable draft per workflow; optimistic update requires current revision. |
 | `workflow_versions` | `id`, `workflow_id`, `version_number`, `normalized_yaml`, `definition_digest`, `parsed_definition`, `publish_note`, `published_by`, `published_at` | Immutable after publish; unique `(workflow_id, version_number)` and `(workflow_id, definition_digest)`. |
 | `workflow_version_artifacts` | `workflow_version_id`, `node_id`, `script_artifact_id` | Pins published script artifact per node. |

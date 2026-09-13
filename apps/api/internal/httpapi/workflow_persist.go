@@ -21,12 +21,13 @@ import (
 )
 
 type createWorkflowRequest struct {
-	ID             string `json:"id"`
-	WorkspaceID    string `json:"workspace_id"`
-	WorkspaceIDAlt string `json:"workspaceId"`
-	Slug           string `json:"slug"`
-	Name           string `json:"name"`
-	DefinitionYAML string `json:"definitionYaml"`
+	ID             string  `json:"id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	WorkspaceIDAlt string  `json:"workspaceId"`
+	Slug           string  `json:"slug"`
+	Name           string  `json:"name"`
+	DefinitionYAML string  `json:"definitionYaml"`
+	FolderID       *string `json:"folderId"`
 }
 
 type saveDraftRequest struct {
@@ -118,12 +119,37 @@ func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.workflows.List(r.Context(), scope)
+	filter, ok := parseWorkflowListFolderQuery(w, r)
+	if !ok {
+		return
+	}
+	if filter.FolderID != "" {
+		if _, err := s.workflows.GetFolder(r.Context(), scope, filter.FolderID); err != nil {
+			writeFolderStoreError(w, r, err)
+			return
+		}
+	}
+	items, err := s.workflows.List(r.Context(), scope, filter)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, listResponse[wfstore.Workflow]{Items: items})
+}
+
+func parseWorkflowListFolderQuery(w http.ResponseWriter, r *http.Request) (wfstore.WorkflowListFilter, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("folderId"))
+	if raw == "" {
+		return wfstore.WorkflowListFilter{}, true
+	}
+	if strings.EqualFold(raw, wfstore.FolderListUnfiled) {
+		return wfstore.WorkflowListFilter{Unfiled: true}, true
+	}
+	if !authz.ValidUUID(raw) {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "folderId must be a UUID or unfiled.")
+		return wfstore.WorkflowListFilter{}, false
+	}
+	return wfstore.WorkflowListFilter{FolderID: raw}, true
 }
 
 func (s *Server) createWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -148,12 +174,17 @@ func (s *Server) createWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowErrors(w, r, errs)
 		return
 	}
+	folderID := ""
+	if req.FolderID != nil {
+		folderID = strings.TrimSpace(*req.FolderID)
+	}
 	wf, draft, err := s.workflows.Create(r.Context(), scope, wfstore.CreateInput{
 		Slug:           strings.TrimSpace(req.Slug),
 		Name:           strings.TrimSpace(req.Name),
 		NormalizedYAML: res.NormalizedYAML,
 		Digest:         res.Digest,
 		Summary:        res.Summary,
+		FolderID:       folderID,
 	})
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)

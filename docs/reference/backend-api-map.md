@@ -796,9 +796,10 @@ Suggested UI flow:
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. | `200` `{items}` | `401` `403` |
-| `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?}`. Requires `workflow.edit`. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `409` (slug) |
-| `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, latest version. | `200` workflow | `401` `403` `404` |
+| `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. Each item includes `folderId` (`null` = Unfiled). Additive query `folderId=<uuid>` or `folderId=unfiled`. Omit = today's full list. | `200` `{items}` | `401` `403` `404` (unknown / cross-workspace folder) |
+| `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?, folderId?}`. Missing / null `folderId` is Unfiled. Requires `workflow.edit`. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `404` (folder) `409` (slug) |
+| `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, `folderId`, latest version. | `200` workflow | `401` `403` `404` |
+| `PATCH /api/v1/workflows/{workflowId}/folder` | **Move only.** JSON `{folderId}` (`null` / omitted = Unfiled). Does **not** bump `draftRevision` or change YAML. Requires `workflow.edit`. | `200` workflow | `400` host identity / `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/draft` | Current mutable draft. | `200` `{workflowId,revision,definitionYaml,digest,summary,warnings,validationState}` | `401` `403` `404` |
 | `PUT /api/v1/workflows/{workflowId}/draft` | Conflict-safe save. JSON `{revision,definitionYaml}` or YAML + `If-Match: <revision>`. Requires `workflow.edit`. | `200` `{workflow,draft}` (revision incremented) | `400` `invalid-workflow` / `409` revision mismatch / `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/publish` | Copy current draft to an immutable version. JSON `{revision?,note?}`. Requires `workflow.publish`. Script nodes are packaged, scanned, signed, and pinned (`scriptArtifacts[]`). | `201` `{workflow,version,pins,scriptArtifacts}` | `409` duplicate digest or stale revision / `400` invalid script / `401` `403` `404` |
@@ -810,6 +811,22 @@ Suggested UI flow:
 | `POST /api/v1/workflows/{workflowId}/executions` | **E10.1 authenticated manual start** (same route as E5). **Requires** published `workflowVersionId`. Drafts / missing version → `400`. Requires `workflow.execute` (+ engine perms as today). Pins `workflowVersionId` + `workflowDigest`. Run dialog **must** send `idempotencyKey` or `Idempotency-Key` (1–128 `[A-Za-z0-9._~:-]`). Unique on `(workspace, workflowVersionId, key)`. Same fingerprint → `200` `{replayed:true}` (no new steps/jobs). Different fingerprint → `409`. Bounded typed `input` (16 KiB; JSON-schema subset when the published manual trigger declares `schema` / `inputSchema` / `with.schema`). Secrets redacted before persist. Policy evaluate before dispatch: deny → `403`; approval-required without a valid bound approval → `409`. Secret-free `execution.start` audit records actor, version/digest, correlation, idempotency key, and outcome (`created` / `replayed` / `denied`). Script nodes also require `script.run` + `runtimeProfile.use` and a published, scanned, signed pin (`artifact-*` fail closed before a run is created). | `201` / `200` execution | `400` drafts cannot run / `400` invalid input / `400` artifact-* / `401` `403` `404` `409` |
 | `GET /api/v1/workflows/{workflowId}/executions` | List runs for one workflow. Requires `execution.view`. Query `status`, `limit`. | `200` `{items}` | `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/executions/{executionId}` | Execution detail (redacted `input`, `steps`, `jobs`, `pins`, `auditEvents`). Requires `execution.view`. Later draft edits do not change digest/version. | `200` | `401` `403` `404` |
+
+## Workflow folders (F.1)
+
+Server-backed folder tree for `/workflows` home. Folders are **per workspace** (server-derived). Membership is `workflows.folder_id`, **not** YAML. Unfiled is virtual (`folderId == null`), not a persisted row. Depth ≤ 4 (top-level = 1). Unique sibling names, case-insensitive. Cookie session + `X-CSRF-Token` on writes. Host-supplied `id` / `workspace_id` / `workspaceId` on write bodies is `400`. Cross-workspace UUIDs are `404`. RFC 9457 problems. No `folder.admin`. Embed `session.embed.capabilities` cannot escalate.
+
+**UI route map (Chloe / F.2+):** `GET /workflow-folders` builds the rail (flat `{items}` with `parentId`; Unfiled is chrome-only). Main pane uses `GET /workflows?folderId=` or `folderId=unfiled`. Create draft in a folder with `POST /workflows` `{folderId}`. Move with `PATCH /workflows/{id}/folder` `{folderId}` (null = Unfiled) — not a general workflow PATCH. Delete empty folders only; `409` includes `workflowCount` and `childFolderCount`. Do not persist the tree in `localStorage`.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workflow-folders` | Flat folder list with `parentId`. Requires `workflow.view`. | `200` `{items}` | `401` `403` |
+| `POST /api/v1/workflow-folders` | Create. JSON `{name, parentId?}`. Requires `workflow.edit`. Name 1–64 graphemes, no `/` or control chars. | `201` folder | `400` name/depth / `401` `403` `404` parent / `409` sibling name |
+| `GET /api/v1/workflow-folders/{folderId}` | One folder. Requires `workflow.view`. | `200` folder | `401` `403` `404` |
+| `PATCH /api/v1/workflow-folders/{folderId}` | Rename and/or re-parent. JSON `{name?, parentId?}`. `parentId` null = top-level. Requires `workflow.edit`. Children stay with the moved node. | `200` folder | `400` name/depth / `401` `403` `404` / `409` name or cycle |
+| `DELETE /api/v1/workflow-folders/{folderId}` | Delete if empty. Requires `workflow.edit`. Never cascade-deletes workflows. | `204` | `401` `403` `404` / `409` `{workflowCount,childFolderCount}` |
+
+Folder JSON: `{id, workspaceId, parentId, name, createdAt, updatedAt}`. `workspaceId` is server-derived. Audit: `workflow_folder.create` / `.rename` / `.delete` and `workflow.folder.move` (from/to ids, no YAML/secrets).
 
 ## Authenticated manual starts (E10.1)
 

@@ -47,6 +47,7 @@ type memGrant struct {
 type Memory struct {
 	mu         sync.Mutex
 	workflows  map[string]memWorkflow  // id -> row
+	folders    map[string]memFolder    // id -> row
 	versions   map[string][]Version    // workflow id -> versions
 	executions map[string]memExecution // execution id -> row
 	artifacts  map[string]memArtifact
@@ -58,6 +59,7 @@ type Memory struct {
 func NewMemory() *Memory {
 	return &Memory{
 		workflows:  map[string]memWorkflow{},
+		folders:    map[string]memFolder{},
 		versions:   map[string][]Version{},
 		executions: map[string]memExecution{},
 		artifacts:  map[string]memArtifact{},
@@ -104,8 +106,18 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 		UpdatedBy:       scope.ActorID(),
 		UpdatedAt:       now,
 	}
+	folderID := strings.TrimSpace(in.FolderID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if folderID != "" {
+		if !authz.ValidUUID(folderID) {
+			return Workflow{}, Draft{}, ErrNotFound
+		}
+		if _, ok := m.lookupFolderLocked(scope, folderID); !ok {
+			return Workflow{}, Draft{}, ErrNotFound
+		}
+		wf.FolderID = optionalID(folderID)
+	}
 	for _, existing := range m.workflows {
 		if existing.workspaceID == scope.WorkspaceID() && existing.record.Slug == slug {
 			return Workflow{}, Draft{}, ErrConflict
@@ -115,7 +127,7 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	return wf, draft, nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope) ([]Workflow, error) {
+func (m *Memory) List(_ context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error) {
 	if scope.Zero() {
 		return nil, ErrNoScope
 	}
@@ -126,7 +138,11 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope) ([]Workflow, err
 		if row.workspaceID != scope.WorkspaceID() {
 			continue
 		}
-		out = append(out, publicWorkflow(row))
+		wf := publicWorkflow(row)
+		if !workflowMatchesFolder(wf, filter) {
+			continue
+		}
+		out = append(out, wf)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {

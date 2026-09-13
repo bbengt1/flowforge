@@ -39,6 +39,10 @@ var (
 	ErrArtifactExpired            = errors.New("artifact has expired")
 	ErrLegalHold                  = errors.New("artifact is under legal hold")
 	ErrGrantExpired               = errors.New("download grant has expired")
+	ErrFolderName                 = errors.New("invalid folder name")
+	ErrFolderDepth                = errors.New("folder depth exceeds maximum")
+	ErrFolderCycle                = errors.New("folder re-parent would create a cycle")
+	ErrFolderNotEmpty             = errors.New("folder is not empty")
 )
 
 // Validation states persisted with a draft.
@@ -93,6 +97,9 @@ const (
 	DefaultDownloadTTL        = 60 * time.Second
 	MaxDownloadTTL            = 5 * time.Minute
 	MaxStepOutputBytes        = 16 * 1024
+	MaxFolderDepth            = 4
+	MaxFolderNameGraphemes    = 64
+	FolderListUnfiled         = "unfiled"
 )
 
 // Workflow is the workspace-owned authoring record.
@@ -110,6 +117,7 @@ type Workflow struct {
 	UpdatedBy           string    `json:"updatedBy,omitempty"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
+	FolderID            *string   `json:"folderId"`
 }
 
 // Draft is the single mutable normalized document for a workflow.
@@ -343,6 +351,47 @@ type CompareResult struct {
 	Changes     []Change   `json:"changes"`
 }
 
+// Folder is a workspace-owned organizer node. It is not stored in YAML.
+type Folder struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspaceId"`
+	ParentID    *string   `json:"parentId"`
+	Name        string    `json:"name"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// WorkflowListFilter is an additive list selector. Zero value lists all
+// workflows in the workspace (today's unfiltered home / across-folders).
+type WorkflowListFilter struct {
+	Unfiled  bool
+	FolderID string
+}
+
+// CreateFolderInput creates a folder under an optional parent.
+type CreateFolderInput struct {
+	Name     string
+	ParentID string
+}
+
+// UpdateFolderInput renames and/or re-parents a folder. Nil fields are
+// left unchanged. ParentID pointing at "" moves the folder to top-level.
+type UpdateFolderInput struct {
+	Name     *string
+	ParentID *string
+}
+
+// FolderNotEmptyError is returned when DELETE is refused because the
+// folder still has child folders or workflows. Never cascade-deletes.
+type FolderNotEmptyError struct {
+	WorkflowCount    int
+	ChildFolderCount int
+}
+
+func (e FolderNotEmptyError) Error() string { return ErrFolderNotEmpty.Error() }
+
+func (e FolderNotEmptyError) Unwrap() error { return ErrFolderNotEmpty }
+
 // CreateInput creates a workflow and its first draft from normalized YAML.
 type CreateInput struct {
 	Slug           string
@@ -350,6 +399,7 @@ type CreateInput struct {
 	NormalizedYAML string
 	Digest         string
 	Summary        workflow.Summary
+	FolderID       string
 }
 
 // SaveInput is an optimistic draft update.
@@ -480,8 +530,14 @@ type AuditWrite struct {
 // Store persists drafts, versions, and pinned executions under a server scope.
 type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Workflow, Draft, error)
-	List(ctx context.Context, scope isolation.Scope) ([]Workflow, error)
+	List(ctx context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Workflow, error)
+	SetWorkflowFolder(ctx context.Context, scope isolation.Scope, workflowID, folderID string) (Workflow, error)
+	CreateFolder(ctx context.Context, scope isolation.Scope, in CreateFolderInput) (Folder, error)
+	ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error)
+	GetFolder(ctx context.Context, scope isolation.Scope, folderID string) (Folder, error)
+	UpdateFolder(ctx context.Context, scope isolation.Scope, folderID string, in UpdateFolderInput) (Folder, error)
+	DeleteFolder(ctx context.Context, scope isolation.Scope, folderID string) error
 	GetDraft(ctx context.Context, scope isolation.Scope, workflowID string) (Draft, error)
 	SaveDraft(ctx context.Context, scope isolation.Scope, workflowID string, in SaveInput) (Workflow, Draft, error)
 	Publish(ctx context.Context, scope isolation.Scope, workflowID string, in PublishInput) (Workflow, Version, error)

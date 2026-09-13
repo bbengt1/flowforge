@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.17.0
+  version: 0.18.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -853,11 +853,14 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
-  /workflows:
+  /workflow-folders:
     get:
-      operationId: listWorkflows
-      summary: List workspace workflows
-      description: Requires `workflow.view`. Returns summaries without YAML bodies.
+      operationId: listWorkflowFolders
+      summary: List workspace workflow folders
+      description: |
+        Requires `workflow.view`. Returns a flat `{items}` list with `parentId`
+        (null = top-level). Unfiled is not a persisted folder. This workspace
+        only. Embed capabilities cannot escalate.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -866,6 +869,191 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+      responses:
+        "200":
+          description: Folder list
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowFolderList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createWorkflowFolder
+      summary: Create a workflow folder
+      description: |
+        Requires `workflow.edit`. Body `{name, parentId?}`. Name is trimmed,
+        1–64 graphemes, no `/` or control characters, unique among siblings
+        (case-insensitive). `parentId` omitted or null creates a top-level
+        folder (depth 1). Depth greater than 4 is `400`. Host-supplied `id` /
+        `workspace_id` / `workspaceId` is `400`. Cross-workspace parent UUID
+        is `404`. Cookie session + CSRF. Folder membership is not written to
+        YAML. Drafts still never run.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowFolderRequest"
+      responses:
+        "201":
+          description: Created folder
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowFolder"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workflow-folders/{folderId}:
+    get:
+      operationId: getWorkflowFolder
+      summary: Get a workflow folder
+      description: Requires `workflow.view`. Cross-workspace folder UUIDs are 404.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/FolderID"
+      responses:
+        "200":
+          description: Folder
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowFolder"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateWorkflowFolder
+      summary: Rename or re-parent a workflow folder
+      description: |
+        Requires `workflow.edit`. Body `{name?, parentId?}`. `parentId` null
+        moves the folder to top-level. Children stay with the moved node.
+        Sibling name clash or a would-be cycle is `409`. Depth greater than 4
+        is `400`. Host-supplied `id` / `workspace_id` / `workspaceId` is `400`.
+        Cross-workspace UUIDs are `404`. Cookie session + CSRF. Does not
+        rewrite YAML or workflow slugs.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/FolderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowFolderRequest"
+      responses:
+        "200":
+          description: Updated folder
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowFolder"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteWorkflowFolder
+      summary: Delete an empty workflow folder
+      description: |
+        Requires `workflow.edit`. `204` if the folder has no child folders and
+        no workflows. Non-empty delete is `409` with `workflowCount` and
+        `childFolderCount`. Never cascade-deletes workflows. Cookie session +
+        CSRF.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/FolderID"
+      responses:
+        "204":
+          description: Folder deleted
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/FolderNotEmpty"
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workspace workflows
+      description: |
+        Requires `workflow.view`. Returns summaries without YAML bodies.
+        Each item includes `folderId` (null = Unfiled). Additive query
+        `folderId` (UUID) or `folderId=unfiled`. Omit = today's full list.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/WorkflowFolderQuery"
       responses:
         "200":
           description: Workflow list
@@ -880,13 +1068,18 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       operationId: createWorkflow
       summary: Create workflow and first draft
       description: |
         Parses and normalizes YAML, then persists only the normalized
         document as revision 1. Requires `workflow.edit`. Body `id` /
-        `workspace_id` / `workspaceId` is rejected.
+        `workspace_id` / `workspaceId` is rejected. Optional `folderId`
+        files the draft; missing or null is Unfiled. Unknown or
+        cross-workspace `folderId` is `404`. Folder membership is not
+        written to YAML.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -917,6 +1110,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
   /workflows/{workflowId}:
@@ -943,6 +1138,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowRecord"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workflows/{workflowId}/folder:
+    patch:
+      operationId: moveWorkflowFolder
+      summary: Move a workflow to a folder or Unfiled
+      description: |
+        Dedicated move route (not a YAML/name PATCH). Requires
+        `workflow.edit`. Body `{folderId}` — UUID files the workflow;
+        `null` or omitted is Unfiled. Does **not** bump `draftRevision`,
+        change YAML, slug, or activation. Unknown / cross-workspace
+        folder is `404`. Host-supplied `id` / `workspace_id` /
+        `workspaceId` is `400`. Cookie session + CSRF. Audit
+        `workflow.folder.move` is secret-free (from/to ids only).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/Subject"
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/TenantSlug"
+        - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveWorkflowFolderRequest"
+      responses:
+        "200":
+          description: Workflow summary after move
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRecord"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -5764,6 +6005,20 @@ components:
       schema:
         type: string
         format: uuid
+    FolderID:
+      name: folderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WorkflowFolderQuery:
+      name: folderId
+      in: query
+      required: false
+      description: Filter list to one folder UUID, or `unfiled` for `folderId == null`. Omit for the full workspace list.
+      schema:
+        type: string
     VersionID:
       name: versionId
       in: path
@@ -7421,7 +7676,7 @@ components:
             $ref: "#/components/schemas/WorkflowFieldError"
     WorkflowRecord:
       type: object
-      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt]
+      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId]
       properties:
         id:
           type: string
@@ -7455,6 +7710,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null means Unfiled. Not stored in YAML.
     WorkflowList:
       type: object
       required: [items]
@@ -7542,6 +7802,71 @@ components:
           type: string
         definitionYaml:
           type: string
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional. Missing or null files the workflow as Unfiled.
+    WorkflowFolder:
+      type: object
+      required: [id, workspaceId, parentId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+          description: Server-derived. Never accepted from the client on writes.
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null is a top-level folder.
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkflowFolderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFolder"
+    CreateWorkflowFolderRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+    UpdateWorkflowFolderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null re-parents to top-level. Omit to leave unchanged.
+    MoveWorkflowFolderRequest:
+      type: object
+      properties:
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null or omitted moves the workflow to Unfiled.
     SaveDraftRequest:
       type: object
       required: [revision, definitionYaml]
@@ -8695,6 +9020,31 @@ components:
             instance: /api/v1/workspaces
             code: conflict
             request_id: 0123456789abcdef0123456789abcdef
+    FolderNotEmpty:
+      description: Folder still has child folders or workflows. Never cascade-deletes workflows.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - type: object
+                required: [workflowCount, childFolderCount]
+                properties:
+                  workflowCount: {type: integer}
+                  childFolderCount: {type: integer}
+          example:
+            type: urn:flowforge:problem:conflict
+            title: Conflict
+            status: 409
+            detail: Move or delete contents first.
+            instance: /api/v1/workflow-folders/11111111-1111-4111-8111-111111111111
+            code: conflict
+            request_id: 0123456789abcdef0123456789abcdef
+            workflowCount: 2
+            childFolderCount: 1
     NotFound:
       description: The requested path does not exist
       headers:
