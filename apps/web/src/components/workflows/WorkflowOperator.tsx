@@ -88,6 +88,10 @@ import {
   subscribeRunsOpenPreference,
 } from "@/lib/editor-runs";
 import {
+  consumePeakEndOverlay,
+  rememberPeakEndOverlay,
+} from "@/lib/peak-end-operate-endings";
+import {
   EDITOR_RUN_OVERLAY_HELP,
   editorRunCurrentNodeId,
   editorRunOverlayGraph,
@@ -407,6 +411,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const createdCredentialReturn = useRef<
     ReturnType<typeof parseCredentialNdvCreated> | undefined
   >(undefined);
+  const peakEndConsumed = useRef(false);
 
   const yamlNodes = listYamlNodes(yaml);
 
@@ -632,6 +637,17 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
   }
 
+  function endOperateOnOverlay(executionId: string, scopedWorkflowId: string) {
+    rememberPeakEndOverlay({
+      workflowId: scopedWorkflowId,
+      executionId,
+    });
+    consumePeakEndOverlay(scopedWorkflowId);
+    peakEndConsumed.current = true;
+    setStartOpen(false);
+    void selectRun(executionId);
+  }
+
   function setDrawerOpen(id: EditorDrawerId, open: boolean) {
     if (id === "library") {
       rememberLibraryOpen(open);
@@ -732,6 +748,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         setSelectedRun(result.execution);
         setSelectedRunStrippedKeys(result.strippedKeys);
         void loadSelectedRunLogs(result.execution.id, result.execution.steps);
+        const currentId = editorRunCurrentNodeId(
+          result.execution.steps,
+          editorRunWaitingNodeIds(selectedRunApprovals),
+        );
+        if (currentId && yamlNodes.some((node) => node.id === currentId)) {
+          applySelection({ kind: "node", id: currentId });
+        }
       })();
     }, EXECUTION_STATUS_POLL_MS);
     return () => window.clearInterval(timer);
@@ -820,6 +843,24 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     headerFallback,
   ) && hasWorkspaceLookup(identity);
   const dirty = Boolean(workflow && yaml !== savedYaml);
+
+  useEffect(() => {
+    if (peakEndConsumed.current || !canCall) {
+      return;
+    }
+    const scopedId = workflow?.id ?? workflowId ?? "";
+    if (!scopedId) {
+      return;
+    }
+    const executionId = consumePeakEndOverlay(scopedId);
+    if (!executionId) {
+      return;
+    }
+    peakEndConsumed.current = true;
+    void selectRun(executionId);
+    // Overlay handoff from home Test run / Start published.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCall, workflow?.id, workflowId]);
 
   async function loadLatestPublishedRun(scopedId: string) {
     if (runIoIsOverlay()) {
@@ -1436,7 +1477,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
     await refreshVersions(workflow.id);
     setExecution(result.execution);
-    rememberRunsOpen(true);
+    endOperateOnOverlay(result.execution.id, workflow.id);
     pushNotification({
       kind: "execution",
       title: result.execution.replayed
@@ -1709,6 +1750,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
     setProblem(null);
     setExecution(result.execution);
+    endOperateOnOverlay(result.execution.id, workflow.id);
     pushNotification({
       kind: "execution",
       title: result.execution.replayed ? "Execution replayed" : "Execution started",

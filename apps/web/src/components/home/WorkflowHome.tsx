@@ -15,8 +15,10 @@ import type { ExecutionRecord } from "@/lib/execution-types";
 import {
   productHomeCapabilities,
   templateCreatedEditorHref,
+  workflowEditorHref,
   workflowHomeLastRunHref,
 } from "@/lib/product-home";
+import { rememberPeakEndOverlay } from "@/lib/peak-end-operate-endings";
 import { workspaceLookupKey } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
@@ -590,6 +592,10 @@ function WorkflowHomeSession() {
       setProblem(result.problem);
       return;
     }
+    rememberPeakEndOverlay({
+      workflowId: item.id,
+      executionId: result.execution.id,
+    });
     pushNotification({
       kind: "execution",
       title: result.execution.replayed
@@ -598,7 +604,7 @@ function WorkflowHomeSession() {
       detail: `Published test v${result.version.versionNumber} · ${result.execution.status}`,
       href: `/executions/${result.execution.id}`,
     });
-    await refresh();
+    router.push(workflowEditorHref(item.id));
   }
 
   async function exportItem(item: WorkflowHomeItem) {
@@ -864,6 +870,13 @@ function WorkflowHomeSession() {
           workflowName={startItem.name}
           permissions={permissions}
           onClose={() => setStartWorkflowId("")}
+          onStarted={(execution) => {
+            rememberPeakEndOverlay({
+              workflowId: startItem.id,
+              executionId: execution.id,
+            });
+            router.push(workflowEditorHref(startItem.id));
+          }}
         />
       ) : null}
 

@@ -240,7 +240,9 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
    (closed still shows a **Runs** rail — it does not bury the canvas).
    `/executions` remains the workspace inbox. Esc closes the drawer
    and restores focus to **Runs** (R7.4 / #279 — **Keep #279 open.**).
-   Status stays icon + text.
+   Status stays icon + text. After **Start published** or **Test run**
+   the editor ends on this overlay for that run (UXL.4 / #291 —
+   **Keep #291 open.**), not only a toast.
 2. Status chips filter this workflow’s runs. **Skip to failed** /
    **Skip to indeterminate** jump to the matching run or step without
    leaving the graph. Arrow keys move; Enter / Space overlays the
@@ -248,11 +250,13 @@ YAML is a **mode** (drawer under the canvas), not a permanent stack.
 3. Inspector shows redacted last-run step I/O at operate density for the
    selected node (overlay-selected run, or the latest published run when
    no overlay is active). Failures and indeterminate steps jump to the
-   node. Secrets stay `[redacted]`.
+   node. Success is explicit and distinct from `indeterminate`. Secrets
+   stay `[redacted]`.
 4. **Cancel / Retry / Stop** use the existing execution routes on the
    selected overlay run. Retry appears only when
    `result.retry.allowed` is true. `indeterminate` stays loud — never
-   silent success.
+   silent success. Waiting runs **decide** the bound approval on this
+   overlay and on the inbox.
 5. **Open execution** goes to `/executions/{id}`. **Clear run overlay**
    removes the overlay and falls back to latest. Still no draft execute.
    Do not invent `/replay`.

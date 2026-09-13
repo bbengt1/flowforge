@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { isExecutionAwaitingApproval } from "@/lib/approval";
+import { PeakEndEnding } from "@/components/chrome/PeakEndEnding";
+import { peakEndKind } from "@/lib/peak-end-operate-endings";
 import {
   EXECUTION_INBOX_COLUMNS,
   EXECUTION_INBOX_KEYBOARD_HELP,
@@ -106,6 +108,7 @@ export function ExecutionHistoryListbox({
           const started = executionInboxTimeLabel(row.startedAt);
           const duration = executionInboxDurationLabel(row.startedAt, row.finishedAt);
           const waiting = isExecutionAwaitingApproval(row.status);
+          const ending = peakEndKind(row.status, waiting);
           return (
             <li
               key={row.id}
@@ -147,14 +150,12 @@ export function ExecutionHistoryListbox({
                     </div>
                     <ExecutionStatusBadge status={row.status} />
                   </div>
-                  {row.indeterminate ? (
-                    <p className="mt-2 text-[11px] font-medium text-amber-950">
-                      Indeterminate — do not assume the action did not run.
-                    </p>
-                  ) : waiting ? (
-                    <p className="mt-2 text-[11px] font-medium text-indigo-950">
-                      Waiting — decide the bound approval. Resume is decide.
-                    </p>
+                  {row.indeterminate || waiting || ending === "success" || ending === "failed" ? (
+                    <PeakEndEnding
+                      kind={ending}
+                      surface="overlay"
+                      className="mt-2"
+                    />
                   ) : null}
                   {row.replayed ? (
                     <p className="mt-1 text-[11px] text-zinc-600">Replayed</p>
@@ -192,14 +193,12 @@ export function ExecutionHistoryListbox({
                     <p className="font-mono text-[11px] break-all text-zinc-500">
                       {row.id}
                     </p>
-                    {row.indeterminate ? (
-                      <p className="mt-1 text-xs font-medium text-amber-950">
-                        Indeterminate — do not assume the action did not run.
-                      </p>
-                    ) : waiting ? (
-                      <p className="mt-1 text-xs font-medium text-indigo-950">
-                        Waiting — decide the bound approval. Resume is decide.
-                      </p>
+                    {row.indeterminate || waiting || ending === "success" || ending === "failed" ? (
+                      <PeakEndEnding
+                        kind={ending}
+                        surface="inbox"
+                        className="mt-1"
+                      />
                     ) : null}
                     {row.replayed ? (
                       <p className="mt-1 text-xs text-zinc-600">Replayed</p>
