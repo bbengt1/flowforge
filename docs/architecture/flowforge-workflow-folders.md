@@ -179,7 +179,7 @@ Re-parent a folder under another folder or to top-level. Server rejects cycles, 
 | State | Copy / verbs |
 | --- | --- |
 | **Empty home** (no workflows **and** no folders) | Existing UXL.6: Create, Import YAML, or a reviewed template — each creates a **draft**; copy says drafts do not run. Optional: New folder. No Developer fixtures. No `/actions` CTA. |
-| **Empty folder** (folder exists, no workflows) | “Nothing in this folder.” Create draft **here**, Move existing, or Delete folder (allowed because it is empty). |
+| **Empty folder** (folder exists, no workflows) | “Nothing in this folder.” Create draft **here** or Move existing. Delete folder only when there are also **no child folders** (same refuse-if-non-empty rule). |
 | **Unfiled empty** (all workflows are filed, or none exist) | If workflows exist elsewhere: point at the tree + search. If none exist: same as empty home. |
 | **Viewer, empty** | No create/move/delete. Do not fake an empty catalog as a permission grant. |
 
@@ -355,7 +355,7 @@ Acceptance:
 Acceptance:
 
 - Empty home (no workflows, no folders): UXL.6 verbs + optional New folder. Drafts do not run. No Developer fixtures.
-- Empty folder: create here / move / delete (if empty). Unfiled-empty points at the tree or empty-home verbs.
+- Empty folder: create here / move / delete (only if no workflows **and** no child folders). Unfiled-empty points at the tree or empty-home verbs.
 - Unfiled is always in the rail and is not a persisted folder.
 
 ### F.6 — Search / filter across folders
