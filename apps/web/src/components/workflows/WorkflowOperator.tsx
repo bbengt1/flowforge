@@ -844,24 +844,6 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   ) && hasWorkspaceLookup(identity);
   const dirty = Boolean(workflow && yaml !== savedYaml);
 
-  useEffect(() => {
-    if (peakEndConsumed.current || !canCall) {
-      return;
-    }
-    const scopedId = workflow?.id ?? workflowId ?? "";
-    if (!scopedId) {
-      return;
-    }
-    const executionId = consumePeakEndOverlay(scopedId);
-    if (!executionId) {
-      return;
-    }
-    peakEndConsumed.current = true;
-    void selectRun(executionId);
-    // Overlay handoff from home Test run / Start published.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canCall, workflow?.id, workflowId]);
-
   async function loadLatestPublishedRun(scopedId: string) {
     if (runIoIsOverlay()) {
       return;
@@ -944,6 +926,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       return;
     }
     const timer = window.setTimeout(() => {
+      const peakEndId = consumePeakEndOverlay(scopedId);
+      if (peakEndId) {
+        peakEndConsumed.current = true;
+        void selectRun(peakEndId);
+        return;
+      }
       void loadLatestPublishedRun(scopedId);
     }, 0);
     return () => window.clearTimeout(timer);

@@ -29,7 +29,6 @@ import { EDITOR_NDV_RUN_IO } from "./editor-ndv-run-io.ts";
 import {
   EDITOR_RUNS,
   EDITOR_RUNS_DETAIL_PATH,
-  EDITOR_RUNS_REPLAY_GRAPH_SOURCE,
   INVENTED_REPLAY_ROUTE,
   editorRunOpenHref,
   editorRunsHasSingleOperatePath,
@@ -41,7 +40,6 @@ import { EDITOR_WORKING_MEMORY } from "./editor-working-memory.ts";
 import {
   EXECUTION_INBOX,
   EXECUTION_INBOX_DETAIL_PATH,
-  EXECUTION_INBOX_REPLAY_GRAPH_SOURCE,
   R4_GUARDRAILS,
   executionInboxIndeterminateIsLoud,
   executionInboxHasSingleOperatePath,
@@ -382,7 +380,7 @@ export function peakEndSuccessIsDistinctFromIndeterminate(): boolean {
     PEAK_END_OPERATE.successExplicitAndDistinctFromIndeterminate &&
     peakEndKind("succeeded") === "success" &&
     peakEndKind("indeterminate") === "indeterminate" &&
-    PEAK_END_LABELS.success !== PEAK_END_LABELS.indeterminate &&
+    (PEAK_END_LABELS.success as string) !== PEAK_END_LABELS.indeterminate &&
     !/indeterminate/i.test(PEAK_END_LABELS.success) &&
     /indeterminate/i.test(PEAK_END_LABELS.indeterminate) &&
     /succeed/i.test(PEAK_END_LABELS.success) &&
