@@ -96,7 +96,12 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    Editors can **New folder**, **Rename folder**, or **Delete folder**
    on the rail (F.3 / #310 — **keep #310 open**). Viewers cannot.
    Empty delete returns to the parent or Unfiled; a folder with
-   children or workflows stays put (`409`).
+   children or workflows stays put (`409`). Editors **Move…** a
+   workflow from the row menu or drag it onto a folder or Unfiled
+   (F.4 / #311 — **keep #311 open**). Both call
+   `PATCH /api/v1/workflows/{id}/folder` `{folderId}` (`null` =
+   Unfiled). Move does not change YAML, draft revision, or
+   activation. Viewers cannot drop or see Move.
 2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
    column/status (R6.2 / #271 — **keep #271 open**) shows whether a
    published version is active for webhook/schedule. Drafts read

@@ -11,6 +11,7 @@ import {
   fetchWorkflowCatalog,
   IF_MATCH_HEADER,
   listWorkflows,
+  moveWorkflowToFolder,
   normalizeWorkflowYaml,
   importValidatedWorkflow,
   saveCanonicalWorkflowDraft,
@@ -487,5 +488,90 @@ describe("workflow client", () => {
       assert.equal(result.execution.pins?.[0]?.name, "prod-cluster");
       assert.equal(result.execution.pins?.[0]?.resourceId, "11111111-1111-4111-8111-111111111111");
     }
+  });
+
+  it("PATCHes /workflows/{id}/folder with CSRF; Unfiled is folderId null", async () => {
+    withSession();
+    const record = {
+      id: "11111111-1111-4111-8111-111111111111",
+      slug: "deploy",
+      name: "Deploy",
+      status: "draft",
+      draftRevision: 4,
+      draftDigest: "sha256:aaaa",
+      latestVersionNumber: 2,
+      createdAt: "2026-09-13T00:00:00Z",
+      updatedAt: "2026-09-13T00:00:00Z",
+      folderId: "22222222-2222-4222-8222-222222222222",
+    };
+    const seen: Array<{
+      url?: string;
+      method?: string;
+      headers?: Headers;
+      body?: string;
+    }> = [];
+    globalThis.fetch = (async (input, init) => {
+      seen.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        headers: new Headers(init?.headers),
+        body: typeof init?.body === "string" ? init.body : "",
+      });
+      return new Response(JSON.stringify({ ...record, folderId: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const filed = await moveWorkflowToFolder(
+      identity,
+      record.id,
+      "22222222-2222-4222-8222-222222222222",
+    );
+    assert.equal(filed.ok, true);
+    assert.equal(seen[0]?.url, `/api/v1/workflows/${record.id}/folder`);
+    assert.equal(seen[0]?.method, "PATCH");
+    assert.equal(seen[0]?.headers?.get(CSRF_HEADER), "csrf-ok");
+    const filedBody = JSON.parse(seen[0]?.body ?? "{}") as Record<string, unknown>;
+    assert.deepEqual(filedBody, {
+      folderId: "22222222-2222-4222-8222-222222222222",
+    });
+    assert.equal(Object.hasOwn(filedBody, "definitionYaml"), false);
+    assert.equal(Object.hasOwn(filedBody, "draftRevision"), false);
+    if (filed.ok) {
+      assert.equal(filed.workflow.draftRevision, 4);
+    }
+
+    const unfiled = await moveWorkflowToFolder(identity, record.id, null);
+    assert.equal(unfiled.ok, true);
+    const unfiledBody = JSON.parse(seen[1]?.body ?? "{}") as Record<string, unknown>;
+    assert.deepEqual(unfiledBody, { folderId: null });
+    assert.equal(unfiledBody.folderId, null);
+    if (unfiled.ok) {
+      assert.equal(unfiled.workflow.draftRevision, 4);
+      assert.equal(unfiled.workflow.folderId, null);
+    }
+
+    setActiveSession({
+      issuer: "https://flowforge.local",
+      subject: "operator-chloe",
+      displayName: "Chloe",
+      sessionId: "sess-1",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "",
+    });
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response(JSON.stringify(record), { status: 200 });
+    }) as typeof fetch;
+    const missing = await moveWorkflowToFolder(identity, record.id, null);
+    assert.equal(missing.ok, false);
+    if (!missing.ok) {
+      assert.equal(missing.problem.code, "csrf-required");
+      assert.equal(missing.statusCode, 403);
+    }
+    assert.equal(fetched, false);
   });
 });
