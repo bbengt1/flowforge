@@ -10,12 +10,14 @@
 
 import type { ApprovalRequest } from "./approval-types.ts";
 import type { ExecutionRecord } from "./execution-types.ts";
+import { isIndeterminateStatus } from "./execution.ts";
 import {
   homeActivationFromListHint,
   matchesHomeActivationFilter,
   type HomeActivationColumn,
   type HomeActivationFilter,
 } from "./home-activation.ts";
+import { homeLastRunIsWaiting } from "./home-row-scan.ts";
 import type { WorkflowDraft, WorkflowRecord } from "./workflow-types.ts";
 
 export type WorkflowHomeView = "list" | "card";
@@ -26,6 +28,8 @@ export type LastRunFilter =
   | "running"
   | "succeeded"
   | "failed"
+  | "waiting"
+  | "indeterminate"
   | "never"
   | "24h";
 
@@ -80,6 +84,8 @@ export type WorkflowHomeItem = {
   lastRunStatus: string | null;
   lastRunId: string | null;
   lastRunKnown: boolean;
+  lastRunWaiting: boolean;
+  lastRunIndeterminate: boolean;
   activation: HomeActivationColumn;
 };
 
@@ -161,6 +167,8 @@ export function toWorkflowHomeItem(
   const triggers = (draft?.summary?.triggers ?? []).map((item) => item.type);
   const last = latestExecution(record.id, extras.executions ?? []);
   const lastRunKnown = extras.lastRunKnown === true;
+  const lastRunWaiting = homeLastRunIsWaiting(last, extras.approvals ?? []);
+  const lastRunIndeterminate = isIndeterminateStatus(last?.status);
   const pendingApprovals = (extras.approvals ?? []).filter(
     (item) => item.workflowId === record.id && item.status === "pending",
   ).length;
@@ -193,6 +201,8 @@ export function toWorkflowHomeItem(
     lastRunStatus: last?.status ?? null,
     lastRunId: last?.id ?? null,
     lastRunKnown,
+    lastRunWaiting,
+    lastRunIndeterminate,
     activation:
       extras.activation ??
       homeActivationFromListHint({
@@ -296,6 +306,12 @@ export function matchesWorkflowHomeFilters(
       return false;
     }
     if (lastRun === "failed" && item.lastRunStatus !== "failed") {
+      return false;
+    }
+    if (lastRun === "waiting" && !item.lastRunWaiting) {
+      return false;
+    }
+    if (lastRun === "indeterminate" && !item.lastRunIndeterminate) {
       return false;
     }
     if (lastRun === "24h" && !withinWindow(item.lastRunAt, 24 * 60 * 60 * 1000, now)) {

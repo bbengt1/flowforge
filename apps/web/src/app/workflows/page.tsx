@@ -13,9 +13,10 @@ export default function WorkflowsPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Workflows</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Product home for drafts and published versions. List and card
-          views show activation (published version active for webhook or
-          schedule), status, version, validation health, and required
-          approvals without opening three drawers. Create and import use{" "}
+          scan ends are activation (published version active for webhook
+          or schedule) and last run (waiting or indeterminate when those
+          joins already exist), then status, version, validation health,
+          and required approvals without opening three drawers. Create and import use{" "}
           <code className="font-mono text-sm">POST /workflows</code>. The
           canvas + YAML editor is a standalone surface at{" "}
           <code className="font-mono text-sm">/workflows/{"{id}"}</code>

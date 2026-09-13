@@ -33,6 +33,7 @@ import {
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
 import { HomeActivationStatus } from "@/components/home/HomeActivationStatus";
+import { HomeLastRunStatus } from "@/components/home/HomeLastRunStatus";
 import {
   EDITOR_ACTIVATION_CHANGED_EVENT,
   canViewEditorActivation,
@@ -46,6 +47,7 @@ import {
   type HomeActivationColumn,
   type HomeActivationFilter,
 } from "@/lib/home-activation";
+import { HOME_ROW_SCAN_HELP } from "@/lib/home-row-scan";
 import { loadHomeActivationStates } from "@/lib/home-activation-client";
 import {
   EMPTY_WORKFLOW_HOME_FILTERS,
@@ -672,6 +674,9 @@ function WorkflowHomeSession() {
             >
               {EDITOR_WORKING_MEMORY_TEST_RUN} {TEST_RUN_HELP}
             </p>
+            <p className="mt-2 text-sm text-zinc-600" data-home-row-scan="help">
+              {HOME_ROW_SCAN_HELP}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -789,6 +794,8 @@ function WorkflowHomeSession() {
               <option value="">Any</option>
               <option value="never">Never</option>
               <option value="running">Running / queued</option>
+              <option value="waiting">Waiting</option>
+              <option value="indeterminate">Indeterminate</option>
               <option value="succeeded">Succeeded</option>
               <option value="failed">Failed</option>
               <option value="24h">Last 24 hours</option>
@@ -1007,11 +1014,6 @@ function WorkflowMeta({ item }: { item: WorkflowHomeItem }) {
       {item.pendingApprovals
         ? ` · ${item.pendingApprovals} approval${item.pendingApprovals === 1 ? "" : "s"}`
         : ""}
-      {item.lastRunStatus
-        ? ` · last run ${item.lastRunStatus}`
-        : item.lastRunKnown
-          ? " · never run"
-          : ""}
       {item.latestVersionDigest
         ? ` · ${shortDigest(item.latestVersionDigest)}`
         : ""}
@@ -1186,75 +1188,70 @@ function WorkflowHomeList({
   return (
     <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <div
-        className="mb-0 hidden min-w-[52rem] gap-3 border-b border-zinc-100 px-5 py-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[minmax(12rem,1.5fr)_minmax(10rem,1.1fr)_minmax(9rem,1fr)_minmax(7rem,0.8fr)_minmax(12rem,1.3fr)]"
+        className="mb-0 hidden min-w-[52rem] gap-3 border-b border-zinc-100 px-5 py-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.5fr)_minmax(8rem,0.9fr)_minmax(12rem,1.3fr)_minmax(9rem,1fr)]"
         aria-hidden="true"
+        data-home-row-scan="columns"
       >
         {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
-          <span key={column.id}>{column.label}</span>
+          <span key={column.id} data-home-row-scan-column={column.id}>
+            {column.label}
+          </span>
         ))}
       </div>
       <ul className="min-w-0 divide-y divide-zinc-100">
         {items.map((item) => (
           <li
             key={item.id}
-            className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(12rem,1.5fr)_minmax(10rem,1.1fr)_minmax(9rem,1fr)_minmax(7rem,0.8fr)_minmax(12rem,1.3fr)] sm:items-start"
+            className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.5fr)_minmax(8rem,0.9fr)_minmax(12rem,1.3fr)_minmax(9rem,1fr)] sm:items-start"
+            data-home-row-scan="row"
           >
-            <div className="min-w-0">
-              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
-                Workflow
-              </p>
-              <Link
-                href={`/workflows/${item.id}`}
-                className="text-base font-medium text-zinc-900 hover:underline"
-              >
-                {item.name}
-              </Link>
-              <p className="font-mono text-xs text-zinc-500">
-                {item.slug}
-                {item.folder ? ` · ${item.folder}` : ""}
-                {item.owner ? ` · ${item.owner}` : ""}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
-                Activation
-              </p>
-              <HomeActivationStatus column={item.activation} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
-                Status
-              </p>
-              <WorkflowMeta item={item} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
-                Last run
-              </p>
-              <p className="text-xs text-zinc-600">
-                {item.lastRunStatus
-                  ? item.lastRunStatus
-                  : item.lastRunKnown
-                    ? "Never run"
-                    : "—"}
-              </p>
-            </div>
-            <WorkflowActions
-              item={item}
-              pending={pending}
-              canCreate={canCreate}
-              canExecute={canExecute}
-              canPublish={canPublish}
-              canViewWebhooks={canViewWebhooks}
-              canViewSchedules={canViewSchedules}
-              canSeeLastRun={canSeeLastRun}
-              onStart={onStart}
-              onTestRun={onTestRun}
-              onWebhooks={onWebhooks}
-              onSchedules={onSchedules}
-              onDuplicate={onDuplicate}
-              onExport={onExport}
-            />
+            {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
+              <div key={column.id} className="min-w-0" data-home-row-scan-cell={column.id}>
+                <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
+                  {column.label}
+                </p>
+                {column.id === "activation" ? (
+                  <HomeActivationStatus column={item.activation} />
+                ) : null}
+                {column.id === "workflow" ? (
+                  <>
+                    <Link
+                      href={`/workflows/${item.id}`}
+                      className="text-base font-medium text-zinc-900 hover:underline"
+                    >
+                      {item.name}
+                    </Link>
+                    <p className="font-mono text-xs text-zinc-500">
+                      {item.slug}
+                      {item.folder ? ` · ${item.folder}` : ""}
+                      {item.owner ? ` · ${item.owner}` : ""}
+                    </p>
+                  </>
+                ) : null}
+                {column.id === "status" ? <WorkflowMeta item={item} /> : null}
+                {column.id === "actions" ? (
+                  <WorkflowActions
+                    item={item}
+                    pending={pending}
+                    canCreate={canCreate}
+                    canExecute={canExecute}
+                    canPublish={canPublish}
+                    canViewWebhooks={canViewWebhooks}
+                    canViewSchedules={canViewSchedules}
+                    canSeeLastRun={canSeeLastRun}
+                    onStart={onStart}
+                    onTestRun={onTestRun}
+                    onWebhooks={onWebhooks}
+                    onSchedules={onSchedules}
+                    onDuplicate={onDuplicate}
+                    onExport={onExport}
+                  />
+                ) : null}
+                {column.id === "lastRun" ? (
+                  <HomeLastRunStatus item={item} canSeeLastRun={canSeeLastRun} />
+                ) : null}
+              </div>
+            ))}
           </li>
         ))}
       </ul>
@@ -1299,16 +1296,17 @@ function WorkflowHomeCards({
         <li
           key={item.id}
           className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+          data-home-row-scan="card"
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <Link
-              href={`/workflows/${item.id}`}
-              className="text-lg font-semibold text-zinc-900 hover:underline"
-            >
-              {item.name}
-            </Link>
             <HomeActivationStatus column={item.activation} />
           </div>
+          <Link
+            href={`/workflows/${item.id}`}
+            className="mt-2 block text-lg font-semibold text-zinc-900 hover:underline"
+          >
+            {item.name}
+          </Link>
           <p className="mt-1 font-mono text-xs text-zinc-500">{item.slug}</p>
           <div className="mt-3">
             <WorkflowMeta item={item} />
@@ -1330,6 +1328,14 @@ function WorkflowHomeCards({
               onDuplicate={onDuplicate}
               onExport={onExport}
             />
+          </div>
+          <div className="mt-4 border-t border-zinc-100 pt-3">
+            <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+              Last run
+            </p>
+            <div className="mt-1">
+              <HomeLastRunStatus item={item} canSeeLastRun={canSeeLastRun} />
+            </div>
           </div>
         </li>
       ))}
