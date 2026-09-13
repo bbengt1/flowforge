@@ -679,7 +679,7 @@ describe("F.5 empty states + Unfiled", () => {
     );
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.match(home, /data-uxl6="home-empty"/);
-    assert.match(home, /data-f5="home-empty"/);
+    assert.match(home, /data-f5=\{unfiledEmpty \? "unfiled-empty-none" : "home-empty"\}/);
     assert.match(home, /HOME_EMPTY_CREATE_LABEL/);
     assert.match(home, /HOME_EMPTY_IMPORT_LABEL/);
     assert.match(home, /HOME_EMPTY_TEMPLATE_LABEL/);
@@ -781,7 +781,7 @@ describe("F.5 empty states + Unfiled", () => {
     assert.match(UNFILED_EMPTY_NONE_HELP, /drafts do not run/i);
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.match(home, /data-f5="unfiled-empty-filed"/);
-    assert.match(home, /data-f5="unfiled-empty-none"/);
+    assert.match(home, /"unfiled-empty-none"/);
     assert.match(home, /data-f5="unfiled-empty-tree"/);
     assert.match(home, /UNFILED_EMPTY_FILED_HELP/);
     assert.match(home, /UNFILED_EMPTY_NONE_HELP/);
