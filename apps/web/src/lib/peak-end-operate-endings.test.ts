@@ -22,7 +22,9 @@ import {
   PEAK_END_RUN_STORAGE_KEY,
   UXL4_BRIEF,
   UXL4_EPIC,
+  UXL4_FOLLOWUP_STORY,
   UXL4_ID,
+  UXL4_KEEP_FOLLOWUP_OPEN,
   UXL4_KEEP_STORY_OPEN,
   UXL4_STORY,
   consumePeakEndOverlay,
@@ -38,6 +40,10 @@ import {
   peakEndNeverSilentSuccessWhenUncertain,
   peakEndOpenExecutionHref,
   peakEndOpenStaysExecutionsId,
+  peakEndOverlayRowShowsEnding,
+  peakEndOverlaySuccessIsFocusedOnly,
+  peakEndOverlaySuccessIsLoud,
+  peakEndOverlaySuccessLoudCount,
   peakEndShouldOpenOverlay,
   peakEndShowsExplicitEnding,
   peakEndSuccessIsDistinctFromIndeterminate,
@@ -201,5 +207,65 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.equal(consumePeakEndOverlay("other"), null);
     assert.equal(consumePeakEndOverlay("wf-remember"), "ex-remember");
     assert.equal(consumePeakEndOverlay("wf-remember"), null);
+  });
+
+  it("keeps overlay peak-end success on the focused or just-finished ending only", () => {
+    assert.equal(UXL4_FOLLOWUP_STORY, 301);
+    assert.equal(UXL4_KEEP_FOLLOWUP_OPEN, true);
+    assert.equal(PEAK_END_OPERATE.successLoudOnlyOnFocusedOverlay, true);
+    assert.equal(peakEndOverlaySuccessIsLoud({}), false);
+    assert.equal(peakEndOverlaySuccessIsLoud({ focused: false }), false);
+    assert.equal(peakEndOverlaySuccessIsLoud({ focused: true }), true);
+    assert.equal(peakEndOverlaySuccessIsLoud({ selected: true }), true);
+    assert.equal(peakEndOverlaySuccessIsLoud({ justFinished: true }), true);
+    assert.equal(peakEndOverlayRowShowsEnding("success"), false);
+    assert.equal(peakEndOverlayRowShowsEnding("success", { focused: true }), true);
+    assert.equal(peakEndOverlayRowShowsEnding("success", { selected: true }), true);
+    assert.equal(
+      peakEndOverlayRowShowsEnding("success", { justFinished: true }),
+      true,
+    );
+    assert.equal(peakEndOverlayRowShowsEnding("indeterminate"), true);
+    assert.equal(
+      peakEndOverlayRowShowsEnding("indeterminate", { focused: false }),
+      true,
+    );
+    assert.equal(peakEndOverlayRowShowsEnding("waiting"), true);
+    assert.equal(peakEndOverlayRowShowsEnding("waiting", { focused: false }), true);
+    assert.equal(peakEndOverlayRowShowsEnding("failed"), true);
+    assert.equal(peakEndOverlayRowShowsEnding("failed", { focused: false }), true);
+    assert.equal(peakEndOverlayRowShowsEnding("running"), false);
+
+    const fourteenSucceeded = Array.from({ length: 14 }, (_, index) => ({
+      kind: "success" as const,
+      focused: index === 2,
+      selected: index === 2,
+    }));
+    assert.equal(peakEndOverlaySuccessLoudCount(fourteenSucceeded), 1);
+    assert.equal(
+      peakEndOverlaySuccessLoudCount(
+        fourteenSucceeded.map((row) => ({ ...row, focused: false, selected: false })),
+      ),
+      0,
+    );
+    assert.equal(peakEndOverlaySuccessIsFocusedOnly(), true);
+
+    const overlay = source("src/components/workflows/EditorRunsDrawer.tsx");
+    const listbox = source("src/components/executions/ExecutionHistoryListbox.tsx");
+    const frontend = readFileSync(
+      join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
+      "utf8",
+    );
+    assert.match(listbox, /peakEndOverlayRowShowsEnding/);
+    assert.match(listbox, /data-peak-end|PeakEndEnding/);
+    assert.match(overlay, /PeakEndEnding/);
+    assert.match(overlay, /selectedPeakEnd|data-peak-end-surface="overlay"/);
+    assert.match(frontend, /#301/);
+    assert.match(frontend, /keep #301 open/i);
+    assert.match(frontend, /focused\/selected only|focused\/selected operate ending/i);
+    assert.match(PEAK_END_OPERATE_HELP, /quiet success badges/);
+    assert.equal(listbox.includes("/replay"), false);
+    assert.equal(peakEndInboxIsNotSecondReplay(listbox), true);
+    assert.equal(peakEndHoldsHardLines(), true);
   });
 });
