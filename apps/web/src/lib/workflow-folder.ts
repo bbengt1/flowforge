@@ -908,8 +908,8 @@ export function folderTreePersistsInLocalStorage(source: string): boolean {
 export function folderExpandUsesSessionStorageOnly(source: string): boolean {
   return (
     source.includes("sessionStorage") &&
-    !source.includes("localStorage") &&
-    source.includes("FOLDER_EXPAND_STORAGE_PREFIX")
+    source.includes("FOLDER_EXPAND_STORAGE_PREFIX") &&
+    !folderTreePersistsInLocalStorage(source)
   );
 }
 
