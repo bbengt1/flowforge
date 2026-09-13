@@ -35,6 +35,13 @@ import {
   F6_ID,
   F6_KEEP_STORY_OPEN,
   F6_STORY,
+  F7_BRIEF,
+  F7_EPIC,
+  F7_HOME_FOLDER,
+  F7_HOME_FOLDER_SOURCES,
+  F7_ID,
+  F7_KEEP_STORY_OPEN,
+  F7_STORY,
   F320_BUG,
   F320_ID,
   F320_KEEP_OPEN,
@@ -66,6 +73,7 @@ import {
   buildFolderTree,
   canCreateChildFolder,
   canDropWorkflowOnFolder,
+  canMutateEmbedWorkflowFolders,
   canMutateWorkflowFolders,
   childFolderCount,
   coldLoadListFolderId,
@@ -73,8 +81,15 @@ import {
   constrainItemsToFolderSelection,
   createFolderParentId,
   defaultWorkflowMoveTarget,
+  embedFolderHomeMountsAfterSessionEmbed,
+  embedFolderUsesSharedWorkflowHome,
+  embedInventedFolderTree,
+  embedMissingSessionEmbedIsAlert,
+  embedWorkflowsHref,
   emptyFolderDeleteAllowed,
   folderAllowsRenameOrDelete,
+  folderExpandUsesSessionStorageOnly,
+  folderTreePersistsInLocalStorage,
   folderDeleteBlocked,
   folderHomeEmptyKind,
   folderHomeListMode,
@@ -100,6 +115,7 @@ import {
   homeWorkflowRowHasMoveVerb,
   homeFolderRailNestsMain,
   homeUsesPrefixInNameAsPrimaryOrganizer,
+  hostTenantWorkbenchSelectsFolderTree,
   intendedFolderSelectionFromUrl,
   isCompleteWorkspaceLookupKey,
   isWorkflowFolder,
@@ -132,6 +148,8 @@ import {
   writeExpandedFolderIds,
   type WorkflowFolder,
 } from "./workflow-folder.ts";
+import { parseSessionEmbedChrome } from "./session-embed-contract.ts";
+import { EMBED_CHROME_MISSING_SESSION_MESSAGE } from "./embed-contract.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -1169,5 +1187,202 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
     assert.match(home, /subscribeWorkspaceCommands/);
     assert.match(home, /createFromYaml/);
+  });
+});
+
+describe("F.7 embed folder parity", () => {
+  const getSession = {
+    session: {
+      id: "sess-1",
+      embed: {
+        mode: "embed",
+        sdk: "embed.v1",
+        tenantId: "ten-1",
+        tenantSlug: "acme",
+        tenantName: "Acme",
+        workbenchKey: "ops",
+        workspaceId: "ws-1",
+        workspaceName: "Ops",
+        capabilities: ["workflow.view"],
+      },
+    },
+    principal: { display_name: "Ada" },
+  };
+  const embedView = parseSessionEmbedChrome(getSession);
+  const embedEdit = parseSessionEmbedChrome({
+    session: {
+      ...getSession.session,
+      embed: {
+        ...getSession.session.embed,
+        capabilities: ["workflow.view", "workflow.edit"],
+      },
+    },
+    principal: getSession.principal,
+  });
+
+  it("keeps #314 open and cites the folder IA", () => {
+    assert.equal(F7_STORY, 314);
+    assert.equal(F7_EPIC, 307);
+    assert.equal(F7_KEEP_STORY_OPEN, true);
+    assert.equal(F7_ID, "F.7-embed-folder-parity");
+    assert.equal(F7_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F7_HOME_FOLDER.keep314Open, true);
+    assert.equal(F7_HOME_FOLDER.sameWorkflowHomeNoSecondTree, true);
+    assert.equal(F7_HOME_FOLDER.railListEmptyMoveAfterSessionEmbed, true);
+    assert.equal(F7_HOME_FOLDER.missingSessionEmbedIsAlert, true);
+    assert.equal(F7_HOME_FOLDER.hostQueryDisplayOnly, true);
+    assert.equal(F7_HOME_FOLDER.noMutateWithoutWorkflowEdit, true);
+    assert.equal(F7_HOME_FOLDER.treeFromApiNotLocalStorage, true);
+    assert.equal(F7_HOME_FOLDER.chipsPortalIframeUsesApiTree, true);
+    assert.equal(F7_HOME_FOLDER.coldLoadFolderQueryStays, true);
+    assert.equal(F7_HOME_FOLDER.selectedFolderListIsNonRecursive, true);
+    assert.equal(F7_HOME_FOLDER.acrossSearchModesStay, true);
+    assert.equal(F7_HOME_FOLDER.noNewApi, true);
+    assert.equal(F7_HOME_FOLDER.d6MigrateInPlace, true);
+    assert.equal(F7_HOME_FOLDER.foldersNotInYaml, true);
+    assert.equal(F7_HOME_FOLDER.draftsNeverRun, true);
+    assert.equal(F7_HOME_FOLDER.adv021FailClosedWithoutSessionEmbed, true);
+    assert.equal(F7_HOME_FOLDER.isolationSuccessIsDenial, true);
+    assert.equal(F7_HOME_FOLDER.noKekInBrowser, true);
+    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    assert.match(brief, /F\.7/);
+    assert.match(brief, /No second tree/);
+    const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /#314/);
+    assert.match(frontend, /keep #314 open/i);
+    assert.match(frontend, /\/embed\/v1\/workflows/);
+    for (const path of F7_HOME_FOLDER_SOURCES) {
+      assert.equal(source(path).length > 0, true);
+    }
+  });
+
+  it("shows the shared rail + list + empty states + move after session.embed", () => {
+    assert.equal(
+      embedFolderHomeMountsAfterSessionEmbed({
+        sessionChecked: false,
+        sessionActive: false,
+        sessionEmbed: null,
+      }),
+      false,
+    );
+    assert.equal(
+      embedFolderHomeMountsAfterSessionEmbed({
+        sessionChecked: true,
+        sessionActive: true,
+        sessionEmbed: null,
+      }),
+      false,
+    );
+    assert.equal(
+      embedFolderHomeMountsAfterSessionEmbed({
+        sessionChecked: true,
+        sessionActive: true,
+        sessionEmbed: embedView,
+      }),
+      true,
+    );
+    assert.equal(
+      embedFolderHomeMountsAfterSessionEmbed({
+        sessionChecked: true,
+        sessionActive: true,
+        sessionEmbed: embedView,
+        verified: false,
+      }),
+      false,
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const shell = source("src/components/shell/WorkspaceShell.tsx");
+    const rewrite = source("next.config.ts");
+    assert.equal(embedFolderUsesSharedWorkflowHome(home), true);
+    assert.match(home, /data-f7=\{embed \? "embed-home" : "standalone-home"\}/);
+    assert.match(home, /data-f7-tree="api"/);
+    assert.match(home, /data-home-folder-rail=/);
+    assert.match(home, /FOLDER_EMPTY_HEADING/);
+    assert.match(home, /UNFILED_EMPTY_HEADING/);
+    assert.match(home, /FOLDER_MOVE_VERB/);
+    assert.match(home, /selectedFolderListFolderId/);
+    assert.match(home, /folderHomeListMode/);
+    assert.match(home, /intendedFolderSelectionFromUrl/);
+    assert.match(shell, /isSessionEmbedMode\(session\.embedChrome\)/);
+    assert.match(shell, /EmbedTenancyGate>\{children\}/);
+    assert.match(rewrite, /source: "\/embed\/v1\/:path\*"/);
+    assert.match(rewrite, /destination: "\/:path\*"/);
+    assert.equal(embedInventedFolderTree(home), false);
+    assert.equal(embedInventedFolderTree(shell), false);
+    assert.equal(embedWorkflowsHref(), "/embed/v1/workflows");
+    assert.equal(
+      embedWorkflowsHref({ kind: "folder", id: ops.id }),
+      `/embed/v1/workflows?folder=${ops.id}`,
+    );
+    assert.equal(
+      embedWorkflowsHref({ kind: "unfiled" }),
+      "/embed/v1/workflows?folder=unfiled",
+    );
+    const editor = source("src/app/workflows/[id]/page.tsx");
+    assert.doesNotMatch(editor, /WorkflowHome/);
+    assert.doesNotMatch(editor, /data-home-folder-rail/);
+  });
+
+  it("fail-closes without session.embed and keeps host query display-only", () => {
+    const chrome = source("src/components/embed/EmbedChrome.tsx");
+    const shell = source("src/components/shell/WorkspaceShell.tsx");
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.equal(embedMissingSessionEmbedIsAlert(chrome), true);
+    assert.match(chrome, /EMBED_CHROME_MISSING_SESSION_MESSAGE/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(shell, /EmbedExchangeGate/);
+    assert.match(shell, /isSessionEmbedMode\(session\.embedChrome\)/);
+    assert.doesNotMatch(
+      shell,
+      /EmbedTenancyGate>\{children\}[\s\S]*sessionEmbed: null/,
+    );
+    assert.equal(hostTenantWorkbenchSelectsFolderTree(), false);
+    assert.doesNotMatch(home, /searchParams\.get\("tenant"\)/);
+    assert.doesNotMatch(home, /searchParams\.get\("workbench"\)/);
+    assert.match(home, /FOLDER_QUERY/);
+    assert.equal(F7_HOME_FOLDER.hostQueryDisplayOnly, true);
+    assert.equal(F7_HOME_FOLDER.adv021ChromeFromSessionEmbedOnly, true);
+  });
+
+  it("cannot mutate folders without minted workflow.edit", () => {
+    const workspace = ["workflow.view", "workflow.edit"];
+    assert.equal(canMutateWorkflowFolders(["workflow.view"]), false);
+    assert.equal(canMutateWorkflowFolders(workspace), true);
+    assert.equal(canMutateEmbedWorkflowFolders(workspace, null), false);
+    assert.equal(canMutateEmbedWorkflowFolders(workspace, embedView), false);
+    assert.equal(canMutateEmbedWorkflowFolders(["workflow.view"], embedEdit), false);
+    assert.equal(canMutateEmbedWorkflowFolders(workspace, embedEdit), true);
+    assert.equal(canMutateEmbedWorkflowFolders(null, embedEdit), false);
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const provider = source("src/components/shell/WorkspaceProvider.tsx");
+    assert.match(home, /canMutateEmbedWorkflowFolders\(permissions, session\.embedChrome\)/);
+    assert.match(home, /canMutateFolders/);
+    assert.match(provider, /capChromeCapabilities/);
+    assert.match(provider, /session\.embedChrome/);
+    assert.equal(F7_HOME_FOLDER.noMutateWithoutWorkflowEdit, true);
+  });
+
+  it("loads the tree from the API, not localStorage", () => {
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const folder = source("src/lib/workflow-folder.ts");
+    const client = source("src/lib/workflow-folder-client.ts");
+    const portal = source("src/components/portal/PortalHost.tsx");
+    assert.equal(folderTreePersistsInLocalStorage(home), false);
+    assert.equal(folderTreePersistsInLocalStorage(folder), false);
+    assert.equal(folderTreePersistsInLocalStorage(client), false);
+    assert.equal(folderExpandUsesSessionStorageOnly(folder), true);
+    assert.match(home, /listWorkflowFolders/);
+    assert.match(home, /data-f7-tree="api"/);
+    assert.match(client, /WORKFLOW_FOLDERS_PATH/);
+    assert.doesNotMatch(client, /localStorage/);
+    assert.match(portal, /iframe/);
+    assert.doesNotMatch(portal, /localStorage/);
+    assert.equal(F7_HOME_FOLDER.treeFromApiNotLocalStorage, true);
+    assert.equal(F7_HOME_FOLDER.chipsPortalIframeUsesApiTree, true);
+    assert.equal(selectedFolderListIncludesDescendants(), false);
+    assert.equal(folderHomeListMode("deploy", false), "across-search");
+    assert.equal(folderHomeListMode("deploy", true), "selected");
+    assert.equal(F6_HOME_FOLDER.keep320Open, true);
+    assert.equal(F7_HOME_FOLDER.keep320Open, true);
   });
 });

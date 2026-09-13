@@ -1,11 +1,12 @@
 /**
  * F.2 home folder rail + select, F.3 create / rename / delete,
  * F.4 move workflows, F.5 empty states + Unfiled, F.6 search /
- * filter across folders (Chloe UI). #320 cold-load `?folder=`
- * honors the URL on first paint/fetch.
+ * filter across folders, F.7 embed parity (Chloe UI). #320
+ * cold-load `?folder=` honors the URL on first paint/fetch.
  *
- * Relates to #309 / #310 / #311 / #312 / #313 / #320 / Part of
- * #307. Keep #309, #310, #311, #312, #313, and #320 open.
+ * Relates to #309 / #310 / #311 / #312 / #313 / #314 / #320 /
+ * Part of #307. Keep #309, #310, #311, #312, #313, #314, and
+ * #320 open.
  *
  * Tree comes from GET /workflow-folders. The selected-folder list
  * uses GET /workflows?folderId= for **that folder only** — not a
@@ -36,12 +37,28 @@
  * visible. No secret search. No marketplace. Commands do not
  * file via /actions. #320 cold-load `?folder=` stays first.
  *
+ * F.7: `/embed/v1/workflows` mounts the same WorkflowHome rail
+ * + list + empty states + move after GET /session
+ * `session.embed`. No second embed tree. Missing
+ * `session.embed` stays an alert (ADV-021 fail-closed). Host
+ * `?tenant=` / `?workbench=` stay display-only. Embed
+ * capabilities without `workflow.edit` cannot create / rename
+ * / delete / move folders. CHIPS / Portal iframe: the tree
+ * comes from GET /workflow-folders, not `localStorage`.
+ * sessionStorage may remember expand/collapse only.
+ *
  * Folders are not in YAML. Drafts never run. Move does not bump
  * draftRevision, YAML, or activation. No cascade delete.
  * Host ?tenant= / ?workbench= stay display-only (ADV-021).
  * Isolation success is a denial (ADV-024).
  */
 
+import { EMBED_MOUNT_PREFIX } from "./embed-contract.ts";
+import {
+  capChromeCapabilities,
+  isSessionEmbedMode,
+  type SessionEmbedChrome,
+} from "./session-embed-contract.ts";
 import { isResourceId } from "./workflow.ts";
 import { WORKFLOW_EDIT_PERMISSION } from "./workspace-nav.ts";
 
@@ -70,6 +87,11 @@ export const F6_EPIC = 307;
 export const F6_KEEP_STORY_OPEN = true;
 export const F6_ID = "F.6-search-filter-across-folders" as const;
 export const F6_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F7_STORY = 314;
+export const F7_EPIC = 307;
+export const F7_KEEP_STORY_OPEN = true;
+export const F7_ID = "F.7-embed-folder-parity" as const;
+export const F7_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
 export const F320_BUG = 320;
 export const F320_KEEP_OPEN = true;
 export const F320_ID = "cold-load-folder-deep-link" as const;
@@ -342,6 +364,34 @@ export const F6_HOME_FOLDER = {
   coldLoadHonorsFolderQuery: true,
 } as const;
 
+export const F7_HOME_FOLDER = {
+  yamlIsSourceOfTruth: true,
+  foldersNotInYaml: true,
+  draftsNeverRun: true,
+  vaultDisplayNameUuidOnly: true,
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv021FailClosedWithoutSessionEmbed: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  isolationSuccessIsDenial: true,
+  noCascadeDelete: true,
+  notAnN8nClone: true,
+  noKekInBrowser: true,
+  sameWorkflowHomeNoSecondTree: true,
+  railListEmptyMoveAfterSessionEmbed: true,
+  missingSessionEmbedIsAlert: true,
+  hostQueryDisplayOnly: true,
+  noMutateWithoutWorkflowEdit: true,
+  treeFromApiNotLocalStorage: true,
+  chipsPortalIframeUsesApiTree: true,
+  coldLoadFolderQueryStays: true,
+  selectedFolderListIsNonRecursive: true,
+  acrossSearchModesStay: true,
+  noNewApi: true,
+  d6MigrateInPlace: true,
+  keep314Open: true,
+  keep320Open: true,
+} as const;
+
 export const F2_HOME_FOLDER_SOURCES = [
   "src/lib/workflow-folder.ts",
   "src/lib/workflow-folder-client.ts",
@@ -351,6 +401,21 @@ export const F2_HOME_FOLDER_SOURCES = [
   "src/lib/identity-proxy.ts",
   "src/components/home/WorkflowHome.tsx",
   "src/app/workflows/page.tsx",
+] as const;
+
+export const F7_HOME_FOLDER_SOURCES = [
+  ...F2_HOME_FOLDER_SOURCES,
+  "src/components/embed/EmbedChrome.tsx",
+  "src/components/shell/WorkspaceShell.tsx",
+  "src/components/shell/WorkspaceProvider.tsx",
+  "next.config.ts",
+] as const;
+
+export const INVENTED_EMBED_FOLDER_TREES = [
+  "/embed/v2/folders",
+  "/embed/folders",
+  "/studio/folders",
+  "/portal/folders",
 ] as const;
 
 export function isWorkflowFolder(value: unknown): value is WorkflowFolder {
@@ -793,6 +858,83 @@ export function canMutateWorkflowFolders(
     return false;
   }
   return permissions.includes(WORKFLOW_EDIT_PERMISSION);
+}
+
+/**
+ * Embed folder writes use minted `session.embed.capabilities`.
+ * Missing bind or a set without `workflow.edit` cannot mutate.
+ */
+export function canMutateEmbedWorkflowFolders(
+  workspacePermissions: readonly string[] | null | undefined,
+  sessionEmbed: SessionEmbedChrome | null,
+): boolean {
+  return canMutateWorkflowFolders(
+    capChromeCapabilities(workspacePermissions, sessionEmbed),
+  );
+}
+
+export function embedFolderHomeMountsAfterSessionEmbed(input: {
+  sessionChecked: boolean;
+  sessionActive: boolean;
+  sessionEmbed: SessionEmbedChrome | null;
+  verified?: boolean;
+}): boolean {
+  if (!input.sessionChecked) {
+    return false;
+  }
+  return (
+    input.sessionActive &&
+    isSessionEmbedMode(input.sessionEmbed) &&
+    (input.verified ?? true)
+  );
+}
+
+export function embedWorkflowsHref(selection?: FolderSelection): string {
+  const base = `${EMBED_MOUNT_PREFIX}/workflows`;
+  if (!selection) {
+    return base;
+  }
+  return `${base}${applyFolderQuery("", selection)}`;
+}
+
+export function hostTenantWorkbenchSelectsFolderTree(): false {
+  return false;
+}
+
+export function folderTreePersistsInLocalStorage(source: string): boolean {
+  return /localStorage\s*[.\[]/.test(source);
+}
+
+export function folderExpandUsesSessionStorageOnly(source: string): boolean {
+  return (
+    source.includes("sessionStorage") &&
+    !source.includes("localStorage") &&
+    source.includes("FOLDER_EXPAND_STORAGE_PREFIX")
+  );
+}
+
+export function embedFolderUsesSharedWorkflowHome(homeSource: string): boolean {
+  return (
+    homeSource.includes("useEmbedMode") &&
+    homeSource.includes("data-f7=") &&
+    homeSource.includes("data-f7-tree") &&
+    homeSource.includes("listWorkflowFolders") &&
+    homeSource.includes("FOLDER_RAIL_LABEL") &&
+    homeSource.includes("canMutateEmbedWorkflowFolders") &&
+    !folderTreePersistsInLocalStorage(homeSource)
+  );
+}
+
+export function embedMissingSessionEmbedIsAlert(chromeSource: string): boolean {
+  return (
+    chromeSource.includes("EMBED_CHROME_MISSING_SESSION_MESSAGE") &&
+    chromeSource.includes('role="alert"') &&
+    chromeSource.includes("missingEmbed")
+  );
+}
+
+export function embedInventedFolderTree(source: string): boolean {
+  return INVENTED_EMBED_FOLDER_TREES.some((tree) => source.includes(`"${tree}"`));
 }
 
 export function homeFolderRailHasMutateVerbs(source: string): boolean {

@@ -1,6 +1,6 @@
 # Workflows home: folder hierarchy
 
-Status: **F.1 API + F.2–F.5 chrome landed** (this page remains the IA). Search / embed-parity slices are F.6–F.7. Folder membership is not in YAML.
+Status: **F.1 API + F.2–F.7 chrome landed** (this page remains the IA). Folder membership is not in YAML.
 
 **Product ask (Brent):** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
 
