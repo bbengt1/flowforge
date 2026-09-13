@@ -34,8 +34,13 @@
  * F.6: default search is across folders and shows folder path.
  * Optional “in this folder” still means this folder only — not
  * descendants. Rail can filter folder names; Unfiled stays
- * visible. No secret search. No marketplace. Commands do not
- * file via /actions. #320 cold-load `?folder=` stays first.
+ * visible. Across-folder hits join the same draft / last-run /
+ * activation extras as the selected-folder list. A failed
+ * unfiltered GET /workflows keeps scoped rows (null, not []).
+ * A failed GET /workflow-folders keeps the intended `?folder=`
+ * selection — do not resolve against [] as Unfiled. No secret
+ * search. No marketplace. Commands do not file via /actions.
+ * #320 cold-load `?folder=` stays first.
  *
  * F.7: `/embed/v1/workflows` mounts the same WorkflowHome rail
  * + list + empty states + move after GET /session
@@ -362,6 +367,9 @@ export const F6_HOME_FOLDER = {
   keep313Open: true,
   keep320Open: true,
   coldLoadHonorsFolderQuery: true,
+  searchJoinsWorkspaceMetadata: true,
+  preserveScopedRecordsWhenWorkspaceListFails: true,
+  keepIntendedFolderWhenFolderListFails: true,
 } as const;
 
 export const F7_HOME_FOLDER = {
@@ -583,6 +591,27 @@ export function resolveFolderSelection(
   return { kind: "unfiled" };
 }
 
+/**
+ * Only a successful GET /workflow-folders may resolve a UUID
+ * against the tree (including falling back to Unfiled). Failure
+ * must keep the intended `?folder=` selection — resolving against
+ * [] paints Unfiled while the workflow fetch still used the UUID.
+ */
+export function folderRailReady(folderListOk: boolean): boolean {
+  return folderListOk;
+}
+
+export function renderedFolderSelection(
+  intended: FolderSelection,
+  folders: readonly WorkflowFolder[],
+  folderListOk: boolean,
+): FolderSelection {
+  if (!folderRailReady(folderListOk)) {
+    return intended;
+  }
+  return resolveFolderSelection(intended, folders);
+}
+
 export function ancestorIdsForSelection(
   items: readonly WorkflowFolder[],
   selection: FolderSelection,
@@ -604,7 +633,7 @@ export function breadcrumbSegments(
   }
   const path = folderPath(items, selection.id);
   if (path.length === 0) {
-    return [{ selection: { kind: "unfiled" }, label: UNFILED_FOLDER_LABEL }];
+    return [{ selection, label: selection.id }];
   }
   return path.map((item) => ({
     selection: { kind: "folder" as const, id: item.id },
@@ -709,7 +738,38 @@ export function workflowFolderPathLabel(
     return UNFILED_FOLDER_LABEL;
   }
   const path = (item.folder ?? "").trim();
-  return path || UNFILED_FOLDER_LABEL;
+  return path || item.folderId;
+}
+
+/**
+ * Persist the unfiltered GET /workflows list only when it
+ * succeeds. Failure keeps null so across-folder search falls
+ * back to the selected-folder rows instead of showing no hits.
+ */
+export function workspaceWideWorkflowsResult<T>(
+  ok: boolean,
+  items: readonly T[],
+): readonly T[] | null {
+  return ok ? items : null;
+}
+
+/**
+ * Across-folder search (and the extras join for those rows)
+ * uses the unfiltered list when it loaded. A failed full list
+ * must not replace scoped rows with [].
+ */
+export function workspaceWideWorkflowsOrScoped<T>(
+  workspaceWide: readonly T[] | null,
+  scoped: readonly T[],
+): readonly T[] {
+  return workspaceWide ?? scoped;
+}
+
+export function homeListMetadataRecords<T>(
+  scoped: readonly T[],
+  workspaceWide: readonly T[] | null,
+): readonly T[] {
+  return workspaceWideWorkflowsOrScoped(workspaceWide, scoped);
 }
 
 export function selectionForWorkflowFolder(

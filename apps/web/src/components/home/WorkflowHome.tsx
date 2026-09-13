@@ -217,16 +217,21 @@ import {
   folderNotEmptyDetail,
   folderQueryValue,
   folderHomeListMode,
+  folderRailReady,
+  homeListMetadataRecords,
   intendedFolderSelectionFromUrl,
   selectedFolderListFolderId,
   matchesWorkflowNameOrSlug,
   parseFolderQuery,
   parseWorkflowMoveDragPayload,
   readExpandedFolderIds,
+  renderedFolderSelection,
   resolveFolderSelection,
   selectionAfterFolderDelete,
   shouldDropFolderQueryOnWorkspaceMemory,
   shouldRewriteFolderDeepLink,
+  workspaceWideWorkflowsOrScoped,
+  workspaceWideWorkflowsResult,
   unfiledEmptyUsesHomeVerbs,
   workflowAlreadyInFolder,
   workflowFolderPathLabel,
@@ -366,9 +371,11 @@ function WorkflowHomeSession() {
       }),
     [dropPreviousFolder, folderParam],
   );
-  const selection = foldersReady
-    ? resolveFolderSelection(intendedSelection, folders)
-    : intendedSelection;
+  const selection = renderedFolderSelection(
+    intendedSelection,
+    folders,
+    foldersReady,
+  );
   const listMode = folderHomeListMode(filters.query, searchInThisFolder);
   const acrossFolderSearch = listMode === "across-search";
   const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
@@ -404,7 +411,7 @@ function WorkflowHomeSession() {
   );
 
   const displayRecords = acrossFolderSearch
-    ? (workspaceWorkflows ?? records)
+    ? workspaceWideWorkflowsOrScoped(workspaceWorkflows, records)
     : records;
   const items = useMemo(
     () =>
@@ -445,7 +452,7 @@ function WorkflowHomeSession() {
     selection,
     folderCount: folders.length,
     scopedRecordCount: acrossFolderSearch
-      ? (workspaceWorkflows?.length ?? 0)
+      ? workspaceWideWorkflowsOrScoped(workspaceWorkflows, records).length
       : records.length,
     visibleCount: visible.length,
     workspaceWorkflowCount,
@@ -556,12 +563,11 @@ function WorkflowHomeSession() {
       return;
     }
     if (!folderList.ok) {
-      setFolders([]);
-      setFoldersReady(true);
       setProblem(folderList.problem);
+      setFoldersReady(folderRailReady(false));
     } else {
       setFolders(folderList.items);
-      setFoldersReady(true);
+      setFoldersReady(folderRailReady(true));
     }
     const intended = selectionOverride ?? intendedSelection;
     const resolved = resolveFolderSelection(
@@ -604,9 +610,13 @@ function WorkflowHomeSession() {
     if (!refreshGate.current.isCurrent(token)) {
       return;
     }
-    setWorkspaceWorkflows(all.ok ? all.items : []);
+    const workspaceItems = all.ok
+      ? workspaceWideWorkflowsResult(true, all.items)
+      : workspaceWideWorkflowsResult(false, []);
+    setWorkspaceWorkflows(workspaceItems);
+    const metadataRecords = homeListMetadataRecords(list.items, workspaceItems);
     const draftEntries = await Promise.all(
-      list.items.map(async (item) => {
+      metadataRecords.map(async (item) => {
         const draft = await getWorkflowDraft(identity, item.id);
         return [item.id, draft.ok ? draft.draft : null] as const;
       }),
@@ -623,7 +633,7 @@ function WorkflowHomeSession() {
     setDrafts(nextDrafts);
     if (canSeeExecutionsNav(permissions ?? [])) {
       const runEntries = await Promise.all(
-        list.items.map(async (item) => {
+        metadataRecords.map(async (item) => {
           const runs = await listWorkflowExecutions(identity, item.id, {
             limit: 1,
           });
@@ -662,7 +672,7 @@ function WorkflowHomeSession() {
     if (canViewActivation) {
       const nextActivations = await loadHomeActivationStates(
         identity,
-        list.items,
+        metadataRecords,
         { canView: canViewActivation },
       );
       if (!refreshGate.current.isCurrent(token)) {
