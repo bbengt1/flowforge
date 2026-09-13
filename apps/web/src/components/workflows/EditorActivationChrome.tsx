@@ -150,6 +150,7 @@ export function EditorActivationChrome({
       id={EDITOR_ACTIVATION_PANEL_ID}
       aria-labelledby={EDITOR_ACTIVATION_HEADING_ID}
       data-editor-activation="panel"
+      data-uxl8="activation"
       data-r6-d2={R6_CONFIRMATION.d2ComposeEnablePlusVersionPin}
       data-r6-d3={R6_CONFIRMATION.d3TriggersStayWorkflowLevel}
       data-r6-draft-live={R6_CONFIRMATION.draftsNeverLookLive}
@@ -295,6 +296,7 @@ function CompactActivation({
   return (
     <div
       data-editor-activation="compact"
+      data-uxl8="activation"
       data-r6-d2={R6_CONFIRMATION.d2ComposeEnablePlusVersionPin}
       data-r6-d3={R6_CONFIRMATION.d3TriggersStayWorkflowLevel}
       data-r6-draft-live={R6_CONFIRMATION.draftsNeverLookLive}

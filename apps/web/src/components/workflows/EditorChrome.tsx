@@ -7,6 +7,12 @@ import {
   EDITOR_SELECTION_STATUS_ID,
 } from "@/lib/e12-accessibility-contract";
 import {
+  SATELLITE_HEADER_CLASS,
+  SATELLITE_HIDE_BUTTON_CLASS,
+  SATELLITE_RAIL_BUTTON_CLASS,
+  SATELLITE_TITLE_CLASS,
+} from "@/lib/aesthetic-usability-density";
+import {
   EDITOR_LIBRARY_COLUMN_WIDTH,
   EDITOR_LIBRARY_PANEL_ID,
   EDITOR_LIBRARY_SATELLITE_ID,
@@ -53,7 +59,10 @@ export function EditorChrome({
   overlays,
 }: EditorChromeProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--background)]">
+    <div
+      data-uxl8="editor"
+      className="flex h-full min-h-0 flex-col bg-[var(--background)]"
+    >
       {identityGate}
       {topBar}
       <p
@@ -80,14 +89,14 @@ export function EditorChrome({
             className="flex w-full shrink-0 flex-col overflow-hidden border-zinc-200 bg-white max-md:!w-full max-md:border-b md:border-r"
             style={{ width: EDITOR_LIBRARY_COLUMN_WIDTH }}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-              <p className="text-sm font-medium text-zinc-800">Library</p>
+            <div className={SATELLITE_HEADER_CLASS}>
+              <p className={SATELLITE_TITLE_CLASS}>Library</p>
               <button
                 type="button"
                 onClick={onToggleLibrary}
                 aria-expanded
                 aria-controls={EDITOR_LIBRARY_PANEL_ID}
-                className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                className={SATELLITE_HIDE_BUTTON_CLASS}
               >
                 Hide
               </button>
@@ -109,7 +118,7 @@ export function EditorChrome({
               onClick={onToggleLibrary}
               aria-expanded={false}
               aria-controls={EDITOR_LIBRARY_PANEL_ID}
-              className="rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:rotate-180 md:px-1 md:py-3"
+              className={SATELLITE_RAIL_BUTTON_CLASS}
             >
               Library
             </button>
@@ -127,8 +136,8 @@ export function EditorChrome({
             className="order-first flex max-h-[46%] w-full shrink-0 flex-col overflow-auto border-zinc-200 bg-white max-md:!w-full max-md:border-b md:order-none md:max-h-none md:border-l"
             style={{ width: EDITOR_NDV_COLUMN_WIDTH }}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-              <p className="text-sm font-medium text-zinc-800">
+            <div className={SATELLITE_HEADER_CLASS}>
+              <p className={SATELLITE_TITLE_CLASS}>
                 {EDITOR_NDV_SATELLITE_LABEL}
               </p>
               <button
@@ -136,7 +145,7 @@ export function EditorChrome({
                 onClick={onToggleInspector}
                 aria-expanded
                 aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
-                className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                className={SATELLITE_HIDE_BUTTON_CLASS}
               >
                 Hide
               </button>
@@ -156,7 +165,7 @@ export function EditorChrome({
               onClick={onToggleInspector}
               aria-expanded={false}
               aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
-              className="rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:px-1 md:py-3"
+              className={SATELLITE_RAIL_BUTTON_CLASS}
             >
               {EDITOR_NDV_SATELLITE_LABEL}
             </button>

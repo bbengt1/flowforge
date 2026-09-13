@@ -1,4 +1,8 @@
 import Link from "next/link";
+import {
+  LOUD_ERROR_CLASS,
+  LOUD_INDETERMINATE_CLASS,
+} from "@/lib/aesthetic-usability-density";
 import { INDETERMINATE_STATUS_HELP } from "@/lib/execution-contract";
 import {
   HOME_ROW_SCAN,
@@ -22,16 +26,17 @@ type HomeLastRunStatusProps = {
 };
 
 function lastRunClassName(kind: HomeLastRunKind): string {
+  const chip = "inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-medium";
   if (kind === "indeterminate") {
-    return "inline-flex max-w-full items-center gap-1.5 rounded-full border-2 border-amber-700 bg-amber-50 px-2.5 py-0.5 text-sm font-medium text-amber-950";
+    return `${chip} ${LOUD_INDETERMINATE_CLASS}`;
   }
   if (kind === "waiting") {
-    return "inline-flex max-w-full items-center gap-1.5 rounded-full border-2 border-indigo-700 bg-indigo-50 px-2.5 py-0.5 text-sm font-medium text-indigo-950";
+    return `${chip} border-2 border-indigo-700 bg-indigo-50 text-indigo-950`;
   }
   if (kind === "failed") {
-    return "inline-flex max-w-full items-center gap-1.5 rounded-full border border-rose-700 bg-rose-50 px-2.5 py-0.5 text-sm font-medium text-rose-950";
+    return `${chip} ${LOUD_ERROR_CLASS}`;
   }
-  return "inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-0.5 text-sm font-medium text-zinc-700";
+  return `${chip} border border-zinc-300 bg-zinc-50 text-zinc-700`;
 }
 
 export function HomeLastRunStatus({

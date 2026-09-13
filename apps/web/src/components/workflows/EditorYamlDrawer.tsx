@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { SATELLITE_BODY_PAD_CLASS, SATELLITE_HEADER_CLASS } from "@/lib/aesthetic-usability-density";
 import { EDITOR_YAML_PANEL_ID } from "@/lib/e12-accessibility-contract";
 
 type EditorYamlDrawerProps = {
@@ -25,11 +26,11 @@ export function EditorYamlDrawer({
       className="flex max-h-[42%] min-h-[12rem] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white"
     >
       {tools ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2">
+        <div className={`${SATELLITE_HEADER_CLASS} shrink-0 flex-wrap gap-2`}>
           {tools}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
+      <div className={`min-h-0 flex-1 overflow-auto ${SATELLITE_BODY_PAD_CLASS}`}>{children}</div>
     </section>
   );
 }

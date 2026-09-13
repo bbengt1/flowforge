@@ -23,6 +23,11 @@ import {
   hostDisplayConflictsWithVerified,
 } from "@/lib/embed-tenancy-contract";
 import {
+  LOUD_ERROR_CLASS,
+  LOUD_WARNING_CLASS,
+  TYPE_CAPTION_CLASS,
+} from "@/lib/aesthetic-usability-density";
+import {
   REWRITE_EMBED_MOUNT_HELP,
   rewriteEmbedMountState,
   rewriteEmbedShellToolsVisible,
@@ -99,6 +104,7 @@ export function EmbedChrome({
     <header
       className="border-b border-zinc-200 bg-white/80"
       data-rewrite-embed-mount={mountState}
+      data-uxl8="embed"
     >
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <Link
@@ -118,7 +124,7 @@ export function EmbedChrome({
           <p
             role="alert"
             data-doherty-wait="session-embed"
-            className="text-xs text-red-800"
+            className={`${TYPE_CAPTION_CLASS} font-semibold text-red-800`}
             title={SESSION_EMBED_CHROME_HELP}
           >
             {EMBED_CHROME_MISSING_SESSION_MESSAGE}
@@ -126,7 +132,7 @@ export function EmbedChrome({
         ) : (
           <p
             data-doherty-wait="session-embed"
-            className="text-xs text-zinc-500"
+            className={`${TYPE_CAPTION_CLASS} text-zinc-500`}
           >
             {EMBED_MOUNT_PREFIX} · {SESSION_EMBED_ROUTE_MAP_SOURCE} ·{" "}
             {SESSION_EMBED_WAITING_HELP}
@@ -146,7 +152,7 @@ export function EmbedChrome({
         </div>
       </div>
       {chrome ? (
-        <p className="px-4 pb-2 text-[11px] text-zinc-500">
+        <p className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} text-zinc-500`}>
           {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}{" "}
           {REWRITE_EMBED_MOUNT_HELP}
         </p>
@@ -154,7 +160,7 @@ export function EmbedChrome({
         <p
           role="alert"
           data-doherty-wait="session-embed"
-          className="px-4 pb-2 text-[11px] text-red-800"
+          className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} font-semibold text-red-800`}
         >
           {EMBED_CHROME_MISSING_SESSION_MESSAGE}
         </p>
@@ -189,7 +195,7 @@ export function EmbedChrome({
       {rejectedAssertion ? (
         <div
           role="alert"
-          className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950"
+          className={`border-t px-4 py-3 text-sm ${LOUD_ERROR_CLASS}`}
         >
           {EMBED_URL_SECRET_MESSAGE}
         </div>
@@ -197,7 +203,7 @@ export function EmbedChrome({
       {tenancyMismatch ? (
         <div
           role="alert"
-          className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950"
+          className={`border-t px-4 py-3 text-sm ${LOUD_ERROR_CLASS}`}
         >
           {EMBED_TENANCY_MISMATCH_MESSAGE}
         </div>
@@ -205,7 +211,7 @@ export function EmbedChrome({
       {hostConflict ? (
         <div
           role="status"
-          className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          className={`border-t px-4 py-3 text-sm ${LOUD_WARNING_CLASS}`}
         >
           {EMBED_HOST_MISMATCH_MESSAGE} GET /session verified{" "}
           {verified ? embedVerifiedLabel(verified) : ""}.

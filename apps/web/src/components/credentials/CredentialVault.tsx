@@ -135,7 +135,7 @@ export function CredentialVault() {
   }, [ready, identity]);
 
   return (
-    <div className="space-y-6">
+    <div data-uxl8="vault" className="space-y-6">
       {!ready ? (
         <SessionSetupHint purpose="before listing credentials." />
       ) : null}

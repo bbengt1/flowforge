@@ -47,6 +47,7 @@ import {
   inspectorEditConstraint,
   inspectorFocus,
 } from "@/lib/editor-inspector";
+import { SATELLITE_NDV_HEADER_CLASS } from "@/lib/aesthetic-usability-density";
 import {
   EDITOR_NDV_HEADING_ID,
   EDITOR_NDV_SHELL_ID,
@@ -267,7 +268,7 @@ export function EditorInspector({
           data-ndv-shell="node"
           className="space-y-6"
         >
-          <header className="border-b border-zinc-200 px-4 py-3">
+          <header data-uxl8="ndv" className={SATELLITE_NDV_HEADER_CLASS}>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               {ndvConversationEyebrow("node")}
             </p>

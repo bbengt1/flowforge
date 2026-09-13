@@ -660,7 +660,7 @@ function WorkflowHomeSession() {
   }
 
   return (
-    <div className="space-y-6">
+    <div data-uxl8="home" className="space-y-6">
       {!ready ? (
         <SessionSetupHint purpose="before listing workflows." />
       ) : null}

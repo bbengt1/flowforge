@@ -28,6 +28,10 @@
  * inbox, silent success toast as the only ending.
  */
 
+import {
+  LOUD_ERROR_SURFACE,
+  LOUD_INDETERMINATE_SURFACE,
+} from "./aesthetic-usability-density.ts";
 import { isExecutionAwaitingApproval } from "./approval.ts";
 import { DOHERTY_PENDING_CHROME } from "./doherty-pending-chrome.ts";
 import { EDITOR_CHROME } from "./editor-chrome.ts";
@@ -244,11 +248,11 @@ export function peakEndHeadline(kind: PeakEndKind): string {
 export function peakEndSurfaceClassName(kind: PeakEndKind): string {
   switch (kind) {
     case "indeterminate":
-      return "border-2 border-amber-700 bg-amber-50";
+      return LOUD_INDETERMINATE_SURFACE;
     case "waiting":
       return "border-2 border-indigo-700 bg-indigo-50";
     case "failed":
-      return "border-2 border-rose-700 bg-rose-50";
+      return LOUD_ERROR_SURFACE;
     case "success":
       return "border-2 border-emerald-700 bg-emerald-50";
     case "canceled":

@@ -13,6 +13,7 @@ import {
   editorDrawerTriggerId,
   editorTopBarControlLabel,
 } from "@/lib/e12-accessibility-contract";
+import { TYPE_CAPTION_CLASS } from "@/lib/aesthetic-usability-density";
 import {
   EDITOR_TOPBAR_GROUP_LABELS,
   EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS,
@@ -332,7 +333,7 @@ export function EditorTopBar({
           </div>
           <p
             data-editor-working-memory="test-run"
-            className="max-w-[16rem] text-[11px] leading-snug text-zinc-500"
+            className={`max-w-[16rem] ${TYPE_CAPTION_CLASS} leading-snug text-zinc-500`}
           >
             {memory.testRunCopy}
             {memory.canTestRun ? null : ` ${memory.testRunHelp}`}
