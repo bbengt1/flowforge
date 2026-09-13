@@ -749,8 +749,8 @@ export function workflowFolderPathLabel(
 export function workspaceWideWorkflowsResult<T>(
   ok: boolean,
   items: readonly T[],
-): readonly T[] | null {
-  return ok ? items : null;
+): T[] | null {
+  return ok ? [...items] : null;
 }
 
 /**
