@@ -29,6 +29,15 @@ import {
   F5_ID,
   F5_KEEP_STORY_OPEN,
   F5_STORY,
+  F6_BRIEF,
+  F6_EPIC,
+  F6_HOME_FOLDER,
+  F6_ID,
+  F6_KEEP_STORY_OPEN,
+  F6_STORY,
+  F320_BUG,
+  F320_ID,
+  F320_KEEP_OPEN,
   FOLDER_EMPTY_CREATE_LABEL,
   FOLDER_EMPTY_HEADING,
   FOLDER_EMPTY_HELP,
@@ -39,7 +48,12 @@ import {
   FOLDER_DEPTH_HELP,
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
+  FOLDER_PATH_REVEAL_LABEL,
   FOLDER_QUERY,
+  FOLDER_RAIL_FILTER_LABEL,
+  FOLDER_SEARCH_ACROSS_LABEL,
+  FOLDER_SEARCH_HELP,
+  FOLDER_SEARCH_IN_FOLDER_LABEL,
   FOLDER_SIBLING_HELP,
   FOLDER_UNFILED_LOCKED_HELP,
   MAX_FOLDER_DEPTH,
@@ -54,15 +68,21 @@ import {
   canDropWorkflowOnFolder,
   canMutateWorkflowFolders,
   childFolderCount,
+  coldLoadListFolderId,
   consumeFolderWorkspaceChange,
+  constrainItemsToFolderSelection,
   createFolderParentId,
   defaultWorkflowMoveTarget,
   emptyFolderDeleteAllowed,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
   folderHomeEmptyKind,
+  folderHomeListMode,
   folderIdForMove,
+  filterFolderTreeByName,
   folderExpandStorageKey,
+  folderIdsToExpandForFilter,
+  folderSearchListsAcrossFolders,
   folderMutateBegin,
   folderMutateFinish,
   folderMutateLabel,
@@ -80,19 +100,29 @@ import {
   homeWorkflowRowHasMoveVerb,
   homeFolderRailNestsMain,
   homeUsesPrefixInNameAsPrimaryOrganizer,
+  intendedFolderSelectionFromUrl,
+  isCompleteWorkspaceLookupKey,
   isWorkflowFolder,
   isWorkflowFolderProxySegments,
+  matchesWorkflowNameOrSlug,
   listWorkflowsPath,
   normalizeFolderName,
   parseFolderQuery,
   parseWorkflowMoveDragPayload,
+  railFilterKeepsUnfiled,
   readExpandedFolderIds,
   resolveFolderSelection,
+  selectedFolderListFolderId,
+  selectedFolderListIncludesDescendants,
+  selectionForWorkflowFolder,
+  shouldDropFolderQueryOnWorkspaceMemory,
+  shouldRewriteFolderDeepLink,
   selectionAfterFolderDelete,
   siblingFolderNameTaken,
   unfiledEmptyUsesHomeVerbs,
   unfiledIsAlwaysPresentAndNotPersisted,
   workflowAlreadyInFolder,
+  workflowFolderPathLabel,
   workflowMoveBody,
   workflowMoveDragPayload,
   workflowMoveFolderPath,
@@ -290,7 +320,7 @@ describe("F.2 home folder rail + select", () => {
     assert.match(home, /data-home-folder-rail="unfiled"/);
     assert.match(home, /data-home-folder-crumb/);
     assert.match(home, /listWorkflowFolders/);
-    assert.match(home, /folderId: workflowsFolderIdQuery/);
+    assert.match(home, /folderId: selectedFolderListFolderId/);
     assert.match(home, /FOLDER_QUERY/);
     assert.match(home, /consumeFolderWorkspaceChange/);
     assert.match(home, /MANUAL_START_QUERY/);
@@ -786,7 +816,6 @@ describe("F.5 empty states + Unfiled", () => {
     assert.match(home, /UNFILED_EMPTY_FILED_HELP/);
     assert.match(home, /UNFILED_EMPTY_NONE_HELP/);
     assert.equal(F5_HOME_FOLDER.noF6Search, true);
-    assert.doesNotMatch(home, /search across folders/i);
   });
 
   it("Unfiled is always in the rail and is not a persisted folder", () => {
@@ -837,5 +866,308 @@ describe("F.5 empty states + Unfiled", () => {
     assert.equal(F5_HOME_FOLDER.unfiledIsNotPersisted, true);
     assert.equal(F2_HOME_FOLDER.unfiledIsVirtual, true);
     assert.equal(F3_HOME_FOLDER.unfiledCannotRenameOrDelete, true);
+  });
+});
+
+describe("#320 cold-load ?folder= deep link", () => {
+  it("keeps #320 open and honors ?folder=<uuid> on first fetch, not click", () => {
+    assert.equal(F320_BUG, 320);
+    assert.equal(F320_KEEP_OPEN, true);
+    assert.equal(F320_ID, "cold-load-folder-deep-link");
+    assert.equal(F6_HOME_FOLDER.keep320Open, true);
+    assert.equal(F6_HOME_FOLDER.coldLoadHonorsFolderQuery, true);
+    assert.deepEqual(intendedFolderSelectionFromUrl(ops.id, { dropPreviousFolder: true }), {
+      kind: "folder",
+      id: ops.id,
+    });
+    assert.deepEqual(intendedFolderSelectionFromUrl(null, { dropPreviousFolder: true }), {
+      kind: "unfiled",
+    });
+    assert.equal(shouldDropFolderQueryOnWorkspaceMemory(ops.id, true), false);
+    assert.equal(shouldDropFolderQueryOnWorkspaceMemory("unfiled", true), true);
+    assert.equal(shouldDropFolderQueryOnWorkspaceMemory(null, true), true);
+    assert.equal(shouldDropFolderQueryOnWorkspaceMemory(ops.id, false), false);
+    assert.equal(isCompleteWorkspaceLookupKey("||"), false);
+    assert.equal(isCompleteWorkspaceLookupKey("|"), false);
+    assert.equal(isCompleteWorkspaceLookupKey(""), false);
+    assert.equal(isCompleteWorkspaceLookupKey("|acme|ops"), true);
+    assert.equal(isCompleteWorkspaceLookupKey("acme|ops"), true);
+    const storage = new Map<string, string>();
+    const memory = {
+      getItem(key: string) {
+        return storage.get(key) ?? null;
+      },
+      setItem(key: string, value: string) {
+        storage.set(key, value);
+      },
+    };
+    assert.equal(consumeFolderWorkspaceChange("acme|ops", memory), false);
+    assert.equal(consumeFolderWorkspaceChange("||", memory), false);
+    assert.equal(memory.getItem("ff.home.folder.workspace"), "acme|ops");
+    assert.equal(consumeFolderWorkspaceChange("acme|prod", memory), true);
+    assert.equal(
+      coldLoadListFolderId(ops.id, [ops, oncall], true),
+      ops.id,
+    );
+    assert.equal(
+      coldLoadListFolderId(ops.id, [], false),
+      ops.id,
+    );
+    assert.equal(listWorkflowsPath(coldLoadListFolderId(ops.id, [], false)), `/workflows?folderId=${ops.id}`);
+    assert.notEqual(
+      listWorkflowsPath(coldLoadListFolderId(ops.id, [], false)),
+      "/workflows?folderId=unfiled",
+    );
+    assert.equal(
+      coldLoadListFolderId(ops.id, [platform], true),
+      "unfiled",
+    );
+    assert.equal(
+      shouldRewriteFolderDeepLink({
+        intended: { kind: "folder", id: ops.id },
+        resolved: { kind: "unfiled" },
+        folderListOk: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRewriteFolderDeepLink({
+        intended: { kind: "folder", id: ops.id },
+        resolved: { kind: "unfiled" },
+        folderListOk: true,
+      }),
+      true,
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /intendedFolderSelectionFromUrl/);
+    assert.match(home, /shouldDropFolderQueryOnWorkspaceMemory/);
+    assert.match(home, /shouldRewriteFolderDeepLink/);
+    assert.match(home, /folderId: selectedFolderListFolderId/);
+    assert.doesNotMatch(
+      home,
+      /dropPreviousFolder\s*\?\s*\{\s*kind:\s*"unfiled"/,
+    );
+    const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /#320/);
+    assert.match(frontend, /keep #320 open/i);
+  });
+});
+
+describe("F.6 search / filter across folders", () => {
+  it("keeps #313 open and cites the folder IA", () => {
+    assert.equal(F6_STORY, 313);
+    assert.equal(F6_EPIC, 307);
+    assert.equal(F6_KEEP_STORY_OPEN, true);
+    assert.equal(F6_ID, "F.6-search-filter-across-folders");
+    assert.equal(F6_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F6_HOME_FOLDER.keep313Open, true);
+    assert.equal(F6_HOME_FOLDER.defaultSearchAcrossFolders, true);
+    assert.equal(F6_HOME_FOLDER.resultsShowFolderPath, true);
+    assert.equal(F6_HOME_FOLDER.optionalInThisFolder, true);
+    assert.equal(F6_HOME_FOLDER.selectedFolderListIsNonRecursive, true);
+    assert.equal(F6_HOME_FOLDER.acrossSearchIsSeparateMode, true);
+    assert.equal(F6_HOME_FOLDER.folderIdIsNotATreeWalk, true);
+    assert.equal(F6_HOME_FOLDER.railFiltersFolderNames, true);
+    assert.equal(F6_HOME_FOLDER.unfiledAlwaysVisibleInRailFilter, true);
+    assert.equal(F6_HOME_FOLDER.noSecretSearch, true);
+    assert.equal(F6_HOME_FOLDER.noMarketplace, true);
+    assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
+    assert.equal(F6_HOME_FOLDER.clientNameSlugFilterFirst, true);
+    assert.equal(F6_HOME_FOLDER.noInventedQApi, true);
+    assert.equal(F6_HOME_FOLDER.noNewApi, true);
+    assert.equal(F6_HOME_FOLDER.foldersNotInYaml, true);
+    assert.equal(F6_HOME_FOLDER.draftsNeverRun, true);
+    assert.equal(F6_HOME_FOLDER.noKekInBrowser, true);
+    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    assert.match(brief, /F\.6/);
+    assert.match(brief, /Across folders/);
+    const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /#313/);
+    assert.match(frontend, /keep #313 open/i);
+    assert.match(frontend, /across folders/i);
+    assert.match(frontend, /not a tree walk of children/i);
+    assert.match(frontend, /separate mode/i);
+  });
+
+  it("keeps selected-folder GET /workflows?folderId= non-recursive", () => {
+    assert.equal(selectedFolderListIncludesDescendants(), false);
+    assert.equal(selectedFolderListFolderId({ kind: "folder", id: ops.id }), ops.id);
+    assert.equal(
+      listWorkflowsPath(selectedFolderListFolderId({ kind: "folder", id: ops.id })),
+      `/workflows?folderId=${ops.id}`,
+    );
+    assert.equal(folderHomeListMode("", false), "selected");
+    assert.equal(folderHomeListMode("deploy", false), "across-search");
+    assert.equal(folderHomeListMode("deploy", true), "selected");
+    const inOps = { name: "Parent deploy", slug: "ops-root", folderId: ops.id };
+    const inOncall = {
+      name: "Child deploy",
+      slug: "ops-oncall",
+      folderId: oncall.id,
+    };
+    const unfiled = { name: "Scratch deploy", slug: "scratch", folderId: null };
+    const items = [inOps, inOncall, unfiled];
+    assert.deepEqual(
+      constrainItemsToFolderSelection(items, { kind: "folder", id: ops.id }).map(
+        (item) => item.slug,
+      ),
+      ["ops-root"],
+    );
+    assert.deepEqual(
+      constrainItemsToFolderSelection(items, {
+        kind: "folder",
+        id: oncall.id,
+      }).map((item) => item.slug),
+      ["ops-oncall"],
+    );
+    const across = items.filter((item) =>
+      matchesWorkflowNameOrSlug(item, "deploy"),
+    );
+    assert.deepEqual(
+      across.map((item) => item.slug),
+      ["ops-root", "ops-oncall", "scratch"],
+    );
+    const inThisFolder = constrainItemsToFolderSelection(across, {
+      kind: "folder",
+      id: ops.id,
+    });
+    assert.deepEqual(
+      inThisFolder.map((item) => item.slug),
+      ["ops-root"],
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /selectedFolderListFolderId/);
+    assert.match(home, /folderHomeListMode/);
+    assert.match(home, /listWorkflows\(identity\)/);
+    assert.doesNotMatch(home, /includeDescendants|recursiveFolder|treeWalk/i);
+    assert.equal(F6_HOME_FOLDER.selectedFolderListIsNonRecursive, true);
+    assert.equal(F6_HOME_FOLDER.acrossSearchIsSeparateMode, true);
+  });
+
+  it("filters name/slug across folders and shows folder path", () => {
+    assert.equal(folderSearchListsAcrossFolders("deploy", false), true);
+    assert.equal(folderSearchListsAcrossFolders("deploy", true), false);
+    assert.equal(folderSearchListsAcrossFolders("  ", false), false);
+    assert.equal(FOLDER_SEARCH_ACROSS_LABEL, "Search across folders");
+    assert.match(FOLDER_SEARCH_HELP, /name or slug/i);
+    assert.match(FOLDER_SEARCH_HELP, /never searched/i);
+    const filed = {
+      name: "Deploy app",
+      slug: "ops--deploy",
+      folderId: oncall.id,
+      folder: "Ops / On-call",
+    };
+    const unfiled = {
+      name: "Scratch",
+      slug: "scratch",
+      folderId: null,
+      folder: "",
+    };
+    assert.equal(matchesWorkflowNameOrSlug(filed, "deploy"), true);
+    assert.equal(matchesWorkflowNameOrSlug(filed, "ops--deploy"), true);
+    assert.equal(matchesWorkflowNameOrSlug(filed, "scratch"), false);
+    assert.equal(matchesWorkflowNameOrSlug(unfiled, "SCRATCH"), true);
+    assert.equal(workflowFolderPathLabel(filed), "Ops / On-call");
+    assert.equal(workflowFolderPathLabel(unfiled), UNFILED_FOLDER_LABEL);
+    assert.deepEqual(selectionForWorkflowFolder(oncall.id), {
+      kind: "folder",
+      id: oncall.id,
+    });
+    assert.deepEqual(selectionForWorkflowFolder(null), { kind: "unfiled" });
+    const across = [filed, unfiled].filter((item) =>
+      matchesWorkflowNameOrSlug(item, "deploy"),
+    );
+    assert.deepEqual(
+      across.map((item) => workflowFolderPathLabel(item)),
+      ["Ops / On-call"],
+    );
+    assert.equal(listWorkflowsPath(), "/workflows");
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /data-f6="search"/);
+    assert.match(home, /data-home-folder-search/);
+    assert.match(home, /data-home-folder-path/);
+    assert.match(home, /FOLDER_SEARCH_ACROSS_LABEL/);
+    assert.match(home, /workflowFolderPathLabel/);
+    assert.match(home, /listWorkflows\(identity\)/);
+    assert.match(home, /folderId: selectedFolderListFolderId/);
+    assert.doesNotMatch(home, /folderId:\s*filters\.query/);
+    const client = source("src/lib/workflow-client.ts");
+    assert.doesNotMatch(client, /[?&]q=/);
+    assert.match(FOLDER_PATH_REVEAL_LABEL, /folder/i);
+  });
+
+  it("optional in-this-folder constrains Unfiled or the selection", () => {
+    assert.equal(FOLDER_SEARCH_IN_FOLDER_LABEL, "in this folder");
+    const items = [
+      { name: "Deploy app", slug: "ops--deploy", folderId: oncall.id },
+      { name: "Deploy scratch", slug: "scratch", folderId: null },
+      { name: "Other", slug: "other", folderId: platform.id },
+    ];
+    const named = items.filter((item) =>
+      matchesWorkflowNameOrSlug(item, "deploy"),
+    );
+    assert.deepEqual(
+      constrainItemsToFolderSelection(named, { kind: "unfiled" }).map(
+        (item) => item.slug,
+      ),
+      ["scratch"],
+    );
+    assert.deepEqual(
+      constrainItemsToFolderSelection(named, {
+        kind: "folder",
+        id: oncall.id,
+      }).map((item) => item.slug),
+      ["ops--deploy"],
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /data-home-folder-search-scope="in-folder"/);
+    assert.match(home, /FOLDER_SEARCH_IN_FOLDER_LABEL/);
+    assert.match(home, /searchInThisFolder/);
+    assert.match(home, /constrainItemsToFolderSelection/);
+  });
+
+  it("filters rail folder names and keeps Unfiled visible", () => {
+    assert.equal(FOLDER_RAIL_FILTER_LABEL, "Filter folders");
+    const tree = buildFolderTree([ops, oncall, platform]);
+    const filtered = filterFolderTreeByName(tree, "on-call");
+    assert.deepEqual(
+      filtered.map((node) => node.name),
+      ["Ops"],
+    );
+    assert.deepEqual(
+      filtered[0]?.children.map((node) => node.name),
+      ["On-call"],
+    );
+    assert.equal(
+      filterFolderTreeByName(tree, "platform").some(
+        (node) => node.name === "Ops",
+      ),
+      false,
+    );
+    assert.deepEqual(folderIdsToExpandForFilter(filtered), [ops.id]);
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.equal(railFilterKeepsUnfiled(home), true);
+    assert.match(home, /data-home-folder-rail-filter/);
+    assert.match(home, /FOLDER_RAIL_FILTER_LABEL/);
+    assert.match(home, /filterFolderTreeByName/);
+    assert.match(home, /data-home-folder-rail="unfiled"/);
+    assert.equal(F6_HOME_FOLDER.unfiledAlwaysVisibleInRailFilter, true);
+  });
+
+  it("does not search secrets, invent q, or file via /actions", () => {
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const client = source("src/lib/workflow-client.ts");
+    const search = source("src/lib/workspace-search.ts");
+    assert.match(FOLDER_SEARCH_HELP, /never searched/i);
+    assert.match(home, /FOLDER_SEARCH_HELP/);
+    assert.doesNotMatch(home, /marketplace/i);
+    assert.doesNotMatch(home, /\/actions/);
+    assert.doesNotMatch(client, /[?&]q=/);
+    assert.match(search, /searchIndexContainsSecret/);
+    assert.equal(F6_HOME_FOLDER.noSecretSearch, true);
+    assert.equal(F6_HOME_FOLDER.noInventedQApi, true);
+    assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
+    assert.match(home, /subscribeWorkspaceCommands/);
+    assert.match(home, /createFromYaml/);
   });
 });
