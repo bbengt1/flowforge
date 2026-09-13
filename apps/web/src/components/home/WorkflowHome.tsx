@@ -48,6 +48,17 @@ import {
   type HomeActivationFilter,
 } from "@/lib/home-activation";
 import { HOME_ROW_SCAN_HELP } from "@/lib/home-row-scan";
+import {
+  HOME_EMPTY_CREATE_LABEL,
+  HOME_EMPTY_HEADING,
+  HOME_EMPTY_HELP,
+  HOME_EMPTY_IMPORT_LABEL,
+  HOME_EMPTY_TEMPLATE_HELP,
+  HOME_EMPTY_TEMPLATE_LABEL,
+  HOME_FILTERED_EMPTY_HEADING,
+  HOME_FILTERED_EMPTY_HELP,
+  homeEmptyKind,
+} from "@/lib/empty-states-teach-model";
 import { loadHomeActivationStates } from "@/lib/home-activation-client";
 import {
   EMPTY_WORKFLOW_HOME_FILTERS,
@@ -167,6 +178,10 @@ function WorkflowHomeSession() {
     () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
     [items, filters],
   );
+  const emptyKind = homeEmptyKind({
+    recordCount: records.length,
+    visibleCount: visible.length,
+  });
   const options = useMemo(() => uniqueFilterValues(items), [items]);
   const resolvedStartId =
     startWorkflowId === "1"
@@ -907,11 +922,28 @@ function WorkflowHomeSession() {
         />
       ) : null}
 
-      {visible.length === 0 ? (
-        <TemplateGrid
-          canCreate={canCreate}
-          pending={pending !== null}
-          onSelect={(template) => void createFromTemplate(template)}
+      {emptyKind === "teach" ? (
+        <>
+          <HomeEmptyTeach
+            canCreate={canCreate}
+            pending={pending !== null}
+            onCreate={() => {
+              const blank = workflowTemplateById("blank");
+              if (blank) {
+                void createFromYaml(blank.definitionYaml);
+              }
+            }}
+            onImport={() => importRef.current?.click()}
+          />
+          <TemplateGrid
+            canCreate={canCreate}
+            pending={pending !== null}
+            onSelect={(template) => void createFromTemplate(template)}
+          />
+        </>
+      ) : emptyKind === "filtered" ? (
+        <HomeFilteredEmpty
+          onClear={() => setFilters(EMPTY_WORKFLOW_HOME_FILTERS)}
         />
       ) : view === "list" ? (
         <WorkflowHomeList
@@ -1343,6 +1375,71 @@ function WorkflowHomeCards({
   );
 }
 
+function HomeEmptyTeach({
+  canCreate,
+  pending,
+  onCreate,
+  onImport,
+}: {
+  canCreate: boolean;
+  pending: boolean;
+  onCreate: () => void;
+  onImport: () => void;
+}) {
+  return (
+    <section
+      data-uxl6="home-empty"
+      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
+    >
+      <h2 className="text-base font-semibold">{HOME_EMPTY_HEADING}</h2>
+      <p className="mt-2 max-w-3xl text-sm text-zinc-600">{HOME_EMPTY_HELP}</p>
+      {canCreate ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCreate}
+            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+          >
+            {HOME_EMPTY_CREATE_LABEL}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onImport}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+          >
+            {HOME_EMPTY_IMPORT_LABEL}
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-zinc-500">
+          Creating a draft requires <code className="font-mono">workflow.edit</code>.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function HomeFilteredEmpty({ onClear }: { onClear: () => void }) {
+  return (
+    <section
+      data-uxl6="home-filtered"
+      className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center"
+    >
+      <h2 className="text-lg font-semibold">{HOME_FILTERED_EMPTY_HEADING}</h2>
+      <p className="mt-2 text-sm text-zinc-600">{HOME_FILTERED_EMPTY_HELP}</p>
+      <button
+        type="button"
+        onClick={onClear}
+        className="mt-4 text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+      >
+        Clear filters
+      </button>
+    </section>
+  );
+}
+
 export function TemplateGrid({
   canCreate,
   pending,
@@ -1354,11 +1451,8 @@ export function TemplateGrid({
 }) {
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold">Start from a template</h2>
-      <p className="mt-1 text-sm text-zinc-600">
-        Static starters create an editable draft in this workspace. There is no
-        template API on main.
-      </p>
+      <h2 className="text-base font-semibold">Reviewed templates</h2>
+      <p className="mt-1 text-sm text-zinc-600">{HOME_EMPTY_TEMPLATE_HELP}</p>
       <ul className="mt-4 grid gap-3 sm:grid-cols-2">
         {WORKFLOW_TEMPLATES.map((template) => (
           <li
@@ -1374,7 +1468,7 @@ export function TemplateGrid({
                 onClick={() => onSelect(template)}
                 className="mt-3 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white hover:bg-teal-900 disabled:opacity-60"
               >
-                Create draft
+                {HOME_EMPTY_TEMPLATE_LABEL}
               </button>
             ) : (
               <p className="mt-3 text-xs text-zinc-500">

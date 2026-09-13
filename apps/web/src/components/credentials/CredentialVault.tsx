@@ -19,6 +19,11 @@ import {
   parseCredentialVaultQuery,
 } from "@/lib/credential-vault";
 import {
+  VAULT_EMPTY_ADD_LABEL,
+  VAULT_EMPTY_HEADING,
+  VAULT_EMPTY_HELP,
+} from "@/lib/empty-states-teach-model";
+import {
   CREDENTIAL_STATUSES,
   type CredentialCatalog,
   type CredentialListQuery,
@@ -287,16 +292,19 @@ export function CredentialVault() {
       </section>
 
       {!ready || forbidden || denied || stopAfterStrip ? null : visible.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
+        <section
+          data-uxl6={filtersActive ? "vault-filtered" : "vault-empty"}
+          className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center"
+        >
           <h2 className="text-lg font-semibold">
             {filtersActive
               ? "No credentials match this display name"
-              : "No credentials yet"}
+              : VAULT_EMPTY_HEADING}
           </h2>
           <p className="mt-2 text-sm text-zinc-600">
             {filtersActive
               ? "Clear the display-name search or type/status filters to see the rest of the vault. Secrets are never queried."
-              : "Add a workspace credential to use from workflows. Secrets stay on the control plane after submit."}
+              : VAULT_EMPTY_HELP}
           </p>
           <p className="mt-4 flex flex-wrap justify-center gap-4">
             {filtersActive ? (
@@ -312,7 +320,7 @@ export function CredentialVault() {
               href={maybeEmbedDeepLink("/credentials/new", embed)}
               className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
             >
-              Open the add-credential wizard
+              {VAULT_EMPTY_ADD_LABEL}
             </Link>
           </p>
         </section>
