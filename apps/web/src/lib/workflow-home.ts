@@ -1,6 +1,7 @@
 /**
  * E6.1 workflow home: client-side list/filter on safe metadata.
- * GET /workflows has no search query params. Trigger, last run,
+ * GET /workflows has no search query params. F.2 filters by
+ * additive `folderId` / `unfiled` only. Trigger, last run,
  * validation, approvals, and R6.2 activation (D2 compose of trigger
  * status + version pin) are joined from existing list/draft
  * /execution/approval/trigger/version responses when those
@@ -87,6 +88,7 @@ export type WorkflowHomeItem = {
   lastRunWaiting: boolean;
   lastRunIndeterminate: boolean;
   activation: HomeActivationColumn;
+  folderId: string | null;
 };
 
 function readOwner(record: WorkflowRecord): string {
@@ -98,9 +100,8 @@ export function folderFromSlug(slug: string): string {
 }
 
 /**
- * Folders are not an API field. Slugs are `[a-z0-9-]+`, so `/` never
- * survives create. Use a name prefix (`ops/…` or `ops: …`) or encode
- * the folder in the slug as `ops--name`.
+ * Compat helper for leftover name/slug prefixes. F.2 organizes with
+ * the server folder rail — this is not primary chrome.
  */
 export function workflowFolder(slug: string, name = ""): string {
   const fromName =
@@ -161,6 +162,7 @@ export function toWorkflowHomeItem(
     approvals?: readonly ApprovalRequest[];
     lastRunKnown?: boolean;
     activation?: HomeActivationColumn;
+    folderNames?: ReadonlyMap<string, string>;
   } = {},
 ): WorkflowHomeItem {
   const draft = extras.draft ?? null;
@@ -191,7 +193,10 @@ export function toWorkflowHomeItem(
     owner: readOwner(record),
     updatedAt: record.updatedAt,
     createdAt: record.createdAt,
-    folder: workflowFolder(record.slug, record.name),
+    folderId: record.folderId ?? null,
+    folder: record.folderId
+      ? (extras.folderNames?.get(record.folderId) ?? "")
+      : "",
     tags: deriveWorkflowTags(record),
     triggers,
     environment: extras.environment?.trim() ?? "",
@@ -222,6 +227,7 @@ export function buildWorkflowHomeItems(
     approvals?: readonly ApprovalRequest[];
     lastRunKnownIds?: ReadonlySet<string>;
     activations?: ReadonlyMap<string, HomeActivationColumn>;
+    folderNames?: ReadonlyMap<string, string>;
   } = {},
 ): WorkflowHomeItem[] {
   return records.map((record) =>
@@ -232,6 +238,7 @@ export function buildWorkflowHomeItems(
       approvals: extras.approvals,
       lastRunKnown: extras.lastRunKnownIds?.has(record.id) ?? false,
       activation: extras.activations?.get(record.id),
+      folderNames: extras.folderNames,
     }),
   );
 }

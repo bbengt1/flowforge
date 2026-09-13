@@ -10,6 +10,7 @@ import {
   createWorkflow,
   fetchWorkflowCatalog,
   IF_MATCH_HEADER,
+  listWorkflows,
   normalizeWorkflowYaml,
   importValidatedWorkflow,
   saveCanonicalWorkflowDraft,
@@ -92,6 +93,45 @@ describe("workflow client", () => {
         ["data.set"],
       );
     }
+  });
+
+  it("lists workflows with folderId=unfiled or a folder UUID", async () => {
+    withSession();
+    const seen: { url?: string } = {};
+    globalThis.fetch = (async (input) => {
+      seen.url = String(input);
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              slug: "deploy",
+              name: "Deploy",
+              status: "draft",
+              draftRevision: 1,
+              draftDigest: "sha256:aaaa",
+              latestVersionNumber: 0,
+              createdAt: "2026-09-13T00:00:00Z",
+              updatedAt: "2026-09-13T00:00:00Z",
+              folderId: null,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const unfiled = await listWorkflows(identity, { folderId: "unfiled" });
+    assert.equal(unfiled.ok, true);
+    assert.equal(seen.url, "/api/v1/workflows?folderId=unfiled");
+    if (unfiled.ok) {
+      assert.equal(unfiled.items[0]?.folderId, null);
+    }
+
+    const folderId = "22222222-2222-4222-8222-222222222222";
+    const filed = await listWorkflows(identity, { folderId });
+    assert.equal(filed.ok, true);
+    assert.equal(seen.url, `/api/v1/workflows?folderId=${folderId}`);
   });
 
   it("posts definitionYaml with CSRF and keeps invalid-workflow errors[]", async () => {

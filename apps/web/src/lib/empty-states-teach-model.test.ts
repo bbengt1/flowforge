@@ -90,6 +90,14 @@ describe("UXL.6 empty states that teach the model", () => {
     assert.equal(homeEmptyKind({ recordCount: 0, visibleCount: 0 }), "teach");
     assert.equal(homeEmptyKind({ recordCount: 3, visibleCount: 0 }), "filtered");
     assert.equal(homeEmptyKind({ recordCount: 3, visibleCount: 2 }), "populated");
+    assert.equal(
+      homeEmptyKind({
+        recordCount: 0,
+        visibleCount: 0,
+        folderScopedEmpty: true,
+      }),
+      "filtered",
+    );
     assert.equal(workflowHomeFiltersAreActive(EMPTY_WORKFLOW_HOME_FILTERS), false);
     assert.equal(
       workflowHomeFiltersAreActive({

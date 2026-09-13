@@ -46,6 +46,7 @@ import { MANUAL_START_IDEMPOTENCY_HEADER } from "./manual-start-contract.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import { parseScriptVersionPins, type ScriptVersionPin } from "./script-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
+import { listWorkflowsPath } from "./workflow-folder.ts";
 
 export const WORKFLOW_CATALOG_PATH = "/workflows/catalog";
 export const WORKFLOW_VALIDATE_PATH = "/workflows/validate";
@@ -327,8 +328,12 @@ function malformed(
 
 export async function listWorkflows(
   identity: DevIdentity,
+  query: { folderId?: string } = {},
 ): Promise<ListWorkflowsSuccess | WorkflowClientFailure> {
-  const result = await callIdentityProxy<WorkflowList>(WORKFLOWS_PATH, identity);
+  const result = await callIdentityProxy<WorkflowList>(
+    listWorkflowsPath(query.folderId),
+    identity,
+  );
   if (!result.ok) {
     return failure(result);
   }
@@ -458,7 +463,7 @@ export async function saveCanonicalWorkflowDraft(
 export async function importValidatedWorkflow(
   identity: DevIdentity,
   yaml: string,
-  extras: { slug?: string; name?: string } = {},
+  extras: { slug?: string; name?: string; folderId?: string | null } = {},
 ): Promise<DraftClientSuccess | WorkflowClientFailure> {
   const validated = await validateWorkflowYaml(identity, yaml);
   if (!validated.ok) {

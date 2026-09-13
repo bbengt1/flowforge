@@ -168,7 +168,11 @@ export function workflowHomeFiltersAreActive(
 export function homeEmptyKind(input: {
   recordCount: number;
   visibleCount: number;
+  folderScopedEmpty?: boolean;
 }): HomeEmptyKind {
+  if (input.folderScopedEmpty) {
+    return input.visibleCount <= 0 ? "filtered" : "populated";
+  }
   if (input.recordCount <= 0) {
     return "teach";
   }

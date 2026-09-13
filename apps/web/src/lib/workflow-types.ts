@@ -297,6 +297,8 @@ export type WorkflowRecord = {
   updatedBy?: string;
   createdAt: string;
   updatedAt: string;
+  /** Null / omitted = Unfiled. Not stored in YAML. */
+  folderId?: string | null;
 };
 
 export type WorkflowList = {
@@ -340,6 +342,8 @@ export type CreateWorkflowBody = {
   definitionYaml: string;
   slug?: string;
   name?: string;
+  /** Optional. Missing / null files the workflow as Unfiled. */
+  folderId?: string | null;
 };
 
 export type SaveDraftBody = {

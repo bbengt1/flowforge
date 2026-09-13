@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
@@ -103,6 +103,27 @@ import {
   EDITOR_WORKING_MEMORY_TEST_RUN,
 } from "@/lib/editor-working-memory";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
+import {
+  FOLDER_CRUMB_LABEL,
+  FOLDER_QUERY,
+  FOLDER_RAIL_LABEL,
+  UNFILED_FOLDER_LABEL,
+  ancestorIdsForSelection,
+  applyFolderQuery,
+  breadcrumbSegments,
+  buildFolderTree,
+  consumeFolderWorkspaceChange,
+  folderSelectionsEqual,
+  parseFolderQuery,
+  readExpandedFolderIds,
+  resolveFolderSelection,
+  workflowsFolderIdQuery,
+  writeExpandedFolderIds,
+  type FolderSelection,
+  type FolderTreeNode,
+  type WorkflowFolder,
+} from "@/lib/workflow-folder";
+import { listWorkflowFolders } from "@/lib/workflow-folder-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 import {
@@ -119,11 +140,19 @@ export function WorkflowHome() {
 
 function WorkflowHomeSession() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { identity, ready, permissions, environment } = useWorkspace();
+  const workspaceKey = workspaceLookupKey(identity);
   const importRef = useRef<HTMLInputElement>(null);
   const consumedQuery = useRef(false);
   const refreshGate = useRef(createGenerationGate());
+  const [folders, setFolders] = useState<WorkflowFolder[]>([]);
+  const [foldersReady, setFoldersReady] = useState(false);
+  const [ignoreUrlFolder, setIgnoreUrlFolder] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<string[]>(() =>
+    readExpandedFolderIds(workspaceKey),
+  );
   const [records, setRecords] = useState<WorkflowRecord[]>([]);
   const [drafts, setDrafts] = useState<Map<string, WorkflowDraft>>(new Map());
   const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
@@ -162,6 +191,29 @@ function WorkflowHomeSession() {
     id: string;
   } | null>(null);
 
+  const urlSelection = parseFolderQuery(searchParams.get(FOLDER_QUERY));
+  const intendedSelection: FolderSelection = ignoreUrlFolder
+    ? { kind: "unfiled" }
+    : urlSelection;
+  const selection = foldersReady
+    ? resolveFolderSelection(intendedSelection, folders)
+    : intendedSelection;
+  const folderNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const folder of folders) {
+      const path = breadcrumbSegments(folders, { kind: "folder", id: folder.id })
+        .map((item) => item.label)
+        .join(" / ");
+      names.set(folder.id, path);
+    }
+    return names;
+  }, [folders]);
+  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+  const crumbs = useMemo(
+    () => breadcrumbSegments(folders, selection),
+    [folders, selection],
+  );
+
   const items = useMemo(
     () =>
       buildWorkflowHomeItems(records, {
@@ -171,8 +223,18 @@ function WorkflowHomeSession() {
         approvals,
         lastRunKnownIds,
         activations,
+        folderNames,
       }),
-    [records, environment, drafts, executions, approvals, lastRunKnownIds, activations],
+    [
+      records,
+      environment,
+      drafts,
+      executions,
+      approvals,
+      lastRunKnownIds,
+      activations,
+      folderNames,
+    ],
   );
   const visible = useMemo(
     () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
@@ -181,6 +243,7 @@ function WorkflowHomeSession() {
   const emptyKind = homeEmptyKind({
     recordCount: records.length,
     visibleCount: visible.length,
+    folderScopedEmpty: folders.length > 0 && records.length === 0,
   });
   const options = useMemo(() => uniqueFilterValues(items), [items]);
   const resolvedStartId =
@@ -229,9 +292,32 @@ function WorkflowHomeSession() {
     );
   }, [items, resolvedScheduleId]);
 
+  const replaceFolderQuery = useCallback(
+    (next: FolderSelection, options: { drop?: boolean } = {}) => {
+      const query = applyFolderQuery(searchParams.toString(), next, options);
+      const current = searchParams.toString();
+      const nextSearch = query.startsWith("?") ? query.slice(1) : query;
+      if (current === nextSearch) {
+        return;
+      }
+      router.replace(`${pathname}${query}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const selectFolder = useCallback(
+    (next: FolderSelection) => {
+      setIgnoreUrlFolder(false);
+      replaceFolderQuery(next);
+    },
+    [replaceFolderQuery],
+  );
+
   const refresh = useCallback(async () => {
     const token = refreshGate.current.begin();
     if (!canView) {
+      setFolders([]);
+      setFoldersReady(true);
       setRecords([]);
       setDrafts(new Map());
       setExecutions([]);
@@ -243,9 +329,39 @@ function WorkflowHomeSession() {
     }
     setPending("list");
     setProblem(null);
-    const list = await listWorkflows(identity);
+    const folderList = await listWorkflowFolders(identity);
     if (!refreshGate.current.isCurrent(token)) {
       return;
+    }
+    if (!folderList.ok) {
+      setFolders([]);
+      setFoldersReady(true);
+      setProblem(folderList.problem);
+    } else {
+      setFolders(folderList.items);
+      setFoldersReady(true);
+    }
+    const resolved = resolveFolderSelection(
+      intendedSelection,
+      folderList.ok ? folderList.items : [],
+    );
+    if (!folderSelectionsEqual(resolved, intendedSelection)) {
+      replaceFolderQuery(resolved, {
+        drop: resolved.kind === "unfiled",
+      });
+    }
+    let list = await listWorkflows(identity, {
+      folderId: workflowsFolderIdQuery(resolved),
+    });
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
+    }
+    if (!list.ok && list.statusCode === 404 && resolved.kind === "folder") {
+      replaceFolderQuery({ kind: "unfiled" }, { drop: true });
+      list = await listWorkflows(identity, { folderId: "unfiled" });
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
+      }
     }
     if (!list.ok) {
       setPending(null);
@@ -323,7 +439,41 @@ function WorkflowHomeSession() {
     if (refreshGate.current.isCurrent(token)) {
       setPending(null);
     }
-  }, [canView, canViewActivation, identity, permissions]);
+  }, [
+    canView,
+    canViewActivation,
+    identity,
+    intendedSelection,
+    permissions,
+    replaceFolderQuery,
+  ]);
+
+  useEffect(() => {
+    if (!consumeFolderWorkspaceChange(workspaceKey)) {
+      return;
+    }
+    setIgnoreUrlFolder(true);
+    setExpandedIds([]);
+    replaceFolderQuery({ kind: "unfiled" }, { drop: true });
+  }, [replaceFolderQuery, workspaceKey]);
+
+  useEffect(() => {
+    if (ignoreUrlFolder && searchParams.get(FOLDER_QUERY) == null) {
+      setIgnoreUrlFolder(false);
+    }
+  }, [ignoreUrlFolder, searchParams]);
+
+  useEffect(() => {
+    const ancestors = ancestorIdsForSelection(folders, selection);
+    if (ancestors.length === 0) {
+      return;
+    }
+    setExpandedIds((current) => {
+      const next = [...new Set([...current, ...ancestors])];
+      writeExpandedFolderIds(workspaceKey, next);
+      return next;
+    });
+  }, [folders, selection, workspaceKey]);
 
   useEffect(() => {
     const gate = refreshGate.current;
@@ -359,6 +509,7 @@ function WorkflowHomeSession() {
       const result = await createWorkflow(identity, {
         definitionYaml: yaml,
         ...optionalCreateFields(slug ?? createSlug, name ?? createName),
+        ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
       });
       setPending(null);
       if (!result.ok) {
@@ -376,7 +527,7 @@ function WorkflowHomeSession() {
         router.push(templateCreatedEditorHref(created.id));
       }
     },
-    [canCreate, identity, createSlug, createName, router],
+    [canCreate, identity, createSlug, createName, router, selection],
   );
 
   useEffect(() => {
@@ -530,6 +681,7 @@ function WorkflowHomeSession() {
         setProblem(null);
         const result = await importValidatedWorkflow(identity, text, {
           ...optionalCreateFields(createSlug, createName || file.name.replace(/\.ya?ml$/i, "")),
+          ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
         });
         setPending(null);
         if (!result.ok) {
@@ -659,6 +811,16 @@ function WorkflowHomeSession() {
     );
   }
 
+  function toggleFolderExpanded(folderId: string) {
+    setExpandedIds((current) => {
+      const next = current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId];
+      writeExpandedFolderIds(workspaceKey, next);
+      return next;
+    });
+  }
+
   return (
     <div data-uxl8="home" className="space-y-6">
       {!ready ? (
@@ -666,15 +828,24 @@ function WorkflowHomeSession() {
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
 
+      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <FolderRail
+        tree={folderTree}
+        selection={selection}
+        expandedIds={expandedIds}
+        onSelect={selectFolder}
+        onToggle={toggleFolderExpanded}
+      />
+      <div className="min-w-0 space-y-6">
+      <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
+
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Workflow home</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Filter safe metadata. Secrets and YAML payloads are never searched here.
-              Folders use a name prefix (<code className="font-mono text-xs">ops/…</code>{" "}
-              or <code className="font-mono text-xs">ops: …</code>) or a slug like{" "}
-              <code className="font-mono text-xs">ops--name</code>.
+              Filter safe metadata in the selected folder. Secrets and YAML
+              payloads are never searched here. Folder membership is not in YAML.
             </p>
             <p
               id={HOME_ACTIVATION_HEADING_ID}
@@ -736,12 +907,6 @@ function WorkflowHomeSession() {
             label="Search"
             value={filters.query}
             onChange={(value) => setFilters((current) => ({ ...current, query: value }))}
-          />
-          <FilterSelect
-            label="Folder"
-            value={filters.folder}
-            options={options.folders}
-            onChange={(value) => setFilters((current) => ({ ...current, folder: value }))}
           />
           <FilterSelect
             label="Tag"
@@ -980,7 +1145,162 @@ function WorkflowHomeSession() {
           onExport={(item) => void exportItem(item)}
         />
       )}
+      </div>
+      </div>
     </div>
+  );
+}
+
+function FolderRail({
+  tree,
+  selection,
+  expandedIds,
+  onSelect,
+  onToggle,
+}: {
+  tree: FolderTreeNode[];
+  selection: FolderSelection;
+  expandedIds: readonly string[];
+  onSelect: (next: FolderSelection) => void;
+  onToggle: (folderId: string) => void;
+}) {
+  const unfiledCurrent = selection.kind === "unfiled";
+  return (
+    <nav
+      aria-label={FOLDER_RAIL_LABEL}
+      data-home-folder-rail="nav"
+      className="h-fit rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm"
+    >
+      <p className="px-2 text-xs font-medium tracking-wide text-zinc-500 uppercase">
+        {FOLDER_RAIL_LABEL}
+      </p>
+      <ul className="mt-2 space-y-1">
+        <li>
+          <button
+            type="button"
+            data-home-folder-rail="unfiled"
+            aria-current={unfiledCurrent ? "true" : undefined}
+            onClick={() => onSelect({ kind: "unfiled" })}
+            className={
+              unfiledCurrent
+                ? "w-full rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
+                : "w-full rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50"
+            }
+          >
+            {UNFILED_FOLDER_LABEL}
+          </button>
+        </li>
+        {tree.map((node) => (
+          <FolderRailNode
+            key={node.id}
+            node={node}
+            depth={1}
+            selection={selection}
+            expandedIds={expandedIds}
+            onSelect={onSelect}
+            onToggle={onToggle}
+          />
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function FolderRailNode({
+  node,
+  depth,
+  selection,
+  expandedIds,
+  onSelect,
+  onToggle,
+}: {
+  node: FolderTreeNode;
+  depth: number;
+  selection: FolderSelection;
+  expandedIds: readonly string[];
+  onSelect: (next: FolderSelection) => void;
+  onToggle: (folderId: string) => void;
+}) {
+  const selected = selection.kind === "folder" && selection.id === node.id;
+  const hasChildren = node.children.length > 0;
+  const expanded = expandedIds.includes(node.id);
+  return (
+    <li>
+      <div
+        className="flex items-center gap-1"
+        style={{ paddingLeft: `${Math.min(depth, 4) * 0.5}rem` }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
+            onClick={() => onToggle(node.id)}
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+          >
+            {expanded ? "Collapse" : "Expand"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          data-home-folder-rail="folder"
+          data-folder-id={node.id}
+          aria-current={selected ? "true" : undefined}
+          onClick={() => onSelect({ kind: "folder", id: node.id })}
+          className={
+            selected
+              ? "min-w-0 flex-1 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
+              : "min-w-0 flex-1 rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50"
+          }
+        >
+          {node.name}
+        </button>
+      </div>
+      {hasChildren && expanded ? (
+        <ul className="mt-1 space-y-1">
+          {node.children.map((child) => (
+            <FolderRailNode
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              selection={selection}
+              expandedIds={expandedIds}
+              onSelect={onSelect}
+              onToggle={onToggle}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function FolderBreadcrumb({
+  crumbs,
+  onSelect,
+}: {
+  crumbs: ReturnType<typeof breadcrumbSegments>;
+  onSelect: (next: FolderSelection) => void;
+}) {
+  return (
+    <nav
+      aria-label={FOLDER_CRUMB_LABEL}
+      data-home-folder-crumb=""
+      className="flex flex-wrap items-center gap-1 text-sm text-zinc-600"
+    >
+      {crumbs.map((crumb, index) => (
+        <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
+          {index > 0 ? <span aria-hidden="true">/</span> : null}
+          <button
+            type="button"
+            onClick={() => onSelect(crumb.selection)}
+            className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          >
+            {crumb.label}
+          </button>
+        </span>
+      ))}
+    </nav>
   );
 }
 
