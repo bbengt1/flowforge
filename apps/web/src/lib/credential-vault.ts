@@ -86,7 +86,11 @@ export const CREDENTIAL_VAULT_KEYBOARD_HELP =
   "Arrow keys move the vault. Enter or Space opens the focused credential on existing /credentials/{id} detail. Display-name search stays on this page.";
 
 export const CREDENTIAL_VAULT_HELP =
-  "Find credentials by display name. Filter type, tag, or status in the browser. GET /credentials returns metadata only — no list query params. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop). The UI never reads CREDENTIAL_KEK.";
+  "Find credentials by display name. Filter type, tag, or status in the browser. GET /credentials returns metadata only — no list query params. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop).";
+
+/** Contract only — never render in operator chrome (UXL.8). */
+export const CREDENTIAL_KEK_CONTRACT =
+  "The UI never reads CREDENTIAL_KEK. Server-only. Not operator chrome.";
 
 export const CREDENTIAL_VAULT_STRIP_STOP_HELP =
   "Unexpected secret fields were stripped from the API response. This is a backend contract bug. Stop — do not paste the leaked material into chrome, tickets, or screenshots.";
@@ -495,8 +499,9 @@ export function credentialVaultDoesNotReadKek(): boolean {
     CREDENTIAL_KEK_ENV === "CREDENTIAL_KEK" &&
     !chromeIds.includes("keyReference" as CredentialVaultColumnId) &&
     !chromeIds.includes("kek" as CredentialVaultColumnId) &&
-    /never reads CREDENTIAL_KEK/.test(CREDENTIAL_VAULT_HELP) &&
-    !/process\.env/.test(CREDENTIAL_VAULT_HELP)
+    /never reads CREDENTIAL_KEK/.test(CREDENTIAL_KEK_CONTRACT) &&
+    !CREDENTIAL_VAULT_HELP.includes(CREDENTIAL_KEK_ENV) &&
+    !/process\.env/.test(CREDENTIAL_KEK_CONTRACT)
   );
 }
 

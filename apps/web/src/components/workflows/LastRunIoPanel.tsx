@@ -32,6 +32,10 @@ import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { PeakEndEnding } from "@/components/chrome/PeakEndEnding";
+import {
+  LOUD_ERROR_SURFACE,
+  LOUD_INDETERMINATE_SURFACE,
+} from "@/lib/aesthetic-usability-density";
 import { peakEndKind } from "@/lib/peak-end-operate-endings";
 
 export type LastRunIoPanelProps = {
@@ -110,11 +114,11 @@ export function LastRunIoPanel({
       data-peak-end-surface="ndv"
       className={
         io?.indeterminate
-          ? "rounded-2xl border-2 border-amber-700 bg-amber-50 p-5"
+          ? `rounded-2xl ${LOUD_INDETERMINATE_SURFACE} p-5`
           : endingKind === "success"
             ? "rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5"
             : endingKind === "failed"
-              ? "rounded-2xl border-2 border-rose-700 bg-rose-50 p-5"
+              ? `rounded-2xl ${LOUD_ERROR_SURFACE} p-5`
               : "rounded-2xl border border-zinc-200 bg-white p-5"
       }
     >

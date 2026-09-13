@@ -18,6 +18,14 @@ import {
   peakEndSurfaceClassName,
 } from "@/lib/peak-end-operate-endings";
 import {
+  SATELLITE_BODY_PAD_CLASS,
+  SATELLITE_HEADER_CLASS,
+  SATELLITE_HIDE_BUTTON_CLASS,
+  SATELLITE_RAIL_BUTTON_CLASS,
+  SATELLITE_TITLE_CLASS,
+  TYPE_CAPTION_CLASS,
+} from "@/lib/aesthetic-usability-density";
+import {
   EDITOR_RUNS_COLUMN_WIDTH,
   EDITOR_RUNS_LIST_LIMIT,
   EDITOR_RUNS_OPERATE_HELP,
@@ -239,6 +247,7 @@ export function EditorRunsDrawer({
       <aside
         aria-label="Workflow executions"
         data-editor-runs="satellite"
+        data-uxl8="runs"
         className="flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:flex-col md:border-l"
         style={{ width: EDITOR_RUNS_SATELLITE_WIDTH }}
       >
@@ -248,7 +257,7 @@ export function EditorRunsDrawer({
           onClick={onOpen}
           aria-expanded={false}
           aria-controls={EDITOR_RUNS_PANEL_ID}
-          className="rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:rotate-180 md:px-1 md:py-3"
+          className={SATELLITE_RAIL_BUTTON_CLASS}
         >
           {EDITOR_RUNS_SATELLITE_LABEL}
         </button>
@@ -261,11 +270,12 @@ export function EditorRunsDrawer({
       id={EDITOR_RUNS_PANEL_ID}
       aria-label="Workflow executions"
       data-editor-runs="drawer"
+      data-uxl8="runs"
       className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-zinc-200 bg-white max-md:!w-full max-md:border-b md:border-l"
       style={{ width: EDITOR_RUNS_COLUMN_WIDTH }}
     >
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-3 py-2">
-        <p className="text-sm font-medium text-zinc-800">
+      <div className={`${SATELLITE_HEADER_CLASS} shrink-0 flex-wrap gap-2`}>
+        <p className={SATELLITE_TITLE_CLASS}>
           {EDITOR_RUNS_SATELLITE_LABEL}
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -273,7 +283,7 @@ export function EditorRunsDrawer({
             type="button"
             onClick={onStart}
             disabled={!scopedId}
-            className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50 disabled:opacity-60"
+            className={`${SATELLITE_HIDE_BUTTON_CLASS} disabled:opacity-60`}
           >
             Start published
           </button>
@@ -282,13 +292,13 @@ export function EditorRunsDrawer({
             onClick={onClose}
             aria-expanded
             aria-controls={EDITOR_RUNS_PANEL_ID}
-            className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+            className={SATELLITE_HIDE_BUTTON_CLASS}
           >
             Hide
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className={`min-h-0 flex-1 overflow-auto ${SATELLITE_BODY_PAD_CLASS}`}>
         <p className="text-xs text-zinc-600">{EDITOR_RUNS_OPERATE_HELP}</p>
         {workflowName ? (
           <p className="mt-1 text-xs text-zinc-500">
@@ -410,7 +420,7 @@ export function EditorRunsDrawer({
                 <p className="text-xs font-semibold text-zinc-800">
                   {peakEndHeadline(selectedPeakEnd)}
                 </p>
-                <p className="mt-1 font-mono text-[11px] break-all text-zinc-600">
+                <p className={`mt-1 font-mono ${TYPE_CAPTION_CLASS} break-all text-zinc-600`}>
                   {selectedRow.versionPin}
                 </p>
               </div>
@@ -551,8 +561,8 @@ function StatusChip({
       onClick={onClick}
       className={
         active
-          ? "rounded-full border border-teal-800 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-950 disabled:opacity-60"
-          : "rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+          ? `rounded-full border border-teal-800 bg-teal-50 px-2 py-0.5 ${TYPE_CAPTION_CLASS} font-semibold text-teal-950 disabled:opacity-60`
+          : `rounded-full border border-zinc-300 bg-white px-2 py-0.5 ${TYPE_CAPTION_CLASS} font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60`
       }
     >
       {label}

@@ -1,3 +1,7 @@
+import {
+  LOUD_ERROR_CLASS,
+  LOUD_INDETERMINATE_CLASS,
+} from "@/lib/aesthetic-usability-density";
 import { executionStatusPresentation } from "@/lib/execution";
 import type { ExecutionStatus } from "@/lib/execution-types";
 
@@ -9,11 +13,10 @@ const TONE_CLASS: Record<
   ReturnType<typeof executionStatusPresentation>["tone"],
   string
 > = {
-  indeterminate:
-    "border-amber-700 bg-amber-50 text-amber-950 font-semibold border-2",
+  indeterminate: LOUD_INDETERMINATE_CLASS,
   running: "border-sky-700 bg-sky-50 text-sky-950 font-semibold",
   canceled: "border-zinc-700 bg-zinc-100 text-zinc-950 font-semibold",
-  failed: "border-rose-700 bg-rose-50 text-rose-950 font-semibold",
+  failed: LOUD_ERROR_CLASS,
   succeeded: "border-emerald-700 bg-emerald-50 text-emerald-950",
   queued: "border-zinc-400 bg-zinc-50 text-zinc-800",
   claimed: "border-indigo-700 bg-indigo-50 text-indigo-950 font-semibold",

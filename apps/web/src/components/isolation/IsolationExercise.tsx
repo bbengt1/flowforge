@@ -25,6 +25,14 @@ import {
 import { ISOLATION_KINDS, type IsolationKind, type IsolationRecord } from "@/lib/isolation-types";
 import type { ItemList } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
+import {
+  ISOLATION_DENIAL_ICON,
+  ISOLATION_DENIAL_LABEL,
+  ISOLATION_LEAK_ICON,
+  ISOLATION_LEAK_LABEL,
+  LOUD_ADV024_DENIAL_CLASS,
+  LOUD_ADV024_LEAK_CLASS,
+} from "@/lib/aesthetic-usability-density";
 
 type ExerciseResult = {
   exercise: IsolationExerciseDef;
@@ -436,13 +444,22 @@ export function IsolationExercise() {
             {results.map((item) => (
               <li key={`${item.exercise.id}-${item.requestId}`}>
                 <article
+                  data-uxl8="adv024-denial"
+                  data-isolation-held={item.held ? "true" : "false"}
                   className={
                     item.held
-                      ? "rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950"
-                      : "rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950"
+                      ? `rounded-xl px-4 py-3 text-sm ${LOUD_ADV024_DENIAL_CLASS}`
+                      : `rounded-xl px-4 py-3 text-sm ${LOUD_ADV024_LEAK_CLASS}`
                   }
                 >
                   <p className="font-medium">
+                    <span aria-hidden="true">
+                      {item.held ? ISOLATION_DENIAL_ICON : ISOLATION_LEAK_ICON}
+                    </span>{" "}
+                    <span>
+                      {item.held ? ISOLATION_DENIAL_LABEL : ISOLATION_LEAK_LABEL}
+                    </span>
+                    {" — "}
                     {item.label}
                     {item.statusCode ? ` (${item.statusCode})` : null}
                   </p>

@@ -1,4 +1,11 @@
 import { CredentialWizard } from "@/components/credentials/CredentialWizard";
+import {
+  PAGE_HEADER_CLASS,
+  PAGE_SHELL_CLASS,
+  TYPE_EYEBROW_CLASS,
+  TYPE_HEADING_CLASS,
+  TYPE_PAGE_HELP_CLASS,
+} from "@/lib/aesthetic-usability-density";
 import { parseInspectorCredentialReturnTo } from "@/lib/editor-credential";
 import { CREDENTIAL_NDV_ADD_WIZARD_HELP } from "@/lib/credential-ndv-add";
 
@@ -12,15 +19,15 @@ export default async function NewCredentialPage({ searchParams }: PageProps) {
   const query = await searchParams;
   const returnContext = parseInspectorCredentialReturnTo(query);
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
-      <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+    <main className={PAGE_SHELL_CLASS}>
+      <header className={PAGE_HEADER_CLASS}>
+        <p className={TYPE_EYEBROW_CLASS}>
           E6.3 · Vault
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <h1 className={TYPE_HEADING_CLASS}>
           New vault credential
         </h1>
-        <p className="max-w-3xl text-base leading-7 text-zinc-600">
+        <p className={TYPE_PAGE_HELP_CLASS}>
           Catalog-driven wizard: display name, type, masked secret fields,
           safe metadata, and optional expiresAt. After create the secret
           inputs are emptied and only metadata is kept.

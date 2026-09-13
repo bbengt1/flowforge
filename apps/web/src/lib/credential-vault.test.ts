@@ -86,7 +86,7 @@ describe("R5.1 credential vault find", () => {
     assert.equal(CREDENTIAL_VAULT.operateDensity, true);
     assert.match(CREDENTIAL_VAULT_HELP, /display name/);
     assert.match(CREDENTIAL_VAULT_HELP, /\/credentials\/\{id\}/);
-    assert.match(CREDENTIAL_VAULT_HELP, /CREDENTIAL_KEK/);
+    assert.doesNotMatch(CREDENTIAL_VAULT_HELP, /CREDENTIAL_KEK/);
     assert.match(CREDENTIAL_VAULT_HELP, /strip \+ stop/);
     assert.match(CREDENTIAL_VAULT_KEYBOARD_HELP, /opens the focused credential/);
     assert.equal(R5_SECURITY_LINE.noKekInBrowser, true);

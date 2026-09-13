@@ -370,7 +370,7 @@ export function CredentialWizard({
               <ReviewRow label="Expires at" value={expiresAt || "—"} />
               <p className="text-xs text-zinc-500">
                 Secret values are not shown on review and are cleared after
-                submit. The UI never reads <code>CREDENTIAL_KEK</code>.
+                submit. Display-name + UUID only.
               </p>
             </dl>
           ) : null}

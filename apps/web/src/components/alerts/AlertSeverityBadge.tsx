@@ -1,5 +1,9 @@
 import { alertSeverityPresentation } from "@/lib/alert";
 import type { AlertKind, AlertSeverity } from "@/lib/alert-types";
+import {
+  LOUD_ERROR_CLASS,
+  LOUD_WARNING_CLASS,
+} from "@/lib/aesthetic-usability-density";
 
 type AlertSeverityBadgeProps = {
   severity: AlertSeverity | undefined;
@@ -10,8 +14,8 @@ const TONE_CLASS: Record<
   ReturnType<typeof alertSeverityPresentation>["tone"],
   string
 > = {
-  critical: "border-rose-800 bg-rose-50 text-rose-950 font-semibold border-2",
-  warning: "border-amber-700 bg-amber-50 text-amber-950 font-semibold",
+  critical: LOUD_ERROR_CLASS,
+  warning: LOUD_WARNING_CLASS,
   other: "border-zinc-300 bg-zinc-50 text-zinc-800",
 };
 
