@@ -333,5 +333,6 @@ permission to open production UI PRs or to close #195-era stories.
 | [embed-sdk.md](embed-sdk.md) / [portal-adapter.md](portal-adapter.md) | Host contracts. Rewrite must not invent a second tree. |
 | [deployment.md](../deployment.md) | Seed, Example context, local-vs-prod pitfalls. |
 | [flowforge-rewrite-n8n-class-parity.md](../architecture/flowforge-rewrite-n8n-class-parity.md) | Rewrite charter. **§11.1** is the fold-in authority for this page. |
+| [flowforge-ux-laws.md](../architecture/flowforge-ux-laws.md) | Post-R1–R7 chrome polish (Laws of UX). Docs-only; does not reopen this IA. |
 | [master-implementation-plan.md](../master-implementation-plan.md) | MVP epic backlog (E1–E12). Rewrite vision is the charter; Arie/Gracie open epics later. |
 | [e12-accessibility-review.md](e12-accessibility-review.md) | Landed a11y + tracked gaps (`touch-inspector-first`). R7.4 / #279 — **Keep #279 open.** extends UX.10 to rewrite satellites. |
