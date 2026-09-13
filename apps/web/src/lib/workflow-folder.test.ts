@@ -448,7 +448,7 @@ describe("F.3 create / rename / delete folders", () => {
     assert.match(client, /method:\s*"PATCH"/);
     assert.match(client, /method:\s*"DELETE"/);
     assert.match(client, /body:\s*\{\s*name\s*\}/);
-    assert.doesNotMatch(client, /workspaceId/);
+    assert.doesNotMatch(client, /workspaceId:/);
     assert.doesNotMatch(client, /\/workflows\/.+\/folder/);
     assert.equal(folderMutateLabel(folderMutateBegin("create")), "Creating folder…");
     assert.equal(

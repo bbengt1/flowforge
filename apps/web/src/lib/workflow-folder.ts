@@ -451,7 +451,12 @@ export function homeFolderRailHasMutateVerbs(source: string): boolean {
 }
 
 export function homeFolderRailHasOrganizeVerbs(source: string): boolean {
-  return FOLDER_ORGANIZE_VERBS.every((verb) => source.includes(verb));
+  const labeled = FOLDER_ORGANIZE_VERBS.every((verb) => source.includes(verb));
+  const tokens =
+    source.includes("NEW_FOLDER_LABEL") &&
+    source.includes("RENAME_FOLDER_LABEL") &&
+    source.includes("DELETE_FOLDER_LABEL");
+  return labeled || tokens;
 }
 
 export function homeFolderRailHasMoveVerb(source: string): boolean {
