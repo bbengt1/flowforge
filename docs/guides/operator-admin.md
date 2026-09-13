@@ -102,6 +102,13 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    `PATCH /api/v1/workflows/{id}/folder` `{folderId}` (`null` =
    Unfiled). Move does not change YAML, draft revision, or
    activation. Viewers cannot drop or see Move.
+   Empty home keeps Create / Import YAML / a reviewed template
+   (drafts do not run) plus optional **New folder**. An empty
+   folder offers create here, move, or delete — delete only when
+   there are no workflows and no child folders. Unfiled-empty
+   points at the folder rail or those empty-home verbs. Unfiled
+   is always in the rail and is not a persisted folder
+   (F.5 / #312 — **keep #312 open**).
 2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
    column/status (R6.2 / #271 — **keep #271 open**) shows whether a
    published version is active for webhook/schedule. Drafts read

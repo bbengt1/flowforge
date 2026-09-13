@@ -1,20 +1,26 @@
 /**
  * F.2 home folder rail + select, F.3 create / rename / delete,
- * F.4 move workflows (Chloe UI).
+ * F.4 move workflows, F.5 empty states + Unfiled (Chloe UI).
  *
- * Relates to #309 / #310 / #311 / Part of #307. Keep #309, #310,
- * and #311 open.
+ * Relates to #309 / #310 / #311 / #312 / Part of #307. Keep #309,
+ * #310, #311, and #312 open.
  *
  * Tree comes from GET /workflow-folders. The list uses
  * GET /workflows?folderId=. Unfiled is virtual (folderId == null),
- * not a persisted row. `?folder=` is the deep link. Workspace /
- * tenant+workbench change drops the previous-workspace folder query.
- * Prefix-in-name is no longer the primary organizer. Viewers can
- * select; they do not get New folder / Rename folder / Delete folder
- * / Move. Editors mutate folders through POST / PATCH / DELETE
- * /workflow-folders. Workflow move is PATCH /workflows/{id}/folder
- * (drag onto a folder or Unfiled, and row-menu Move…). Folder
- * re-parent drag is not this story.
+ * not a persisted row — always in the rail. `?folder=` is the deep
+ * link. Workspace / tenant+workbench change drops the
+ * previous-workspace folder query. Prefix-in-name is no longer the
+ * primary organizer. Viewers can select; they do not get New folder
+ * / Rename folder / Delete folder / Move. Editors mutate folders
+ * through POST / PATCH / DELETE /workflow-folders. Workflow move is
+ * PATCH /workflows/{id}/folder (drag onto a folder or Unfiled, and
+ * row-menu Move…). Folder re-parent drag is not this story.
+ *
+ * F.5 empty chrome: empty home keeps UXL.6 Create / Import YAML /
+ * reviewed template (+ optional New folder). Empty folder is create
+ * here / move / delete (delete only when no workflows and no child
+ * folders). Unfiled-empty points at the tree or empty-home verbs.
+ * F.6 search across folders is out of scope.
  *
  * Folders are not in YAML. Drafts never run. Move does not bump
  * draftRevision, YAML, or activation. No cascade delete.
@@ -40,6 +46,11 @@ export const F4_EPIC = 307;
 export const F4_KEEP_STORY_OPEN = true;
 export const F4_ID = "F.4-move-workflows-drag-menu" as const;
 export const F4_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F5_STORY = 312;
+export const F5_EPIC = 307;
+export const F5_KEEP_STORY_OPEN = true;
+export const F5_ID = "F.5-empty-states-unfiled" as const;
+export const F5_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
 export const MAX_FOLDER_DEPTH = 4;
 export const MAX_FOLDER_NAME_GRAPHEMES = 64;
 export const FOLDER_NAME_RULES_HELP =
@@ -71,6 +82,19 @@ export const FOLDER_ORGANIZE_VERBS = [
 ] as const;
 
 export const FOLDER_MOVE_VERB = "Move…" as const;
+export const FOLDER_EMPTY_HEADING = "Nothing in this folder.";
+export const FOLDER_EMPTY_HELP =
+  "Create a draft here or move an existing workflow into this folder. Drafts do not run — publish, then start a published version.";
+export const FOLDER_EMPTY_CREATE_LABEL = "Create here";
+export const FOLDER_EMPTY_MOVE_LABEL = "Move existing";
+export const FOLDER_EMPTY_VIEWER_HELP =
+  "This folder has no workflows. Creating, moving, or deleting requires workflow.edit.";
+export const UNFILED_EMPTY_HEADING = "Nothing in Unfiled.";
+export const UNFILED_EMPTY_FILED_HELP =
+  "Workflows in this workspace are filed in the folder tree. Select a folder in the rail to open them.";
+export const UNFILED_EMPTY_NONE_HELP =
+  "Create, Import YAML, or pick a reviewed template. Each creates a draft. Drafts do not run — publish, then start a published version.";
+export const UNFILED_EMPTY_TREE_LABEL = "Open the folder rail";
 
 export const FOLDER_MUTATE_VERBS = [
   ...FOLDER_ORGANIZE_VERBS,
@@ -230,6 +254,33 @@ export const F4_HOME_FOLDER = {
   noNewApi: true,
   d6MigrateInPlace: true,
   keep311Open: true,
+} as const;
+
+export const F5_HOME_FOLDER = {
+  yamlIsSourceOfTruth: true,
+  foldersNotInYaml: true,
+  draftsNeverRun: true,
+  vaultDisplayNameUuidOnly: true,
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  isolationSuccessIsDenial: true,
+  noCascadeDelete: true,
+  notAnN8nClone: true,
+  noKekInBrowser: true,
+  emptyHomeKeepsUxl6Verbs: true,
+  emptyHomeOptionalNewFolder: true,
+  emptyHomeCopySaysDraftsDoNotRun: true,
+  noDeveloperFixtures: true,
+  emptyFolderCreateHereMoveDelete: true,
+  deleteOnlyWhenNoWorkflowsAndNoChildFolders: true,
+  refuseIfNonemptyStays: true,
+  unfiledEmptyPointsAtTreeOrHomeVerbs: true,
+  unfiledAlwaysInRail: true,
+  unfiledIsNotPersisted: true,
+  noF6Search: true,
+  noNewApi: true,
+  d6MigrateInPlace: true,
+  keep312Open: true,
 } as const;
 
 export const F2_HOME_FOLDER_SOURCES = [
@@ -776,6 +827,96 @@ export function folderDeleteBlocked(options: {
     return true;
   }
   return options.workflowCount != null && options.workflowCount > 0;
+}
+
+export type FolderHomeEmptyKind =
+  | "teach"
+  | "folder"
+  | "unfiled"
+  | "filtered"
+  | "populated";
+
+export function folderHomeEmptyKind(input: {
+  selection: FolderSelection;
+  folderCount: number;
+  scopedRecordCount: number;
+  visibleCount: number;
+  workspaceWorkflowCount: number;
+}): FolderHomeEmptyKind {
+  if (input.visibleCount > 0) {
+    return "populated";
+  }
+  if (input.scopedRecordCount > 0) {
+    return "filtered";
+  }
+  if (input.selection.kind === "folder") {
+    return "folder";
+  }
+  if (input.folderCount === 0 && input.workspaceWorkflowCount <= 0) {
+    return "teach";
+  }
+  return "unfiled";
+}
+
+export function unfiledEmptyUsesHomeVerbs(
+  workspaceWorkflowCount: number,
+): boolean {
+  return workspaceWorkflowCount <= 0;
+}
+
+export function emptyFolderDeleteAllowed(options: {
+  childFolderCount: number;
+  workflowCount: number;
+}): boolean {
+  return !folderDeleteBlocked({
+    childFolderCount: options.childFolderCount,
+    workflowCount: options.workflowCount,
+  });
+}
+
+export function workflowsMovableIntoSelection<
+  T extends { folderId?: string | null },
+>(items: readonly T[], target: FolderSelection): T[] {
+  return items.filter((item) => !workflowAlreadyInFolder(item.folderId, target));
+}
+
+export function isUnfiledFolderId(id: string): boolean {
+  return id.trim().toLowerCase() === UNFILED_FOLDER_ID;
+}
+
+export function persistedFoldersIncludeUnfiledRow(
+  items: readonly WorkflowFolder[],
+): boolean {
+  return items.some(
+    (item) =>
+      isUnfiledFolderId(item.id) ||
+      !isWorkflowFolder(item),
+  );
+}
+
+export function unfiledIsAlwaysPresentAndNotPersisted(options: {
+  railSource: string;
+  items: readonly WorkflowFolder[];
+}): boolean {
+  const railHasUnfiled =
+    options.railSource.includes('data-home-folder-rail="unfiled"') &&
+    options.railSource.includes("UNFILED_FOLDER_LABEL");
+  const treeHasUnfiledId = buildFolderTree(options.items).some((node) =>
+    isUnfiledFolderId(node.id),
+  );
+  return (
+    railHasUnfiled &&
+    !treeHasUnfiledId &&
+    !persistedFoldersIncludeUnfiledRow(options.items) &&
+    !isWorkflowFolder({
+      id: UNFILED_FOLDER_ID,
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      parentId: null,
+      name: UNFILED_FOLDER_LABEL,
+      createdAt: "2026-09-13T00:00:00Z",
+      updatedAt: "2026-09-13T00:00:00Z",
+    })
+  );
 }
 
 export function folderNotEmptyCounts(

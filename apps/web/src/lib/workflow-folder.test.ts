@@ -23,6 +23,19 @@ import {
   F4_ID,
   F4_KEEP_STORY_OPEN,
   F4_STORY,
+  F5_BRIEF,
+  F5_EPIC,
+  F5_HOME_FOLDER,
+  F5_ID,
+  F5_KEEP_STORY_OPEN,
+  F5_STORY,
+  FOLDER_EMPTY_CREATE_LABEL,
+  FOLDER_EMPTY_HEADING,
+  FOLDER_EMPTY_HELP,
+  FOLDER_EMPTY_MOVE_LABEL,
+  UNFILED_EMPTY_FILED_HELP,
+  UNFILED_EMPTY_HEADING,
+  UNFILED_EMPTY_NONE_HELP,
   FOLDER_DEPTH_HELP,
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
@@ -44,8 +57,10 @@ import {
   consumeFolderWorkspaceChange,
   createFolderParentId,
   defaultWorkflowMoveTarget,
+  emptyFolderDeleteAllowed,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
+  folderHomeEmptyKind,
   folderIdForMove,
   folderExpandStorageKey,
   folderMutateBegin,
@@ -75,12 +90,15 @@ import {
   resolveFolderSelection,
   selectionAfterFolderDelete,
   siblingFolderNameTaken,
+  unfiledEmptyUsesHomeVerbs,
+  unfiledIsAlwaysPresentAndNotPersisted,
   workflowAlreadyInFolder,
   workflowMoveBody,
   workflowMoveDragPayload,
   workflowMoveFolderPath,
   workflowMoveTargets,
   workflowsFolderIdQuery,
+  workflowsMovableIntoSelection,
   writeExpandedFolderIds,
   type WorkflowFolder,
 } from "./workflow-folder.ts";
@@ -610,5 +628,214 @@ describe("F.4 move workflows (drag + menu)", () => {
       folderMutateLabel(folderMutateFinish("move", false)),
       "Workflow was not moved.",
     );
+  });
+});
+
+describe("F.5 empty states + Unfiled", () => {
+  it("keeps #312 open and cites the folder IA", () => {
+    assert.equal(F5_STORY, 312);
+    assert.equal(F5_EPIC, 307);
+    assert.equal(F5_KEEP_STORY_OPEN, true);
+    assert.equal(F5_ID, "F.5-empty-states-unfiled");
+    assert.equal(F5_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F5_HOME_FOLDER.keep312Open, true);
+    assert.equal(F5_HOME_FOLDER.emptyHomeKeepsUxl6Verbs, true);
+    assert.equal(F5_HOME_FOLDER.emptyHomeOptionalNewFolder, true);
+    assert.equal(F5_HOME_FOLDER.emptyHomeCopySaysDraftsDoNotRun, true);
+    assert.equal(F5_HOME_FOLDER.noDeveloperFixtures, true);
+    assert.equal(F5_HOME_FOLDER.emptyFolderCreateHereMoveDelete, true);
+    assert.equal(F5_HOME_FOLDER.deleteOnlyWhenNoWorkflowsAndNoChildFolders, true);
+    assert.equal(F5_HOME_FOLDER.refuseIfNonemptyStays, true);
+    assert.equal(F5_HOME_FOLDER.unfiledEmptyPointsAtTreeOrHomeVerbs, true);
+    assert.equal(F5_HOME_FOLDER.unfiledAlwaysInRail, true);
+    assert.equal(F5_HOME_FOLDER.unfiledIsNotPersisted, true);
+    assert.equal(F5_HOME_FOLDER.noF6Search, true);
+    assert.equal(F5_HOME_FOLDER.noNewApi, true);
+    assert.equal(F5_HOME_FOLDER.foldersNotInYaml, true);
+    assert.equal(F5_HOME_FOLDER.draftsNeverRun, true);
+    assert.equal(F5_HOME_FOLDER.noCascadeDelete, true);
+    assert.equal(F5_HOME_FOLDER.noKekInBrowser, true);
+    assert.equal(F5_HOME_FOLDER.notAnN8nClone, true);
+    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    assert.match(brief, /F\.5/);
+    assert.match(brief, /Unfiled/);
+    const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /#312/);
+    assert.match(frontend, /keep #312 open/i);
+    assert.match(frontend, /create here/);
+    assert.match(frontend, /Unfiled-empty/);
+  });
+
+  it("empty home keeps UXL.6 verbs + optional New folder; drafts do not run", () => {
+    assert.equal(
+      folderHomeEmptyKind({
+        selection: { kind: "unfiled" },
+        folderCount: 0,
+        scopedRecordCount: 0,
+        visibleCount: 0,
+        workspaceWorkflowCount: 0,
+      }),
+      "teach",
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /data-uxl6="home-empty"/);
+    assert.match(home, /data-f5=\{unfiledEmpty \? "unfiled-empty-none" : "home-empty"\}/);
+    assert.match(home, /HOME_EMPTY_CREATE_LABEL/);
+    assert.match(home, /HOME_EMPTY_IMPORT_LABEL/);
+    assert.match(home, /HOME_EMPTY_TEMPLATE_LABEL/);
+    assert.match(home, /createFromYaml/);
+    assert.match(home, /importValidatedWorkflow/);
+    assert.match(home, /createFromTemplate/);
+    assert.match(home, /data-home-empty-verb="new-folder"/);
+    assert.match(home, /NEW_FOLDER_LABEL/);
+    assert.match(FOLDER_EMPTY_HELP, /drafts do not run/i);
+    assert.match(UNFILED_EMPTY_NONE_HELP, /drafts do not run/i);
+    assert.equal(home.includes("Load starter YAML"), false);
+    assert.equal(home.includes("Load invalid YAML"), false);
+    assert.doesNotMatch(home, /\/actions/);
+    assert.equal(F5_HOME_FOLDER.emptyHomeKeepsUxl6Verbs, true);
+    assert.equal(F5_HOME_FOLDER.noDeveloperFixtures, true);
+  });
+
+  it("empty folder offers create here / move / delete only when empty", () => {
+    assert.equal(
+      folderHomeEmptyKind({
+        selection: { kind: "folder", id: ops.id },
+        folderCount: 1,
+        scopedRecordCount: 0,
+        visibleCount: 0,
+        workspaceWorkflowCount: 2,
+      }),
+      "folder",
+    );
+    assert.equal(FOLDER_EMPTY_HEADING, "Nothing in this folder.");
+    assert.equal(FOLDER_EMPTY_CREATE_LABEL, "Create here");
+    assert.equal(FOLDER_EMPTY_MOVE_LABEL, "Move existing");
+    assert.equal(
+      emptyFolderDeleteAllowed({ childFolderCount: 0, workflowCount: 0 }),
+      true,
+    );
+    assert.equal(
+      emptyFolderDeleteAllowed({ childFolderCount: 1, workflowCount: 0 }),
+      false,
+    );
+    assert.equal(
+      emptyFolderDeleteAllowed({ childFolderCount: 0, workflowCount: 2 }),
+      false,
+    );
+    assert.equal(
+      folderDeleteBlocked({ childFolderCount: 1, workflowCount: 0 }),
+      true,
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /data-f5="folder-empty"/);
+    assert.match(home, /data-home-folder-empty-verb="create"/);
+    assert.match(home, /data-home-folder-empty-verb="move"/);
+    assert.match(home, /data-home-folder-empty-verb="delete"/);
+    assert.match(home, /FOLDER_EMPTY_CREATE_LABEL/);
+    assert.match(home, /FOLDER_EMPTY_MOVE_LABEL/);
+    assert.match(home, /DELETE_FOLDER_LABEL/);
+    assert.match(home, /emptyFolderDeleteAllowed/);
+    assert.match(home, /FOLDER_NOT_EMPTY_HELP/);
+    assert.match(home, /moveWorkflowToFolder/);
+    assert.equal(
+      workflowsMovableIntoSelection(
+        [
+          { folderId: null },
+          { folderId: ops.id },
+          { folderId: platform.id },
+        ],
+        { kind: "folder", id: ops.id },
+      ).length,
+      2,
+    );
+    assert.equal(F5_HOME_FOLDER.refuseIfNonemptyStays, true);
+    assert.equal(F5_HOME_FOLDER.noCascadeDelete, true);
+  });
+
+  it("Unfiled-empty points at the tree or empty-home verbs", () => {
+    assert.equal(
+      folderHomeEmptyKind({
+        selection: { kind: "unfiled" },
+        folderCount: 2,
+        scopedRecordCount: 0,
+        visibleCount: 0,
+        workspaceWorkflowCount: 3,
+      }),
+      "unfiled",
+    );
+    assert.equal(unfiledEmptyUsesHomeVerbs(3), false);
+    assert.equal(UNFILED_EMPTY_HEADING, "Nothing in Unfiled.");
+    assert.match(UNFILED_EMPTY_FILED_HELP, /folder tree/i);
+    assert.equal(
+      folderHomeEmptyKind({
+        selection: { kind: "unfiled" },
+        folderCount: 1,
+        scopedRecordCount: 0,
+        visibleCount: 0,
+        workspaceWorkflowCount: 0,
+      }),
+      "unfiled",
+    );
+    assert.equal(unfiledEmptyUsesHomeVerbs(0), true);
+    assert.match(UNFILED_EMPTY_NONE_HELP, /drafts do not run/i);
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /data-f5="unfiled-empty-filed"/);
+    assert.match(home, /"unfiled-empty-none"/);
+    assert.match(home, /data-f5="unfiled-empty-tree"/);
+    assert.match(home, /UNFILED_EMPTY_FILED_HELP/);
+    assert.match(home, /UNFILED_EMPTY_NONE_HELP/);
+    assert.equal(F5_HOME_FOLDER.noF6Search, true);
+    assert.doesNotMatch(home, /search across folders/i);
+  });
+
+  it("Unfiled is always in the rail and is not a persisted folder", () => {
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const client = source("src/lib/workflow-folder-client.ts");
+    assert.equal(
+      unfiledIsAlwaysPresentAndNotPersisted({
+        railSource: home,
+        items: [ops, oncall, platform],
+      }),
+      true,
+    );
+    assert.equal(
+      unfiledIsAlwaysPresentAndNotPersisted({
+        railSource: home,
+        items: [],
+      }),
+      true,
+    );
+    assert.equal(UNFILED_FOLDER_LABEL, "Unfiled");
+    assert.equal(UNFILED_FOLDER_ID, "unfiled");
+    assert.equal(
+      isWorkflowFolder({
+        id: UNFILED_FOLDER_ID,
+        workspaceId: ops.workspaceId,
+        parentId: null,
+        name: UNFILED_FOLDER_LABEL,
+        createdAt: ops.createdAt,
+        updatedAt: ops.updatedAt,
+      }),
+      false,
+    );
+    assert.equal(
+      buildFolderTree([ops, oncall]).some((node) => node.id === UNFILED_FOLDER_ID),
+      false,
+    );
+    assert.equal(
+      buildFolderTree([ops, oncall]).some(
+        (node) => node.name === UNFILED_FOLDER_LABEL,
+      ),
+      false,
+    );
+    assert.match(home, /data-home-folder-rail="unfiled"/);
+    assert.match(home, /UNFILED_FOLDER_LABEL/);
+    assert.match(client, /filter\(isWorkflowFolder\)/);
+    assert.doesNotMatch(home, /localStorage/);
+    assert.equal(F5_HOME_FOLDER.unfiledAlwaysInRail, true);
+    assert.equal(F5_HOME_FOLDER.unfiledIsNotPersisted, true);
+    assert.equal(F2_HOME_FOLDER.unfiledIsVirtual, true);
+    assert.equal(F3_HOME_FOLDER.unfiledCannotRenameOrDelete, true);
   });
 });

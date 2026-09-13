@@ -65,7 +65,6 @@ import {
   HOME_EMPTY_TEMPLATE_LABEL,
   HOME_FILTERED_EMPTY_HEADING,
   HOME_FILTERED_EMPTY_HELP,
-  homeEmptyKind,
 } from "@/lib/empty-states-teach-model";
 import { loadHomeActivationStates } from "@/lib/home-activation-client";
 import {
@@ -116,6 +115,11 @@ import {
   DELETE_FOLDER_LABEL,
   FOLDER_CRUMB_LABEL,
   FOLDER_DEPTH_HELP,
+  FOLDER_EMPTY_CREATE_LABEL,
+  FOLDER_EMPTY_HEADING,
+  FOLDER_EMPTY_HELP,
+  FOLDER_EMPTY_MOVE_LABEL,
+  FOLDER_EMPTY_VIEWER_HELP,
   FOLDER_MOVE_VERB,
   FOLDER_MUTATE_IDLE,
   FOLDER_NAME_RULES_HELP,
@@ -124,6 +128,10 @@ import {
   FOLDER_RAIL_LABEL,
   NEW_FOLDER_LABEL,
   RENAME_FOLDER_LABEL,
+  UNFILED_EMPTY_FILED_HELP,
+  UNFILED_EMPTY_HEADING,
+  UNFILED_EMPTY_NONE_HELP,
+  UNFILED_EMPTY_TREE_LABEL,
   UNFILED_FOLDER_LABEL,
   WORKFLOW_MOVE_DRAG_TYPE,
   ancestorIdsForSelection,
@@ -137,8 +145,10 @@ import {
   consumeFolderWorkspaceChange,
   createFolderParentId,
   defaultWorkflowMoveTarget,
+  emptyFolderDeleteAllowed,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
+  folderHomeEmptyKind,
   folderIdForMove,
   folderMutateBegin,
   folderMutateFinish,
@@ -152,10 +162,12 @@ import {
   readExpandedFolderIds,
   resolveFolderSelection,
   selectionAfterFolderDelete,
+  unfiledEmptyUsesHomeVerbs,
   workflowAlreadyInFolder,
   workflowMoveDragPayload,
   workflowMoveTargets,
   workflowsFolderIdQuery,
+  workflowsMovableIntoSelection,
   writeExpandedFolderIds,
   type FolderMutateChrome,
   type FolderSelection,
@@ -201,6 +213,9 @@ function WorkflowHomeSession() {
     dropPreviousFolder ? [] : readExpandedFolderIds(workspaceKey),
   );
   const [records, setRecords] = useState<WorkflowRecord[]>([]);
+  const [workspaceWorkflows, setWorkspaceWorkflows] = useState<
+    WorkflowRecord[] | null
+  >(null);
   const [drafts, setDrafts] = useState<Map<string, WorkflowDraft>>(new Map());
   const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
   const [lastRunKnownIds, setLastRunKnownIds] = useState<Set<string>>(new Set());
@@ -233,6 +248,8 @@ function WorkflowHomeSession() {
   const [dragging, setDragging] = useState<WorkflowMoveDragPayload | null>(
     null,
   );
+  const [moveIntoOpen, setMoveIntoOpen] = useState(false);
+  const [moveIntoWorkflowId, setMoveIntoWorkflowId] = useState("");
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
@@ -320,11 +337,28 @@ function WorkflowHomeSession() {
     () => sortWorkflowHomeItems(filterWorkflowHomeItems(items, filters)),
     [items, filters],
   );
-  const emptyKind = homeEmptyKind({
-    recordCount: records.length,
+  const workspaceWorkflowCount = workspaceWorkflows?.length ?? records.length;
+  const emptyKind = folderHomeEmptyKind({
+    selection,
+    folderCount: folders.length,
+    scopedRecordCount: records.length,
     visibleCount: visible.length,
-    folderScopedEmpty: folders.length > 0 && records.length === 0,
+    workspaceWorkflowCount,
   });
+  const unfiledShowsHomeVerbs = unfiledEmptyUsesHomeVerbs(workspaceWorkflowCount);
+  const selectedChildFolderCount =
+    selection.kind === "folder" ? childFolderCount(folders, selection.id) : 0;
+  const folderEmptyDeleteAllowed =
+    selection.kind === "folder" &&
+    emptyFolderDeleteAllowed({
+      childFolderCount: selectedChildFolderCount,
+      workflowCount: records.length,
+    });
+  const moveIntoCandidates = useMemo(
+    () =>
+      workflowsMovableIntoSelection(workspaceWorkflows ?? [], selection),
+    [workspaceWorkflows, selection],
+  );
   const options = useMemo(() => uniqueFilterValues(items), [items]);
   const resolvedStartId =
     startWorkflowId === "1"
@@ -399,6 +433,7 @@ function WorkflowHomeSession() {
       setFolders([]);
       setFoldersReady(true);
       setRecords([]);
+      setWorkspaceWorkflows(null);
       setDrafts(new Map());
       setExecutions([]);
       setLastRunKnownIds(new Set());
@@ -445,10 +480,20 @@ function WorkflowHomeSession() {
     }
     if (!list.ok) {
       setPending(null);
+      setWorkspaceWorkflows(null);
       setProblem(list.problem);
       return;
     }
     setRecords(list.items);
+    if (list.items.length === 0) {
+      const all = await listWorkflows(identity);
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
+      }
+      setWorkspaceWorkflows(all.ok ? all.items : []);
+    } else {
+      setWorkspaceWorkflows(null);
+    }
     const draftEntries = await Promise.all(
       list.items.map(async (item) => {
         const draft = await getWorkflowDraft(identity, item.id);
@@ -653,6 +698,28 @@ function WorkflowHomeSession() {
     setMoveTarget({ kind: "unfiled" });
   }
 
+  function openMoveIntoFolder() {
+    if (!canMutateFolders || selection.kind !== "folder") {
+      return;
+    }
+    const first = moveIntoCandidates[0];
+    setMoveIntoWorkflowId(first?.id ?? "");
+    setMoveIntoOpen(true);
+  }
+
+  function closeMoveIntoFolder() {
+    setMoveIntoOpen(false);
+    setMoveIntoWorkflowId("");
+  }
+
+  async function submitMoveIntoFolder() {
+    if (!moveIntoWorkflowId) {
+      return;
+    }
+    await moveItem(moveIntoWorkflowId, selection);
+    closeMoveIntoFolder();
+  }
+
   function openMoveDialog(item: WorkflowHomeItem) {
     if (!canMutateFolders) {
       return;
@@ -672,6 +739,7 @@ function WorkflowHomeSession() {
     }
     const current =
       items.find((item) => item.id === workflowId)?.folderId ??
+      workspaceWorkflows?.find((item) => item.id === workflowId)?.folderId ??
       (moveDialog?.id === workflowId ? moveDialog.folderId : undefined);
     if (workflowAlreadyInFolder(current, target)) {
       return;
@@ -1089,6 +1157,62 @@ function WorkflowHomeSession() {
       />
       <div className="min-w-0 space-y-6">
       <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
+      {canMutateFolders && moveIntoOpen && selection.kind === "folder" ? (
+        <form
+          data-f5="folder-empty-move"
+          data-home-folder-empty-move-dialog=""
+          className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitMoveIntoFolder();
+          }}
+        >
+          <p className="text-sm text-zinc-700">
+            Move an existing workflow into this folder. This does not change
+            YAML, draft revision, or activation.
+          </p>
+          {moveIntoCandidates.length === 0 ? (
+            <p className="text-sm text-zinc-600">
+              No workflows are available to move. Create a draft here or use
+              the folder rail.
+            </p>
+          ) : (
+            <label className="block text-sm">
+              <span className="text-zinc-600">Workflow</span>
+              <select
+                data-home-folder-empty-move-target=""
+                value={moveIntoWorkflowId}
+                onChange={(event) => setMoveIntoWorkflowId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              >
+                {moveIntoCandidates.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || item.slug}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={pending !== null || !moveIntoWorkflowId}
+              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            >
+              {FOLDER_EMPTY_MOVE_LABEL}
+            </button>
+            <button
+              type="button"
+              disabled={pending !== null}
+              onClick={closeMoveIntoFolder}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       {canMutateFolders && moveDialog ? (
         <form
           data-home-workflow-move-dialog=""
@@ -1394,11 +1518,14 @@ function WorkflowHomeSession() {
         />
       ) : null}
 
-      {emptyKind === "teach" ? (
+      {emptyKind === "teach" ||
+      (emptyKind === "unfiled" && unfiledShowsHomeVerbs) ? (
         <>
           <HomeEmptyTeach
             canCreate={canCreate}
+            canCreateFolder={canMutateFolders}
             pending={pending !== null}
+            unfiledEmpty={emptyKind === "unfiled"}
             onCreate={() => {
               const blank = workflowTemplateById("blank");
               if (blank) {
@@ -1406,6 +1533,7 @@ function WorkflowHomeSession() {
               }
             }}
             onImport={() => importRef.current?.click()}
+            onNewFolder={openCreateFolder}
           />
           <TemplateGrid
             canCreate={canCreate}
@@ -1413,6 +1541,32 @@ function WorkflowHomeSession() {
             onSelect={(template) => void createFromTemplate(template)}
           />
         </>
+      ) : emptyKind === "unfiled" ? (
+        <UnfiledEmptyFiled
+          folders={folders}
+          onSelectFolder={selectFolder}
+        />
+      ) : emptyKind === "folder" ? (
+        <FolderEmpty
+          canCreate={canCreate}
+          canMutate={canMutateFolders}
+          pending={pending !== null}
+          deleteAllowed={folderEmptyDeleteAllowed}
+          moveAvailable={moveIntoCandidates.length > 0}
+          onCreate={() => {
+            const blank = workflowTemplateById("blank");
+            if (blank) {
+              void createFromYaml(blank.definitionYaml);
+            }
+          }}
+          onImport={() => importRef.current?.click()}
+          onMove={openMoveIntoFolder}
+          onDelete={() => {
+            if (selection.kind === "folder") {
+              void removeFolder(selection.id);
+            }
+          }}
+        />
       ) : emptyKind === "filtered" ? (
         <HomeFilteredEmpty
           onClear={() => setFilters(EMPTY_WORKFLOW_HOME_FILTERS)}
@@ -2330,46 +2484,199 @@ function WorkflowHomeCards({
 
 function HomeEmptyTeach({
   canCreate,
+  canCreateFolder,
   pending,
+  unfiledEmpty,
   onCreate,
   onImport,
+  onNewFolder,
 }: {
   canCreate: boolean;
+  canCreateFolder: boolean;
   pending: boolean;
+  unfiledEmpty?: boolean;
   onCreate: () => void;
   onImport: () => void;
+  onNewFolder: () => void;
 }) {
   return (
     <section
       data-uxl6="home-empty"
+      data-f5={unfiledEmpty ? "unfiled-empty-none" : "home-empty"}
       className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
     >
-      <h2 className="text-base font-semibold">{HOME_EMPTY_HEADING}</h2>
-      <p className="mt-2 max-w-3xl text-sm text-zinc-600">{HOME_EMPTY_HELP}</p>
-      {canCreate ? (
+      <h2 className="text-base font-semibold">
+        {unfiledEmpty ? UNFILED_EMPTY_HEADING : HOME_EMPTY_HEADING}
+      </h2>
+      <p className="mt-2 max-w-3xl text-sm text-zinc-600">
+        {unfiledEmpty ? UNFILED_EMPTY_NONE_HELP : HOME_EMPTY_HELP}
+      </p>
+      {canCreate || canCreateFolder ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onCreate}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-          >
-            {HOME_EMPTY_CREATE_LABEL}
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onImport}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-          >
-            {HOME_EMPTY_IMPORT_LABEL}
-          </button>
+          {canCreate ? (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={onCreate}
+                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              >
+                {HOME_EMPTY_CREATE_LABEL}
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={onImport}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {HOME_EMPTY_IMPORT_LABEL}
+              </button>
+            </>
+          ) : null}
+          {canCreateFolder ? (
+            <button
+              type="button"
+              data-home-empty-verb="new-folder"
+              disabled={pending}
+              onClick={onNewFolder}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {NEW_FOLDER_LABEL}
+            </button>
+          ) : null}
         </div>
       ) : (
         <p className="mt-3 text-xs text-zinc-500">
           Creating a draft requires <code className="font-mono">workflow.edit</code>.
         </p>
       )}
+    </section>
+  );
+}
+
+function FolderEmpty({
+  canCreate,
+  canMutate,
+  pending,
+  deleteAllowed,
+  moveAvailable,
+  onCreate,
+  onImport,
+  onMove,
+  onDelete,
+}: {
+  canCreate: boolean;
+  canMutate: boolean;
+  pending: boolean;
+  deleteAllowed: boolean;
+  moveAvailable: boolean;
+  onCreate: () => void;
+  onImport: () => void;
+  onMove: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section
+      data-f5="folder-empty"
+      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
+    >
+      <h2 className="text-base font-semibold">{FOLDER_EMPTY_HEADING}</h2>
+      <p className="mt-2 max-w-3xl text-sm text-zinc-600">{FOLDER_EMPTY_HELP}</p>
+      {canCreate || canMutate ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {canCreate ? (
+            <>
+              <button
+                type="button"
+                data-home-folder-empty-verb="create"
+                disabled={pending}
+                onClick={onCreate}
+                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              >
+                {FOLDER_EMPTY_CREATE_LABEL}
+              </button>
+              <button
+                type="button"
+                data-home-folder-empty-verb="import"
+                disabled={pending}
+                onClick={onImport}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {HOME_EMPTY_IMPORT_LABEL}
+              </button>
+            </>
+          ) : null}
+          {canMutate ? (
+            <>
+              <button
+                type="button"
+                data-home-folder-empty-verb="move"
+                disabled={pending || !moveAvailable}
+                title={
+                  moveAvailable
+                    ? undefined
+                    : "No workflows are available to move."
+                }
+                onClick={onMove}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {FOLDER_EMPTY_MOVE_LABEL}
+              </button>
+              <button
+                type="button"
+                data-home-folder-empty-verb="delete"
+                disabled={pending || !deleteAllowed}
+                title={deleteAllowed ? undefined : FOLDER_NOT_EMPTY_HELP}
+                onClick={onDelete}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {DELETE_FOLDER_LABEL}
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-zinc-500">{FOLDER_EMPTY_VIEWER_HELP}</p>
+      )}
+    </section>
+  );
+}
+
+function UnfiledEmptyFiled({
+  folders,
+  onSelectFolder,
+}: {
+  folders: readonly WorkflowFolder[];
+  onSelectFolder: (next: FolderSelection) => void;
+}) {
+  const tree = buildFolderTree(folders);
+  return (
+    <section
+      data-f5="unfiled-empty-filed"
+      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
+    >
+      <h2 className="text-base font-semibold">{UNFILED_EMPTY_HEADING}</h2>
+      <p className="mt-2 max-w-3xl text-sm text-zinc-600">
+        {UNFILED_EMPTY_FILED_HELP}
+      </p>
+      <p className="mt-2 text-sm text-zinc-600">{UNFILED_EMPTY_TREE_LABEL}.</p>
+      {tree.length > 0 ? (
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {tree.map((node) => (
+            <li key={node.id}>
+              <button
+                type="button"
+                data-f5="unfiled-empty-tree"
+                data-folder-id={node.id}
+                onClick={() => onSelectFolder({ kind: "folder", id: node.id })}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              >
+                {node.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
 }

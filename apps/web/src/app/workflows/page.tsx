@@ -21,9 +21,13 @@ export default function WorkflowsPage() {
         <p className={TYPE_PAGE_HELP_CLASS}>
           Product home for drafts and published versions. The left rail
           lists Unfiled and this workspace&apos;s folders; the main list
-          is the selected folder. Empty home
+          is the selected folder. Unfiled is always in the rail and is
+          not a persisted folder. Empty home
           teaches Create, Import YAML, or a reviewed template — each
-          creates a draft. Drafts do not run. List and card
+          creates a draft — plus optional New folder. Empty folder
+          offers create here, move, or delete when the folder has no
+          workflows and no child folders. Unfiled-empty points at the
+          tree or those empty-home verbs. Drafts do not run. List and card
           scan ends are activation (published version active for webhook
           or schedule) and last run (waiting or indeterminate when those
           joins already exist), then status, version, validation health,
