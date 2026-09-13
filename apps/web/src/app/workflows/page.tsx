@@ -12,7 +12,9 @@ export default function WorkflowsPage() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Workflows</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Product home for drafts and published versions. List and card
+          Product home for drafts and published versions. Empty home
+          teaches Create, Import YAML, or a reviewed template — each
+          creates a draft. Drafts do not run. List and card
           scan ends are activation (published version active for webhook
           or schedule) and last run (waiting or indeterminate when those
           joins already exist), then status, version, validation health,

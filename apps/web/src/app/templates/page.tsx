@@ -45,7 +45,8 @@ export default function TemplatesPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Templates</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
           Reviewed starting points. Creating from a template always POSTs an
-          editable draft in the current workspace. There is no template API
+          editable draft in the current workspace. Drafts do not run —
+          publish, then start a published version. There is no template API
           on main.
         </p>
       </header>

@@ -54,6 +54,7 @@ import {
   type WorkflowGraph,
 } from "@/lib/workflow-graph";
 import { canvasAddAffordance } from "@/lib/editor-library";
+import { CANVAS_EMPTY_HELP } from "@/lib/empty-states-teach-model";
 import type { CatalogPort } from "@/lib/workflow-types";
 
 type WorkflowCanvasProps = {
@@ -368,24 +369,27 @@ export function WorkflowCanvas({
             : "The canvas appears after a successful validate. Invalid YAML never becomes a guessed graph."}
         </p>
         {!readOnly && onOpenLibrary ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onOpenLibrary}
-              aria-label="Open action library"
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-teal-800 bg-teal-800 text-lg font-semibold leading-none text-white hover:bg-teal-900"
-            >
-              +
-            </button>
-            {onAddAction ? (
+          <div className="mt-4 space-y-3" data-uxl6="canvas-empty">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={onAddAction}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+                onClick={onOpenLibrary}
+                aria-label="Open action library"
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-teal-800 bg-teal-800 text-lg font-semibold leading-none text-white hover:bg-teal-900"
               >
-                Add action
+                +
               </button>
-            ) : null}
+              {onAddAction ? (
+                <button
+                  type="button"
+                  onClick={onAddAction}
+                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+                >
+                  Add action
+                </button>
+              ) : null}
+            </div>
+            <p className="text-sm text-zinc-600">{CANVAS_EMPTY_HELP}</p>
           </div>
         ) : null}
       </section>
@@ -707,7 +711,10 @@ export function WorkflowCanvas({
         </div>
         {addAffordance.emptyPlus && onOpenLibrary ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white/95 px-6 py-5 shadow-sm">
+            <div
+              data-uxl6="canvas-empty"
+              className="pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white/95 px-6 py-5 shadow-sm"
+            >
               <button
                 type="button"
                 onClick={onOpenLibrary}
@@ -727,6 +734,7 @@ export function WorkflowCanvas({
               ) : (
                 <p className="text-sm text-zinc-600">Add an action to the canvas</p>
               )}
+              <p className="text-center text-sm text-zinc-600">{CANVAS_EMPTY_HELP}</p>
             </div>
           </div>
         ) : null}

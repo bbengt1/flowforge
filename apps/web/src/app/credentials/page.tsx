@@ -17,7 +17,9 @@ export default function CredentialsPage() {
           Find credentials by display name. Filter by
           type, tag, or status, then open a row into existing{" "}
           <code className="font-mono text-sm">/credentials/{"{id}"}</code>{" "}
-          detail — no hunting. List is metadata only.{" "}
+          detail — no hunting. Empty vault adds via the masked wizard;
+          selectors stay display name + UUID. No sample secrets. List is
+          metadata only.{" "}
           <code className="font-mono text-sm">GET /credentials</code> has no
           query params; search stays in the browser. Unexpected plaintext is a
           contract bug (strip + stop). The UI never reads{" "}
