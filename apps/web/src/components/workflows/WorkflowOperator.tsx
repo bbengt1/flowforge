@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
-import { DohertyStatus } from "@/components/chrome/DohertyStatus";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   DOHERTY_IDLE,
@@ -1948,8 +1947,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       bannerProblem ||
       (dirty && workflow) ||
       publishedVersion ||
-      wizardFeedback !== "idle" ||
-      doherty.phase !== "idle",
+      wizardFeedback !== "idle",
   );
 
   const runControl = workflow ? (
@@ -2093,7 +2091,6 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
                     : "Action was not added."}
               </p>
             ) : null}
-            {doherty.phase !== "idle" ? <DohertyStatus chrome={doherty} /> : null}
           </>
         ) : null
       }
