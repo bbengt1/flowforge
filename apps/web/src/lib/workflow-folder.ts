@@ -1,15 +1,17 @@
 /**
- * F.2 home folder rail + select (Chloe UI).
+ * F.2 home folder rail + select, F.3 create / rename / delete
+ * (Chloe UI).
  *
- * Relates to #309 / Part of #307. Keep #309 open.
+ * Relates to #309 / #310 / Part of #307. Keep #309 and #310 open.
  *
- * Read + select only. Tree comes from GET /workflow-folders.
- * The list uses GET /workflows?folderId=. Unfiled is virtual
- * (folderId == null), not a persisted row. `?folder=` is the
- * deep link. Workspace / tenant+workbench change drops the
- * previous-workspace folder query. Prefix-in-name is no longer
- * the primary organizer. Viewers can select; F.2 ships no
- * create / rename / delete / move verbs.
+ * Tree comes from GET /workflow-folders. The list uses
+ * GET /workflows?folderId=. Unfiled is virtual (folderId == null),
+ * not a persisted row. `?folder=` is the deep link. Workspace /
+ * tenant+workbench change drops the previous-workspace folder query.
+ * Prefix-in-name is no longer the primary organizer. Viewers can
+ * select; they do not get New folder / Rename folder / Delete folder.
+ * Editors mutate through POST / PATCH / DELETE /workflow-folders.
+ * Rename-only in F.3 — folder re-parent and workflow move stay F.4.
  *
  * Folders are not in YAML. Drafts never run. No cascade delete.
  * Host ?tenant= / ?workbench= stay display-only (ADV-021).
@@ -24,6 +26,25 @@ export const F2_EPIC = 307;
 export const F2_KEEP_STORY_OPEN = true;
 export const F2_ID = "F.2-home-folder-rail-select" as const;
 export const F2_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F3_STORY = 310;
+export const F3_EPIC = 307;
+export const F3_KEEP_STORY_OPEN = true;
+export const F3_ID = "F.3-create-rename-delete-folders" as const;
+export const F3_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const MAX_FOLDER_DEPTH = 4;
+export const MAX_FOLDER_NAME_GRAPHEMES = 64;
+export const FOLDER_NAME_RULES_HELP =
+  "Folder name must be 1-64 graphemes with no '/' or control characters.";
+export const FOLDER_SIBLING_HELP =
+  "A folder with this name already exists among siblings.";
+export const FOLDER_DEPTH_HELP =
+  "Folders cannot be nested more than 4 levels.";
+export const FOLDER_NOT_EMPTY_HELP = "Move or delete contents first.";
+export const FOLDER_UNFILED_LOCKED_HELP =
+  "Unfiled is virtual and cannot be renamed or deleted.";
+export const NEW_FOLDER_LABEL = "New folder";
+export const RENAME_FOLDER_LABEL = "Rename folder";
+export const DELETE_FOLDER_LABEL = "Delete folder";
 
 export const WORKFLOW_FOLDERS_PATH = "/workflow-folders";
 export const FOLDER_QUERY = "folder";
@@ -34,12 +55,58 @@ export const FOLDER_CRUMB_LABEL = "Selected folder";
 export const FOLDER_EXPAND_STORAGE_PREFIX = "ff.home.folder.expand:";
 export const FOLDER_WORKSPACE_MEMORY = "ff.home.folder.workspace";
 
-export const FOLDER_MUTATE_VERBS = [
-  "New folder",
-  "Rename folder",
-  "Delete folder",
-  "Move…",
+export const FOLDER_ORGANIZE_VERBS = [
+  NEW_FOLDER_LABEL,
+  RENAME_FOLDER_LABEL,
+  DELETE_FOLDER_LABEL,
 ] as const;
+
+export const FOLDER_MOVE_VERB = "Move…" as const;
+
+export const FOLDER_MUTATE_VERBS = [
+  ...FOLDER_ORGANIZE_VERBS,
+  FOLDER_MOVE_VERB,
+] as const;
+
+export type FolderMutateGesture = "create" | "rename" | "delete";
+
+export type FolderMutatePhase = "idle" | "pending" | "success" | "error";
+
+export type FolderMutateChrome = {
+  gesture: FolderMutateGesture | null;
+  phase: FolderMutatePhase;
+};
+
+export const FOLDER_MUTATE_IDLE: FolderMutateChrome = {
+  gesture: null,
+  phase: "idle",
+};
+
+export const FOLDER_MUTATE_LABELS = {
+  create: {
+    pending: "Creating folder…",
+    success: "Folder created.",
+    error: "Folder was not created.",
+  },
+  rename: {
+    pending: "Renaming folder…",
+    success: "Folder renamed.",
+    error: "Folder was not renamed.",
+  },
+  delete: {
+    pending: "Deleting folder…",
+    success: "Folder deleted.",
+    error: "Folder was not deleted.",
+  },
+} as const satisfies Record<
+  FolderMutateGesture,
+  { pending: string; success: string; error: string }
+>;
+
+export type FolderNotEmptyCounts = {
+  workflowCount: number;
+  childFolderCount: number;
+};
 
 export const PREFIX_IN_NAME_PRIMARY_TOKENS = [
   'label="Folder"',
@@ -85,6 +152,7 @@ export const F2_HOME_FOLDER = {
   prefixInNameIsNotPrimaryOrganizer: true,
   viewerCanSelect: true,
   noMutateVerbs: true,
+  f3OrganizeVerbsEditGated: true,
   singleMain: true,
   labeledRail: true,
   noNestedMain: true,
@@ -93,6 +161,33 @@ export const F2_HOME_FOLDER = {
   noNewApi: true,
   d6MigrateInPlace: true,
   keep309Open: true,
+  keep310Open: true,
+} as const;
+
+export const F3_HOME_FOLDER = {
+  yamlIsSourceOfTruth: true,
+  foldersNotInYaml: true,
+  draftsNeverRun: true,
+  vaultDisplayNameUuidOnly: true,
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  isolationSuccessIsDenial: true,
+  noCascadeDelete: true,
+  notAnN8nClone: true,
+  noKekInBrowser: true,
+  unfiledIsVirtual: true,
+  unfiledCannotRenameOrDelete: true,
+  organizeVerbsOnRail: true,
+  renameOnlyNoReparent: true,
+  noWorkflowMove: true,
+  viewersHaveNoOrganizeVerbs: true,
+  pendingThenSuccessOrError: true,
+  csrfOnWrites: true,
+  noActionsDetour: true,
+  noYamlOrSlugRewrite: true,
+  noNewApi: true,
+  d6MigrateInPlace: true,
+  keep310Open: true,
 } as const;
 
 export const F2_HOME_FOLDER_SOURCES = [
@@ -353,6 +448,224 @@ export function canMutateWorkflowFolders(
 
 export function homeFolderRailHasMutateVerbs(source: string): boolean {
   return FOLDER_MUTATE_VERBS.some((verb) => source.includes(verb));
+}
+
+export function homeFolderRailHasOrganizeVerbs(source: string): boolean {
+  const labeled = FOLDER_ORGANIZE_VERBS.every((verb) => source.includes(verb));
+  const tokens =
+    source.includes("NEW_FOLDER_LABEL") &&
+    source.includes("RENAME_FOLDER_LABEL") &&
+    source.includes("DELETE_FOLDER_LABEL");
+  return labeled || tokens;
+}
+
+export function homeFolderRailHasMoveVerb(source: string): boolean {
+  return source.includes(FOLDER_MOVE_VERB);
+}
+
+export function workflowFolderPath(folderId: string): string {
+  return `${WORKFLOW_FOLDERS_PATH}/${folderId}`;
+}
+
+export function folderNameGraphemes(name: string): number {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter(undefined, {
+      granularity: "grapheme",
+    });
+    return [...segmenter.segment(name)].length;
+  }
+  return [...name].length;
+}
+
+function hasForbiddenFolderChar(name: string): boolean {
+  for (const char of name) {
+    if (char === "/") {
+      return true;
+    }
+    const code = char.codePointAt(0) ?? 0;
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function folderNameRuleError(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "Enter a folder name.";
+  }
+  if (hasForbiddenFolderChar(trimmed)) {
+    return FOLDER_NAME_RULES_HELP;
+  }
+  if (folderNameGraphemes(trimmed) > MAX_FOLDER_NAME_GRAPHEMES) {
+    return FOLDER_NAME_RULES_HELP;
+  }
+  return null;
+}
+
+export function normalizeFolderName(
+  name: string,
+): { ok: true; name: string } | { ok: false; error: string } {
+  const trimmed = name.trim();
+  const error = folderNameRuleError(trimmed);
+  if (error) {
+    return { ok: false, error };
+  }
+  return { ok: true, name: trimmed };
+}
+
+export function siblingFolderNameTaken(
+  items: readonly WorkflowFolder[],
+  name: string,
+  parentId: string | null,
+  exceptId?: string,
+): boolean {
+  const needle = name.trim().toLowerCase();
+  if (!needle) {
+    return false;
+  }
+  return items.some((item) => {
+    if (exceptId && item.id === exceptId) {
+      return false;
+    }
+    if ((item.parentId ?? null) !== parentId) {
+      return false;
+    }
+    return item.name.trim().toLowerCase() === needle;
+  });
+}
+
+export function folderNameSubmitError(
+  items: readonly WorkflowFolder[],
+  name: string,
+  parentId: string | null,
+  exceptId?: string,
+): string | null {
+  const normalized = normalizeFolderName(name);
+  if (!normalized.ok) {
+    return normalized.error;
+  }
+  if (siblingFolderNameTaken(items, normalized.name, parentId, exceptId)) {
+    return FOLDER_SIBLING_HELP;
+  }
+  return null;
+}
+
+export function createFolderParentId(selection: FolderSelection): string | null {
+  return selection.kind === "folder" ? selection.id : null;
+}
+
+export function folderDepth(
+  items: readonly WorkflowFolder[],
+  folderId: string,
+): number {
+  return folderPath(items, folderId).length;
+}
+
+export function canCreateChildFolder(
+  items: readonly WorkflowFolder[],
+  parentId: string | null,
+): boolean {
+  if (!parentId) {
+    return true;
+  }
+  return folderDepth(items, parentId) < MAX_FOLDER_DEPTH;
+}
+
+export function childFolderCount(
+  items: readonly WorkflowFolder[],
+  folderId: string,
+): number {
+  return items.filter((item) => item.parentId === folderId).length;
+}
+
+export function folderAllowsRenameOrDelete(selection: FolderSelection): boolean {
+  return selection.kind === "folder";
+}
+
+export function selectionAfterFolderDelete(
+  deletedId: string,
+  items: readonly WorkflowFolder[],
+  current: FolderSelection,
+): FolderSelection {
+  if (current.kind === "unfiled" || current.id !== deletedId) {
+    return current;
+  }
+  const deleted = items.find((item) => item.id === deletedId);
+  if (deleted?.parentId) {
+    return { kind: "folder", id: deleted.parentId };
+  }
+  return { kind: "unfiled" };
+}
+
+export function folderDeleteBlocked(options: {
+  childFolderCount: number;
+  workflowCount: number | null;
+}): boolean {
+  if (options.childFolderCount > 0) {
+    return true;
+  }
+  return options.workflowCount != null && options.workflowCount > 0;
+}
+
+export function folderNotEmptyCounts(
+  value: unknown,
+): FolderNotEmptyCounts | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const body = value as Record<string, unknown>;
+  if (
+    typeof body.workflowCount !== "number" ||
+    typeof body.childFolderCount !== "number" ||
+    !Number.isFinite(body.workflowCount) ||
+    !Number.isFinite(body.childFolderCount)
+  ) {
+    return null;
+  }
+  return {
+    workflowCount: body.workflowCount,
+    childFolderCount: body.childFolderCount,
+  };
+}
+
+export function folderNotEmptyDetail(counts: FolderNotEmptyCounts): string {
+  const parts: string[] = [];
+  if (counts.workflowCount > 0) {
+    parts.push(
+      `${counts.workflowCount} workflow${counts.workflowCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (counts.childFolderCount > 0) {
+    parts.push(
+      `${counts.childFolderCount} child folder${counts.childFolderCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (parts.length === 0) {
+    return FOLDER_NOT_EMPTY_HELP;
+  }
+  return `${FOLDER_NOT_EMPTY_HELP} This folder still has ${parts.join(" and ")}.`;
+}
+
+export function folderMutateBegin(
+  gesture: FolderMutateGesture,
+): FolderMutateChrome {
+  return { gesture, phase: "pending" };
+}
+
+export function folderMutateFinish(
+  gesture: FolderMutateGesture,
+  ok: boolean,
+): FolderMutateChrome {
+  return { gesture, phase: ok ? "success" : "error" };
+}
+
+export function folderMutateLabel(chrome: FolderMutateChrome): string {
+  if (!chrome.gesture || chrome.phase === "idle") {
+    return "";
+  }
+  return FOLDER_MUTATE_LABELS[chrome.gesture][chrome.phase];
 }
 
 export function homeUsesPrefixInNameAsPrimaryOrganizer(source: string): boolean {

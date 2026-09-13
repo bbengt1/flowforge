@@ -103,27 +103,53 @@ import {
   EDITOR_WORKING_MEMORY_TEST_RUN,
 } from "@/lib/editor-working-memory";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
+import { dohertyStatusClassName } from "@/lib/doherty-pending-chrome";
 import {
+  DELETE_FOLDER_LABEL,
   FOLDER_CRUMB_LABEL,
+  FOLDER_DEPTH_HELP,
+  FOLDER_MUTATE_IDLE,
+  FOLDER_NAME_RULES_HELP,
+  FOLDER_NOT_EMPTY_HELP,
   FOLDER_QUERY,
   FOLDER_RAIL_LABEL,
+  NEW_FOLDER_LABEL,
+  RENAME_FOLDER_LABEL,
   UNFILED_FOLDER_LABEL,
   ancestorIdsForSelection,
   applyFolderQuery,
   breadcrumbSegments,
   buildFolderTree,
+  canCreateChildFolder,
+  canMutateWorkflowFolders,
+  childFolderCount,
   consumeFolderWorkspaceChange,
+  createFolderParentId,
+  folderAllowsRenameOrDelete,
+  folderDeleteBlocked,
+  folderMutateBegin,
+  folderMutateFinish,
+  folderMutateLabel,
+  folderNameSubmitError,
+  folderNotEmptyDetail,
   folderSelectionsEqual,
   parseFolderQuery,
   readExpandedFolderIds,
   resolveFolderSelection,
+  selectionAfterFolderDelete,
   workflowsFolderIdQuery,
   writeExpandedFolderIds,
+  type FolderMutateChrome,
   type FolderSelection,
   type FolderTreeNode,
   type WorkflowFolder,
 } from "@/lib/workflow-folder";
-import { listWorkflowFolders } from "@/lib/workflow-folder-client";
+import {
+  createWorkflowFolder,
+  deleteWorkflowFolder,
+  listWorkflowFolders,
+  renameWorkflowFolder,
+} from "@/lib/workflow-folder-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 import {
@@ -170,8 +196,17 @@ function WorkflowHomeSession() {
   const [createName, setCreateName] = useState("");
   const [createSlug, setCreateSlug] = useState("");
 
+  const [folderDialog, setFolderDialog] = useState<
+    { kind: "create" } | { kind: "rename"; id: string } | null
+  >(null);
+  const [folderNameDraft, setFolderNameDraft] = useState("");
+  const [folderNameError, setFolderNameError] = useState<string | null>(null);
+  const [folderChrome, setFolderChrome] =
+    useState<FolderMutateChrome>(FOLDER_MUTATE_IDLE);
+
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
+  const canMutateFolders = ready && canMutateWorkflowFolders(permissions);
   const rowCapabilities = productHomeCapabilities(ready ? permissions : null);
   const canExecute =
     ready && canOfferManualStart(permissions) && rowCapabilities.canExecute;
@@ -328,7 +363,7 @@ function WorkflowHomeSession() {
     [replaceFolderQuery],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (selectionOverride?: FolderSelection) => {
     const token = refreshGate.current.begin();
     if (!canView) {
       setFolders([]);
@@ -357,7 +392,7 @@ function WorkflowHomeSession() {
       setFoldersReady(true);
     }
     const resolved = resolveFolderSelection(
-      intendedSelection,
+      selectionOverride ?? intendedSelection,
       folderList.ok ? folderList.items : [],
     );
     if (!folderSelectionsEqual(resolved, intendedSelection)) {
@@ -462,6 +497,126 @@ function WorkflowHomeSession() {
     permissions,
     replaceFolderQuery,
   ]);
+
+  const selectedWorkflowCount =
+    selection.kind === "folder" ? records.length : null;
+
+  function openCreateFolder() {
+    if (!canMutateFolders) {
+      return;
+    }
+    setFolderDialog({ kind: "create" });
+    setFolderNameDraft("");
+    setFolderNameError(null);
+    setProblem(null);
+  }
+
+  function openRenameFolder(folderId: string) {
+    if (!canMutateFolders) {
+      return;
+    }
+    const current = folders.find((item) => item.id === folderId);
+    if (!current) {
+      return;
+    }
+    setFolderDialog({ kind: "rename", id: folderId });
+    setFolderNameDraft(current.name);
+    setFolderNameError(null);
+    setProblem(null);
+  }
+
+  function closeFolderDialog() {
+    setFolderDialog(null);
+    setFolderNameDraft("");
+    setFolderNameError(null);
+  }
+
+  async function submitFolderDialog() {
+    if (!canMutateFolders || !folderDialog) {
+      return;
+    }
+    const parentId =
+      folderDialog.kind === "create"
+        ? createFolderParentId(selection)
+        : (folders.find((item) => item.id === folderDialog.id)?.parentId ??
+          null);
+    const nameError = folderNameSubmitError(
+      folders,
+      folderNameDraft,
+      parentId,
+      folderDialog.kind === "rename" ? folderDialog.id : undefined,
+    );
+    if (nameError) {
+      setFolderNameError(nameError);
+      return;
+    }
+    const name = folderNameDraft.trim();
+    const gesture = folderDialog.kind === "create" ? "create" : "rename";
+    setFolderChrome(folderMutateBegin(gesture));
+    setPending(gesture === "create" ? "folder-create" : "folder-rename");
+    setProblem(null);
+    const result =
+      folderDialog.kind === "create"
+        ? await createWorkflowFolder(identity, {
+            name,
+            parentId,
+          })
+        : await renameWorkflowFolder(identity, folderDialog.id, name);
+    if (!result.ok) {
+      setPending(null);
+      setFolderChrome(folderMutateFinish(gesture, false));
+      setFolderNameError(result.problem.detail || nameError);
+      setProblem(result.problem);
+      return;
+    }
+    closeFolderDialog();
+    if (result.folder && folderDialog.kind === "create") {
+      const created = result.folder;
+      const parentId = created.parentId;
+      if (parentId) {
+        setExpandedIds((current) => {
+          const next = current.includes(parentId)
+            ? current
+            : [...current, parentId];
+          writeExpandedFolderIds(workspaceKey, next);
+          return next;
+        });
+      }
+      selectFolder({ kind: "folder", id: created.id });
+      await refresh({ kind: "folder", id: created.id });
+    } else {
+      await refresh();
+    }
+    setFolderChrome(folderMutateFinish(gesture, true));
+    setPending(null);
+  }
+
+  async function removeFolder(folderId: string) {
+    if (!canMutateFolders || !folderAllowsRenameOrDelete({ kind: "folder", id: folderId })) {
+      return;
+    }
+    const next = selectionAfterFolderDelete(folderId, folders, selection);
+    setFolderChrome(folderMutateBegin("delete"));
+    setPending("folder-delete");
+    setProblem(null);
+    const result = await deleteWorkflowFolder(identity, folderId);
+    if (!result.ok) {
+      setPending(null);
+      setFolderChrome(folderMutateFinish("delete", false));
+      const detail = result.notEmpty
+        ? folderNotEmptyDetail(result.notEmpty)
+        : result.problem.detail;
+      setProblem({
+        ...result.problem,
+        detail,
+      });
+      return;
+    }
+    selectFolder(next);
+    await refresh(next);
+    setFolderChrome(folderMutateFinish("delete", true));
+    setPending(null);
+  }
 
   useEffect(() => {
     if (!dropPreviousFolder) {
@@ -826,10 +981,24 @@ function WorkflowHomeSession() {
       <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
       <FolderRail
         tree={folderTree}
+        folders={folders}
         selection={selection}
         expandedIds={visibleExpandedIds}
+        canMutate={canMutateFolders}
+        pending={pending !== null}
+        selectedWorkflowCount={selectedWorkflowCount}
+        dialog={folderDialog}
+        nameDraft={folderNameDraft}
+        nameError={folderNameError}
+        chrome={folderChrome}
         onSelect={selectFolder}
         onToggle={toggleFolderExpanded}
+        onNameDraft={setFolderNameDraft}
+        onCreate={openCreateFolder}
+        onRename={openRenameFolder}
+        onDelete={(folderId) => void removeFolder(folderId)}
+        onSubmit={() => void submitFolderDialog()}
+        onCancel={closeFolderDialog}
       />
       <div className="min-w-0 space-y-6">
       <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
@@ -1148,27 +1317,144 @@ function WorkflowHomeSession() {
 
 function FolderRail({
   tree,
+  folders,
   selection,
   expandedIds,
+  canMutate,
+  pending,
+  selectedWorkflowCount,
+  dialog,
+  nameDraft,
+  nameError,
+  chrome,
   onSelect,
   onToggle,
+  onNameDraft,
+  onCreate,
+  onRename,
+  onDelete,
+  onSubmit,
+  onCancel,
 }: {
   tree: FolderTreeNode[];
+  folders: readonly WorkflowFolder[];
   selection: FolderSelection;
   expandedIds: readonly string[];
+  canMutate: boolean;
+  pending: boolean;
+  selectedWorkflowCount: number | null;
+  dialog: { kind: "create" } | { kind: "rename"; id: string } | null;
+  nameDraft: string;
+  nameError: string | null;
+  chrome: FolderMutateChrome;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
+  onNameDraft: (value: string) => void;
+  onCreate: () => void;
+  onRename: (folderId: string) => void;
+  onDelete: (folderId: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
 }) {
   const unfiledCurrent = selection.kind === "unfiled";
+  const createParentId = createFolderParentId(selection);
+  const canCreateHere = canCreateChildFolder(folders, createParentId);
+  const mutateLabel = folderMutateLabel(chrome);
   return (
     <nav
       aria-label={FOLDER_RAIL_LABEL}
       data-home-folder-rail="nav"
       className="h-fit rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm"
     >
-      <p className="px-2 text-xs font-medium tracking-wide text-zinc-500 uppercase">
-        {FOLDER_RAIL_LABEL}
-      </p>
+      <div className="flex items-start justify-between gap-2 px-2">
+        <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+          {FOLDER_RAIL_LABEL}
+        </p>
+        {canMutate ? (
+          <button
+            type="button"
+            data-home-folder-verb="new"
+            disabled={pending || !canCreateHere}
+            title={!canCreateHere ? FOLDER_DEPTH_HELP : undefined}
+            onClick={onCreate}
+            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+          >
+            {NEW_FOLDER_LABEL}
+          </button>
+        ) : null}
+      </div>
+      {canMutate && mutateLabel ? (
+        <p
+          role={chrome.phase === "error" ? "alert" : "status"}
+          data-home-folder-mutate={chrome.gesture ?? undefined}
+          data-doherty-phase={chrome.phase}
+          aria-busy={chrome.phase === "pending" ? true : undefined}
+          className={`mt-2 px-2 ${dohertyStatusClassName(chrome.phase)}`}
+        >
+          {mutateLabel}
+        </p>
+      ) : null}
+      {canMutate && dialog ? (
+        <form
+          data-home-folder-dialog={dialog.kind}
+          className="mt-3 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <label className="block text-sm">
+            <span className="text-zinc-600">
+              {dialog.kind === "create" ? NEW_FOLDER_LABEL : RENAME_FOLDER_LABEL}
+            </span>
+            <input
+              value={nameDraft}
+              onChange={(event) => onNameDraft(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+              autoComplete="off"
+              maxLength={256}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={
+                nameError ? "home-folder-name-error" : "home-folder-name-help"
+              }
+            />
+          </label>
+          <p id="home-folder-name-help" className="text-xs text-zinc-500">
+            {dialog.kind === "create"
+              ? createParentId
+                ? "Creates a folder under the selection. Unfiled is not a parent."
+                : "Creates a top-level folder."
+              : FOLDER_NAME_RULES_HELP}
+          </p>
+          {nameError ? (
+            <p
+              id="home-folder-name-error"
+              role="alert"
+              data-home-folder-name-error=""
+              className="text-xs text-rose-900"
+            >
+              {nameError}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md border border-teal-800 bg-teal-800 px-2 py-1 text-xs text-white hover:bg-teal-900 disabled:opacity-60"
+            >
+              {dialog.kind === "create" ? "Create" : "Save"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onCancel}
+              className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-white disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
       <ul className="mt-2 space-y-1">
         <li>
           <button
@@ -1190,10 +1476,16 @@ function FolderRail({
             key={node.id}
             node={node}
             depth={1}
+            folders={folders}
             selection={selection}
             expandedIds={expandedIds}
+            canMutate={canMutate}
+            pending={pending}
+            selectedWorkflowCount={selectedWorkflowCount}
             onSelect={onSelect}
             onToggle={onToggle}
+            onRename={onRename}
+            onDelete={onDelete}
           />
         ))}
       </ul>
@@ -1204,25 +1496,41 @@ function FolderRail({
 function FolderRailNode({
   node,
   depth,
+  folders,
   selection,
   expandedIds,
+  canMutate,
+  pending,
+  selectedWorkflowCount,
   onSelect,
   onToggle,
+  onRename,
+  onDelete,
 }: {
   node: FolderTreeNode;
   depth: number;
+  folders: readonly WorkflowFolder[];
   selection: FolderSelection;
   expandedIds: readonly string[];
+  canMutate: boolean;
+  pending: boolean;
+  selectedWorkflowCount: number | null;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
+  onRename: (folderId: string) => void;
+  onDelete: (folderId: string) => void;
 }) {
   const selected = selection.kind === "folder" && selection.id === node.id;
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.includes(node.id);
+  const deleteBlocked = folderDeleteBlocked({
+    childFolderCount: childFolderCount(folders, node.id),
+    workflowCount: selected ? selectedWorkflowCount : null,
+  });
   return (
     <li>
       <div
-        className="flex items-center gap-1"
+        className="flex flex-wrap items-center gap-1"
         style={{ paddingLeft: `${Math.min(depth, 4) * 0.5}rem` }}
       >
         {hasChildren ? (
@@ -1250,6 +1558,31 @@ function FolderRailNode({
         >
           {node.name}
         </button>
+        {canMutate ? (
+          <>
+            <button
+              type="button"
+              data-home-folder-verb="rename"
+              data-folder-id={node.id}
+              disabled={pending}
+              onClick={() => onRename(node.id)}
+              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {RENAME_FOLDER_LABEL}
+            </button>
+            <button
+              type="button"
+              data-home-folder-verb="delete"
+              data-folder-id={node.id}
+              disabled={pending || deleteBlocked}
+              title={deleteBlocked ? FOLDER_NOT_EMPTY_HELP : undefined}
+              onClick={() => onDelete(node.id)}
+              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {DELETE_FOLDER_LABEL}
+            </button>
+          </>
+        ) : null}
       </div>
       {hasChildren && expanded ? (
         <ul className="mt-1 space-y-1">
@@ -1258,10 +1591,16 @@ function FolderRailNode({
               key={child.id}
               node={child}
               depth={depth + 1}
+              folders={folders}
               selection={selection}
               expandedIds={expandedIds}
+              canMutate={canMutate}
+              pending={pending}
+              selectedWorkflowCount={selectedWorkflowCount}
               onSelect={onSelect}
               onToggle={onToggle}
+              onRename={onRename}
+              onDelete={onDelete}
             />
           ))}
         </ul>
