@@ -17,6 +17,12 @@ import {
   F3_ID,
   F3_KEEP_STORY_OPEN,
   F3_STORY,
+  F4_BRIEF,
+  F4_EPIC,
+  F4_HOME_FOLDER,
+  F4_ID,
+  F4_KEEP_STORY_OPEN,
+  F4_STORY,
   FOLDER_DEPTH_HELP,
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
@@ -32,12 +38,15 @@ import {
   breadcrumbSegments,
   buildFolderTree,
   canCreateChildFolder,
+  canDropWorkflowOnFolder,
   canMutateWorkflowFolders,
   childFolderCount,
   consumeFolderWorkspaceChange,
   createFolderParentId,
+  defaultWorkflowMoveTarget,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
+  folderIdForMove,
   folderExpandStorageKey,
   folderMutateBegin,
   folderMutateFinish,
@@ -52,6 +61,8 @@ import {
   folderSelectionsEqual,
   homeFolderRailHasMoveVerb,
   homeFolderRailHasOrganizeVerbs,
+  homeWorkflowRowHasDragMove,
+  homeWorkflowRowHasMoveVerb,
   homeFolderRailNestsMain,
   homeUsesPrefixInNameAsPrimaryOrganizer,
   isWorkflowFolder,
@@ -59,10 +70,16 @@ import {
   listWorkflowsPath,
   normalizeFolderName,
   parseFolderQuery,
+  parseWorkflowMoveDragPayload,
   readExpandedFolderIds,
   resolveFolderSelection,
   selectionAfterFolderDelete,
   siblingFolderNameTaken,
+  workflowAlreadyInFolder,
+  workflowMoveBody,
+  workflowMoveDragPayload,
+  workflowMoveFolderPath,
+  workflowMoveTargets,
   workflowsFolderIdQuery,
   writeExpandedFolderIds,
   type WorkflowFolder,
@@ -458,6 +475,140 @@ describe("F.3 create / rename / delete folders", () => {
     assert.equal(
       folderMutateLabel(folderMutateFinish("rename", false)),
       "Folder was not renamed.",
+    );
+  });
+});
+
+describe("F.4 move workflows (drag + menu)", () => {
+  it("keeps #311 open and cites the folder IA", () => {
+    assert.equal(F4_STORY, 311);
+    assert.equal(F4_EPIC, 307);
+    assert.equal(F4_KEEP_STORY_OPEN, true);
+    assert.equal(F4_ID, "F.4-move-workflows-drag-menu");
+    assert.equal(F4_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F4_HOME_FOLDER.keep311Open, true);
+    assert.equal(F4_HOME_FOLDER.foldersNotInYaml, true);
+    assert.equal(F4_HOME_FOLDER.draftsNeverRun, true);
+    assert.equal(F4_HOME_FOLDER.moveDoesNotBumpDraftRevision, true);
+    assert.equal(F4_HOME_FOLDER.moveDoesNotChangeYaml, true);
+    assert.equal(F4_HOME_FOLDER.moveDoesNotChangeActivation, true);
+    assert.equal(F4_HOME_FOLDER.viewerCannotDrop, true);
+    assert.equal(F4_HOME_FOLDER.unfiledTargetSendsNullFolderId, true);
+    assert.equal(F4_HOME_FOLDER.noFolderReparentDrag, true);
+    assert.equal(F4_HOME_FOLDER.noNewApi, true);
+    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    assert.match(brief, /F\.4/);
+    assert.match(brief, /Move…/);
+    const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /#311/);
+    assert.match(frontend, /keep #311 open/i);
+    assert.match(frontend, /PATCH \/api\/v1\/workflows\/\{id\}\/folder/);
+  });
+
+  it("maps Unfiled to folderId null and rejects same-folder or viewer drops", () => {
+    assert.equal(folderIdForMove({ kind: "unfiled" }), null);
+    assert.equal(folderIdForMove({ kind: "folder", id: ops.id }), ops.id);
+    assert.deepEqual(workflowMoveBody(null), { folderId: null });
+    assert.deepEqual(workflowMoveBody(ops.id), { folderId: ops.id });
+    assert.equal(
+      workflowMoveFolderPath("11111111-1111-4111-8111-111111111111"),
+      "/workflows/11111111-1111-4111-8111-111111111111/folder",
+    );
+    assert.equal(workflowAlreadyInFolder(null, { kind: "unfiled" }), true);
+    assert.equal(workflowAlreadyInFolder(ops.id, { kind: "folder", id: ops.id }), true);
+    assert.equal(workflowAlreadyInFolder(ops.id, { kind: "unfiled" }), false);
+    assert.equal(
+      canDropWorkflowOnFolder(false, null, { kind: "folder", id: ops.id }),
+      false,
+    );
+    assert.equal(
+      canDropWorkflowOnFolder(true, ops.id, { kind: "folder", id: ops.id }),
+      false,
+    );
+    assert.equal(
+      canDropWorkflowOnFolder(true, null, { kind: "folder", id: ops.id }),
+      true,
+    );
+    assert.equal(
+      canDropWorkflowOnFolder(true, ops.id, { kind: "unfiled" }),
+      true,
+    );
+    assert.deepEqual(
+      workflowMoveTargets([oncall, ops]).map((item) => item.label),
+      [UNFILED_FOLDER_LABEL, "Ops", "Ops / On-call"],
+    );
+    assert.deepEqual(defaultWorkflowMoveTarget(ops.id, [ops, oncall]), {
+      kind: "unfiled",
+    });
+    assert.deepEqual(defaultWorkflowMoveTarget(null, [ops, platform]), {
+      kind: "folder",
+      id: ops.id,
+    });
+    const payload = workflowMoveDragPayload("11111111-1111-4111-8111-111111111111", null);
+    assert.deepEqual(parseWorkflowMoveDragPayload(payload), {
+      workflowId: "11111111-1111-4111-8111-111111111111",
+      folderId: null,
+    });
+    assert.deepEqual(
+      parseWorkflowMoveDragPayload("11111111-1111-4111-8111-111111111111"),
+      {
+        workflowId: "11111111-1111-4111-8111-111111111111",
+        folderId: null,
+      },
+    );
+    assert.equal(parseWorkflowMoveDragPayload("not-a-workflow"), null);
+  });
+
+  it("wires drag + Move… to the F.1 PATCH and hides both for viewers", () => {
+    const home = source("src/components/home/WorkflowHome.tsx");
+    const client = source("src/lib/workflow-client.ts");
+    const folderClient = source("src/lib/workflow-folder-client.ts");
+    assert.equal(homeWorkflowRowHasMoveVerb(home), true);
+    assert.equal(homeWorkflowRowHasDragMove(home), true);
+    assert.equal(homeFolderRailHasMoveVerb(home), false);
+    assert.equal(F3_HOME_FOLDER.noWorkflowMove, true);
+    assert.equal(F4_HOME_FOLDER.dragAndMenuCallSamePatch, true);
+    assert.equal(F4_HOME_FOLDER.viewerHasNoMoveMenu, true);
+    assert.match(home, /moveWorkflowToFolder/);
+    assert.match(home, /folderIdForMove/);
+    assert.match(home, /canMutateFolders/);
+    assert.match(home, /canMove=\{canMutateFolders\}/);
+    assert.match(home, /data-home-workflow-verb="move"/);
+    assert.match(home, /data-home-workflow-drag/);
+    assert.match(home, /data-home-folder-drop/);
+    assert.match(home, /data-home-workflow-move-dialog/);
+    assert.match(home, /FOLDER_MOVE_VERB/);
+    assert.match(home, /if \(!canMutate\) \{\s*return \{\};\s*\}/);
+    assert.match(home, /if \(!canMove\) \{\s*return \{ draggable: false/);
+    assert.match(home, /\{canMove \?/);
+    assert.doesNotMatch(home, /data-home-folder-verb="move"/);
+    assert.doesNotMatch(home, /parentId:/);
+    assert.doesNotMatch(home, /\/actions/);
+    assert.match(client, /moveWorkflowToFolder/);
+    assert.match(client, /workflowMoveFolderPath/);
+    assert.match(client, /method:\s*"PATCH"/);
+    assert.match(client, /workflowMoveBody\(folderId\)/);
+    const moveFn = client.slice(
+      client.indexOf("export async function moveWorkflowToFolder"),
+      client.indexOf("export async function getWorkflowDraft"),
+    );
+    assert.match(moveFn, /PATCH/);
+    assert.match(moveFn, /body: workflowMoveBody\(folderId\)/);
+    assert.doesNotMatch(moveFn, /definitionYaml/);
+    assert.doesNotMatch(moveFn, /saveWorkflowDraft/);
+    assert.doesNotMatch(folderClient, /\/workflows\/.+\/folder/);
+    assert.doesNotMatch(folderClient, /moveWorkflowToFolder/);
+    assert.equal(
+      folderMutateLabel(folderMutateBegin("move")),
+      "Moving workflow…",
+    );
+    assert.equal(
+      folderMutateLabel(folderMutateFinish("move", true)),
+      "Workflow moved.",
+    );
+    assert.equal(
+      folderMutateLabel(folderMutateFinish("move", false)),
+      "Workflow was not moved.",
     );
   });
 });

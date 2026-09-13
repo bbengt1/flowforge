@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
@@ -29,6 +36,7 @@ import {
   getWorkflowDraft,
   importValidatedWorkflow,
   listWorkflows,
+  moveWorkflowToFolder,
 } from "@/lib/workflow-client";
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
@@ -108,6 +116,7 @@ import {
   DELETE_FOLDER_LABEL,
   FOLDER_CRUMB_LABEL,
   FOLDER_DEPTH_HELP,
+  FOLDER_MOVE_VERB,
   FOLDER_MUTATE_IDLE,
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
@@ -116,33 +125,43 @@ import {
   NEW_FOLDER_LABEL,
   RENAME_FOLDER_LABEL,
   UNFILED_FOLDER_LABEL,
+  WORKFLOW_MOVE_DRAG_TYPE,
   ancestorIdsForSelection,
   applyFolderQuery,
   breadcrumbSegments,
   buildFolderTree,
   canCreateChildFolder,
+  canDropWorkflowOnFolder,
   canMutateWorkflowFolders,
   childFolderCount,
   consumeFolderWorkspaceChange,
   createFolderParentId,
+  defaultWorkflowMoveTarget,
   folderAllowsRenameOrDelete,
   folderDeleteBlocked,
+  folderIdForMove,
   folderMutateBegin,
   folderMutateFinish,
   folderMutateLabel,
   folderNameSubmitError,
   folderNotEmptyDetail,
+  folderQueryValue,
   folderSelectionsEqual,
   parseFolderQuery,
+  parseWorkflowMoveDragPayload,
   readExpandedFolderIds,
   resolveFolderSelection,
   selectionAfterFolderDelete,
+  workflowAlreadyInFolder,
+  workflowMoveDragPayload,
+  workflowMoveTargets,
   workflowsFolderIdQuery,
   writeExpandedFolderIds,
   type FolderMutateChrome,
   type FolderSelection,
   type FolderTreeNode,
   type WorkflowFolder,
+  type WorkflowMoveDragPayload,
 } from "@/lib/workflow-folder";
 import {
   createWorkflowFolder,
@@ -203,6 +222,17 @@ function WorkflowHomeSession() {
   const [folderNameError, setFolderNameError] = useState<string | null>(null);
   const [folderChrome, setFolderChrome] =
     useState<FolderMutateChrome>(FOLDER_MUTATE_IDLE);
+  const [moveDialog, setMoveDialog] = useState<{
+    id: string;
+    name: string;
+    folderId: string | null;
+  } | null>(null);
+  const [moveTarget, setMoveTarget] = useState<FolderSelection>({
+    kind: "unfiled",
+  });
+  const [dragging, setDragging] = useState<WorkflowMoveDragPayload | null>(
+    null,
+  );
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
@@ -618,6 +648,61 @@ function WorkflowHomeSession() {
     setPending(null);
   }
 
+  function closeMoveDialog() {
+    setMoveDialog(null);
+    setMoveTarget({ kind: "unfiled" });
+  }
+
+  function openMoveDialog(item: WorkflowHomeItem) {
+    if (!canMutateFolders) {
+      return;
+    }
+    setMoveDialog({
+      id: item.id,
+      name: item.name,
+      folderId: item.folderId,
+    });
+    setMoveTarget(defaultWorkflowMoveTarget(item.folderId, folders));
+    setProblem(null);
+  }
+
+  async function moveItem(workflowId: string, target: FolderSelection) {
+    if (!canMutateFolders) {
+      return;
+    }
+    const current =
+      items.find((item) => item.id === workflowId)?.folderId ??
+      (moveDialog?.id === workflowId ? moveDialog.folderId : undefined);
+    if (workflowAlreadyInFolder(current, target)) {
+      return;
+    }
+    setFolderChrome(folderMutateBegin("move"));
+    setPending("workflow-move");
+    setProblem(null);
+    const result = await moveWorkflowToFolder(
+      identity,
+      workflowId,
+      folderIdForMove(target),
+    );
+    if (!result.ok) {
+      setPending(null);
+      setFolderChrome(folderMutateFinish("move", false));
+      setProblem(result.problem);
+      return;
+    }
+    closeMoveDialog();
+    await refresh();
+    setFolderChrome(folderMutateFinish("move", true));
+    setPending(null);
+  }
+
+  async function submitMoveDialog() {
+    if (!moveDialog) {
+      return;
+    }
+    await moveItem(moveDialog.id, moveTarget);
+  }
+
   useEffect(() => {
     if (!dropPreviousFolder) {
       return;
@@ -991,6 +1076,7 @@ function WorkflowHomeSession() {
         nameDraft={folderNameDraft}
         nameError={folderNameError}
         chrome={folderChrome}
+        dragging={dragging}
         onSelect={selectFolder}
         onToggle={toggleFolderExpanded}
         onNameDraft={setFolderNameDraft}
@@ -999,9 +1085,66 @@ function WorkflowHomeSession() {
         onDelete={(folderId) => void removeFolder(folderId)}
         onSubmit={() => void submitFolderDialog()}
         onCancel={closeFolderDialog}
+        onDropWorkflow={(workflowId, target) => void moveItem(workflowId, target)}
       />
       <div className="min-w-0 space-y-6">
       <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
+      {canMutateFolders && moveDialog ? (
+        <form
+          data-home-workflow-move-dialog=""
+          className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitMoveDialog();
+          }}
+        >
+          <p className="text-sm text-zinc-700">
+            Move <span className="font-medium text-zinc-900">{moveDialog.name}</span>{" "}
+            to a folder in this workspace. This does not change YAML, draft
+            revision, or activation.
+          </p>
+          <label className="block text-sm">
+            <span className="text-zinc-600">Destination</span>
+            <select
+              data-home-workflow-move-target=""
+              value={folderQueryValue(moveTarget)}
+              onChange={(event) =>
+                setMoveTarget(parseFolderQuery(event.target.value))
+              }
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+            >
+              {workflowMoveTargets(folders).map((option) => (
+                <option
+                  key={folderQueryValue(option.selection)}
+                  value={folderQueryValue(option.selection)}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={
+                pending !== null ||
+                workflowAlreadyInFolder(moveDialog.folderId, moveTarget)
+              }
+              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            >
+              {FOLDER_MOVE_VERB}
+            </button>
+            <button
+              type="button"
+              disabled={pending !== null}
+              onClick={closeMoveDialog}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1279,6 +1422,7 @@ function WorkflowHomeSession() {
           items={visible}
           pending={pending !== null}
           canCreate={canCreate}
+          canMove={canMutateFolders}
           canExecute={canExecute}
           canPublish={canPublish}
           canViewWebhooks={canViewWebhooks}
@@ -1290,12 +1434,16 @@ function WorkflowHomeSession() {
           onSchedules={(item) => openHomeOverlay("schedules", item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
+          onMove={openMoveDialog}
+          onDragStart={setDragging}
+          onDragEnd={() => setDragging(null)}
         />
       ) : (
         <WorkflowHomeCards
           items={visible}
           pending={pending !== null}
           canCreate={canCreate}
+          canMove={canMutateFolders}
           canExecute={canExecute}
           canPublish={canPublish}
           canViewWebhooks={canViewWebhooks}
@@ -1307,12 +1455,56 @@ function WorkflowHomeSession() {
           onSchedules={(item) => openHomeOverlay("schedules", item.id)}
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
+          onMove={openMoveDialog}
+          onDragStart={setDragging}
+          onDragEnd={() => setDragging(null)}
         />
       )}
       </div>
       </div>
     </div>
   );
+}
+
+function folderDropHandlers(
+  canMutate: boolean,
+  target: FolderSelection,
+  dragging: WorkflowMoveDragPayload | null,
+  onDropWorkflow: (workflowId: string, target: FolderSelection) => void,
+) {
+  if (!canMutate) {
+    return {};
+  }
+  const accepts =
+    dragging != null &&
+    canDropWorkflowOnFolder(true, dragging.folderId, target);
+  return {
+    "data-home-folder-drop":
+      target.kind === "unfiled" ? "unfiled" : "folder",
+    "data-home-folder-drop-active": accepts ? "true" : undefined,
+    onDragOver: (event: DragEvent) => {
+      if (!canDropWorkflowOnFolder(true, dragging?.folderId, target)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    onDrop: (event: DragEvent) => {
+      event.preventDefault();
+      const payload =
+        parseWorkflowMoveDragPayload(
+          event.dataTransfer.getData(WORKFLOW_MOVE_DRAG_TYPE) ||
+            event.dataTransfer.getData("text/plain"),
+        ) ?? dragging;
+      if (!payload) {
+        return;
+      }
+      if (!canDropWorkflowOnFolder(true, payload.folderId, target)) {
+        return;
+      }
+      onDropWorkflow(payload.workflowId, target);
+    },
+  };
 }
 
 function FolderRail({
@@ -1327,6 +1519,7 @@ function FolderRail({
   nameDraft,
   nameError,
   chrome,
+  dragging,
   onSelect,
   onToggle,
   onNameDraft,
@@ -1335,6 +1528,7 @@ function FolderRail({
   onDelete,
   onSubmit,
   onCancel,
+  onDropWorkflow,
 }: {
   tree: FolderTreeNode[];
   folders: readonly WorkflowFolder[];
@@ -1347,6 +1541,7 @@ function FolderRail({
   nameDraft: string;
   nameError: string | null;
   chrome: FolderMutateChrome;
+  dragging: WorkflowMoveDragPayload | null;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
   onNameDraft: (value: string) => void;
@@ -1355,6 +1550,7 @@ function FolderRail({
   onDelete: (folderId: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
+  onDropWorkflow: (workflowId: string, target: FolderSelection) => void;
 }) {
   const unfiledCurrent = selection.kind === "unfiled";
   const createParentId = createFolderParentId(selection);
@@ -1463,10 +1659,23 @@ function FolderRail({
             aria-current={unfiledCurrent ? "true" : undefined}
             onClick={() => onSelect({ kind: "unfiled" })}
             className={
-              unfiledCurrent
+              (unfiledCurrent
                 ? "w-full rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
-                : "w-full rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50"
+                : "w-full rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+              (canMutate &&
+              dragging &&
+              canDropWorkflowOnFolder(true, dragging.folderId, {
+                kind: "unfiled",
+              })
+                ? " ring-2 ring-teal-600 ring-offset-1"
+                : "")
             }
+            {...folderDropHandlers(
+              canMutate,
+              { kind: "unfiled" },
+              dragging,
+              onDropWorkflow,
+            )}
           >
             {UNFILED_FOLDER_LABEL}
           </button>
@@ -1482,10 +1691,12 @@ function FolderRail({
             canMutate={canMutate}
             pending={pending}
             selectedWorkflowCount={selectedWorkflowCount}
+            dragging={dragging}
             onSelect={onSelect}
             onToggle={onToggle}
             onRename={onRename}
             onDelete={onDelete}
+            onDropWorkflow={onDropWorkflow}
           />
         ))}
       </ul>
@@ -1502,10 +1713,12 @@ function FolderRailNode({
   canMutate,
   pending,
   selectedWorkflowCount,
+  dragging,
   onSelect,
   onToggle,
   onRename,
   onDelete,
+  onDropWorkflow,
 }: {
   node: FolderTreeNode;
   depth: number;
@@ -1515,10 +1728,12 @@ function FolderRailNode({
   canMutate: boolean;
   pending: boolean;
   selectedWorkflowCount: number | null;
+  dragging: WorkflowMoveDragPayload | null;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
+  onDropWorkflow: (workflowId: string, target: FolderSelection) => void;
 }) {
   const selected = selection.kind === "folder" && selection.id === node.id;
   const hasChildren = node.children.length > 0;
@@ -1551,10 +1766,24 @@ function FolderRailNode({
           aria-current={selected ? "true" : undefined}
           onClick={() => onSelect({ kind: "folder", id: node.id })}
           className={
-            selected
+            (selected
               ? "min-w-0 flex-1 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
-              : "min-w-0 flex-1 rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50"
+              : "min-w-0 flex-1 rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+            (canMutate &&
+            dragging &&
+            canDropWorkflowOnFolder(true, dragging.folderId, {
+              kind: "folder",
+              id: node.id,
+            })
+              ? " ring-2 ring-teal-600 ring-offset-1"
+              : "")
           }
+          {...folderDropHandlers(
+            canMutate,
+            { kind: "folder", id: node.id },
+            dragging,
+            onDropWorkflow,
+          )}
         >
           {node.name}
         </button>
@@ -1597,10 +1826,12 @@ function FolderRailNode({
               canMutate={canMutate}
               pending={pending}
               selectedWorkflowCount={selectedWorkflowCount}
+              dragging={dragging}
               onSelect={onSelect}
               onToggle={onToggle}
               onRename={onRename}
               onDelete={onDelete}
+              onDropWorkflow={onDropWorkflow}
             />
           ))}
         </ul>
@@ -1707,10 +1938,42 @@ function WorkflowMeta({ item }: { item: WorkflowHomeItem }) {
   );
 }
 
+function workflowRowDragProps(
+  canMove: boolean,
+  item: WorkflowHomeItem,
+  beginDrag: (payload: WorkflowMoveDragPayload) => void,
+  endDrag: () => void,
+) {
+  if (!canMove) {
+    return { draggable: false as const };
+  }
+  return {
+    draggable: true,
+    "data-home-workflow-drag": "",
+    onDragStart: (event: DragEvent) => {
+      const payload = {
+        workflowId: item.id,
+        folderId: item.folderId,
+      };
+      event.dataTransfer.setData(
+        WORKFLOW_MOVE_DRAG_TYPE,
+        workflowMoveDragPayload(item.id, item.folderId),
+      );
+      event.dataTransfer.setData("text/plain", item.id);
+      event.dataTransfer.effectAllowed = "move";
+      beginDrag(payload);
+    },
+    onDragEnd: () => {
+      endDrag();
+    },
+  };
+}
+
 function WorkflowActions({
   item,
   pending,
   canCreate,
+  canMove,
   canExecute,
   canPublish,
   canViewWebhooks,
@@ -1722,10 +1985,12 @@ function WorkflowActions({
   onSchedules,
   onDuplicate,
   onExport,
+  onMove,
 }: {
   item: WorkflowHomeItem;
   pending: boolean;
   canCreate: boolean;
+  canMove: boolean;
   canExecute: boolean;
   canPublish: boolean;
   canViewWebhooks: boolean;
@@ -1737,6 +2002,7 @@ function WorkflowActions({
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
+  onMove: (item: WorkflowHomeItem) => void;
 }) {
   const showTestRun = canPublish && canExecute;
   return (
@@ -1826,6 +2092,17 @@ function WorkflowActions({
           Duplicate
         </button>
       ) : null}
+      {canMove ? (
+        <button
+          type="button"
+          data-home-workflow-verb="move"
+          disabled={pending}
+          onClick={() => onMove(item)}
+          className="text-sm text-zinc-700 underline disabled:opacity-60"
+        >
+          {FOLDER_MOVE_VERB}
+        </button>
+      ) : null}
       {item.latestVersionId ? (
         <button
           type="button"
@@ -1844,6 +2121,7 @@ function WorkflowHomeList({
   items,
   pending,
   canCreate,
+  canMove,
   canExecute,
   canPublish,
   canViewWebhooks,
@@ -1855,10 +2133,14 @@ function WorkflowHomeList({
   onSchedules,
   onDuplicate,
   onExport,
+  onMove,
+  onDragStart,
+  onDragEnd,
 }: {
   items: WorkflowHomeItem[];
   pending: boolean;
   canCreate: boolean;
+  canMove: boolean;
   canExecute: boolean;
   canPublish: boolean;
   canViewWebhooks: boolean;
@@ -1870,6 +2152,9 @@ function WorkflowHomeList({
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
+  onMove: (item: WorkflowHomeItem) => void;
+  onDragStart: (payload: WorkflowMoveDragPayload) => void;
+  onDragEnd: () => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -1890,6 +2175,7 @@ function WorkflowHomeList({
             key={item.id}
             className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.5fr)_minmax(8rem,0.9fr)_minmax(12rem,1.3fr)_minmax(9rem,1fr)] sm:items-start"
             data-home-row-scan="row"
+            {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
           >
             {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
               <div key={column.id} className="min-w-0" data-home-row-scan-cell={column.id}>
@@ -1920,6 +2206,7 @@ function WorkflowHomeList({
                     item={item}
                     pending={pending}
                     canCreate={canCreate}
+                    canMove={canMove}
                     canExecute={canExecute}
                     canPublish={canPublish}
                     canViewWebhooks={canViewWebhooks}
@@ -1931,6 +2218,7 @@ function WorkflowHomeList({
                     onSchedules={onSchedules}
                     onDuplicate={onDuplicate}
                     onExport={onExport}
+                    onMove={onMove}
                   />
                 ) : null}
                 {column.id === "lastRun" ? (
@@ -1949,6 +2237,7 @@ function WorkflowHomeCards({
   items,
   pending,
   canCreate,
+  canMove,
   canExecute,
   canPublish,
   canViewWebhooks,
@@ -1960,10 +2249,14 @@ function WorkflowHomeCards({
   onSchedules,
   onDuplicate,
   onExport,
+  onMove,
+  onDragStart,
+  onDragEnd,
 }: {
   items: WorkflowHomeItem[];
   pending: boolean;
   canCreate: boolean;
+  canMove: boolean;
   canExecute: boolean;
   canPublish: boolean;
   canViewWebhooks: boolean;
@@ -1975,6 +2268,9 @@ function WorkflowHomeCards({
   onSchedules: (item: WorkflowHomeItem) => void;
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
+  onMove: (item: WorkflowHomeItem) => void;
+  onDragStart: (payload: WorkflowMoveDragPayload) => void;
+  onDragEnd: () => void;
 }) {
   return (
     <ul className="grid gap-4 sm:grid-cols-2">
@@ -1983,6 +2279,7 @@ function WorkflowHomeCards({
           key={item.id}
           className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
           data-home-row-scan="card"
+          {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <HomeActivationStatus column={item.activation} />
@@ -2002,6 +2299,7 @@ function WorkflowHomeCards({
               item={item}
               pending={pending}
               canCreate={canCreate}
+              canMove={canMove}
               canExecute={canExecute}
               canPublish={canPublish}
               canViewWebhooks={canViewWebhooks}
@@ -2013,6 +2311,7 @@ function WorkflowHomeCards({
               onSchedules={onSchedules}
               onDuplicate={onDuplicate}
               onExport={onExport}
+              onMove={onMove}
             />
           </div>
           <div className="mt-4 border-t border-zinc-100 pt-3">

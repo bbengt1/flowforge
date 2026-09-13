@@ -1,19 +1,23 @@
 /**
- * F.2 home folder rail + select, F.3 create / rename / delete
- * (Chloe UI).
+ * F.2 home folder rail + select, F.3 create / rename / delete,
+ * F.4 move workflows (Chloe UI).
  *
- * Relates to #309 / #310 / Part of #307. Keep #309 and #310 open.
+ * Relates to #309 / #310 / #311 / Part of #307. Keep #309, #310,
+ * and #311 open.
  *
  * Tree comes from GET /workflow-folders. The list uses
  * GET /workflows?folderId=. Unfiled is virtual (folderId == null),
  * not a persisted row. `?folder=` is the deep link. Workspace /
  * tenant+workbench change drops the previous-workspace folder query.
  * Prefix-in-name is no longer the primary organizer. Viewers can
- * select; they do not get New folder / Rename folder / Delete folder.
- * Editors mutate through POST / PATCH / DELETE /workflow-folders.
- * Rename-only in F.3 — folder re-parent and workflow move stay F.4.
+ * select; they do not get New folder / Rename folder / Delete folder
+ * / Move. Editors mutate folders through POST / PATCH / DELETE
+ * /workflow-folders. Workflow move is PATCH /workflows/{id}/folder
+ * (drag onto a folder or Unfiled, and row-menu Move…). Folder
+ * re-parent drag is not this story.
  *
- * Folders are not in YAML. Drafts never run. No cascade delete.
+ * Folders are not in YAML. Drafts never run. Move does not bump
+ * draftRevision, YAML, or activation. No cascade delete.
  * Host ?tenant= / ?workbench= stay display-only (ADV-021).
  * Isolation success is a denial (ADV-024).
  */
@@ -31,6 +35,11 @@ export const F3_EPIC = 307;
 export const F3_KEEP_STORY_OPEN = true;
 export const F3_ID = "F.3-create-rename-delete-folders" as const;
 export const F3_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const F4_STORY = 311;
+export const F4_EPIC = 307;
+export const F4_KEEP_STORY_OPEN = true;
+export const F4_ID = "F.4-move-workflows-drag-menu" as const;
+export const F4_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
 export const MAX_FOLDER_DEPTH = 4;
 export const MAX_FOLDER_NAME_GRAPHEMES = 64;
 export const FOLDER_NAME_RULES_HELP =
@@ -68,7 +77,7 @@ export const FOLDER_MUTATE_VERBS = [
   FOLDER_MOVE_VERB,
 ] as const;
 
-export type FolderMutateGesture = "create" | "rename" | "delete";
+export type FolderMutateGesture = "create" | "rename" | "delete" | "move";
 
 export type FolderMutatePhase = "idle" | "pending" | "success" | "error";
 
@@ -97,6 +106,11 @@ export const FOLDER_MUTATE_LABELS = {
     pending: "Deleting folder…",
     success: "Folder deleted.",
     error: "Folder was not deleted.",
+  },
+  move: {
+    pending: "Moving workflow…",
+    success: "Workflow moved.",
+    error: "Workflow was not moved.",
   },
 } as const satisfies Record<
   FolderMutateGesture,
@@ -188,6 +202,34 @@ export const F3_HOME_FOLDER = {
   noNewApi: true,
   d6MigrateInPlace: true,
   keep310Open: true,
+} as const;
+
+export const F4_HOME_FOLDER = {
+  yamlIsSourceOfTruth: true,
+  foldersNotInYaml: true,
+  draftsNeverRun: true,
+  vaultDisplayNameUuidOnly: true,
+  adv021ChromeFromSessionEmbedOnly: true,
+  adv024MembershipIsolationStayGrantGated: true,
+  isolationSuccessIsDenial: true,
+  noCascadeDelete: true,
+  notAnN8nClone: true,
+  noKekInBrowser: true,
+  dragAndMenuCallSamePatch: true,
+  unfiledTargetSendsNullFolderId: true,
+  moveDoesNotBumpDraftRevision: true,
+  moveDoesNotChangeYaml: true,
+  moveDoesNotChangeActivation: true,
+  viewerCannotDrop: true,
+  viewerHasNoMoveMenu: true,
+  crossFolderInsideWorkspaceOnly: true,
+  noFolderReparentDrag: true,
+  singleRowIsEnough: true,
+  pendingThenSuccessOrError: true,
+  csrfOnWrites: true,
+  noNewApi: true,
+  d6MigrateInPlace: true,
+  keep311Open: true,
 } as const;
 
 export const F2_HOME_FOLDER_SOURCES = [
@@ -460,11 +502,138 @@ export function homeFolderRailHasOrganizeVerbs(source: string): boolean {
 }
 
 export function homeFolderRailHasMoveVerb(source: string): boolean {
-  return source.includes(FOLDER_MOVE_VERB);
+  return source.includes('data-home-folder-verb="move"');
+}
+
+export function homeWorkflowRowHasMoveVerb(source: string): boolean {
+  return (
+    source.includes("FOLDER_MOVE_VERB") &&
+    source.includes('data-home-workflow-verb="move"')
+  );
+}
+
+export function homeWorkflowRowHasDragMove(source: string): boolean {
+  return (
+    source.includes("data-home-workflow-drag") &&
+    source.includes("onDragStart") &&
+    source.includes("onDrop") &&
+    source.includes("data-home-folder-drop") &&
+    source.includes("WORKFLOW_MOVE_DRAG_TYPE")
+  );
 }
 
 export function workflowFolderPath(folderId: string): string {
   return `${WORKFLOW_FOLDERS_PATH}/${folderId}`;
+}
+
+export function workflowMoveFolderPath(workflowId: string): string {
+  return `/workflows/${workflowId}/folder`;
+}
+
+export const WORKFLOW_MOVE_DRAG_TYPE = "application/x-flowforge-workflow";
+
+export type WorkflowMoveDragPayload = {
+  workflowId: string;
+  folderId: string | null;
+};
+
+export function folderIdForMove(target: FolderSelection): string | null {
+  return target.kind === "unfiled" ? null : target.id;
+}
+
+export function workflowMoveBody(
+  folderId: string | null,
+): { folderId: string | null } {
+  return { folderId };
+}
+
+export function workflowAlreadyInFolder(
+  currentFolderId: string | null | undefined,
+  target: FolderSelection,
+): boolean {
+  const current = currentFolderId?.trim() ? currentFolderId : null;
+  if (target.kind === "unfiled") {
+    return current == null;
+  }
+  return current === target.id;
+}
+
+export function canDropWorkflowOnFolder(
+  canMutate: boolean,
+  currentFolderId: string | null | undefined,
+  target: FolderSelection,
+): boolean {
+  return canMutate && !workflowAlreadyInFolder(currentFolderId, target);
+}
+
+export function workflowMoveTargets(
+  items: readonly WorkflowFolder[],
+): Array<{ selection: FolderSelection; label: string }> {
+  const folders = items
+    .map((item) => ({
+      selection: { kind: "folder" as const, id: item.id },
+      label: folderPathLabel(folderPath(items, item.id)),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+  return [
+    { selection: { kind: "unfiled" }, label: UNFILED_FOLDER_LABEL },
+    ...folders,
+  ];
+}
+
+export function defaultWorkflowMoveTarget(
+  currentFolderId: string | null | undefined,
+  items: readonly WorkflowFolder[],
+): FolderSelection {
+  if (currentFolderId?.trim()) {
+    return { kind: "unfiled" };
+  }
+  const first = workflowMoveTargets(items).find(
+    (item) => item.selection.kind === "folder",
+  );
+  return first?.selection ?? { kind: "unfiled" };
+}
+
+export function workflowMoveDragPayload(
+  workflowId: string,
+  folderId: string | null,
+): string {
+  const body: WorkflowMoveDragPayload = { workflowId, folderId };
+  return JSON.stringify(body);
+}
+
+export function parseWorkflowMoveDragPayload(
+  raw: string | null | undefined,
+): WorkflowMoveDragPayload | null {
+  const value = (raw ?? "").trim();
+  if (!value) {
+    return null;
+  }
+  if (isResourceId(value)) {
+    return { workflowId: value, folderId: null };
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const body = parsed as Record<string, unknown>;
+    if (typeof body.workflowId !== "string" || !isResourceId(body.workflowId)) {
+      return null;
+    }
+    const folderId =
+      body.folderId == null || body.folderId === ""
+        ? null
+        : typeof body.folderId === "string" && isResourceId(body.folderId)
+          ? body.folderId
+          : null;
+    if (body.folderId != null && body.folderId !== "" && folderId == null) {
+      return null;
+    }
+    return { workflowId: body.workflowId, folderId };
+  } catch {
+    return null;
+  }
 }
 
 export function folderNameGraphemes(name: string): number {

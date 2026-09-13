@@ -46,7 +46,11 @@ import { MANUAL_START_IDEMPOTENCY_HEADER } from "./manual-start-contract.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import { parseScriptVersionPins, type ScriptVersionPin } from "./script-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
-import { listWorkflowsPath } from "./workflow-folder.ts";
+import {
+  listWorkflowsPath,
+  workflowMoveBody,
+  workflowMoveFolderPath,
+} from "./workflow-folder.ts";
 
 export const WORKFLOW_CATALOG_PATH = "/workflows/catalog";
 export const WORKFLOW_VALIDATE_PATH = "/workflows/validate";
@@ -56,6 +60,10 @@ export const IF_MATCH_HEADER = "If-Match";
 
 export function workflowPath(workflowId: string): string {
   return `${WORKFLOWS_PATH}/${workflowId}`;
+}
+
+export function workflowFolderMovePath(workflowId: string): string {
+  return workflowMoveFolderPath(workflowId);
 }
 
 export function workflowDraftPath(workflowId: string): string {
@@ -365,6 +373,39 @@ export async function getWorkflow(
 ): Promise<WorkflowRecordSuccess | WorkflowClientFailure> {
   const path = workflowPath(workflowId);
   const result = await callIdentityProxy<WorkflowRecord>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  if (!isWorkflowRecord(result.data)) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Workflow summary was missing id or draftRevision.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    workflow: result.data,
+  };
+}
+
+/**
+ * F.4 move — PATCH /workflows/{id}/folder `{folderId}` (`null` = Unfiled).
+ * CSRF on the write. Does not send YAML or draftRevision.
+ */
+export async function moveWorkflowToFolder(
+  identity: DevIdentity,
+  workflowId: string,
+  folderId: string | null,
+): Promise<WorkflowRecordSuccess | WorkflowClientFailure> {
+  const path = workflowMoveFolderPath(workflowId);
+  const result = await callIdentityProxy<WorkflowRecord>(path, identity, {
+    method: "PATCH",
+    body: workflowMoveBody(folderId),
+  });
   if (!result.ok) {
     return failure(result);
   }

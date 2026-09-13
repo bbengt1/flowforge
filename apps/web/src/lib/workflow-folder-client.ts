@@ -2,7 +2,8 @@
  * F.2 list + F.3 create / rename / delete folder client.
  * Cookie session + X-CSRF-Token on POST / PATCH / DELETE.
  * workspaceId is server-derived — never sent from the browser.
- * Rename is name-only; re-parent and workflow move stay F.4.
+ * Rename is name-only. Workflow move lives in workflow-client.ts (F.4).
+ * Folder re-parent is not this client.
  */
 
 import { callIdentityProxy } from "./identity-client.ts";
