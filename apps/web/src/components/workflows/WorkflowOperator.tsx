@@ -37,6 +37,7 @@ import {
   editorCommandAppliesToRoute,
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
+import { editorHasPublishedVersion } from "@/lib/editor-working-memory";
 import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
 import { canOfferEditorTestRun, testRunVersionHints } from "@/lib/editor-test-run";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
@@ -1899,6 +1900,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     revision,
     permissions,
   }).ok;
+  const canStartPublished = editorHasPublishedVersion(versions);
 
   function jumpToYaml(line: number, column?: number) {
     setDrawerOpen("yaml", true);
@@ -1995,6 +1997,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           canSave={canSave}
           canPublish={canPublish}
           canTestRun={canTestRun}
+          canStartPublished={canStartPublished}
           yamlOpen={yamlOpen}
           libraryOpen={libraryOpen}
           runsOpen={runsOpen}

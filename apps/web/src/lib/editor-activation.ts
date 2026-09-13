@@ -340,7 +340,7 @@ export function composeEditorActivation(input: {
       pins: publishedPins,
       label: versionLabel
         ? `${versionLabel} is not active`
-        : "Not active",
+        : "not active",
       help: EDITOR_ACTIVATION_NO_PINS_HELP,
       canActivate: false,
       canDeactivate: false,
@@ -360,7 +360,7 @@ export function composeEditorActivation(input: {
       pins: publishedPins,
       label: versionLabel
         ? `${versionLabel} is not active`
-        : "Not active",
+        : "not active",
       help:
         workflowActiveVersionIds.length > 0
           ? `${EDITOR_ACTIVATION_INACTIVE_HELP} Another published version is active.`
@@ -381,8 +381,8 @@ export function composeEditorActivation(input: {
     disabledPins,
     pins: publishedPins,
     label: versionLabel
-      ? `This ${versionLabel} is active`
-      : "This published version is active",
+      ? `${versionLabel} is active`
+      : "published version is active",
     help: EDITOR_ACTIVATION_ACTIVE_HELP,
     canActivate: disabledPins.length > 0,
     canDeactivate: true,
@@ -423,14 +423,11 @@ export function editorActivationTopBarLabel(
     return "Draft — not live";
   }
   if (!state.live || state.workflowActiveVersionIds.length === 0) {
-    return "Not active";
-  }
-  if (state.workflowActiveVersionIds.length > 1) {
-    return `Active · ${state.workflowActiveVersionIds.length} published versions`;
+    return "not active";
   }
   return state.publishedVersionLabel
-    ? `Active · ${state.publishedVersionLabel}`
-    : "Active";
+    ? `${state.publishedVersionLabel} is active`
+    : "published version is active";
 }
 
 export function activationTogglePlan(

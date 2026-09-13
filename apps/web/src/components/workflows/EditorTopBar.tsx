@@ -17,6 +17,9 @@ import {
   EDITOR_TOPBAR_GROUP_LABELS,
   EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS,
 } from "@/lib/editor-topbar-chunking";
+import {
+  editorWorkingMemoryChrome,
+} from "@/lib/editor-working-memory";
 import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import {
   EDITOR_CANVAS_REDO_LABEL,
@@ -37,6 +40,7 @@ type EditorTopBarProps = {
   canSave: boolean;
   canPublish: boolean;
   canTestRun: boolean;
+  canStartPublished: boolean;
   yamlOpen: boolean;
   libraryOpen: boolean;
   runsOpen: boolean;
@@ -79,6 +83,7 @@ export function EditorTopBar({
   canSave,
   canPublish,
   canTestRun,
+  canStartPublished,
   yamlOpen,
   libraryOpen,
   runsOpen,
@@ -106,6 +111,13 @@ export function EditorTopBar({
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
   const context = editorStickyContext(workflow, { loaded });
   const dirtyLabel = editorDirtyLabel(dirty);
+  const memory = editorWorkingMemoryChrome({
+    dirty,
+    hasWorkflow: Boolean(workflow),
+    revision,
+    hasPublishedVersion: canStartPublished,
+    permissions,
+  });
 
   return (
     <header
@@ -137,7 +149,7 @@ export function EditorTopBar({
         <p className="shrink-0 text-xs text-zinc-600" role="status">
           {workflow ? (
             <>
-              <span className="capitalize">{context.status}</span>
+              <span data-editor-working-memory="draft">{memory.draft}</span>
               {" · "}
               {editorRevisionLabel(revision)}
               {" · "}
@@ -281,26 +293,39 @@ export function EditorTopBar({
         data-editor-topbar="run"
         className={GROUP_DIVIDER}
       >
-        <button
-          type="button"
-          id={satelliteOverlayTriggerId("start-published")}
-          onClick={onStart}
-          disabled={!workflow}
-          className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
-        >
-          {editorTopBarControlLabel("start")}
-        </button>
-        <button
-          type="button"
-          onClick={onTestRun}
-          disabled={!canCall || pending !== null || !canTestRun}
-          title={editorTopBarControlLabel("test-run")}
-          className={`rounded-md border border-teal-800 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-teal-900 hover:bg-teal-50 disabled:opacity-60`}
-        >
-          {pending === "test-run"
-            ? "Test run…"
-            : editorTopBarControlLabel("test-run")}
-        </button>
+        <div className="flex flex-col gap-1">
+          <div className={GROUP}>
+            <button
+              type="button"
+              id={satelliteOverlayTriggerId("start-published")}
+              onClick={onStart}
+              disabled={!workflow || !memory.canStartPublished}
+              title={memory.startHelp}
+              className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
+            >
+              {editorTopBarControlLabel("start")}
+            </button>
+            <button
+              type="button"
+              onClick={onTestRun}
+              disabled={!canCall || pending !== null || !canTestRun}
+              title={memory.testRunHelp}
+              className={`rounded-md border border-teal-800 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-teal-900 hover:bg-teal-50 disabled:opacity-60`}
+            >
+              {pending === "test-run"
+                ? "Test run…"
+                : editorTopBarControlLabel("test-run")}
+            </button>
+          </div>
+          <p
+            data-editor-working-memory="test-run"
+            className="max-w-[16rem] text-[11px] leading-snug text-zinc-500"
+          >
+            {memory.testRunCopy}
+            {memory.canTestRun ? null : ` ${memory.testRunHelp}`}
+            {memory.canStartPublished ? null : ` ${memory.startHelp}`}
+          </p>
+        </div>
       </div>
     </header>
   );

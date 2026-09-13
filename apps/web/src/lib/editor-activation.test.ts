@@ -194,7 +194,7 @@ describe("R6.1 editor activation chrome", () => {
     assert.equal(editorActivationLooksLive(active), true);
     assert.equal(active.publishedVersionId, VERSION_A);
     assert.equal(active.publishedVersionLabel, "published v3");
-    assert.equal(active.label, "This published v3 is active");
+    assert.equal(active.label, "published v3 is active");
     assert.equal(active.help, EDITOR_ACTIVATION_ACTIVE_HELP);
     assert.equal(active.canDeactivate, true);
     assert.equal(active.canActivate, false);
@@ -245,7 +245,7 @@ describe("R6.1 editor activation chrome", () => {
       versions: [version(VERSION_A, 1)],
       webhooks: [webhook({ status: "disabled" })],
     });
-    assert.equal(editorActivationTopBarLabel(inactive), "Not active");
+    assert.equal(editorActivationTopBarLabel(inactive), "not active");
 
     const active = composeWorkflowActivation({
       versions: [version(VERSION_A, 8), version(VERSION_B, 9)],
@@ -253,7 +253,7 @@ describe("R6.1 editor activation chrome", () => {
     });
     assert.equal(
       editorActivationTopBarLabel(active),
-      "Active · published v8",
+      "published v8 is active",
     );
 
     const two = composeWorkflowActivation({
@@ -269,7 +269,7 @@ describe("R6.1 editor activation chrome", () => {
     });
     assert.equal(
       editorActivationTopBarLabel(two),
-      "Active · 2 published versions",
+      "published v8 is active",
     );
     assert.equal(two.draftLooksLive, false);
   });

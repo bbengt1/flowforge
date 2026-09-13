@@ -82,6 +82,11 @@ import {
   canOfferHomeTestRun,
   testRunVersionHints,
 } from "@/lib/editor-test-run";
+import {
+  EDITOR_WORKING_MEMORY_START_NEEDS_PUBLISHED,
+  EDITOR_WORKING_MEMORY_START_USES_PUBLISHED,
+  EDITOR_WORKING_MEMORY_TEST_RUN,
+} from "@/lib/editor-working-memory";
 import { runPublishedTestVersion } from "@/lib/editor-test-run-client";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
@@ -655,7 +660,12 @@ function WorkflowHomeSession() {
             >
               {HOME_ACTIVATION_HELP}
             </p>
-            <p className="mt-2 text-sm text-zinc-600">{TEST_RUN_HELP}</p>
+            <p
+              className="mt-2 text-sm text-zinc-600"
+              data-home-working-memory="test-run"
+            >
+              {EDITOR_WORKING_MEMORY_TEST_RUN} {TEST_RUN_HELP}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -1035,6 +1045,7 @@ function WorkflowActions({
           type="button"
           disabled={pending}
           onClick={() => onTestRun(item)}
+          title={EDITOR_WORKING_MEMORY_TEST_RUN}
           className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
         >
           Test run
@@ -1047,6 +1058,7 @@ function WorkflowActions({
             id={homeSatelliteOverlayTriggerId("start", item.id)}
             disabled={pending}
             onClick={() => onStart(item)}
+            title={EDITOR_WORKING_MEMORY_START_USES_PUBLISHED}
             className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
           >
             Start published
@@ -1056,7 +1068,14 @@ function WorkflowActions({
             Start locked
           </span>
         )
-      ) : null}
+      ) : (
+        <span
+          className="text-sm text-zinc-500"
+          title={EDITOR_WORKING_MEMORY_START_NEEDS_PUBLISHED}
+        >
+          Start published
+        </span>
+      )}
       {canViewWebhooks ? (
         <button
           type="button"
