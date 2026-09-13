@@ -149,9 +149,11 @@ function WorkflowHomeSession() {
   const refreshGate = useRef(createGenerationGate());
   const [folders, setFolders] = useState<WorkflowFolder[]>([]);
   const [foldersReady, setFoldersReady] = useState(false);
-  const [ignoreUrlFolder, setIgnoreUrlFolder] = useState(false);
+  const [dropPreviousFolder, setDropPreviousFolder] = useState(() =>
+    consumeFolderWorkspaceChange(workspaceKey),
+  );
   const [expandedIds, setExpandedIds] = useState<string[]>(() =>
-    readExpandedFolderIds(workspaceKey),
+    dropPreviousFolder ? [] : readExpandedFolderIds(workspaceKey),
   );
   const [records, setRecords] = useState<WorkflowRecord[]>([]);
   const [drafts, setDrafts] = useState<Map<string, WorkflowDraft>>(new Map());
@@ -191,13 +193,26 @@ function WorkflowHomeSession() {
     id: string;
   } | null>(null);
 
-  const urlSelection = parseFolderQuery(searchParams.get(FOLDER_QUERY));
-  const intendedSelection: FolderSelection = ignoreUrlFolder
-    ? { kind: "unfiled" }
-    : urlSelection;
+  const folderParam = searchParams.get(FOLDER_QUERY);
+  const intendedSelection = useMemo<FolderSelection>(
+    () =>
+      dropPreviousFolder
+        ? { kind: "unfiled" }
+        : parseFolderQuery(folderParam),
+    [dropPreviousFolder, folderParam],
+  );
   const selection = foldersReady
     ? resolveFolderSelection(intendedSelection, folders)
     : intendedSelection;
+  const visibleExpandedIds = useMemo(
+    () => [
+      ...new Set([
+        ...expandedIds,
+        ...ancestorIdsForSelection(folders, selection),
+      ]),
+    ],
+    [expandedIds, folders, selection],
+  );
   const folderNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const folder of folders) {
@@ -307,7 +322,7 @@ function WorkflowHomeSession() {
 
   const selectFolder = useCallback(
     (next: FolderSelection) => {
-      setIgnoreUrlFolder(false);
+      setDropPreviousFolder(false);
       replaceFolderQuery(next);
     },
     [replaceFolderQuery],
@@ -449,31 +464,11 @@ function WorkflowHomeSession() {
   ]);
 
   useEffect(() => {
-    if (!consumeFolderWorkspaceChange(workspaceKey)) {
+    if (!dropPreviousFolder) {
       return;
     }
-    setIgnoreUrlFolder(true);
-    setExpandedIds([]);
     replaceFolderQuery({ kind: "unfiled" }, { drop: true });
-  }, [replaceFolderQuery, workspaceKey]);
-
-  useEffect(() => {
-    if (ignoreUrlFolder && searchParams.get(FOLDER_QUERY) == null) {
-      setIgnoreUrlFolder(false);
-    }
-  }, [ignoreUrlFolder, searchParams]);
-
-  useEffect(() => {
-    const ancestors = ancestorIdsForSelection(folders, selection);
-    if (ancestors.length === 0) {
-      return;
-    }
-    setExpandedIds((current) => {
-      const next = [...new Set([...current, ...ancestors])];
-      writeExpandedFolderIds(workspaceKey, next);
-      return next;
-    });
-  }, [folders, selection, workspaceKey]);
+  }, [dropPreviousFolder, replaceFolderQuery]);
 
   useEffect(() => {
     const gate = refreshGate.current;
@@ -832,7 +827,7 @@ function WorkflowHomeSession() {
       <FolderRail
         tree={folderTree}
         selection={selection}
-        expandedIds={expandedIds}
+        expandedIds={visibleExpandedIds}
         onSelect={selectFolder}
         onToggle={toggleFolderExpanded}
       />
