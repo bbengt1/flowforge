@@ -28,7 +28,7 @@ import {
   workflowHomeLastRunHref,
 } from "@/lib/product-home";
 import { rememberPeakEndOverlay } from "@/lib/peak-end-operate-endings";
-import { workspaceLookupKey } from "@/lib/identity-headers";
+import { workspaceLookupKey, type DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
 import { optionalCreateFields, shortDigest } from "@/lib/workflow";
@@ -218,6 +218,7 @@ import {
   folderQueryValue,
   folderHomeListMode,
   folderRailReady,
+  homeExtrasIdsToLoad,
   homeListMetadataRecords,
   intendedFolderSelectionFromUrl,
   selectedFolderListFolderId,
@@ -266,6 +267,55 @@ export function WorkflowHome() {
   return <WorkflowHomeSession key={workspaceLookupKey(identity)} />;
 }
 
+async function fetchHomeRowExtras(
+  identity: DevIdentity,
+  records: readonly WorkflowRecord[],
+  options: { canSeeExecutions: boolean; canViewActivation: boolean },
+): Promise<{
+  drafts: Map<string, WorkflowDraft>;
+  executions: ExecutionRecord[];
+  lastRunKnownIds: Set<string>;
+  activations: Map<string, HomeActivationColumn>;
+}> {
+  const draftEntries = await Promise.all(
+    records.map(async (item) => {
+      const draft = await getWorkflowDraft(identity, item.id);
+      return [item.id, draft.ok ? draft.draft : null] as const;
+    }),
+  );
+  const drafts = new Map<string, WorkflowDraft>();
+  for (const [id, draft] of draftEntries) {
+    if (draft) {
+      drafts.set(id, draft);
+    }
+  }
+  const executions: ExecutionRecord[] = [];
+  const lastRunKnownIds = new Set<string>();
+  if (options.canSeeExecutions) {
+    const runEntries = await Promise.all(
+      records.map(async (item) => {
+        const runs = await listWorkflowExecutions(identity, item.id, {
+          limit: 1,
+        });
+        return [item.id, runs.ok ? runs.items : null] as const;
+      }),
+    );
+    for (const [id, items] of runEntries) {
+      if (!items) {
+        continue;
+      }
+      lastRunKnownIds.add(id);
+      executions.push(...items);
+    }
+  }
+  const activations = options.canViewActivation
+    ? await loadHomeActivationStates(identity, records, {
+        canView: options.canViewActivation,
+      })
+    : new Map<string, HomeActivationColumn>();
+  return { drafts, executions, lastRunKnownIds, activations };
+}
+
 function WorkflowHomeSession() {
   const router = useRouter();
   const pathname = usePathname();
@@ -281,6 +331,8 @@ function WorkflowHomeSession() {
   const importRef = useRef<HTMLInputElement>(null);
   const consumedQuery = useRef(false);
   const refreshGate = useRef(createGenerationGate());
+  const extrasGate = useRef(createGenerationGate());
+  const extrasLoadedIds = useRef(new Set<string>());
   const [folders, setFolders] = useState<WorkflowFolder[]>([]);
   const [foldersReady, setFoldersReady] = useState(false);
   const [dropPreviousFolder, setDropPreviousFolder] = useState(() =>
@@ -546,6 +598,7 @@ function WorkflowHomeSession() {
       if (ready) {
         setFoldersReady(true);
       }
+      extrasLoadedIds.current = new Set();
       setRecords([]);
       setWorkspaceWorkflows(null);
       setDrafts(new Map());
@@ -614,50 +667,25 @@ function WorkflowHomeSession() {
       ? workspaceWideWorkflowsResult(true, all.items)
       : workspaceWideWorkflowsResult(false, []);
     setWorkspaceWorkflows(workspaceItems);
-    const metadataRecords = homeListMetadataRecords(list.items, workspaceItems);
-    const draftEntries = await Promise.all(
-      metadataRecords.map(async (item) => {
-        const draft = await getWorkflowDraft(identity, item.id);
-        return [item.id, draft.ok ? draft.draft : null] as const;
-      }),
+    extrasGate.current.begin();
+    const metadataRecords = homeListMetadataRecords(
+      list.items,
+      workspaceItems,
+      "",
+      false,
     );
+    extrasLoadedIds.current = new Set(metadataRecords.map((item) => item.id));
+    const extras = await fetchHomeRowExtras(identity, metadataRecords, {
+      canSeeExecutions: canSeeExecutionsNav(permissions ?? []),
+      canViewActivation,
+    });
     if (!refreshGate.current.isCurrent(token)) {
       return;
     }
-    const nextDrafts = new Map<string, WorkflowDraft>();
-    for (const [id, draft] of draftEntries) {
-      if (draft) {
-        nextDrafts.set(id, draft);
-      }
-    }
-    setDrafts(nextDrafts);
-    if (canSeeExecutionsNav(permissions ?? [])) {
-      const runEntries = await Promise.all(
-        metadataRecords.map(async (item) => {
-          const runs = await listWorkflowExecutions(identity, item.id, {
-            limit: 1,
-          });
-          return [item.id, runs.ok ? runs.items : null] as const;
-        }),
-      );
-      if (!refreshGate.current.isCurrent(token)) {
-        return;
-      }
-      const nextRuns: ExecutionRecord[] = [];
-      const known = new Set<string>();
-      for (const [id, items] of runEntries) {
-        if (!items) {
-          continue;
-        }
-        known.add(id);
-        nextRuns.push(...items);
-      }
-      setExecutions(nextRuns);
-      setLastRunKnownIds(known);
-    } else {
-      setExecutions([]);
-      setLastRunKnownIds(new Set());
-    }
+    setDrafts(extras.drafts);
+    setExecutions(extras.executions);
+    setLastRunKnownIds(extras.lastRunKnownIds);
+    setActivations(extras.activations);
     if (canSeeApprovalsNav(permissions ?? [])) {
       const inbox = await listApprovals(identity, { status: "pending" });
       if (!refreshGate.current.isCurrent(token)) {
@@ -668,19 +696,6 @@ function WorkflowHomeSession() {
       }
     } else {
       setApprovals([]);
-    }
-    if (canViewActivation) {
-      const nextActivations = await loadHomeActivationStates(
-        identity,
-        metadataRecords,
-        { canView: canViewActivation },
-      );
-      if (!refreshGate.current.isCurrent(token)) {
-        return;
-      }
-      setActivations(nextActivations);
-    } else {
-      setActivations(new Map());
     }
     if (refreshGate.current.isCurrent(token)) {
       setPending(null);
@@ -912,6 +927,76 @@ function WorkflowHomeSession() {
       gate.begin();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!canView || !acrossFolderSearch) {
+      return;
+    }
+    const needed = homeListMetadataRecords(
+      records,
+      workspaceWorkflows,
+      filters.query,
+      searchInThisFolder,
+    );
+    const missingIds = new Set(
+      homeExtrasIdsToLoad(needed, extrasLoadedIds.current),
+    );
+    if (missingIds.size === 0) {
+      return;
+    }
+    const missing = needed.filter((item) => missingIds.has(item.id));
+    for (const id of missingIds) {
+      extrasLoadedIds.current.add(id);
+    }
+    const token = extrasGate.current.begin();
+    void (async () => {
+      const extras = await fetchHomeRowExtras(identity, missing, {
+        canSeeExecutions: canSeeExecutionsNav(permissions ?? []),
+        canViewActivation,
+      });
+      if (!extrasGate.current.isCurrent(token)) {
+        return;
+      }
+      setDrafts((prev) => {
+        const next = new Map(prev);
+        for (const [id, draft] of extras.drafts) {
+          next.set(id, draft);
+        }
+        return next;
+      });
+      setExecutions((prev) => {
+        const replace = new Set(extras.lastRunKnownIds);
+        return [
+          ...prev.filter((item) => !replace.has(item.workflowId)),
+          ...extras.executions,
+        ];
+      });
+      setLastRunKnownIds((prev) => {
+        const next = new Set(prev);
+        for (const id of extras.lastRunKnownIds) {
+          next.add(id);
+        }
+        return next;
+      });
+      setActivations((prev) => {
+        const next = new Map(prev);
+        for (const [id, column] of extras.activations) {
+          next.set(id, column);
+        }
+        return next;
+      });
+    })();
+  }, [
+    acrossFolderSearch,
+    canView,
+    canViewActivation,
+    filters.query,
+    identity,
+    permissions,
+    records,
+    searchInThisFolder,
+    workspaceWorkflows,
+  ]);
 
   useEffect(() => {
     function onActivationChanged() {

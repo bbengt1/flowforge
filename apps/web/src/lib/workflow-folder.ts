@@ -35,10 +35,12 @@
  * Optional “in this folder” still means this folder only — not
  * descendants. Rail can filter folder names; Unfiled stays
  * visible. Across-folder hits join the same draft / last-run /
- * activation extras as the selected-folder list. A failed
- * unfiltered GET /workflows keeps scoped rows (null, not []).
- * A failed GET /workflow-folders keeps the intended `?folder=`
- * selection — do not resolve against [] as Unfiled. No secret
+ * activation extras as the selected-folder list, but only for
+ * the current name/slug hits — not every workspace row on each
+ * folder visit. A failed unfiltered GET /workflows keeps scoped
+ * rows (null, not []). A failed GET /workflow-folders clears
+ * rail readiness and keeps the intended `?folder=` selection —
+ * do not resolve a stale cache (or []) as Unfiled. No secret
  * search. No marketplace. Commands do not file via /actions.
  * #320 cold-load `?folder=` stays first.
  *
@@ -150,6 +152,7 @@ export const FOLDER_SEARCH_IN_FOLDER_LABEL = "in this folder";
 export const FOLDER_SEARCH_ACROSS_LABEL = "Search across folders";
 export const FOLDER_RAIL_FILTER_LABEL = "Filter folders";
 export const FOLDER_PATH_REVEAL_LABEL = "Show in folder";
+export const HOME_SEARCH_METADATA_LIMIT = 64;
 
 export const FOLDER_MUTATE_VERBS = [
   ...FOLDER_ORGANIZE_VERBS,
@@ -368,8 +371,10 @@ export const F6_HOME_FOLDER = {
   keep320Open: true,
   coldLoadHonorsFolderQuery: true,
   searchJoinsWorkspaceMetadata: true,
+  searchExtrasBoundedToNameSlugHits: true,
   preserveScopedRecordsWhenWorkspaceListFails: true,
   keepIntendedFolderWhenFolderListFails: true,
+  folderReadyFalseOnFolderListFailure: true,
 } as const;
 
 export const F7_HOME_FOLDER = {
@@ -594,8 +599,9 @@ export function resolveFolderSelection(
 /**
  * Only a successful GET /workflow-folders may resolve a UUID
  * against the tree (including falling back to Unfiled). Failure
- * must keep the intended `?folder=` selection — resolving against
- * [] paints Unfiled while the workflow fetch still used the UUID.
+ * — including a later refresh after a successful load — must
+ * clear readiness so a stale cache cannot resolve an intended
+ * UUID as Unfiled while the workflow fetch still used that UUID.
  */
 export function folderRailReady(folderListOk: boolean): boolean {
   return folderListOk;
@@ -765,11 +771,29 @@ export function workspaceWideWorkflowsOrScoped<T>(
   return workspaceWide ?? scoped;
 }
 
-export function homeListMetadataRecords<T>(
+export function homeListMetadataRecords<
+  T extends { name?: string | null; slug?: string | null },
+>(
   scoped: readonly T[],
   workspaceWide: readonly T[] | null,
+  query: string,
+  inThisFolder: boolean,
 ): readonly T[] {
-  return workspaceWideWorkflowsOrScoped(workspaceWide, scoped);
+  if (!folderSearchListsAcrossFolders(query, inThisFolder)) {
+    return scoped;
+  }
+  return workspaceWideWorkflowsOrScoped(workspaceWide, scoped)
+    .filter((item) => matchesWorkflowNameOrSlug(item, query))
+    .slice(0, HOME_SEARCH_METADATA_LIMIT);
+}
+
+export function homeExtrasIdsToLoad(
+  needed: readonly { id: string }[],
+  loadedIds: ReadonlySet<string>,
+): string[] {
+  return needed
+    .filter((item) => !loadedIds.has(item.id))
+    .map((item) => item.id);
 }
 
 export function selectionForWorkflowFolder(
