@@ -7,7 +7,10 @@ import { useState } from "react";
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { isExecutionAwaitingApproval } from "@/lib/approval";
 import { PeakEndEnding } from "@/components/chrome/PeakEndEnding";
-import { peakEndKind } from "@/lib/peak-end-operate-endings";
+import {
+  peakEndKind,
+  peakEndOverlayRowShowsEnding,
+} from "@/lib/peak-end-operate-endings";
 import {
   EXECUTION_INBOX_COLUMNS,
   EXECUTION_INBOX_KEYBOARD_HELP,
@@ -150,7 +153,10 @@ export function ExecutionHistoryListbox({
                     </div>
                     <ExecutionStatusBadge status={row.status} />
                   </div>
-                  {row.indeterminate || waiting || ending === "success" || ending === "failed" ? (
+                  {peakEndOverlayRowShowsEnding(ending, {
+                    focused,
+                    selected: Boolean(selectedId) && row.id === selectedId,
+                  }) ? (
                     <PeakEndEnding
                       kind={ending}
                       surface="overlay"

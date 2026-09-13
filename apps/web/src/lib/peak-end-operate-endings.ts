@@ -18,6 +18,12 @@
  * (R4.4). Inbox is not a second replay graph. Open execution still
  * goes to `/executions/{id}`.
  *
+ * Follow-up #301 (keep open): overlay `data-peak-end=success` is
+ * only on the focused/selected operate ending (or the just-finished
+ * run). Other succeeded rows stay quiet success badges (Peak-End /
+ * Von Restorff). Loud `indeterminate` and waiting → decide stay on
+ * every matching row.
+ *
  * Out of scope: UXL.5–8, inventing a second ExecutionReplay on
  * inbox, silent success toast as the only ending.
  */
@@ -58,6 +64,8 @@ import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 export const UXL4_STORY = 291;
 export const UXL4_EPIC = 287;
 export const UXL4_KEEP_STORY_OPEN = true;
+export const UXL4_FOLLOWUP_STORY = 301;
+export const UXL4_KEEP_FOLLOWUP_OPEN = true;
 export const UXL4_ID = "UXL.4-peak-end-endings" as const;
 
 export const UXL4_BRIEF = "docs/architecture/flowforge-ux-laws.md";
@@ -150,6 +158,7 @@ export const PEAK_END_OPERATE = {
   loudIndeterminateOnOverlayAndInbox: true,
   waitingDecideOnOverlayAndInbox: true,
   successExplicitAndDistinctFromIndeterminate: true,
+  successLoudOnlyOnFocusedOverlay: true,
   cancelRetryStopStayOnSamePath: true,
   inboxIsNotSecondReplayGraph: true,
   openExecutionGoesToExecutionsId: true,
@@ -170,7 +179,7 @@ export const PEAK_END_OPERATE = {
 } as const;
 
 export const PEAK_END_OPERATE_HELP =
-  "After Start published or Test run, the editor ends on the Runs overlay for that run (remembered-open satellite), not only a toast. Fail jumps to the node. Indeterminate stays icon + text + explanation on overlay and inbox. Waiting → decide stays on overlay and inbox. Success is explicit and distinct from indeterminate. Cancel / retry / stop remain on the same path. Open execution still goes to /executions/{id}. Inbox is not a second replay graph.";
+  "After Start published or Test run, the editor ends on the Runs overlay for that run (remembered-open satellite), not only a toast. Fail jumps to the node. Indeterminate stays icon + text + explanation on overlay and inbox. Waiting → decide stays on overlay and inbox. Success is explicit and distinct from indeterminate. Overlay peak-end success is only on the focused/selected operate ending (or the just-finished run); other succeeded rows stay quiet success badges. Cancel / retry / stop remain on the same path. Open execution still goes to /executions/{id}. Inbox is not a second replay graph.";
 
 export const PEAK_END_OPERATE_SOURCES = [
   "src/lib/peak-end-operate-endings.ts",
@@ -391,6 +400,75 @@ export function peakEndSuccessIsDistinctFromIndeterminate(): boolean {
   );
 }
 
+export type PeakEndOverlayRowFocus = {
+  focused?: boolean;
+  selected?: boolean;
+  justFinished?: boolean;
+};
+
+export function peakEndOverlaySuccessIsLoud(
+  focus: PeakEndOverlayRowFocus = {},
+): boolean {
+  return Boolean(
+    PEAK_END_OPERATE.successLoudOnlyOnFocusedOverlay &&
+      (focus.focused || focus.selected || focus.justFinished),
+  );
+}
+
+export function peakEndOverlayRowShowsEnding(
+  kind: PeakEndKind,
+  focus: PeakEndOverlayRowFocus = {},
+): boolean {
+  if (kind === "indeterminate" || kind === "waiting" || kind === "failed") {
+    return true;
+  }
+  if (kind === "success") {
+    return peakEndOverlaySuccessIsLoud(focus);
+  }
+  return false;
+}
+
+export function peakEndOverlaySuccessLoudCount(
+  rows: readonly (PeakEndOverlayRowFocus & { kind: PeakEndKind })[],
+): number {
+  return rows.filter(
+    (row) => row.kind === "success" && peakEndOverlaySuccessIsLoud(row),
+  ).length;
+}
+
+export function peakEndOverlaySuccessIsFocusedOnly(): boolean {
+  const quiet = Array.from({ length: 14 }, () => ({
+    kind: "success" as const,
+    focused: false,
+    selected: false,
+    justFinished: false,
+  }));
+  const oneFocused = quiet.map((row, index) =>
+    index === 0 ? { ...row, focused: true, selected: true } : row,
+  );
+  const justFinished = quiet.map((row, index) =>
+    index === 3 ? { ...row, justFinished: true } : row,
+  );
+  return (
+    PEAK_END_OPERATE.successLoudOnlyOnFocusedOverlay &&
+    peakEndOverlaySuccessIsLoud({}) === false &&
+    peakEndOverlaySuccessIsLoud({ focused: false }) === false &&
+    peakEndOverlaySuccessIsLoud({ focused: true }) === true &&
+    peakEndOverlaySuccessIsLoud({ selected: true }) === true &&
+    peakEndOverlaySuccessIsLoud({ justFinished: true }) === true &&
+    peakEndOverlayRowShowsEnding("success") === false &&
+    peakEndOverlayRowShowsEnding("success", { focused: true }) === true &&
+    peakEndOverlayRowShowsEnding("indeterminate") === true &&
+    peakEndOverlayRowShowsEnding("indeterminate", { focused: false }) === true &&
+    peakEndOverlayRowShowsEnding("waiting") === true &&
+    peakEndOverlayRowShowsEnding("waiting", { focused: false }) === true &&
+    peakEndOverlayRowShowsEnding("failed") === true &&
+    peakEndOverlaySuccessLoudCount(quiet) === 0 &&
+    peakEndOverlaySuccessLoudCount(oneFocused) === 1 &&
+    peakEndOverlaySuccessLoudCount(justFinished) === 1
+  );
+}
+
 export function peakEndNeverSilentSuccessWhenUncertain(status?: string): boolean {
   const kind = peakEndKind(status);
   if (isIndeterminateStatus(status)) {
@@ -456,7 +534,9 @@ export function peakEndHoldsHardLines(): boolean {
     editorRunsHasSingleOperatePath() &&
     executionInboxHasSingleOperatePath() &&
     peakEndOpenStaysExecutionsId() &&
-    peakEndSuccessIsDistinctFromIndeterminate()
+    peakEndSuccessIsDistinctFromIndeterminate() &&
+    PEAK_END_OPERATE.successLoudOnlyOnFocusedOverlay &&
+    peakEndOverlaySuccessIsFocusedOnly()
   );
 }
 
