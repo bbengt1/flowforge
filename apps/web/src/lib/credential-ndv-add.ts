@@ -45,6 +45,7 @@ import { maybeEmbedDeepLink } from "./embed-tenancy-contract.ts";
 import { credentialsPath } from "./credential-contract.ts";
 import { isSecretFieldName } from "./credential.ts";
 import {
+  CREDENTIAL_KEK_CONTRACT,
   CREDENTIAL_KEK_ENV,
   CREDENTIAL_UUID_RE,
   CREDENTIAL_VAULT_STRIP_STOP_HELP,
@@ -83,7 +84,7 @@ export const CREDENTIAL_NDV_ADD_STRIP_STOP_HELP =
   CREDENTIAL_VAULT_STRIP_STOP_HELP;
 
 export const CREDENTIAL_NDV_ADD_HELP =
-  "Add a vault credential from the selected node without abandoning the graph. The guided masked wizard stays add; this inspector stays edit/pick. After add, the picker selects the new credential by display name and YAML stores the UUID only. SecretField and plaintext stay out of the NDV. Unexpected plaintext is a contract bug (strip + stop). The UI never reads CREDENTIAL_KEK.";
+  "Add a vault credential from the selected node without abandoning the graph. The guided masked wizard stays add; this inspector stays edit/pick. After add, the picker selects the new credential by display name and YAML stores the UUID only. SecretField and plaintext stay out of the NDV. Unexpected plaintext is a contract bug (strip + stop).";
 
 export const CREDENTIAL_NDV_ADD_WIZARD_HELP =
   "Guided add only. Masked fields submit once and clear. After create you return to the editor; the NDV picker selects the display name and YAML stores the UUID. The inspector never gains a secret surface.";
@@ -343,8 +344,9 @@ export function credentialNdvDoesNotReadKek(): boolean {
     CREDENTIAL_NDV_ADD.noKekInBrowser &&
     credentialVaultDoesNotReadKek() &&
     CREDENTIAL_KEK_ENV === "CREDENTIAL_KEK" &&
-    /never reads CREDENTIAL_KEK/.test(CREDENTIAL_NDV_ADD_HELP) &&
-    !/process\.env/.test(CREDENTIAL_NDV_ADD_HELP)
+    /never reads CREDENTIAL_KEK/.test(CREDENTIAL_KEK_CONTRACT) &&
+    !CREDENTIAL_NDV_ADD_HELP.includes(CREDENTIAL_KEK_ENV) &&
+    !/process\.env/.test(CREDENTIAL_KEK_CONTRACT)
   );
 }
 

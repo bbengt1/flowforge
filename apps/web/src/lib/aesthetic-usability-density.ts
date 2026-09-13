@@ -204,8 +204,11 @@ export const PRODUCT_CHROME_SOURCES = [
   "src/app/credentials/new/page.tsx",
   "src/components/home/WorkflowHome.tsx",
   "src/components/credentials/CredentialVault.tsx",
+  "src/components/credentials/CredentialDetail.tsx",
+  "src/components/credentials/CredentialWizard.tsx",
   "src/components/workflows/EditorChrome.tsx",
   "src/components/workflows/EditorTopBar.tsx",
+  "src/components/workflows/EditorInspector.tsx",
   "src/components/embed/EmbedChrome.tsx",
 ] as const;
 

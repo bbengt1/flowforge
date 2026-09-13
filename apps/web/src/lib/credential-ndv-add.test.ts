@@ -98,7 +98,7 @@ describe("R5.3 NDV add credential without leaving the graph", () => {
     assert.match(CREDENTIAL_NDV_ADD_HELP, /display name/);
     assert.match(CREDENTIAL_NDV_ADD_HELP, /UUID/);
     assert.match(CREDENTIAL_NDV_ADD_HELP, /SecretField/);
-    assert.match(CREDENTIAL_NDV_ADD_HELP, /CREDENTIAL_KEK/);
+    assert.doesNotMatch(CREDENTIAL_NDV_ADD_HELP, /CREDENTIAL_KEK/);
     assert.match(CREDENTIAL_NDV_ADD_HELP, /strip \+ stop/);
     assert.match(CREDENTIAL_NDV_ADD_WIZARD_HELP, /Guided add/);
     assert.match(CREDENTIAL_NDV_ADD_WIZARD_HELP, /return to the editor/);

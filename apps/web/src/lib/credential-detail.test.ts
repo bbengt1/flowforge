@@ -156,7 +156,7 @@ describe("R5.2 credential detail operate density", () => {
     assert.match(CREDENTIAL_DETAIL_HELP, /rotate/);
     assert.match(CREDENTIAL_DETAIL_HELP, /usage/);
     assert.match(CREDENTIAL_DETAIL_HELP, /deletion-impact/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /CREDENTIAL_KEK/);
+    assert.doesNotMatch(CREDENTIAL_DETAIL_HELP, /CREDENTIAL_KEK/);
     assert.match(CREDENTIAL_DETAIL_HELP, /strip \+ stop/);
     assert.match(CREDENTIAL_DETAIL_HELP, /CSRF/);
     assert.match(CREDENTIAL_DETAIL_ROTATE_HELP, /display-name \+ UUID only/);
