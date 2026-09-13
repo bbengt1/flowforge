@@ -10,7 +10,13 @@ import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
+import { PeakEndEnding } from "@/components/chrome/PeakEndEnding";
 import { EDITOR_RUN_CLEAR_LABEL } from "@/lib/editor-run-io";
+import {
+  peakEndHeadline,
+  peakEndKind,
+  peakEndSurfaceClassName,
+} from "@/lib/peak-end-operate-endings";
 import {
   EDITOR_RUNS_COLUMN_WIDTH,
   EDITOR_RUNS_LIST_LIMIT,
@@ -112,6 +118,12 @@ export function EditorRunsDrawer({
   const scopedId = workflowId?.trim() ?? "";
   const selectedRow = visible.find((row) => row.id === selectedExecutionId);
   const chrome = runsChromeMode(open);
+  const selectedPeakEnd = peakEndKind(
+    selectedExecution?.status ?? selectedRow?.status,
+    isExecutionAwaitingApproval(
+      selectedExecution?.status ?? selectedRow?.status,
+    ),
+  );
 
   async function refresh() {
     if (!scopedId) {
@@ -390,23 +402,23 @@ export function EditorRunsDrawer({
         {selectedRow ? (
           <section
             aria-label="Selected run"
-            className={
-              selectedRow.indeterminate
-                ? "mt-4 rounded-xl border-2 border-amber-700 bg-amber-50 p-3"
-                : isExecutionAwaitingApproval(selectedRow.status)
-                  ? "mt-4 rounded-xl border-2 border-indigo-700 bg-indigo-50 p-3"
-                : "mt-4 rounded-xl border border-teal-800 bg-teal-50 p-3"
-            }
+            data-peak-end-surface="overlay"
+            className={`mt-4 rounded-xl p-3 ${peakEndSurfaceClassName(selectedPeakEnd)}`}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-zinc-800">On this canvas</p>
+                <p className="text-xs font-semibold text-zinc-800">
+                  {peakEndHeadline(selectedPeakEnd)}
+                </p>
                 <p className="mt-1 font-mono text-[11px] break-all text-zinc-600">
                   {selectedRow.versionPin}
                 </p>
               </div>
-              <ExecutionStatusBadge status={selectedRow.status} />
+              <ExecutionStatusBadge
+                status={selectedExecution?.status ?? selectedRow.status}
+              />
             </div>
+            <PeakEndEnding kind={selectedPeakEnd} className="mt-2" />
             <p className="mt-2 text-xs text-zinc-700">
               {editorRunsHighlightSummary(overlayHighlightCount)}
             </p>

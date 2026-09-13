@@ -31,6 +31,8 @@ import {
 import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { PeakEndEnding } from "@/components/chrome/PeakEndEnding";
+import { peakEndKind } from "@/lib/peak-end-operate-endings";
 
 export type LastRunIoPanelProps = {
   detail: ExecutionDetail | null;
@@ -68,6 +70,10 @@ export function LastRunIoPanel({
     embed,
   });
   const io = view.io;
+  const endingKind = peakEndKind(
+    io?.status || view.runStatus || detail?.status,
+    Boolean(io?.view?.waiting),
+  );
   const indeterminateCopy = io?.step
     ? isSshRunType(io.step.nodeType)
       ? sshIndeterminateCopy({
@@ -101,10 +107,15 @@ export function LastRunIoPanel({
       aria-labelledby="last-run-io-heading"
       data-ndv-run-io={view.source || "empty"}
       data-ndv-run-io-source={view.source || ""}
+      data-peak-end-surface="ndv"
       className={
         io?.indeterminate
           ? "rounded-2xl border-2 border-amber-700 bg-amber-50 p-5"
-          : "rounded-2xl border border-zinc-200 bg-white p-5"
+          : endingKind === "success"
+            ? "rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5"
+            : endingKind === "failed"
+              ? "rounded-2xl border-2 border-rose-700 bg-rose-50 p-5"
+              : "rounded-2xl border border-zinc-200 bg-white p-5"
       }
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -123,6 +134,9 @@ export function LastRunIoPanel({
           ) : null}
           {detail || view.runStatus ? (
             <ExecutionStatusBadge status={view.runStatus || detail?.status} />
+          ) : null}
+          {detail || view.runStatus ? (
+            <PeakEndEnding kind={endingKind} surface="ndv" />
           ) : null}
           {onClear ? (
             <button
