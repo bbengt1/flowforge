@@ -101,11 +101,14 @@ import {
 } from "@/lib/ssh-retry-contract";
 import type { SshEngineCatalog, SshParameterConstraint } from "@/lib/ssh-types";
 import type { PolicyEvaluation } from "@/lib/approval-types";
+import { type ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
-  ACTION_FAMILY_ORDER,
-  actionFamilyLabel,
-  type ActionLibraryEntry,
-} from "@/lib/workflow-action-library";
+  PALETTE_CATEGORY_FIRST_HELP,
+  PALETTE_CATEGORY_LABELS,
+  PALETTE_CATALOG_UNAVAILABLE_HELP,
+  paletteFirstPaint,
+  type PaletteCategoryId,
+} from "@/lib/palette-category-first";
 import {
   ACTION_WIZARD_STEPS,
   applyCredentialRef,
@@ -229,6 +232,7 @@ export function ActionWizard({
     .map(([kind]) => kind);
   const { recommended, visible } = recommendActions({
     entries,
+    catalog,
     query,
     upstream,
     permissions,
@@ -594,6 +598,7 @@ export function ActionWizard({
         <div className="mt-6 space-y-4">
           {step === "type" ? (
             <TypeStep
+              catalog={catalog}
               query={query}
               onQuery={setQuery}
               recommended={recommended}
@@ -720,6 +725,7 @@ export function ActionWizard({
 }
 
 function TypeStep({
+  catalog,
   query,
   onQuery,
   recommended,
@@ -727,6 +733,7 @@ function TypeStep({
   selected,
   onChoose,
 }: {
+  catalog: WorkflowCatalog | null;
   query: string;
   onQuery: (value: string) => void;
   recommended: { type: string; reasons: string[] }[];
@@ -734,12 +741,21 @@ function TypeStep({
   selected: string;
   onChoose: (type: string) => void;
 }) {
+  const [selectedCategory, setSelectedCategory] =
+    useState<PaletteCategoryId | null>(null);
+  const paint = paletteFirstPaint({
+    entries: visible,
+    catalog,
+    query,
+    selectedCategory,
+  });
   const recEntries = recommended
     .map((item) => visible.find((entry) => entry.type === item.type))
     .filter((item): item is ActionLibraryEntry => Boolean(item));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-uxl7="wizard-type" data-uxl7-paint={paint.kind}>
+      <p className="text-sm text-zinc-600">{PALETTE_CATEGORY_FIRST_HELP}</p>
       <label className="block text-sm">
         <span className="font-medium">Search types</span>
         <input
@@ -768,27 +784,81 @@ function TypeStep({
           </ul>
         </div>
       ) : null}
-      {ACTION_FAMILY_ORDER.map((family) => {
-        const items = visible.filter((entry) => entry.family === family);
-        if (items.length === 0) {
-          return null;
-        }
-        return (
-          <div key={family}>
-            <h3 className="text-sm font-medium">{actionFamilyLabel(family)}</h3>
-            <ul className="mt-2 space-y-2">
-              {items.map((entry) => (
-                <TypeCard
-                  key={entry.type}
-                  entry={entry}
-                  selected={selected === entry.type}
-                  onChoose={onChoose}
-                />
-              ))}
-            </ul>
-          </div>
-        );
-      })}
+      {paint.kind === "categories" ? (
+        <div data-uxl7="categories">
+          <h3 className="text-sm font-medium">Categories</h3>
+          <ul className="mt-2 space-y-2">
+            {paint.categories.map((group) => (
+              <li key={group.id}>
+                <button
+                  type="button"
+                  data-uxl7-category={group.id}
+                  onClick={() => setSelectedCategory(group.id)}
+                  className="flex w-full items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-zinc-400"
+                >
+                  <span className="font-medium">
+                    {PALETTE_CATEGORY_LABELS[group.id]}
+                  </span>
+                  <span className="text-xs text-zinc-600">
+                    {group.items.length} enabled
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {paint.kind === "category" ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory(null)}
+            className="text-xs font-medium text-teal-800 underline"
+          >
+            All categories
+          </button>
+          <h3 className="mt-2 text-sm font-medium">
+            {paint.selectedCategory
+              ? PALETTE_CATEGORY_LABELS[paint.selectedCategory]
+              : "Category"}
+          </h3>
+          <ul className="mt-2 space-y-2">
+            {paint.items.map((entry) => (
+              <TypeCard
+                key={entry.type}
+                entry={entry}
+                selected={selected === entry.type}
+                onChoose={onChoose}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {paint.kind === "search" ? (
+        <div>
+          <h3 className="text-sm font-medium">Search results</h3>
+          <ul className="mt-2 space-y-2">
+            {paint.items.map((entry) => (
+              <TypeCard
+                key={entry.type}
+                entry={entry}
+                selected={selected === entry.type}
+                onChoose={onChoose}
+              />
+            ))}
+          </ul>
+          {paint.items.length === 0 ? (
+            <p className="mt-2 text-sm text-zinc-600">
+              No enabled actions match that search.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {paint.kind === "unavailable" ? (
+        <p className="text-sm text-zinc-600" role="status">
+          {paint.unavailableReason ?? PALETTE_CATALOG_UNAVAILABLE_HELP}
+        </p>
+      ) : null}
     </div>
   );
 }

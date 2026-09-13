@@ -67,6 +67,10 @@ import { authorizedSelectorOptions, pinFromSummary } from "./ops-config.ts";
 import type { OpsConfigKind, OpsConfigPin, OpsConfigSummary } from "./ops-config-types.ts";
 import type { ProblemDetails } from "./problem.ts";
 import {
+  enabledCatalogPaletteEntries,
+  recommendFromUpstreamPort,
+} from "./palette-category-first.ts";
+import {
   ACTION_FAMILY_ORDER,
   actionFamilyForType,
   filterActionLibrary,
@@ -478,18 +482,25 @@ export function publishedPinsFromList(input: {
 
 export function recommendActions(input: {
   entries: ActionLibraryEntry[];
+  catalog?: WorkflowCatalog | null;
   query?: string;
   upstream?: { type: string; port: CatalogPort } | null;
   permissions?: readonly string[] | null;
   enabledTargetKinds?: readonly OpsConfigKind[];
 }): { recommended: WizardRecommendation[]; visible: ActionLibraryEntry[] } {
   const visible = filterActionLibrary(
-    input.entries.filter((entry) => entry.placeable && entry.enabled),
+    enabledCatalogPaletteEntries(input.entries, input.catalog),
     input.query ?? "",
   );
-  const recommended = visible
-    .map((entry) => scoreRecommendation(entry, input))
-    .filter((item) => item.score > 0)
+  const recommended = recommendFromUpstreamPort({
+    entries: visible,
+    catalog: input.catalog,
+    upstream: input.upstream,
+  })
+    .map((item) => {
+      const entry = visible.find((candidate) => candidate.type === item.type);
+      return entry ? scoreRecommendation(entry, input, item) : item;
+    })
     .sort((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
@@ -1176,18 +1187,10 @@ function scoreRecommendation(
     permissions?: readonly string[] | null;
     enabledTargetKinds?: readonly OpsConfigKind[];
   },
+  base: WizardRecommendation,
 ): WizardRecommendation {
-  let score = 1;
-  const reasons: string[] = ["Enabled catalog implementation"];
-  if (input.upstream?.port) {
-    const compatible = (entry.inputs ?? []).some((port) =>
-      portsCompatible(input.upstream?.port, port),
-    );
-    if (compatible) {
-      score += 5;
-      reasons.push(`Accepts upstream ${input.upstream.port.name} (${input.upstream.port.kind})`);
-    }
-  }
+  let score = base.score;
+  const reasons = [...base.reasons];
   const needed = opsConfigKindsForAction(entry.type);
   const enabled = new Set(input.enabledTargetKinds ?? []);
   if (needed.length > 0 && needed.every((kind) => enabled.has(kind))) {
