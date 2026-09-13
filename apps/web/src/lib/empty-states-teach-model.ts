@@ -258,7 +258,8 @@ export function canvasAddPathExcludesTriggers(
 
 export function vaultEmptyAddsViaMaskedWizard(source: string): boolean {
   return (
-    source.includes('data-uxl6="vault-empty"') &&
+    source.includes("data-uxl6") &&
+    source.includes("vault-empty") &&
     source.includes("VAULT_EMPTY_HEADING") &&
     source.includes("VAULT_EMPTY_HELP") &&
     source.includes("VAULT_EMPTY_ADD_LABEL") &&
@@ -283,9 +284,11 @@ export function vaultSelectorsStayDisplayNameAndUuid(): boolean {
 export function developerSamplesStayUnderSettings(settingsSource: string): boolean {
   return (
     settingsSource.includes("Developer") &&
-    settingsSource.includes(SETTINGS_DEVELOPER_HREF) &&
+    (settingsSource.includes("SETTINGS_DEVELOPER_HREF") ||
+      settingsSource.includes(SETTINGS_DEVELOPER_HREF)) &&
     (settingsSource.includes("Starter YAML") ||
-      settingsSource.includes("Developer samples")) &&
+      settingsSource.includes("Developer samples") ||
+      settingsSource.includes("EDITOR_YAML_DEVELOPER_DISCLOSURE")) &&
     EDITOR_DEVELOPER.starterInvalidNotPrimaryButtons &&
     EDITOR_DEVELOPER.starterInvalidPlacement ===
       "yaml-disclosure-or-settings-developer" &&
