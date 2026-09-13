@@ -1095,7 +1095,8 @@ describe("F.6 search / filter across folders", () => {
     const home = source("src/components/home/WorkflowHome.tsx");
     const client = source("src/lib/workflow-client.ts");
     const search = source("src/lib/workspace-search.ts");
-    assert.match(home, /never searched/i);
+    assert.match(FOLDER_SEARCH_HELP, /never searched/i);
+    assert.match(home, /FOLDER_SEARCH_HELP/);
     assert.doesNotMatch(home, /marketplace/i);
     assert.doesNotMatch(home, /\/actions/);
     assert.doesNotMatch(client, /[?&]q=/);
