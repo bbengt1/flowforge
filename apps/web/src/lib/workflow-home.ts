@@ -1,8 +1,10 @@
 /**
  * E6.1 workflow home: client-side list/filter on safe metadata.
  * GET /workflows has no search `q` — F.6 filters name/slug in the
- * browser on the unfiltered list (omit folderId). F.2 still filters
- * the selected folder with additive `folderId` / `unfiled` only.
+ * browser on the unfiltered list (omit folderId). That across-folder
+ * search is a separate mode from selected-folder listing. F.2 still
+ * lists the selected folder with additive `folderId` / `unfiled`
+ * only — non-recursive; `?folderId=` is not a tree walk of children.
  * Trigger, last run, validation, approvals, and R6.2 activation
  * (D2 compose of trigger status + version pin) are joined from
  * existing list/draft /execution/approval/trigger/version responses

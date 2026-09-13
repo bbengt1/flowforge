@@ -164,8 +164,9 @@ import {
   folderNameSubmitError,
   folderNotEmptyDetail,
   folderQueryValue,
-  folderSearchListsAcrossFolders,
+  folderHomeListMode,
   intendedFolderSelectionFromUrl,
+  selectedFolderListFolderId,
   matchesWorkflowNameOrSlug,
   parseFolderQuery,
   parseWorkflowMoveDragPayload,
@@ -180,7 +181,6 @@ import {
   workflowFolderPathLabel,
   workflowMoveDragPayload,
   workflowMoveTargets,
-  workflowsFolderIdQuery,
   workflowsMovableIntoSelection,
   writeExpandedFolderIds,
   type FolderMutateChrome,
@@ -302,10 +302,8 @@ function WorkflowHomeSession() {
   const selection = foldersReady
     ? resolveFolderSelection(intendedSelection, folders)
     : intendedSelection;
-  const acrossFolderSearch = folderSearchListsAcrossFolders(
-    filters.query,
-    searchInThisFolder,
-  );
+  const listMode = folderHomeListMode(filters.query, searchInThisFolder);
+  const acrossFolderSearch = listMode === "across-search";
   const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
   const visibleFolderTree = useMemo(
     () => filterFolderTreeByName(folderTree, railFilter),
@@ -515,7 +513,7 @@ function WorkflowHomeSession() {
     }
     const listSelection = folderList.ok ? resolved : intended;
     let list = await listWorkflows(identity, {
-      folderId: workflowsFolderIdQuery(listSelection),
+      folderId: selectedFolderListFolderId(listSelection),
     });
     if (!refreshGate.current.isCurrent(token)) {
       return;

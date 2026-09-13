@@ -8,11 +8,13 @@
  * #307. Keep #309, #310, #311, #312, #313, and #320 open.
  *
  * Tree comes from GET /workflow-folders. The selected-folder list
- * uses GET /workflows?folderId=. Across-folders search omits
- * folderId (today's full list) and filters name/slug in the
- * browser — do not invent `q`. Unfiled is virtual (folderId ==
- * null), not a persisted row — always in the rail. `?folder=` is
- * the deep link and must survive cold load / refresh / paste.
+ * uses GET /workflows?folderId= for **that folder only** — not a
+ * tree walk of children (Gracie). Across-folders search is a
+ * separate mode: omit folderId (today's full list) and filter
+ * name/slug in the browser — do not invent `q`, do not redefine
+ * `?folderId=`. Unfiled is virtual (folderId == null), not a
+ * persisted row — always in the rail. `?folder=` is the deep
+ * link and must survive cold load / refresh / paste.
  * Workspace / tenant+workbench change drops previous-workspace
  * folder state after folders load; an explicit `?folder=<uuid>`
  * is not stripped because identity flickered to "||".
@@ -29,9 +31,10 @@
  * folders). Unfiled-empty points at the tree or empty-home verbs.
  *
  * F.6: default search is across folders and shows folder path.
- * Optional “in this folder.” Rail can filter folder names; Unfiled
- * stays visible. No secret search. No marketplace. Commands do
- * not file via /actions.
+ * Optional “in this folder” still means this folder only — not
+ * descendants. Rail can filter folder names; Unfiled stays
+ * visible. No secret search. No marketplace. Commands do not
+ * file via /actions. #320 cold-load `?folder=` stays first.
  *
  * Folders are not in YAML. Drafts never run. Move does not bump
  * draftRevision, YAML, or activation. No cascade delete.
@@ -322,6 +325,9 @@ export const F6_HOME_FOLDER = {
   defaultSearchAcrossFolders: true,
   resultsShowFolderPath: true,
   optionalInThisFolder: true,
+  selectedFolderListIsNonRecursive: true,
+  acrossSearchIsSeparateMode: true,
+  folderIdIsNotATreeWalk: true,
   railFiltersFolderNames: true,
   unfiledAlwaysVisibleInRailFilter: true,
   noSecretSearch: true,
@@ -383,6 +389,30 @@ export function folderQueryValue(selection: FolderSelection): string {
 
 export function workflowsFolderIdQuery(selection: FolderSelection): string {
   return folderQueryValue(selection);
+}
+
+/**
+ * Selected-folder list query. This folder only — not descendants.
+ * Gracie: do not redefine `?folderId=` as a tree walk of children.
+ * Across-folder search is a separate mode (omit folderId).
+ */
+export function selectedFolderListFolderId(selection: FolderSelection): string {
+  return workflowsFolderIdQuery(selection);
+}
+
+export function selectedFolderListIncludesDescendants(): false {
+  return false;
+}
+
+export type FolderHomeListMode = "selected" | "across-search";
+
+export function folderHomeListMode(
+  query: string,
+  inThisFolder: boolean,
+): FolderHomeListMode {
+  return folderSearchListsAcrossFolders(query, inThisFolder)
+    ? "across-search"
+    : "selected";
 }
 
 export function listWorkflowsPath(folderId?: string): string {
@@ -594,6 +624,10 @@ export function matchesWorkflowNameOrSlug(
   return name.includes(needle) || slug.includes(needle);
 }
 
+/**
+ * Exact folder membership only. Child-folder workflows stay out of
+ * the parent selected-folder list and out of “in this folder.”
+ */
 export function constrainItemsToFolderSelection<
   T extends { folderId?: string | null },
 >(items: readonly T[], selection: FolderSelection): T[] {
