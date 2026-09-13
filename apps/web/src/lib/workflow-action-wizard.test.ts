@@ -269,6 +269,7 @@ describe("action wizard catalog inference and recommendations", () => {
   it("recommends compatible enabled actions from upstream port and targets", () => {
     const { recommended, visible } = recommendActions({
       entries: palette,
+      catalog,
       upstream: { type: "data.set", port: { name: "result", kind: "object" } },
       permissions: ["workflow.execute", "kubernetes.apply"],
       enabledTargetKinds: ["cluster_target"],
