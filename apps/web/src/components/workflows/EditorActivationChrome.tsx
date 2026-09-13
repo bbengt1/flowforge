@@ -18,6 +18,7 @@ import {
   type EditorActivationPin,
   type EditorActivationState,
 } from "@/lib/editor-activation";
+import { editorWorkingMemoryDraftLabel } from "@/lib/editor-working-memory";
 import {
   applyEditorActivationToggle,
   loadEditorActivation,
@@ -159,11 +160,17 @@ export function EditorActivationChrome({
           <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
             R6.1 · Activation · D2 compose
           </p>
+          <p
+            data-editor-working-memory="draft"
+            className="mt-1 text-sm text-zinc-600"
+          >
+            {editorWorkingMemoryDraftLabel()}
+          </p>
           <h2
             id={EDITOR_ACTIVATION_HEADING_ID}
             className="text-base font-semibold"
           >
-            This published version is active
+            {state.label}
           </h2>
           <p className="mt-1 text-sm text-zinc-600">{EDITOR_ACTIVATION_COMPOSE}</p>
         </div>
@@ -200,6 +207,7 @@ export function EditorActivationChrome({
         role="status"
         data-editor-activation-live={editorActivationLooksLive(state) ? "true" : "false"}
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
+        data-editor-working-memory="published"
         className="mt-3 text-sm font-medium text-zinc-900"
       >
         <ActivationStatusText state={state} />
@@ -296,6 +304,7 @@ function CompactActivation({
         role="status"
         data-editor-activation-live={live ? "true" : "false"}
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
+        data-editor-working-memory="published"
         className={`text-xs ${live ? "font-medium text-teal-900" : "text-zinc-600"}`}
       >
         {loading ? (

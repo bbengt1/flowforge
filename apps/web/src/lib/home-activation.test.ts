@@ -206,7 +206,7 @@ describe("R6.2 home activation column", () => {
     assert.equal(active.kind, "active");
     assert.equal(homeActivationLooksLive(active), true);
     assert.equal(active.draftLooksLive, false);
-    assert.match(active.label, /Active/);
+    assert.match(active.label, /is active/);
     assert.match(active.label, /published v3/);
     assert.match(HOME_ACTIVATION_COMPOSE, /published version/);
 
@@ -217,7 +217,7 @@ describe("R6.2 home activation column", () => {
     });
     assert.equal(inactive.kind, "inactive");
     assert.equal(homeActivationLooksLive(inactive), false);
-    assert.equal(inactive.label, "Not active");
+    assert.equal(inactive.label, "not active");
 
     const unknown = composeHomeActivation({
       workflowId: WORKFLOW_ID,
