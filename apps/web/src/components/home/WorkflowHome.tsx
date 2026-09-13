@@ -8,10 +8,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type DragEvent,
 } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { listApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
@@ -145,6 +147,7 @@ import {
   buildFolderTree,
   canCreateChildFolder,
   canDropWorkflowOnFolder,
+  canMutateEmbedWorkflowFolders,
   canMutateWorkflowFolders,
   childFolderCount,
   consumeFolderWorkspaceChange,
@@ -195,6 +198,7 @@ import {
   listWorkflowFolders,
   renameWorkflowFolder,
 } from "@/lib/workflow-folder-client";
+import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
 import { pushNotification } from "@/lib/workspace-notifications";
 import {
@@ -214,6 +218,12 @@ function WorkflowHomeSession() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { identity, ready, permissions, environment } = useWorkspace();
+  const embed = useEmbedMode();
+  const session = useSyncExternalStore(
+    subscribeSession,
+    getSessionSnapshot,
+    getSessionSnapshot,
+  );
   const workspaceKey = workspaceLookupKey(identity);
   const importRef = useRef<HTMLInputElement>(null);
   const consumedQuery = useRef(false);
@@ -269,7 +279,11 @@ function WorkflowHomeSession() {
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canCreate = ready && canCreateWorkflows(permissions);
-  const canMutateFolders = ready && canMutateWorkflowFolders(permissions);
+  const canMutateFolders =
+    ready &&
+    (embed
+      ? canMutateEmbedWorkflowFolders(permissions, session.embedChrome)
+      : canMutateWorkflowFolders(permissions));
   const rowCapabilities = productHomeCapabilities(ready ? permissions : null);
   const canExecute =
     ready && canOfferManualStart(permissions) && rowCapabilities.canExecute;
@@ -1171,7 +1185,12 @@ function WorkflowHomeSession() {
   }
 
   return (
-    <div data-uxl8="home" className="space-y-6">
+    <div
+      data-uxl8="home"
+      data-f7={embed ? "embed-home" : "standalone-home"}
+      data-f7-tree="api"
+      className="space-y-6"
+    >
       {!ready ? (
         <SessionSetupHint purpose="before listing workflows." />
       ) : null}

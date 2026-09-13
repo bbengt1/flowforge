@@ -108,7 +108,15 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    there are no workflows and no child folders. Unfiled-empty
    points at the folder rail or those empty-home verbs. Unfiled
    is always in the rail and is not a persisted folder
-   (F.5 / #312 — **keep #312 open**).
+   (F.5 / #312 — **keep #312 open**). Default search is
+   **across folders** by name/slug; optional **in this
+   folder** (F.6 / #313 — **keep #313 open**). The same
+   rail + list + empty states + move land on
+   `/embed/v1/workflows` after `session.embed` (F.7 /
+   #314 — **keep #314 open**). Missing `session.embed`
+   is still an alert. Embed without `workflow.edit`
+   cannot mutate folders. The tree comes from the API,
+   not `localStorage`.
 2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
    column/status (R6.2 / #271 — **keep #271 open**) shows whether a
    published version is active for webhook/schedule. Drafts read
