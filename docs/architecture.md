@@ -61,3 +61,5 @@ Each embedded instance is scoped by `(tenant_id, workbench_key)`. That identity 
 The shipped product on `main` is E1–E12 plus epic #195 canvas-first chrome. The next program is a **FlowForge rewrite aimed at n8n-class UX and feature coverage**, not a clone: [flowforge-rewrite-n8n-class-parity.md](architecture/flowforge-rewrite-n8n-class-parity.md). YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay unless that charter records an explicit safer replacement.
 
 Post-R1–R7 chrome polish (Laws of UX, selective; docs-only): [flowforge-ux-laws.md](architecture/flowforge-ux-laws.md).
+
+Workflows home folder hierarchy (nested, server-backed, per workspace; docs-only IA; Brent-promoted): [flowforge-workflow-folders.md](architecture/flowforge-workflow-folders.md).
