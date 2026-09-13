@@ -13,6 +13,10 @@ import {
   editorDrawerTriggerId,
   editorTopBarControlLabel,
 } from "@/lib/e12-accessibility-contract";
+import {
+  EDITOR_TOPBAR_GROUP_LABELS,
+  EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS,
+} from "@/lib/editor-topbar-chunking";
 import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import {
   EDITOR_CANVAS_REDO_LABEL,
@@ -57,6 +61,14 @@ type EditorTopBarProps = {
   onRedo?: () => void;
 };
 
+const SATELLITE_CONTROL =
+  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50";
+const HISTORY_CONTROL =
+  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60";
+const GROUP =
+  "flex shrink-0 items-center gap-1.5";
+const GROUP_DIVIDER = `${GROUP} border-l border-zinc-200 pl-3`;
+
 export function EditorTopBar({
   workflow,
   loaded = false,
@@ -100,140 +112,161 @@ export function EditorTopBar({
       data-editor-context="sticky"
       className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2"
     >
-      <Link
-        href={backHref}
-        className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
+      <div
+        data-editor-topbar="identity"
+        className="flex min-w-0 flex-1 items-center gap-3"
       >
-        {editorTopBarControlLabel("back")}
-      </Link>
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
-        {context.slug ? (
-          <p className="truncate font-mono text-xs text-zinc-500">{context.slug}</p>
-        ) : (
-          <p className="text-xs text-zinc-500">
-            {context.loaded
-              ? "This workflow could not be loaded."
-              : "Loading this workflow…"}
-          </p>
-        )}
+        <Link
+          href={backHref}
+          className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
+        >
+          {editorTopBarControlLabel("back")}
+        </Link>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
+          {context.slug ? (
+            <p className="truncate font-mono text-xs text-zinc-500">{context.slug}</p>
+          ) : (
+            <p className="text-xs text-zinc-500">
+              {context.loaded
+                ? "This workflow could not be loaded."
+                : "Loading this workflow…"}
+            </p>
+          )}
+        </div>
+        <p className="shrink-0 text-xs text-zinc-600" role="status">
+          {workflow ? (
+            <>
+              <span className="capitalize">{context.status}</span>
+              {" · "}
+              {editorRevisionLabel(revision)}
+              {" · "}
+              <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
+                {dirtyLabel}
+              </span>
+            </>
+          ) : (
+            context.status
+          )}
+        </p>
       </div>
-      <p className="text-xs text-zinc-600" role="status">
-        {workflow ? (
-          <>
-            <span className="capitalize">{context.status}</span>
-            {" · "}
-            {editorRevisionLabel(revision)}
-            {" · "}
-            <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
-              {dirtyLabel}
-            </span>
-          </>
-        ) : (
-          context.status
-        )}
-      </p>
-      <label className="hidden text-xs sm:block">
-        <span className="sr-only">{editorTopBarControlLabel("publish-note")}</span>
-        <input
-          value={publishNote}
-          onChange={(event) => onPublishNote(event.target.value)}
-          placeholder={editorTopBarControlLabel("publish-note")}
-          className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-        />
-      </label>
-      <button
-        type="button"
-        id={satelliteOverlayTriggerId("action-wizard")}
-        onClick={onAddAction}
-        className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900"
+      <div
+        role="group"
+        aria-label={EDITOR_TOPBAR_GROUP_LABELS.authoring}
+        data-editor-topbar="authoring"
+        className={GROUP}
       >
-        {editorTopBarControlLabel("add-action")}
-      </button>
-      <button
-        type="button"
-        data-editor-history="undo"
-        title={EDITOR_CANVAS_UNDO_LABEL}
-        aria-keyshortcuts="Control+Z Meta+Z"
-        onClick={onUndo}
-        disabled={!onUndo || !canUndo}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60"
+        <label className="hidden text-xs sm:block">
+          <span className="sr-only">{editorTopBarControlLabel("publish-note")}</span>
+          <input
+            value={publishNote}
+            onChange={(event) => onPublishNote(event.target.value)}
+            placeholder={editorTopBarControlLabel("publish-note")}
+            className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
+          className={`rounded-md border border-teal-800 bg-teal-800 ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-white hover:bg-teal-900 disabled:opacity-60`}
+        >
+          {pending === "save" ? "Saving…" : editorTopBarControlLabel("save")}
+        </button>
+        <button
+          type="button"
+          onClick={onPublish}
+          disabled={!canCall || pending !== null || !canPublish}
+          className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
+        >
+          {pending === "publish" ? "Publishing…" : editorTopBarControlLabel("publish")}
+        </button>
+      </div>
+      <div data-editor-topbar="history" className={GROUP_DIVIDER}>
+        <button
+          type="button"
+          id={satelliteOverlayTriggerId("action-wizard")}
+          onClick={onAddAction}
+          className={`rounded-md border border-teal-800 bg-teal-800 ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-white hover:bg-teal-900`}
+        >
+          {editorTopBarControlLabel("add-action")}
+        </button>
+        <button
+          type="button"
+          data-editor-history="undo"
+          title={EDITOR_CANVAS_UNDO_LABEL}
+          aria-keyshortcuts="Control+Z Meta+Z"
+          onClick={onUndo}
+          disabled={!onUndo || !canUndo}
+          className={HISTORY_CONTROL}
+        >
+          {editorTopBarControlLabel("undo")}
+        </button>
+        <button
+          type="button"
+          data-editor-history="redo"
+          title={EDITOR_CANVAS_REDO_LABEL}
+          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+          onClick={onRedo}
+          disabled={!onRedo || !canRedo}
+          className={HISTORY_CONTROL}
+        >
+          {editorTopBarControlLabel("redo")}
+        </button>
+      </div>
+      <div
+        role="group"
+        aria-label={EDITOR_TOPBAR_GROUP_LABELS.satellites}
+        data-editor-topbar="satellites"
+        className={GROUP_DIVIDER}
       >
-        {editorTopBarControlLabel("undo")}
-      </button>
-      <button
-        type="button"
-        data-editor-history="redo"
-        title={EDITOR_CANVAS_REDO_LABEL}
-        aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
-        onClick={onRedo}
-        disabled={!onRedo || !canRedo}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60"
-      >
-        {editorTopBarControlLabel("redo")}
-      </button>
-      <button
-        type="button"
-        id={editorDrawerTriggerId("library")}
-        onClick={onToggleLibrary}
-        aria-pressed={libraryOpen}
-        aria-expanded={libraryOpen}
-        aria-controls={EDITOR_DRAWER_PANEL_IDS.library}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
-      >
-        {editorTopBarControlLabel("library", libraryOpen)}
-      </button>
-      <button
-        type="button"
-        id={editorDrawerTriggerId("yaml")}
-        onClick={onToggleYaml}
-        aria-pressed={yamlOpen}
-        aria-expanded={yamlOpen}
-        aria-controls={EDITOR_DRAWER_PANEL_IDS.yaml}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
-      >
-        {editorTopBarControlLabel("yaml", yamlOpen)}
-      </button>
-      <button
-        type="button"
-        id={editorDrawerTriggerId("inspector")}
-        onClick={onToggleInspector}
-        aria-pressed={inspectorOpen}
-        aria-expanded={inspectorOpen}
-        aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
-      >
-        {editorTopBarControlLabel("inspector", inspectorOpen)}
-      </button>
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
-        className="rounded-md border border-teal-800 bg-teal-800 px-2.5 py-1 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-      >
-        {pending === "save" ? "Saving…" : editorTopBarControlLabel("save")}
-      </button>
-      <button
-        type="button"
-        onClick={onPublish}
-        disabled={!canCall || pending !== null || !canPublish}
-        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
-      >
-        {pending === "publish" ? "Publishing…" : editorTopBarControlLabel("publish")}
-      </button>
-      <button
-        type="button"
-        id={editorDrawerTriggerId("runs")}
-        onClick={onToggleRuns}
-        disabled={!workflow}
-        aria-pressed={runsOpen}
-        aria-expanded={runsOpen}
-        aria-controls={EDITOR_DRAWER_PANEL_IDS.runs}
-        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
-      >
-        {editorTopBarControlLabel("runs", runsOpen)}
-      </button>
-      <div data-editor-topbar="activation">
+        <button
+          type="button"
+          id={editorDrawerTriggerId("library")}
+          onClick={onToggleLibrary}
+          aria-pressed={libraryOpen}
+          aria-expanded={libraryOpen}
+          aria-controls={EDITOR_DRAWER_PANEL_IDS.library}
+          className={SATELLITE_CONTROL}
+        >
+          {editorTopBarControlLabel("library", libraryOpen)}
+        </button>
+        <button
+          type="button"
+          id={editorDrawerTriggerId("inspector")}
+          onClick={onToggleInspector}
+          aria-pressed={inspectorOpen}
+          aria-expanded={inspectorOpen}
+          aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
+          className={SATELLITE_CONTROL}
+        >
+          {editorTopBarControlLabel("inspector", inspectorOpen)}
+        </button>
+        <button
+          type="button"
+          id={editorDrawerTriggerId("yaml")}
+          onClick={onToggleYaml}
+          aria-pressed={yamlOpen}
+          aria-expanded={yamlOpen}
+          aria-controls={EDITOR_DRAWER_PANEL_IDS.yaml}
+          className={SATELLITE_CONTROL}
+        >
+          {editorTopBarControlLabel("yaml", yamlOpen)}
+        </button>
+        <button
+          type="button"
+          id={editorDrawerTriggerId("runs")}
+          onClick={onToggleRuns}
+          disabled={!workflow}
+          aria-pressed={runsOpen}
+          aria-expanded={runsOpen}
+          aria-controls={EDITOR_DRAWER_PANEL_IDS.runs}
+          className={`${SATELLITE_CONTROL} disabled:opacity-60`}
+        >
+          {editorTopBarControlLabel("runs", runsOpen)}
+        </button>
+      </div>
+      <div data-editor-topbar="activation" className="shrink-0 border-l border-zinc-200 pl-3">
         <EditorActivationChrome
           variant="compact"
           identity={identity}
@@ -242,26 +275,33 @@ export function EditorTopBar({
           onOpenTriggers={onOpenActivation}
         />
       </div>
-      <button
-        type="button"
-        id={satelliteOverlayTriggerId("start-published")}
-        onClick={onStart}
-        disabled={!workflow}
-        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+      <div
+        role="group"
+        aria-label={EDITOR_TOPBAR_GROUP_LABELS.run}
+        data-editor-topbar="run"
+        className={GROUP_DIVIDER}
       >
-        {editorTopBarControlLabel("start")}
-      </button>
-      <button
-        type="button"
-        onClick={onTestRun}
-        disabled={!canCall || pending !== null || !canTestRun}
-        title={editorTopBarControlLabel("test-run")}
-        className="rounded-md border border-teal-800 bg-white px-2.5 py-1 text-sm font-medium text-teal-900 hover:bg-teal-50 disabled:opacity-60"
-      >
-        {pending === "test-run"
-          ? "Test run…"
-          : editorTopBarControlLabel("test-run")}
-      </button>
+        <button
+          type="button"
+          id={satelliteOverlayTriggerId("start-published")}
+          onClick={onStart}
+          disabled={!workflow}
+          className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
+        >
+          {editorTopBarControlLabel("start")}
+        </button>
+        <button
+          type="button"
+          onClick={onTestRun}
+          disabled={!canCall || pending !== null || !canTestRun}
+          title={editorTopBarControlLabel("test-run")}
+          className={`rounded-md border border-teal-800 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-teal-900 hover:bg-teal-50 disabled:opacity-60`}
+        >
+          {pending === "test-run"
+            ? "Test run…"
+            : editorTopBarControlLabel("test-run")}
+        </button>
+      </div>
     </header>
   );
 }
