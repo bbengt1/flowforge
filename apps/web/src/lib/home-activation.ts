@@ -104,11 +104,11 @@ export const HOME_ACTIVATION_SOURCES = [
 ] as const;
 
 export const WORKFLOW_HOME_LIST_COLUMNS = [
-  { id: "workflow", label: "Workflow" },
   { id: HOME_ACTIVATION_COLUMN_ID, label: "Activation" },
+  { id: "workflow", label: "Workflow" },
   { id: "status", label: "Status" },
-  { id: "lastRun", label: "Last run" },
   { id: "actions", label: "Actions" },
+  { id: "lastRun", label: "Last run" },
 ] as const;
 
 export const HOME_ACTIVATION_FILTERS = [
@@ -339,7 +339,10 @@ export function homeActivationCommonPathUsesHomeDrawers(
 
 export function homeActivationColumnIsFirstClass(): boolean {
   return (
-    WORKFLOW_HOME_LIST_COLUMNS[1]?.id === HOME_ACTIVATION_COLUMN_ID &&
+    WORKFLOW_HOME_LIST_COLUMNS.some(
+      (column) => column.id === HOME_ACTIVATION_COLUMN_ID,
+    ) &&
+    WORKFLOW_HOME_LIST_COLUMNS[0]?.id === HOME_ACTIVATION_COLUMN_ID &&
     HOME_ACTIVATION.firstClassColumn &&
     HOME_ACTIVATION.densifyHomeListInPlace
   );

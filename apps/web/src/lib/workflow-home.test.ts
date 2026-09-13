@@ -133,6 +133,8 @@ describe("workflow home list/filter", () => {
     assert.equal(item?.pendingApprovals, 1);
     assert.equal(item?.lastRunStatus, "succeeded");
     assert.equal(item?.lastRunKnown, true);
+    assert.equal(item?.lastRunWaiting, false);
+    assert.equal(item?.lastRunIndeterminate, false);
     assert.equal(
       workflowHomeLastRunHref({
         workflowId: item.id,
@@ -201,6 +203,16 @@ describe("workflow home list/filter", () => {
       { ...EMPTY_WORKFLOW_HOME_FILTERS, lastRun: "never" },
     );
     assert.equal(neverRun.length, 1);
+
+    const uncertain = filterWorkflowHomeItems(
+      buildWorkflowHomeItems([record()], {
+        executions: [{ ...execution, status: "indeterminate" }],
+        lastRunKnownIds: new Set([record().id]),
+      }),
+      { ...EMPTY_WORKFLOW_HOME_FILTERS, lastRun: "indeterminate" },
+    );
+    assert.equal(uncertain.length, 1);
+    assert.equal(uncertain[0]?.lastRunIndeterminate, true);
   });
 });
 

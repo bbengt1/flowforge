@@ -299,7 +299,11 @@ describe("R6.2 home activation column", () => {
     assert.match(HOME_ACTIVATION_COMMON_PATH_HELP, /#activation/);
     assert.match(HOME_ACTIVATION_HELP, /first-class column/);
     assert.equal(homeActivationColumnIsFirstClass(), true);
-    assert.equal(WORKFLOW_HOME_LIST_COLUMNS[1]?.id, HOME_ACTIVATION_COLUMN_ID);
+    assert.equal(WORKFLOW_HOME_LIST_COLUMNS[0]?.id, HOME_ACTIVATION_COLUMN_ID);
+    assert.equal(
+      WORKFLOW_HOME_LIST_COLUMNS[WORKFLOW_HOME_LIST_COLUMNS.length - 1]?.id,
+      "lastRun",
+    );
 
     const home = source("src/components/home/WorkflowHome.tsx");
     const status = source("src/components/home/HomeActivationStatus.tsx");

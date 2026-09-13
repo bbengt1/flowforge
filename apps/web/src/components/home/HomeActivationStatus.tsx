@@ -23,6 +23,7 @@ export function HomeActivationStatus({ column }: HomeActivationStatusProps) {
       data-home-activation-live={live ? "true" : "false"}
       data-home-activation-draft-live={column.draftLooksLive ? "true" : "false"}
       data-home-activation-known={column.known ? "true" : "false"}
+      data-home-row-scan="lead"
       data-home-working-memory="published"
       data-r6-d2={HOME_ACTIVATION.d2ComposeEnablePlusVersionPin}
       data-r6-d3={HOME_ACTIVATION.d3TriggersStayWorkflowLevel}
