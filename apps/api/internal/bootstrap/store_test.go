@@ -84,6 +84,27 @@ func TestMemorySetStepDoesNotComplete(t *testing.T) {
 	}
 }
 
+func TestMemorySetPublicURLDoesNotComplete(t *testing.T) {
+	store := NewMemory()
+	if err := store.SetPublicURL(context.Background(), "https://flows.example.com/"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicBaseURL != "https://flows.example.com" || !st.PublicURLReady {
+		t.Fatalf("SetPublicURL persist: %+v", st)
+	}
+	if st.Complete {
+		t.Fatal("SetPublicURL must not mark complete")
+	}
+	if _, ok := statusJSON(t, st.Status())["publicBaseUrl"]; ok {
+		t.Fatal("status must not echo publicBaseUrl")
+	}
+	assertStatusHasNoSecrets(t, st.Status())
+}
+
 func TestMemoryRejectsInvalidStepAndURL(t *testing.T) {
 	store := NewMemory()
 	if err := store.SetStep(context.Background(), "kek", true); err != ErrInvalid {

@@ -116,3 +116,49 @@ func TestPostgresSetStepPersistenceDoesNotComplete(t *testing.T) {
 	}
 	assertStatusHasNoSecrets(t, st.Status())
 }
+
+func TestPostgresSetPublicURLDoesNotComplete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	store := NewPostgres(app)
+	if _, err := app.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET complete = false, skipped = false,
+		    persistence_ready = true, first_admin_ready = true,
+		    public_url_ready = false, tls_ready = false,
+		    public_base_url = '', tls_mode = 'none',
+		    completed_at = NULL, updated_at = now()
+		WHERE id = 'default'
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetPublicURL(ctx, "https://flows.example.com/"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicBaseURL != "https://flows.example.com" {
+		t.Fatalf("SetPublicURL must persist normalized column: %q", st.PublicBaseURL)
+	}
+	if !st.PublicURLReady {
+		t.Fatal("SetPublicURL must set public_url_ready")
+	}
+	if st.Complete || st.TLSReady {
+		t.Fatalf("SetPublicURL must not complete or advance TLS: %+v", st)
+	}
+	assertStatusHasNoSecrets(t, st.Status())
+	if _, ok := statusJSON(t, st.Status())["publicBaseUrl"]; ok {
+		t.Fatal("status must not echo publicBaseUrl")
+	}
+}
