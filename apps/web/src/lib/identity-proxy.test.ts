@@ -83,6 +83,7 @@ describe("resolveIdentityProxyTarget", () => {
         "/api/v1/workspace/realtime/channels/22222222-2222-2222-2222-222222222222/subscribe",
       ],
       ["GET", ["workspace", "audit-events"], "/api/v1/workspace/audit-events"],
+      ["GET", ["bootstrap"], "/api/v1/bootstrap"],
       ["GET", ["session"], "/api/v1/session"],
       ["POST", ["session"], "/api/v1/session"],
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
@@ -1189,6 +1190,12 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in publicIngress, true);
     if ("status" in publicIngress) {
       assert.equal(publicIngress.status, 404);
+    }
+
+    const postBootstrap = resolveIdentityProxyTarget("POST", ["bootstrap"]);
+    assert.equal("status" in postBootstrap, true);
+    if ("status" in postBootstrap) {
+      assert.equal(postBootstrap.status, 405);
     }
 
     const deleteSession = resolveIdentityProxyTarget("DELETE", ["session"]);

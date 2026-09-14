@@ -12,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -34,6 +35,7 @@ import (
 type Server struct {
 	db               postgres.Checker
 	store            identity.Store
+	bootstrap        bootstrap.Store
 	scoped           isolation.Store
 	cache            *isolation.Cache
 	sessions         session.Store
@@ -71,6 +73,7 @@ type Server struct {
 type Deps struct {
 	DB                   postgres.Checker
 	Store                identity.Store
+	Bootstrap            bootstrap.Store
 	Scoped               isolation.Store
 	Sessions             session.Store
 	Workflows            wfstore.Store
@@ -221,12 +224,22 @@ func inferAlerts(db postgres.Checker) opsalert.Store {
 	return opsalert.NewMemory()
 }
 
+func inferBootstrap(db postgres.Checker) bootstrap.Store {
+	if p, ok := db.(*postgres.Pool); ok {
+		return bootstrap.NewPostgres(p)
+	}
+	return bootstrap.NewMemory()
+}
+
 func newServer(d Deps) http.Handler {
 	// Production cmd/api uses NewWithDeps with a postgres.Pool and no
 	// explicit Store. Infer identity / isolation / session / workflow
 	// stores from that pool so mint, membership, and exchange can run.
 	// Tests that inject stores keep them. Nil store + non-pool DB still
 	// fail closed (503) via requireStore.
+	if d.Bootstrap == nil {
+		d.Bootstrap = inferBootstrap(d.DB)
+	}
 	if d.Store == nil || d.Scoped == nil || d.Sessions == nil || d.Workflows == nil {
 		infStore, infScoped, infSessions, infWorkflows := inferStores(d.DB)
 		if d.Store == nil {
@@ -327,6 +340,7 @@ func newServer(d Deps) http.Handler {
 	s := &Server{
 		db:               d.DB,
 		store:            d.Store,
+		bootstrap:        d.Bootstrap,
 		scoped:           d.Scoped,
 		cache:            cache,
 		sessions:         sessions,
@@ -389,6 +403,7 @@ func newServer(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("GET /api/v1/readiness", s.readiness)
+	mux.HandleFunc("GET /api/v1/bootstrap", s.getBootstrap)
 	mux.HandleFunc("GET /api/v1/metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/openapi.yaml", s.openapiYAML)
 	mux.HandleFunc("GET /api/v1/openapi.json", s.openapiJSON)

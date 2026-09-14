@@ -12,6 +12,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
@@ -99,6 +100,9 @@ type Config struct {
 	// SEED_LOCAL_DEFAULTS is not an explicit off value. Production-locked
 	// processes stay false; an explicit on flag is a boot-fail.
 	SeedLocalDefaults bool
+	// PublicBaseURL is the operator-facing origin (B.4). Localseed
+	// persists it on trusted-dev skip. Never returned by GET /bootstrap.
+	PublicBaseURL string
 }
 
 // Load reads configuration from the process environment.
@@ -183,6 +187,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.SeedLocalDefaults = seedLocal
+	publicURL, err := bootstrap.NormalizePublicBaseURL(os.Getenv(bootstrap.EnvPublicBaseURL))
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", bootstrap.EnvPublicBaseURL, err)
+	}
+	cfg.PublicBaseURL = publicURL
 	requireHTTPS := authz.ProductionLocked(appEnv, cfg.RequireTLS)
 	if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
 		return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)

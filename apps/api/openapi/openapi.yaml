@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.18.0
+  version: 0.19.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -45,7 +45,9 @@ info:
       authenticated principal with `platform.administer` (`PLATFORM_ADMINS`).
       Scrapers send `Authorization: Bearer <ff_session>` or the `ff_session`
       cookie. `GET /health` and `GET /readiness` stay unauthenticated for
-      Kubernetes probes.
+      Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
+      (incomplete installs may call it without a session; complete requires
+      normal auth). It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
 paths:
@@ -116,6 +118,81 @@ paths:
                 instance: /api/v1/readiness
                 code: dependency-unavailable
                 request_id: 0123456789abcdef0123456789abcdef
+  /bootstrap:
+    get:
+      operationId: getBootstrap
+      summary: First-run bootstrap status
+      description: |
+        Standalone first-run wizard gate. Status flags only — never
+        secrets, KEK, password hashes, private keys, or the stored
+        public base URL.
+
+        Auth: when `complete` is false (no admin / wizard in progress),
+        this GET is unauthenticated so the wizard can start. After
+        `complete` is true, a normal product session (cookie) or
+        trusted-dev identity headers are required (`401` otherwise).
+
+        **Never gate `/embed/v1` with this endpoint.** Embed never
+        shows the wizard. `standaloneOnly` is always true. After
+        complete, further URL / TLS / user / persistence edits live
+        in Settings only.
+
+        Trusted-dev / compose localseed that already created an admin
+        and public URL marks `complete=true` / `incomplete=false` /
+        `skipped=true`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Bootstrap status (no secrets)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              examples:
+                incomplete:
+                  value:
+                    complete: false
+                    incomplete: true
+                    skipped: false
+                    standaloneOnly: true
+                    steps:
+                      persistence:
+                        ready: false
+                      firstAdmin:
+                        ready: false
+                      publicUrl:
+                        ready: false
+                      tls:
+                        ready: false
+                complete:
+                  value:
+                    complete: true
+                    incomplete: false
+                    skipped: true
+                    standaloneOnly: true
+                    steps:
+                      persistence:
+                        ready: true
+                      firstAdmin:
+                        ready: true
+                      publicUrl:
+                        ready: true
+                      tls:
+                        ready: false
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /metrics:
     get:
       operationId: getMetrics
@@ -6853,6 +6930,45 @@ components:
         status:
           type: string
           enum: [ready]
+    BootstrapStep:
+      type: object
+      additionalProperties: false
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+        mode:
+          type: string
+          description: TLS status-only mode. Never a key or PEM.
+          enum: [none, self_signed, uploaded, local_http]
+    BootstrapStatus:
+      type: object
+      additionalProperties: false
+      required: [complete, incomplete, skipped, standaloneOnly, steps]
+      properties:
+        complete:
+          type: boolean
+        incomplete:
+          type: boolean
+        skipped:
+          type: boolean
+          description: Trusted-dev / compose localseed skip (admin + URL).
+        standaloneOnly:
+          type: boolean
+          description: Always true. Wizard and this gate never apply to /embed/v1.
+        steps:
+          type: object
+          additionalProperties: false
+          required: [persistence, firstAdmin, publicUrl, tls]
+          properties:
+            persistence:
+              $ref: "#/components/schemas/BootstrapStep"
+            firstAdmin:
+              $ref: "#/components/schemas/BootstrapStep"
+            publicUrl:
+              $ref: "#/components/schemas/BootstrapStep"
+            tls:
+              $ref: "#/components/schemas/BootstrapStep"
     Problem:
       type: object
       required: [type, title, status, detail, instance, code, request_id]

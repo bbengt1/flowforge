@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -202,15 +203,67 @@ func TestApplySkipsCredentialsWithoutKEK(t *testing.T) {
 	}
 }
 
+func TestApplyMarksBootstrapCompleteWhenAdminAndURLExist(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+	boot := bootstrap.NewMemory()
+	if _, err := Apply(ctx, Input{
+		Store:          store,
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: "admin-1"}},
+		Bootstrap:      boot,
+		PublicBaseURL:  "http://localhost:3000",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := boot.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.Skipped || !st.FirstAdminReady || !st.PublicURLReady {
+		t.Fatalf("seed must skip wizard: %+v", st)
+	}
+	if st.PublicBaseURL != "http://localhost:3000" {
+		t.Fatalf("stored URL = %q", st.PublicBaseURL)
+	}
+	status := st.Status()
+	if !status.Complete || status.Incomplete {
+		t.Fatalf("status %+v", status)
+	}
+
+	if _, err := Apply(ctx, Input{
+		Store:          store,
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: "admin-1"}},
+		Bootstrap:      boot,
+		PublicBaseURL:  "http://other.example",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = boot.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicBaseURL != "http://localhost:3000" {
+		t.Fatalf("idempotent seed must not replace URL: %q", st.PublicBaseURL)
+	}
+}
+
 func TestApplyNoopsWithoutPlatformAdmins(t *testing.T) {
 	ctx := context.Background()
 	store := identity.NewMemory()
-	res, err := Apply(ctx, Input{Store: store})
+	boot := bootstrap.NewMemory()
+	res, err := Apply(ctx, Input{Store: store, Bootstrap: boot})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Skipped == "" {
 		t.Fatal("empty PLATFORM_ADMINS must skip")
+	}
+	st, err := boot.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Complete {
+		t.Fatal("empty PLATFORM_ADMINS must not mark bootstrap complete")
 	}
 	if _, err := store.GetTenantBySlug(ctx, TenantSlug); !errors.Is(err, identity.ErrNotFound) {
 		t.Fatalf("must not invent a tenant: %v", err)
