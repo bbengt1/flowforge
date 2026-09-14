@@ -78,8 +78,21 @@ import {
   validationHealthLabel,
   type WorkflowHomeFilters,
   type WorkflowHomeItem,
-  type WorkflowHomeView,
 } from "@/lib/workflow-home";
+import {
+  OVERVIEW_CREATE_LABEL,
+  OVERVIEW_DEFAULT_SORT,
+  OVERVIEW_FILTER_LABEL,
+  OVERVIEW_HEADING,
+  OVERVIEW_HELP,
+  OVERVIEW_KEBAB_LABEL,
+  OVERVIEW_PUBLISHED_LABEL,
+  OVERVIEW_SORT_LABEL,
+  OVERVIEW_SORTS,
+  overviewCardTimestamps,
+  overviewPublishedBadge,
+  type OverviewHomeSort,
+} from "@/lib/overview-home";
 import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
@@ -250,7 +263,8 @@ function WorkflowHomeSession() {
   const [filters, setFilters] = useState<WorkflowHomeFilters>(EMPTY_WORKFLOW_HOME_FILTERS);
   const [searchInThisFolder, setSearchInThisFolder] = useState(false);
   const [railFilter, setRailFilter] = useState("");
-  const [view, setView] = useState<WorkflowHomeView>("list");
+  const [sort, setSort] = useState<OverviewHomeSort>(OVERVIEW_DEFAULT_SORT);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [createName, setCreateName] = useState("");
@@ -384,8 +398,9 @@ function WorkflowHomeSession() {
       : named;
     return sortWorkflowHomeItems(
       filterWorkflowHomeItems(scoped, { ...filters, query: "" }),
+      sort,
     );
-  }, [items, filters, searchInThisFolder, selection]);
+  }, [items, filters, searchInThisFolder, selection, sort]);
   const workspaceWorkflowCount = workspaceWorkflows?.length ?? records.length;
   const emptyKind = folderHomeEmptyKind({
     selection,
@@ -1196,7 +1211,7 @@ function WorkflowHomeSession() {
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
 
-      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[13rem_minmax(0,1fr)]">
       <FolderRail
         tree={visibleFolderTree}
         folders={folders}
@@ -1337,31 +1352,37 @@ function WorkflowHomeSession() {
         </form>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <section
+        data-o1="overview-header"
+        className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">Workflow home</h2>
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold tracking-tight text-zinc-900">
+              {OVERVIEW_HEADING}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">{OVERVIEW_HELP}</p>
             <p className="mt-1 text-sm text-zinc-600" data-f6="search-help">
               {FOLDER_SEARCH_HELP} Folder membership is not in YAML.
             </p>
             <p
               id={HOME_ACTIVATION_HEADING_ID}
-              className="mt-2 text-sm text-zinc-600"
+              className="sr-only"
               data-r6-d2={HOME_ACTIVATION.d2ComposeEnablePlusVersionPin}
             >
               {HOME_ACTIVATION_HELP}
             </p>
             <p
-              className="mt-2 text-sm text-zinc-600"
+              className="sr-only"
               data-home-working-memory="test-run"
             >
               {EDITOR_WORKING_MEMORY_TEST_RUN} {TEST_RUN_HELP}
             </p>
-            <p className="mt-2 text-sm text-zinc-600" data-home-row-scan="help">
+            <p className="sr-only" data-home-row-scan="help">
               {HOME_ROW_SCAN_HELP}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => void refresh()}
@@ -1370,43 +1391,34 @@ function WorkflowHomeSession() {
             >
               {pending === "list" ? "Loading…" : "Refresh"}
             </button>
-            <div role="group" aria-label="Workflow home view" className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setView("list")}
-              aria-pressed={view === "list"}
-              className={
-                view === "list"
-                  ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
-                  : "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
-              }
-            >
-              List
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("card")}
-              aria-pressed={view === "card"}
-              className={
-                view === "card"
-                  ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
-                  : "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
-              }
-            >
-              Cards
-            </button>
-            </div>
+            {canCreate ? (
+              <button
+                type="button"
+                data-o1="create"
+                disabled={pending !== null}
+                onClick={() => {
+                  const blank = workflowTemplateById("blank");
+                  if (blank) {
+                    void createFromYaml(blank.definitionYaml);
+                  }
+                }}
+                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              >
+                {OVERVIEW_CREATE_LABEL}
+              </button>
+            ) : null}
           </div>
         </div>
 
         <div
-          className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="mt-4 flex flex-wrap items-end gap-3"
+          data-o1="toolbar"
           data-f6="search"
           data-home-folder-search={
             searchInThisFolder ? "folder" : "across"
           }
         >
-          <div className="space-y-2">
+          <div className="min-w-[12rem] flex-1 space-y-2">
             <FilterInput
               label={FOLDER_SEARCH_ACROSS_LABEL}
               value={filters.query}
@@ -1424,6 +1436,43 @@ function WorkflowHomeSession() {
               {FOLDER_SEARCH_IN_FOLDER_LABEL}
             </label>
           </div>
+          <label className="block min-w-[10rem] text-sm">
+            <span className="text-zinc-600">{OVERVIEW_SORT_LABEL}</span>
+            <select
+              data-o1="sort"
+              value={sort}
+              onChange={(event) =>
+                setSort(event.target.value as OverviewHomeSort)
+              }
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+            >
+              {OVERVIEW_SORTS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            data-o1="filter"
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((current) => !current)}
+            className={
+              filterOpen
+                ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
+                : "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50"
+            }
+          >
+            {OVERVIEW_FILTER_LABEL}
+          </button>
+        </div>
+
+        {filterOpen ? (
+          <div
+            data-o1="filter-panel"
+            className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          >
           <FilterSelect
             label="Tag"
             value={filters.tag}
@@ -1515,10 +1564,11 @@ function WorkflowHomeSession() {
               <option value="30d">Last 30 days</option>
             </select>
           </label>
-        </div>
+          </div>
+        ) : null}
 
         {canCreate ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
             <FilterInput
               label="Name (optional)"
               value={createName}
@@ -1529,21 +1579,6 @@ function WorkflowHomeSession() {
               value={createSlug}
               onChange={setCreateSlug}
             />
-            <div className="flex items-end">
-              <button
-                type="button"
-                disabled={pending !== null}
-                onClick={() => {
-                  const blank = workflowTemplateById("blank");
-                  if (blank) {
-                    void createFromYaml(blank.definitionYaml);
-                  }
-                }}
-                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-              >
-                Create workflow
-              </button>
-            </div>
             <div className="flex items-end">
               <label className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50">
                 Import YAML
@@ -1659,30 +1694,6 @@ function WorkflowHomeSession() {
             setSearchInThisFolder(false);
           }}
         />
-      ) : view === "list" ? (
-        <WorkflowHomeList
-          items={visible}
-          pending={pending !== null}
-          canCreate={canCreate}
-          canMove={canMutateFolders}
-          canExecute={canExecute}
-          canPublish={canPublish}
-          canViewWebhooks={canViewWebhooks}
-          canViewSchedules={canViewSchedules}
-          canSeeLastRun={canSeeLastRun}
-          onStart={(item) => openHomeOverlay("start", item.id)}
-          onTestRun={(item) => void testRunItem(item)}
-          onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
-          onSchedules={(item) => openHomeOverlay("schedules", item.id)}
-          onDuplicate={(item) => void duplicateItem(item)}
-          onExport={(item) => void exportItem(item)}
-          onMove={openMoveDialog}
-          onRevealFolder={(item) =>
-            selectFolder(selectionForWorkflowFolder(item.folderId))
-          }
-          onDragStart={setDragging}
-          onDragEnd={() => setDragging(null)}
-        />
       ) : (
         <WorkflowHomeCards
           items={visible}
@@ -1694,6 +1705,7 @@ function WorkflowHomeSession() {
           canViewWebhooks={canViewWebhooks}
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
+          showFolderPath
           onStart={(item) => openHomeOverlay("start", item.id)}
           onTestRun={(item) => void testRunItem(item)}
           onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
@@ -2399,129 +2411,6 @@ function WorkflowFolderPath({
   );
 }
 
-function WorkflowHomeList({
-  items,
-  pending,
-  canCreate,
-  canMove,
-  canExecute,
-  canPublish,
-  canViewWebhooks,
-  canViewSchedules,
-  canSeeLastRun,
-  onStart,
-  onTestRun,
-  onWebhooks,
-  onSchedules,
-  onDuplicate,
-  onExport,
-  onMove,
-  onRevealFolder,
-  onDragStart,
-  onDragEnd,
-}: {
-  items: WorkflowHomeItem[];
-  pending: boolean;
-  canCreate: boolean;
-  canMove: boolean;
-  canExecute: boolean;
-  canPublish: boolean;
-  canViewWebhooks: boolean;
-  canViewSchedules: boolean;
-  canSeeLastRun: boolean;
-  onStart: (item: WorkflowHomeItem) => void;
-  onTestRun: (item: WorkflowHomeItem) => void;
-  onWebhooks: (item: WorkflowHomeItem) => void;
-  onSchedules: (item: WorkflowHomeItem) => void;
-  onDuplicate: (item: WorkflowHomeItem) => void;
-  onExport: (item: WorkflowHomeItem) => void;
-  onMove: (item: WorkflowHomeItem) => void;
-  onRevealFolder: (item: WorkflowHomeItem) => void;
-  onDragStart: (payload: WorkflowMoveDragPayload) => void;
-  onDragEnd: () => void;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      <div
-        className="mb-0 hidden min-w-[52rem] gap-3 border-b border-zinc-100 px-5 py-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.5fr)_minmax(8rem,0.9fr)_minmax(12rem,1.3fr)_minmax(9rem,1fr)]"
-        aria-hidden="true"
-        data-home-row-scan="columns"
-      >
-        {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
-          <span key={column.id} data-home-row-scan-column={column.id}>
-            {column.label}
-          </span>
-        ))}
-      </div>
-      <ul className="min-w-0 divide-y divide-zinc-100">
-        {items.map((item) => (
-          <li
-            key={item.id}
-            className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.5fr)_minmax(8rem,0.9fr)_minmax(12rem,1.3fr)_minmax(9rem,1fr)] sm:items-start"
-            data-home-row-scan="row"
-            {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
-          >
-            {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
-              <div key={column.id} className="min-w-0" data-home-row-scan-cell={column.id}>
-                <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase sm:hidden">
-                  {column.label}
-                </p>
-                {column.id === "activation" ? (
-                  <HomeActivationStatus column={item.activation} />
-                ) : null}
-                {column.id === "workflow" ? (
-                  <>
-                    <Link
-                      href={`/workflows/${item.id}`}
-                      className="text-base font-medium text-zinc-900 hover:underline"
-                    >
-                      {item.name}
-                    </Link>
-                    <p className="font-mono text-xs text-zinc-500">
-                      {item.slug}
-                      {item.owner ? ` · ${item.owner}` : ""}
-                    </p>
-                    <p className="mt-1">
-                      <WorkflowFolderPath
-                        item={item}
-                        onReveal={onRevealFolder}
-                      />
-                    </p>
-                  </>
-                ) : null}
-                {column.id === "status" ? <WorkflowMeta item={item} /> : null}
-                {column.id === "actions" ? (
-                  <WorkflowActions
-                    item={item}
-                    pending={pending}
-                    canCreate={canCreate}
-                    canMove={canMove}
-                    canExecute={canExecute}
-                    canPublish={canPublish}
-                    canViewWebhooks={canViewWebhooks}
-                    canViewSchedules={canViewSchedules}
-                    canSeeLastRun={canSeeLastRun}
-                    onStart={onStart}
-                    onTestRun={onTestRun}
-                    onWebhooks={onWebhooks}
-                    onSchedules={onSchedules}
-                    onDuplicate={onDuplicate}
-                    onExport={onExport}
-                    onMove={onMove}
-                  />
-                ) : null}
-                {column.id === "lastRun" ? (
-                  <HomeLastRunStatus item={item} canSeeLastRun={canSeeLastRun} />
-                ) : null}
-              </div>
-            ))}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function WorkflowHomeCards({
   items,
   pending,
@@ -2532,6 +2421,7 @@ function WorkflowHomeCards({
   canViewWebhooks,
   canViewSchedules,
   canSeeLastRun,
+  showFolderPath,
   onStart,
   onTestRun,
   onWebhooks,
@@ -2552,6 +2442,7 @@ function WorkflowHomeCards({
   canViewWebhooks: boolean;
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
+  showFolderPath: boolean;
   onStart: (item: WorkflowHomeItem) => void;
   onTestRun: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
@@ -2564,61 +2455,106 @@ function WorkflowHomeCards({
   onDragEnd: () => void;
 }) {
   return (
-    <ul className="grid gap-4 sm:grid-cols-2">
-      {items.map((item) => (
-        <li
-          key={item.id}
-          className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
-          data-home-row-scan="card"
-          {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <HomeActivationStatus column={item.activation} />
-          </div>
-          <Link
-            href={`/workflows/${item.id}`}
-            className="mt-2 block text-lg font-semibold text-zinc-900 hover:underline"
-          >
-            {item.name}
-          </Link>
-          <p className="mt-1 font-mono text-xs text-zinc-500">{item.slug}</p>
-          <p className="mt-2">
-            <WorkflowFolderPath item={item} onReveal={onRevealFolder} />
-          </p>
-          <div className="mt-3">
-            <WorkflowMeta item={item} />
-          </div>
-          <div className="mt-4">
-            <WorkflowActions
-              item={item}
-              pending={pending}
-              canCreate={canCreate}
-              canMove={canMove}
-              canExecute={canExecute}
-              canPublish={canPublish}
-              canViewWebhooks={canViewWebhooks}
-              canViewSchedules={canViewSchedules}
-              canSeeLastRun={canSeeLastRun}
-              onStart={onStart}
-              onTestRun={onTestRun}
-              onWebhooks={onWebhooks}
-              onSchedules={onSchedules}
-              onDuplicate={onDuplicate}
-              onExport={onExport}
-              onMove={onMove}
-            />
-          </div>
-          <div className="mt-4 border-t border-zinc-100 pt-3">
-            <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
-              Last run
-            </p>
-            <div className="mt-1">
-              <HomeLastRunStatus item={item} canSeeLastRun={canSeeLastRun} />
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div data-o1="card-list">
+      <div
+        className="sr-only"
+        aria-hidden="true"
+        data-home-row-scan="columns"
+      >
+        {WORKFLOW_HOME_LIST_COLUMNS.map((column) => (
+          <span key={column.id} data-home-row-scan-column={column.id}>
+            {column.label}
+          </span>
+        ))}
+      </div>
+      <ul className="space-y-2">
+        {items.map((item) => {
+          const dates = overviewCardTimestamps(item);
+          const published = overviewPublishedBadge(item.status);
+          return (
+            <li
+              key={item.id}
+              className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm"
+              data-o1="card"
+              data-home-row-scan="card"
+              {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/workflows/${item.id}`}
+                    className="text-base font-medium text-zinc-900 hover:underline"
+                    data-o1="card-name"
+                  >
+                    {item.name}
+                  </Link>
+                  {showFolderPath ? (
+                    <p className="mt-1">
+                      <WorkflowFolderPath
+                        item={item}
+                        onReveal={onRevealFolder}
+                      />
+                    </p>
+                  ) : null}
+                </div>
+                <p
+                  className="text-sm text-zinc-500"
+                  data-o1="card-dates"
+                >
+                  {dates.line}
+                </p>
+                {published.shown ? (
+                  <span
+                    data-o1="published"
+                    className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700"
+                  >
+                    {OVERVIEW_PUBLISHED_LABEL}
+                  </span>
+                ) : null}
+                <details data-o1="kebab" className="relative">
+                  <summary
+                    aria-label={OVERVIEW_KEBAB_LABEL}
+                    className="cursor-pointer list-none rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden"
+                  >
+                    ⋮
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-1 w-64 space-y-3 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg">
+                    <div data-home-row-scan-cell="activation">
+                      <HomeActivationStatus column={item.activation} />
+                    </div>
+                    <div data-home-row-scan-cell="lastRun">
+                      <HomeLastRunStatus
+                        item={item}
+                        canSeeLastRun={canSeeLastRun}
+                      />
+                    </div>
+                    <WorkflowMeta item={item} />
+                    <WorkflowActions
+                      item={item}
+                      pending={pending}
+                      canCreate={canCreate}
+                      canMove={canMove}
+                      canExecute={canExecute}
+                      canPublish={canPublish}
+                      canViewWebhooks={canViewWebhooks}
+                      canViewSchedules={canViewSchedules}
+                      canSeeLastRun={canSeeLastRun}
+                      onStart={onStart}
+                      onTestRun={onTestRun}
+                      onWebhooks={onWebhooks}
+                      onSchedules={onSchedules}
+                      onDuplicate={onDuplicate}
+                      onExport={onExport}
+                      onMove={onMove}
+                    />
+                  </div>
+                </details>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

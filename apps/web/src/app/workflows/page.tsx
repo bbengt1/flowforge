@@ -27,11 +27,13 @@ export default function WorkflowsPage() {
           creates a draft — plus optional New folder. Empty folder
           offers create here, move, or delete when the folder has no
           workflows and no child folders. Unfiled-empty points at the
-          tree or those empty-home verbs. Drafts do not run. List and card
-          scan ends are activation (published version active for webhook
+          tree or those empty-home verbs. Drafts do not run. The Overview
+          card list is the primary browse surface (O.1 / #325 —{" "}
+          <strong>keep #325 open</strong>): name, last updated/created,
+          published badge, and kebab. Compact folder rail stays a filter.
+          Scan ends remain activation (published version active for webhook
           or schedule) and last run (waiting or indeterminate when those
-          joins already exist), then status, version, validation health,
-          and required approvals without opening three drawers. Create and import use{" "}
+          joins already exist). Create and import use{" "}
           <code className="font-mono text-sm">POST /workflows</code>. The
           canvas + YAML editor is a standalone surface at{" "}
           <code className="font-mono text-sm">/workflows/{"{id}"}</code>
