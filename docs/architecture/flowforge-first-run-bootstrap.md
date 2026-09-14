@@ -1,6 +1,6 @@
-# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5)
+# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5 / B.6)
 
-Status: **B.1–B.5 landed** (this page is the contract map for B.6 chrome). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338).
+Status: **B.1–B.6 landed** (this page is the contract map). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338). B.6: [#339](https://github.com/bbengt1/flowforge/issues/339) — **keep #339 open**.
 
 **Owners:** jonny (gate + B.2–B.5 APIs), Chloe (B.6 wizard chrome + Settings handoff). Product hard lines: Gracie.
 
@@ -90,21 +90,23 @@ No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401
 
 **Never present:** `publicBaseUrl` / `public_base_url`, passwords, hashes, KEK, PEMs, private keys, cookies, CSRF secrets.
 
-### Chloe B.6 notes
+### Chloe B.6 chrome (landed)
+
+Adapter: `apps/web/src/lib/first-run-bootstrap.ts`. Gate: `BootstrapGate` on the standalone `WorkspaceShell` only. Wizard: `FirstRunWizard`. Settings handoff: `BootstrapSettings` (`/settings#bootstrap`).
 
 1. Call `GET /api/control-plane/bootstrap` only from **standalone** shell (not `/embed/v1`).
 2. `200` + `incomplete` → wizard. `200` + `complete` → product home (`/workflows`).
 3. `401` → treat as complete (login / home). Do not invent a second gate.
 4. `standaloneOnly` / this doc: ignore the payload on embed. Embed chrome stays ADV-021 (`GET /session` `session.embed`).
 5. Step `ready` flags are progress only. **Fail closed:** do not skip ahead. B.2–B.5 mutations will reject out-of-order writes.
-6. After `complete`, never remount the wizard. Link Settings for URL / TLS / users / persistence.
+6. After `complete`, never remount the wizard. Link Settings for URL / TLS / users / persistence (`/membership` for users).
 7. Do not store secrets, KEK, or this payload’s absence in `localStorage`.
 
 ---
 
 ## 3. B.2–B.5 landed API
 
-B.2–B.5 are implemented. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed. **Chloe B.6:** after this merge, wizard chrome is unblocked.
+B.2–B.5 are implemented. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed. **Chloe B.6:** wizard chrome + Settings handoff consume these routes.
 
 Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` for B.2–B.5. Embed sessions are `403` (wizard is standalone). Unauthenticated incomplete POSTs have no session, so CSRF does not apply until `ff_session` is present.
 
@@ -135,8 +137,8 @@ Table `instance_bootstrap` (migration `000024_instance_bootstrap.sql`):
 
 ## 5. Non-goals (this epic)
 
-- Full wizard UI (Chloe B.6)
 - ACME / Let’s Encrypt
 - Membership re-teach pages
 - Changing YAML SoT or allowing drafts to run
 - Gating embed catalog, exchange, or `/embed/v1` chrome
+- Post-complete Settings *mutation* APIs (status + link-out only in B.6)
