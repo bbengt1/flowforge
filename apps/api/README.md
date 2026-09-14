@@ -213,6 +213,8 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
       SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/tmp/flowforge-tls/cert.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/tmp/flowforge-tls/key.pem}
     depends_on:
       postgres:
         condition: service_healthy
