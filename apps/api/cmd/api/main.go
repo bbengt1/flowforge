@@ -35,6 +35,7 @@ func main() {
 		pool.SetAfterReady(localseed.Hook(localseed.Input{
 			Keys:           cfg.VaultKeys,
 			PlatformAdmins: cfg.PlatformAdmins,
+			PublicBaseURL:  cfg.PublicBaseURL,
 			Log:            log,
 		}))
 	}

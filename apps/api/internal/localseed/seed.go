@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
@@ -42,6 +43,8 @@ type Input struct {
 	Vault          vault.Store
 	Keys           vault.Keys
 	PlatformAdmins []authz.PrincipalRef
+	Bootstrap      bootstrap.Store
+	PublicBaseURL  string
 	Log            *slog.Logger
 }
 
@@ -90,6 +93,9 @@ func Hook(in Input) func(context.Context, *pgxpool.Pool) error {
 		}
 		in.Store = identity.NewPostgres(db)
 		in.Vault = vault.NewPostgres(db, in.Keys, nil)
+		if in.Bootstrap == nil {
+			in.Bootstrap = bootstrap.NewPostgres(db)
+		}
 		res, err := Apply(ctx, in)
 		if err != nil {
 			return err
@@ -161,7 +167,20 @@ func Apply(ctx context.Context, in Input) (Result, error) {
 	if err := seedCredentials(ctx, in, tenant, ws, users[0], &res); err != nil {
 		return Result{}, err
 	}
+	if err := markBootstrapSkip(ctx, in); err != nil {
+		return Result{}, err
+	}
 	return res, nil
+}
+
+// markBootstrapSkip records trusted-dev / compose seed as already
+// bootstrapped when admin users exist. The public URL defaults to the
+// local compose UI origin when PUBLIC_BASE_URL is unset.
+func markBootstrapSkip(ctx context.Context, in Input) error {
+	if in.Bootstrap == nil {
+		return nil
+	}
+	return in.Bootstrap.MarkSeedSkip(ctx, bootstrap.SeedSkip{PublicBaseURL: in.PublicBaseURL})
 }
 
 func ensureTenant(ctx context.Context, store identity.Store) (identity.Tenant, bool, error) {

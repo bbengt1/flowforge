@@ -72,7 +72,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, read `GET /metrics` / OpenAPI / swagger, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
 | `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity and local seed require `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
-| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | **Local/dev only.** When `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is false, the API seeds one tenant (`local`), workbench (`default`), attaches `PLATFORM_ADMINS` as workspace admin, and writes demo vault credentials if `CREDENTIAL_KEK` is set. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this. |
+| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | **Local/dev only.** When `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is false, the API seeds one tenant (`local`), workbench (`default`), attaches `PLATFORM_ADMINS` as workspace admin, writes demo vault credentials if `CREDENTIAL_KEK` is set, and marks first-run bootstrap **complete** (wizard skip) when that admin + public URL exist. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this. |
+| `PUBLIC_BASE_URL` | empty (compose default `http://localhost:3000`) | Operator-facing origin stored server-side by localseed skip (B.1/B.4). `http` or `https` origin only — no userinfo, query, or fragment. Never returned by `GET /api/v1/bootstrap`. Do not copy the compose localhost default into `deploy/k8s`. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403` on mint; exchange also `403` when Portal is empty). Compose seeds `https://idp.example`. Production ConfigMap must set an explicit **https** list — `http://`, relative, or opaque issuers are a boot-fail when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true` (ADV-018). Mint/exchange also `403` a non-https `iss`. Local/dev/test may use `http://`. |
 | `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` per client IP per window. Raise if a Portal shared egress IP remounts many iframes. Negative is unlimited. |
 | `EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL` | `30` | Max exchange per peekable `iss\|sub` per window. |
@@ -157,6 +158,7 @@ self-asserted headers or let an embed session create tenants.
 | Tenant slug / name | `local` / `Local demo` |
 | Workbench key / name | `default` / `Local workbench` |
 | Workspace admin | Each `PLATFORM_ADMINS` principal (compose default `https://idp.example\|admin-1`) |
+| Public URL | `PUBLIC_BASE_URL` or `http://localhost:3000`; stored server-side; first-run wizard **skipped** |
 | Demo credentials | `Local demo token`, `Local demo webhook`, `Local demo provider` (tag `local-demo`) |
 
 Demo secret payloads are documented placeholders
@@ -208,7 +210,8 @@ switcher lists memberships only after that workspace lookup is in tab
 
 ### Production
 
-`deploy/k8s/api-configmap.yaml` must not set `SEED_LOCAL_DEFAULTS`.
+`deploy/k8s/api-configmap.yaml` must not set `SEED_LOCAL_DEFAULTS`
+or compose `PUBLIC_BASE_URL=http://localhost:3000`.
 Empty/`production` `APP_ENV` plus `REQUIRE_TLS=true` keeps the seed
 inactive even if someone copies the compose file.
 

@@ -45,6 +45,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   identity headers work only when that flag is on. Health and
   readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
   unauthenticated so Kubernetes probes keep working.
+  First-run `GET /api/v1/bootstrap` returns status flags only (no
+  secrets). Incomplete installs may call it without a session; after
+  bootstrap is complete, normal session auth is required. This endpoint
+  must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
   After `POST /embed/exchange`, the session is bound to the assertion’s
   `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
   sessions cannot create tenants, workspaces, or sibling workbenches —

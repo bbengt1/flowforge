@@ -8,6 +8,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). |
 | `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
+| `GET` | `/api/v1/bootstrap` | First-run wizard gate. Status flags only. Unauthenticated when incomplete; session required when complete. Never gates `/embed/v1`. |
 | `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. |
@@ -151,7 +152,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403`). Production requires `https://` (ADV-018; boot-fail). |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint issuer allowlist. Empty fails closed (`403`). Merged into embed exchange verification. Production requires `https://` (ADV-018; boot-fail). |
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `WEB_EMBED_FRAME_ANCESTORS`). Published on `GET /api/v1/embed/catalog` and `GET /api/v1/portal/adapter` as `frameAncestors`. Empty fails closed. |
-| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, and demo vault credentials. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, demo vault credentials, and marks first-run bootstrap complete (wizard skip). Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `PUBLIC_BASE_URL` | empty | Operator-facing origin (`http`/`https`) persisted by localseed skip. Never returned by `GET /api/v1/bootstrap`. Compose defaults `http://localhost:3000`. |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). |
 

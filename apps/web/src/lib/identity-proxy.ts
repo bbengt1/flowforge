@@ -141,6 +141,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
       Boolean(s[3]),
   },
   { methods: ["GET"], match: (s) => eq(s, ["workspace", "audit-events"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["bootstrap"]) },
   { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },

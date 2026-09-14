@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -39,11 +40,14 @@ func TestApplyPostgresIdempotent(t *testing.T) {
 	store := identity.NewPostgres(app)
 	keys := vault.TestKeys()
 	vlt := vault.NewPostgres(app, keys, nil)
+	boot := bootstrap.NewPostgres(app)
 	in := Input{
 		Store:          store,
 		Vault:          vlt,
 		Keys:           keys,
 		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: "admin-1"}},
+		Bootstrap:      boot,
+		PublicBaseURL:  "http://localhost:3000",
 	}
 
 	first, err := Apply(ctx, in)
@@ -74,5 +78,13 @@ func TestApplyPostgresIdempotent(t *testing.T) {
 	}
 	if len(items) != 3 {
 		t.Fatalf("listed %d credentials after second seed", len(items))
+	}
+
+	st, err := boot.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.Skipped || st.PublicBaseURL == "" {
+		t.Fatalf("postgres localseed must mark bootstrap skip: %+v", st)
 	}
 }

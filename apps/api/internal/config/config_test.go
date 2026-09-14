@@ -499,6 +499,26 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 }
 
+func TestLoadPublicBaseURL(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("PUBLIC_BASE_URL", "http://localhost:3000")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicBaseURL != "http://localhost:3000" {
+		t.Fatalf("PublicBaseURL = %q", cfg.PublicBaseURL)
+	}
+
+	t.Setenv("PUBLIC_BASE_URL", "https://user:secret@example.com")
+	if _, err := Load(); err == nil {
+		t.Fatal("userinfo PUBLIC_BASE_URL must fail closed")
+	}
+}
+
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
