@@ -1,6 +1,7 @@
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { BootstrapSettings } from "@/components/settings/BootstrapSettings";
 import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
 import { FoundationAdminLinks } from "@/components/settings/FoundationAdminLinks";
 import {
@@ -28,12 +29,15 @@ export default async function SettingsPage() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="max-w-3xl text-base leading-7 text-zinc-600">
-          Session, workspace context, control-plane health, and OpenAPI.
-          Cookie session + CSRF are unchanged. Members and isolation
-          stay ADV-024 grant-gated — Settings may link carefully; they
-          are not product destinations.
+          Session, workspace context, instance setup (URL / TLS / users /
+          persistence), control-plane health, and OpenAPI. Cookie
+          session + CSRF are unchanged. Members and isolation stay
+          ADV-024 grant-gated — Settings may link carefully; they are
+          not product destinations. The first-run wizard does not remount
+          here.
         </p>
       </header>
+      <BootstrapSettings />
       <IsolationIdentityPanel />
       <div id="health">
         <ApiHealthCard

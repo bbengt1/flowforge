@@ -12,6 +12,7 @@ function subscribeBrowserLocation(onChange: () => void) {
     window.removeEventListener("hashchange", onChange);
   };
 }
+import { BootstrapGate } from "@/components/bootstrap/BootstrapGate";
 import { EmbedChrome } from "@/components/embed/EmbedChrome";
 import { EmbedDeepLinkGuard } from "@/components/embed/EmbedDeepLinkGuard";
 import { EmbedExchangeGate } from "@/components/embed/EmbedExchangeGate";
@@ -170,6 +171,7 @@ export function WorkspaceShell({
     </WorkspaceProvider>
   ) : (
     <WorkspaceProvider>
+      <BootstrapGate>
       <div className="flex h-full min-h-0 overflow-hidden">
         {skipLink}
         {editorRoute && navOpen ? (
@@ -251,6 +253,7 @@ export function WorkspaceShell({
           </div>
         </div>
       </div>
+      </BootstrapGate>
     </WorkspaceProvider>
   );
 
