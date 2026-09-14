@@ -113,10 +113,14 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    folder** (F.6 / #313 — **keep #313 open**). The same
    rail + list + empty states + move land on
    `/embed/v1/workflows` after `session.embed` (F.7 /
-   #314 — **keep #314 open**). Missing `session.embed`
-   is still an alert. Embed without `workflow.edit`
-   cannot mutate folders. The tree comes from the API,
-   not `localStorage`.
+   #314 — **keep #314 open**). The same Overview cards
+   + compact Finder rail mount there (O.4 / #328 —
+   **keep #328 open**). Missing `session.embed`
+   is still an ADV-021 alert. Host query is
+   display-only. Viewers are select-only — no create /
+   rename / delete / move without `workflow.edit`. The
+   tree comes from the API, not `localStorage`. No
+   second tree.
 2. Toggle **List** / **Cards** (`aria-pressed`). The **Activation**
    column/status (R6.2 / #271 — **keep #271 open**) shows whether a
    published version is active for webhook/schedule. Drafts read
