@@ -11,6 +11,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/bootstrap` | First-run wizard gate. Status flags only. Unauthenticated when incomplete; session required when complete. Never gates `/embed/v1`. |
 | `POST` | `/api/v1/bootstrap/persistence` | Wizard step 1. Body `{confirm:true}` only (no DSN). `200` status with `steps.persistence.ready=true`. Does not mark complete. Incomplete installs may call without a session. Already complete → `409`. PostgreSQL down → `503`. |
 | `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Non-empty password → `400` (local login has not landed). Never echoes credentials. |
+| `POST` | `/api/v1/bootstrap/public-url` | Wizard step 3. Body `{publicBaseUrl}`. `200` status with `steps.publicUrl.ready=true`. Does not mark complete. First admin must be ready (`409`). Already complete → `409`. HTTPS preferred; HTTP allowed for local. Never echoes the URL. |
 | `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. |

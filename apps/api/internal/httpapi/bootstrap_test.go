@@ -487,6 +487,205 @@ func TestBootstrapAdminsMethodNotAllowed(t *testing.T) {
 	assertProblem(t, rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "caller-request-16")
 }
 
+func TestBootstrapPublicURLPersistsAndSetsReady(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(`{"publicBaseUrl":"https://flows.example.com/"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set public url: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if status.Complete || !status.Incomplete {
+		t.Fatalf("must not mark complete: %+v", status)
+	}
+	if !status.Steps.Persistence.Ready || !status.Steps.FirstAdmin.Ready || !status.Steps.PublicURL.Ready {
+		t.Fatalf("prior steps + publicUrl must be ready: %+v", status.Steps)
+	}
+	if status.Steps.TLS.Ready {
+		t.Fatalf("tls must stay unreadied: %+v", status.Steps)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+	if strings.Contains(rec.Body.String(), "flows.example.com") {
+		t.Fatal("success body must not echo the public URL")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.PublicURLReady || st.Complete {
+		t.Fatalf("store after SetPublicURL: %+v", st)
+	}
+	if st.PublicBaseURL != "https://flows.example.com" {
+		t.Fatalf("must persist normalized URL: %q", st.PublicBaseURL)
+	}
+
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status GET: %d %s", rec.Code, rec.Body.String())
+	}
+	got := decodeBootstrapStatus(t, rec)
+	if !got.Steps.PublicURL.Ready || got.Complete {
+		t.Fatalf("GET must reflect publicUrl ready: %+v", got)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+	if strings.Contains(rec.Body.String(), "flows.example.com") {
+		t.Fatal("GET status must not include publicBaseUrl")
+	}
+}
+
+func TestBootstrapPublicURLAllowsLocalHTTP(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(`{"publicBaseUrl":"http://localhost:3000"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("local http: %d %s", rec.Code, rec.Body.String())
+	}
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicBaseURL != "http://localhost:3000" || !st.PublicURLReady || st.Complete {
+		t.Fatalf("local http persist: %+v", st)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+}
+
+func TestBootstrapPublicURLRejectsWithoutFirstAdmin(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(`{"publicBaseUrl":"https://flows.example.com"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "First admin") {
+		t.Fatalf("fail-closed order should mention first admin: %s", rec.Body.String())
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicURLReady || st.PublicBaseURL != "" || st.Complete {
+		t.Fatalf("must not persist URL without firstAdmin: %+v", st)
+	}
+}
+
+func TestBootstrapPublicURLCompleteIs409(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.MarkSeedSkip(t.Context(), bootstrap.SeedSkip{}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(`{"publicBaseUrl":"https://other.example"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Settings") {
+		t.Fatalf("complete reject should point at Settings: %s", rec.Body.String())
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicBaseURL != before.PublicBaseURL {
+		t.Fatalf("complete must not overwrite stored URL: %q", st.PublicBaseURL)
+	}
+}
+
+func TestBootstrapPublicURLInvalidIs400(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	for _, body := range []string{
+		`{"publicBaseUrl":"not-a-url"}`,
+		`{"publicBaseUrl":"ftp://flows.example.com"}`,
+		`{"publicBaseUrl":"https://user:secret@example.com"}`,
+		`{"publicBaseUrl":""}`,
+		`{}`,
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, publicURLRequest(body))
+		assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+		if strings.Contains(rec.Body.String(), "secret") {
+			t.Fatal("problem must not echo credentials")
+		}
+	}
+
+	secretBody := `{"publicBaseUrl":"https://flows.example.com","password":"super-secret"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(secretBody))
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if strings.Contains(rec.Body.String(), "super-secret") {
+		t.Fatal("problem must not echo credentials")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PublicURLReady || st.PublicBaseURL != "" {
+		t.Fatal("invalid URL must not persist or set ready")
+	}
+}
+
+func TestBootstrapPublicURLEmbedSessionForbidden(t *testing.T) {
+	env := newEmbedEnv(t)
+	token, csrf := exchangeEmbedSession(t, env, env.ops, []string{authz.PermWorkflowView})
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/public-url", `{"publicBaseUrl":"https://flows.example.com"}`, token, csrf)
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "standalone") {
+		t.Fatalf("embed deny should mention standalone wizard: %s", rec.Body.String())
+	}
+}
+
+func TestBootstrapPublicURLMethodNotAllowed(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: bootstrap.NewMemory()})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap/public-url", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "caller-request-16")
+}
+
+func TestBootstrapPublicURLStoreDownIs503(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: unavailableBootstrap{}, Security: Security{}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, publicURLRequest(`{"publicBaseUrl":"https://flows.example.com"}`))
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+}
+
 func TestBootstrapAdminsStoreDownIs503(t *testing.T) {
 	h := NewWithDeps(Deps{Bootstrap: unavailableBootstrap{}, Store: identity.NewMemory(), Security: Security{}})
 	rec := httptest.NewRecorder()
@@ -514,6 +713,13 @@ func persistenceConfirmRequest() *http.Request {
 
 func firstAdminRequest(body string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/admins", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	return req
+}
+
+func publicURLRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/public-url", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(RequestIDHeader, "caller-request-16")
 	return req

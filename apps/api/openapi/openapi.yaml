@@ -47,8 +47,9 @@ info:
       cookie. `GET /health` and `GET /readiness` stay unauthenticated for
       Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
-      normal auth). `POST /bootstrap/persistence` is wizard step 1 (B.2).
+      normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
       `POST /bootstrap/admins` is wizard step 2 (B.3).
+      `POST /bootstrap/public-url` is wizard step 3 (B.4).
       It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
@@ -398,6 +399,116 @@ paths:
                     status: 409
                     detail: Persistence must be ready before creating the first admin.
                     instance: /api/v1/bootstrap/admins
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /bootstrap/public-url:
+    post:
+      operationId: setBootstrapPublicURL
+      summary: Set first-run public base URL
+      description: |
+        Wizard step 3 (B.4). Persists the public origin on
+        `instance_bootstrap.public_base_url` via `Store.SetPublicURL`
+        and sets `steps.publicUrl.ready=true`. Does **not** mark
+        bootstrap `complete` (TLS is still required).
+
+        Body is `{publicBaseUrl}`. HTTPS is preferred. HTTP is allowed
+        for local installs (for example `http://localhost:3000`). The
+        value must be an origin — no userinfo, query, fragment, or
+        non-root path. Success is status-only (`BootstrapStatus`).
+        **Never echoes** the URL on this response or `GET /bootstrap`
+        (Settings read is later).
+
+        Auth matches incomplete-install `GET /bootstrap` and B.2/B.3:
+        no session is required while the gate is incomplete. After
+        `complete`, this wizard handler is **409 Conflict**
+        (Settings-only). First admin must be ready first (**409**
+        fail-closed order). Embed sessions are `403`. CSRF is required
+        when an `ff_session` cookie is presented. Unauthenticated
+        incomplete installs have no session, so CSRF does not apply.
+
+        **Never call this from `/embed/v1`.**
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapPublicURL"
+            examples:
+              https:
+                value:
+                  publicBaseUrl: https://flows.example.com
+              localHttp:
+                summary: HTTP is allowed for local installs
+                value:
+                  publicBaseUrl: http://localhost:3000
+      responses:
+        "200":
+          description: Public URL ready (status only; bootstrap not complete)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              example:
+                complete: false
+                incomplete: true
+                skipped: false
+                standaloneOnly: true
+                steps:
+                  persistence:
+                    ready: true
+                  firstAdmin:
+                    ready: true
+                  publicUrl:
+                    ready: true
+                  tls:
+                    ready: false
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          description: |
+            Bootstrap is already complete (Settings-only), or
+            first admin is not ready (fail-closed step order).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                complete:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: Bootstrap is already complete. The public URL is edited in Settings.
+                    instance: /api/v1/bootstrap/public-url
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+                firstAdminNotReady:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: First admin must be ready before setting the public URL.
+                    instance: /api/v1/bootstrap/public-url
                     code: conflict
                     request_id: 0123456789abcdef0123456789abcdef
         "413":
@@ -7183,6 +7294,23 @@ components:
           description: |
             POST once if local login exists. This release rejects a
             non-empty value. Never returned.
+    BootstrapPublicURL:
+      type: object
+      additionalProperties: false
+      required: [publicBaseUrl]
+      description: |
+        Public origin for this instance. HTTPS is preferred. HTTP is
+        allowed for local installs. Never echoed on GET /bootstrap.
+      properties:
+        publicBaseUrl:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 2048
+          description: |
+            Origin only (`https://host[:port]`). Trailing slash is
+            stripped. No userinfo, query, fragment, or path. HTTP is
+            documented for local (for example `http://localhost:3000`).
     BootstrapStep:
       type: object
       additionalProperties: false

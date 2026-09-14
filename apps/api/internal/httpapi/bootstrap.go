@@ -150,6 +150,56 @@ func (s *Server) postBootstrapAdmins(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, st.Status())
 }
 
+// postBootstrapPublicURL is wizard step 3 (B.4). It persists the public
+// base URL via Store.SetPublicURL (instance_bootstrap.public_base_url)
+// and sets steps.publicUrl.ready. It never marks bootstrap complete
+// and never echoes the URL on this or GET /bootstrap.
+//
+// Auth matches incomplete-install GET /bootstrap and B.2/B.3: no
+// session is required while the gate is incomplete. After complete,
+// this wizard handler rejects with 409 (Settings-only). Embed
+// sessions are 403. CSRF is required when an ff_session cookie is
+// presented. First admin must be ready first (fail-closed order).
+func (s *Server) postBootstrapPublicURL(w http.ResponseWriter, r *http.Request) {
+	if !s.requireBootstrap(w, r) {
+		return
+	}
+	st, err := s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if st.Complete {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Bootstrap is already complete. The public URL is edited in Settings.")
+		return
+	}
+	if !s.allowIncompleteWizard(w, r) {
+		return
+	}
+	if !st.FirstAdminReady {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "First admin must be ready before setting the public URL.")
+		return
+	}
+	publicBaseURL, ok := decodePublicBaseURL(w, r)
+	if !ok {
+		return
+	}
+	if err := s.bootstrap.SetPublicURL(r.Context(), publicBaseURL); err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	st, err = s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if !st.PublicURLReady || st.Complete {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Public URL is not ready.")
+		return
+	}
+	writeJSON(w, http.StatusOK, st.Status())
+}
+
 // allowIncompleteWizard reuses B.1 incomplete openness. A presented
 // session cookie is validated (CSRF on POST). Embed-bound sessions are
 // forbidden — the wizard is standalone only.
@@ -267,6 +317,56 @@ func decodeFirstAdmin(w http.ResponseWriter, r *http.Request) (issuer, subject, 
 func firstAdminBodyForbidden(key string) bool {
 	switch key {
 	case "passwd", "dsn", "database_url", "databaseurl",
+		"kek", "secret", "secrets", "private_key", "privatekey",
+		"pem", "token", "hash", "ciphertext":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodePublicBaseURL(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var raw map[string]any
+	if !DecodeJSON(w, r, &raw) {
+		return "", false
+	}
+	var publicBaseURL string
+	found := false
+	for key, value := range raw {
+		norm := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+		if publicURLBodyForbidden(norm) {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Public URL accepts only publicBaseUrl. Credentials are not accepted.")
+			return "", false
+		}
+		switch norm {
+		case "publicbaseurl", "public_base_url":
+			s, ok := value.(string)
+			if !ok {
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "publicBaseUrl must be an http(s) origin.")
+				return "", false
+			}
+			publicBaseURL = s
+			found = true
+		default:
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Public URL accepts only publicBaseUrl.")
+			return "", false
+		}
+	}
+	if !found {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "publicBaseUrl is required.")
+		return "", false
+	}
+	normalized, err := bootstrap.NormalizePublicBaseURL(publicBaseURL)
+	if err != nil || normalized == "" {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "publicBaseUrl must be an http(s) origin. HTTPS is preferred; HTTP is allowed for local installs.")
+		return "", false
+	}
+	return normalized, true
+}
+
+func publicURLBodyForbidden(key string) bool {
+	switch key {
+	case "password", "passwd", "dsn", "database_url", "databaseurl",
 		"kek", "secret", "secrets", "private_key", "privatekey",
 		"pem", "token", "hash", "ciphertext":
 		return true
