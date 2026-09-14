@@ -131,7 +131,7 @@ Table `instance_bootstrap` (migration `000024_instance_bootstrap.sql`):
 - Flags: `complete`, `skipped`, `persistence_ready`, `first_admin_ready`, `public_url_ready`, `tls_ready`
 - Server-only: `public_base_url` (never in GET JSON), `tls_mode` (status enum)
 - **No FORCE RLS** — instance substrate, like `browser_sessions`. `flowforge_app` SELECT/INSERT/UPDATE only. Not workspace-owned.
-- **TLS files:** B.5 writes the certificate and private key to `TLS_CERT_FILE` / `TLS_KEY_FILE` (same pairing as `ListenAndServeTLS`). The bootstrap table never stores PEMs. Operators mount a durable volume at those paths; a process restart picks up in-process TLS. Ingress-terminated installs still persist the pair there so Settings can later report status-only metadata (`steps.tls.mode`) without reading the key. Empty TLS paths fail closed (`503`) — do not invent database or `/tmp` key storage.
+- **TLS files:** B.5 writes the certificate and private key to `TLS_CERT_FILE` / `TLS_KEY_FILE` (same pairing as `ListenAndServeTLS`). The bootstrap table never stores PEMs. Operators mount a durable volume at those paths; a process restart picks up in-process TLS. Ingress-terminated installs still persist the pair there so Settings can later report status-only metadata (`steps.tls.mode`) without reading the key. Empty TLS paths fail closed (`503`) — do not invent database storage or a process-internal fallback when env is unset. Local compose sets explicit `/tmp/flowforge-tls/{cert,key}.pem` on the existing `/tmp` tmpfs so path-2 wizard B.5 can write (UID 65532; `tlsmaterial` mkdir). Do not copy those localhost defaults into `deploy/k8s`.
 
 ---
 

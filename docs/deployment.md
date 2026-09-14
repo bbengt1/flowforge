@@ -10,7 +10,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
 2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
@@ -50,7 +50,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | --- | --- | --- |
 | `TRUSTED_PROXY_CIDRS` | empty | Comma-separated CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | Reject requests that are not HTTPS (direct TLS or a trusted proxy). |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process-level TLS. Both must be set or neither. First-run B.5 writes the created or uploaded PEM pair here (0600). Empty fails closed on `POST /bootstrap/tls` (`503`) — keys are never stored in PostgreSQL. Settings later reads `GET /bootstrap` `steps.tls.mode` only. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty (compose: `/tmp/flowforge-tls/{cert,key}.pem`) | Optional process-level TLS. Both must be set or neither. First-run B.5 writes the created or uploaded PEM pair here (0600). `internal/tlsmaterial` creates the parent directory (0700) so UID **65532** can write on the existing `/tmp` tmpfs. Empty fails closed on `POST /bootstrap/tls` (`503`) — keys are never stored in PostgreSQL and never echoed. Compose defaults writable `/tmp` paths so [path-2](#path-2-first-run-wizard) wizard B.5 works on the read-only API container. Do not copy those localhost defaults into `deploy/k8s` — production mounts durable paths. Settings later reads `GET /bootstrap` `steps.tls.mode` only. |
 | `CORS_ALLOWED_ORIGINS` | empty | Exact browser origins allowed to make credentialed API calls. Empty fails closed. Wildcard is rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Browser session absolute lifetime. |
@@ -121,6 +121,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Compose-mounted `deploy/local/embed-signing.pem` / template PEM | Unique PKCS#8 `EMBED_SIGNING_KEY` on the Secret. **Boot-fail** if missing. Do not copy the local key. |
 | `EMBED_ISSUER` may be `http://` in dev | Absolute `https://` only (ADV-018). `http://` is a boot-fail. |
 | `REQUIRE_TLS` unset / false; HTTP on :8080 | `REQUIRE_TLS=true` + `TRUSTED_PROXY_CIDRS` for cluster ranges. TLS terminates at Ingress (`deploy/k8s/ingress.yaml`, `deploy/tls/`). |
+| Compose `TLS_CERT_FILE` / `TLS_KEY_FILE` under `/tmp/flowforge-tls` (tmpfs; lost on recreate) | Durable mounted paths (or ingress-only TLS). Empty still fail-closed (`503`). Do not copy the localhost `/tmp` defaults. |
 | `POSTGRES_SSLMODE=disable` in compose DSN | `POSTGRES_SSLMODE=require` (ConfigMap). |
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
@@ -214,6 +215,32 @@ switcher lists memberships only after that workspace lookup is in tab
 or compose `PUBLIC_BASE_URL=http://localhost:3000`.
 Empty/`production` `APP_ENV` plus `REQUIRE_TLS=true` keeps the seed
 inactive even if someone copies the compose file.
+
+## Path-2 first-run wizard
+
+Default compose localseed marks bootstrap **complete** (wizard skip).
+To exercise the first-run wizard (path-2 / B.1–B.5), set
+`SEED_LOCAL_DEFAULTS=0` and start against an empty postgres volume
+(`docker compose down -v`, then `docker compose up --build`).
+
+The API container is read-only except `/tmp`. Compose defaults:
+
+```text
+TLS_CERT_FILE=/tmp/flowforge-tls/cert.pem
+TLS_KEY_FILE=/tmp/flowforge-tls/key.pem
+```
+
+`internal/tlsmaterial` creates `/tmp/flowforge-tls` (0700) on the
+existing `/tmp` tmpfs as UID **65532**. Wizard step 4
+(`POST /api/v1/bootstrap/tls` `{action:"create-self-signed"}` or
+upload) then succeeds without hand-setting env. Materials stay on
+disk (0600). `instance_bootstrap` stores **status only** — never
+PEM. Responses never echo the key.
+
+Those files live on tmpfs and are lost when the container is
+recreated. Production / `deploy/k8s` must mount durable paths.
+Empty `TLS_*` still fails closed (`503`). Do not copy the
+localhost `/tmp` defaults into the ConfigMap.
 
 ## Local compose worker
 

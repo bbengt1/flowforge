@@ -93,6 +93,38 @@ func TestFilesWriteAtomicAndRestrictive(t *testing.T) {
 	}
 }
 
+func TestFilesWriteCreatesParentDir(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "flowforge-tls")
+	store, err := NewFiles(filepath.Join(nested, "cert.pem"), filepath.Join(nested, "key.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := CreateSelfSigned([]string{"localhost"}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(certPEM, keyPEM); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected parent directory")
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("parent perm = %o", info.Mode().Perm())
+	}
+	if _, err := os.Stat(store.CertPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store.KeyPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewFilesFailClosed(t *testing.T) {
 	if _, err := NewFiles("", "/tmp/key.pem"); err != ErrUnavailable {
 		t.Fatalf("empty cert: %v", err)
