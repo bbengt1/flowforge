@@ -93,6 +93,7 @@ import {
   overviewPublishedBadge,
   type OverviewHomeSort,
 } from "@/lib/overview-home";
+import { overviewAncestryPills } from "@/lib/overview-path-pills";
 import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
@@ -189,7 +190,6 @@ import {
   readExpandedFolderIds,
   resolveFolderSelection,
   selectionAfterFolderDelete,
-  selectionForWorkflowFolder,
   shouldDropFolderQueryOnWorkspaceMemory,
   shouldRewriteFolderDeepLink,
   unfiledEmptyUsesHomeVerbs,
@@ -1211,7 +1211,7 @@ function WorkflowHomeSession() {
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
 
-      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[13rem_minmax(0,1fr)]">
+      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[12.5rem_minmax(0,1fr)]">
       <FolderRail
         tree={visibleFolderTree}
         folders={folders}
@@ -1706,6 +1706,7 @@ function WorkflowHomeSession() {
           canViewSchedules={canViewSchedules}
           canSeeLastRun={canSeeLastRun}
           showFolderPath
+          folders={folders}
           onStart={(item) => openHomeOverlay("start", item.id)}
           onTestRun={(item) => void testRunItem(item)}
           onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
@@ -1713,9 +1714,7 @@ function WorkflowHomeSession() {
           onDuplicate={(item) => void duplicateItem(item)}
           onExport={(item) => void exportItem(item)}
           onMove={openMoveDialog}
-          onRevealFolder={(item) =>
-            selectFolder(selectionForWorkflowFolder(item.folderId))
-          }
+          onSelectFolder={selectFolder}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
         />
@@ -1765,6 +1764,75 @@ function folderDropHandlers(
       onDropWorkflow(payload.workflowId, target);
     },
   };
+}
+
+function FinderDisclosureIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      className={expanded ? "rotate-90" : undefined}
+    >
+      <path
+        d="M4.2 2.2 9 6 4.2 9.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FinderFolderIcon() {
+  return (
+    <svg
+      data-o2="folder-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        d="M2 4.5h4.2l1.2 1.3H14V12.2A1.3 1.3 0 0 1 12.7 13.5H3.3A1.3 1.3 0 0 1 2 12.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FinderUnfiledIcon() {
+  return (
+    <svg
+      data-o2="unfiled-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        d="M2.5 6.5 4 3.5h8l1.5 3v6.2A1.3 1.3 0 0 1 12.2 13H3.8A1.3 1.3 0 0 1 2.5 12.7Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.5 6.5h11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
 }
 
 function FolderRail({
@@ -1824,7 +1892,8 @@ function FolderRail({
     <nav
       aria-label={FOLDER_RAIL_LABEL}
       data-home-folder-rail="nav"
-      className="h-fit rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm"
+      data-o2="finder-rail"
+      className="h-fit rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm"
     >
       <div className="flex items-start justify-between gap-2 px-2">
         <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
@@ -1934,8 +2003,8 @@ function FolderRail({
             onClick={() => onSelect({ kind: "unfiled" })}
             className={
               (unfiledCurrent
-                ? "w-full rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
-                : "w-full rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+                ? "flex w-full items-center gap-1.5 rounded-lg border border-teal-800 bg-teal-800 px-2 py-1 text-left text-sm text-white"
+                : "flex w-full items-center gap-1.5 rounded-lg border border-transparent px-2 py-1 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
               (canMutate &&
               dragging &&
               canDropWorkflowOnFolder(true, dragging.folderId, {
@@ -1951,7 +2020,8 @@ function FolderRail({
               onDropWorkflow,
             )}
           >
-            {UNFILED_FOLDER_LABEL}
+            <FinderUnfiledIcon />
+            <span className="truncate">{UNFILED_FOLDER_LABEL}</span>
           </button>
         </li>
         {tree.map((node) => (
@@ -2019,20 +2089,24 @@ function FolderRailNode({
   return (
     <li>
       <div
-        className="flex flex-wrap items-center gap-1"
-        style={{ paddingLeft: `${Math.min(depth, 4) * 0.5}rem` }}
+        className="flex flex-col gap-0.5"
+        style={{ paddingLeft: `${(Math.min(depth, 4) - 1) * 0.75}rem` }}
       >
+        <div className="flex items-center gap-0.5">
         {hasChildren ? (
           <button
             type="button"
+            data-o2="disclosure"
             aria-expanded={expanded}
             aria-label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
             onClick={() => onToggle(node.id)}
-            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-100"
           >
-            {expanded ? "Collapse" : "Expand"}
+            <FinderDisclosureIcon expanded={expanded} />
           </button>
-        ) : null}
+        ) : (
+          <span className="inline-block h-6 w-6 shrink-0" aria-hidden="true" />
+        )}
         <button
           type="button"
           data-home-folder-rail="folder"
@@ -2041,8 +2115,8 @@ function FolderRailNode({
           onClick={() => onSelect({ kind: "folder", id: node.id })}
           className={
             (selected
-              ? "min-w-0 flex-1 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-left text-sm text-white"
-              : "min-w-0 flex-1 rounded-lg border border-transparent px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+              ? "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-teal-800 bg-teal-800 px-2 py-1 text-left text-sm text-white"
+              : "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent px-2 py-1 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
             (canMutate &&
             dragging &&
             canDropWorkflowOnFolder(true, dragging.folderId, {
@@ -2059,17 +2133,19 @@ function FolderRailNode({
             onDropWorkflow,
           )}
         >
-          {node.name}
+          <FinderFolderIcon />
+          <span className="truncate">{node.name}</span>
         </button>
+        </div>
         {canMutate ? (
-          <>
+          <div className="flex flex-wrap gap-1 pl-6">
             <button
               type="button"
               data-home-folder-verb="rename"
               data-folder-id={node.id}
               disabled={pending}
               onClick={() => onRename(node.id)}
-              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className="shrink-0 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
             >
               {RENAME_FOLDER_LABEL}
             </button>
@@ -2080,11 +2156,11 @@ function FolderRailNode({
               disabled={pending || deleteBlocked}
               title={deleteBlocked ? FOLDER_NOT_EMPTY_HELP : undefined}
               onClick={() => onDelete(node.id)}
-              className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className="shrink-0 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
             >
               {DELETE_FOLDER_LABEL}
             </button>
-          </>
+          </div>
         ) : null}
       </div>
       {hasChildren && expanded ? (
@@ -2393,21 +2469,63 @@ function WorkflowActions({
 
 function WorkflowFolderPath({
   item,
-  onReveal,
+  folders,
+  onSelect,
 }: {
   item: WorkflowHomeItem;
-  onReveal: (item: WorkflowHomeItem) => void;
+  folders: readonly WorkflowFolder[];
+  onSelect: (next: FolderSelection) => void;
 }) {
+  const pills = overviewAncestryPills(folders, item.folderId);
+  const pathLabel = workflowFolderPathLabel(item);
+  if (item.folderId == null) {
+    return (
+      <span
+        data-home-folder-path=""
+        data-o2="unfiled"
+        className="text-xs text-zinc-500"
+      >
+        {UNFILED_FOLDER_LABEL}
+      </span>
+    );
+  }
+  if (pills.length === 0) {
+    return (
+      <span
+        data-home-folder-path=""
+        data-o2="path-pills"
+        aria-label={pathLabel}
+        className="text-xs text-zinc-500"
+      />
+    );
+  }
   return (
-    <button
-      type="button"
+    <nav
       data-home-folder-path=""
-      title={FOLDER_PATH_REVEAL_LABEL}
-      onClick={() => onReveal(item)}
-      className="text-left text-xs font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+      data-o2="path-pills"
+      aria-label={pathLabel}
+      className="mt-1 flex flex-wrap items-center gap-1"
     >
-      {workflowFolderPathLabel(item)}
-    </button>
+      {pills.map((pill, index) => (
+        <span key={pill.id} className="flex items-center gap-1">
+          {index > 0 ? (
+            <span aria-hidden="true" className="text-zinc-400">
+              /
+            </span>
+          ) : null}
+          <button
+            type="button"
+            data-o2="path-pill"
+            data-folder-id={pill.id}
+            title={FOLDER_PATH_REVEAL_LABEL}
+            onClick={() => onSelect({ kind: "folder", id: pill.id })}
+            className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:border-teal-700 hover:text-teal-800"
+          >
+            {pill.name}
+          </button>
+        </span>
+      ))}
+    </nav>
   );
 }
 
@@ -2422,6 +2540,7 @@ function WorkflowHomeCards({
   canViewSchedules,
   canSeeLastRun,
   showFolderPath,
+  folders,
   onStart,
   onTestRun,
   onWebhooks,
@@ -2429,7 +2548,7 @@ function WorkflowHomeCards({
   onDuplicate,
   onExport,
   onMove,
-  onRevealFolder,
+  onSelectFolder,
   onDragStart,
   onDragEnd,
 }: {
@@ -2443,6 +2562,7 @@ function WorkflowHomeCards({
   canViewSchedules: boolean;
   canSeeLastRun: boolean;
   showFolderPath: boolean;
+  folders: readonly WorkflowFolder[];
   onStart: (item: WorkflowHomeItem) => void;
   onTestRun: (item: WorkflowHomeItem) => void;
   onWebhooks: (item: WorkflowHomeItem) => void;
@@ -2450,7 +2570,7 @@ function WorkflowHomeCards({
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
   onMove: (item: WorkflowHomeItem) => void;
-  onRevealFolder: (item: WorkflowHomeItem) => void;
+  onSelectFolder: (next: FolderSelection) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
 }) {
@@ -2489,12 +2609,11 @@ function WorkflowHomeCards({
                     {item.name}
                   </Link>
                   {showFolderPath ? (
-                    <p className="mt-1">
-                      <WorkflowFolderPath
-                        item={item}
-                        onReveal={onRevealFolder}
-                      />
-                    </p>
+                    <WorkflowFolderPath
+                      item={item}
+                      folders={folders}
+                      onSelect={onSelectFolder}
+                    />
                   ) : null}
                 </div>
                 <p
