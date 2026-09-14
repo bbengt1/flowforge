@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.20.0
+  version: 0.21.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -48,6 +48,7 @@ info:
       Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
       normal auth). `POST /bootstrap/persistence` is wizard step 1 (B.2).
+      `POST /bootstrap/admins` is wizard step 2 (B.3).
       It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
@@ -299,6 +300,112 @@ paths:
                 instance: /api/v1/bootstrap/persistence
                 code: dependency-unavailable
                 request_id: 0123456789abcdef0123456789abcdef
+  /bootstrap/admins:
+    post:
+      operationId: createBootstrapAdmins
+      summary: Create first-run admin user
+      description: |
+        Wizard step 2 (B.3). Upserts the first admin identity using the
+        same issuer + external_subject pattern as localseed
+        `PLATFORM_ADMINS`, grants workspace admin on the default
+        tenant/workbench, then sets `steps.firstAdmin.ready=true` via
+        the bootstrap store. Does **not** mark bootstrap `complete`
+        (public URL and TLS are still required).
+
+        Body is `{issuer, external_subject, display_name?, password?}`.
+        Local login has not landed: a non-empty `password` is rejected
+        and never stored. Success is status-only (`BootstrapStatus`).
+        Never returns a password, hash, or KEK.
+
+        Auth matches incomplete-install `GET /bootstrap` and B.2: no
+        session is required while the gate is incomplete. After
+        `complete`, this wizard handler is **409 Conflict**
+        (Settings-only). Persistence must be ready first (**409**
+        fail-closed order). Embed sessions are `403`. CSRF is required
+        when an `ff_session` cookie is presented. Unauthenticated
+        incomplete installs have no session, so CSRF does not apply.
+
+        **Never call this from `/embed/v1`.**
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapFirstAdmin"
+            example:
+              issuer: https://idp.example
+              external_subject: admin-1
+              display_name: Operator
+      responses:
+        "201":
+          description: First admin ready (status only; bootstrap not complete)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              example:
+                complete: false
+                incomplete: true
+                skipped: false
+                standaloneOnly: true
+                steps:
+                  persistence:
+                    ready: true
+                  firstAdmin:
+                    ready: true
+                  publicUrl:
+                    ready: false
+                  tls:
+                    ready: false
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          description: |
+            Bootstrap is already complete (Settings-only), or
+            persistence is not ready (fail-closed step order).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                complete:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: Bootstrap is already complete. Users are edited in Settings.
+                    instance: /api/v1/bootstrap/admins
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+                persistenceNotReady:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: Persistence must be ready before creating the first admin.
+                    instance: /api/v1/bootstrap/admins
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /metrics:
     get:
       operationId: getMetrics
@@ -7048,6 +7155,34 @@ components:
           type: boolean
           enum: [true]
           description: Must be true. The server pings PostgreSQL; the client does not send credentials.
+    BootstrapFirstAdmin:
+      type: object
+      additionalProperties: false
+      required: [issuer, external_subject]
+      description: |
+        First admin identity. Prefer existing localseed /
+        PLATFORM_ADMINS upsert (issuer + external_subject). A password
+        is accepted only when local login exists; this release has no
+        local login, so omit it. Never echoed, hashed, or stored.
+      properties:
+        issuer:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Identity issuer. Same vocabulary as localseed PLATFORM_ADMINS.
+        external_subject:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: External subject. Same vocabulary as localseed PLATFORM_ADMINS.
+        display_name:
+          type: string
+          maxLength: 200
+        password:
+          type: string
+          description: |
+            POST once if local login exists. This release rejects a
+            non-empty value. Never returned.
     BootstrapStep:
       type: object
       additionalProperties: false

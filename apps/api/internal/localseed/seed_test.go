@@ -247,6 +247,36 @@ func TestApplyMarksBootstrapCompleteWhenAdminAndURLExist(t *testing.T) {
 	}
 }
 
+func TestProvisionAdminCreatesWorkspaceAdmin(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+
+	user, err := ProvisionAdmin(ctx, store, "https://idp.example", "admin-1", "Operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.ExternalSubject != "admin-1" || user.DisplayName != "Operator" {
+		t.Fatalf("user %+v", user)
+	}
+	memberships, err := store.ListWorkspacesForUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 || memberships[0].Workspace.WorkbenchKey != WorkbenchKey {
+		t.Fatalf("memberships %+v", memberships)
+	}
+	if !authz.Allows(memberships[0].Permissions, authz.PermWorkspaceAdminister) {
+		t.Fatalf("must be workspace admin, roles=%v", memberships[0].Roles)
+	}
+	again, err := ProvisionAdmin(ctx, store, "https://idp.example", "admin-1", "Operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != user.ID {
+		t.Fatal("second provision must reuse the user")
+	}
+}
+
 func TestApplyNoopsWithoutPlatformAdmins(t *testing.T) {
 	ctx := context.Background()
 	store := identity.NewMemory()
