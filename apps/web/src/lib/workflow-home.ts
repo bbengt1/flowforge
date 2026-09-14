@@ -23,9 +23,14 @@ import {
   type HomeActivationFilter,
 } from "./home-activation.ts";
 import { homeLastRunIsWaiting } from "./home-row-scan.ts";
+import {
+  sortOverviewHomeItems,
+  type OverviewHomeSort,
+} from "./overview-home.ts";
 import type { WorkflowDraft, WorkflowRecord } from "./workflow-types.ts";
 
 export type WorkflowHomeView = "list" | "card";
+export type WorkflowHomeSort = OverviewHomeSort;
 
 export type LastRunFilter =
   | ""
@@ -354,15 +359,9 @@ export function filterWorkflowHomeItems(
 
 export function sortWorkflowHomeItems(
   items: readonly WorkflowHomeItem[],
+  sort: OverviewHomeSort = "updatedAt",
 ): WorkflowHomeItem[] {
-  return [...items].sort((left, right) => {
-    const leftRun = left.lastRunAt ? 1 : 0;
-    const rightRun = right.lastRunAt ? 1 : 0;
-    if (leftRun !== rightRun) {
-      return rightRun - leftRun;
-    }
-    return (right.updatedAt || "").localeCompare(left.updatedAt || "");
-  });
+  return sortOverviewHomeItems(items, sort);
 }
 
 export function uniqueFilterValues(
