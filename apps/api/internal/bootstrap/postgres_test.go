@@ -76,3 +76,43 @@ func TestPostgresSeedSkipAndStatus(t *testing.T) {
 		t.Fatalf("second skip must not replace stored URL: %q", st.PublicBaseURL)
 	}
 }
+
+func TestPostgresSetStepPersistenceDoesNotComplete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	store := NewPostgres(app)
+	if _, err := app.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET complete = false, skipped = false,
+		    persistence_ready = false, first_admin_ready = false,
+		    public_url_ready = false, tls_ready = false,
+		    public_base_url = '', tls_mode = 'none',
+		    completed_at = NULL, updated_at = now()
+		WHERE id = 'default'
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetStep(ctx, StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.PersistenceReady {
+		t.Fatal("SetStep persistence must set ready")
+	}
+	if st.Complete || st.FirstAdminReady {
+		t.Fatalf("SetStep must not complete or advance later steps: %+v", st)
+	}
+	assertStatusHasNoSecrets(t, st.Status())
+}

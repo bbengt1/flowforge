@@ -84,6 +84,7 @@ describe("resolveIdentityProxyTarget", () => {
       ],
       ["GET", ["workspace", "audit-events"], "/api/v1/workspace/audit-events"],
       ["GET", ["bootstrap"], "/api/v1/bootstrap"],
+      ["POST", ["bootstrap", "persistence"], "/api/v1/bootstrap/persistence"],
       ["GET", ["session"], "/api/v1/session"],
       ["POST", ["session"], "/api/v1/session"],
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
@@ -1196,6 +1197,15 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in postBootstrap, true);
     if ("status" in postBootstrap) {
       assert.equal(postBootstrap.status, 405);
+    }
+
+    const getPersistence = resolveIdentityProxyTarget("GET", [
+      "bootstrap",
+      "persistence",
+    ]);
+    assert.equal("status" in getPersistence, true);
+    if ("status" in getPersistence) {
+      assert.equal(getPersistence.status, 405);
     }
 
     const deleteSession = resolveIdentityProxyTarget("DELETE", ["session"]);

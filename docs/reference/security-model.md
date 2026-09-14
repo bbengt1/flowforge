@@ -47,7 +47,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   unauthenticated so Kubernetes probes keep working.
   First-run `GET /api/v1/bootstrap` returns status flags only (no
   secrets). Incomplete installs may call it without a session; after
-  bootstrap is complete, normal session auth is required. This endpoint
+  bootstrap is complete, normal session auth is required. Wizard step 1
+  `POST /api/v1/bootstrap/persistence` uses the same incomplete-install
+  openness; after complete it is `409` (Settings-only). Body is
+  `{confirm:true}` only — never a DSN or password. These endpoints
   must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
   After `POST /embed/exchange`, the session is bound to the assertion’s
   `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin

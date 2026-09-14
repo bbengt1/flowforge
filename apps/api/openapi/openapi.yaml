@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.19.0
+  version: 0.20.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -47,7 +47,8 @@ info:
       cookie. `GET /health` and `GET /readiness` stay unauthenticated for
       Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
-      normal auth). It must not be used to gate `/embed/v1`.
+      normal auth). `POST /bootstrap/persistence` is wizard step 1 (B.2).
+      It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
 paths:
@@ -193,6 +194,111 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/DependencyUnavailable"
+  /bootstrap/persistence:
+    post:
+      operationId: confirmBootstrapPersistence
+      summary: Confirm first-run persistence
+      description: |
+        Wizard step 1 (B.2). Confirms that process `DATABASE_URL`
+        PostgreSQL is reachable, then sets `steps.persistence.ready=true`
+        via the bootstrap store. Does **not** mark bootstrap `complete`.
+
+        Body is `{confirm:true}` only — never a DSN, password, or
+        `DATABASE_URL`. The operator-facing check is a server-side
+        PostgreSQL ping using the process environment.
+
+        Auth matches incomplete-install `GET /bootstrap`: no session is
+        required while the gate is incomplete. After `complete`, this
+        wizard handler is **409 Conflict** (Settings-only). Embed
+        sessions are `403`. CSRF is required when an `ff_session` cookie
+        is presented.
+
+        Success is status-only (`BootstrapStatus`). Never returns
+        secrets, KEK, or connection strings.
+
+        **Never call this from `/embed/v1`.**
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapPersistenceConfirm"
+            example:
+              confirm: true
+      responses:
+        "200":
+          description: Persistence ready (status only; bootstrap not complete)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              example:
+                complete: false
+                incomplete: true
+                skipped: false
+                standaloneOnly: true
+                steps:
+                  persistence:
+                    ready: true
+                  firstAdmin:
+                    ready: false
+                  publicUrl:
+                    ready: false
+                  tls:
+                    ready: false
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          description: |
+            Bootstrap is already complete. Wizard mutations are
+            Settings-only after complete.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: urn:flowforge:problem:conflict
+                title: Conflict
+                status: 409
+                detail: Bootstrap is already complete. Persistence is edited in Settings.
+                instance: /api/v1/bootstrap/persistence
+                code: conflict
+                request_id: 0123456789abcdef0123456789abcdef
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: PostgreSQL is not reachable, or the bootstrap store is down
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: urn:flowforge:problem:dependency-unavailable
+                title: Dependency Unavailable
+                status: 503
+                detail: PostgreSQL is not reachable
+                instance: /api/v1/bootstrap/persistence
+                code: dependency-unavailable
+                request_id: 0123456789abcdef0123456789abcdef
   /metrics:
     get:
       operationId: getMetrics
@@ -6930,6 +7036,18 @@ components:
         status:
           type: string
           enum: [ready]
+    BootstrapPersistenceConfirm:
+      type: object
+      additionalProperties: false
+      required: [confirm]
+      description: |
+        Operator confirmation that process DATABASE_URL persistence is
+        ready. Never a DSN, password, or connection string.
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Must be true. The server pings PostgreSQL; the client does not send credentials.
     BootstrapStep:
       type: object
       additionalProperties: false

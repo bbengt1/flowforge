@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
@@ -178,6 +180,201 @@ func TestBootstrapMethodNotAllowedAndNoSecrets(t *testing.T) {
 	if rec.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("Allow = %q", rec.Header().Get("Allow"))
 	}
+}
+
+func TestBootstrapPersistenceConfirmSetsReady(t *testing.T) {
+	store := bootstrap.NewMemory()
+	h := NewWithDeps(Deps{Bootstrap: store, DB: readyPersistenceDB(), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	req := persistenceConfirmRequest()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if status.Complete || !status.Incomplete {
+		t.Fatalf("must not mark complete: %+v", status)
+	}
+	if !status.Steps.Persistence.Ready {
+		t.Fatalf("persistence must be ready: %+v", status.Steps)
+	}
+	if status.Steps.FirstAdmin.Ready || status.Steps.PublicURL.Ready || status.Steps.TLS.Ready {
+		t.Fatalf("later steps must stay unreadied: %+v", status.Steps)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.PersistenceReady || st.Complete {
+		t.Fatalf("store after SetStep: %+v", st)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status GET: %d %s", rec.Code, rec.Body.String())
+	}
+	got := decodeBootstrapStatus(t, rec)
+	if !got.Steps.Persistence.Ready || got.Complete {
+		t.Fatalf("GET must reflect persistence ready: %+v", got)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+}
+
+func TestBootstrapPersistenceDBDownIs503(t *testing.T) {
+	store := bootstrap.NewMemory()
+	h := NewWithDeps(Deps{
+		Bootstrap: store,
+		DB: ReadyChecker(func(context.Context) error {
+			return postgres.ErrUnavailable
+		}),
+		Security: Security{},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, persistenceConfirmRequest())
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+	if strings.Contains(strings.ToLower(rec.Body.String()), "password") {
+		t.Fatal("503 must not mention secrets")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PersistenceReady || st.Complete {
+		t.Fatalf("fail closed must not set ready: %+v", st)
+	}
+}
+
+func TestBootstrapPersistenceNilDBIs503(t *testing.T) {
+	store := bootstrap.NewMemory()
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, persistenceConfirmRequest())
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PersistenceReady {
+		t.Fatal("nil DB must not set persistence ready")
+	}
+}
+
+func TestBootstrapPersistenceCompleteIs409(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.MarkSeedSkip(t.Context(), bootstrap.SeedSkip{}); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, DB: readyPersistenceDB(), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, persistenceConfirmRequest())
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Settings") {
+		t.Fatalf("complete reject should point at Settings: %s", rec.Body.String())
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+}
+
+func TestBootstrapPersistenceRejectsSecretsAndInvalidConfirm(t *testing.T) {
+	store := bootstrap.NewMemory()
+	h := NewWithDeps(Deps{Bootstrap: store, DB: readyPersistenceDB(), Security: Security{}})
+
+	secretBody := `{"confirm":true,"password":"super-secret","DATABASE_URL":"postgres://user:hunter2@db/ff"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/persistence", strings.NewReader(secretBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if strings.Contains(rec.Body.String(), "super-secret") || strings.Contains(rec.Body.String(), "hunter2") {
+		t.Fatal("problem must not echo credentials")
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/persistence", strings.NewReader(`{"confirm":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PersistenceReady {
+		t.Fatal("invalid body must not set persistence ready")
+	}
+}
+
+func TestBootstrapPersistenceEmbedSessionForbidden(t *testing.T) {
+	env := newEmbedEnv(t)
+	token, csrf := exchangeEmbedSession(t, env, env.ops, []string{authz.PermWorkflowView})
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/persistence", `{"confirm":true}`, token, csrf)
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "standalone") {
+		t.Fatalf("embed deny should mention standalone wizard: %s", rec.Body.String())
+	}
+}
+
+func TestBootstrapPersistenceMethodNotAllowed(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: bootstrap.NewMemory(), DB: readyPersistenceDB()})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap/persistence", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "caller-request-16")
+}
+
+func TestBootstrapPersistenceStoreDownIs503(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: unavailableBootstrap{}, DB: readyPersistenceDB(), Security: Security{}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, persistenceConfirmRequest())
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+}
+
+func readyPersistenceDB() postgres.Checker {
+	return ReadyChecker(func(context.Context) error { return nil })
+}
+
+func persistenceConfirmRequest() *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/persistence", strings.NewReader(`{"confirm":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	return req
+}
+
+type unavailableBootstrap struct{}
+
+func (unavailableBootstrap) Get(context.Context) (bootstrap.State, error) {
+	return bootstrap.State{}, bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) SetStep(context.Context, string, bool) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) SetPublicURL(context.Context, string) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) SetTLS(context.Context, bool, string) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) MarkComplete(context.Context) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) MarkSeedSkip(context.Context, bootstrap.SeedSkip) error {
+	return bootstrap.ErrUnavailable
 }
 
 func decodeBootstrapStatus(t *testing.T, rec *httptest.ResponseRecorder) bootstrap.Status {

@@ -2,7 +2,7 @@
 
 The maintained technical reference starts with the [workflow model](workflow-model.md), [workflow YAML schema](workflow-yaml-schema.md), [standard action catalog](action-catalog.md), [core neutral node contracts](core-node-contracts.md), [security model](security-model.md), [frontend UI](frontend-ui.md), [rewrite UI surfaces](rewrite-ui-surfaces.md) (Chloe expanded map; charter §11.1 is the fold-in), [database specification](database.md), [Kubernetes API engine](kubernetes-engine.md), [SSH engine](ssh-engine.md), and [script engine](script-engine.md).
 
-Successor product charter (not a current-state contract): [rewrite — n8n-class parity](../architecture/flowforge-rewrite-n8n-class-parity.md). Post-R1–R7 chrome polish (docs-only): [FlowForge UX Laws](../architecture/flowforge-ux-laws.md). Workflows home folder hierarchy (F.1 API landed; chrome F.2+): [flowforge-workflow-folders.md](../architecture/flowforge-workflow-folders.md). First-run bootstrap gate (B.1): [flowforge-first-run-bootstrap.md](../architecture/flowforge-first-run-bootstrap.md).
+Successor product charter (not a current-state contract): [rewrite — n8n-class parity](../architecture/flowforge-rewrite-n8n-class-parity.md). Post-R1–R7 chrome polish (docs-only): [FlowForge UX Laws](../architecture/flowforge-ux-laws.md). Workflows home folder hierarchy (F.1 API landed; chrome F.2+): [flowforge-workflow-folders.md](../architecture/flowforge-workflow-folders.md). First-run bootstrap gate (B.1 status + B.2 persistence): [flowforge-first-run-bootstrap.md](../architecture/flowforge-first-run-bootstrap.md).
 
 Future implementation changes should add API, deployment, and runner references here, and update the security model when a trust boundary or control changes.
 
