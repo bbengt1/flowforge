@@ -30,7 +30,15 @@ export default function WorkflowsPage() {
           tree or those empty-home verbs. Drafts do not run. The Overview
           card list is the primary browse surface (O.1 / #325 —{" "}
           <strong>keep #325 open</strong>): name, last updated/created,
-          published badge, and kebab. Compact folder rail stays a filter.
+          published badge, and kebab. Cards show folder path pills
+          joined from{" "}
+          <code className="font-mono text-sm">GET /workflow-folders</code>{" "}
+          ancestry (O.2 / #326 — <strong>keep #326 open</strong>).
+          Unfiled has no path pills and is not a persisted folder.
+          The compact Finder rail uses disclosure and folder icons
+          and stays a non-recursive{" "}
+          <code className="font-mono text-sm">?folderId=</code> filter —
+          not Miller columns, not primary browse.
           Scan ends remain activation (published version active for webhook
           or schedule) and last run (waiting or indeterminate when those
           joins already exist). Create and import use{" "}
