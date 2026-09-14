@@ -48,10 +48,15 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   First-run `GET /api/v1/bootstrap` returns status flags only (no
   secrets). Incomplete installs may call it without a session; after
   bootstrap is complete, normal session auth is required. Wizard step 1
-  `POST /api/v1/bootstrap/persistence` uses the same incomplete-install
-  openness; after complete it is `409` (Settings-only). Body is
-  `{confirm:true}` only — never a DSN or password. These endpoints
-  must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
+  `POST /api/v1/bootstrap/persistence` and step 2
+  `POST /api/v1/bootstrap/admins` use the same incomplete-install
+  openness; after complete they are `409` (Settings-only). Persistence
+  confirm is `{confirm:true}` only — never a DSN or password. First
+  admin is `{issuer, external_subject, display_name?}`; a non-empty
+  `password` is rejected until local login lands and is never echoed.
+  CSRF is required when `ff_session` is present; unauthenticated
+  incomplete POSTs have no session, so CSRF does not apply. These
+  endpoints must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
   After `POST /embed/exchange`, the session is bound to the assertion’s
   `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
   sessions cannot create tenants, workspaces, or sibling workbenches —

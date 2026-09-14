@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
+	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
@@ -91,6 +93,63 @@ func (s *Server) postBootstrapPersistence(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, st.Status())
 }
 
+// postBootstrapAdmins is wizard step 2 (B.3). It upserts the first
+// admin identity (localseed PLATFORM_ADMINS / workspace-admin pattern),
+// then sets steps.firstAdmin.ready via Store.SetStep. It never marks
+// bootstrap complete, never returns a password / hash / KEK, and never
+// stores a password (local login has not landed).
+//
+// Auth matches incomplete-install GET /bootstrap and B.2: no session is
+// required while the gate is incomplete. After complete, this wizard
+// handler rejects with 409 (Settings-only). Embed sessions are 403.
+// CSRF is required when an ff_session cookie is presented.
+func (s *Server) postBootstrapAdmins(w http.ResponseWriter, r *http.Request) {
+	if !s.requireBootstrap(w, r) {
+		return
+	}
+	st, err := s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if st.Complete {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Bootstrap is already complete. Users are edited in Settings.")
+		return
+	}
+	if !s.allowIncompleteWizard(w, r) {
+		return
+	}
+	if !st.PersistenceReady {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Persistence must be ready before creating the first admin.")
+		return
+	}
+	if !s.requireStore(w, r) {
+		return
+	}
+	issuer, subject, display, ok := decodeFirstAdmin(w, r)
+	if !ok {
+		return
+	}
+	if _, err := localseed.ProvisionAdmin(r.Context(), s.store, issuer, subject, display); err != nil {
+		writeIdentityError(w, r, err)
+		return
+	}
+	if err := s.bootstrap.SetStep(r.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	st, err = s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if !st.FirstAdminReady || st.Complete {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "First admin is not ready.")
+		return
+	}
+	writeJSON(w, http.StatusCreated, st.Status())
+}
+
 // allowIncompleteWizard reuses B.1 incomplete openness. A presented
 // session cookie is validated (CSRF on POST). Embed-bound sessions are
 // forbidden — the wizard is standalone only.
@@ -148,6 +207,66 @@ func decodePersistenceConfirm(w http.ResponseWriter, r *http.Request) bool {
 func persistenceBodyForbidden(key string) bool {
 	switch strings.ToLower(strings.ReplaceAll(key, "-", "_")) {
 	case "password", "passwd", "dsn", "database_url", "databaseurl",
+		"kek", "secret", "secrets", "private_key", "privatekey",
+		"pem", "token", "hash", "ciphertext":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeFirstAdmin(w http.ResponseWriter, r *http.Request) (issuer, subject, display string, ok bool) {
+	var raw map[string]any
+	if !DecodeJSON(w, r, &raw) {
+		return "", "", "", false
+	}
+	var password any
+	hasPassword := false
+	for key, value := range raw {
+		norm := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+		if firstAdminBodyForbidden(norm) {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, and optional display_name. Credentials are not accepted.")
+			return "", "", "", false
+		}
+		switch norm {
+		case "issuer":
+			issuer, _ = value.(string)
+		case "external_subject":
+			subject, _ = value.(string)
+		case "display_name":
+			display, _ = value.(string)
+		case "password":
+			password = value
+			hasPassword = true
+		default:
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, and optional display_name.")
+			return "", "", "", false
+		}
+	}
+	if hasPassword && password != nil {
+		s, isStr := password.(string)
+		if !isStr || strings.TrimSpace(s) != "" {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Local login is not available. Credentials are not stored.")
+			return "", "", "", false
+		}
+	}
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	display = strings.TrimSpace(display)
+	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "issuer and external_subject are required.")
+		return "", "", "", false
+	}
+	if len(display) > 200 {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "display_name is too long.")
+		return "", "", "", false
+	}
+	return issuer, subject, display, true
+}
+
+func firstAdminBodyForbidden(key string) bool {
+	switch key {
+	case "passwd", "dsn", "database_url", "databaseurl",
 		"kek", "secret", "secrets", "private_key", "privatekey",
 		"pem", "token", "hash", "ciphertext":
 		return true

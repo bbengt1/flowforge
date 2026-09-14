@@ -202,6 +202,35 @@ func ensureTenant(ctx context.Context, store identity.Store) (identity.Tenant, b
 	return identity.Tenant{}, false, err
 }
 
+// ProvisionAdmin upserts issuer+subject and grants workspace admin on
+// the default local tenant/workbench (same identities as Apply).
+// It does not write vault credentials and does not mark bootstrap complete.
+func ProvisionAdmin(ctx context.Context, store identity.Store, issuer, subject, displayName string) (identity.User, error) {
+	if store == nil {
+		return identity.User{}, fmt.Errorf("local seed: identity store is required")
+	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = AdminDisplay
+	}
+	user, err := store.UpsertUser(ctx, issuer, subject, displayName)
+	if err != nil {
+		return identity.User{}, err
+	}
+	tenant, _, err := ensureTenant(ctx, store)
+	if err != nil {
+		return identity.User{}, err
+	}
+	ws, _, err := ensureWorkspace(ctx, store, tenant, user.ID)
+	if err != nil {
+		return identity.User{}, err
+	}
+	if _, err := ensureAdminMember(ctx, store, ws.ID, user); err != nil {
+		return identity.User{}, err
+	}
+	return user, nil
+}
+
 func ensureUsers(ctx context.Context, store identity.Store, admins []authz.PrincipalRef) ([]identity.User, error) {
 	var out []identity.User
 	for _, ref := range admins {

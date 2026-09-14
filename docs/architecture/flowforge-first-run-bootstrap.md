@@ -1,6 +1,6 @@
-# First-run operator wizard — bootstrap gate (B.1 / B.2)
+# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3)
 
-Status: **B.1 and B.2 landed** (this page is the contract map for B.3–B.6). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335).
+Status: **B.1, B.2, and B.3 landed** (this page is the contract map for B.4–B.6). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336).
 
 **Owners:** jonny (gate + B.2–B.5 APIs), Chloe (B.6 wizard chrome + Settings handoff). Product hard lines: Gracie.
 
@@ -58,7 +58,7 @@ Do **not** auto-complete at runtime when B.3 creates the first admin — that wo
 
 `GET /api/v1/bootstrap`
 
-OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web proxy: `GET /api/control-plane/bootstrap` and `POST /api/control-plane/bootstrap/persistence`.
+OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web proxy: `GET /api/control-plane/bootstrap`, `POST /api/control-plane/bootstrap/persistence`, and `POST /api/control-plane/bootstrap/admins`.
 
 ### Auth
 
@@ -102,20 +102,20 @@ No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401
 
 ---
 
-## 3. B.2 landed; sketched B.3–B.5 APIs
+## 3. B.2 and B.3 landed; sketched B.4–B.5 APIs
 
-B.2 is implemented. B.3–B.5 shapes stay locked so later stories do not invent them. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed.
+B.2 and B.3 are implemented. B.4–B.5 shapes stay locked so later stories do not invent them. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed.
 
-Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` until first admin exists; after first admin, B.3+ require that admin’s session. Embed sessions are `403` (wizard is standalone).
+Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` for B.2 and B.3 (no admin exists yet). After first admin, B.4–B.5 require that admin’s session. Embed sessions are `403` (wizard is standalone). Unauthenticated incomplete POSTs have no session, so CSRF does not apply until `ff_session` is present.
 
 | Story | Method / path | Body (once) | Success | Notes |
 | --- | --- | --- | --- | --- |
 | **B.2 Persistence** (landed) | `POST /api/v1/bootstrap/persistence` | `{confirm:true}` only — **no DSN / password / `DATABASE_URL` in JSON** (process already uses `DATABASE_URL`) | `200` `BootstrapStatus`; `steps.persistence.ready=true` via `Store.SetStep` | Operator-facing check is a server-side PostgreSQL ping. Fail closed if PostgreSQL is not ready (`503`). Does not mark `complete`. Already `complete` → **`409 Conflict`** (Settings-only; not `404`). Same incomplete-install openness as B.1 GET. Same-origin proxy: `POST /api/control-plane/bootstrap/persistence`. |
-| **B.3 First admin** | `POST /api/v1/bootstrap/admins` | `{issuer, external_subject, display_name?, password?}` — password POST once if local login lands; prefer existing identity upsert | `201` status; `steps.firstAdmin.ready=true` | Never return password / hash. Reject if persistence is not ready. `PLATFORM_ADMINS` / workspace admin. |
+| **B.3 First admin** (landed) | `POST /api/v1/bootstrap/admins` | `{issuer, external_subject, display_name?, password?}` — password POST once if local login lands; this release has **no local login**, so a non-empty `password` is **`400`** and is never stored. Prefer existing identity upsert (`localseed.ProvisionAdmin` / `UpsertUser`) | `201` `BootstrapStatus`; `steps.firstAdmin.ready=true` via `Store.SetStep` | Never return password / hash / KEK. Reject if persistence is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1/B.2. Embed sessions are `403`. CSRF required when `ff_session` is present. Grants workspace admin on the default localseed tenant/workbench (`local` / `default`). `platform.administer` remains the process `PLATFORM_ADMINS` allowlist (operators should include this `issuer\|subject`). Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/admins`. |
 | **B.4 Public URL** | `POST /api/v1/bootstrap/public-url` | `{publicBaseUrl}` | `200` status; `steps.publicUrl.ready=true` | Persist on server (`instance_bootstrap.public_base_url`). **Do not echo the URL** on this status GET (Settings read is B.4/Settings). Reject if first admin is not ready. |
 | **B.5 TLS** | `POST /api/v1/bootstrap/tls` | `{action:"create-self-signed"}` **or** `{action:"upload", certPem, keyPem}` — PEM POST once | `200` status; `steps.tls.ready=true`; `tls.mode` | Never return key/PEM. ACME / Let’s Encrypt is **out of scope**. Then `MarkComplete`. Reject if public URL is not ready. |
 
-Settings-only after complete: reuse these resources under `/api/v1/settings/…` (or document aliases in B.3–B.5). Wizard mutations reject with **`409 Conflict`** when `complete` is already true (B.2 landed this; B.3–B.5 must match).
+Settings-only after complete: reuse these resources under `/api/v1/settings/…` (or document aliases in B.3–B.5). Wizard mutations reject with **`409 Conflict`** when `complete` is already true (B.2 landed this; B.3 matches; B.4–B.5 must match).
 
 Store methods already on `internal/bootstrap.Store` for those stories: `SetStep`, `SetPublicURL`, `SetTLS`, `MarkComplete`.
 
