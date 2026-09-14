@@ -58,10 +58,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   `password` is rejected until local login lands and is never echoed.
   Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
   the value is stored server-side and never echoed. TLS is
-  `{action:"create-self-signed"}` or `{action:"upload", certPem,
-  keyPem}` — PEM POST once, written to `TLS_CERT_FILE` /
-  `TLS_KEY_FILE`, never returned; then `MarkComplete`. ACME is out of
-  scope.
+  `{action:"create-self-signed"}`, `{action:"upload", certPem,
+  keyPem}`, or `{action:"skip"}` — PEM POST once on upload, written
+  to `TLS_CERT_FILE` / `TLS_KEY_FILE`, never returned; skip writes
+  no files; then `MarkComplete`. ACME is out of scope.
   CSRF is required when `ff_session` is present; unauthenticated
   incomplete POSTs have no session, so CSRF does not apply. These
   endpoints must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).

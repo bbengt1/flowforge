@@ -57,7 +57,8 @@ export type BootstrapTlsMode =
   | "none"
   | "self_signed"
   | "uploaded"
-  | "local_http";
+  | "local_http"
+  | "skipped";
 
 export type BootstrapStep = {
   ready: boolean;
@@ -90,7 +91,7 @@ export type BootstrapChromeDecision = {
     | "blocked";
 };
 
-export type BootstrapTlsAction = "create-self-signed" | "upload";
+export type BootstrapTlsAction = "create-self-signed" | "upload" | "skip";
 
 export type BootstrapAdminInput = {
   issuer: string;
@@ -108,7 +109,8 @@ export type BootstrapPublicUrlInput = {
 
 export type BootstrapTlsInput =
   | { action: "create-self-signed" }
-  | { action: "upload"; certPem: string; keyPem: string };
+  | { action: "upload"; certPem: string; keyPem: string }
+  | { action: "skip" };
 
 export const FIRST_RUN_BOOTSTRAP = {
   ...R7_HARD_LINE,
@@ -225,6 +227,7 @@ export const TLS_MODE_LABELS = {
   self_signed: "Self-signed",
   uploaded: "Uploaded certificate",
   local_http: "Local HTTP",
+  skipped: "Skipped",
 } as const satisfies Record<BootstrapTlsMode, string>;
 
 const TLS_MODES = new Set<BootstrapTlsMode>([
@@ -232,6 +235,7 @@ const TLS_MODES = new Set<BootstrapTlsMode>([
   "self_signed",
   "uploaded",
   "local_http",
+  "skipped",
 ]);
 
 export function emptyBootstrapStatus(): BootstrapStatus {
@@ -454,6 +458,10 @@ export function bootstrapAdminBody(
 
 export function bootstrapTlsCreateBody(): BootstrapTlsInput {
   return { action: "create-self-signed" };
+}
+
+export function bootstrapTlsSkipBody(): BootstrapTlsInput {
+  return { action: "skip" };
 }
 
 export function bootstrapTlsUploadBody(

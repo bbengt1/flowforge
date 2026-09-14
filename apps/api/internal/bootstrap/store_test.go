@@ -153,6 +153,35 @@ func TestMemoryRejectsInvalidStepAndURL(t *testing.T) {
 	}
 }
 
+func TestNormalizeTLSModeAcceptsSkipped(t *testing.T) {
+	got, err := NormalizeTLSMode(TLSModeSkipped)
+	if err != nil || got != TLSModeSkipped {
+		t.Fatalf("skipped: %q err=%v", got, err)
+	}
+	if _, err := NormalizeTLSMode("pem-upload"); err != ErrInvalid {
+		t.Fatalf("unknown mode: %v", err)
+	}
+}
+
+func TestMemorySetTLSSkippedDoesNotComplete(t *testing.T) {
+	store := NewMemory()
+	if err := store.SetTLS(context.Background(), true, TLSModeSkipped); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.TLSReady || st.TLSMode != TLSModeSkipped || st.Complete {
+		t.Fatalf("SetTLS skipped: %+v", st)
+	}
+	status := st.Status()
+	if status.Steps.TLS.Mode != TLSModeSkipped || !status.Steps.TLS.Ready {
+		t.Fatalf("status tls skipped: %+v", status.Steps.TLS)
+	}
+	assertStatusHasNoSecrets(t, status)
+}
+
 func TestNormalizePublicBaseURL(t *testing.T) {
 	got, err := NormalizePublicBaseURL("https://flows.example.com/")
 	if err != nil || got != "https://flows.example.com" {

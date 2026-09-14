@@ -27,6 +27,7 @@ const (
 	TLSModeSelfSigned = "self_signed"
 	TLSModeUploaded   = "uploaded"
 	TLSModeLocalHTTP  = "local_http"
+	TLSModeSkipped    = "skipped"
 )
 
 // Step names match the OpenAPI / contract map (camelCase).
@@ -158,7 +159,7 @@ func NormalizeTLSMode(raw string) (string, error) {
 		return TLSModeNone, nil
 	}
 	switch raw {
-	case TLSModeNone, TLSModeSelfSigned, TLSModeUploaded, TLSModeLocalHTTP:
+	case TLSModeNone, TLSModeSelfSigned, TLSModeUploaded, TLSModeLocalHTTP, TLSModeSkipped:
 		return raw, nil
 	default:
 		return "", ErrInvalid

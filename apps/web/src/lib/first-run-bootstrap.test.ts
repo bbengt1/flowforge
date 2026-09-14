@@ -17,6 +17,7 @@ import {
   bootstrapProblemMessage,
   bootstrapStatusRetainsSecrets,
   bootstrapStepIsAhead,
+  bootstrapTlsSkipBody,
   canOpenBootstrapStep,
   collectForbiddenKeys,
   currentBootstrapStep,
@@ -490,5 +491,39 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(seen.url, "/api/v1/bootstrap/tls");
     assert.match(seen.body ?? "", /certPem/);
     assert.equal(tls.ok && bootstrapStatusRetainsSecrets(tls.status), false);
+
+    const skippedStatus: BootstrapStatus = {
+      complete: true,
+      incomplete: false,
+      skipped: false,
+      standaloneOnly: true,
+      steps: {
+        persistence: { ready: true },
+        firstAdmin: { ready: true },
+        publicUrl: { ready: true },
+        tls: { ready: true, mode: "skipped" },
+      },
+    };
+    assert.deepEqual(parseBootstrapStatus(skippedStatus)?.steps.tls, {
+      ready: true,
+      mode: "skipped",
+    });
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.body = typeof init?.body === "string" ? init.body : "";
+      return new Response(JSON.stringify(skippedStatus), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    const skipped = await setBootstrapTls({
+      embed: false,
+      tls: bootstrapTlsSkipBody(),
+    });
+    assert.equal(skipped.ok, true);
+    assert.equal(seen.url, "/api/v1/bootstrap/tls");
+    assert.equal(seen.body, JSON.stringify({ action: "skip" }));
+    assert.equal(skipped.ok && skipped.status.steps.tls.mode, "skipped");
+    assert.equal(skipped.ok && bootstrapStatusRetainsSecrets(skipped.status), false);
   });
 });

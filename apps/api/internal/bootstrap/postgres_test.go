@@ -215,3 +215,43 @@ func TestPostgresSetTLSAndMarkComplete(t *testing.T) {
 		t.Fatalf("status mode: %+v", st.Status().Steps.TLS)
 	}
 }
+
+func TestPostgresSetTLSSkipped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	store := NewPostgres(app)
+	if _, err := app.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET complete = false, skipped = false,
+		    persistence_ready = true, first_admin_ready = true,
+		    public_url_ready = true, tls_ready = false,
+		    public_base_url = 'https://flows.example.com', tls_mode = 'none',
+		    completed_at = NULL, updated_at = now()
+		WHERE id = 'default'
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetTLS(ctx, true, TLSModeSkipped); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.TLSReady || st.TLSMode != TLSModeSkipped || st.Complete {
+		t.Fatalf("SetTLS skipped: %+v", st)
+	}
+	if st.Status().Steps.TLS.Mode != TLSModeSkipped {
+		t.Fatalf("status mode: %+v", st.Status().Steps.TLS)
+	}
+	assertStatusHasNoSecrets(t, st.Status())
+}
