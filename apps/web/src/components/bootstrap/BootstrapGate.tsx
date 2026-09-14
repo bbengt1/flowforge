@@ -23,12 +23,10 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
   const embed = useEmbedMode();
   const { identity } = useWorkspace();
   const router = useRouter();
-  const [chrome, setChrome] = useState<BootstrapChrome>(
-    embed ? "ignore" : "blocked",
-  );
+  const [chrome, setChrome] = useState<BootstrapChrome>("blocked");
   const [status, setStatus] = useState<BootstrapStatus | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
-  const [checked, setChecked] = useState(embed);
+  const [checked, setChecked] = useState(false);
 
   const applyHome = useCallback(() => {
     setChrome("home");
@@ -37,8 +35,6 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
 
   useEffect(() => {
     if (!shouldFetchBootstrapGate(embed)) {
-      setChrome("ignore");
-      setChecked(true);
       return;
     }
     let cancelled = false;
@@ -56,7 +52,7 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
     };
   }, [embed, identity]);
 
-  if (embed || chrome === "ignore") {
+  if (embed) {
     return children;
   }
 

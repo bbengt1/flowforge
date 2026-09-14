@@ -28,7 +28,6 @@ export function BootstrapSettings() {
 
   useEffect(() => {
     if (!shouldFetchBootstrapGate(embed)) {
-      setPending(false);
       return;
     }
     let cancelled = false;
