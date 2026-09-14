@@ -22,12 +22,15 @@ export default function WorkflowsPage() {
           Product home for drafts and published versions. The left rail
           lists Unfiled and this workspace&apos;s folders; the main list
           is the selected folder. Unfiled is always in the rail and is
-          not a persisted folder. Empty home
+          not a persisted folder.           Empty home
           teaches Create, Import YAML, or a reviewed template — each
           creates a draft — plus optional New folder. Empty folder
           offers create here, move, or delete when the folder has no
           workflows and no child folders. Unfiled-empty points at the
-          tree or those empty-home verbs. Drafts do not run. The Overview
+          tree or those empty-home verbs. Those empty states use
+          Overview card chrome (O.3 / #327 —{" "}
+          <strong>keep #327 open</strong>), not dense-list empty chrome.
+          Drafts do not run. The Overview
           card list is the primary browse surface (O.1 / #325 —{" "}
           <strong>keep #325 open</strong>): name, last updated/created,
           published badge, and kebab. Cards show folder path pills
