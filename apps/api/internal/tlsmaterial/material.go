@@ -67,6 +67,9 @@ func (f *Files) Write(certPEM, keyPEM []byte) error {
 	if err := ValidatePair(certPEM, keyPEM); err != nil {
 		return err
 	}
+	// Parent dirs must be creatable by the process user (compose API is
+	// UID 65532 with only /tmp writable). Fail closed if mkdir or write
+	// cannot complete — never invent another destination.
 	if err := os.MkdirAll(filepath.Dir(f.KeyPath), 0o700); err != nil {
 		return ErrUnavailable
 	}

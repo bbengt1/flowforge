@@ -111,6 +111,15 @@ services:
       # Operator-facing origin stored by localseed bootstrap skip (B.1).
       # Never returned by GET /api/v1/bootstrap. Do not copy to k8s.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      # Path-2 first-run wizard B.5 destinations on the existing /tmp
+      # tmpfs (read-only root; UID 65532). tlsmaterial mkdir's the
+      # parent. Listen stays HTTP until both files exist (restart
+      # after B.5). Lost on container recreate — production must
+      # mount durable paths. Do not copy these localhost defaults
+      # into deploy/k8s. Empty still fails closed (503). Never store
+      # PEMs in PostgreSQL; never echo the key.
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/tmp/flowforge-tls/cert.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/tmp/flowforge-tls/key.pem}
     volumes:
       - ./deploy/local/embed-signing.pem:/run/flowforge/embed-signing.pem:ro
     depends_on:

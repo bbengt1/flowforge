@@ -134,7 +134,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
 | `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). Probe paths `/api/v1/health` and `/api/v1/readiness` stay reachable over plain HTTP for kubelet. |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. B.5 writes created/uploaded PEMs here (0600). Empty fails closed on `POST /bootstrap/tls`. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty (compose: `/tmp/flowforge-tls/{cert,key}.pem`) | Optional process TLS. Both must be set or neither. B.5 writes created/uploaded PEMs here (0600). Parent dir is created (0700) on write. Empty fails closed on `POST /bootstrap/tls`. Compose defaults writable `/tmp` paths for path-2. Do not copy to k8s. |
 | `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |
@@ -213,6 +213,8 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
       SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/tmp/flowforge-tls/cert.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/tmp/flowforge-tls/key.pem}
     depends_on:
       postgres:
         condition: service_healthy
