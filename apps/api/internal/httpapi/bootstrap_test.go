@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
@@ -15,6 +18,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
@@ -679,6 +683,253 @@ func TestBootstrapPublicURLMethodNotAllowed(t *testing.T) {
 	assertProblem(t, rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "caller-request-16")
 }
 
+func TestBootstrapTLSCreateSelfSignedCompletes(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	materials := tempTLSMaterials(t)
+	idStore := identity.NewMemory()
+	sessions := session.NewMemory()
+	h := NewWithDeps(Deps{
+		Store:          idStore,
+		Sessions:       sessions,
+		Bootstrap:      store,
+		TLSMaterials:   materials,
+		Security:       Security{},
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: httpTestIssuer, Subject: httpTestSubject}},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"create-self-signed"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create self-signed: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if !status.Complete || status.Incomplete {
+		t.Fatalf("B.5 must mark complete: %+v", status)
+	}
+	if !status.Steps.TLS.Ready {
+		t.Fatalf("tls must be ready: %+v", status.Steps)
+	}
+	if status.Steps.TLS.Mode != bootstrap.TLSModeSelfSigned {
+		t.Fatalf("tls.mode: %+v", status.Steps.TLS)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+	if strings.Contains(rec.Body.String(), "BEGIN") {
+		t.Fatal("success must not echo PEM")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.TLSReady || st.TLSMode != bootstrap.TLSModeSelfSigned {
+		t.Fatalf("store after MarkComplete: %+v", st)
+	}
+	if _, err := os.Stat(materials.CertPath); err != nil {
+		t.Fatalf("cert file: %v", err)
+	}
+	keyRaw, err := os.ReadFile(materials.KeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(keyRaw), "BEGIN PRIVATE KEY") {
+		t.Fatal("key must be persisted server-side")
+	}
+	info, err := os.Stat(materials.KeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("key perm = %o", info.Mode().Perm())
+	}
+
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	_, issued := issueTestSession(t, idStore, sessions, httpTestIssuer, httpTestSubject, "Admin")
+	rec = httptest.NewRecorder()
+	req = sessionAPIRequest(http.MethodGet, "/api/v1/bootstrap", "", issued.Token, issued.CSRF)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authenticated complete GET: %d %s", rec.Code, rec.Body.String())
+	}
+	got := decodeBootstrapStatus(t, rec)
+	if !got.Complete || !got.Steps.TLS.Ready || got.Steps.TLS.Mode != bootstrap.TLSModeSelfSigned {
+		t.Fatalf("GET may show tls.mode, never secrets: %+v", got)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+}
+
+func TestBootstrapTLSUploadCompletes(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	materials := tempTLSMaterials(t)
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: materials, Security: Security{}})
+
+	certPEM, keyPEM, err := tlsmaterial.CreateSelfSigned([]string{"flows.example.com"}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]string{
+		"action":  "upload",
+		"certPem": string(certPEM),
+		"keyPem":  string(keyPEM),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(string(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if !status.Complete || !status.Steps.TLS.Ready || status.Steps.TLS.Mode != bootstrap.TLSModeUploaded {
+		t.Fatalf("upload status: %+v", status)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+	if strings.Contains(rec.Body.String(), "BEGIN") || strings.Contains(rec.Body.String(), string(keyPEM)) {
+		t.Fatal("success must not echo key or PEM")
+	}
+
+	gotKey, err := os.ReadFile(materials.KeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotKey) != string(keyPEM) {
+		t.Fatal("uploaded key must persist server-side")
+	}
+}
+
+func TestBootstrapTLSRejectsWithoutPublicURL(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"create-self-signed"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Public URL") {
+		t.Fatalf("fail-closed order should mention public URL: %s", rec.Body.String())
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady || st.Complete {
+		t.Fatalf("must not enable TLS without publicUrl: %+v", st)
+	}
+}
+
+func TestBootstrapTLSCompleteIs409(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.MarkSeedSkip(t.Context(), bootstrap.SeedSkip{}); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"create-self-signed"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Settings") {
+		t.Fatalf("complete reject should point at Settings: %s", rec.Body.String())
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady {
+		t.Fatal("complete must not set tls ready")
+	}
+}
+
+func TestBootstrapTLSNeverEchoesKeyOrPEM(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	secret := "super-secret-hunter2-private-key"
+	body := `{"action":"upload","certPem":"-----BEGIN CERTIFICATE-----\n` + secret + `\n-----END CERTIFICATE-----","keyPem":"-----BEGIN PRIVATE KEY-----\n` + secret + `\n-----END PRIVATE KEY-----"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(body))
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if strings.Contains(rec.Body.String(), secret) || strings.Contains(rec.Body.String(), "BEGIN PRIVATE") {
+		t.Fatal("problem must not echo key or PEM")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady || st.Complete {
+		t.Fatal("invalid upload must not complete")
+	}
+}
+
+func TestBootstrapTLSRejectsACME(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"acme"}`))
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "ACME") {
+		t.Fatalf("ACME is out of scope: %s", rec.Body.String())
+	}
+}
+
+func TestBootstrapTLSEmbedSessionForbidden(t *testing.T) {
+	env := newEmbedEnv(t)
+	token, csrf := exchangeEmbedSession(t, env, env.ops, []string{authz.PermWorkflowView})
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/tls", `{"action":"create-self-signed"}`, token, csrf)
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "standalone") {
+		t.Fatalf("embed deny should mention standalone wizard: %s", rec.Body.String())
+	}
+}
+
+func TestBootstrapTLSMethodNotAllowed(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: bootstrap.NewMemory(), TLSMaterials: tempTLSMaterials(t)})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap/tls", nil)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "caller-request-16")
+}
+
+func TestBootstrapTLSMissingMaterialsIs503(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"create-self-signed"}`))
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady || st.Complete {
+		t.Fatalf("nil materials must fail closed: %+v", st)
+	}
+}
+
+func TestBootstrapTLSStoreDownIs503(t *testing.T) {
+	h := NewWithDeps(Deps{Bootstrap: unavailableBootstrap{}, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"create-self-signed"}`))
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+}
+
 func TestBootstrapPublicURLStoreDownIs503(t *testing.T) {
 	h := NewWithDeps(Deps{Bootstrap: unavailableBootstrap{}, Security: Security{}})
 	rec := httptest.NewRecorder()
@@ -723,6 +974,38 @@ func publicURLRequest(body string) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(RequestIDHeader, "caller-request-16")
 	return req
+}
+
+func tlsRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/tls", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	return req
+}
+
+func readyTLSBootstrap(t *testing.T) *bootstrap.Memory {
+	t.Helper()
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPublicURL(t.Context(), "https://flows.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func tempTLSMaterials(t *testing.T) *tlsmaterial.Files {
+	t.Helper()
+	dir := t.TempDir()
+	files, err := tlsmaterial.NewFiles(filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
 
 type unavailableBootstrap struct{}

@@ -162,3 +162,56 @@ func TestPostgresSetPublicURLDoesNotComplete(t *testing.T) {
 		t.Fatal("status must not echo publicBaseUrl")
 	}
 }
+
+func TestPostgresSetTLSAndMarkComplete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	store := NewPostgres(app)
+	if _, err := app.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET complete = false, skipped = false,
+		    persistence_ready = true, first_admin_ready = true,
+		    public_url_ready = true, tls_ready = false,
+		    public_base_url = 'https://flows.example.com', tls_mode = 'none',
+		    completed_at = NULL, updated_at = now()
+		WHERE id = 'default'
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetTLS(ctx, true, TLSModeUploaded); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.TLSReady || st.TLSMode != TLSModeUploaded {
+		t.Fatalf("SetTLS persist: %+v", st)
+	}
+	if st.Complete {
+		t.Fatal("SetTLS must not mark complete")
+	}
+	if err := store.MarkComplete(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.TLSReady || st.TLSMode != TLSModeUploaded {
+		t.Fatalf("MarkComplete after SetTLS: %+v", st)
+	}
+	assertStatusHasNoSecrets(t, st.Status())
+	if st.Status().Steps.TLS.Mode != TLSModeUploaded {
+		t.Fatalf("status mode: %+v", st.Status().Steps.TLS)
+	}
+}

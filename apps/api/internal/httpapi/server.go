@@ -23,6 +23,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/schedule"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -67,6 +68,7 @@ type Server struct {
 	embedLimiter     *embed.Limiter
 	embedAuditor     embed.Auditor
 	embedNBFLeeway   time.Duration
+	tlsMaterials     tlsmaterial.Store
 }
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
@@ -107,6 +109,9 @@ type Deps struct {
 	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
+	// TLSMaterials writes first-run cert/key PEMs to TLS_CERT_FILE /
+	// TLS_KEY_FILE. Nil fails closed on POST /bootstrap/tls.
+	TLSMaterials tlsmaterial.Store
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -371,6 +376,7 @@ func newServer(d Deps) http.Handler {
 		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
 		embedAuditor:     d.EmbedAuditor,
 		embedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
+		tlsMaterials:     d.TLSMaterials,
 	}
 	if d.PlatformAdmins != nil {
 		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
@@ -407,6 +413,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/bootstrap/persistence", s.postBootstrapPersistence)
 	mux.HandleFunc("POST /api/v1/bootstrap/admins", s.postBootstrapAdmins)
 	mux.HandleFunc("POST /api/v1/bootstrap/public-url", s.postBootstrapPublicURL)
+	mux.HandleFunc("POST /api/v1/bootstrap/tls", s.postBootstrapTLS)
 	mux.HandleFunc("GET /api/v1/metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/openapi.yaml", s.openapiYAML)
 	mux.HandleFunc("GET /api/v1/openapi.json", s.openapiJSON)

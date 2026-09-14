@@ -49,14 +49,19 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   secrets, never the stored public URL). Incomplete installs may call
   it without a session; after bootstrap is complete, normal session
   auth is required. Wizard step 1 `POST /api/v1/bootstrap/persistence`,
-  step 2 `POST /api/v1/bootstrap/admins`, and step 3
-  `POST /api/v1/bootstrap/public-url` use the same incomplete-install
+  step 2 `POST /api/v1/bootstrap/admins`, step 3
+  `POST /api/v1/bootstrap/public-url`, and step 4
+  `POST /api/v1/bootstrap/tls` use the same incomplete-install
   openness; after complete they are `409` (Settings-only). Persistence
   confirm is `{confirm:true}` only — never a DSN or password. First
   admin is `{issuer, external_subject, display_name?}`; a non-empty
   `password` is rejected until local login lands and is never echoed.
   Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
-  the value is stored server-side and never echoed.
+  the value is stored server-side and never echoed. TLS is
+  `{action:"create-self-signed"}` or `{action:"upload", certPem,
+  keyPem}` — PEM POST once, written to `TLS_CERT_FILE` /
+  `TLS_KEY_FILE`, never returned; then `MarkComplete`. ACME is out of
+  scope.
   CSRF is required when `ff_session` is present; unauthenticated
   incomplete POSTs have no session, so CSRF does not apply. These
   endpoints must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).

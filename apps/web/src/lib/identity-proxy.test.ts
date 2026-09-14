@@ -87,6 +87,7 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["bootstrap", "persistence"], "/api/v1/bootstrap/persistence"],
       ["POST", ["bootstrap", "admins"], "/api/v1/bootstrap/admins"],
       ["POST", ["bootstrap", "public-url"], "/api/v1/bootstrap/public-url"],
+      ["POST", ["bootstrap", "tls"], "/api/v1/bootstrap/tls"],
       ["GET", ["session"], "/api/v1/session"],
       ["POST", ["session"], "/api/v1/session"],
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
@@ -1223,6 +1224,12 @@ describe("resolveIdentityProxyTarget", () => {
     assert.equal("status" in getPublicURL, true);
     if ("status" in getPublicURL) {
       assert.equal(getPublicURL.status, 405);
+    }
+
+    const getTLS = resolveIdentityProxyTarget("GET", ["bootstrap", "tls"]);
+    assert.equal("status" in getTLS, true);
+    if ("status" in getTLS) {
+      assert.equal(getTLS.status, 405);
     }
 
     const deleteSession = resolveIdentityProxyTarget("DELETE", ["session"]);

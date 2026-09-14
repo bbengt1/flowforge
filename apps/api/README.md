@@ -12,6 +12,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/bootstrap/persistence` | Wizard step 1. Body `{confirm:true}` only (no DSN). `200` status with `steps.persistence.ready=true`. Does not mark complete. Incomplete installs may call without a session. Already complete → `409`. PostgreSQL down → `503`. |
 | `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Non-empty password → `400` (local login has not landed). Never echoes credentials. |
 | `POST` | `/api/v1/bootstrap/public-url` | Wizard step 3. Body `{publicBaseUrl}`. `200` status with `steps.publicUrl.ready=true`. Does not mark complete. First admin must be ready (`409`). Already complete → `409`. HTTPS preferred; HTTP allowed for local. Never echoes the URL. |
+| `POST` | `/api/v1/bootstrap/tls` | Wizard step 4. Body `{action:"create-self-signed"}` or `{action:"upload", certPem, keyPem}`. `200` status with `steps.tls.ready=true`, `steps.tls.mode`, and `complete=true` (`MarkComplete`). Public URL must be ready (`409`). Already complete → `409`. Never echoes key/PEM. ACME out of scope. Requires `TLS_CERT_FILE` / `TLS_KEY_FILE` (`503` if unset). |
 | `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. |
@@ -133,7 +134,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
 | `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). Probe paths `/api/v1/health` and `/api/v1/readiness` stay reachable over plain HTTP for kubelet. |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process TLS. Both must be set or neither. B.5 writes created/uploaded PEMs here (0600). Empty fails closed on `POST /bootstrap/tls`. |
 | `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |

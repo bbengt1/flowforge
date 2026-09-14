@@ -1,6 +1,6 @@
-# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4)
+# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5)
 
-Status: **B.1, B.2, B.3, and B.4 landed** (this page is the contract map for B.5–B.6). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337).
+Status: **B.1–B.5 landed** (this page is the contract map for B.6 chrome). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338).
 
 **Owners:** jonny (gate + B.2–B.5 APIs), Chloe (B.6 wizard chrome + Settings handoff). Product hard lines: Gracie.
 
@@ -58,7 +58,7 @@ Do **not** auto-complete at runtime when B.3 creates the first admin or B.4 stor
 
 `GET /api/v1/bootstrap`
 
-OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web proxy: `GET /api/control-plane/bootstrap`, `POST /api/control-plane/bootstrap/persistence`, `POST /api/control-plane/bootstrap/admins`, and `POST /api/control-plane/bootstrap/public-url`.
+OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web proxy: `GET /api/control-plane/bootstrap`, `POST /api/control-plane/bootstrap/persistence`, `POST /api/control-plane/bootstrap/admins`, `POST /api/control-plane/bootstrap/public-url`, and `POST /api/control-plane/bootstrap/tls`.
 
 ### Auth
 
@@ -86,7 +86,7 @@ No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401
 }
 ```
 
-`standaloneOnly` is always `true`. `tls.mode` (`none` \| `self_signed` \| `uploaded` \| `local_http`) may appear after B.5; it is never a key.
+`standaloneOnly` is always `true`. After B.5, `steps.tls.mode` is `self_signed` or `uploaded` (localseed skip may leave TLS unreadied; `local_http` is reserved for that Settings path). It is never a key.
 
 **Never present:** `publicBaseUrl` / `public_base_url`, passwords, hashes, KEK, PEMs, private keys, cookies, CSRF secrets.
 
@@ -102,22 +102,22 @@ No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401
 
 ---
 
-## 3. B.2–B.4 landed; sketched B.5 API
+## 3. B.2–B.5 landed API
 
-B.2, B.3, and B.4 are implemented. B.5 shape stays locked so later stories do not invent it. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed.
+B.2–B.5 are implemented. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed. **Chloe B.6:** after this merge, wizard chrome is unblocked.
 
-Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` for B.2–B.4. B.5 may require that admin’s session. Embed sessions are `403` (wizard is standalone). Unauthenticated incomplete POSTs have no session, so CSRF does not apply until `ff_session` is present.
+Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` for B.2–B.5. Embed sessions are `403` (wizard is standalone). Unauthenticated incomplete POSTs have no session, so CSRF does not apply until `ff_session` is present.
 
 | Story | Method / path | Body (once) | Success | Notes |
 | --- | --- | --- | --- | --- |
 | **B.2 Persistence** (landed) | `POST /api/v1/bootstrap/persistence` | `{confirm:true}` only — **no DSN / password / `DATABASE_URL` in JSON** (process already uses `DATABASE_URL`) | `200` `BootstrapStatus`; `steps.persistence.ready=true` via `Store.SetStep` | Operator-facing check is a server-side PostgreSQL ping. Fail closed if PostgreSQL is not ready (`503`). Does not mark `complete`. Already `complete` → **`409 Conflict`** (Settings-only; not `404`). Same incomplete-install openness as B.1 GET. Same-origin proxy: `POST /api/control-plane/bootstrap/persistence`. |
 | **B.3 First admin** (landed) | `POST /api/v1/bootstrap/admins` | `{issuer, external_subject, display_name?, password?}` — password POST once if local login lands; this release has **no local login**, so a non-empty `password` is **`400`** and is never stored. Prefer existing identity upsert (`localseed.ProvisionAdmin` / `UpsertUser`) | `201` `BootstrapStatus`; `steps.firstAdmin.ready=true` via `Store.SetStep` | Never return password / hash / KEK. Reject if persistence is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1/B.2. Embed sessions are `403`. CSRF required when `ff_session` is present. Grants workspace admin on the default localseed tenant/workbench (`local` / `default`). `platform.administer` remains the process `PLATFORM_ADMINS` allowlist (operators should include this `issuer\|subject`). Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/admins`. |
 | **B.4 Public URL** (landed) | `POST /api/v1/bootstrap/public-url` | `{publicBaseUrl}` — HTTPS preferred; HTTP is allowed for local (for example `http://localhost:3000`). Origin only: no userinfo, query, fragment, or path | `200` `BootstrapStatus`; `steps.publicUrl.ready=true` via `Store.SetPublicURL` | Persist on server (`instance_bootstrap.public_base_url`). **Do not echo the URL** on this response or `GET /bootstrap` (Settings read is later). Reject if first admin is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1–B.3. Embed sessions are `403`. CSRF required when `ff_session` is present. Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/public-url`. |
-| **B.5 TLS** | `POST /api/v1/bootstrap/tls` | `{action:"create-self-signed"}` **or** `{action:"upload", certPem, keyPem}` — PEM POST once | `200` status; `steps.tls.ready=true`; `tls.mode` | Never return key/PEM. ACME / Let’s Encrypt is **out of scope**. Then `MarkComplete`. Reject if public URL is not ready. |
+| **B.5 TLS** (landed) | `POST /api/v1/bootstrap/tls` | `{action:"create-self-signed"}` **or** `{action:"upload", certPem, keyPem}` — PEM POST once | `200` `BootstrapStatus`; `steps.tls.ready=true`; `steps.tls.mode` (`self_signed` \| `uploaded`); then `Store.MarkComplete` so `complete=true` | Never return key/PEM/KEK. ACME / Let’s Encrypt is **out of scope** (`400`). Reject if public URL is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1–B.4. Embed sessions are `403`. CSRF required when `ff_session` is present. Materials are written to process `TLS_CERT_FILE` / `TLS_KEY_FILE` (`internal/tlsmaterial`, 0600, atomic replace). `instance_bootstrap` stores **status only** (`tls_ready`, `tls_mode`) — never the PEM. Missing/unwritable TLS paths → **`503`**. Same-origin proxy: `POST /api/control-plane/bootstrap/tls`. **This is the only wizard step that calls `MarkComplete`.** |
 
-Settings-only after complete: reuse these resources under `/api/v1/settings/…` (or document aliases in B.5). Wizard mutations reject with **`409 Conflict`** when `complete` is already true (B.2–B.4 landed this; B.5 must match).
+Settings-only after complete: wizard mutations reject with **`409 Conflict`** when `complete` is already true. Settings later reads `GET /bootstrap` `steps.tls.ready` / `steps.tls.mode` (and other step flags) — never files, PEMs, or `public_base_url`. Further TLS / URL / user / persistence edits live under Settings (no `/api/v1/settings/…` alias in this story).
 
-Store methods already on `internal/bootstrap.Store` for those stories: `SetStep`, `SetPublicURL`, `SetTLS`, `MarkComplete`.
+Store methods: `SetStep`, `SetPublicURL`, `SetTLS`, `MarkComplete`. Private keys never enter `internal/bootstrap`.
 
 ---
 
@@ -129,6 +129,7 @@ Table `instance_bootstrap` (migration `000024_instance_bootstrap.sql`):
 - Flags: `complete`, `skipped`, `persistence_ready`, `first_admin_ready`, `public_url_ready`, `tls_ready`
 - Server-only: `public_base_url` (never in GET JSON), `tls_mode` (status enum)
 - **No FORCE RLS** — instance substrate, like `browser_sessions`. `flowforge_app` SELECT/INSERT/UPDATE only. Not workspace-owned.
+- **TLS files:** B.5 writes the certificate and private key to `TLS_CERT_FILE` / `TLS_KEY_FILE` (same pairing as `ListenAndServeTLS`). The bootstrap table never stores PEMs. Operators mount a durable volume at those paths; a process restart picks up in-process TLS. Ingress-terminated installs still persist the pair there so Settings can later report status-only metadata (`steps.tls.mode`) without reading the key. Empty TLS paths fail closed (`503`) — do not invent database or `/tmp` key storage.
 
 ---
 

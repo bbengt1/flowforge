@@ -84,6 +84,38 @@ func TestMemorySetStepDoesNotComplete(t *testing.T) {
 	}
 }
 
+func TestMemorySetTLSDoesNotComplete(t *testing.T) {
+	store := NewMemory()
+	if err := store.SetTLS(context.Background(), true, TLSModeSelfSigned); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.TLSReady || st.TLSMode != TLSModeSelfSigned {
+		t.Fatalf("SetTLS persist: %+v", st)
+	}
+	if st.Complete {
+		t.Fatal("SetTLS must not mark complete")
+	}
+	status := st.Status()
+	if status.Steps.TLS.Mode != TLSModeSelfSigned || !status.Steps.TLS.Ready {
+		t.Fatalf("status tls: %+v", status.Steps.TLS)
+	}
+	assertStatusHasNoSecrets(t, status)
+	if err := store.MarkComplete(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.TLSReady {
+		t.Fatalf("MarkComplete after SetTLS: %+v", st)
+	}
+}
+
 func TestMemorySetPublicURLDoesNotComplete(t *testing.T) {
 	store := NewMemory()
 	if err := store.SetPublicURL(context.Background(), "https://flows.example.com/"); err != nil {
