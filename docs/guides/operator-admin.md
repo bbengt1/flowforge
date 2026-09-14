@@ -474,7 +474,7 @@ operator chrome.
 
 | Screen | Route | When it appears | What to do |
 | --- | --- | --- | --- |
-| Settings | `/settings` | Always | Session panel (`#session`), instance setup handoff (`#bootstrap` — URL / TLS / users / persistence after first-run; wizard does not remount), health/OpenAPI, disclosed Developer samples. Grant-gated Workspace administration links are not product destinations |
+| Settings | `/settings` | Always | Session panel (`#session`), instance setup handoff (`#bootstrap` — URL / TLS / users / persistence after first-run; `#tls` surfaces skipped mode and the path to enable later; wizard does not remount), health/OpenAPI, disclosed Developer samples. Grant-gated Workspace administration links are not product destinations |
 | Membership | `/membership` | ADV-024 grant; **off product chrome** | Members, roles, matrix — [Membership](#membership). Open from Settings. Labeled **Example context** is local-only |
 | Isolation | `/isolation` | ADV-024 grant; **off product chrome** | Negative cross-workspace clicks; expect denials |
 | Config / Targets / Profiles | `/config`, `?group=` | `opsconfig.view` | Draft → publish versioned cluster/SSH/runtime/policy/connection resources. Selectors are authorized metadata only |

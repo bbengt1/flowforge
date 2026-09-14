@@ -7,6 +7,7 @@ import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { loadBootstrapGate } from "@/lib/first-run-bootstrap-client";
 import {
+  BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER,
   SETTINGS_BOOTSTRAP_HREF,
   SETTINGS_PERSISTENCE_HREF,
   SETTINGS_PUBLIC_URL_HREF,
@@ -14,7 +15,8 @@ import {
   SETTINGS_USERS_HANDOFF_HREF,
   settingsHandoffAfterComplete,
   shouldFetchBootstrapGate,
-  tlsModeLabel,
+  tlsSettingsDescription,
+  tlsStepIsSkipped,
   type BootstrapStatus,
 } from "@/lib/first-run-bootstrap";
 import type { ProblemDetails } from "@/lib/problem";
@@ -77,6 +79,21 @@ export function BootstrapSettings() {
           not come back after complete.
         </p>
       ) : null}
+      {status &&
+      settingsHandoffAfterComplete(status) &&
+      tlsStepIsSkipped(status.steps.tls) ? (
+        <p
+          role="status"
+          data-bootstrap-tls-skipped=""
+          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950"
+        >
+          {BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER}{" "}
+          <Link href={SETTINGS_TLS_HREF} className="font-medium text-teal-900 underline">
+            Enable TLS later
+          </Link>
+          .
+        </p>
+      ) : null}
       {status && settingsHandoffAfterComplete(status) ? (
         <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
           <div id="persistence">
@@ -112,12 +129,19 @@ export function BootstrapSettings() {
                 : "Public URL is not marked ready."}
             </dd>
           </div>
-          <div id="tls">
+          <div
+            id="tls"
+            data-bootstrap-tls-mode={status.steps.tls.mode ?? "none"}
+          >
             <dt className="font-medium text-zinc-900">TLS</dt>
-            <dd className="mt-1 text-zinc-600">
-              {status.steps.tls.ready
-                ? `Ready — ${tlsModeLabel(status.steps.tls.mode)}.`
-                : `Not ready — ${tlsModeLabel(status.steps.tls.mode)}. Local HTTP skips stay Settings-only.`}
+            <dd
+              className={
+                tlsStepIsSkipped(status.steps.tls)
+                  ? "mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950"
+                  : "mt-1 text-zinc-600"
+              }
+            >
+              {tlsSettingsDescription(status.steps.tls)}
             </dd>
           </div>
         </dl>

@@ -1,8 +1,9 @@
 /**
- * Same-origin client for B.1–B.5 bootstrap routes. Chloe B.6 only.
+ * Same-origin client for B.1–B.5 / B.7 bootstrap routes. Chloe B.6 / B.7.
  *
  * GET /bootstrap is called from the standalone shell, never `/embed/v1`.
  * Mutations POST once; secrets are not kept on the parsed status.
+ * Skip TLS POSTs `{action:"skip"}` only — no PEM in the body.
  * CSRF is attached by callIdentityProxy when a session is present.
  */
 
@@ -16,9 +17,7 @@ import {
   BOOTSTRAP_STATUS_PATH,
   BOOTSTRAP_TLS_PATH,
   bootstrapAdminBody,
-  bootstrapTlsCreateBody,
-  bootstrapTlsSkipBody,
-  bootstrapTlsUploadBody,
+  wizardTlsInput,
   decideBootstrapChrome,
   emptyTlsUploadDraft,
   parseBootstrapStatus,
@@ -232,11 +231,9 @@ export async function setBootstrapTls(input: {
     return embedDenied(BOOTSTRAP_TLS_PATH);
   }
   const body =
-    input.tls.action === "create-self-signed"
-      ? bootstrapTlsCreateBody()
-      : input.tls.action === "skip"
-        ? bootstrapTlsSkipBody()
-        : bootstrapTlsUploadBody(input.tls.certPem, input.tls.keyPem);
+    input.tls.action === "upload"
+      ? wizardTlsInput("upload", input.tls)
+      : wizardTlsInput(input.tls.action, emptyTlsUploadDraft());
   if (!body) {
     return {
       ok: false,

@@ -14,6 +14,11 @@ import {
   BOOTSTRAP_STEP_HELP,
   BOOTSTRAP_STEP_LABELS,
   BOOTSTRAP_STEPS,
+  BOOTSTRAP_TLS_SKIP_LABEL,
+  BOOTSTRAP_TLS_SKIP_PENDING,
+  BOOTSTRAP_TLS_SKIP_SUCCESS,
+  BOOTSTRAP_TLS_SKIP_WARNING,
+  DEFAULT_BOOTSTRAP_TLS_ACTION,
   bootstrapProblemMessage,
   bootstrapStepIsAhead,
   canOpenBootstrapStep,
@@ -21,6 +26,7 @@ import {
   emptyTlsUploadDraft,
   mutationConflictIsComplete,
   normalizePublicBaseUrl,
+  wizardTlsInput,
   type BootstrapStatus,
   type BootstrapStepId,
   type BootstrapTlsAction,
@@ -72,7 +78,7 @@ export function FirstRunWizard({
   const [displayName, setDisplayName] = useState("");
   const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [tlsAction, setTlsAction] = useState<BootstrapTlsAction>(
-    "create-self-signed",
+    DEFAULT_BOOTSTRAP_TLS_ACTION,
   );
   const [tlsDraft, setTlsDraft] = useState(emptyTlsUploadDraft);
 
@@ -93,12 +99,16 @@ export function FirstRunWizard({
   async function runStep(
     step: BootstrapStepId,
     mutate: () => ReturnType<typeof confirmBootstrapPersistence>,
+    messages?: { pending?: string; success?: string },
   ) {
     if (!canOpenBootstrapStep(status, step) || busy) {
       return;
     }
     setProblem(null);
-    setFeedback({ phase: "pending", message: STEP_PENDING[step] });
+    setFeedback({
+      phase: "pending",
+      message: messages?.pending ?? STEP_PENDING[step],
+    });
     const result = await mutate();
     if (step === "tls") {
       setTlsDraft(forgetTlsUploadDraft());
@@ -120,7 +130,10 @@ export function FirstRunWizard({
       return;
     }
     setStatus(result.status);
-    setFeedback({ phase: "success", message: STEP_SUCCESS[step] });
+    setFeedback({
+      phase: "success",
+      message: messages?.success ?? STEP_SUCCESS[step],
+    });
     if (result.status.complete || currentBootstrapStep(result.status) === "done") {
       onComplete();
     }
@@ -141,7 +154,8 @@ export function FirstRunWizard({
         </h1>
         <p className="max-w-2xl text-base leading-7 text-zinc-600">
           Persistence, first admin, public URL, then TLS — in that order.
-          Steps cannot be skipped. Drafts still do not run. This wizard
+          Earlier steps cannot be skipped. On TLS you may Skip for now
+          (HTTP until Settings). Drafts still do not run. This wizard
           never appears on embed chrome.
         </p>
       </header>
@@ -311,10 +325,20 @@ export function FirstRunWizard({
       ) : null}
 
       {current === "tls" ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <section
+          className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+          data-bootstrap-tls-step=""
+        >
           <h2 className="text-lg font-semibold">TLS</h2>
           <p className="text-sm leading-6 text-zinc-600">
             {BOOTSTRAP_STEP_HELP.tls}
+          </p>
+          <p
+            role="status"
+            data-bootstrap-tls-skip-warning=""
+            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950"
+          >
+            {BOOTSTRAP_TLS_SKIP_WARNING}
           </p>
           <fieldset className="grid gap-2 text-sm">
             <legend className="font-medium">Certificate</legend>
@@ -338,6 +362,19 @@ export function FirstRunWizard({
                 onChange={() => setTlsAction("upload")}
               />
               Upload PEM
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="tls-action"
+                data-bootstrap-tls-action="skip"
+                checked={tlsAction === "skip"}
+                onChange={() => {
+                  setTlsAction("skip");
+                  setTlsDraft(emptyTlsUploadDraft());
+                }}
+              />
+              {BOOTSTRAP_TLS_SKIP_LABEL}
             </label>
           </fieldset>
           {tlsAction === "upload" ? (
@@ -384,24 +421,31 @@ export function FirstRunWizard({
                 (!tlsDraft.certPem.trim() || !tlsDraft.keyPem.trim()))
             }
             className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-            onClick={() =>
-              void runStep("tls", () =>
-                setBootstrapTls({
-                  embed: false,
-                  identity,
-                  tls:
-                    tlsAction === "create-self-signed"
-                      ? { action: "create-self-signed" }
-                      : {
-                          action: "upload",
-                          certPem: tlsDraft.certPem,
-                          keyPem: tlsDraft.keyPem,
-                        },
-                }),
-              )
-            }
+            onClick={() => {
+              const tls = wizardTlsInput(tlsAction, tlsDraft);
+              if (!tls) {
+                return;
+              }
+              void runStep(
+                "tls",
+                () =>
+                  setBootstrapTls({
+                    embed: false,
+                    identity,
+                    tls,
+                  }),
+                tlsAction === "skip"
+                  ? {
+                      pending: BOOTSTRAP_TLS_SKIP_PENDING,
+                      success: BOOTSTRAP_TLS_SKIP_SUCCESS,
+                    }
+                  : undefined,
+              );
+            }}
           >
-            Enable TLS and finish
+            {tlsAction === "skip"
+              ? "Skip for now and finish"
+              : "Enable TLS and finish"}
           </button>
         </section>
       ) : null}

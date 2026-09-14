@@ -7,11 +7,20 @@ import {
   B6_EPIC,
   B6_KEEP_STORY_OPEN,
   B6_STORY,
+  B7_EPIC,
+  B7_KEEP_STORY_OPEN,
+  B7_STORY,
   BOOTSTRAP_STEPS,
+  BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER,
+  BOOTSTRAP_TLS_SKIP_LABEL,
+  BOOTSTRAP_TLS_SKIP_SETTINGS_COPY,
+  BOOTSTRAP_TLS_SKIP_WARNING,
+  DEFAULT_BOOTSTRAP_TLS_ACTION,
   FIRST_RUN_BOOTSTRAP,
   FIRST_RUN_BOOTSTRAP_SOURCES,
   FIRST_RUN_WIZARD_COMPLETE_HREF,
   SETTINGS_BOOTSTRAP_HREF,
+  SETTINGS_TLS_HREF,
   SETTINGS_USERS_HANDOFF_HREF,
   bootstrapAdminBody,
   bootstrapProblemMessage,
@@ -32,8 +41,12 @@ import {
   settingsSourceRemountsWizard,
   shouldFetchBootstrapGate,
   shouldRemountWizard,
+  tlsSettingsDescription,
+  tlsSkipBodyIsActionOnly,
+  tlsStepIsSkipped,
   wizardSourceHasPasswordField,
   wizardSourceRetainsSecrets,
+  wizardTlsInput,
   type BootstrapStatus,
 } from "./first-run-bootstrap.ts";
 import {
@@ -525,5 +538,154 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(seen.body, JSON.stringify({ action: "skip" }));
     assert.equal(skipped.ok && skipped.status.steps.tls.mode, "skipped");
     assert.equal(skipped.ok && bootstrapStatusRetainsSecrets(skipped.status), false);
+    assert.equal(tlsSkipBodyIsActionOnly(JSON.parse(seen.body ?? "{}")), true);
+    assert.equal(seen.body?.includes("certPem"), false);
+    assert.equal(seen.body?.includes("keyPem"), false);
   });
 });
+
+describe("B.7 skip TLS wizard chrome", () => {
+  it("keeps #347 open and cites epic #333", () => {
+    assert.equal(B7_STORY, 347);
+    assert.equal(B7_EPIC, 333);
+    assert.equal(B7_KEEP_STORY_OPEN, true);
+    assert.equal(B6_STORY, 339);
+    assert.equal(B6_KEEP_STORY_OPEN, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.skipTlsPostsActionOnly, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.skipTlsNeverIncludesPem, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.skipTlsIsFirstClassExit, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.skipTlsNotSilentDefault, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.httpUntilTlsInSettings, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.settingsSurfacesSkippedTls, true);
+    assert.equal(firstRunBootstrapHoldsHardLines(), true);
+    assert.equal(DEFAULT_BOOTSTRAP_TLS_ACTION, "create-self-signed");
+  });
+
+  it("offers Skip for now with loud HTTP-until-Settings copy and no silent default", () => {
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.match(wizard, /Skip for now/);
+    assert.match(wizard, /BOOTSTRAP_TLS_SKIP_LABEL/);
+    assert.match(wizard, /BOOTSTRAP_TLS_SKIP_WARNING/);
+    assert.match(wizard, /DEFAULT_BOOTSTRAP_TLS_ACTION/);
+    assert.match(wizard, /data-bootstrap-tls-action="skip"/);
+    assert.match(wizard, /data-bootstrap-tls-skip-warning/);
+    assert.match(wizard, /Skip for now and finish/);
+    assert.match(wizard, /HTTP until Settings/);
+    assert.doesNotMatch(wizard, /Steps cannot be skipped\./);
+    assert.equal(wizard.includes(BOOTSTRAP_TLS_SKIP_LABEL), true);
+    assert.equal(BOOTSTRAP_TLS_SKIP_WARNING.includes("HTTP until you enable TLS in Settings"), true);
+    assert.equal(BOOTSTRAP_STEP_HELP_HAS_SKIP(), true);
+
+    assert.equal(canOpenBootstrapStep(incompleteStatus(), "tls"), false);
+    const afterUrl = incompleteStatus({
+      persistence: true,
+      firstAdmin: true,
+      publicUrl: true,
+    });
+    assert.equal(currentBootstrapStep(afterUrl), "tls");
+    assert.equal(canOpenBootstrapStep(afterUrl, "tls"), true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.skipTlsOnlyWhenPublicUrlReady, true);
+  });
+
+  it("POSTs skip as {action:\"skip\"} only and never retains PEM or localStorage secrets", () => {
+    const skip = wizardTlsInput("skip", {
+      certPem: "-----BEGIN CERTIFICATE-----\nA\n-----END CERTIFICATE-----",
+      keyPem: "-----BEGIN PRIVATE KEY-----\nB\n-----END PRIVATE KEY-----",
+    });
+    assert.deepEqual(skip, { action: "skip" });
+    assert.equal(tlsSkipBodyIsActionOnly(skip), true);
+    assert.equal(tlsSkipBodyIsActionOnly(bootstrapTlsSkipBody()), true);
+    assert.equal("certPem" in (skip ?? {}), false);
+    assert.equal("keyPem" in (skip ?? {}), false);
+    assert.equal(bootstrapStatusRetainsSecrets(skip), false);
+
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.equal(wizardSourceRetainsSecrets(wizard), false);
+    assert.equal(wizard.includes("localStorage"), false);
+    assert.equal(wizard.includes("sessionStorage"), false);
+    assert.match(wizard, /wizardTlsInput/);
+    assert.match(wizard, /forgetTlsUploadDraft/);
+    assert.match(wizard, /setTlsDraft\(emptyTlsUploadDraft\(\)\)/);
+
+    const client = source("src/lib/first-run-bootstrap-client.ts");
+    assert.equal(client.includes("localStorage"), false);
+    assert.match(client, /wizardTlsInput/);
+    assert.match(client, /action:"skip"/);
+  });
+
+  it("surfaces skipped TLS on Settings #bootstrap / #tls and does not remount the wizard", () => {
+    const skipped: BootstrapStatus = {
+      complete: true,
+      incomplete: false,
+      skipped: false,
+      standaloneOnly: true,
+      steps: {
+        persistence: { ready: true },
+        firstAdmin: { ready: true },
+        publicUrl: { ready: true },
+        tls: { ready: true, mode: "skipped" },
+      },
+    };
+    assert.equal(tlsStepIsSkipped(skipped.steps.tls), true);
+    assert.equal(tlsSettingsDescription(skipped.steps.tls), BOOTSTRAP_TLS_SKIP_SETTINGS_COPY);
+    assert.match(BOOTSTRAP_TLS_SKIP_SETTINGS_COPY, /HTTP until you enable TLS here/);
+    assert.match(BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER, /TLS was skipped/);
+    assert.equal(settingsHandoffAfterComplete(skipped), true);
+    assert.equal(
+      shouldRemountWizard({
+        embed: false,
+        complete: true,
+        settingsSurface: true,
+      }),
+      false,
+    );
+    assert.equal(FIRST_RUN_WIZARD_COMPLETE_HREF, "/workflows");
+    assert.equal(SETTINGS_TLS_HREF, "/settings#tls");
+
+    const settings = source("src/components/settings/BootstrapSettings.tsx");
+    assert.equal(settingsSourceRemountsWizard(settings), false);
+    assert.match(settings, /tlsStepIsSkipped/);
+    assert.match(settings, /tlsSettingsDescription/);
+    assert.match(settings, /BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER/);
+    assert.match(settings, /data-bootstrap-tls-skipped/);
+    assert.match(settings, /id="tls"/);
+    assert.match(settings, /SETTINGS_TLS_HREF/);
+    assert.match(settings, /Enable TLS later/);
+
+    const parsedNullMode = parseBootstrapStatus({
+      ...skipped,
+      steps: {
+        ...skipped.steps,
+        tls: { ready: false },
+      },
+    });
+    assert.equal(parsedNullMode?.steps.tls.mode, undefined);
+    assert.equal(tlsStepIsSkipped(parsedNullMode!.steps.tls), false);
+  });
+
+  it("never mounts skip chrome on embed", () => {
+    const embed = decideBootstrapChrome({
+      embed: true,
+      statusCode: 200,
+      body: incompleteStatus({
+        persistence: true,
+        firstAdmin: true,
+        publicUrl: true,
+      }),
+    });
+    assert.equal(embed.chrome, "ignore");
+    assert.equal(shouldFetchBootstrapGate(true), false);
+    const embedChrome = source("src/components/embed/EmbedChrome.tsx");
+    assert.equal(embedChrome.includes("FirstRunWizard"), false);
+    assert.equal(embedChrome.includes("Skip for now"), false);
+    assert.equal(embedChrome.includes("setBootstrapTls"), false);
+  });
+});
+
+function BOOTSTRAP_STEP_HELP_HAS_SKIP(): boolean {
+  const adapter = source("src/lib/first-run-bootstrap.ts");
+  return (
+    adapter.includes("Skip for now") &&
+    adapter.includes("HTTP until you enable TLS in Settings")
+  );
+}
