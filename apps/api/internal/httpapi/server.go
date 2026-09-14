@@ -404,6 +404,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("GET /api/v1/readiness", s.readiness)
 	mux.HandleFunc("GET /api/v1/bootstrap", s.getBootstrap)
+	mux.HandleFunc("POST /api/v1/bootstrap/persistence", s.postBootstrapPersistence)
 	mux.HandleFunc("GET /api/v1/metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/openapi.yaml", s.openapiYAML)
 	mux.HandleFunc("GET /api/v1/openapi.json", s.openapiJSON)

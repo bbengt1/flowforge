@@ -21,7 +21,7 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 | Landing page | `GET /api/v1/swagger` (links to the two documents; not an interactive explorer) |
 
 OpenAPI **3.0.3**. `info.version` is the document version (currently
-`0.19.0` in the YAML). That is not the URL prefix.
+`0.20.0` in the YAML). That is not the URL prefix.
 
 There is no code-generated spec. When a route or problem code changes,
 update `apps/api/openapi/openapi.yaml` in the same change as
