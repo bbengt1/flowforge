@@ -136,6 +136,8 @@ export const FIRST_RUN_BOOTSTRAP = {
   incompleteShowsWizard: true,
   completeGoesHome: true,
   unauthenticated401IsHome: true,
+  mutation401ClearsStaleSession: true,
+  mutation401DoesNotSkipWizard: true,
   neverInventSecondGate: true,
   failClosedStepOrder: true,
   doNotSkipAhead: true,
@@ -165,7 +167,10 @@ export const FIRST_RUN_BOOTSTRAP = {
 } as const;
 
 export const FIRST_RUN_BOOTSTRAP_HELP =
-  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or 401 goes to product home. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser.";
+  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — clear it and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser.";
+
+export const WIZARD_STALE_SESSION_HELP =
+  "The browser session expired. Clearing the stale cookie so first-run setup can continue.";
 
 export const FIRST_RUN_BOOTSTRAP_SOURCES = [
   "src/lib/first-run-bootstrap.ts",
@@ -599,9 +604,26 @@ export function bootstrapProblemMessage(
     );
   }
   if (statusCode === 401) {
-    return "Setup is complete. Sign in to open product home.";
+    return WIZARD_STALE_SESSION_HELP;
   }
   return detail || problem?.title || `Request failed (${statusCode}).`;
+}
+
+/** GET 401 after complete is home. Mutation 401 while incomplete is a stale cookie. */
+export function wizardMutation401IsStaleSession(
+  statusCode: number,
+  problem?: Pick<ProblemDetails, "code" | "status"> | null,
+): boolean {
+  if (statusCode !== 401) {
+    return false;
+  }
+  const code = problem?.code ?? "";
+  return (
+    code === "" ||
+    code === "unauthenticated" ||
+    code === "stale-session" ||
+    code === "upstream-error"
+  );
 }
 
 export function mutationConflictIsComplete(
@@ -640,6 +662,8 @@ export function firstRunBootstrapHoldsHardLines(): boolean {
     FIRST_RUN_BOOTSTRAP.skipTlsNotSilentDefault &&
     FIRST_RUN_BOOTSTRAP.httpUntilTlsInSettings &&
     FIRST_RUN_BOOTSTRAP.settingsSurfacesSkippedTls &&
+    FIRST_RUN_BOOTSTRAP.mutation401ClearsStaleSession &&
+    FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard &&
     R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly
   );
 }

@@ -44,9 +44,11 @@ import {
   tlsSettingsDescription,
   tlsSkipBodyIsActionOnly,
   tlsStepIsSkipped,
+  wizardMutation401IsStaleSession,
   wizardSourceHasPasswordField,
   wizardSourceRetainsSecrets,
   wizardTlsInput,
+  WIZARD_STALE_SESSION_HELP,
   type BootstrapStatus,
 } from "./first-run-bootstrap.ts";
 import {
@@ -104,6 +106,8 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(B6_KEEP_STORY_OPEN, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.noNewApi, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.neverInventSecondGate, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.mutation401ClearsStaleSession, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard, true);
     assert.equal(firstRunBootstrapHoldsHardLines(), true);
     assert.ok(FIRST_RUN_BOOTSTRAP_SOURCES.includes("src/components/bootstrap/FirstRunWizard.tsx"));
   });
@@ -306,6 +310,10 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.match(bootstrapProblemMessage(403), /standalone only/);
     assert.match(bootstrapProblemMessage(400), /credentials are never echoed/);
     assert.match(bootstrapProblemMessage(503), /PostgreSQL/);
+    assert.equal(bootstrapProblemMessage(401), WIZARD_STALE_SESSION_HELP);
+    assert.equal(wizardMutation401IsStaleSession(401, { code: "unauthenticated", status: 401 }), true);
+    assert.equal(wizardMutation401IsStaleSession(409, { code: "conflict", status: 409 }), false);
+    assert.equal(FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard, true);
     assert.equal(
       mutationConflictIsComplete(409, {
         detail: "Bootstrap is already complete. TLS is edited in Settings.",
@@ -545,6 +553,72 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(tlsSkipBodyIsActionOnly(JSON.parse(seen.body ?? "{}")), true);
     assert.equal(seen.body?.includes("certPem"), false);
     assert.equal(seen.body?.includes("keyPem"), false);
+  });
+
+  it("clears a stale session on mutation 401 and retries without skipping the wizard", async () => {
+    const urls: string[] = [];
+    let persistenceCalls = 0;
+    setActiveSession({
+      issuer: "https://idp.example",
+      subject: "admin-1",
+      displayName: "Operator",
+      sessionId: "sess-stale",
+      idleExpiresAt: null,
+      absoluteExpiresAt: null,
+      csrfToken: "csrf-stale",
+    });
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("/bootstrap/persistence")) {
+        persistenceCalls += 1;
+        if (persistenceCalls === 1) {
+          return new Response(
+            JSON.stringify({
+              type: "urn:flowforge:problem:unauthenticated",
+              title: "Unauthenticated",
+              status: 401,
+              detail: "Authentication is required.",
+              instance: "/api/v1/bootstrap/persistence",
+              code: "unauthenticated",
+              request_id: "req-stale",
+            }),
+            {
+              status: 401,
+              headers: { "Content-Type": "application/problem+json" },
+            },
+          );
+        }
+        return new Response(JSON.stringify(incompleteStatus({ persistence: true })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/session/logout")) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response("unexpected", { status: 500 });
+    }) as typeof fetch;
+
+    const result = await confirmBootstrapPersistence({ embed: false });
+    assert.equal(result.ok, true);
+    assert.equal(persistenceCalls, 2);
+    assert.ok(urls.includes("/api/v1/session/logout"));
+    assert.equal(result.ok && result.status.steps.persistence.ready, true);
+    assert.equal(
+      decideBootstrapChrome({
+        embed: false,
+        statusCode: 200,
+        body: result.ok ? result.status : null,
+      }).chrome,
+      "wizard",
+    );
+
+    const client = source("src/lib/first-run-bootstrap-client.ts");
+    assert.match(client, /endSession/);
+    assert.match(client, /wizardMutation401IsStaleSession/);
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.doesNotMatch(wizard, /onComplete\(\);\s*\n\s*return;[\s\S]*401/);
   });
 });
 

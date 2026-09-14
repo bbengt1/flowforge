@@ -10,6 +10,7 @@
 import { callIdentityProxy } from "./identity-client.ts";
 import { emptyDevIdentity, type DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
+import { endSession } from "./session-client.ts";
 import {
   BOOTSTRAP_ADMINS_PATH,
   BOOTSTRAP_PERSISTENCE_PATH,
@@ -21,6 +22,7 @@ import {
   decideBootstrapChrome,
   emptyTlsUploadDraft,
   parseBootstrapStatus,
+  wizardMutation401IsStaleSession,
   type BootstrapAdminInput,
   type BootstrapChromeDecision,
   type BootstrapStatus,
@@ -182,12 +184,13 @@ export async function confirmBootstrapPersistence(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_PERSISTENCE_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_PERSISTENCE_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: { confirm: true } },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_PERSISTENCE_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: { confirm: true } },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function createBootstrapAdmin(input: {
@@ -198,12 +201,13 @@ export async function createBootstrapAdmin(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_ADMINS_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_ADMINS_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: bootstrapAdminBody(input.admin) },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_ADMINS_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: bootstrapAdminBody(input.admin) },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function setBootstrapPublicUrl(input: {
@@ -214,12 +218,13 @@ export async function setBootstrapPublicUrl(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_PUBLIC_URL_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_PUBLIC_URL_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: { publicBaseUrl: input.publicBaseUrl } },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_PUBLIC_URL_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: { publicBaseUrl: input.publicBaseUrl } },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function setBootstrapTls(input: {
@@ -251,12 +256,24 @@ export async function setBootstrapTls(input: {
       strippedKeys: [],
     };
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_TLS_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_TLS_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body },
+    ),
   );
-  return finishMutation(result);
+}
+
+async function postWizardMutation(
+  send: () => ReturnType<typeof callIdentityProxy<unknown>>,
+): Promise<BootstrapStatusResult> {
+  const first = finishMutation(await send());
+  if (first.ok || !wizardMutation401IsStaleSession(first.statusCode, first.problem)) {
+    return first;
+  }
+  await endSession();
+  return finishMutation(await send());
 }
 
 function finishMutation(
