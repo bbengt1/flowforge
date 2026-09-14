@@ -50,7 +50,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | --- | --- | --- |
 | `TRUSTED_PROXY_CIDRS` | empty | Comma-separated CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | Reject requests that are not HTTPS (direct TLS or a trusted proxy). |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process-level TLS. Both must be set or neither. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | empty | Optional process-level TLS. Both must be set or neither. First-run B.5 writes the created or uploaded PEM pair here (0600). Empty fails closed on `POST /bootstrap/tls` (`503`) — keys are never stored in PostgreSQL. Settings later reads `GET /bootstrap` `steps.tls.mode` only. |
 | `CORS_ALLOWED_ORIGINS` | empty | Exact browser origins allowed to make credentialed API calls. Empty fails closed. Wildcard is rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Browser session absolute lifetime. |

@@ -9,6 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 )
 
 func (s *Server) requireBootstrap(w http.ResponseWriter, r *http.Request) bool {
@@ -200,6 +201,88 @@ func (s *Server) postBootstrapPublicURL(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, st.Status())
 }
 
+// postBootstrapTLS is wizard step 4 (B.5). It enables TLS by creating
+// a self-signed certificate or accepting a one-shot PEM upload, writes
+// the pair to TLS_CERT_FILE / TLS_KEY_FILE, sets steps.tls via
+// Store.SetTLS, then MarkComplete. It never returns the key, PEM, or
+// KEK. ACME / Let’s Encrypt is out of scope.
+//
+// Auth matches incomplete-install GET /bootstrap and B.2–B.4: no
+// session is required while the gate is incomplete. After complete,
+// this wizard handler rejects with 409 (Settings-only). Embed
+// sessions are 403. CSRF is required when an ff_session cookie is
+// presented. Public URL must be ready first (fail-closed order).
+func (s *Server) postBootstrapTLS(w http.ResponseWriter, r *http.Request) {
+	if !s.requireBootstrap(w, r) {
+		return
+	}
+	st, err := s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if st.Complete {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Bootstrap is already complete. TLS is edited in Settings.")
+		return
+	}
+	if !s.allowIncompleteWizard(w, r) {
+		return
+	}
+	if !st.PublicURLReady {
+		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Public URL must be ready before enabling TLS.")
+		return
+	}
+	action, certPEM, keyPEM, ok := decodeBootstrapTLS(w, r)
+	if !ok {
+		return
+	}
+	if s.tlsMaterials == nil {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS certificate files are not configured.")
+		return
+	}
+	mode := bootstrap.TLSModeSelfSigned
+	switch action {
+	case tlsActionCreateSelfSigned:
+		hosts := tlsmaterial.HostsFromPublicBaseURL(st.PublicBaseURL)
+		certPEM, keyPEM, err = tlsmaterial.CreateSelfSigned(hosts, s.clock().UTC())
+		if err != nil {
+			writeTLSMaterialError(w, r, err)
+			return
+		}
+	case tlsActionUpload:
+		mode = bootstrap.TLSModeUploaded
+		if err := tlsmaterial.ValidatePair(certPEM, keyPEM); err != nil {
+			writeTLSMaterialError(w, r, err)
+			return
+		}
+	default:
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
+		return
+	}
+	if err := s.tlsMaterials.Write(certPEM, keyPEM); err != nil {
+		writeTLSMaterialError(w, r, err)
+		return
+	}
+	if err := s.bootstrap.SetTLS(r.Context(), true, mode); err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if err := s.bootstrap.MarkComplete(r.Context()); err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	st, err = s.bootstrap.Get(r.Context())
+	if err != nil {
+		writeBootstrapError(w, r, err)
+		return
+	}
+	if !st.TLSReady || !st.Complete {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS is not ready.")
+		return
+	}
+	writeJSON(w, http.StatusOK, st.Status())
+}
+
 // allowIncompleteWizard reuses B.1 incomplete openness. A presented
 // session cookie is validated (CSRF on POST). Embed-bound sessions are
 // forbidden — the wizard is standalone only.
@@ -373,6 +456,96 @@ func publicURLBodyForbidden(key string) bool {
 	default:
 		return false
 	}
+}
+
+const (
+	tlsActionCreateSelfSigned = "create-self-signed"
+	tlsActionUpload           = "upload"
+)
+
+func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, certPEM, keyPEM []byte, ok bool) {
+	var raw map[string]any
+	if !DecodeJSON(w, r, &raw) {
+		return "", nil, nil, false
+	}
+	var certStr, keyStr string
+	hasCert, hasKey := false, false
+	for key, value := range raw {
+		norm := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+		if tlsBodyForbidden(norm) {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS accepts action create-self-signed or upload. Credentials other than a one-shot certificate pair are not accepted.")
+			return "", nil, nil, false
+		}
+		switch norm {
+		case "action":
+			s, isStr := value.(string)
+			if !isStr {
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
+				return "", nil, nil, false
+			}
+			action = strings.TrimSpace(s)
+		case "certpem", "cert_pem":
+			s, isStr := value.(string)
+			if !isStr {
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "certPem must be a certificate.")
+				return "", nil, nil, false
+			}
+			certStr = s
+			hasCert = true
+		case "keypem", "key_pem":
+			s, isStr := value.(string)
+			if !isStr {
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "keyPem must be a private key.")
+				return "", nil, nil, false
+			}
+			keyStr = s
+			hasKey = true
+		default:
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS accepts action create-self-signed or upload.")
+			return "", nil, nil, false
+		}
+	}
+	switch strings.ToLower(action) {
+	case "acme", "letsencrypt", "lets-encrypt", "lets_encrypt":
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "ACME / Let's Encrypt is not available.")
+		return "", nil, nil, false
+	}
+	switch action {
+	case tlsActionCreateSelfSigned:
+		if hasCert || hasKey {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "create-self-signed does not accept a certificate or key.")
+			return "", nil, nil, false
+		}
+		return action, nil, nil, true
+	case tlsActionUpload:
+		if strings.TrimSpace(certStr) == "" || strings.TrimSpace(keyStr) == "" {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "upload requires certPem and keyPem.")
+			return "", nil, nil, false
+		}
+		return action, []byte(certStr), []byte(keyStr), true
+	default:
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
+		return "", nil, nil, false
+	}
+}
+
+func tlsBodyForbidden(key string) bool {
+	switch key {
+	case "password", "passwd", "dsn", "database_url", "databaseurl",
+		"kek", "secret", "secrets", "private_key", "privatekey",
+		"token", "hash", "ciphertext":
+		return true
+	default:
+		return false
+	}
+}
+
+func writeTLSMaterialError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, tlsmaterial.ErrInvalid) {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "The certificate and key are not valid.")
+		return
+	}
+	WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS certificate files are not available.")
 }
 
 func writeBootstrapError(w http.ResponseWriter, r *http.Request, err error) {

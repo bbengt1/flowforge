@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -52,6 +53,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	tlsMaterials, err := loadTLSMaterials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		log.Error("tls material store", "error", err)
+		os.Exit(1)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewWithDeps(httpapi.Deps{
@@ -59,6 +66,7 @@ func main() {
 			Keys:                 cfg.VaultKeys,
 			JobBindingKey:        wfstore.LoadJobBindingKey(),
 			Objects:              objects,
+			TLSMaterials:         tlsMaterials,
 			DownloadTTL:          cfg.ArtifactDownloadTTL,
 			ArtifactMaxBytes:     cfg.ArtifactMaxBytes,
 			EmbedKeys:            cfg.EmbedKeys,
@@ -128,6 +136,15 @@ func main() {
 		log.Error("shutdown", "error", err)
 		os.Exit(1)
 	}
+}
+
+func loadTLSMaterials(certPath, keyPath string) (tlsmaterial.Store, error) {
+	certPath = strings.TrimSpace(certPath)
+	keyPath = strings.TrimSpace(keyPath)
+	if certPath == "" && keyPath == "" {
+		return nil, nil
+	}
+	return tlsmaterial.NewFiles(certPath, keyPath)
 }
 
 func loadArtifactObjects(root string) (artifact.Objects, string, error) {

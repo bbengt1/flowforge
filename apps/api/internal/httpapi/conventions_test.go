@@ -217,7 +217,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 	}
 	paths, _ := doc["paths"].(map[string]any)
 	for _, p := range []string{
-		"/health", "/readiness", "/bootstrap", "/bootstrap/persistence", "/bootstrap/admins", "/bootstrap/public-url", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
+		"/health", "/readiness", "/bootstrap", "/bootstrap/persistence", "/bootstrap/admins", "/bootstrap/public-url", "/bootstrap/tls", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
 		"/session", "/session/refresh", "/session/logout", "/session/audit-events",
 		"/embed/catalog", "/embed/jwks", "/embed/assertions", "/embed/exchange", "/embed/keys/rotate",
 		"/portal/adapter", "/portal/adapter/assertions",

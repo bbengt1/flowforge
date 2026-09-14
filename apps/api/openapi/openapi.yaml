@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.21.0
+  version: 0.22.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -50,7 +50,8 @@ info:
       normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
       `POST /bootstrap/admins` is wizard step 2 (B.3).
       `POST /bootstrap/public-url` is wizard step 3 (B.4).
-      It must not be used to gate `/embed/v1`.
+      `POST /bootstrap/tls` is wizard step 4 (B.5) and marks bootstrap
+      complete. It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
 paths:
@@ -517,6 +518,141 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/DependencyUnavailable"
+  /bootstrap/tls:
+    post:
+      operationId: setBootstrapTLS
+      summary: Enable first-run TLS and complete bootstrap
+      description: |
+        Wizard step 4 (B.5). Enables TLS by creating a self-signed
+        certificate or uploading a PEM pair (`certPem` + `keyPem`)
+        once. Materials are written to process `TLS_CERT_FILE` /
+        `TLS_KEY_FILE`. Status is updated via `Store.SetTLS`, then
+        `Store.MarkComplete` flips the gate so the wizard never
+        reappears.
+
+        Body is `{action:"create-self-signed"}` or
+        `{action:"upload", certPem, keyPem}`. ACME / Let’s Encrypt is
+        **out of scope**. Success is status-only (`BootstrapStatus`)
+        with `steps.tls.ready=true`, `steps.tls.mode` (`self_signed`
+        or `uploaded`), and `complete=true`. **Never returns** the
+        private key, PEM, or KEK.
+
+        Auth matches incomplete-install `GET /bootstrap` and B.2–B.4:
+        no session is required while the gate is incomplete. After
+        `complete`, this wizard handler is **409 Conflict**
+        (Settings-only). Public URL must be ready first (**409**
+        fail-closed order). Embed sessions are `403`. CSRF is required
+        when an `ff_session` cookie is presented. Unauthenticated
+        incomplete installs have no session, so CSRF does not apply.
+
+        Settings later reads `GET /bootstrap` `steps.tls.ready` /
+        `steps.tls.mode` only. Further TLS edits are Settings-only.
+
+        **Never call this from `/embed/v1`.**
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapTLS"
+            examples:
+              createSelfSigned:
+                value:
+                  action: create-self-signed
+              upload:
+                summary: PEM POST once; never echoed
+                value:
+                  action: upload
+                  certPem: "(certificate PEM posted once; never returned)"
+                  keyPem: "(private key PEM posted once; never returned)"
+      responses:
+        "200":
+          description: TLS ready and bootstrap complete (status only; no secrets)
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              example:
+                complete: true
+                incomplete: false
+                skipped: false
+                standaloneOnly: true
+                steps:
+                  persistence:
+                    ready: true
+                  firstAdmin:
+                    ready: true
+                  publicUrl:
+                    ready: true
+                  tls:
+                    ready: true
+                    mode: self_signed
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          description: |
+            Bootstrap is already complete (Settings-only), or
+            public URL is not ready (fail-closed step order).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                complete:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: Bootstrap is already complete. TLS is edited in Settings.
+                    instance: /api/v1/bootstrap/tls
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+                publicUrlNotReady:
+                  value:
+                    type: urn:flowforge:problem:conflict
+                    title: Conflict
+                    status: 409
+                    detail: Public URL must be ready before enabling TLS.
+                    instance: /api/v1/bootstrap/tls
+                    code: conflict
+                    request_id: 0123456789abcdef0123456789abcdef
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: |
+            TLS_CERT_FILE / TLS_KEY_FILE are not configured, the
+            files are not writable, or the bootstrap store is down.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: urn:flowforge:problem:dependency-unavailable
+                title: Dependency Unavailable
+                status: 503
+                detail: TLS certificate files are not configured.
+                instance: /api/v1/bootstrap/tls
+                code: dependency-unavailable
+                request_id: 0123456789abcdef0123456789abcdef
   /metrics:
     get:
       operationId: getMetrics
@@ -7311,6 +7447,35 @@ components:
             Origin only (`https://host[:port]`). Trailing slash is
             stripped. No userinfo, query, fragment, or path. HTTP is
             documented for local (for example `http://localhost:3000`).
+    BootstrapTLS:
+      description: |
+        Wizard step 4 body. PEM fields POST once and are never
+        returned. ACME is not accepted.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action:
+              type: string
+              enum: [create-self-signed]
+        - type: object
+          additionalProperties: false
+          required: [action, certPem, keyPem]
+          properties:
+            action:
+              type: string
+              enum: [upload]
+            certPem:
+              type: string
+              minLength: 1
+              maxLength: 262144
+              description: Certificate PEM. POST once. Never returned.
+            keyPem:
+              type: string
+              minLength: 1
+              maxLength: 262144
+              description: Private key PEM. POST once. Never returned.
     BootstrapStep:
       type: object
       additionalProperties: false
