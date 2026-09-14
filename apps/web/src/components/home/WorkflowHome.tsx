@@ -80,6 +80,7 @@ import {
   type WorkflowHomeItem,
 } from "@/lib/workflow-home";
 import {
+  OVERVIEW_CARD_SURFACE_CLASS,
   OVERVIEW_CREATE_LABEL,
   OVERVIEW_DEFAULT_SORT,
   OVERVIEW_FILTER_LABEL,
@@ -2594,7 +2595,7 @@ function WorkflowHomeCards({
           return (
             <li
               key={item.id}
-              className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm"
+              className={OVERVIEW_CARD_SURFACE_CLASS}
               data-o1="card"
               data-home-row-scan="card"
               {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
@@ -2695,57 +2696,66 @@ function HomeEmptyTeach({
   onNewFolder: () => void;
 }) {
   return (
-    <section
-      data-uxl6="home-empty"
-      data-f5={unfiledEmpty ? "unfiled-empty-none" : "home-empty"}
-      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
+    <div
+      data-o1="card-list"
+      data-o3={unfiledEmpty ? "unfiled-empty" : "empty-home"}
     >
-      <h2 className="text-base font-semibold">
-        {unfiledEmpty ? UNFILED_EMPTY_HEADING : HOME_EMPTY_HEADING}
-      </h2>
-      <p className="mt-2 max-w-3xl text-sm text-zinc-600">
-        {unfiledEmpty ? UNFILED_EMPTY_NONE_HELP : HOME_EMPTY_HELP}
-      </p>
-      {canCreate || canCreateFolder ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {canCreate ? (
-            <>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={onCreate}
-                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-              >
-                {HOME_EMPTY_CREATE_LABEL}
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={onImport}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {HOME_EMPTY_IMPORT_LABEL}
-              </button>
-            </>
-          ) : null}
-          {canCreateFolder ? (
-            <button
-              type="button"
-              data-home-empty-verb="new-folder"
-              disabled={pending}
-              onClick={onNewFolder}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-            >
-              {NEW_FOLDER_LABEL}
-            </button>
-          ) : null}
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-zinc-500">
-          Creating a draft requires <code className="font-mono">workflow.edit</code>.
-        </p>
-      )}
-    </section>
+      <ul className="space-y-2">
+        <li
+          className={OVERVIEW_CARD_SURFACE_CLASS}
+          data-o1="card"
+          data-o3="empty-card"
+          data-uxl6="home-empty"
+          data-f5={unfiledEmpty ? "unfiled-empty-none" : "home-empty"}
+        >
+          <h2 className="text-base font-medium text-zinc-900">
+            {unfiledEmpty ? UNFILED_EMPTY_HEADING : HOME_EMPTY_HEADING}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            {unfiledEmpty ? UNFILED_EMPTY_NONE_HELP : HOME_EMPTY_HELP}
+          </p>
+          {canCreate || canCreateFolder ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canCreate ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={onCreate}
+                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                  >
+                    {HOME_EMPTY_CREATE_LABEL}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={onImport}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    {HOME_EMPTY_IMPORT_LABEL}
+                  </button>
+                </>
+              ) : null}
+              {canCreateFolder ? (
+                <button
+                  type="button"
+                  data-home-empty-verb="new-folder"
+                  disabled={pending}
+                  onClick={onNewFolder}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  {NEW_FOLDER_LABEL}
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-zinc-500">
+              Creating a draft requires <code className="font-mono">workflow.edit</code>.
+            </p>
+          )}
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -2771,69 +2781,77 @@ function FolderEmpty({
   onDelete: () => void;
 }) {
   return (
-    <section
-      data-f5="folder-empty"
-      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
-    >
-      <h2 className="text-base font-semibold">{FOLDER_EMPTY_HEADING}</h2>
-      <p className="mt-2 max-w-3xl text-sm text-zinc-600">{FOLDER_EMPTY_HELP}</p>
-      {canCreate || canMutate ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {canCreate ? (
-            <>
-              <button
-                type="button"
-                data-home-folder-empty-verb="create"
-                disabled={pending}
-                onClick={onCreate}
-                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
-              >
-                {FOLDER_EMPTY_CREATE_LABEL}
-              </button>
-              <button
-                type="button"
-                data-home-folder-empty-verb="import"
-                disabled={pending}
-                onClick={onImport}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {HOME_EMPTY_IMPORT_LABEL}
-              </button>
-            </>
-          ) : null}
-          {canMutate ? (
-            <>
-              <button
-                type="button"
-                data-home-folder-empty-verb="move"
-                disabled={pending || !moveAvailable}
-                title={
-                  moveAvailable
-                    ? undefined
-                    : "No workflows are available to move."
-                }
-                onClick={onMove}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {FOLDER_EMPTY_MOVE_LABEL}
-              </button>
-              <button
-                type="button"
-                data-home-folder-empty-verb="delete"
-                disabled={pending || !deleteAllowed}
-                title={deleteAllowed ? undefined : FOLDER_NOT_EMPTY_HELP}
-                onClick={onDelete}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {DELETE_FOLDER_LABEL}
-              </button>
-            </>
-          ) : null}
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-zinc-500">{FOLDER_EMPTY_VIEWER_HELP}</p>
-      )}
-    </section>
+    <div data-o1="card-list" data-o3="empty-folder">
+      <ul className="space-y-2">
+        <li
+          className={OVERVIEW_CARD_SURFACE_CLASS}
+          data-o1="card"
+          data-o3="empty-card"
+          data-f5="folder-empty"
+        >
+          <h2 className="text-base font-medium text-zinc-900">
+            {FOLDER_EMPTY_HEADING}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">{FOLDER_EMPTY_HELP}</p>
+          {canCreate || canMutate ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canCreate ? (
+                <>
+                  <button
+                    type="button"
+                    data-home-folder-empty-verb="create"
+                    disabled={pending}
+                    onClick={onCreate}
+                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                  >
+                    {FOLDER_EMPTY_CREATE_LABEL}
+                  </button>
+                  <button
+                    type="button"
+                    data-home-folder-empty-verb="import"
+                    disabled={pending}
+                    onClick={onImport}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    {HOME_EMPTY_IMPORT_LABEL}
+                  </button>
+                </>
+              ) : null}
+              {canMutate ? (
+                <>
+                  <button
+                    type="button"
+                    data-home-folder-empty-verb="move"
+                    disabled={pending || !moveAvailable}
+                    title={
+                      moveAvailable
+                        ? undefined
+                        : "No workflows are available to move."
+                    }
+                    onClick={onMove}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    {FOLDER_EMPTY_MOVE_LABEL}
+                  </button>
+                  <button
+                    type="button"
+                    data-home-folder-empty-verb="delete"
+                    disabled={pending || !deleteAllowed}
+                    title={deleteAllowed ? undefined : FOLDER_NOT_EMPTY_HELP}
+                    onClick={onDelete}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    {DELETE_FOLDER_LABEL}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-zinc-500">{FOLDER_EMPTY_VIEWER_HELP}</p>
+          )}
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -2846,52 +2864,66 @@ function UnfiledEmptyFiled({
 }) {
   const tree = buildFolderTree(folders);
   return (
-    <section
-      data-f5="unfiled-empty-filed"
-      className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 shadow-sm"
-    >
-      <h2 className="text-base font-semibold">{UNFILED_EMPTY_HEADING}</h2>
-      <p className="mt-2 max-w-3xl text-sm text-zinc-600">
-        {UNFILED_EMPTY_FILED_HELP}
-      </p>
-      <p className="mt-2 text-sm text-zinc-600">{UNFILED_EMPTY_TREE_LABEL}.</p>
-      {tree.length > 0 ? (
-        <ul className="mt-4 flex flex-wrap gap-2">
-          {tree.map((node) => (
-            <li key={node.id}>
-              <button
-                type="button"
-                data-f5="unfiled-empty-tree"
-                data-folder-id={node.id}
-                onClick={() => onSelectFolder({ kind: "folder", id: node.id })}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              >
-                {node.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
+    <div data-o1="card-list" data-o3="unfiled-empty">
+      <ul className="space-y-2">
+        <li
+          className={OVERVIEW_CARD_SURFACE_CLASS}
+          data-o1="card"
+          data-o3="empty-card"
+          data-f5="unfiled-empty-filed"
+        >
+          <h2 className="text-base font-medium text-zinc-900">
+            {UNFILED_EMPTY_HEADING}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">{UNFILED_EMPTY_FILED_HELP}</p>
+          <p className="mt-1 text-sm text-zinc-500">{UNFILED_EMPTY_TREE_LABEL}.</p>
+          {tree.length > 0 ? (
+            <ul className="mt-3 flex flex-wrap gap-1">
+              {tree.map((node) => (
+                <li key={node.id}>
+                  <button
+                    type="button"
+                    data-f5="unfiled-empty-tree"
+                    data-folder-id={node.id}
+                    onClick={() => onSelectFolder({ kind: "folder", id: node.id })}
+                    className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:border-teal-700 hover:text-teal-800"
+                  >
+                    {node.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      </ul>
+    </div>
   );
 }
 
 function HomeFilteredEmpty({ onClear }: { onClear: () => void }) {
   return (
-    <section
-      data-uxl6="home-filtered"
-      className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center"
-    >
-      <h2 className="text-lg font-semibold">{HOME_FILTERED_EMPTY_HEADING}</h2>
-      <p className="mt-2 text-sm text-zinc-600">{HOME_FILTERED_EMPTY_HELP}</p>
-      <button
-        type="button"
-        onClick={onClear}
-        className="mt-4 text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
-      >
-        Clear filters
-      </button>
-    </section>
+    <div data-o1="card-list" data-o3="filtered-empty">
+      <ul className="space-y-2">
+        <li
+          className={OVERVIEW_CARD_SURFACE_CLASS}
+          data-o1="card"
+          data-o3="empty-card"
+          data-uxl6="home-filtered"
+        >
+          <h2 className="text-base font-medium text-zinc-900">
+            {HOME_FILTERED_EMPTY_HEADING}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">{HOME_FILTERED_EMPTY_HELP}</p>
+          <button
+            type="button"
+            onClick={onClear}
+            className="mt-3 text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          >
+            Clear filters
+          </button>
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -2905,17 +2937,19 @@ export function TemplateGrid({
   onSelect: (template: WorkflowTemplate) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold">Reviewed templates</h2>
-      <p className="mt-1 text-sm text-zinc-600">{HOME_EMPTY_TEMPLATE_HELP}</p>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div data-o1="card-list" data-o3="template-cards">
+      <h2 className="text-base font-medium text-zinc-900">Reviewed templates</h2>
+      <p className="mt-1 text-sm text-zinc-500">{HOME_EMPTY_TEMPLATE_HELP}</p>
+      <ul className="mt-3 space-y-2">
         {WORKFLOW_TEMPLATES.map((template) => (
           <li
             key={template.id}
-            className="rounded-xl border border-zinc-200 p-4"
+            className={OVERVIEW_CARD_SURFACE_CLASS}
+            data-o1="card"
+            data-o3="template-card"
           >
-            <h3 className="font-medium text-zinc-900">{template.title}</h3>
-            <p className="mt-1 text-sm text-zinc-600">{template.description}</p>
+            <h3 className="text-base font-medium text-zinc-900">{template.title}</h3>
+            <p className="mt-1 text-sm text-zinc-500">{template.description}</p>
             {canCreate ? (
               <button
                 type="button"
@@ -2933,6 +2967,6 @@ export function TemplateGrid({
           </li>
         ))}
       </ul>
-    </section>
+    </div>
   );
 }
