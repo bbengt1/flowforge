@@ -42,6 +42,15 @@ export default function WorkflowsPage() {
           and stays a non-recursive{" "}
           <code className="font-mono text-sm">?folderId=</code> filter —
           not Miller columns, not primary browse.
+          The same Overview cards + compact Finder rail mount on{" "}
+          <code className="font-mono text-sm">/embed/v1/workflows</code>{" "}
+          after <code className="font-mono text-sm">session.embed</code>{" "}
+          (O.4 / #328 — <strong>keep #328 open</strong>). Missing{" "}
+          <code className="font-mono text-sm">session.embed</code> is an
+          ADV-021 alert. Host query is display-only. Viewers are
+          select-only. The tree comes from the API, not{" "}
+          <code className="font-mono text-sm">localStorage</code>. No
+          second tree.
           Scan ends remain activation (published version active for webhook
           or schedule) and last run (waiting or indeterminate when those
           joins already exist). Create and import use{" "}

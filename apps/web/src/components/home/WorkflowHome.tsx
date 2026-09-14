@@ -293,12 +293,16 @@ function WorkflowHomeSession() {
   const [moveIntoWorkflowId, setMoveIntoWorkflowId] = useState("");
 
   const canView = ready && canSeeWorkflowsNav(permissions);
-  const canCreate = ready && canCreateWorkflows(permissions);
   const canMutateFolders =
     ready &&
     (embed
       ? canMutateEmbedWorkflowFolders(permissions, session.embedChrome)
       : canMutateWorkflowFolders(permissions));
+  const canCreate =
+    ready &&
+    (embed
+      ? canMutateEmbedWorkflowFolders(permissions, session.embedChrome)
+      : canCreateWorkflows(permissions));
   const rowCapabilities = productHomeCapabilities(ready ? permissions : null);
   const canExecute =
     ready && canOfferManualStart(permissions) && rowCapabilities.canExecute;
@@ -1205,6 +1209,9 @@ function WorkflowHomeSession() {
       data-uxl8="home"
       data-f7={embed ? "embed-home" : "standalone-home"}
       data-f7-tree="api"
+      data-o4={embed ? "embed-overview" : "standalone-overview"}
+      data-o4-tree="api"
+      data-o4-viewer={canMutateFolders ? "editor" : "select-only"}
       className="space-y-6"
     >
       {!ready ? (

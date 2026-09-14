@@ -384,6 +384,22 @@ Acceptance:
 - Embed session without `workflow.edit` cannot mutate folders.
 - CHIPS / Portal iframe: tree comes from the API, not `localStorage`.
 
+### O.4 — Embed Overview parity
+
+**Owner:** Chloe.
+**Effort:** S.
+**Blocked by:** O.1–O.3; F.7.
+
+Acceptance:
+
+- `/embed/v1/workflows` shows the **same** Overview cards + compact Finder rail after `session.embed`. No second tree. Prefer shared `WorkflowHome` — do not fork embed Overview.
+- Missing `session.embed` is still an ADV-021 alert (fail-closed). Host `?tenant=` / `?workbench=` stay display-only.
+- Viewers are select-only — no create / rename / delete / move without `workflow.edit`.
+- CHIPS / Portal iframe: tree comes from `GET /workflow-folders`, not `localStorage`.
+- Existing APIs only. No jonny change. Skip Personal / link-count / stats.
+
+Keep #328 open.
+
 ---
 
 ### Story table (Arie)
@@ -397,6 +413,7 @@ Acceptance:
 | F.5 | Empty states + Unfiled | Chloe | F.2 | S |
 | F.6 | Search / filter across folders | Chloe (jonny if `q`) | F.2 | M |
 | F.7 | Embed parity | Chloe | F.2–F.6 | S |
+| O.4 | Embed Overview parity | Chloe | O.1–O.3, F.7 | S |
 
 ---
 
