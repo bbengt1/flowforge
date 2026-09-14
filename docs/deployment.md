@@ -235,7 +235,9 @@ existing `/tmp` tmpfs as UID **65532**. Wizard step 4
 (`POST /api/v1/bootstrap/tls` `{action:"create-self-signed"}` or
 upload) then succeeds without hand-setting env. Materials stay on
 disk (0600). `instance_bootstrap` stores **status only** — never
-PEM. Responses never echo the key.
+PEM. Responses never echo the key. Local compose stays **HTTP**
+until both files exist; a process restart is required for
+`ListenAndServeTLS` to pick them up.
 
 Those files live on tmpfs and are lost when the container is
 recreated. Production / `deploy/k8s` must mount durable paths.

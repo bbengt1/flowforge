@@ -13,4 +13,4 @@ Optional direct TLS on the process (no proxy): `TLS_CERT_FILE` and `TLS_KEY_FILE
 
 First-run wizard B.5 (`POST /api/v1/bootstrap/tls`) writes a created self-signed pair or an uploaded PEM pair to those same paths (atomic replace, key `0600`). PostgreSQL `instance_bootstrap` stores only `tls_ready` / `tls_mode`. Settings later reads `GET /api/v1/bootstrap` `steps.tls.mode` — never the key. Empty paths fail closed (`503`). A process restart is required for `ListenAndServeTLS` to pick up newly written files. Ingress-terminated installs still set the paths so materials have a durable, operator-controlled destination.
 
-Local compose defaults writable `/tmp/flowforge-tls/{cert,key}.pem` on the API `/tmp` tmpfs so path-2 wizard B.5 can write without hand-setting env (`tlsmaterial` mkdir, UID 65532). Do not copy those localhost defaults into `deploy/k8s`.
+Local compose defaults writable `/tmp/flowforge-tls/{cert,key}.pem` on the API `/tmp` tmpfs so path-2 wizard B.5 can write without hand-setting env (`tlsmaterial` mkdir, UID 65532). Listen stays HTTP until both files exist. Do not copy those localhost defaults into `deploy/k8s`.
