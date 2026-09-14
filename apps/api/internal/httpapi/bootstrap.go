@@ -201,11 +201,14 @@ func (s *Server) postBootstrapPublicURL(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, st.Status())
 }
 
-// postBootstrapTLS is wizard step 4 (B.5). It enables TLS by creating
-// a self-signed certificate or accepting a one-shot PEM upload, writes
-// the pair to TLS_CERT_FILE / TLS_KEY_FILE, sets steps.tls via
-// Store.SetTLS, then MarkComplete. It never returns the key, PEM, or
-// KEK. ACME / Let’s Encrypt is out of scope.
+// postBootstrapTLS is wizard step 4 (B.5 / B.7). It enables TLS by
+// creating a self-signed certificate, accepting a one-shot PEM
+// upload, or skipping in-process certs. Create/upload write the pair
+// to TLS_CERT_FILE / TLS_KEY_FILE. Skip writes no PEM/key. All three
+// set steps.tls via Store.SetTLS, then MarkComplete. It never
+// returns the key, PEM, or KEK. ACME / Let’s Encrypt is out of
+// scope. Skip is not a permanent lockout — Settings #tls can enable
+// create/upload later.
 //
 // Auth matches incomplete-install GET /bootstrap and B.2–B.4: no
 // session is required while the gate is incomplete. After complete,
@@ -236,31 +239,41 @@ func (s *Server) postBootstrapTLS(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.tlsMaterials == nil {
-		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS certificate files are not configured.")
-		return
-	}
 	mode := bootstrap.TLSModeSelfSigned
 	switch action {
+	case tlsActionSkip:
+		mode = bootstrap.TLSModeSkipped
 	case tlsActionCreateSelfSigned:
+		if s.tlsMaterials == nil {
+			WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS certificate files are not configured.")
+			return
+		}
 		hosts := tlsmaterial.HostsFromPublicBaseURL(st.PublicBaseURL)
 		certPEM, keyPEM, err = tlsmaterial.CreateSelfSigned(hosts, s.clock().UTC())
 		if err != nil {
 			writeTLSMaterialError(w, r, err)
 			return
 		}
+		if err := s.tlsMaterials.Write(certPEM, keyPEM); err != nil {
+			writeTLSMaterialError(w, r, err)
+			return
+		}
 	case tlsActionUpload:
+		if s.tlsMaterials == nil {
+			WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "TLS certificate files are not configured.")
+			return
+		}
 		mode = bootstrap.TLSModeUploaded
 		if err := tlsmaterial.ValidatePair(certPEM, keyPEM); err != nil {
 			writeTLSMaterialError(w, r, err)
 			return
 		}
+		if err := s.tlsMaterials.Write(certPEM, keyPEM); err != nil {
+			writeTLSMaterialError(w, r, err)
+			return
+		}
 	default:
-		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
-		return
-	}
-	if err := s.tlsMaterials.Write(certPEM, keyPEM); err != nil {
-		writeTLSMaterialError(w, r, err)
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", tlsActionMustBeAccepted)
 		return
 	}
 	if err := s.bootstrap.SetTLS(r.Context(), true, mode); err != nil {
@@ -461,6 +474,9 @@ func publicURLBodyForbidden(key string) bool {
 const (
 	tlsActionCreateSelfSigned = "create-self-signed"
 	tlsActionUpload           = "upload"
+	tlsActionSkip             = "skip"
+	tlsActionMustBeAccepted   = "action must be create-self-signed, upload, or skip."
+	tlsAcceptsActions         = "TLS accepts action create-self-signed, upload, or skip."
 )
 
 func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, certPEM, keyPEM []byte, ok bool) {
@@ -473,14 +489,14 @@ func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, 
 	for key, value := range raw {
 		norm := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
 		if tlsBodyForbidden(norm) {
-			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS accepts action create-self-signed or upload. Credentials other than a one-shot certificate pair are not accepted.")
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", tlsAcceptsActions+" Credentials other than a one-shot certificate pair are not accepted.")
 			return "", nil, nil, false
 		}
 		switch norm {
 		case "action":
 			s, isStr := value.(string)
 			if !isStr {
-				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
+				WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", tlsActionMustBeAccepted)
 				return "", nil, nil, false
 			}
 			action = strings.TrimSpace(s)
@@ -501,7 +517,7 @@ func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, 
 			keyStr = s
 			hasKey = true
 		default:
-			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "TLS accepts action create-self-signed or upload.")
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", tlsAcceptsActions)
 			return "", nil, nil, false
 		}
 	}
@@ -517,6 +533,12 @@ func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, 
 			return "", nil, nil, false
 		}
 		return action, nil, nil, true
+	case tlsActionSkip:
+		if hasCert || hasKey {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "skip does not accept a certificate or key.")
+			return "", nil, nil, false
+		}
+		return action, nil, nil, true
 	case tlsActionUpload:
 		if strings.TrimSpace(certStr) == "" || strings.TrimSpace(keyStr) == "" {
 			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "upload requires certPem and keyPem.")
@@ -524,7 +546,7 @@ func decodeBootstrapTLS(w http.ResponseWriter, r *http.Request) (action string, 
 		}
 		return action, []byte(certStr), []byte(keyStr), true
 	default:
-		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "action must be create-self-signed or upload.")
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", tlsActionMustBeAccepted)
 		return "", nil, nil, false
 	}
 }

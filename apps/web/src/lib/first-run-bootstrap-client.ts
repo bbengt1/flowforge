@@ -17,6 +17,7 @@ import {
   BOOTSTRAP_TLS_PATH,
   bootstrapAdminBody,
   bootstrapTlsCreateBody,
+  bootstrapTlsSkipBody,
   bootstrapTlsUploadBody,
   decideBootstrapChrome,
   emptyTlsUploadDraft,
@@ -233,7 +234,9 @@ export async function setBootstrapTls(input: {
   const body =
     input.tls.action === "create-self-signed"
       ? bootstrapTlsCreateBody()
-      : bootstrapTlsUploadBody(input.tls.certPem, input.tls.keyPem);
+      : input.tls.action === "skip"
+        ? bootstrapTlsSkipBody()
+        : bootstrapTlsUploadBody(input.tls.certPem, input.tls.keyPem);
   if (!body) {
     return {
       ok: false,

@@ -803,6 +803,176 @@ func TestBootstrapTLSUploadCompletes(t *testing.T) {
 	}
 }
 
+func TestBootstrapTLSSkipCompletesWithoutWritingFiles(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	materials := tempTLSMaterials(t)
+	idStore := identity.NewMemory()
+	sessions := session.NewMemory()
+	h := NewWithDeps(Deps{
+		Store:          idStore,
+		Sessions:       sessions,
+		Bootstrap:      store,
+		TLSMaterials:   materials,
+		Security:       Security{},
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: httpTestIssuer, Subject: httpTestSubject}},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"skip"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("skip: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if !status.Complete || status.Incomplete {
+		t.Fatalf("B.7 skip must mark complete: %+v", status)
+	}
+	if !status.Steps.TLS.Ready {
+		t.Fatalf("skip marks tls ready: %+v", status.Steps)
+	}
+	if status.Steps.TLS.Mode != bootstrap.TLSModeSkipped {
+		t.Fatalf("tls.mode: %+v", status.Steps.TLS)
+	}
+	if status.Skipped {
+		t.Fatal("wizard skip is tls.mode=skipped, not localseed skipped=true")
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+	if strings.Contains(rec.Body.String(), "BEGIN") {
+		t.Fatal("success must not echo PEM")
+	}
+	if _, err := os.Stat(materials.CertPath); !os.IsNotExist(err) {
+		t.Fatalf("skip must not write cert: %v", err)
+	}
+	if _, err := os.Stat(materials.KeyPath); !os.IsNotExist(err) {
+		t.Fatalf("skip must not write key: %v", err)
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.TLSReady || st.TLSMode != bootstrap.TLSModeSkipped {
+		t.Fatalf("store after skip MarkComplete: %+v", st)
+	}
+
+	_, issued := issueTestSession(t, idStore, sessions, httpTestIssuer, httpTestSubject, "Admin")
+	rec = httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodGet, "/api/v1/bootstrap", "", issued.Token, issued.CSRF)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authenticated complete GET: %d %s", rec.Code, rec.Body.String())
+	}
+	got := decodeBootstrapStatus(t, rec)
+	if !got.Complete || !got.Steps.TLS.Ready || got.Steps.TLS.Mode != bootstrap.TLSModeSkipped {
+		t.Fatalf("GET may show tls.mode skipped, never secrets: %+v", got)
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+}
+
+func TestBootstrapTLSSkipWorksWithoutMaterials(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	h := NewWithDeps(Deps{Bootstrap: store, Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"skip"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("skip without TLS paths: %d %s", rec.Code, rec.Body.String())
+	}
+	status := decodeBootstrapStatus(t, rec)
+	if !status.Complete || !status.Steps.TLS.Ready || status.Steps.TLS.Mode != bootstrap.TLSModeSkipped {
+		t.Fatalf("skip status: %+v", status)
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Complete || !st.TLSReady || st.TLSMode != bootstrap.TLSModeSkipped {
+		t.Fatalf("skip must not require TLS files: %+v", st)
+	}
+}
+
+func TestBootstrapTLSSkipRejectsWithoutPublicURL(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"skip"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Public URL") {
+		t.Fatalf("fail-closed order should mention public URL: %s", rec.Body.String())
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady || st.Complete || st.TLSMode == bootstrap.TLSModeSkipped {
+		t.Fatalf("must not skip TLS without publicUrl: %+v", st)
+	}
+}
+
+func TestBootstrapTLSSkipCompleteIs409(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.MarkSeedSkip(t.Context(), bootstrap.SeedSkip{}); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(`{"action":"skip"}`))
+	assertProblem(t, rec, http.StatusConflict, CodeConflict, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "Settings") {
+		t.Fatalf("complete reject should point at Settings: %s", rec.Body.String())
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSMode == bootstrap.TLSModeSkipped {
+		t.Fatal("already complete must not set tls.mode skipped")
+	}
+}
+
+func TestBootstrapTLSSkipNeverEchoesPEM(t *testing.T) {
+	store := readyTLSBootstrap(t)
+	h := NewWithDeps(Deps{Bootstrap: store, TLSMaterials: tempTLSMaterials(t), Security: Security{}})
+
+	secret := "super-secret-hunter2-private-key"
+	body := `{"action":"skip","certPem":"-----BEGIN CERTIFICATE-----\n` + secret + `\n-----END CERTIFICATE-----","keyPem":"-----BEGIN PRIVATE KEY-----\n` + secret + `\n-----END PRIVATE KEY-----"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, tlsRequest(body))
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if strings.Contains(rec.Body.String(), secret) || strings.Contains(rec.Body.String(), "BEGIN PRIVATE") {
+		t.Fatal("problem must not echo key or PEM")
+	}
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TLSReady || st.Complete {
+		t.Fatal("skip with PEM must not complete")
+	}
+}
+
+func TestBootstrapTLSSkipEmbedSessionForbidden(t *testing.T) {
+	env := newEmbedEnv(t)
+	token, csrf := exchangeEmbedSession(t, env, env.ops, []string{authz.PermWorkflowView})
+
+	rec := httptest.NewRecorder()
+	req := sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/tls", `{"action":"skip"}`, token, csrf)
+	env.h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), "standalone") {
+		t.Fatalf("embed deny should mention standalone wizard: %s", rec.Body.String())
+	}
+}
+
 func TestBootstrapTLSRejectsWithoutPublicURL(t *testing.T) {
 	store := bootstrap.NewMemory()
 	if err := store.SetStep(t.Context(), bootstrap.StepFirstAdmin, true); err != nil {

@@ -110,7 +110,7 @@ type Deps struct {
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
 	// TLSMaterials writes first-run cert/key PEMs to TLS_CERT_FILE /
-	// TLS_KEY_FILE. Nil fails closed on POST /bootstrap/tls.
+	// TLS_KEY_FILE. Nil fails closed on create/upload; skip does not.
 	TLSMaterials tlsmaterial.Store
 }
 
