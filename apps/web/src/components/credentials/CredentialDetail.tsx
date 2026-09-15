@@ -69,6 +69,19 @@ import {
   type DohertyChrome,
 } from "@/lib/doherty-pending-chrome";
 import { DohertyStatus } from "@/components/chrome/DohertyStatus";
+import {
+  FF_VAULT_CONTROL_CLASS,
+  FF_VAULT_DANGER_CLASS,
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_LINK_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_PRIMARY_CLASS,
+  FF_VAULT_ROOT_CLASS,
+  FF_VAULT_TITLE_CLASS,
+  FF_VAULT_UUID_CLASS,
+  FF_VAULT_VALUE,
+} from "@/lib/vault-executions-visual";
 
 type CredentialDetailProps = {
   credentialId: string;
@@ -346,18 +359,18 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
     : "Disable";
 
   return (
-    <div className="space-y-6">
+    <div data-ff-vault={FF_VAULT_VALUE} className={`${FF_VAULT_ROOT_CLASS} space-y-6`}>
       <p>
         <Link
           href={credentialDetailListHref(embed)}
-          className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className={`text-sm font-medium ${FF_VAULT_LINK_CLASS}`}
         >
           Back to vault
         </Link>
       </p>
       {problem ? <ProblemBanner problem={problem} /> : null}
       {stopAfterStrip ? (
-        <p role="alert" className="text-sm text-amber-950">
+        <p role="alert" className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
           {CREDENTIAL_DETAIL_STRIP_STOP_HELP} Stripped keys:{" "}
           {strippedKeys.join(", ")}.
         </p>
@@ -366,24 +379,24 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       {!ready ? (
         <SessionSetupHint purpose="before opening a credential." />
       ) : forbidden ? (
-        <p className="text-sm text-zinc-600">
+        <p className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
           This role cannot view this credential (
           <code className="font-mono text-xs">credential.view</code> missing).
         </p>
       ) : !record ? (
-        <p className="text-sm text-zinc-600" aria-live="polite">
+        <p className={`text-sm ${FF_VAULT_MUTED_CLASS}`} aria-live="polite">
           {pending === "load" ? "Loading credential…" : "Credential is not available."}
         </p>
       ) : (
         <>
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <section className={FF_VAULT_PANEL_CLASS}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">{header?.identity.displayName}</h2>
-                <p className="mt-1 font-mono text-xs break-all text-zinc-500">
+                <h2 className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>{header?.identity.displayName}</h2>
+                <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>
                   {header?.identity.id}
                 </p>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                   {header?.typeLabel} · {header?.statusLabel}
                 </p>
               </div>
@@ -391,16 +404,16 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                 type="button"
                 onClick={() => void refresh()}
                 disabled={pending === "load"}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+                className={FF_VAULT_GHOST_CLASS}
               >
                 {pending === "load" ? "Loading…" : "Reload"}
               </button>
             </div>
-            <p className="mt-3 max-w-3xl text-sm text-zinc-600">
+            <p className={`mt-3 max-w-3xl text-sm ${FF_VAULT_MUTED_CLASS}`}>
               {CREDENTIAL_DETAIL_HELP}
             </p>
             {mutatedIdentity && !stopAfterStrip ? (
-              <p role="status" className="mt-3 text-sm text-zinc-700">
+              <p role="status" className="mt-3 text-sm">
                 After mutate: <span className="font-medium">{mutatedIdentity}</span>
                 {" — "}
                 display-name + UUID only.
@@ -416,9 +429,9 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
 
           {stopAfterStrip ? null : (
             <>
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Operate</h3>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                   {CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -427,7 +440,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     onClick={() => void runTest()}
                     disabled={pending === "test" || !recordHasAction(record, "test")}
                     aria-busy={pending === "test"}
-                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                    className={FF_VAULT_PRIMARY_CLASS}
                   >
                     {pending === "test" ? "Testing…" : "Test"}
                   </button>
@@ -441,7 +454,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                         ? !recordHasAction(record, "enable")
                         : !recordHasAction(record, "disable"))
                     }
-                    className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+                    className={FF_VAULT_GHOST_CLASS}
                   >
                     {pending === "disable" || pending === "enable"
                       ? `${disableEnableLabel.slice(0, -1)}ing…`
@@ -453,27 +466,27 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                 ) : null}
                 <dl className="mt-4 grid gap-1 text-sm">
                   <div>
-                    <dt className="inline text-zinc-500">test status </dt>
+                    <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>test status </dt>
                     <dd className="inline font-medium">{testDisplay.status}</dd>
                   </div>
                   {testDisplay.checkedAt !== "—" ? (
                     <div>
-                      <dt className="inline text-zinc-500">checked </dt>
+                      <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>checked </dt>
                       <dd className="inline font-mono text-xs">{testDisplay.checkedAt}</dd>
                     </div>
                   ) : null}
                   {testDisplay.reason ? (
                     <div>
-                      <dt className="inline text-zinc-500">reason </dt>
+                      <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>reason </dt>
                       <dd className="inline">{testDisplay.reason}</dd>
                     </div>
                   ) : null}
                 </dl>
               </section>
 
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Rotate secret</h3>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                   {CREDENTIAL_DETAIL_ROTATE_HELP}
                 </p>
                 <div className="mt-4 space-y-3">
@@ -495,7 +508,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     onClick={() => void rotate()}
                     disabled={pending === "rotate" || !recordHasAction(record, "rotate")}
                     aria-busy={pending === "rotate"}
-                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                    className={FF_VAULT_PRIMARY_CLASS}
                   >
                     {pending === "rotate" ? "Rotating…" : "Rotate"}
                   </button>
@@ -505,11 +518,11 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Usage</h3>
                 {usageDisplay ? (
                   <>
-                    <p className="mt-1 font-mono text-xs text-zinc-500">
+                    <p className={`mt-1 font-mono text-xs ${FF_VAULT_MUTED_CLASS}`}>
                       count {usageDisplay.useCount}
                       {usageDisplay.lastUsedLabel !== "—"
                         ? ` · last ${usageDisplay.lastUsedLabel}`
@@ -531,17 +544,17 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     />
                   </>
                 ) : (
-                  <p className="mt-2 text-sm text-zinc-600">
+                  <p className={`mt-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                     {pending === "load" ? "Loading usage…" : "Usage is not available."}
                   </p>
                 )}
               </section>
 
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Deletion impact</h3>
                 {impactDisplay ? (
                   <div className="mt-2 space-y-3 text-sm">
-                    <p className="text-zinc-600">
+                    <p className={FF_VAULT_MUTED_CLASS}>
                       {impactDisplay.canDelete
                         ? `${impactDisplay.displayName} can be deleted. Type the display name to confirm.`
                         : impactDisplay.blockReason ||
@@ -564,7 +577,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     />
                   </div>
                 ) : (
-                  <p className="mt-2 text-sm text-zinc-600">
+                  <p className={`mt-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                     {pending === "load"
                       ? "Loading deletion impact…"
                       : "Deletion impact is not available."}
@@ -578,16 +591,16 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                       setTypedName("");
                     }}
                     disabled={!recordHasAction(record, "delete")}
-                    className="rounded-lg border border-red-800 bg-red-800 px-3 py-2 text-sm font-medium text-white hover:bg-red-900 disabled:opacity-60"
+                    className={`${FF_VAULT_DANGER_CLASS} rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60`}
                   >
                     Delete…
                   </button>
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Safe metadata</h3>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                   <code className="font-mono text-xs">PATCH /credentials/{"{id}"}</code>{" "}
                   accepts displayName, tags, metadata, and expiresAt. Sending{" "}
                   <code className="font-mono text-xs">secret</code> is 400.
@@ -599,7 +612,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                       value={displayName}
                       onChange={(event) => setDisplayName(event.target.value)}
                       autoComplete="off"
-                      className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                      className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                     />
                   </label>
                   <label className="block text-sm">
@@ -608,7 +621,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                       value={tagsInput}
                       onChange={(event) => setTagsInput(event.target.value)}
                       autoComplete="off"
-                      className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                      className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                     />
                   </label>
                   {metadataFields.map((field) => (
@@ -623,7 +636,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                           }))
                         }
                         autoComplete="off"
-                        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                        className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                       />
                     </label>
                   ))}
@@ -634,28 +647,28 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                       onChange={(event) => setExpiresAt(event.target.value)}
                       placeholder="2026-12-31T23:59:59Z"
                       autoComplete="off"
-                      className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                      className={`mt-1 font-mono ${FF_VAULT_CONTROL_CLASS}`}
                     />
                   </label>
                   <button
                     type="button"
                     onClick={() => void saveMetadata()}
                     disabled={pending === "save" || !recordHasAction(record, "manage")}
-                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                    className={FF_VAULT_PRIMARY_CLASS}
                   >
                     {pending === "save" ? "Saving…" : "Save metadata"}
                   </button>
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <section className={FF_VAULT_PANEL_CLASS}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <h3 className="text-base font-semibold">Events</h3>
                   <button
                     type="button"
                     onClick={() => void loadEvents()}
                     disabled={pending === "events"}
-                    className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+                    className={FF_VAULT_GHOST_CLASS}
                   >
                     {pending === "events" ? "Loading…" : "Load events"}
                   </button>
@@ -665,10 +678,10 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     {events.map((event) => (
                       <li
                         key={event.id}
-                        className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2"
+                        className={`${FF_VAULT_PANEL_CLASS} !p-3`}
                       >
                         <p className="font-medium">{event.eventType}</p>
-                        <p className="font-mono text-xs text-zinc-500">
+                        <p className={`font-mono text-xs ${FF_VAULT_MUTED_CLASS}`}>
                           {event.occurredAt}
                           {event.actorId ? ` · ${event.actorId}` : ""}
                         </p>
@@ -676,7 +689,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-sm text-zinc-600">
+                  <p className={`mt-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
                     Events stay on demand. They are metadata only — not{" "}
                     <code className="font-mono text-xs">/audit</code>.
                   </p>
@@ -712,7 +725,7 @@ function Meta({
 }) {
   return (
     <div>
-      <dt className="text-zinc-500">{label}</dt>
+      <dt className={FF_VAULT_MUTED_CLASS}>{label}</dt>
       <dd className={mono ? "break-all font-mono text-xs" : "font-medium"}>
         {value}
       </dd>
@@ -733,7 +746,7 @@ function RefList({
     <div className="mt-3">
       <h4 className="text-sm font-medium">{title}</h4>
       {refs.length === 0 ? (
-        <p className="mt-1 text-sm text-zinc-600">{empty}</p>
+        <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>{empty}</p>
       ) : (
         <ul className="mt-1 list-disc pl-5 text-sm">
           {refs.map((ref) => (

@@ -131,21 +131,17 @@ export const SATELLITE_RAIL_BUTTON_CLASS =
 export const SATELLITE_BODY_PAD_CLASS = "p-3";
 export const SATELLITE_NDV_HEADER_CLASS = "ff-editor-satellite-header px-3 py-2";
 
-/** Loud status — do not quiet. Icon + text inherit UX.10 / R7.4. */
-export const LOUD_INDETERMINATE_SURFACE =
-  "border-2 border-amber-700 bg-amber-50";
-export const LOUD_ERROR_SURFACE = "border-2 border-rose-700 bg-rose-50";
-export const LOUD_WARNING_SURFACE = "border-amber-700 bg-amber-50";
+/** Loud status — do not quiet. Icon + text inherit UX.10 / R7.4.
+ * V.5 paints these on the dark V.1 tree (not light amber-50 / rose-50). */
+export const LOUD_INDETERMINATE_SURFACE = "ff-loud-indeterminate";
+export const LOUD_ERROR_SURFACE = "ff-loud-danger";
+export const LOUD_WARNING_SURFACE = "ff-loud-warning";
 export const LOUD_INDETERMINATE_CLASS =
-  `${LOUD_INDETERMINATE_SURFACE} text-amber-950 font-semibold`;
-export const LOUD_ERROR_CLASS =
-  `${LOUD_ERROR_SURFACE} text-rose-950 font-semibold`;
-export const LOUD_WARNING_CLASS =
-  `${LOUD_WARNING_SURFACE} text-amber-950 font-semibold`;
-export const LOUD_ADV024_DENIAL_CLASS =
-  "border-2 border-rose-700 bg-rose-50 text-rose-950 font-semibold";
-export const LOUD_ADV024_LEAK_CLASS =
-  "border-2 border-rose-800 bg-rose-100 text-rose-950 font-semibold";
+  `${LOUD_INDETERMINATE_SURFACE} font-semibold`;
+export const LOUD_ERROR_CLASS = `${LOUD_ERROR_SURFACE} font-semibold`;
+export const LOUD_WARNING_CLASS = `${LOUD_WARNING_SURFACE} font-semibold`;
+export const LOUD_ADV024_DENIAL_CLASS = "ff-loud-denial font-semibold";
+export const LOUD_ADV024_LEAK_CLASS = "ff-loud-leak font-semibold";
 
 export const ISOLATION_DENIAL_ICON = "⊘";
 export const ISOLATION_DENIAL_LABEL = "Denial";
@@ -280,6 +276,14 @@ export function loudContrastNotQuieter(className: string): boolean {
   if (QUIETED_STATUS_TOKENS.some((token) => className.includes(token))) {
     return false;
   }
+  const loudToken =
+    className.includes("ff-loud-indeterminate") ||
+    className.includes("ff-loud-danger") ||
+    className.includes("ff-loud-denial") ||
+    className.includes("ff-loud-leak");
+  if (loudToken) {
+    return true;
+  }
   const loudBorder = className.includes("border-2");
   const loudAmber =
     className.includes("amber-700") && className.includes("amber-50");
@@ -290,12 +294,17 @@ export function loudContrastNotQuieter(className: string): boolean {
 }
 
 export function warningContrastNotQuieter(className: string): boolean {
+  if (QUIETED_STATUS_TOKENS.some((token) => className.includes(token))) {
+    return false;
+  }
+  if (className.includes("ff-loud-warning") && className.includes("font-semibold")) {
+    return true;
+  }
   return (
     className.includes("amber-700") &&
     className.includes("amber-50") &&
     className.includes("amber-950") &&
-    className.includes("font-semibold") &&
-    !QUIETED_STATUS_TOKENS.some((token) => className.includes(token))
+    className.includes("font-semibold")
   );
 }
 

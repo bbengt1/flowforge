@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  FF_VAULT_CONTROL_CLASS,
+  FF_VAULT_MUTED_CLASS,
+} from "@/lib/vault-executions-visual";
+
 type SecretFieldProps = {
   id: string;
   label: string;
@@ -28,12 +33,11 @@ export function SecretField({
   const hintText =
     hint ??
     "Masked. Paste is allowed. Cleared from this page after a successful submit.";
-  const shared =
-    "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20";
+  const shared = `mt-1 font-mono ${FF_VAULT_CONTROL_CLASS}`;
 
   return (
     <label htmlFor={id} className="block text-sm">
-      <span className="font-medium text-zinc-800">{label}</span>
+      <span className="font-medium">{label}</span>
       {multiline ? (
         <textarea
           id={id}
@@ -77,7 +81,7 @@ export function SecretField({
           className={shared}
         />
       )}
-      <span id={hintId} className="mt-1 block text-xs text-zinc-500">
+      <span id={hintId} className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
         {hintText}
       </span>
     </label>

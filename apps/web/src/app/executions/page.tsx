@@ -3,10 +3,13 @@ import { ExecutionHistory } from "@/components/executions/ExecutionHistory";
 import {
   PAGE_HEADER_CLASS,
   PAGE_SHELL_CLASS,
-  TYPE_EYEBROW_CLASS,
   TYPE_HEADING_CLASS,
-  TYPE_PAGE_HELP_CLASS,
 } from "@/lib/aesthetic-usability-density";
+import {
+  FF_INBOX_EYEBROW_CLASS,
+  FF_INBOX_HELP_CLASS,
+  FF_INBOX_MUTED_CLASS,
+} from "@/lib/vault-executions-visual";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +17,11 @@ export default function ExecutionsPage() {
   return (
     <main className={PAGE_SHELL_CLASS}>
       <header className={PAGE_HEADER_CLASS}>
-        <p className={TYPE_EYEBROW_CLASS}>
+        <p className={FF_INBOX_EYEBROW_CLASS}>
           R4.1 · Workspace inbox
         </p>
         <h1 className={TYPE_HEADING_CLASS}>Executions</h1>
-        <p className={TYPE_PAGE_HELP_CLASS}>
+        <p className={FF_INBOX_HELP_CLASS}>
           Operate workspace runs. Filter by status or workflow, then open a
           row into existing{" "}
           <code className="font-mono text-sm">/executions/{"{id}"}</code>{" "}
@@ -39,7 +42,7 @@ export default function ExecutionsPage() {
         </p>
       </header>
       <Suspense
-        fallback={<p className="text-sm text-zinc-600">Loading executions inbox…</p>}
+        fallback={<p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>Loading executions inbox…</p>}
       >
         <ExecutionHistory />
       </Suspense>

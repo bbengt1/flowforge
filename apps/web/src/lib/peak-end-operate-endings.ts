@@ -250,30 +250,30 @@ export function peakEndSurfaceClassName(kind: PeakEndKind): string {
     case "indeterminate":
       return LOUD_INDETERMINATE_SURFACE;
     case "waiting":
-      return "border-2 border-indigo-700 bg-indigo-50";
+      return "ff-inbox-row-waiting";
     case "failed":
       return LOUD_ERROR_SURFACE;
     case "success":
-      return "border-2 border-emerald-700 bg-emerald-50";
+      return "ff-status-succeeded";
     case "canceled":
-      return "border border-zinc-400 bg-zinc-50";
+      return "ff-status-canceled";
     default:
-      return "border border-teal-800 bg-teal-50";
+      return "ff-status-other";
   }
 }
 
 export function peakEndTextClassName(kind: PeakEndKind): string {
   switch (kind) {
     case "indeterminate":
-      return "text-amber-950";
+      return "font-semibold";
     case "waiting":
-      return "text-indigo-950";
+      return "font-semibold";
     case "failed":
-      return "text-rose-950";
+      return "ff-inbox-danger font-semibold";
     case "success":
-      return "text-emerald-950";
+      return "font-semibold";
     default:
-      return "text-zinc-800";
+      return "ff-inbox-muted";
   }
 }
 

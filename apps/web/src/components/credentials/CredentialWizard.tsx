@@ -38,6 +38,18 @@ import {
   credentialNdvEditorReturnHref,
   credentialNdvMustStopAfterStrip,
 } from "@/lib/credential-ndv-add";
+import {
+  FF_VAULT_CHIP_ACCENT_CLASS,
+  FF_VAULT_CHIP_CLASS,
+  FF_VAULT_CONTROL_CLASS,
+  FF_VAULT_DANGER_CLASS,
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_PRIMARY_CLASS,
+  FF_VAULT_ROOT_CLASS,
+  FF_VAULT_TITLE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 const STEP_LABEL: Record<WizardStep, string> = {
   identity: "Name and tags",
@@ -192,24 +204,24 @@ export function CredentialWizard({
   const modal = variant === "modal";
 
   return (
-    <div className="space-y-6">
+    <div className={`${FF_VAULT_ROOT_CLASS} space-y-6`}>
       {!modal && !ready ? (
         <SessionSetupHint purpose="before adding a credential." />
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {credentialNdvMustStopAfterStrip(strippedKeys) ? (
-        <p role="alert" className="text-sm text-amber-950">
+        <p role="alert" className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
           {CREDENTIAL_NDV_ADD_STRIP_STOP_HELP} Stripped keys:{" "}
           {strippedKeys.join(", ")}.
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+      <section className={FF_VAULT_PANEL_CLASS}>
+        <p className={`text-sm font-medium tracking-wide uppercase ${FF_VAULT_MUTED_CLASS}`}>
           Step {stepIndex + 1} of {WIZARD_STEPS.length}
         </p>
-        <h2 className="mt-1 text-lg font-semibold">{STEP_LABEL[step]}</h2>
-        <ol className="mt-3 flex flex-wrap gap-2 text-sm text-zinc-600">
+        <h2 className={`mt-1 text-lg ${FF_VAULT_TITLE_CLASS}`}>{STEP_LABEL[step]}</h2>
+        <ol className={`mt-3 flex flex-wrap gap-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
           {WIZARD_STEPS.map((item, index) => (
             <li key={item}>
               <button
@@ -217,8 +229,8 @@ export function CredentialWizard({
                 onClick={() => go(item)}
                 className={
                   item === step
-                    ? "rounded-full bg-teal-800 px-3 py-1.5 text-white"
-                    : "rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-400"
+                    ? FF_VAULT_CHIP_ACCENT_CLASS
+                    : FF_VAULT_CHIP_CLASS
                 }
               >
                 {index + 1}. {STEP_LABEL[item]}
@@ -236,7 +248,7 @@ export function CredentialWizard({
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
                   autoComplete="off"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                  className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                 />
               </label>
               <label className="block text-sm">
@@ -246,9 +258,9 @@ export function CredentialWizard({
                   onChange={(event) => setTagsInput(event.target.value)}
                   placeholder="prod, cluster"
                   autoComplete="off"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                  className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                 />
-                <span className="mt-1 block text-xs text-zinc-500">
+                <span className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
                   Comma-separated lowercase letters, digits, or hyphen. Used
                   for search — never secret values.
                 </span>
@@ -273,7 +285,7 @@ export function CredentialWizard({
                   />
                   <span>
                     <span className="font-medium">{item.displayName}</span>
-                    <span className="block text-xs text-zinc-500">
+                    <span className={`block text-xs ${FF_VAULT_MUTED_CLASS}`}>
                       {item.type}
                     </span>
                   </span>
@@ -298,7 +310,7 @@ export function CredentialWizard({
           {step === "metadata" ? (
             <div className="space-y-4">
               {metadataFields.length === 0 ? (
-                <p className="text-sm text-zinc-600">
+                <p className={`text-sm ${FF_VAULT_MUTED_CLASS}`}>
                   This type has no catalog metadata fields.
                 </p>
               ) : (
@@ -314,7 +326,7 @@ export function CredentialWizard({
                         }))
                       }
                       autoComplete="off"
-                      className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                      className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                     />
                   </label>
                 ))
@@ -326,9 +338,9 @@ export function CredentialWizard({
                   onChange={(event) => setExpiresAt(event.target.value)}
                   placeholder="2026-12-31T23:59:59Z"
                   autoComplete="off"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                  className={`mt-1 font-mono ${FF_VAULT_CONTROL_CLASS}`}
                 />
-                <span className="mt-1 block text-xs text-zinc-500">
+                <span className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
                   RFC3339 only. Leave blank for no expiry.
                 </span>
               </label>
@@ -368,7 +380,7 @@ export function CredentialWizard({
                 }
               />
               <ReviewRow label="Expires at" value={expiresAt || "—"} />
-              <p className="text-xs text-zinc-500">
+              <p className={`text-xs ${FF_VAULT_MUTED_CLASS}`}>
                 Secret values are not shown on review and are cleared after
                 submit. Display-name + UUID only.
               </p>
@@ -381,7 +393,7 @@ export function CredentialWizard({
             <button
               type="button"
               onClick={() => go(WIZARD_STEPS[stepIndex - 1] ?? "identity")}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              className={FF_VAULT_GHOST_CLASS}
             >
               Back
             </button>
@@ -390,7 +402,7 @@ export function CredentialWizard({
             <button
               type="button"
               onClick={() => go(WIZARD_STEPS[stepIndex + 1] ?? "review")}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900"
+              className={FF_VAULT_PRIMARY_CLASS}
             >
               Continue
             </button>
@@ -399,7 +411,7 @@ export function CredentialWizard({
               type="button"
               onClick={() => void submit()}
               disabled={pending || !ready || !displayName.trim()}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              className={FF_VAULT_PRIMARY_CLASS}
             >
               {pending ? "Creating…" : "Create credential"}
             </button>
@@ -408,7 +420,7 @@ export function CredentialWizard({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              className={FF_VAULT_GHOST_CLASS}
             >
               Cancel
             </button>
@@ -443,7 +455,7 @@ function CatalogSecretField({
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="inline text-zinc-500">{label} </dt>
+      <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>{label} </dt>
       <dd className="inline">{value}</dd>
     </div>
   );

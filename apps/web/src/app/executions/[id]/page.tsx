@@ -1,4 +1,8 @@
 import { ExecutionDetail } from "@/components/executions/ExecutionDetail";
+import {
+  FF_INBOX_EYEBROW_CLASS,
+  FF_INBOX_HELP_CLASS,
+} from "@/lib/vault-executions-visual";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +20,13 @@ export default async function ExecutionDetailPage({
   return (
     <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+        <p className={FF_INBOX_EYEBROW_CLASS}>
           E6.4 · Graph replay
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Execution
         </h1>
-        <p className="max-w-3xl text-base leading-7 text-zinc-600">
+        <p className={FF_INBOX_HELP_CLASS}>
           Graph replay overlays step status on the E6.2 canvas from the
           pinned published version YAML. Cancel stays idempotent. Emergency
           stop of a script is separately authorized (

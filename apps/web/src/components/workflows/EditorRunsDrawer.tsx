@@ -357,7 +357,7 @@ export function EditorRunsDrawer({
             type="button"
             onClick={() => skipTo("indeterminate")}
             disabled={denied || !canCall || !scopedId}
-            className="rounded-md border border-amber-700 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+            className="ff-loud-indeterminate rounded-md px-2 py-1 text-xs font-medium disabled:opacity-60"
           >
             {EDITOR_RUNS_SKIP_INDETERMINATE_LABEL}
           </button>

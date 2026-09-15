@@ -8,6 +8,14 @@ import {
   type ScriptIoParsedResult,
 } from "@/lib/script-io-contract";
 import { boundRedactedDisplay } from "@/lib/execution";
+import {
+  FF_INBOX_DANGER_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PANEL_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_LOUD_DANGER_CLASS,
+  FF_LOUD_INDETERMINATE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ScriptIoResultPanelProps = {
   steps?: readonly {
@@ -35,9 +43,9 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
     return null;
   }
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">Script I/O result</h2>
-      <p className="mt-1 text-sm text-zinc-600">
+    <section className={FF_INBOX_PANEL_CLASS}>
+      <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Script I/O result</h2>
+      <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
         Redacted typed outputs from existing{" "}
         <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
         steps.         {SCRIPT_IO_VALIDATION_HELP} {SCRIPT_IO_HANDLE_HELP}{" "}
@@ -50,27 +58,27 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
             key={step.id || `${step.nodeId}-${step.nodeType}`}
             className={
               parsed.errorCode === "indeterminate"
-                ? "rounded-xl border-2 border-amber-700 bg-amber-50 p-4"
+                ? `rounded-xl p-4 ${FF_LOUD_INDETERMINATE_CLASS}`
                 : parsed.validationErrors.length > 0
-                  ? "rounded-xl border-2 border-rose-700 bg-rose-50 p-4"
-                  : "rounded-xl border border-zinc-200 p-4"
+                  ? `rounded-xl p-4 ${FF_LOUD_DANGER_CLASS}`
+                  : FF_INBOX_PANEL_CLASS
             }
           >
             <p className="font-medium">
               {step.nodeId || step.nodeType || "script"}
             </p>
-            <p className="font-mono text-xs text-zinc-600">
+            <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
               {step.nodeType || "script"}
               {parsed.exitCode != null ? ` · exit ${parsed.exitCode}` : ""}
               {parsed.correlationId ? ` · ${parsed.correlationId}` : ""}
             </p>
             {parsed.errorCode === "indeterminate" ? (
-              <p className="mt-2 text-sm font-medium text-amber-950">
+              <p className="mt-2 text-sm font-medium">
                 {SCRIPT_IO_INDETERMINATE_HELP}
               </p>
             ) : null}
             {parsed.validationErrors.length > 0 ? (
-              <ul className="mt-2 space-y-1 text-sm text-rose-950">
+              <ul className={`mt-2 space-y-1 text-sm ${FF_INBOX_DANGER_CLASS}`}>
                 {parsed.validationErrors.map((error) => (
                   <li key={`${error.code}-${error.path}-${error.message}`}>
                     <span className="font-mono text-xs">{error.code}</span>
@@ -89,7 +97,7 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
               <RedactedBlock label="Redacted stdout" value={parsed.stdout} />
             ) : null}
             {parsed.retry ? (
-              <p className="mt-2 text-xs text-zinc-700">
+              <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                 result.retry.allowed={String(parsed.retry.allowed)} · maxAttempts=
                 {parsed.retry.maxAttempts} · executed=
                 {parsed.retry.executedAttempts}
@@ -99,12 +107,12 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
                 . {parsed.retry.allowed ? "" : SCRIPT_IO_NO_BLIND_RETRY_HELP}
               </p>
             ) : (
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                 {SCRIPT_IO_NO_BLIND_RETRY_HELP}
               </p>
             )}
             {parsed.strippedHandleKeys.length > 0 ? (
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                 Stripped scoped handle fields: {parsed.strippedHandleKeys.join(", ")}.
               </p>
             ) : null}
@@ -119,12 +127,12 @@ function RedactedBlock({ label, value }: { label: string; value: unknown }) {
   const display = boundRedactedDisplay(value);
   return (
     <div className="mt-3">
-      <p className="text-xs font-medium text-zinc-600">{label}</p>
-      <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+      <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>{label}</p>
+      <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
         {display.text}
       </pre>
       {display.truncated ? (
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>
           Output truncated at {display.maxBytes} characters.
         </p>
       ) : null}

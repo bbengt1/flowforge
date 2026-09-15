@@ -10,6 +10,15 @@ import {
   credentialVaultKeyAction,
   type CredentialVaultRow,
 } from "@/lib/credential-vault";
+import {
+  FF_VAULT_LINK_CLASS,
+  FF_VAULT_LIST_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_ROW_CLASS,
+  FF_VAULT_ROW_FOCUSED_CLASS,
+  FF_VAULT_TITLE_CLASS,
+  FF_VAULT_UUID_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type CredentialVaultListboxProps = {
   rows: CredentialVaultRow[];
@@ -32,9 +41,9 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
 
   return (
     <div>
-      <p className="mb-3 text-xs text-zinc-500">{CREDENTIAL_VAULT_KEYBOARD_HELP}</p>
+      <p className={`mb-3 text-xs ${FF_VAULT_MUTED_CLASS}`}>{CREDENTIAL_VAULT_KEYBOARD_HELP}</p>
       <div
-        className={`mb-2 hidden min-w-[52rem] gap-3 px-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[minmax(12rem,1.6fr)_minmax(8rem,1fr)_6.5rem_minmax(7rem,0.9fr)_minmax(8rem,1fr)_8.5rem_3.75rem]`}
+        className={`mb-2 hidden min-w-[52rem] gap-3 px-3 text-xs font-medium tracking-wide uppercase ${FF_VAULT_MUTED_CLASS} sm:grid sm:grid-cols-[minmax(12rem,1.6fr)_minmax(8rem,1fr)_6.5rem_minmax(7rem,0.9fr)_minmax(8rem,1fr)_8.5rem_3.75rem]`}
         aria-hidden="true"
       >
         {CREDENTIAL_VAULT_COLUMNS.map((column) => (
@@ -56,7 +65,7 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
             activate(rows[next.index]);
           }
         }}
-        className="min-w-0 divide-y divide-zinc-100 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+        className={`min-w-0 divide-y divide-white/10 overflow-x-auto ${FF_VAULT_LIST_CLASS} outline-none`}
       >
         {rows.map((row, index) => {
           const focused = index === safeIndex;
@@ -68,43 +77,43 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
               onClick={() => activate(row)}
               className={
                 focused
-                  ? "cursor-pointer bg-teal-50 px-3 py-2.5"
-                  : "cursor-pointer bg-white px-3 py-2.5 hover:bg-zinc-50"
+                  ? `${FF_VAULT_ROW_FOCUSED_CLASS} px-3 py-2.5`
+                  : `${FF_VAULT_ROW_CLASS} px-3 py-2.5`
               }
             >
               <div className={VAULT_GRID}>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
+                  <p className={`truncate text-sm ${FF_VAULT_TITLE_CLASS}`}>
                     <Link
                       href={row.href}
                       onClick={(event) => event.stopPropagation()}
-                      className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                      className={FF_VAULT_LINK_CLASS}
                     >
                       {row.displayName}
                     </Link>
                   </p>
-                  <p className="font-mono text-[11px] break-all text-zinc-500">
+                  <p className={FF_VAULT_UUID_CLASS}>
                     {row.id}
                   </p>
                 </div>
-                <p className="text-sm text-zinc-700">{row.typeLabel}</p>
+                <p className="text-sm">{row.typeLabel}</p>
                 <p
                   className={
                     row.status === "disabled"
-                      ? "text-sm font-medium text-zinc-600"
-                      : "text-sm font-medium text-teal-950"
+                      ? `text-sm font-medium ${FF_VAULT_MUTED_CLASS}`
+                      : "text-sm font-medium"
                   }
                 >
                   {row.statusLabel}
                 </p>
-                <p className="truncate text-sm text-zinc-600">{row.tagsLabel}</p>
-                <p className="font-mono text-xs text-zinc-700">{row.lastTestLabel}</p>
-                <p className="font-mono text-xs text-zinc-700">{row.rotatedLabel}</p>
+                <p className={`truncate text-sm ${FF_VAULT_MUTED_CLASS}`}>{row.tagsLabel}</p>
+                <p className="font-mono text-xs">{row.lastTestLabel}</p>
+                <p className="font-mono text-xs">{row.rotatedLabel}</p>
                 <p className="text-sm">
                   <Link
                     href={row.href}
                     onClick={(event) => event.stopPropagation()}
-                    className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                    className={`font-medium ${FF_VAULT_LINK_CLASS}`}
                   >
                     {CREDENTIAL_VAULT_OPEN_LABEL}
                   </Link>

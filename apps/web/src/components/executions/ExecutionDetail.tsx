@@ -116,6 +116,22 @@ import {
   emergencyStopShouldMarkUncertain,
   scriptEmergencyStopCopy,
 } from "@/lib/script-ops-contract";
+import {
+  FF_INBOX_CONTROL_CLASS,
+  FF_INBOX_DANGER_CLASS,
+  FF_INBOX_GHOST_CLASS,
+  FF_INBOX_LINK_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PANEL_CLASS,
+  FF_INBOX_PRIMARY_CLASS,
+  FF_INBOX_ROOT_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_INBOX_VALUE,
+  FF_INBOX_ROW_INDETERMINATE_CLASS,
+  FF_LOUD_DANGER_CLASS,
+  FF_LOUD_INDETERMINATE_CLASS,
+  FF_LOUD_WARNING_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ExecutionDetailProps = {
   executionId: string;
@@ -533,11 +549,11 @@ export function ExecutionDetail({
   }, [ready, denied, live, identity, executionId, workflowId]);
 
   return (
-    <div className="space-y-6">
+    <div data-ff-inbox={FF_INBOX_VALUE} className={`${FF_INBOX_ROOT_CLASS} space-y-6`}>
       <p>
         <Link
           href="/executions"
-          className="text-sm text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className={`text-sm ${FF_INBOX_LINK_CLASS}`}
         >
           Back to executions
         </Link>
@@ -548,7 +564,7 @@ export function ExecutionDetail({
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-zinc-600">
+        <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
           This role cannot view executions (
           <code className="font-mono text-xs">execution.view</code> missing).
         </p>
@@ -557,13 +573,13 @@ export function ExecutionDetail({
       <nav aria-label="Execution errors" className="text-sm">
         <a
           href="#execution-errors"
-          className="sr-only focus:not-sr-only focus:rounded-md focus:border focus:border-teal-800 focus:bg-white focus:px-3 focus:py-2"
+          className="sr-only focus:not-sr-only focus:rounded-md focus:border focus:px-3 focus:py-2"
         >
           Skip to errors
         </a>
         <a
           href="#graph-replay-heading"
-          className="sr-only focus:not-sr-only focus:ml-2 focus:rounded-md focus:border focus:border-teal-800 focus:bg-white focus:px-3 focus:py-2"
+          className="sr-only focus:not-sr-only focus:ml-2 focus:rounded-md focus:border focus:px-3 focus:py-2"
         >
           Skip to graph replay
         </a>
@@ -573,12 +589,12 @@ export function ExecutionDetail({
         {problem ? <ProblemBanner problem={problem} /> : null}
       </div>
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
           last request_id {lastRequestId}
         </p>
       ) : null}
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
@@ -589,7 +605,7 @@ export function ExecutionDetail({
           type="button"
           onClick={() => void refresh()}
           disabled={pending || !ready || denied}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+          className={FF_INBOX_GHOST_CLASS}
         >
           {pending ? "Loading…" : "Refresh"}
         </button>
@@ -608,7 +624,7 @@ export function ExecutionDetail({
             return (
               <nav
                 aria-label="Failed and indeterminate steps"
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm"
+                className={`${FF_INBOX_PANEL_CLASS} text-sm`}
               >
                 <p className="font-medium">Error navigation</p>
                 <ul className="mt-2 space-y-1">
@@ -623,7 +639,7 @@ export function ExecutionDetail({
                             document.getElementById(link.id)?.focus();
                           }
                         }}
-                        className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                        className={FF_INBOX_LINK_CLASS}
                       >
                         {link.label}
                       </a>
@@ -636,21 +652,21 @@ export function ExecutionDetail({
           <section
             className={
               view.header.indeterminate
-                ? "rounded-2xl border-2 border-amber-700 bg-amber-50 p-6 shadow-sm"
-                : "rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+                ? `${FF_INBOX_ROW_INDETERMINATE_CLASS} rounded-xl p-6`
+                : FF_INBOX_PANEL_CLASS
             }
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">{view.header.workflowLabel}</h2>
-                <p className="mt-1 font-mono text-xs break-all text-zinc-600">
+                <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>{view.header.workflowLabel}</h2>
+                <p className={`mt-1 font-mono text-xs break-all ${FF_INBOX_MUTED_CLASS}`}>
                   {view.header.id}
                 </p>
               </div>
               <ExecutionStatusBadge status={view.header.status} />
             </div>
             {view.header.indeterminate ? (
-              <p className="mt-3 text-sm text-amber-950">
+              <p className="mt-3 text-sm font-semibold">
                 {executionHasSshRun(view.steps) ||
                 executionHasSshIndeterminate(view.steps)
                   ? sshIndeterminateCopy({
@@ -685,20 +701,20 @@ export function ExecutionDetail({
               </p>
             ) : null}
             {view.legalHold ? (
-              <p role="status" className="mt-3 text-sm font-medium text-amber-950">
+              <p role="status" className={`mt-3 text-sm ${FF_LOUD_WARNING_CLASS}`}>
                 {retentionStatusMessage({
                   retentionUntil: view.retentionUntil,
                   legalHold: true,
                 })}
               </p>
             ) : view.retentionUntil ? (
-              <p className="mt-3 text-sm text-zinc-600">
+              <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>
                 {retentionStatusMessage({
                   retentionUntil: view.retentionUntil,
                 })}
               </p>
             ) : (
-              <p className="mt-3 text-xs text-zinc-500">{RETENTION_HELP}</p>
+              <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>{RETENTION_HELP}</p>
             )}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {canCancel ? (
@@ -706,13 +722,13 @@ export function ExecutionDetail({
                   type="button"
                   onClick={() => void onCancel()}
                   disabled={cancelPending || pending || Boolean(stopPending)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                  className={FF_INBOX_PRIMARY_CLASS}
                 >
                   {cancelPending ? "Canceling…" : "Cancel execution"}
                 </button>
               ) : permissions != null &&
                 !permissions.includes(EXECUTION_CANCEL_PERMISSION) ? (
-                <p className="text-sm text-zinc-600">
+                <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
                   Cancel requires{" "}
                   <code className="font-mono text-xs">
                     {EXECUTION_CANCEL_PERMISSION}
@@ -725,7 +741,7 @@ export function ExecutionDetail({
                   type="button"
                   onClick={() => void onEmergencyStop()}
                   disabled={Boolean(stopPending) || pending || cancelPending}
-                  className="rounded-lg border-2 border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-900 disabled:opacity-60"
+                  className={`rounded-lg px-3 py-1.5 text-sm ${FF_LOUD_DANGER_CLASS}`}
                 >
                   {stopPending === "execution"
                     ? "Stopping…"
@@ -736,7 +752,7 @@ export function ExecutionDetail({
               ) : executionHasScriptRun(view.steps) &&
                 permissions != null &&
                 !permissions.includes(SCRIPT_EMERGENCY_STOP_PERMISSION) ? (
-                <p className="text-sm text-zinc-600">
+                <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
                   {SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE}
                 </p>
               ) : null}
@@ -745,12 +761,12 @@ export function ExecutionDetail({
                   type="button"
                   onClick={() => void onRetry()}
                   disabled={Boolean(retryPending) || pending || cancelPending}
-                  className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                  className={FF_INBOX_PRIMARY_CLASS}
                 >
                   {retryPending === "execution" ? "Retrying…" : "Retry execution"}
                 </button>
               ) : indeterminate ? (
-                <p className="text-sm font-medium text-amber-950">
+                <p className={`text-sm font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}>
                   {executionHasSshRun(view.steps) ||
                   executionHasSshIndeterminate(view.steps)
                     ? sshRetryBlockedMessage({
@@ -780,92 +796,92 @@ export function ExecutionDetail({
                       : RETRY_INDETERMINATE_MESSAGE}
                 </p>
               ) : executionHasSshRun(view.steps) ? (
-                <p className="text-xs text-zinc-500">{SSH_NO_BLIND_RETRY_HELP}</p>
+                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>{SSH_NO_BLIND_RETRY_HELP}</p>
               ) : executionHasScriptRun(view.steps) ? (
-                <p className="text-xs text-zinc-500">{SCRIPT_IO_NO_BLIND_RETRY_HELP}</p>
+                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>{SCRIPT_IO_NO_BLIND_RETRY_HELP}</p>
               ) : (
-                <p className="text-xs text-zinc-500">
+                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>
                   {retryAffordanceMessage(view.header.status)}
                 </p>
               )}
             </div>
             {executionHasRolloutObservation(view.steps) ? (
-              <p className="mt-2 text-sm text-zinc-700">
+              <p className="mt-2 text-sm">
                 {KUBERNETES_ROLLOUT_CANCEL_HELP}
               </p>
             ) : null}
-            <p className="mt-2 text-xs text-zinc-500">{CANCEL_CSRF_HELP}</p>
-            <p className="mt-1 text-xs text-zinc-500">{RETRY_CSRF_HELP}</p>
-            <p className="mt-1 text-xs text-zinc-500">{STATUS_POLL_HELP}</p>
+            <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>{CANCEL_CSRF_HELP}</p>
+            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{RETRY_CSRF_HELP}</p>
+            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{STATUS_POLL_HELP}</p>
             {canEmergencyStop || stoppedUncertain ? (
-              <p className="mt-2 text-xs text-rose-900">
+              <p className={`mt-2 text-xs ${FF_INBOX_DANGER_CLASS}`}>
                 {SCRIPT_EMERGENCY_STOP_HELP} {SCRIPT_EMERGENCY_STOP_CONFIRM_HELP}{" "}
                 {SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP}
               </p>
             ) : null}
             {cancelMessage ? (
-              <p role="status" className="mt-3 text-sm text-zinc-800">
+              <p role="status" className="mt-3 text-sm">
                 {cancelMessage}
               </p>
             ) : null}
             {stopMessage ? (
-              <p role="status" className="mt-3 text-sm font-medium text-rose-950">
+              <p role="status" className={`mt-3 text-sm font-medium ${FF_INBOX_DANGER_CLASS}`}>
                 {stopMessage}
               </p>
             ) : null}
             {retryMessage ? (
-              <p role="status" className="mt-3 text-sm text-zinc-800">
+              <p role="status" className="mt-3 text-sm">
                 {retryMessage}
               </p>
             ) : null}
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-zinc-500">Version pin</dt>
+                <dt className={FF_INBOX_MUTED_CLASS}>Version pin</dt>
                 <dd className="font-mono text-xs break-all">
                   {view.header.versionPin}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Correlation id</dt>
+                <dt className={FF_INBOX_MUTED_CLASS}>Correlation id</dt>
                 <dd className="font-mono text-xs break-all">
                   {view.header.correlationId}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Started</dt>
+                <dt className={FF_INBOX_MUTED_CLASS}>Started</dt>
                 <dd className="font-mono text-xs">{view.header.startedAt}</dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Finished</dt>
+                <dt className={FF_INBOX_MUTED_CLASS}>Finished</dt>
                 <dd className="font-mono text-xs">{view.header.finishedAt}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-zinc-500">Idempotency key</dt>
+                <dt className={FF_INBOX_MUTED_CLASS}>Idempotency key</dt>
                 <dd className="font-mono text-xs break-all">
                   {view.header.idempotencyKey}
                 </dd>
               </div>
             </dl>
             {view.replayedMessage ? (
-              <p role="status" className="mt-4 text-sm text-zinc-800">
+              <p role="status" className="mt-4 text-sm">
                 {view.replayedMessage}
               </p>
             ) : view.header.idempotencyKey !== "—" ? (
-              <p className="mt-4 text-sm text-zinc-600">{IDEMPOTENCY_KEY_HELP}</p>
+              <p className={`mt-4 text-sm ${FF_INBOX_MUTED_CLASS}`}>{IDEMPOTENCY_KEY_HELP}</p>
             ) : null}
             <div className="mt-4">
-              <p className="text-xs font-medium text-zinc-600">Config pins</p>
+              <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Config pins</p>
               <ConfigPinList
                 pins={view.pins}
                 empty="No ops-config pins on this execution."
               />
             </div>
             <div className="mt-4">
-              <p className="text-xs font-medium text-zinc-600">
+              <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>
                 Redacted input
               </p>
-              <p className="mt-1 text-xs text-zinc-500">{REDACTED_HELP}</p>
-              <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+              <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{REDACTED_HELP}</p>
+              <pre className={`mt-2 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
                 {boundRedactedDisplay(view.input).text}
               </pre>
             </div>
@@ -873,13 +889,13 @@ export function ExecutionDetail({
               <p className="mt-4 flex flex-wrap gap-3 text-sm">
                 <Link
                   href={manualStartHref(detail.workflowId)}
-                  className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  className={FF_INBOX_LINK_CLASS}
                 >
                   Start another published version
                 </Link>
                 <Link
                   href={`/workflows/${detail.workflowId}`}
-                  className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  className={FF_INBOX_LINK_CLASS}
                 >
                   Open workflow operator
                 </Link>
@@ -919,9 +935,9 @@ export function ExecutionDetail({
             }
           />
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Compare another run</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+          <section className={FF_INBOX_PANEL_CLASS}>
+            <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Compare another run</h2>
+            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
               Client-side diff of redacted summaries. Secrets stay{" "}
               <code className="font-mono text-xs">[redacted]</code>.
             </p>
@@ -968,12 +984,12 @@ export function ExecutionDetail({
                 <input
                   value={compareId}
                   onChange={(event) => setCompareId(event.target.value)}
-                  className="mt-1 block w-80 rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
+                  className={`mt-1 block w-80 font-mono ${FF_INBOX_CONTROL_CLASS}`}
                 />
               </label>
               <button
                 type="submit"
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+                className={FF_INBOX_GHOST_CLASS}
               >
                 Compare
               </button>
@@ -988,18 +1004,18 @@ export function ExecutionDetail({
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Steps</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+          <section className={FF_INBOX_PANEL_CLASS}>
+            <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Steps</h2>
+            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
               Redacted step state with bounded logs and output. Secret
               values show as{" "}
               <code className="font-mono text-xs">[redacted]</code>. Graph
               replay above uses the pinned published version when YAML is
               available.
             </p>
-            <p className="mt-1 text-xs text-zinc-500">{BOUNDED_LOG_HELP}</p>
+            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{BOUNDED_LOG_HELP}</p>
             {view.steps.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-600">
+              <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>
                 No steps returned yet.
               </p>
             ) : (
@@ -1009,21 +1025,21 @@ export function ExecutionDetail({
                     key={step.id}
                     className={
                       isIndeterminateStatus(step.status)
-                        ? "rounded-xl border-2 border-amber-700 bg-amber-50 p-4"
-                        : "rounded-xl border border-zinc-200 p-4"
+                        ? `${FF_INBOX_ROW_INDETERMINATE_CLASS} rounded-xl p-4`
+                        : `rounded-xl ${FF_INBOX_PANEL_CLASS}`
                     }
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-medium">{step.nodeId}</p>
-                        <p className="font-mono text-xs text-zinc-600">
+                        <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                           {step.nodeType || "node"} · attempt {step.attempt}
                         </p>
                       </div>
                       <ExecutionStatusBadge status={step.status} />
                     </div>
                     {step.workerId || step.leaseId || step.fencingToken != null ? (
-                      <p className="mt-2 font-mono text-xs text-zinc-600">
+                      <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {step.workerId ? `worker ${step.workerId}` : ""}
                         {step.leaseId ? ` · lease ${step.leaseId}` : ""}
                         {step.fencingToken != null
@@ -1059,13 +1075,13 @@ export function ExecutionDetail({
                         type="button"
                         onClick={() => void onRetry(step.id)}
                         disabled={Boolean(retryPending) || pending || cancelPending}
-                        className="mt-3 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                        className={`mt-3 ${FF_INBOX_PRIMARY_CLASS}`}
                       >
                         {retryPending === step.id ? "Retrying…" : "Retry step"}
                       </button>
                     ) : isIndeterminateStatus(step.status) ||
                       isIndeterminateStatus(view.header.status) ? (
-                      <p className="mt-3 text-sm font-medium text-amber-950">
+                      <p className={`mt-3 text-sm font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}>
                         {isSshRunType(step.nodeType)
                           ? sshRetryBlockedMessage({
                               status: step.status,
@@ -1083,11 +1099,11 @@ export function ExecutionDetail({
                             : RETRY_INDETERMINATE_MESSAGE}
                       </p>
                     ) : isSshRunType(step.nodeType) ? (
-                      <p className="mt-3 text-xs text-zinc-500">
+                      <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {SSH_NO_BLIND_RETRY_HELP}
                       </p>
                     ) : isScriptIoActionType(step.nodeType) ? (
-                      <p className="mt-3 text-xs text-zinc-500">
+                      <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {stoppedUncertain
                           ? scriptEmergencyStopCopy({
                               outcome: "indeterminate",
@@ -1106,7 +1122,7 @@ export function ExecutionDetail({
                         type="button"
                         onClick={() => void onEmergencyStop(step.id)}
                         disabled={Boolean(stopPending) || pending || cancelPending}
-                        className="mt-3 ml-2 rounded-lg border-2 border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-900 disabled:opacity-60"
+                        className={`mt-3 ml-2 rounded-lg px-3 py-1.5 text-sm ${FF_LOUD_DANGER_CLASS}`}
                       >
                         {stopPending === step.id
                           ? "Stopping…"
@@ -1123,7 +1139,7 @@ export function ExecutionDetail({
                             step.input,
                           );
                           return retry?.verificationOutcome ? (
-                            <p className="mt-2 text-xs text-zinc-700">
+                            <p className="mt-2 text-xs">
                               {sshVerificationOutcomeCopy(retry.verificationOutcome)}
                             </p>
                           ) : null;
@@ -1137,14 +1153,14 @@ export function ExecutionDetail({
                         );
                       return (
                         <div className="mt-3">
-                          <p className="text-xs font-medium text-zinc-600">
+                          <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>
                             Bounded logs / output
                           </p>
-                          <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+                          <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
                             {logs.text}
                           </pre>
                           {logs.truncated ? (
-                            <p className="mt-1 text-xs text-zinc-500">
+                            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                               Output truncated at {logs.maxBytes} characters.
                             </p>
                           ) : null}
@@ -1180,15 +1196,15 @@ export function ExecutionDetail({
             onDownload={(artifact) => void onDownload(artifact.id)}
           />
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Jobs</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+          <section className={FF_INBOX_PANEL_CLASS}>
+            <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Jobs</h2>
+            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
               Dispatch records with safe lease/claim/heartbeat metadata when
               the API returns them. Worker secrets are never shown. This UI
               does not claim jobs.
             </p>
             {view.jobViews.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-600">No jobs returned.</p>
+              <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>No jobs returned.</p>
             ) : (
               <ul className="mt-4 grid gap-2">
                 {view.jobViews.map((job) => (
@@ -1196,8 +1212,8 @@ export function ExecutionDetail({
                     key={job.id}
                     className={
                       job.presentation.indeterminate
-                        ? "rounded-xl border-2 border-amber-700 bg-amber-50 px-4 py-3 text-sm"
-                        : "rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+                        ? `${FF_INBOX_ROW_INDETERMINATE_CLASS} rounded-xl px-4 py-3 text-sm`
+                        : `rounded-xl px-4 py-3 text-sm ${FF_INBOX_PANEL_CLASS}`
                     }
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1208,38 +1224,38 @@ export function ExecutionDetail({
                       </p>
                       <ExecutionStatusBadge status={job.status} />
                     </div>
-                    <p className="mt-1 font-mono text-xs break-all text-zinc-600">
+                    <p className={`mt-1 font-mono text-xs break-all ${FF_INBOX_MUTED_CLASS}`}>
                       {job.id}
                       {job.executionStepId ? ` · step ${job.executionStepId}` : ""}
                     </p>
                     <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
                       {job.workerId ? (
                         <div>
-                          <dt className="text-zinc-500">Worker id</dt>
+                          <dt className={FF_INBOX_MUTED_CLASS}>Worker id</dt>
                           <dd className="font-mono break-all">{job.workerId}</dd>
                         </div>
                       ) : null}
                       {job.leaseId ? (
                         <div>
-                          <dt className="text-zinc-500">Lease id</dt>
+                          <dt className={FF_INBOX_MUTED_CLASS}>Lease id</dt>
                           <dd className="font-mono break-all">{job.leaseId}</dd>
                         </div>
                       ) : null}
                       {job.leaseExpiresAt ? (
                         <div>
-                          <dt className="text-zinc-500">Lease expires</dt>
+                          <dt className={FF_INBOX_MUTED_CLASS}>Lease expires</dt>
                           <dd className="font-mono">{job.leaseExpiresAt}</dd>
                         </div>
                       ) : null}
                       {job.heartbeatAt ? (
                         <div>
-                          <dt className="text-zinc-500">Heartbeat</dt>
+                          <dt className={FF_INBOX_MUTED_CLASS}>Heartbeat</dt>
                           <dd className="font-mono">{job.heartbeatAt}</dd>
                         </div>
                       ) : null}
                       {job.fencingToken != null ? (
                         <div>
-                          <dt className="text-zinc-500">Fencing token</dt>
+                          <dt className={FF_INBOX_MUTED_CLASS}>Fencing token</dt>
                           <dd className="font-mono">{job.fencingToken}</dd>
                         </div>
                       ) : null}
@@ -1250,9 +1266,9 @@ export function ExecutionDetail({
             )}
           </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Audit events</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+          <section className={FF_INBOX_PANEL_CLASS}>
+            <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Audit events</h2>
+            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
               From{" "}
               <code className="font-mono text-xs">
                 GET /executions/{"{id}"}/audit-events
@@ -1262,26 +1278,26 @@ export function ExecutionDetail({
               — not the E2.2 isolation stub. {REDACTED_HELP}
             </p>
             {view.auditEvents.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-600">No audit events returned.</p>
+              <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>No audit events returned.</p>
             ) : (
               <ul className="mt-4 grid gap-2">
                 {view.auditEvents.map((event) => (
                   <li
                     key={event.id}
-                    className="rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+                    className={`rounded-xl px-4 py-3 text-sm ${FF_INBOX_PANEL_CLASS}`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <p className="font-medium">{event.action}</p>
-                      <p className="text-xs text-zinc-600">
+                      <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {event.outcome || "—"}
                       </p>
                     </div>
-                    <p className="mt-1 font-mono text-xs text-zinc-500">
+                    <p className={`mt-1 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                       {event.occurredAt || "—"}
                       {event.correlationId ? ` · ${event.correlationId}` : ""}
                     </p>
                     {event.details != null ? (
-                      <pre className="mt-2 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+                      <pre className={`mt-2 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
                         {boundRedactedDisplay(event.details).text}
                       </pre>
                     ) : null}

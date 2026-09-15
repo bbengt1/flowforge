@@ -9,6 +9,13 @@ import {
   satelliteOverlayAfterEscape,
   satelliteOverlayTriggerId,
 } from "@/lib/rewrite-satellite-a11y";
+import {
+  FF_VAULT_EYEBROW_CLASS,
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_HELP_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_TITLE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type CredentialWizardDialogProps = {
   open: boolean;
@@ -58,17 +65,17 @@ export function CredentialWizardDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="inspector-credential-wizard-heading"
-      className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
+      className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-black/60 p-4"
     >
-      <div className="my-8 w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-lg">
+      <div className={`my-8 w-full max-w-3xl ${FF_VAULT_PANEL_CLASS}`}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+            <p className={FF_VAULT_EYEBROW_CLASS}>
               Add vault credential
             </p>
             <h2
               id="inspector-credential-wizard-heading"
-              className="mt-1 text-lg font-semibold"
+              className={`mt-1 text-lg ${FF_VAULT_TITLE_CLASS}`}
             >
               Masked credential wizard
             </h2>
@@ -76,12 +83,12 @@ export function CredentialWizardDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className={FF_VAULT_GHOST_CLASS}
           >
             Close
           </button>
         </div>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className={`mt-2 text-sm ${FF_VAULT_HELP_CLASS}`}>
           Guided add on this graph — you return to the selected node.
           Secret fields stay in this wizard and clear after create. The
           inspector only receives the display name and workspace UUID —
