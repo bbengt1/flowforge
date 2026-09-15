@@ -1,47 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { afterLocalLoginHref } from "@/lib/change-password";
 import {
-  LOGIN_SUCCESS_HREF,
-  clearLoginPassword,
-  emptyLoginForm,
-  loginFailureMessage,
-  loginFormIsSubmittable,
-  type LocalLoginForm,
-} from "@/lib/local-login";
-import { loginWithPassword } from "@/lib/session-client";
-import { getSessionSnapshot } from "@/lib/session-store";
+  CHANGE_PASSWORD_SUCCESS_HREF,
+  changePasswordClientError,
+  changePasswordFailureMessage,
+  changePasswordFormIsSubmittable,
+  clearChangePasswordForm,
+  emptyChangePasswordForm,
+  type ChangePasswordForm,
+} from "@/lib/change-password";
+import { changeLocalPassword } from "@/lib/session-client";
 import {
   FF_SHELL_ROOT_CLASS,
   FF_SHELL_ROOT_VALUE,
 } from "@/lib/visual-tokens";
 
-type LoginChromeProps = {
+type ChangePasswordChromeProps = {
   onSuccess?: (href: string) => void;
 };
 
-export function LoginChrome({ onSuccess }: LoginChromeProps) {
-  const [form, setForm] = useState<LocalLoginForm>(emptyLoginForm);
+export function ChangePasswordChrome({ onSuccess }: ChangePasswordChromeProps) {
+  const [form, setForm] = useState<ChangePasswordForm>(emptyChangePasswordForm);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
-    const identifier = form.identifier.trim();
+    const clientError = changePasswordClientError(form);
     const password = form.password;
-    setForm(clearLoginPassword({ identifier, password }));
-    setPending(true);
+    setForm(clearChangePasswordForm());
     setError(null);
-    const result = await loginWithPassword({ identifier, password });
-    setPending(false);
-    if (!result.ok) {
-      setError(loginFailureMessage(result.statusCode, result.problem.detail));
+    if (clientError) {
+      setError(clientError);
       return;
     }
-    const href = afterLocalLoginHref(
-      getSessionSnapshot().session.mustChangePassword === true,
-    );
-    onSuccess?.(href === LOGIN_SUCCESS_HREF ? LOGIN_SUCCESS_HREF : href);
+    setPending(true);
+    const result = await changeLocalPassword(password);
+    setPending(false);
+    if (!result.ok) {
+      setError(
+        changePasswordFailureMessage(result.statusCode, result.problem.detail),
+      );
+      return;
+    }
+    onSuccess?.(CHANGE_PASSWORD_SUCCESS_HREF);
   }
 
   return (
@@ -62,7 +64,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
         className="mx-auto flex min-h-full w-full max-w-md flex-1 flex-col justify-center px-6 py-16 outline-none"
       >
         <section
-          aria-labelledby="login-heading"
+          aria-labelledby="change-password-heading"
           className="rounded-[var(--ff-radius-lg)] border px-6 py-8"
           style={{
             background: "var(--ff-surface)",
@@ -76,14 +78,15 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
             FlowForge
           </p>
           <h1
-            id="login-heading"
+            id="change-password-heading"
             className="mt-2 font-semibold tracking-tight"
             style={{ fontSize: "var(--ff-type-heading)" }}
           >
-            Sign in
+            Change password
           </h1>
           <p className="mt-2" style={{ color: "var(--ff-muted)" }}>
-            Use your email or username and password.
+            A one-time bootstrap password must be changed before you can
+            continue. This cannot be skipped.
           </p>
 
           <form
@@ -94,16 +97,14 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
             }}
           >
             <label className="grid gap-1 text-sm">
-              <span className="font-medium">Email or username</span>
+              <span className="font-medium">New password</span>
               <input
-                name="identifier"
-                type="text"
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={form.identifier}
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                value={form.password}
                 onChange={(event) =>
-                  setForm({ ...form, identifier: event.target.value })
+                  setForm({ ...form, password: event.target.value })
                 }
                 className="w-full px-3 py-2 outline-none"
                 style={{
@@ -115,14 +116,14 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
               />
             </label>
             <label className="grid gap-1 text-sm">
-              <span className="font-medium">Password</span>
+              <span className="font-medium">Confirm password</span>
               <input
-                name="password"
+                name="confirm"
                 type="password"
-                autoComplete="current-password"
-                value={form.password}
+                autoComplete="new-password"
+                value={form.confirm}
                 onChange={(event) =>
-                  setForm({ ...form, password: event.target.value })
+                  setForm({ ...form, confirm: event.target.value })
                 }
                 className="w-full px-3 py-2 outline-none"
                 style={{
@@ -148,7 +149,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
             ) : null}
             <button
               type="submit"
-              disabled={pending || !loginFormIsSubmittable(form)}
+              disabled={pending || !changePasswordFormIsSubmittable(form)}
               className="w-full px-3 py-2 text-sm font-semibold disabled:opacity-60"
               style={{
                 background: "var(--ff-accent)",
@@ -156,7 +157,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
                 borderRadius: "var(--ff-radius)",
               }}
             >
-              {pending ? "Signing in…" : "Sign in"}
+              {pending ? "Changing password…" : "Change password"}
             </button>
           </form>
         </section>
