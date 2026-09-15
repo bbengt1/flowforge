@@ -329,6 +329,76 @@ body {
 }
 
 /*
+ * X.1 Explorer shell — consume V.1 tokens. Relates to #380 / Part of #379.
+ * Keep #380 open. Keep #379 open. Tree + content pane + breadcrumb.
+ * Overview cards demoted from primary. Dense rows. No n8n orange.
+ * Not Miller columns. Not a second theme tree.
+ */
+.ff-explorer-shell {
+  color: var(--ff-text);
+}
+
+.ff-explorer-layout {
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  min-height: 28rem;
+  overflow: visible;
+}
+
+.ff-explorer-tree.ff-overview-rail {
+  border: none;
+  border-right: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius) 0 0 var(--ff-radius);
+  background: var(--ff-canvas);
+}
+
+.ff-explorer-pane {
+  min-width: 0;
+  overflow: visible;
+  background: var(--ff-canvas);
+}
+
+.ff-explorer-pane .ff-overview-header,
+.ff-explorer-pane .ff-overview-dialog {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-explorer-crumb {
+  border-bottom: 1px solid var(--ff-border);
+  background: var(--ff-surface);
+  padding: var(--ff-space-2) var(--ff-space-3);
+}
+
+.ff-explorer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ff-explorer-row.ff-overview-card {
+  min-height: 36px;
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
+.ff-explorer-row.ff-overview-card + .ff-explorer-row.ff-overview-card {
+  border-top: none;
+}
+
+@media (max-width: 767px) {
+  .ff-explorer-tree.ff-overview-rail {
+    border-right: none;
+    border-bottom: 1px solid var(--ff-border);
+    border-radius: var(--ff-radius) var(--ff-radius) 0 0;
+  }
+}
+
+/*
  * V.4 Editor chrome — consume V.1 tokens. Relates to #360 / Part of #353.
  * Keep #360 open. Dark canvas + satellites. One teal accent ring.
  * No n8n orange. Not a branded NDV clone. Not a second theme tree.

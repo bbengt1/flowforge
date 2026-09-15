@@ -119,6 +119,17 @@ import {
 } from "@/lib/overview-visual";
 import { overviewAncestryPills } from "@/lib/overview-path-pills";
 import {
+  EXPLORER_HELP,
+  EXPLORER_PANE_LABEL,
+  FF_EXPLORER_CRUMB_CLASS,
+  FF_EXPLORER_LAYOUT_CLASS,
+  FF_EXPLORER_LIST_CLASS,
+  FF_EXPLORER_PANE_CLASS,
+  FF_EXPLORER_ROW_CLASS,
+  FF_EXPLORER_SHELL_CLASS,
+  FF_EXPLORER_TREE_CLASS,
+} from "@/lib/explorer-shell";
+import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
   workflowTemplateById,
@@ -1236,14 +1247,18 @@ function WorkflowHomeSession() {
       data-o4-tree="api"
       data-o4-viewer={canMutateFolders ? "editor" : "select-only"}
       data-ff-overview={FF_OVERVIEW_VALUE}
-      className={`${FF_OVERVIEW_ROOT_CLASS} space-y-4`}
+      data-x1="explorer-shell"
+      className={`${FF_OVERVIEW_ROOT_CLASS} ${FF_EXPLORER_SHELL_CLASS} space-y-4`}
     >
       {!ready ? (
         <SessionSetupHint purpose="before listing workflows." />
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
 
-      <div className="grid gap-4 max-md:grid-cols-1 md:grid-cols-[12.5rem_minmax(0,1fr)]">
+      <div
+        data-x1="explorer-layout"
+        className={`${FF_EXPLORER_LAYOUT_CLASS} grid max-md:grid-cols-1 md:grid-cols-[16.5rem_minmax(0,1fr)]`}
+      >
       <FolderRail
         tree={visibleFolderTree}
         folders={folders}
@@ -1269,7 +1284,11 @@ function WorkflowHomeSession() {
         onCancel={closeFolderDialog}
         onDropWorkflow={(workflowId, target) => void moveItem(workflowId, target)}
       />
-      <div className="min-w-0 space-y-4">
+      <div
+        data-x1="content-pane"
+        aria-label={EXPLORER_PANE_LABEL}
+        className={`min-w-0 ${FF_EXPLORER_PANE_CLASS}`}
+      >
       <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
       {canMutateFolders && moveIntoOpen && selection.kind === "folder" ? (
         <form
@@ -1394,6 +1413,9 @@ function WorkflowHomeSession() {
               {OVERVIEW_HEADING}
             </h2>
             <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{OVERVIEW_HELP}</p>
+            <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-x1="explorer-help">
+              {EXPLORER_HELP}
+            </p>
             <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-f6="search-help">
               {FOLDER_SEARCH_HELP} Folder membership is not in YAML.
             </p>
@@ -1923,7 +1945,8 @@ function FolderRail({
       aria-label={FOLDER_RAIL_LABEL}
       data-home-folder-rail="nav"
       data-o2="finder-rail"
-      className={`h-fit ${FF_OVERVIEW_RAIL_CLASS}`}
+      data-x1="folder-tree"
+      className={`h-full ${FF_OVERVIEW_RAIL_CLASS} ${FF_EXPLORER_TREE_CLASS}`}
     >
       <div className="flex items-start justify-between gap-2 px-2">
         <p className={`text-xs font-medium tracking-wide uppercase ${FF_OVERVIEW_MUTED_CLASS}`}>
@@ -2231,7 +2254,8 @@ function FolderBreadcrumb({
     <nav
       aria-label={FOLDER_CRUMB_LABEL}
       data-home-folder-crumb=""
-      className={`flex flex-wrap items-center gap-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
+      data-x1="breadcrumb"
+      className={`${FF_EXPLORER_CRUMB_CLASS} flex flex-wrap items-center gap-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
     >
       {crumbs.map((crumb, index) => (
         <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
@@ -2605,7 +2629,7 @@ function WorkflowHomeCards({
   onDragEnd: () => void;
 }) {
   return (
-    <div data-o1="card-list">
+    <div data-o1="card-list" data-x1="content-list">
       <div
         className="sr-only"
         aria-hidden="true"
@@ -2617,15 +2641,16 @@ function WorkflowHomeCards({
           </span>
         ))}
       </div>
-      <ul className="space-y-2">
+      <ul className={FF_EXPLORER_LIST_CLASS}>
         {items.map((item) => {
           const dates = overviewCardTimestamps(item);
           const published = overviewPublishedBadge(item.status);
           return (
             <li
               key={item.id}
-              className={OVERVIEW_CARD_SURFACE_CLASS}
+              className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}`}
               data-o1="card"
+              data-x1="content-row"
               data-home-row-scan="card"
               {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
             >
