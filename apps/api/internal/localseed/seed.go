@@ -14,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -23,18 +24,23 @@ const EnvSeedLocalDefaults = "SEED_LOCAL_DEFAULTS"
 
 // Documented local-only identities. These are not production values.
 const (
-	TenantSlug     = "local"
-	TenantName     = "Local demo"
-	WorkbenchKey   = "default"
-	WorkspaceName  = "Local workbench"
-	AdminDisplay   = "Local platform admin"
-	CredentialTag  = "local-demo"
-	TokenName      = "Local demo token"
-	WebhookName    = "Local demo webhook"
-	ProviderName   = "Local demo provider"
-	TokenSecret    = "local-demo-token-not-a-secret"
-	WebhookSecret  = "local-demo-webhook-not-a-secret"
-	ProviderSecret = "local-demo-provider-not-a-secret"
+	TenantSlug    = "local"
+	TenantName    = "Local demo"
+	WorkbenchKey  = "default"
+	WorkspaceName = "Local workbench"
+	AdminDisplay  = "Local platform admin"
+	// BootstrapIssuer/Subject are the first-run local-login operator.
+	// Distinct from PLATFORM_ADMINS / trusted-dev.
+	BootstrapIssuer  = "local"
+	BootstrapSubject = "admin"
+	BootstrapDisplay = "Administrator"
+	CredentialTag    = "local-demo"
+	TokenName        = "Local demo token"
+	WebhookName      = "Local demo webhook"
+	ProviderName     = "Local demo provider"
+	TokenSecret      = "local-demo-token-not-a-secret"
+	WebhookSecret    = "local-demo-webhook-not-a-secret"
+	ProviderSecret   = "local-demo-provider-not-a-secret"
 )
 
 // Input is the seed dependency set. Tests inject memory stores.
@@ -114,6 +120,63 @@ func Hook(in Input) func(context.Context, *pgxpool.Pool) error {
 		)
 		return nil
 	}
+}
+
+// BootstrapLoginHook seeds the one-time admin/admin credential after
+// migrate when local_logins is empty. Runs on path-1 and path-2 first
+// boot, including production-locked processes — Login still works, but
+// GET /session exposes must_change_password so chrome can gate until
+// the operator rotates. Never overwrites an existing credential.
+func BootstrapLoginHook(log *slog.Logger) func(context.Context, *pgxpool.Pool) error {
+	return func(ctx context.Context, db *pgxpool.Pool) error {
+		if db == nil {
+			return fmt.Errorf("bootstrap login: postgres pool is nil")
+		}
+		return EnsureBootstrapLogin(ctx, identity.NewPostgres(db), log)
+	}
+}
+
+// EnsureBootstrapLogin inserts identifier `admin` with the documented
+// one-time password only when zero local_logins exist. The user is
+// create-or-bound as workspace admin on local/default so first sign-in
+// has a selectable workbench. PLATFORM_ADMINS are not this identity.
+func EnsureBootstrapLogin(ctx context.Context, store identity.Store, log *slog.Logger) error {
+	if store == nil {
+		return fmt.Errorf("bootstrap login: identity store is required")
+	}
+	has, err := store.HasLocalLogins(ctx)
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	user, err := ProvisionAdmin(ctx, store, BootstrapIssuer, BootstrapSubject, BootstrapDisplay)
+	if err != nil {
+		return err
+	}
+	ident, err := localauth.NormalizeIdentifier(localauth.OneTimeIdentifier)
+	if err != nil {
+		return err
+	}
+	hash, err := localauth.HashOneTimePassword()
+	if err != nil {
+		return err
+	}
+	created, err := store.InsertBootstrapLocalLogin(ctx, user.ID, ident, hash)
+	if err != nil {
+		if errors.Is(err, identity.ErrConflict) {
+			return nil
+		}
+		return err
+	}
+	if created {
+		logger(log).Warn("first-run local login seeded; rotate the one-time password immediately",
+			"identifier", localauth.OneTimeIdentifier,
+			"must_change_password", true,
+		)
+	}
+	return nil
 }
 
 // Apply is idempotent. A second call with the same stores must not

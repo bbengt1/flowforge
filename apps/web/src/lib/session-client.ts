@@ -10,6 +10,7 @@ import {
   SESSION_AUDIT_PATH,
   SESSION_LOGIN_PATH,
   SESSION_LOGOUT_PATH,
+  SESSION_PASSWORD_PATH,
   SESSION_PATH,
   SESSION_REFRESH_PATH,
   type SessionAuditEvent,
@@ -142,6 +143,36 @@ export async function refreshSession(): Promise<IdentityClientResult<SessionPayl
   }
   if (isUnauthenticatedProblem(result.problem)) {
     markSessionStale();
+  }
+  return result;
+}
+
+/** First-run change-password. Password POST once; never persist the value. */
+export async function changeLocalPassword(
+  password: string,
+): Promise<IdentityClientResult<SessionPayload>> {
+  const requestId = generateRequestId();
+  const instance = sessionBrowserPath(SESSION_PASSWORD_PATH);
+  const headers: Record<string, string> = {
+    Accept: "application/json, application/problem+json",
+    "Content-Type": "application/json",
+    [REQUEST_ID_HEADER]: requestId,
+  };
+  if (shouldAttachCsrf("POST", instance)) {
+    const token = resolveCsrfToken();
+    if (token) {
+      headers[CSRF_HEADER] = token;
+    }
+  }
+  const result = await fetchSameOriginProxy<SessionPayload>({
+    instance,
+    method: "POST",
+    headers,
+    body: JSON.stringify({ password }),
+    requestId,
+  });
+  if (result.ok) {
+    applySessionPayload(result.data);
   }
   return result;
 }

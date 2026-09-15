@@ -237,12 +237,15 @@ func TestMemoryLocalLoginRoundTrip(t *testing.T) {
 	if err := store.SetLocalPassword(ctx, user.ID, "admin@example.com", "$2a$10$not-a-real-hash-but-stored"); err != nil {
 		t.Fatal(err)
 	}
-	got, hash, err := store.LookupLocalLogin(ctx, "admin@example.com")
+	got, err := store.LookupLocalLogin(ctx, "admin@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != user.ID || hash == "" {
-		t.Fatalf("lookup: %+v hash=%q", got, hash)
+	if got.User.ID != user.ID || got.PasswordHash == "" {
+		t.Fatalf("lookup: %+v", got)
+	}
+	if got.MustChangePassword {
+		t.Fatal("operator-set password must not require change")
 	}
 	other, err := store.UpsertUser(ctx, "https://idp.example", "other", "Other")
 	if err != nil {
@@ -250,6 +253,54 @@ func TestMemoryLocalLoginRoundTrip(t *testing.T) {
 	}
 	if err := store.SetLocalPassword(ctx, other.ID, "admin@example.com", "other-hash"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate identifier = %v", err)
+	}
+}
+
+func TestMemoryBootstrapLocalLoginOnlyWhenEmpty(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	user, err := store.UpsertUser(ctx, "local", "admin", "Administrator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.InsertBootstrapLocalLogin(ctx, user.ID, "admin", "$2a$10$bootstrap-hash")
+	if err != nil || !created {
+		t.Fatalf("first seed created=%v err=%v", created, err)
+	}
+	got, err := store.LookupLocalLogin(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.MustChangePassword || got.PasswordHash != "$2a$10$bootstrap-hash" {
+		t.Fatalf("bootstrap lookup: %+v", got)
+	}
+	other, err := store.UpsertUser(ctx, "local", "other", "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.InsertBootstrapLocalLogin(ctx, other.ID, "admin", "$2a$10$other-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again {
+		t.Fatal("second seed must not overwrite")
+	}
+	got, err = store.LookupLocalLogin(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PasswordHash != "$2a$10$bootstrap-hash" || !got.MustChangePassword {
+		t.Fatalf("existing credential overwritten: %+v", got)
+	}
+	if err := store.ChangeLocalPassword(ctx, user.ID, "$2a$10$rotated-hash"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.LookupLocalLoginByUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MustChangePassword || got.PasswordHash != "$2a$10$rotated-hash" {
+		t.Fatalf("after change: %+v", got)
 	}
 }
 
@@ -272,12 +323,15 @@ func TestPostgresLocalLoginRoundTrip(t *testing.T) {
 	if err := store.SetLocalPassword(ctx, user.ID, ident, "$2a$10$stored-hash-only"); err != nil {
 		t.Fatal(err)
 	}
-	got, hash, err := store.LookupLocalLogin(ctx, ident)
+	got, err := store.LookupLocalLogin(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != user.ID || hash != "$2a$10$stored-hash-only" {
-		t.Fatalf("lookup: %+v hash=%q", got, hash)
+	if got.User.ID != user.ID || got.PasswordHash != "$2a$10$stored-hash-only" {
+		t.Fatalf("lookup: %+v", got)
+	}
+	if got.MustChangePassword {
+		t.Fatal("operator-set password must not require change")
 	}
 	other, err := store.UpsertUser(ctx, "https://idp.example", "other-"+suffix, "Other")
 	if err != nil {
@@ -285,6 +339,29 @@ func TestPostgresLocalLoginRoundTrip(t *testing.T) {
 	}
 	if err := store.SetLocalPassword(ctx, other.ID, ident, "other-hash"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate identifier = %v", err)
+	}
+
+	fresh, err := store.UpsertUser(ctx, "local", "admin-"+suffix, "Administrator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Table is not empty — bootstrap insert must no-op.
+	created, err := store.InsertBootstrapLocalLogin(ctx, fresh.ID, "admin-"+suffix, "$2a$10$bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("bootstrap insert must not write when local_logins already exist")
+	}
+	if err := store.ChangeLocalPassword(ctx, user.ID, "$2a$10$rotated-hash"); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := store.LookupLocalLoginByUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.MustChangePassword || rotated.PasswordHash != "$2a$10$rotated-hash" {
+		t.Fatalf("after change: %+v", rotated)
 	}
 }
 

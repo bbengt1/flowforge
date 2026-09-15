@@ -47,6 +47,16 @@ type User struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+// LocalLogin is a standalone password credential. PasswordHash is for
+// Verify only and must never be copied onto User JSON, session bodies,
+// bootstrap status, or logs.
+type LocalLogin struct {
+	User               User
+	Identifier         string
+	PasswordHash       string
+	MustChangePassword bool
+}
+
 // Member is a workspace binding.
 type Member struct {
 	User        User     `json:"user"`

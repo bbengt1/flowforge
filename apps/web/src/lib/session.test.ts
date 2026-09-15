@@ -56,7 +56,20 @@ describe("parseBrowserSession", () => {
       idleExpiresAt: "2026-09-08T19:30:00.000Z",
       absoluteExpiresAt: "2026-09-09T07:00:00.000Z",
       csrfToken: "csrf-abc",
+      mustChangePassword: false,
     });
+    const forced = parseBrowserSession({
+      session: {
+        id: "sess-1",
+        must_change_password: true,
+      },
+      principal: {
+        issuer: "local",
+        external_subject: "admin",
+      },
+      csrf_token: "csrf-abc",
+    });
+    assert.equal(forced?.mustChangePassword, true);
     assert.equal(
       effectiveExpiresAt(parsed!),
       "2026-09-08T19:30:00.000Z",

@@ -55,3 +55,34 @@ func TestValidatePassword(t *testing.T) {
 func TestDummyVerifyDoesNotPanic(t *testing.T) {
 	DummyVerify("anything-at-all")
 }
+
+func TestHashOneTimePassword(t *testing.T) {
+	if _, err := HashPassword(OneTimePassword); err != ErrInvalidPassword {
+		t.Fatalf("normal hash must reject the short one-time password: %v", err)
+	}
+	hash, err := HashOneTimePassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash == "" || strings.Contains(hash, OneTimePassword) {
+		t.Fatal("one-time hash must not contain the password")
+	}
+	if !Verify(OneTimePassword, hash) {
+		t.Fatal("one-time password must verify against its hash")
+	}
+}
+
+func TestValidateReplacementPassword(t *testing.T) {
+	if err := ValidateReplacementPassword(OneTimePassword, "correct-horse"); err != ErrOneTimePassword {
+		t.Fatalf("one-time = %v", err)
+	}
+	if err := ValidateReplacementPassword("correct-horse", "correct-horse"); err != ErrReusedPassword {
+		t.Fatalf("reuse = %v", err)
+	}
+	if err := ValidateReplacementPassword("short", "correct-horse"); err != ErrInvalidPassword {
+		t.Fatalf("short = %v", err)
+	}
+	if err := ValidateReplacementPassword("new-secret", "correct-horse"); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -470,12 +470,15 @@ func TestBootstrapAdminsStoresPasswordWithoutEcho(t *testing.T) {
 	if !st.FirstAdminReady {
 		t.Fatal("password POST must still set firstAdmin ready")
 	}
-	user, hash, err := idStore.LookupLocalLogin(t.Context(), "admin-1")
+	cred, err := idStore.LookupLocalLogin(t.Context(), "admin-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.ExternalSubject != "admin-1" || hash == "" || strings.Contains(hash, "super-secret-hunter2") {
-		t.Fatalf("stored login: user=%+v hash=%q", user, hash)
+	if cred.User.ExternalSubject != "admin-1" || cred.PasswordHash == "" || strings.Contains(cred.PasswordHash, "super-secret-hunter2") {
+		t.Fatalf("stored login: user=%+v hash=%q", cred.User, cred.PasswordHash)
+	}
+	if cred.MustChangePassword {
+		t.Fatal("B.3 operator-chosen password must not require change")
 	}
 }
 

@@ -10,7 +10,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
 2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
-4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
+4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). When `local_logins` is empty it also seeds the **one-time** local Login operator — see [First-run local Login](#first-run-local-login). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
@@ -131,6 +131,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` unset (ephemeral) | Durable secrets. Tickets and script signatures die on restart if unset. |
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Production workers are isolated claim clients you deploy separately. The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
+| First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
 | `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
 | OpenAPI/metrics via trusted-dev headers | `Authorization: Bearer <ff_session>` for a `PLATFORM_ADMINS` principal. |
@@ -221,6 +222,32 @@ or compose `PUBLIC_BASE_URL=http://localhost:3000`.
 Empty/`production` `APP_ENV` plus `REQUIRE_TLS=true` keeps the seed
 inactive even if someone copies the compose file.
 
+## First-run local Login
+
+**This is a one-time bootstrap credential, not a permanent default.**
+
+When PostgreSQL is ready and **zero** `local_logins` rows exist (empty
+volume / path-2 first boot), the API seeds identifier `admin` with
+one-time password `admin` and `must_change_password=true`. It never
+overwrites an existing credential. `PLATFORM_ADMINS` / trusted-dev
+`POST /session` stay a separate identity.
+
+`POST /login` with that one-time pair mints the usual `ff_session` /
+`ff_csrf` cookies **and** `session.must_change_password`. Overview /
+product chrome must stay blocked until `POST /session/password` (CSRF)
+succeeds — no skip. The new password must be longer than the one-time
+default, must not equal the current secret, and must not be `admin`.
+Password POST once; never echoed.
+
+After a successful change the one-time hash is dead. `admin` / `admin`
+is the same `401` as an unknown identifier. Production-locked processes
+still allow Login, but the same `must_change_password` gate stays up
+until the operator rotates — do **not** leave `admin` / `admin` usable.
+
+Incomplete installs still open the wizard first. After complete (or
+localseed skip), signed-out standalone chrome is Login. Embed /
+`POST /embed/exchange` / ADV-021 are untouched.
+
 ## Path-2 first-run wizard
 
 Default compose localseed marks bootstrap **complete** (wizard skip).
@@ -228,7 +255,9 @@ To exercise the first-run wizard (path-2 / B.1–B.5), set
 `SEED_LOCAL_DEFAULTS=0` and start against an empty postgres volume
 (`docker compose down -v`, then `docker compose up --build`).
 B.3 still create-or-binds tenant `local` / workbench `default` for the
-first admin (no demo vault credentials). After wizard complete +
+first admin (no demo vault credentials). If B.3 omits a password and
+`local_logins` is still empty, the one-time `admin` / `admin` seed
+still runs — rotate it on first sign-in. After wizard complete +
 `POST /login`, that workbench is listed and selectable.
 
 The API container is read-only except `/tmp`. Compose defaults:

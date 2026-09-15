@@ -60,9 +60,19 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   admin is `{issuer, external_subject, display_name?, password?}`.
   Optional `password` is POSTed once, stored only as a bcrypt hash on
   `local_logins` (identifier = `external_subject`), and is **never
-  echoed**. `POST /login` verifies that hash and mints the same
-  standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`).
-  Unknown identifier and wrong password are the same `401` without
+  echoed**. When `local_logins` is empty (fresh / path-2 first boot),
+  the API seeds a **one-time** operator identifier `admin` with
+  password `admin` and `must_change_password=true`. This is not a
+  permanent default and never overwrites an existing credential.
+  `POST /login` verifies that hash and mints the same
+  standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`)
+  plus session claim `must_change_password` when the flag is set.
+  `GET /session` exposes the same flag so chrome can gate Overview
+  until `POST /session/password` (CSRF) replaces the hash. After
+  change, `admin`/`admin` is the same `401` as unknown. Production
+  still allows Login, but the same gate stays up until the one-time
+  is rotated — do not leave `admin`/`admin` usable. Unknown identifier
+  and wrong password are the same `401` without
   saying which field failed. `POST /login` is rate-limited by IP
   (default 60/min) and identifier (default 30/min) **before** lookup
   or bcrypt and returns `429` `rate-limited` with `Retry-After` on

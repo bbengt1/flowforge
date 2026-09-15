@@ -11,6 +11,7 @@ export type BrowserSession = {
   idleExpiresAt: string | null;
   absoluteExpiresAt: string | null;
   csrfToken: string;
+  mustChangePassword?: boolean;
 };
 
 export type SessionExpiryState = "ok" | "warning" | "expired" | "unknown";
@@ -24,6 +25,7 @@ export function emptyBrowserSession(): BrowserSession {
     idleExpiresAt: null,
     absoluteExpiresAt: null,
     csrfToken: "",
+    mustChangePassword: false,
   };
 }
 
@@ -47,6 +49,7 @@ export function parseBrowserSession(value: unknown): BrowserSession | null {
       session.absolute_expires_at ?? session.absoluteExpiresAt,
     ),
     csrfToken: readString(value.csrf_token ?? value.csrfToken),
+    mustChangePassword: session.must_change_password === true,
   };
 }
 

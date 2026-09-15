@@ -13,6 +13,7 @@ import {
   SESSION_COOKIE_PATH,
   SESSION_LOGIN_PATH,
   SESSION_LOGOUT_PATH,
+  SESSION_PASSWORD_PATH,
   SESSION_PATH,
   SESSION_REFRESH_PATH,
 } from "./session-contract.ts";
@@ -25,6 +26,7 @@ describe("session-contract", () => {
     assert.equal(sessionBrowserPath(), "/api/v1/session");
     assert.equal(sessionBrowserPath(SESSION_REFRESH_PATH), "/api/v1/session/refresh");
     assert.equal(sessionBrowserPath(SESSION_LOGOUT_PATH), "/api/v1/session/logout");
+    assert.equal(sessionBrowserPath(SESSION_PASSWORD_PATH), "/api/v1/session/password");
     assert.equal(sessionBrowserPath(SESSION_LOGIN_PATH), "/api/v1/login");
     assert.equal(SESSION_PATH, "/session");
     assert.equal(SESSION_LOGIN_PATH, "/login");
@@ -55,6 +57,8 @@ describe("session-contract", () => {
     assert.equal(csrfRequiredFor("POST", "/session"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session/refresh"), true);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session/logout"), true);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/session/password"), true);
+    assert.equal(csrfRequiredFor("POST", "/api/control-plane/session/password"), true);
     assert.equal(csrfRequiredFor("POST", "/api/control-plane/session/logout"), true);
     assert.equal(csrfRequiredFor("DELETE", "/api/v1/session"), true);
     assert.equal(csrfRequiredFor("POST", "/api/v1/tenants"), true);

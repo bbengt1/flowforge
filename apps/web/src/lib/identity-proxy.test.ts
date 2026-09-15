@@ -93,6 +93,7 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["session"], "/api/v1/session"],
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],
       ["POST", ["session", "logout"], "/api/v1/session/logout"],
+      ["POST", ["session", "password"], "/api/v1/session/password"],
       ["GET", ["session", "audit-events"], "/api/v1/session/audit-events"],
       ["GET", ["embed", "catalog"], "/api/v1/embed/catalog"],
       ["GET", ["embed", "jwks"], "/api/v1/embed/jwks"],

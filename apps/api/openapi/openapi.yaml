@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.24.0
+  version: 0.25.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -823,8 +823,10 @@ paths:
         not required (no session yet). Password is POST-once and never
         echoed. Unknown identifier and wrong password are the same `401`
         (`Invalid credentials.`) — the response does not say which field
-        failed. `GET /session` after success is a normal non-embed
-        session (`session.embed` omitted).
+        failed.         `GET /session` after success is a normal non-embed
+        session (`session.embed` omitted). First-run one-time
+        `admin` / `admin` sets `session.must_change_password`
+        so product chrome can gate until `POST /session/password`.
 
         Rate-limited by client IP (default 60/min) and identifier
         (default 30/min) **before** lookup or bcrypt (`DummyVerify`
@@ -935,8 +937,10 @@ paths:
         `session.embed` as the authoritative chrome payload: `mode`, `sdk`,
         `tenantId`, `tenantSlug`, `tenantName`, `workbenchKey`, `workspaceId`,
         `workspaceName`, and session-capped `capabilities`. Standalone
-        sessions omit `session.embed`. The body never includes a compact JWS,
-        assertion leftovers, or signing material.
+        sessions omit `session.embed`. `session.must_change_password` is
+        true while the local-login credential still requires rotation
+        (first-run one-time). The body never includes a compact JWS,
+        assertion leftovers, password, hash, or signing material.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -1000,6 +1004,59 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+  /session/password:
+    post:
+      operationId: changeLocalPassword
+      summary: Change the local-login password
+      description: |
+        Standalone first-run / rotation door. Requires `ff_session` plus
+        matching `ff_csrf` / `X-CSRF-Token`. Embed sessions are `403`
+        (ADV-021 / `POST /embed/exchange` is untouched). Password is
+        POST-once and never echoed.
+
+        The new password must meet the documented minimum length, must
+        not match the current secret, and must not be the one-time
+        default `admin`. Success replaces the hash, clears
+        `must_change_password`, and makes `admin` / `admin` the same
+        `401` as an unknown identifier.
+
+        Trusted-dev `POST /session` is a separate identity path and is
+        not this credential.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+            example:
+              password: "********"
+      responses:
+        "200":
+          description: Password rotated; session claim cleared
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /session/audit-events:
     get:
       operationId: listSessionAuditEvents
@@ -7759,6 +7816,25 @@ components:
           maxLength: 72
           format: password
           description: POST once. Never returned.
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        New local-login password. POST once; never echoed. Must not
+        match the current secret or the one-time default `admin`.
+      properties:
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+          description: New password. POST once. Never returned.
+        new_password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+          description: Alias for password.
     CreateSessionRequest:
       type: object
       properties:
@@ -7787,6 +7863,13 @@ components:
         absolute_expires_at:
           type: string
           format: date-time
+        must_change_password:
+          type: boolean
+          description: |
+            True after first-run one-time local login until
+            `POST /session/password` succeeds. Chloe gates Overview /
+            product chrome to the change-password screen. Omitted when
+            false. Never a password or hash.
         embed:
           $ref: "#/components/schemas/SessionEmbedBinding"
     SessionEmbedBinding:
