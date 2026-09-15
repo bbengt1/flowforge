@@ -98,7 +98,7 @@ describe("V.0b Login chrome + signed-out gate", () => {
     assert.equal(loginSourceIsProductDoor(chrome), true);
     assert.match(chrome, /Email or username/);
     assert.match(chrome, /type="password"/);
-    assert.match(chrome, />Sign in</);
+    assert.match(chrome, /"Sign in"/);
     assert.doesNotMatch(chrome, /Establish session/);
     assert.doesNotMatch(chrome, /Example context/);
     assert.doesNotMatch(chrome, /trusted-dev/);
