@@ -202,9 +202,13 @@ func ensureTenant(ctx context.Context, store identity.Store) (identity.Tenant, b
 	return identity.Tenant{}, false, err
 }
 
-// ProvisionAdmin upserts issuer+subject and grants workspace admin on
-// the default local tenant/workbench (same identities as Apply).
-// It does not write vault credentials and does not mark bootstrap complete.
+// ProvisionAdmin upserts issuer+subject and create-or-binds workspace
+// admin on the default local tenant/workbench (same identities as Apply:
+// tenant slug "local", workbench key "default"). Missing tenant or
+// workbench is created; an existing pair is reused. Path-2
+// (SEED_LOCAL_DEFAULTS=0) therefore still gets a selectable workbench
+// after B.3. It does not write vault credentials and does not mark
+// bootstrap complete.
 func ProvisionAdmin(ctx context.Context, store identity.Store, issuer, subject, displayName string) (identity.User, error) {
 	if store == nil {
 		return identity.User{}, fmt.Errorf("local seed: identity store is required")

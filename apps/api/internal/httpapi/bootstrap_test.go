@@ -383,8 +383,11 @@ func TestBootstrapAdminsCreatesWorkspaceAdminAndSetsReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(memberships) != 1 || !authz.Allows(memberships[0].Permissions, authz.PermWorkspaceAdminister) {
-		t.Fatalf("first admin must be workspace admin: %+v", memberships)
+	if len(memberships) != 1 ||
+		memberships[0].Tenant.Slug != localseed.TenantSlug ||
+		memberships[0].Workspace.WorkbenchKey != localseed.WorkbenchKey ||
+		!authz.Allows(memberships[0].Permissions, authz.PermWorkspaceAdminister) {
+		t.Fatalf("first admin must be workspace admin on local/default: %+v", memberships)
 	}
 
 	rec = httptest.NewRecorder()

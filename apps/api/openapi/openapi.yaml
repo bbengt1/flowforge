@@ -330,10 +330,13 @@ paths:
       description: |
         Wizard step 2 (B.3). Upserts the first admin identity using the
         same issuer + external_subject pattern as localseed
-        `PLATFORM_ADMINS`, grants workspace admin on the default
-        tenant/workbench, then sets `steps.firstAdmin.ready=true` via
-        the bootstrap store. Does **not** mark bootstrap `complete`
-        (public URL and TLS are still required).
+        `PLATFORM_ADMINS`, then create-or-binds workspace admin on the
+        default tenant/workbench (`local` / `default`, created if
+        missing so path-2 with `SEED_LOCAL_DEFAULTS=0` still has a
+        selectable workbench after `POST /login`). Then sets
+        `steps.firstAdmin.ready=true` via the bootstrap store. Does
+        **not** mark bootstrap `complete` (public URL and TLS are still
+        required).
 
         Body is `{issuer, external_subject, display_name?, password?}`.
         Optional `password` is POSTed once, stored only as a bcrypt hash

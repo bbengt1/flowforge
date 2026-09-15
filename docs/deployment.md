@@ -208,9 +208,11 @@ do not promote it into production Settings copy.
 Trusted-dev identity headers and `POST /session` remain a labeled
 local fallback when compose has `TRUSTED_DEV_IDENTITY_HEADERS=1`.
 They are **never rewrite login**. Production identity is
-`POST /embed/exchange`. Then list workspaces / open Credentials. The
-switcher lists memberships only after that workspace lookup is in tab
-`sessionStorage`.
+`POST /embed/exchange`. Then list workspaces / open Credentials.
+After a cookie session, `GET /workspaces` lists memberships without a
+prior lookup; standalone chrome binds B.3 / localseed `local` /
+`default` (or the sole membership) into tab `sessionStorage` so the
+switcher is not an empty Select-a-workspace dead end.
 
 ### Production
 
@@ -225,6 +227,9 @@ Default compose localseed marks bootstrap **complete** (wizard skip).
 To exercise the first-run wizard (path-2 / B.1–B.5), set
 `SEED_LOCAL_DEFAULTS=0` and start against an empty postgres volume
 (`docker compose down -v`, then `docker compose up --build`).
+B.3 still create-or-binds tenant `local` / workbench `default` for the
+first admin (no demo vault credentials). After wizard complete +
+`POST /login`, that workbench is listed and selectable.
 
 The API container is read-only except `/tmp`. Compose defaults:
 

@@ -23,6 +23,10 @@ import {
   workspaceMatchesVerified,
 } from "@/lib/embed-tenancy-contract";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
+import {
+  pickDefaultWorkbench,
+  workspaceLookupFromMembership,
+} from "@/lib/default-workbench";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup, type DevIdentity } from "@/lib/identity-headers";
 import type { CurrentWorkspace, ItemList, Membership } from "@/lib/identity-types";
@@ -82,10 +86,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[] | null>(null);
   const [tenancyMismatch, setTenancyMismatch] = useState(false);
 
-  const ready =
+  const canListMemberships =
     hasOperatorCaller(session.active, identity, headerFallback) &&
-    hasWorkspaceLookup(identity) &&
     (!embed || Boolean(verified));
+  const ready = canListMemberships && hasWorkspaceLookup(identity);
 
   useEffect(() => {
     if (!embed || !verified) {
@@ -97,15 +101,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [embed, verified, identity]);
 
   useEffect(() => {
-    if (!ready) {
+    if (!canListMemberships) {
       return;
     }
     let cancelled = false;
+    const lookup = hasWorkspaceLookup(identity);
     void Promise.all([
-      callIdentityProxy<CurrentWorkspace>("/workspace", identity),
+      lookup
+        ? callIdentityProxy<CurrentWorkspace>("/workspace", identity)
+        : Promise.resolve(undefined),
       callIdentityProxy<ItemList<Membership>>("/workspaces", identity),
     ]).then(([workspace, list]) => {
       if (cancelled) {
+        return;
+      }
+      if (list.ok) {
+        const items = list.data.items ?? [];
+        setMemberships(items);
+        if (!embed && !lookup) {
+          const pick = pickDefaultWorkbench(items);
+          if (pick) {
+            saveDevIdentity({
+              ...identity,
+              ...workspaceLookupFromMembership(pick),
+            });
+          }
+        }
+      }
+      if (!workspace) {
         return;
       }
       if (workspace.ok) {
@@ -131,14 +154,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       } else {
         setPermissions([]);
       }
-      if (list.ok) {
-        setMemberships(list.data.items ?? []);
-      }
     });
     return () => {
       cancelled = true;
     };
-  }, [ready, identity, embed, verified]);
+  }, [canListMemberships, identity, embed, verified]);
 
   const switchWorkspace = useCallback(
     (membership: Membership) => {
@@ -147,9 +167,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       saveDevIdentity({
         ...identity,
-        tenantId: membership.workspace.tenant_id,
-        tenantSlug: membership.tenant.slug,
-        workbenchKey: membership.workspace.workbench_key,
+        ...workspaceLookupFromMembership(membership),
       });
     },
     [embed, verified, identity],
@@ -172,7 +190,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           : null,
       roles: ready && !tenancyMismatch ? current?.roles ?? [] : [],
       current: ready && !tenancyMismatch ? current : null,
-      memberships: ready && !tenancyMismatch ? memberships : [],
+      memberships: canListMemberships && !tenancyMismatch ? memberships : [],
       environment: identity.workbenchKey.trim(),
       switchWorkspace,
       embedLocked: embed && Boolean(session.embedChrome || verified),
@@ -181,6 +199,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [
       identity,
       ready,
+      canListMemberships,
       permissions,
       current,
       memberships,
