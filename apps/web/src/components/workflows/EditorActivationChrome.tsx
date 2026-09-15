@@ -31,6 +31,16 @@ import {
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import type { WorkflowVersion } from "@/lib/workflow-types";
+import {
+  FF_EDITOR_CHIP_ACCENT_CLASS,
+  FF_EDITOR_CHIP_CLASS,
+  FF_EDITOR_CONTROL_CLASS,
+  FF_EDITOR_GHOST_CLASS,
+  FF_EDITOR_MUTED_CLASS,
+  FF_EDITOR_PANEL_CLASS,
+  FF_EDITOR_PLUS_CLASS,
+  FF_EDITOR_TITLE_CLASS,
+} from "@/lib/editor-visual";
 
 type EditorActivationChromeProps = {
   identity: DevIdentity;
@@ -154,45 +164,45 @@ export function EditorActivationChrome({
       data-r6-d2={R6_CONFIRMATION.d2ComposeEnablePlusVersionPin}
       data-r6-d3={R6_CONFIRMATION.d3TriggersStayWorkflowLevel}
       data-r6-draft-live={R6_CONFIRMATION.draftsNeverLookLive}
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={`rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+          <p className={`text-sm font-medium tracking-wide uppercase ${FF_EDITOR_MUTED_CLASS}`}>
             R6.1 · Activation · D2 compose
           </p>
           <p
             data-editor-working-memory="draft"
-            className="mt-1 text-sm text-zinc-600"
+            className={`mt-1 text-sm ${FF_EDITOR_MUTED_CLASS}`}
           >
             {editorWorkingMemoryDraftLabel()}
           </p>
           <h2
             id={EDITOR_ACTIVATION_HEADING_ID}
-            className="text-base font-semibold"
+            className={`text-base font-semibold ${FF_EDITOR_TITLE_CLASS}`}
           >
             {state.label}
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">{EDITOR_ACTIVATION_COMPOSE}</p>
+          <p className={`mt-1 text-sm ${FF_EDITOR_MUTED_CLASS}`}>{EDITOR_ACTIVATION_COMPOSE}</p>
         </div>
         <ActivationStatus state={state} />
       </div>
 
       {!workflowId ? (
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className={`mt-4 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
           Open a workflow to compose webhook and schedule enable + version pin.
         </p>
       ) : null}
 
       {published.length > 0 ? (
         <label className="mt-4 block text-sm">
-          <span className="text-xs font-medium text-zinc-600">
+          <span className={`text-xs font-medium ${FF_EDITOR_MUTED_CLASS}`}>
             Published version pin
           </span>
           <select
             value={selectedVersionId}
             onChange={(event) => setSelectedVersionId(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className={`mt-1 w-full px-3 py-1.5 text-sm ${FF_EDITOR_CONTROL_CLASS}`}
           >
             {published.map((item) => (
               <option key={item.id} value={item.id}>
@@ -209,12 +219,12 @@ export function EditorActivationChrome({
         data-editor-activation-live={editorActivationLooksLive(state) ? "true" : "false"}
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
         data-editor-working-memory="published"
-        className="mt-3 text-sm font-medium text-zinc-900"
+        className={`mt-3 text-sm font-medium ${FF_EDITOR_TITLE_CLASS}`}
       >
         <ActivationStatusText state={state} />
       </p>
-      <p className="mt-1 text-sm text-zinc-600">{state.help}</p>
-      <p className="mt-2 text-xs text-zinc-500">{EDITOR_ACTIVATION_MANUAL_HELP}</p>
+      <p className={`mt-1 text-sm ${FF_EDITOR_MUTED_CLASS}`}>{state.help}</p>
+      <p className={`mt-2 text-xs ${FF_EDITOR_MUTED_CLASS}`}>{EDITOR_ACTIVATION_MANUAL_HELP}</p>
 
       {problem ? (
         <div className="mt-4">
@@ -223,7 +233,7 @@ export function EditorActivationChrome({
       ) : null}
 
       {message ? (
-        <p role="status" className="mt-3 text-sm text-teal-900">
+        <p role="status" className={`mt-3 text-sm ${FF_EDITOR_TITLE_CLASS}`}>
           {message}
         </p>
       ) : null}
@@ -247,7 +257,7 @@ export function EditorActivationChrome({
             !canManage || pending !== null || !state.canActivate || !workflowId
           }
           onClick={() => void onToggle("enable")}
-          className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+          className={`${FF_EDITOR_PLUS_CLASS} px-3 py-1.5 text-sm font-medium disabled:opacity-60`}
         >
           {pending === "enable" ? "Activating…" : "Activate published version"}
         </button>
@@ -257,7 +267,7 @@ export function EditorActivationChrome({
             !canManage || pending !== null || !state.canDeactivate || !workflowId
           }
           onClick={() => void onToggle("disable")}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+          className={`${FF_EDITOR_GHOST_CLASS} px-3 py-1.5 text-sm font-medium disabled:opacity-60`}
         >
           {pending === "disable" ? "Deactivating…" : "Deactivate"}
         </button>
@@ -267,7 +277,7 @@ export function EditorActivationChrome({
         {state.enabledPins.concat(state.disabledPins).map((pin) => (
           <li
             key={`${pin.kind}:${pin.id}`}
-            className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700"
+            className={`rounded-xl border px-3 py-2 text-sm ${FF_EDITOR_PANEL_CLASS}`}
           >
             <span className="font-medium capitalize">{pin.kind}</span>
             {" · "}
@@ -307,7 +317,7 @@ function CompactActivation({
         data-editor-activation-live={live ? "true" : "false"}
         data-editor-activation-draft-live={state.draftLooksLive ? "true" : "false"}
         data-editor-working-memory="published"
-        className={`text-xs ${live ? "font-medium text-teal-900" : "text-zinc-600"}`}
+        className={`text-xs ${live ? `font-medium ${FF_EDITOR_TITLE_CLASS}` : FF_EDITOR_MUTED_CLASS}`}
       >
         {loading ? (
           "Activation…"
@@ -324,7 +334,7 @@ function CompactActivation({
         data-editor-activation="open"
         onClick={onOpenTriggers}
         disabled={disabled || !onOpenTriggers}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60"
+        className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm disabled:opacity-60`}
       >
         {editorTopBarControlLabel("activation")}
       </button>
@@ -342,8 +352,8 @@ function ActivationStatus({ state }: { state: EditorActivationState }) {
     <p
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
         live
-          ? "bg-teal-50 text-teal-900"
-          : "bg-zinc-100 text-zinc-700"
+          ? FF_EDITOR_CHIP_ACCENT_CLASS
+          : FF_EDITOR_CHIP_CLASS
       }`}
     >
       <span aria-hidden="true">{presentation.icon}</span>

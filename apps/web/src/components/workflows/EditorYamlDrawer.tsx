@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { SATELLITE_BODY_PAD_CLASS, SATELLITE_HEADER_CLASS } from "@/lib/aesthetic-usability-density";
+import { FF_EDITOR_SATELLITE_CLASS } from "@/lib/editor-visual";
 import { EDITOR_YAML_PANEL_ID } from "@/lib/e12-accessibility-contract";
 
 type EditorYamlDrawerProps = {
@@ -23,7 +24,7 @@ export function EditorYamlDrawer({
     <section
       id={EDITOR_YAML_PANEL_ID}
       aria-label="YAML editor"
-      className="flex max-h-[42%] min-h-[12rem] shrink-0 flex-col overflow-hidden border-t border-zinc-200 bg-white"
+      className={`flex max-h-[42%] min-h-[12rem] shrink-0 flex-col overflow-hidden border-t ${FF_EDITOR_SATELLITE_CLASS}`}
     >
       {tools ? (
         <div className={`${SATELLITE_HEADER_CLASS} shrink-0 flex-wrap gap-2`}>
