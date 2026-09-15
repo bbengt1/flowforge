@@ -30,7 +30,8 @@ export default function WorkflowsPage() {
           tree or those empty-home verbs. Those empty states use
           Overview card chrome (O.3 / #327 —{" "}
           <strong>keep #327 open</strong>), not dense-list empty chrome.
-          Drafts do not run. The Overview
+          Drafts do not run.           Dark Overview card rows use V.1 tokens (V.3 / #359 —{" "}
+          <strong>keep #359 open</strong>). The Overview
           card list is the primary browse surface (O.1 / #325 —{" "}
           <strong>keep #325 open</strong>): name, last updated/created,
           published badge, and kebab. Cards show folder path pills
@@ -68,7 +69,7 @@ export default function WorkflowsPage() {
         </p>
       </header>
       <Suspense
-        fallback={<p className="text-sm text-zinc-600">Loading workflow home…</p>}
+        fallback={<p className="text-sm" style={{ color: "var(--ff-muted)" }}>Loading workflow home…</p>}
       >
         <WorkflowHome />
       </Suspense>

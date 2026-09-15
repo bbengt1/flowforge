@@ -4,6 +4,10 @@ import {
   homeActivationLooksLive,
   type HomeActivationColumn,
 } from "@/lib/home-activation";
+import {
+  FF_OVERVIEW_CHIP_ACCENT_CLASS,
+  FF_OVERVIEW_CHIP_CLASS,
+} from "@/lib/overview-visual";
 import { activationStatusPresentation } from "@/lib/rewrite-satellite-a11y";
 
 type HomeActivationStatusProps = {
@@ -34,8 +38,8 @@ export function HomeActivationStatus({ column }: HomeActivationStatusProps) {
         title={column.help}
         className={
           live
-            ? "inline-flex max-w-full items-center gap-1.5 rounded-full border border-teal-800 bg-teal-50 px-2.5 py-0.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
-            : "inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-0.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+            ? `max-w-full gap-1.5 ${FF_OVERVIEW_CHIP_ACCENT_CLASS}`
+            : `max-w-full gap-1.5 ${FF_OVERVIEW_CHIP_CLASS}`
         }
       >
         <span aria-hidden="true">{presentation.icon}</span>
