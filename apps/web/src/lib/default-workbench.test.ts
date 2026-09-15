@@ -142,6 +142,13 @@ describe("post-login default workbench (#369)", () => {
     assert.doesNotMatch(provider, /session\.embed\s*=/);
   });
 
+  it("keeps an unbound Select-a-workspace option when memberships exist", () => {
+    const switcher = source("src/components/shell/WorkspaceSwitcher.tsx");
+    assert.match(switcher, /!current/);
+    assert.match(switcher, /Select a workspace/);
+    assert.match(switcher, /memberships\.map/);
+  });
+
   it("does not invent embed bind or a greenfield session type", () => {
     const helper = source("src/lib/default-workbench.ts");
     const client = source("src/lib/session-client.ts");
