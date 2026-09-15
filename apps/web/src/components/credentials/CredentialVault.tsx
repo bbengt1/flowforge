@@ -38,6 +38,21 @@ import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { maybeEmbedDeepLink } from "@/lib/embed-tenancy-contract";
 import { canSeeCredentialsNav } from "@/lib/workspace-nav";
+import {
+  FF_VAULT_CHIP_ACCENT_CLASS,
+  FF_VAULT_CHIP_CLASS,
+  FF_VAULT_CONTROL_CLASS,
+  FF_VAULT_DANGER_CLASS,
+  FF_VAULT_EMPTY_CLASS,
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_LINK_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_PRIMARY_CLASS,
+  FF_VAULT_ROOT_CLASS,
+  FF_VAULT_TITLE_CLASS,
+  FF_VAULT_VALUE,
+} from "@/lib/vault-executions-visual";
 
 export function CredentialVault() {
   const identity = useSyncExternalStore(
@@ -135,13 +150,17 @@ export function CredentialVault() {
   }, [ready, identity]);
 
   return (
-    <div data-uxl8="vault" className="space-y-6">
+    <div
+      data-uxl8="vault"
+      data-ff-vault={FF_VAULT_VALUE}
+      className={`${FF_VAULT_ROOT_CLASS} space-y-6`}
+    >
       {!ready ? (
         <SessionSetupHint purpose="before listing credentials." />
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-zinc-600">
+        <p className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
           This role cannot view credentials (
           <code className="font-mono text-xs">credential.view</code> missing).
         </p>
@@ -149,22 +168,22 @@ export function CredentialVault() {
 
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className={`font-mono text-xs ${FF_VAULT_MUTED_CLASS}`}>
           last request_id {lastRequestId}
         </p>
       ) : null}
       {credentialVaultMustStopAfterStrip(strippedKeys) ? (
-        <p role="alert" className="text-sm text-amber-950">
+        <p role="alert" className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
           {CREDENTIAL_VAULT_STRIP_STOP_HELP} Stripped keys:{" "}
           {strippedKeys.join(", ")}.
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <section className={FF_VAULT_PANEL_CLASS}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Workspace vault</h2>
-            <p className="mt-1 max-w-3xl text-sm text-zinc-600">
+            <h2 className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>Workspace vault</h2>
+            <p className={`mt-1 max-w-3xl text-sm ${FF_VAULT_MUTED_CLASS}`}>
               {CREDENTIAL_VAULT_HELP}{" "}
               List is{" "}
               <code className="font-mono text-xs">GET /credentials</code>.
@@ -176,14 +195,14 @@ export function CredentialVault() {
                 type="button"
                 onClick={() => replaceQuery({})}
                 disabled={denied || !ready}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                className={FF_VAULT_GHOST_CLASS}
               >
                 Clear filters
               </button>
             ) : null}
             <Link
               href={maybeEmbedDeepLink("/credentials/new", embed)}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900"
+              className={FF_VAULT_PRIMARY_CLASS}
             >
               Add credential
             </Link>
@@ -191,7 +210,7 @@ export function CredentialVault() {
               type="button"
               onClick={() => void refresh()}
               disabled={pending || !ready || denied}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              className={FF_VAULT_GHOST_CLASS}
             >
               {pending ? "Loading…" : "Refresh"}
             </button>
@@ -209,7 +228,7 @@ export function CredentialVault() {
               placeholder="Find by display name"
               autoComplete="off"
               disabled={denied || !ready}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:opacity-60"
+              className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
             />
           </label>
 
@@ -277,11 +296,11 @@ export function CredentialVault() {
                 }
                 autoComplete="off"
                 disabled={denied || !ready}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:opacity-60"
+                className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
               />
             </label>
           </form>
-          <p className="text-sm text-zinc-500" aria-live="polite">
+          <p className={`text-sm ${FF_VAULT_MUTED_CLASS}`} aria-live="polite">
             {pending
               ? "Loading credentials…"
               : stopAfterStrip
@@ -294,14 +313,14 @@ export function CredentialVault() {
       {!ready || forbidden || denied || stopAfterStrip ? null : visible.length === 0 ? (
         <section
           data-uxl6={filtersActive ? "vault-filtered" : "vault-empty"}
-          className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center"
+          className={`${FF_VAULT_EMPTY_CLASS} p-8`}
         >
-          <h2 className="text-lg font-semibold">
+          <h2 className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>
             {filtersActive
               ? "No credentials match this display name"
               : VAULT_EMPTY_HEADING}
           </h2>
-          <p className="mt-2 text-sm text-zinc-600">
+          <p className={`mt-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
             {filtersActive
               ? "Clear the display-name search or type/status filters to see the rest of the vault. Secrets are never queried."
               : VAULT_EMPTY_HELP}
@@ -311,14 +330,14 @@ export function CredentialVault() {
               <button
                 type="button"
                 onClick={() => replaceQuery({})}
-                className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className={`text-sm font-medium ${FF_VAULT_LINK_CLASS}`}
               >
                 Clear filters
               </button>
             ) : null}
             <Link
               href={maybeEmbedDeepLink("/credentials/new", embed)}
-              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              className={`text-sm font-medium ${FF_VAULT_LINK_CLASS}`}
             >
               {VAULT_EMPTY_ADD_LABEL}
             </Link>
@@ -350,8 +369,8 @@ function FilterChip({
       onClick={onClick}
       className={
         active
-          ? "rounded-full border border-teal-800 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-950 disabled:opacity-60"
-          : "rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+          ? `${FF_VAULT_CHIP_ACCENT_CLASS} disabled:opacity-60`
+          : `${FF_VAULT_CHIP_CLASS} disabled:opacity-60`
       }
     >
       {label}

@@ -134,9 +134,13 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.equal(PEAK_END_HEADLINES.success, "Run succeeded");
     assert.equal(PEAK_END_INBOX_LABELS.success !== PEAK_END_INBOX_LABELS.indeterminate, true);
     assert.equal(PEAK_END_NDV_LABELS.success !== PEAK_END_NDV_LABELS.indeterminate, true);
-    assert.match(peakEndSurfaceClassName("success"), /emerald/);
-    assert.match(peakEndSurfaceClassName("indeterminate"), /amber/);
-    assert.match(peakEndSurfaceClassName("failed"), /rose/);
+    assert.match(peakEndSurfaceClassName("success"), /ff-status-succeeded/);
+    assert.match(peakEndSurfaceClassName("indeterminate"), /ff-loud-indeterminate/);
+    assert.match(peakEndSurfaceClassName("failed"), /ff-loud-danger/);
+    assert.notEqual(
+      peakEndSurfaceClassName("success"),
+      peakEndSurfaceClassName("indeterminate"),
+    );
     assert.equal(EDITOR_NDV_RUN_IO.failuresJumpToNode, true);
     assert.equal(PEAK_END_OPERATE.failJumpsToNode, true);
     assert.equal(PEAK_END_OPERATE.loudIndeterminateOnOverlayAndInbox, true);

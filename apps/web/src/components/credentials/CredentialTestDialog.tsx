@@ -1,6 +1,14 @@
 "use client";
 
 import type { CredentialTestResult } from "@/lib/credential-types";
+import {
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_HELP_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_PRIMARY_CLASS,
+  FF_VAULT_TITLE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type CredentialTestDialogProps = {
   open: boolean;
@@ -26,13 +34,13 @@ export function CredentialTestDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="credential-test-heading"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-zinc-900/40 p-4"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
     >
-      <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-lg">
-        <h2 id="credential-test-heading" className="text-lg font-semibold">
+      <div className={`w-full max-w-lg ${FF_VAULT_PANEL_CLASS}`}>
+        <h2 id="credential-test-heading" className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>
           Test connection
         </h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className={`mt-1 text-sm ${FF_VAULT_HELP_CLASS}`}>
           <code className="font-mono text-xs">POST .../test</code> checks the
           stored encrypted payload. This page never sends or displays
           plaintext. The API returns{" "}
@@ -44,18 +52,18 @@ export function CredentialTestDialog({
         {result ? (
           <dl className="mt-4 grid gap-1 text-sm">
             <div>
-              <dt className="inline text-zinc-500">status </dt>
+              <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>status </dt>
               <dd className="inline font-medium">{result.status}</dd>
             </div>
             {result.checkedAt ? (
               <div>
-                <dt className="inline text-zinc-500">checkedAt </dt>
+                <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>checkedAt </dt>
                 <dd className="inline font-mono text-xs">{result.checkedAt}</dd>
               </div>
             ) : null}
             {result.reason ? (
               <div>
-                <dt className="inline text-zinc-500">reason </dt>
+                <dt className={`inline ${FF_VAULT_MUTED_CLASS}`}>reason </dt>
                 <dd className="inline">{result.reason}</dd>
               </div>
             ) : null}
@@ -66,14 +74,14 @@ export function CredentialTestDialog({
             type="button"
             onClick={onTest}
             disabled={pending}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            className={FF_VAULT_PRIMARY_CLASS}
           >
             {pending ? "Testing…" : "Run test"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className={FF_VAULT_GHOST_CLASS}
           >
             Close
           </button>

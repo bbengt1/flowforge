@@ -26,6 +26,14 @@ import {
   emergencyStopShouldMarkUncertain,
 } from "@/lib/script-ops-contract";
 import { SSH_RETRY_DENIED_MESSAGE } from "@/lib/ssh-retry-contract";
+import {
+  FF_INBOX_DANGER_CLASS,
+  FF_INBOX_GHOST_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PRIMARY_CLASS,
+  FF_LOUD_DANGER_CLASS,
+  FF_LOUD_INDETERMINATE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ExecutionOperateActionsProps = {
   identity: DevIdentity;
@@ -169,7 +177,7 @@ export function ExecutionOperateActions({
             data-execution-operate-action="cancel"
             disabled={busy}
             onClick={() => void onCancel()}
-            className={`rounded-md border border-zinc-800 bg-zinc-900 font-medium text-white hover:bg-zinc-800 disabled:opacity-60 ${pad}`}
+            className={`${FF_INBOX_GHOST_CLASS} ${pad}`}
           >
             {cancelPending ? "Canceling…" : EXECUTION_OPERATE_CANCEL_LABEL}
           </button>
@@ -180,7 +188,7 @@ export function ExecutionOperateActions({
             data-execution-operate-action="stop"
             disabled={busy}
             onClick={() => void onStop()}
-            className={`rounded-md border-2 border-rose-800 bg-rose-800 font-semibold text-white hover:bg-rose-900 disabled:opacity-60 ${pad}`}
+            className={`${FF_LOUD_DANGER_CLASS} ${pad}`}
           >
             {stopPending
               ? "Stopping…"
@@ -195,7 +203,7 @@ export function ExecutionOperateActions({
             data-execution-operate-action="retry"
             disabled={busy}
             onClick={() => void onRetry()}
-            className={`rounded-md border border-teal-800 bg-teal-800 font-medium text-white hover:bg-teal-900 disabled:opacity-60 ${pad}`}
+            className={`${FF_INBOX_PRIMARY_CLASS} ${pad}`}
           >
             {retryPending ? "Retrying…" : EXECUTION_OPERATE_RETRY_LABEL}
           </button>
@@ -204,18 +212,18 @@ export function ExecutionOperateActions({
       {affordances.indeterminate ? (
         <p
           data-execution-operate-indeterminate=""
-          className="text-[11px] font-medium text-amber-950"
+          className={`text-[11px] font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}
         >
           {affordances.loudIndeterminateCopy}
         </p>
       ) : affordances.retry ? null : affordances.retryBlockedReason &&
         (resolvedStatus === "failed" || resolvedStatus === "canceled") ? (
-        <p className="text-[11px] text-zinc-500">
+        <p className={`text-[11px] ${FF_INBOX_MUTED_CLASS}`}>
           {affordances.retryBlockedReason}
         </p>
       ) : null}
       {message ? (
-        <p role="status" className="text-[11px] text-zinc-800">
+        <p role="status" className={`text-[11px] ${FF_INBOX_DANGER_CLASS}`}>
           {message}
         </p>
       ) : compact ? null : (

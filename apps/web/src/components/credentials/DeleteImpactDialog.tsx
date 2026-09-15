@@ -2,6 +2,14 @@
 
 import { deletionConfirmationState, formatRef } from "@/lib/credential";
 import type { CredentialDeletionImpact } from "@/lib/credential-types";
+import {
+  FF_VAULT_CONTROL_CLASS,
+  FF_VAULT_DANGER_CLASS,
+  FF_VAULT_GHOST_CLASS,
+  FF_VAULT_MUTED_CLASS,
+  FF_VAULT_PANEL_CLASS,
+  FF_VAULT_TITLE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type DeleteImpactDialogProps = {
   open: boolean;
@@ -35,13 +43,13 @@ export function DeleteImpactDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="credential-delete-heading"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-zinc-900/40 p-4"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
     >
-      <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-lg">
-        <h2 id="credential-delete-heading" className="text-lg font-semibold">
+      <div className={`max-h-[90vh] w-full max-w-xl overflow-auto ${FF_VAULT_PANEL_CLASS}`}>
+        <h2 id="credential-delete-heading" className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>
           Confirm deletion
         </h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
           Deletion-impact is already on the detail page from{" "}
           <code className="font-mono text-xs">GET .../deletion-impact</code>.
           Delete sends{" "}
@@ -54,7 +62,7 @@ export function DeleteImpactDialog({
             type="button"
             onClick={onLoadImpact}
             disabled={pending}
-            className="mt-4 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className={`mt-4 ${FF_VAULT_GHOST_CLASS}`}
           >
             {pending ? "Loading impact…" : "Load deletion impact"}
           </button>
@@ -77,7 +85,7 @@ export function DeleteImpactDialog({
             />
 
             {confirmation.blockingReason ? (
-              <p role="status" className="text-amber-900">
+              <p role="status" className={FF_VAULT_DANGER_CLASS}>
                 {confirmation.blockingReason}
               </p>
             ) : null}
@@ -90,7 +98,7 @@ export function DeleteImpactDialog({
                 value={typedName}
                 onChange={(event) => onTypedName(event.target.value)}
                 autoComplete="off"
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
               />
             </label>
           </div>
@@ -101,14 +109,14 @@ export function DeleteImpactDialog({
             type="button"
             onClick={onConfirm}
             disabled={pending || !confirmation.canProceed}
-            className="rounded-lg border border-red-800 bg-red-800 px-3 py-2 text-sm font-medium text-white hover:bg-red-900 disabled:opacity-60"
+            className={`${FF_VAULT_DANGER_CLASS} rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60`}
           >
             {pending ? "Deleting…" : "Delete credential"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className={FF_VAULT_GHOST_CLASS}
           >
             Cancel
           </button>
@@ -131,7 +139,7 @@ function ImpactList({
     <section>
       <h3 className="font-medium">{title}</h3>
       {items.length === 0 ? (
-        <p className="mt-1 text-zinc-600">{empty}</p>
+        <p className={`mt-1 ${FF_VAULT_MUTED_CLASS}`}>{empty}</p>
       ) : (
         <ul className="mt-1 list-disc pl-5">
           {items.map((item) => (

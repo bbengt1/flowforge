@@ -532,6 +532,282 @@ body {
   color: var(--ff-danger);
 }
 
+/*
+ * V.5 Vault + executions — consume V.1 tokens. Relates to #361 / Part of #353.
+ * Keep #361 open. Dark find/detail and inbox density. Metadata only.
+ * No KEK chrome. Loud indeterminate. ADV-024 denial contrast stays loud.
+ * Inbox is not a second replay graph. Not an n8n clone.
+ */
+.ff-vault,
+.ff-inbox {
+  color: var(--ff-text);
+}
+
+.ff-vault-header,
+.ff-inbox-header,
+.ff-vault-panel,
+.ff-inbox-panel {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  padding: var(--ff-space-4);
+}
+
+.ff-vault-list,
+.ff-inbox-list {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  overflow: hidden;
+}
+
+.ff-vault-row,
+.ff-inbox-row {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  cursor: pointer;
+}
+
+.ff-vault-row:hover,
+.ff-inbox-row:hover {
+  background: color-mix(in srgb, var(--ff-surface) 80%, var(--ff-canvas));
+}
+
+.ff-vault-row-focused,
+.ff-inbox-row-focused {
+  background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-surface));
+  color: var(--ff-text);
+  cursor: pointer;
+}
+
+.ff-inbox-row-indeterminate {
+  border-left: 4px solid #d97706;
+  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
+  color: #fde68a;
+  cursor: pointer;
+}
+
+.ff-inbox-row-waiting {
+  border-left: 4px solid #6366f1;
+  background: color-mix(in srgb, #6366f1 16%, var(--ff-canvas));
+  color: #c7d2fe;
+  cursor: pointer;
+}
+
+.ff-inbox-row-current {
+  border: 1px solid var(--ff-accent);
+  background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-surface));
+  color: var(--ff-text);
+  cursor: pointer;
+}
+
+.ff-vault-empty,
+.ff-inbox-empty {
+  background: color-mix(in srgb, var(--ff-surface) 70%, var(--ff-canvas));
+  color: var(--ff-text);
+  border: 1px dashed var(--ff-border);
+  border-radius: var(--ff-radius);
+  padding: var(--ff-space-4);
+  text-align: center;
+}
+
+.ff-vault-primary,
+.ff-inbox-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-radius: var(--ff-radius-sm);
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+  font-weight: 600;
+}
+
+.ff-vault-primary:hover,
+.ff-inbox-primary:hover {
+  filter: brightness(1.08);
+}
+
+.ff-vault-primary:disabled,
+.ff-inbox-primary:disabled,
+.ff-vault-ghost:disabled,
+.ff-inbox-ghost:disabled,
+.ff-vault-control:disabled,
+.ff-inbox-control:disabled {
+  opacity: 0.6;
+}
+
+.ff-vault-ghost,
+.ff-inbox-ghost,
+.ff-vault-control,
+.ff-inbox-control {
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  border-radius: var(--ff-radius-sm);
+}
+
+.ff-vault-ghost,
+.ff-inbox-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+}
+
+.ff-vault-ghost:hover,
+.ff-inbox-ghost:hover {
+  background: color-mix(in srgb, var(--ff-surface) 80%, var(--ff-canvas));
+}
+
+.ff-vault-control,
+.ff-inbox-control {
+  width: 100%;
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+}
+
+.ff-vault-muted,
+.ff-inbox-muted {
+  color: var(--ff-muted);
+}
+
+.ff-vault-title,
+.ff-inbox-title {
+  color: var(--ff-text);
+  font-weight: 600;
+}
+
+.ff-vault-link,
+.ff-inbox-link {
+  color: var(--ff-accent-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ff-vault-link:hover,
+.ff-inbox-link:hover {
+  color: var(--ff-text);
+}
+
+.ff-vault-chip,
+.ff-inbox-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-muted);
+  border-radius: 999px;
+  padding: 2px var(--ff-space-2);
+  font-size: var(--ff-type-caption);
+  font-weight: 500;
+}
+
+.ff-vault-chip-accent,
+.ff-inbox-chip-accent {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--ff-type-caption);
+  font-weight: 600;
+}
+
+.ff-vault-uuid {
+  color: var(--ff-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.ff-vault-eyebrow,
+.ff-inbox-eyebrow {
+  color: var(--ff-accent-foreground);
+  font-size: var(--ff-type-body);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ff-vault-help,
+.ff-inbox-help {
+  max-width: 48rem;
+  color: var(--ff-muted);
+  font-size: var(--ff-type-page);
+  line-height: 1.7;
+}
+
+.ff-vault-danger,
+.ff-inbox-danger {
+  color: var(--ff-danger);
+}
+
+.ff-loud-indeterminate {
+  border: 2px solid #d97706;
+  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
+  color: #fde68a;
+}
+
+.ff-loud-warning {
+  border: 1px solid #d97706;
+  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
+  color: #fde68a;
+}
+
+.ff-loud-danger {
+  border: 2px solid var(--ff-danger);
+  background: var(--ff-danger-surface);
+  color: var(--ff-danger-foreground);
+}
+
+.ff-loud-denial {
+  border: 2px solid var(--ff-danger);
+  background: var(--ff-danger-surface);
+  color: var(--ff-danger-foreground);
+}
+
+.ff-loud-leak {
+  border: 2px solid var(--ff-danger);
+  background: color-mix(in srgb, var(--ff-danger) 28%, var(--ff-canvas));
+  color: var(--ff-danger-foreground);
+}
+
+.ff-status-running {
+  border: 1px solid #38bdf8;
+  background: color-mix(in srgb, #38bdf8 16%, var(--ff-canvas));
+  color: #e0f2fe;
+  font-weight: 600;
+}
+
+.ff-status-succeeded {
+  border: 1px solid #34d399;
+  background: color-mix(in srgb, #34d399 14%, var(--ff-canvas));
+  color: #d1fae5;
+}
+
+.ff-status-canceled,
+.ff-status-queued,
+.ff-status-other {
+  border: 1px solid var(--ff-border);
+  background: var(--ff-surface);
+  color: var(--ff-muted);
+}
+
+.ff-status-claimed {
+  border: 1px solid #818cf8;
+  background: color-mix(in srgb, #818cf8 16%, var(--ff-canvas));
+  color: #e0e7ff;
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

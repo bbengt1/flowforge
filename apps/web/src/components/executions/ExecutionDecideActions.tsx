@@ -21,6 +21,14 @@ import {
 } from "@/lib/execution-decide";
 import type { ExecutionStatus } from "@/lib/execution-types";
 import type { DevIdentity } from "@/lib/identity-headers";
+import {
+  FF_INBOX_GHOST_CLASS,
+  FF_INBOX_LINK_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PRIMARY_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_LOUD_WARNING_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ExecutionDecideActionsProps = {
   identity: DevIdentity;
@@ -106,8 +114,8 @@ export function ExecutionDecideActions({
         data-execution-decide-waiting=""
         className={
           compact
-            ? "text-[11px] font-medium text-sky-950"
-            : "text-xs font-medium text-sky-950"
+            ? `text-[11px] font-medium ${FF_INBOX_TITLE_CLASS}`
+            : `text-xs font-medium ${FF_INBOX_TITLE_CLASS}`
         }
       >
         {affordances.approvalsLoaded
@@ -117,7 +125,7 @@ export function ExecutionDecideActions({
           : EXECUTION_DECIDE_WAITING_COPY}
       </p>
       {affordances.selfRequested ? (
-        <p role="status" className="text-[11px] text-amber-950">
+        <p role="status" className={`text-[11px] ${FF_LOUD_WARNING_CLASS}`}>
           {EXECUTION_DECIDE_SELF_REQUESTED_COPY}
         </p>
       ) : null}
@@ -134,7 +142,7 @@ export function ExecutionDecideActions({
                   data-execution-decide-action="approve"
                   disabled={busy}
                   onClick={() => void decide(approval, "approve")}
-                  className={`rounded-md border border-teal-800 bg-teal-800 font-medium text-white hover:bg-teal-900 disabled:opacity-60 ${pad}`}
+                  className={`${FF_INBOX_PRIMARY_CLASS} ${pad}`}
                 >
                   {pendingAction === `approve:${approval.id}`
                     ? "Approving…"
@@ -145,7 +153,7 @@ export function ExecutionDecideActions({
                   data-execution-decide-action="reject"
                   disabled={busy}
                   onClick={() => void decide(approval, "reject")}
-                  className={`rounded-md border border-zinc-300 bg-white font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60 ${pad}`}
+                  className={`${FF_INBOX_GHOST_CLASS} ${pad}`}
                 >
                   {pendingAction === `reject:${approval.id}`
                     ? "Rejecting…"
@@ -156,22 +164,22 @@ export function ExecutionDecideActions({
             <Link
               href={`/approvals/${approval.id}`}
               data-execution-decide-open=""
-              className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              className={FF_INBOX_LINK_CLASS}
             >
               {EXECUTION_DECIDE_OPEN_LABEL}
             </Link>
-            <span className="font-mono text-[11px] break-all text-zinc-500">
+            <span className={`font-mono text-[11px] break-all ${FF_INBOX_MUTED_CLASS}`}>
               {approval.id}
             </span>
           </div>
         );
       })}
       {affordances.waiting && affordances.approvalsLoaded && affordances.pending.length === 0 ? (
-        <p className="text-[11px] text-zinc-500">
+        <p className={`text-[11px] ${FF_INBOX_MUTED_CLASS}`}>
           Open{" "}
           <Link
             href={`/executions/${executionId}`}
-            className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            className={FF_INBOX_LINK_CLASS}
           >
             /executions/{executionId}
           </Link>{" "}
@@ -179,7 +187,7 @@ export function ExecutionDecideActions({
         </p>
       ) : null}
       {message ? (
-        <p role="status" className="text-[11px] text-zinc-800">
+        <p role="status" className="text-[11px]">
           {message}
         </p>
       ) : compact ? null : (

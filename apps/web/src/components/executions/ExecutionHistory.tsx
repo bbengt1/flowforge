@@ -52,6 +52,20 @@ import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { listWorkflows } from "@/lib/workflow-client";
 import type { WorkflowRecord } from "@/lib/workflow-types";
+import {
+  FF_INBOX_CHIP_ACCENT_CLASS,
+  FF_INBOX_CHIP_CLASS,
+  FF_INBOX_CONTROL_CLASS,
+  FF_INBOX_DANGER_CLASS,
+  FF_INBOX_EMPTY_CLASS,
+  FF_INBOX_GHOST_CLASS,
+  FF_INBOX_LINK_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PANEL_CLASS,
+  FF_INBOX_ROOT_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_INBOX_VALUE,
+} from "@/lib/vault-executions-visual";
 
 export function ExecutionHistory() {
   const identity = useSyncExternalStore(
@@ -214,13 +228,16 @@ export function ExecutionHistory() {
   }, [ready, identity, query.workflowId, query.status, query.limit]);
 
   return (
-    <div className="space-y-6">
+    <div
+      data-ff-inbox={FF_INBOX_VALUE}
+      className={`${FF_INBOX_ROOT_CLASS} space-y-6`}
+    >
       {!ready ? (
         <SessionSetupHint purpose="before listing executions." />
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-zinc-600">
+        <p className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>
           This role cannot view executions (
           <code className="font-mono text-xs">execution.view</code> missing).
         </p>
@@ -228,24 +245,24 @@ export function ExecutionHistory() {
 
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
           last request_id {lastRequestId}
         </p>
       ) : null}
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <section className={FF_INBOX_PANEL_CLASS}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">
+            <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>
               {perWorkflow ? "Workflow runs" : "Workspace runs"}
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-zinc-600">
+            <p className={`mt-1 max-w-3xl text-sm ${FF_INBOX_MUTED_CLASS}`}>
               {EXECUTION_INBOX_HELP}{" "}
               {perWorkflow ? (
                 <>
@@ -269,7 +286,7 @@ export function ExecutionHistory() {
                 type="button"
                 onClick={() => replaceQuery({ limit: EXECUTION_INBOX_DEFAULT_LIMIT })}
                 disabled={denied}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                className={FF_INBOX_GHOST_CLASS}
               >
                 Clear filters
               </button>
@@ -278,7 +295,7 @@ export function ExecutionHistory() {
               type="button"
               onClick={() => void refresh()}
               disabled={pending || !ready || denied}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              className={FF_INBOX_GHOST_CLASS}
             >
               {pending ? "Loading…" : "Refresh"}
             </button>
@@ -336,7 +353,7 @@ export function ExecutionHistory() {
                   })
                 }
                 disabled={denied}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                className={`mt-1 ${FF_INBOX_CONTROL_CLASS}`}
               >
                 <option value="">Workspace (all)</option>
                 {query.workflowId &&
@@ -361,7 +378,7 @@ export function ExecutionHistory() {
                   })
                 }
                 disabled={denied}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                className={`mt-1 ${FF_INBOX_CONTROL_CLASS}`}
               >
                 {EXECUTION_INBOX_LIMITS.map((limit) => (
                   <option key={limit} value={limit}>
@@ -371,7 +388,7 @@ export function ExecutionHistory() {
               </select>
             </label>
           </form>
-          <p className="text-sm text-zinc-500" aria-live="polite">
+          <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`} aria-live="polite">
             {pending
               ? "Loading runs…"
               : `${visible.length} run${visible.length === 1 ? "" : "s"}`}
@@ -380,11 +397,11 @@ export function ExecutionHistory() {
       </section>
 
       {forbidden || denied ? null : visible.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
-          <h2 className="text-lg font-semibold">
+        <section className={`${FF_INBOX_EMPTY_CLASS} p-8`}>
+          <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>
             {filtersActive ? "No runs match these filters" : "No executions yet"}
           </h2>
-          <p className="mt-2 text-sm text-zinc-600">
+          <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
             Start a published version from workflow home or the panel below.
             Duplicate idempotency keys replay the existing run (
             <code className="font-mono text-xs">200</code>). Same key +
@@ -396,14 +413,14 @@ export function ExecutionHistory() {
               <button
                 type="button"
                 onClick={() => replaceQuery({ limit: EXECUTION_INBOX_DEFAULT_LIMIT })}
-                className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className={`text-sm font-medium ${FF_INBOX_LINK_CLASS}`}
               >
                 Clear filters
               </button>
             ) : null}
             <Link
               href="/workflows?start=1"
-              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              className={`text-sm font-medium ${FF_INBOX_LINK_CLASS}`}
             >
               Open authenticated manual start
             </Link>
@@ -444,19 +461,19 @@ export function ExecutionHistory() {
       )}
 
       {!forbidden && !denied && publishedWorkflows.length > 0 ? (
-        <details className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <details className={FF_INBOX_PANEL_CLASS}>
           <summary className="cursor-pointer text-base font-semibold">
             Start a published version
           </summary>
-          <p className="mt-2 text-sm text-zinc-600">
+          <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
             Authenticated manual start from the inbox. Drafts never run.
           </p>
           <label className="mt-3 block text-sm">
-            <span className="text-zinc-600">Workflow</span>
+            <span className={FF_INBOX_MUTED_CLASS}>Workflow</span>
             <select
               value={startWorkflowId}
               onChange={(event) => setStartWorkflowId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_INBOX_CONTROL_CLASS}`}
             >
               <option value="">Select a published workflow</option>
               {publishedWorkflows.map((workflow) => (
@@ -480,7 +497,7 @@ export function ExecutionHistory() {
               />
             </div>
           ) : startWorkflowId && !canExecute ? (
-            <p className="mt-3 text-sm font-medium text-rose-950">
+            <p className={`mt-3 text-sm font-medium ${FF_INBOX_DANGER_CLASS}`}>
               Start requires workflow.execute. This surface is fail-closed.
             </p>
           ) : null}
@@ -488,11 +505,11 @@ export function ExecutionHistory() {
       ) : null}
 
       {forbidden || denied ? null : visible.length > 1 ? (
-        <details className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <details className={FF_INBOX_PANEL_CLASS}>
           <summary className="cursor-pointer text-base font-semibold">
             Compare executions
           </summary>
-          <p className="mt-2 text-sm text-zinc-600">
+          <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
             Two redacted summaries. YAML compare uses the existing workflow
             compare route when both pins share a workflow. No invented compare
             route.
@@ -544,7 +561,7 @@ export function ExecutionHistory() {
               <select
                 value={compareLeftId}
                 onChange={(event) => setCompareLeftId(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                className={`mt-1 ${FF_INBOX_CONTROL_CLASS}`}
               >
                 <option value="">Select an execution</option>
                 {visible.map((row) => (
@@ -559,7 +576,7 @@ export function ExecutionHistory() {
               <select
                 value={compareRightId}
                 onChange={(event) => setCompareRightId(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                className={`mt-1 ${FF_INBOX_CONTROL_CLASS}`}
               >
                 <option value="">Select an execution</option>
                 {visible.map((row) => (
@@ -573,7 +590,7 @@ export function ExecutionHistory() {
               <button
                 type="submit"
                 disabled={!compareLeftId || !compareRightId}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+                className={FF_INBOX_GHOST_CLASS}
               >
                 Compare
               </button>
@@ -607,8 +624,8 @@ function StatusChip({
       onClick={onClick}
       className={
         active
-          ? "rounded-full border border-teal-800 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-950 disabled:opacity-60"
-          : "rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+          ? `${FF_INBOX_CHIP_ACCENT_CLASS} disabled:opacity-60`
+          : `${FF_INBOX_CHIP_CLASS} disabled:opacity-60`
       }
     >
       {label}

@@ -25,6 +25,17 @@ import {
 } from "@/lib/execution-contract";
 import { historyKeyAction } from "@/lib/execution-replay";
 import type { ExecutionListRow } from "@/lib/execution-types";
+import {
+  FF_INBOX_LINK_CLASS,
+  FF_INBOX_LIST_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_ROW_CLASS,
+  FF_INBOX_ROW_FOCUSED_CLASS,
+  FF_INBOX_ROW_INDETERMINATE_CLASS,
+  FF_INBOX_ROW_WAITING_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_VAULT_UUID_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ExecutionHistoryListboxProps = {
   rows: ExecutionListRow[];
@@ -70,12 +81,12 @@ export function ExecutionHistoryListbox({
 
   return (
     <div>
-      <p className={compact ? "mb-2 text-xs text-zinc-500" : "mb-3 text-xs text-zinc-500"}>
+      <p className={compact ? `mb-2 text-xs ${FF_INBOX_MUTED_CLASS}` : `mb-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
         {help}
       </p>
       {inbox ? (
         <div
-          className={`mb-2 hidden min-w-[52rem] gap-3 px-3 text-xs font-medium tracking-wide text-zinc-500 uppercase sm:grid sm:grid-cols-[7.5rem_minmax(11rem,1.5fr)_7.5rem_9.25rem_5.25rem_minmax(6.5rem,0.8fr)_3.75rem]`}
+          className={`mb-2 hidden min-w-[52rem] gap-3 px-3 text-xs font-medium tracking-wide uppercase ${FF_INBOX_MUTED_CLASS} sm:grid sm:grid-cols-[7.5rem_minmax(11rem,1.5fr)_7.5rem_9.25rem_5.25rem_minmax(6.5rem,0.8fr)_3.75rem]`}
           aria-hidden="true"
         >
           {EXECUTION_INBOX_COLUMNS.map((column) => (
@@ -102,8 +113,8 @@ export function ExecutionHistoryListbox({
         }}
         className={
           inbox
-            ? "min-w-0 divide-y divide-zinc-100 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
-            : "grid gap-3 outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+            ? `min-w-0 divide-y divide-white/10 overflow-x-auto ${FF_INBOX_LIST_CLASS} outline-none`
+            : "grid gap-3 outline-none"
         }
       >
         {rows.map((row, index) => {
@@ -122,32 +133,32 @@ export function ExecutionHistoryListbox({
               className={
                 inbox
                   ? row.indeterminate
-                    ? `${pad} cursor-pointer border-l-4 border-amber-700 bg-amber-50`
+                    ? `${pad} ${FF_INBOX_ROW_INDETERMINATE_CLASS}`
                     : waiting
-                      ? `${pad} cursor-pointer border-l-4 border-indigo-700 bg-indigo-50`
+                      ? `${pad} ${FF_INBOX_ROW_WAITING_CLASS}`
                       : focused
-                        ? `${pad} cursor-pointer bg-teal-50`
-                        : `${pad} cursor-pointer bg-white hover:bg-zinc-50`
+                        ? `${pad} ${FF_INBOX_ROW_FOCUSED_CLASS}`
+                        : `${pad} ${FF_INBOX_ROW_CLASS}`
                   : row.indeterminate
-                    ? `rounded-xl border-2 border-amber-700 bg-amber-50 ${pad} shadow-sm`
+                    ? `rounded-xl ${FF_INBOX_ROW_INDETERMINATE_CLASS} ${pad}`
                     : waiting
-                      ? `rounded-xl border-2 border-indigo-700 bg-indigo-50 ${pad} shadow-sm`
+                      ? `rounded-xl ${FF_INBOX_ROW_WAITING_CLASS} ${pad}`
                     : row.id === selectedId
-                      ? `rounded-xl border border-teal-800 bg-teal-50 ${pad} shadow-sm ring-2 ring-teal-700/20`
+                      ? `rounded-xl ${FF_INBOX_ROW_FOCUSED_CLASS} ${pad}`
                       : index === safeIndex
-                        ? `rounded-xl border border-teal-800 bg-white ${pad} shadow-sm ring-2 ring-teal-700/20`
-                        : `rounded-xl border border-zinc-200 bg-white ${pad} shadow-sm`
+                        ? `rounded-xl ${FF_INBOX_ROW_FOCUSED_CLASS} ${pad}`
+                        : `rounded-xl ${FF_INBOX_ROW_CLASS} ${pad}`
               }
             >
               {overlay ? (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-mono text-[11px] text-zinc-700">{row.versionPin}</p>
-                      <p className="mt-1 font-mono text-[11px] text-zinc-500">
+                      <p className="font-mono text-[11px]">{row.versionPin}</p>
+                      <p className={`mt-1 font-mono text-[11px] ${FF_INBOX_MUTED_CLASS}`}>
                         {started} · {duration}
                       </p>
-                      <p className="mt-1 font-mono text-[11px] break-all text-zinc-400">
+                      <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>
                         {row.id}
                       </p>
                     </div>
@@ -164,17 +175,17 @@ export function ExecutionHistoryListbox({
                     />
                   ) : null}
                   {row.replayed ? (
-                    <p className="mt-1 text-[11px] text-zinc-600">Replayed</p>
+                    <p className={`mt-1 text-[11px] ${FF_INBOX_MUTED_CLASS}`}>Replayed</p>
                   ) : null}
                   <p className="mt-2 text-xs">
                     <Link
                       href={row.href}
                       onClick={(event) => event.stopPropagation()}
-                      className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                      className={`font-medium ${FF_INBOX_LINK_CLASS}`}
                     >
                       {EXECUTION_INBOX_OPEN_LABEL}
                     </Link>
-                    <span className="text-zinc-500"> — /executions/{"{id}"}</span>
+                    <span className={FF_INBOX_MUTED_CLASS}> — /executions/{"{id}"}</span>
                   </p>
                   {operateActions ? (
                     <div className="mt-2">{operateActions(row)}</div>
@@ -187,16 +198,16 @@ export function ExecutionHistoryListbox({
                     <ExecutionStatusBadge status={row.status} />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">
+                    <p className={`truncate text-sm ${FF_INBOX_TITLE_CLASS}`}>
                       <Link
                         href={row.href}
                         onClick={(event) => event.stopPropagation()}
-                        className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                        className={FF_INBOX_LINK_CLASS}
                       >
                         {row.workflowLabel}
                       </Link>
                     </p>
-                    <p className="font-mono text-[11px] break-all text-zinc-500">
+                    <p className={FF_VAULT_UUID_CLASS}>
                       {row.id}
                     </p>
                     {row.indeterminate || waiting || ending === "success" || ending === "failed" ? (
@@ -207,22 +218,22 @@ export function ExecutionHistoryListbox({
                       />
                     ) : null}
                     {row.replayed ? (
-                      <p className="mt-1 text-xs text-zinc-600">Replayed</p>
+                      <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>Replayed</p>
                     ) : null}
                   </div>
-                  <p className="font-mono text-xs text-zinc-700">{row.versionPin}</p>
-                  <p className="font-mono text-xs text-zinc-700" title={row.startedAt}>
+                  <p className="font-mono text-xs">{row.versionPin}</p>
+                  <p className="font-mono text-xs" title={row.startedAt}>
                     {started}
                   </p>
-                  <p className="font-mono text-xs text-zinc-700">{duration}</p>
-                  <p className="font-mono text-xs break-all text-zinc-600">
+                  <p className="font-mono text-xs">{duration}</p>
+                  <p className={`font-mono text-xs break-all ${FF_INBOX_MUTED_CLASS}`}>
                     {row.correlationId}
                   </p>
                   <p className="text-sm">
                     <Link
                       href={row.href}
                       onClick={(event) => event.stopPropagation()}
-                      className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                      className={`font-medium ${FF_INBOX_LINK_CLASS}`}
                     >
                       {EXECUTION_INBOX_OPEN_LABEL}
                     </Link>
@@ -244,58 +255,58 @@ export function ExecutionHistoryListbox({
                               event.stopPropagation();
                               onActivate(row);
                             }}
-                            className="text-left underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                            className={`text-left ${FF_INBOX_LINK_CLASS}`}
                           >
                             {row.workflowLabel}
                           </button>
                         ) : (
                           <Link
                             href={row.href}
-                            className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                            className={FF_INBOX_LINK_CLASS}
                           >
                             {row.workflowLabel}
                           </Link>
                         )}
                       </h3>
-                      <p className="mt-1 font-mono text-xs break-all text-zinc-600">{row.id}</p>
+                      <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>{row.id}</p>
                     </div>
                     <ExecutionStatusBadge status={row.status} />
                   </div>
                   <dl className={`mt-3 grid gap-2 text-sm ${compact ? "" : "sm:grid-cols-2"}`}>
                     <div>
-                      <dt className="text-zinc-500">Version pin</dt>
+                      <dt className={FF_INBOX_MUTED_CLASS}>Version pin</dt>
                       <dd className="font-mono text-xs">{row.versionPin}</dd>
                     </div>
                     <div>
-                      <dt className="text-zinc-500">Correlation id</dt>
+                      <dt className={FF_INBOX_MUTED_CLASS}>Correlation id</dt>
                       <dd className="font-mono text-xs break-all">{row.correlationId}</dd>
                     </div>
                     <div>
-                      <dt className="text-zinc-500">Started</dt>
+                      <dt className={FF_INBOX_MUTED_CLASS}>Started</dt>
                       <dd className="font-mono text-xs">{row.startedAt}</dd>
                     </div>
                     <div>
-                      <dt className="text-zinc-500">Finished</dt>
+                      <dt className={FF_INBOX_MUTED_CLASS}>Finished</dt>
                       <dd className="font-mono text-xs">{row.finishedAt}</dd>
                     </div>
                     <div className={compact ? "" : "sm:col-span-2"}>
-                      <dt className="text-zinc-500">Idempotency key</dt>
+                      <dt className={FF_INBOX_MUTED_CLASS}>Idempotency key</dt>
                       <dd className="font-mono text-xs break-all">{row.idempotencyKey}</dd>
                     </div>
                   </dl>
                   {row.replayed ? (
-                    <p className="mt-3 text-sm text-zinc-700">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
+                    <p className="mt-3 text-sm">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
                   ) : null}
                   {onActivate ? (
                     <p className="mt-3 text-xs">
                       <Link
                         href={row.href}
                         onClick={(event) => event.stopPropagation()}
-                        className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                        className={`font-medium ${FF_INBOX_LINK_CLASS}`}
                       >
                         Open execution
                       </Link>
-                      <span className="text-zinc-500"> — workspace replay</span>
+                      <span className={FF_INBOX_MUTED_CLASS}> — workspace replay</span>
                     </p>
                   ) : null}
                 </>

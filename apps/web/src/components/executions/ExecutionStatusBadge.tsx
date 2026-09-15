@@ -14,13 +14,13 @@ const TONE_CLASS: Record<
   string
 > = {
   indeterminate: LOUD_INDETERMINATE_CLASS,
-  running: "border-sky-700 bg-sky-50 text-sky-950 font-semibold",
-  canceled: "border-zinc-700 bg-zinc-100 text-zinc-950 font-semibold",
+  running: "ff-status-running",
+  canceled: "ff-status-canceled font-semibold",
   failed: LOUD_ERROR_CLASS,
-  succeeded: "border-emerald-700 bg-emerald-50 text-emerald-950",
-  queued: "border-zinc-400 bg-zinc-50 text-zinc-800",
-  claimed: "border-indigo-700 bg-indigo-50 text-indigo-950 font-semibold",
-  other: "border-zinc-300 bg-zinc-50 text-zinc-800",
+  succeeded: "ff-status-succeeded",
+  queued: "ff-status-queued",
+  claimed: "ff-status-claimed",
+  other: "ff-status-other",
 };
 
 export function ExecutionStatusBadge({ status }: ExecutionStatusBadgeProps) {

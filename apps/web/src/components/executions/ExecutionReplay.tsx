@@ -32,6 +32,17 @@ import { boundRedactedDisplay } from "@/lib/execution";
 import type { ExecutionArtifact, ExecutionDetail } from "@/lib/execution-types";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
+import {
+  FF_INBOX_DANGER_CLASS,
+  FF_INBOX_EMPTY_CLASS,
+  FF_INBOX_MUTED_CLASS,
+  FF_INBOX_PANEL_CLASS,
+  FF_INBOX_ROW_CLASS,
+  FF_INBOX_ROW_CURRENT_CLASS,
+  FF_INBOX_ROW_INDETERMINATE_CLASS,
+  FF_INBOX_TITLE_CLASS,
+  FF_LOUD_INDETERMINATE_CLASS,
+} from "@/lib/vault-executions-visual";
 
 type ExecutionReplayProps = {
   detail: ExecutionDetail;
@@ -84,11 +95,11 @@ export function ExecutionReplay({
       className="space-y-4"
     >
       <div>
-        <h2 id="graph-replay-heading" className="text-lg font-semibold">
+        <h2 id="graph-replay-heading" className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>
           Graph replay
         </h2>
-        <p className="mt-1 text-sm text-zinc-600">{GRAPH_REPLAY_HELP}</p>
-        <p className="mt-1 font-mono text-xs break-all text-zinc-500">
+        <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>{GRAPH_REPLAY_HELP}</p>
+        <p className={`mt-1 font-mono text-xs break-all ${FF_INBOX_MUTED_CLASS}`}>
           correlation {detail.correlationId || "—"}
         </p>
       </div>
@@ -106,7 +117,7 @@ export function ExecutionReplay({
           onSelect={onSelect}
         />
       ) : (
-        <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-600">
+        <p className={`text-sm ${FF_INBOX_EMPTY_CLASS}`}>
           Pinned version YAML is not available, so this page does not guess a
           graph. Step status, duration, and redacted output are listed below.
         </p>
@@ -116,17 +127,17 @@ export function ExecutionReplay({
         <div
           className={
             selected.presentation.indeterminate
-              ? "rounded-2xl border-2 border-amber-700 bg-amber-50 p-5"
-              : "rounded-2xl border border-zinc-200 bg-white p-5"
+              ? `rounded-2xl p-5 ${FF_LOUD_INDETERMINATE_CLASS}`
+              : FF_INBOX_PANEL_CLASS
           }
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold">
+              <h3 className={`text-base ${FF_INBOX_TITLE_CLASS}`}>
                 {selected.current ? "Current node · " : ""}
                 {selected.nodeId}
               </h3>
-              <p className="font-mono text-xs text-zinc-600">
+              <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                 {selected.step.nodeType} · attempt {selected.attempts} · duration{" "}
                 {selected.durationLabel}
               </p>
@@ -134,7 +145,7 @@ export function ExecutionReplay({
             <ExecutionStatusBadge status={selected.status} />
           </div>
           {selected.presentation.indeterminate ? (
-            <p className="mt-3 text-sm text-amber-950">
+            <p className="mt-3 text-sm font-medium">
               {isSshRunType(selected.step.nodeType)
                 ? sshIndeterminateCopy({
                     status: selected.status,
@@ -166,7 +177,7 @@ export function ExecutionReplay({
                   selected.step.input,
                 );
                 return retry?.verificationOutcome ? (
-                  <p className="mt-2 text-sm text-zinc-800">
+                  <p className="mt-2 text-sm">
                     {sshVerificationOutcomeCopy(retry.verificationOutcome)}
                   </p>
                 ) : null;
@@ -181,7 +192,7 @@ export function ExecutionReplay({
                 );
                 if (!parsed) {
                   return (
-                    <p className="mt-2 text-xs text-zinc-500">
+                    <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
                       {SCRIPT_IO_NO_BLIND_RETRY_HELP}
                     </p>
                   );
@@ -189,7 +200,7 @@ export function ExecutionReplay({
                 return (
                   <div className="mt-2 space-y-2">
                     {parsed.validationErrors.length > 0 ? (
-                      <ul className="space-y-1 text-sm text-rose-950">
+                      <ul className={`space-y-1 text-sm ${FF_INBOX_DANGER_CLASS}`}>
                         {parsed.validationErrors.map((error) => (
                           <li key={`${error.code}-${error.path}-${error.message}`}>
                             <span className="font-mono text-xs">{error.code}</span>
@@ -198,9 +209,9 @@ export function ExecutionReplay({
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-xs text-zinc-500">{SCRIPT_IO_VALIDATION_HELP}</p>
+                      <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>{SCRIPT_IO_VALIDATION_HELP}</p>
                     )}
-                    <p className="text-xs text-zinc-600">
+                    <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>
                       {parsed.retry?.allowed
                         ? `result.retry.allowed is true · maxAttempts=${parsed.retry.maxAttempts}`
                         : SCRIPT_IO_NO_BLIND_RETRY_HELP}
@@ -210,21 +221,21 @@ export function ExecutionReplay({
               })()
             : null}
           {selected.waiting ? (
-            <p role="status" className="mt-3 text-sm text-zinc-800">
+            <p role="status" className="mt-3 text-sm">
               Waiting on approval. Decide the bound approval — the wait state
               survives worker or pod loss. Resume is decide, not a new route.
             </p>
           ) : null}
           <div className="mt-3">
-            <p className="text-xs font-medium text-zinc-600">Safe outputs</p>
-            <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+            <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Safe outputs</p>
+            <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
               {selected.outputText}
             </pre>
           </div>
           {logsText ? (
             <div className="mt-3">
-              <p className="text-xs font-medium text-zinc-600">Redacted logs</p>
-              <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+              <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Redacted logs</p>
+              <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
                 {logsText}
               </pre>
             </div>
@@ -232,7 +243,7 @@ export function ExecutionReplay({
           {selectedArtifacts.length > 0 ? (
             <ul className="mt-3 space-y-1 text-sm">
               {selectedArtifacts.map((artifact) => (
-                <li key={artifact.id} className="font-mono text-xs text-zinc-600">
+                <li key={artifact.id} className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                   {artifact.name || artifact.kind} · {artifact.digest || "no digest"}
                 </li>
               ))}
@@ -251,15 +262,15 @@ export function ExecutionReplay({
                 onClick={() => onSelect({ kind: "node", id: item.nodeId })}
                 className={`flex w-full items-start justify-between gap-3 rounded-xl px-4 py-3 text-left ${
                   item.presentation.indeterminate
-                    ? "border-2 border-amber-700 bg-amber-50"
+                    ? FF_INBOX_ROW_INDETERMINATE_CLASS
                     : item.current
-                      ? "border border-teal-800 bg-teal-50"
-                      : "border border-zinc-200 bg-white"
+                      ? FF_INBOX_ROW_CURRENT_CLASS
+                      : FF_INBOX_ROW_CLASS
                 }`}
               >
                 <span>
                   <span className="font-medium">{item.nodeId}</span>
-                  <span className="mt-1 block font-mono text-xs text-zinc-600">
+                  <span className={`mt-1 block font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                     attempt {item.attempts} · {item.durationLabel}
                     {item.current ? " · current" : ""}
                     {item.waiting ? " · waiting" : ""}
@@ -271,15 +282,15 @@ export function ExecutionReplay({
           ))}
         </ol>
       ) : (
-        <p className="text-sm text-zinc-600">
+        <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
           No steps returned. Replay cannot overlay status yet.
         </p>
       )}
 
       {detail.input != null ? (
         <div>
-          <p className="text-xs font-medium text-zinc-600">Redacted trigger input</p>
-          <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+          <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Redacted trigger input</p>
+          <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
             {boundRedactedDisplay(detail.input).text}
           </pre>
         </div>
