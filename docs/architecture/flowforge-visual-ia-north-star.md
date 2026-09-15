@@ -98,9 +98,11 @@ Prefer **already specified** over inventing work. F / O / B / UXL / R stories st
 
 **n8n is not a visual reference.** Cite it only as the existing behavior/coverage charter. Do not match its orange, card chrome, Overview tabs, or iconography.
 
-**Mobbin:** the Mobbin MCP is paywalled (`requires a paid plan`). This brief **does not invent Mobbin URLs** and does not cite paywalled screens from memory. When a paid plan unlocks MCP, re-run the blocked searches (dark workbench home, canvas editor, vault list, execution inbox, first-run wizard) and add 8–15 `mobbin_url` citations as a **follow-up** to this page — not a rewrite of the hard lines.
-
 **Home visual lean (attached):** Brent’s Overview-style screenshot (dark cards, search / sort / filter, Create CTA, folder/path pills). Use it as **density and arrangement**, not as a product to clone. Stats strip, Personal badge, pin-as-product, and link-count stay **out** (O.1–O.4).
+
+### Public products (backup)
+
+Keep these even when Mobbin citations exist. They are the IA/visual *class*, not pixel specs. No invented Mobbin URLs here.
 
 | Reference | TAKE | SKIP |
 | --- | --- | --- |
@@ -112,6 +114,34 @@ Prefer **already specified** over inventing work. F / O / B / UXL / R stories st
 | **Stripe Dashboard** | Operational table/card density; search + filter that do not hide fail-closed empty; errors and denials stay high contrast. | Finance IA; charts as the home; softening failures into “pretty empty.” |
 | **Retool-class internal tools** | App-list → editor workbench; dark chrome; inspector + canvas as one product. | Builder-as-marketplace; drag-any-widget canvas; a second “studio” origin. |
 | **n8n** | **Nothing visual.** Behavior/coverage only — already locked in the [parity charter](flowforge-rewrite-n8n-class-parity.md). | Colors, CSS, icons, NDV branding, Overview tabs, orange accent, “run the unsaved graph,” canvas triggers. |
+
+### Mobbin screen citations
+
+Live MCP searches on 2026-09-15 (`task_intent`: Flowforge visual IA north-star reference research). Every `mobbin_url` below was returned by Mobbin — **none invented**. TAKE/SKIP is from the screen preview, not the app name. Hard lines in [§3](#3-hard-lines) still win.
+
+A forthcoming research brief may add or replace rows. Do not treat this table as closed.
+
+**PENDING (no `mobbin_url` yet — do not invent):** named-app deep-links for **Linear**, **Notion**, **Stripe Dashboard**, and **macOS Finder**. Public TAKE/SKIP above remains the backup until those URLs land.
+
+| Surface | Screen | TAKE | SKIP |
+| --- | --- | --- | --- |
+| **Home** | [Cursor Automations](https://mobbin.com/screens/9642254c-bab4-4f0c-883b-c6ce766dd6ff) | Dark charcoal workbench; dense list + suggested cards; **New** as a first-class verb. | Stats / success-rate strip (O.1 deferred). Suggested-card marketplace as primary browse. |
+| **Home** | [Vapi Workflows](https://mobbin.com/screens/33f7fbe8-0b96-4dec-97de-0a0984187b2e) | Dark list; header **Create**; search + sort; import JSON as a *secondary* verb. | Table-only as the primary browse (Overview cards stay primary). Step-count as a required column. |
+| **Home** | [Lindy My Agents](https://mobbin.com/screens/c1a6ac79-67b6-454e-9716-48d1c4136182) | Dark pane; compact folder / agent rail; **last run** on the row; New folder + New agent. | Enable-toggle that reads as “this draft is live.” D2 activation stays published-version only. |
+| **Home** | [StackAI Projects](https://mobbin.com/screens/e3467ab7-14ed-490a-ac81-324d9bd813bd) | Dark cards + folder rail + search + **New**. | 2-up tile grid as primary (we want ~56–72px **row** cards). Plan-limit / upgrade banners on home. |
+| **Editor** | [Vapi canvas](https://mobbin.com/screens/e499c56a-5997-485c-aced-c4b3f57deac7) | Dark dotted viewport; canvas **+**; right inspector; Save in the top bar; unsaved called out. | Start / trigger **on the canvas**. Cost/latency chrome. A single **Run** that starts the open buffer. |
+| **Editor** | [Runway workflow](https://mobbin.com/screens/034eb22c-a167-489c-8b1a-699f7e846442) | Dark canvas as the viewport; compact icon rail; Save separate from run. | **Run** on unsaved / credits-as-product. Drafts never run. |
+| **Editor** | [Plain workflow](https://mobbin.com/screens/a797b6af-e877-4896-8dca-a3217dbc8ba6) | Dark graph; right category palette; **Published** + Save in the top bar. | Start-node-as-trigger. Palette as a marketplace. |
+| **Editor** | [OpenAI Agent canvas](https://mobbin.com/screens/395dde29-c7f9-4346-b241-41e7f6b02354) | Dark canvas; **category-first** left palette; Publish in the trail. | Expression-on-node as chrome. Triggers as graph nodes. |
+| **Editor** | [Lindy flow editor](https://mobbin.com/screens/0fb15b25-218d-4bf7-a712-6f31c0dbcdc8) | Dark graph; **Test** and **Publish** as distinct verbs. | Chat-builder as the editor. Test that runs an unsaved buffer (D5 = mint published test version, then start). |
+| **Vault** | [Proton Pass](https://mobbin.com/screens/0089156e-8614-414f-82d4-b2b7c2363843) | Dark list + detail; find by display name; secret field **masked**. | Showing a password/value pane after submit. FlowForge stays display-name + UUID only. |
+| **Vault** | [Vapi API Keys](https://mobbin.com/screens/d820e5e0-0cc7-481b-8a24-86a54cf2bfa4) | Dark lifted cards; **Add**; values masked. | Key material (even masked) as the list primary. No KEK / fingerprint-as-secret. |
+| **Vault** | [n8n Credentials](https://mobbin.com/screens/3043ed66-1286-4d46-8c44-b347d4607917) | **Nothing visual.** | Entire screen — Overview tabs, stats strip, Personal, orange Create. Behavior reference only. |
+| **Runs** | [Vercel Deployments](https://mobbin.com/screens/e9576405-bcef-419a-922a-8fb84b044a54) | Dark dense inbox; status as **icon + label** (Ready / Error); filters; loud **Action required**. | Deploy-metrics / observability as FlowForge home. Color-only status. |
+| **Runs** | [Vapi Evaluation Runs](https://mobbin.com/screens/02a7a8be-1109-4b68-ba46-9989dba1e6c0) | Dark table; **Failed** is text, not color alone; **View details** → existing detail (not a second graph). | Inbox as a replay canvas. Silent success. |
+| **Wizard** | [Vapi first-run](https://mobbin.com/screens/e8106529-4db7-4d84-971c-8d2dbda936d5) | Dark charcoal; progress; Back + primary CTA; one accent. | Persona / “what are you using this for” as bootstrap. B-order stays persistence → admin → URL → TLS. |
+| **Wizard** | [Deel profile setup](https://mobbin.com/screens/14170d69-45fd-43e5-85ff-0396e030f1f5) | Dark form; required fields labeled; next step named. | Personal-profile steps. Secrets in the form. Embed. |
+| **Wizard** | [Figma Dev Mode wizard](https://mobbin.com/screens/68c2e030-6eac-46f0-9b0d-9aead62e27c1) | Numbered **fail-closed** steps; Back / Next. | Light dialog as the default (north star is dark). Remount after complete. |
 
 ---
 
@@ -182,15 +212,15 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share componen
 - Left nav: capability-gated from `GET /workspace`. Editor **collapses** to an icon-rail (original marks — not cloned icons).
 - Membership / Isolation stay **off** product chrome (R7.2). Settings may link when granted.
 - Search + Commands (Ctrl+Shift+K) stay. Never index secrets.
-- Dark charcoal shell on every product route. No second embed skin.
+- Dark charcoal shell on every product route (Cursor Automations, Vapi, Lindy). No second embed skin.
 - Single `<main>`, skip `#main-content`, Esc / focus return on drawers.
 
 ### Home / Overview (`/workflows`)
 
 - **Card list is primary browse** (O.1). Compact Finder rail is **filter-only**, non-recursive `?folderId=` (F.2 / O.1). Not Miller columns.
-- Header: product title + **Create** (draft). Import YAML / template remain secondary, still POST a draft.
-- One row: search (default **across folders**) + sort + filter. Optional “in this folder.”
-- Cards: name; last updated / created; **path pills** from `GET /workflow-folders` ancestry (O.2); published / activation / last-run at the scan ends (UXL.5); kebab. Unfiled has **no** path pills and is not a persisted folder.
+- Header: product title + **Create** (draft) — same visual weight as Vapi / Cursor **New**, not a marketing hero. Import YAML / template remain secondary, still POST a draft.
+- One row: search (default **across folders**) + sort + filter (Vapi Workflows). Optional “in this folder.”
+- Cards: name; last updated / created; **path pills** from `GET /workflow-folders` ancestry (O.2); published / activation / last-run at the scan ends (UXL.5; last-run also on Lindy). Row-height cards, not StackAI 2-up tiles. Kebab. Unfiled has **no** path pills and is not a persisted folder. No Lindy-style live toggle on a draft.
 - Skip on cards: stats strip, Personal badge, link-count (O.1–O.4). No pin-as-product until a pin API exists.
 - Empty home / empty folder / Unfiled-empty use **Overview card chrome** (O.3 / UXL.6). Drafts do not run. No Developer fixtures.
 - Move = drag or **Move…** → `PATCH …/folder` `{folderId}` only. Refuse-if-nonempty delete. Viewers select-only.
@@ -198,23 +228,23 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share componen
 
 ### Editor (`/workflows/{id}`)
 
-- Graph is the viewport. Dark canvas; nodes keep family **shape + icon + label**.
-- Top bar: UXL.1 groups (authoring / satellites / run). Identity + draft/published working memory (UXL.2). Save / Publish stay large.
-- Library / Inspector / YAML / Runs stay satellites. Category-first enabled catalog only (UXL.7).
-- Invalid YAML does not paint a guessed graph. Triggers stay workflow-level.
+- Graph is the viewport. Dark dotted canvas (Vapi / Runway / Plain); nodes keep family **shape + icon + label**.
+- Top bar: UXL.1 groups (authoring / satellites / run). Identity + draft/published working memory (UXL.2). Save / Publish stay large — Plain’s **Published** badge is the lean; Runway’s unsaved **Run** is not.
+- Library / Inspector / YAML / Runs stay satellites (Vapi inspector + OpenAI / Plain category palette). Category-first enabled catalog only (UXL.7).
+- Invalid YAML does not paint a guessed graph. Triggers stay workflow-level — do not TAKE Vapi/Plain start-nodes onto the canvas.
 - After Start published / Test run → Runs overlay (UXL.4). No `/replay`.
 
 ### Vault (`/credentials`)
 
-- Display-name find; type/status/tag filters; detail test / rotate / usage / deletion-impact.
-- Masked wizard. Selectors stay display-name + UUID. Unexpected plaintext → strip + stop.
+- Display-name find; type/status/tag filters; detail test / rotate / usage / deletion-impact (Proton Pass list + detail density).
+- Masked wizard. Selectors stay display-name + UUID. Unexpected plaintext → strip + stop. Do not land Vapi-style key material (even masked) as the list primary.
 - **No KEK chrome.** No fingerprint-as-secret. Empty vault: add, no sample secrets.
 - NDV add returns to the graph. Dedicated routes remain.
 
 ### Executions
 
-- Inbox `/executions` + detail `/{id}` stay the workspace operate path.
-- Editor overlay is the in-graph path. **Open execution** deep-links to detail.
+- Inbox `/executions` + detail `/{id}` stay the workspace operate path (Vercel Deployments density; Vapi **View details**).
+- Editor overlay is the in-graph path. **Open execution** deep-links to detail — not a second inbox graph.
 - Loud `indeterminate`. Cancel / retry / stop / decide on the same path.
 - Compare stays client-side redacted. No second graph.
 
@@ -231,7 +261,7 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share componen
 - Fail-closed order: persistence → first admin → public URL → TLS (create / upload / **Skip for now**).
 - Skip is first-class, not a silent default. Loud HTTP-until-Settings. `{action:"skip"}` only — no PEM in `localStorage`.
 - After `complete` or `401`, product home. Wizard never remounts.
-- Dark charcoal + same accent as the product. Not a marketing onboarding microsite. No secrets / KEK in JSON or chrome.
+- Dark charcoal + same accent as the product (Vapi / Deel first-run). Numbered fail-closed steps (Figma Dev Mode). Not a marketing onboarding microsite. No secrets / KEK in JSON or chrome.
 
 ---
 
