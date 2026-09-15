@@ -39,7 +39,7 @@ export function pickDefaultWorkbench(
   if (memberships.length === 1) {
     return memberships[0];
   }
-  return memberships[0];
+  return null;
 }
 
 export function workspaceLookupFromMembership(
@@ -50,4 +50,60 @@ export function workspaceLookupFromMembership(
     tenantSlug: membership.tenant.slug,
     workbenchKey: membership.workspace.workbench_key,
   };
+}
+
+export type SessionPrincipal = {
+  active: boolean;
+  issuer: string;
+  subject: string;
+  displayName?: string;
+};
+
+/** Stamp the cookie-session principal onto tab identity so lookup is owned. */
+export function stampSessionPrincipal(
+  identity: DevIdentity,
+  session: Pick<SessionPrincipal, "issuer" | "subject" | "displayName">,
+): DevIdentity {
+  return {
+    ...identity,
+    issuer: session.issuer.trim() || identity.issuer,
+    subject: session.subject.trim() || identity.subject,
+    displayName: session.displayName?.trim() || identity.displayName,
+  };
+}
+
+export function clearWorkspaceLookup(identity: DevIdentity): DevIdentity {
+  return {
+    ...identity,
+    tenantId: "",
+    tenantSlug: "",
+    workbenchKey: "",
+  };
+}
+
+/**
+ * A stored lookup without a matching session principal is leftover
+ * from another sign-in in this tab. Header-fallback (no cookie
+ * session) keeps the lookup.
+ */
+export function workspaceLookupBelongsToSession(
+  identity: DevIdentity,
+  session: SessionPrincipal,
+): boolean {
+  if (!session.active || !session.subject.trim()) {
+    return true;
+  }
+  const storedSubject = identity.subject.trim();
+  if (!storedSubject) {
+    return false;
+  }
+  if (storedSubject !== session.subject.trim()) {
+    return false;
+  }
+  const storedIssuer = identity.issuer.trim();
+  const sessionIssuer = session.issuer.trim();
+  if (storedIssuer && sessionIssuer && storedIssuer !== sessionIssuer) {
+    return false;
+  }
+  return true;
 }

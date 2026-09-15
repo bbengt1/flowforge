@@ -1,4 +1,6 @@
 import { attachCsrfHeader, resolveCsrfToken, shouldAttachCsrf } from "./csrf.ts";
+import { clearWorkspaceLookup } from "./default-workbench.ts";
+import { loadDevIdentity, saveDevIdentity } from "./dev-identity.ts";
 import { persistVerifiedFromSession } from "./embed-tenancy-client.ts";
 import { fetchSameOriginProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { ItemList } from "./identity-types.ts";
@@ -197,6 +199,14 @@ export async function endSession(): Promise<IdentityClientResult<unknown>> {
     requestId,
   });
   clearSession();
+  saveDevIdentity(
+    clearWorkspaceLookup({
+      ...loadDevIdentity(),
+      issuer: "",
+      subject: "",
+      displayName: "",
+    }),
+  );
   return result;
 }
 

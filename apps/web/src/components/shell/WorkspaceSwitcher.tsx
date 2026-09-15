@@ -44,18 +44,19 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
         }
       }}
     >
-      {memberships.length === 0 ? (
-        <option value="">{ready ? workspaceName : "Select a workspace"}</option>
-      ) : (
-        memberships.map((item) => {
-          const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
-          return (
-            <option key={key} value={key}>
-              {item.workspace.name} · {item.tenant.slug}
-            </option>
-          );
-        })
-      )}
+      {!current ? (
+        <option value="">
+          {memberships.length === 0 && ready ? workspaceName : "Select a workspace"}
+        </option>
+      ) : null}
+      {memberships.map((item) => {
+        const key = `${item.workspace.tenant_id}:${item.workspace.workbench_key}`;
+        return (
+          <option key={key} value={key}>
+            {item.workspace.name} · {item.tenant.slug}
+          </option>
+        );
+      })}
     </select>
   );
 

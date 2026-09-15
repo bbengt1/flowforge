@@ -5,10 +5,14 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_WORKBENCH_STORY,
+  clearWorkspaceLookup,
   isDefaultWorkbench,
   pickDefaultWorkbench,
+  stampSessionPrincipal,
+  workspaceLookupBelongsToSession,
   workspaceLookupFromMembership,
 } from "./default-workbench.ts";
+import { emptyDevIdentity } from "./identity-headers.ts";
 import type { Membership } from "./identity-types.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -69,9 +73,68 @@ describe("post-login default workbench (#369)", () => {
     assert.equal(pickDefaultWorkbench([]), null);
   });
 
+  it("does not auto-select an arbitrary membership when several exist", () => {
+    const first = membership("acme", "ops");
+    const second = membership("acme", "labs", "tenant-1");
+    assert.equal(pickDefaultWorkbench([first, second]), null);
+  });
+
+  it("rejects a leftover lookup when the session principal changes", () => {
+    const bound = {
+      ...emptyDevIdentity(),
+      issuer: "https://idp.example",
+      subject: "admin-1",
+      tenantSlug: "local",
+      workbenchKey: "default",
+    };
+    assert.equal(
+      workspaceLookupBelongsToSession(bound, {
+        active: true,
+        issuer: "https://idp.example",
+        subject: "admin-1",
+      }),
+      true,
+    );
+    assert.equal(
+      workspaceLookupBelongsToSession(bound, {
+        active: true,
+        issuer: "https://idp.example",
+        subject: "other-admin",
+      }),
+      false,
+    );
+    assert.equal(
+      workspaceLookupBelongsToSession(bound, {
+        active: false,
+        issuer: "",
+        subject: "",
+      }),
+      true,
+    );
+    const stamped = stampSessionPrincipal(emptyDevIdentity(), {
+      issuer: "https://idp.example",
+      subject: "admin-1",
+      displayName: "Operator",
+    });
+    assert.equal(stamped.subject, "admin-1");
+    assert.equal(clearWorkspaceLookup(bound).workbenchKey, "");
+    assert.equal(
+      workspaceLookupBelongsToSession(
+        {
+          ...emptyDevIdentity(),
+          tenantSlug: "local",
+          workbenchKey: "default",
+        },
+        { active: true, issuer: "https://idp.example", subject: "admin-1" },
+      ),
+      false,
+    );
+  });
+
   it("lists memberships from a standalone session without a prior lookup", () => {
     const provider = source("src/components/shell/WorkspaceProvider.tsx");
     assert.match(provider, /pickDefaultWorkbench/);
+    assert.match(provider, /workspaceLookupBelongsToSession/);
     assert.match(provider, /callIdentityProxy<ItemList<Membership>>\("\/workspaces"/);
     assert.match(provider, /hasOperatorCaller\(session\.active, identity, headerFallback\)/);
     assert.doesNotMatch(provider, /switchWorkspace\(host/);
@@ -79,10 +142,19 @@ describe("post-login default workbench (#369)", () => {
     assert.doesNotMatch(provider, /session\.embed\s*=/);
   });
 
+  it("keeps an unbound Select-a-workspace option when memberships exist", () => {
+    const switcher = source("src/components/shell/WorkspaceSwitcher.tsx");
+    assert.match(switcher, /!current/);
+    assert.match(switcher, /Select a workspace/);
+    assert.match(switcher, /memberships\.map/);
+  });
+
   it("does not invent embed bind or a greenfield session type", () => {
     const helper = source("src/lib/default-workbench.ts");
+    const client = source("src/lib/session-client.ts");
     assert.match(helper, /not a session bind/);
     assert.match(helper, /not a new session type/);
     assert.match(helper, /#369/);
+    assert.match(client, /clearWorkspaceLookup/);
   });
 });

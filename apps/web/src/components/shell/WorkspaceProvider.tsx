@@ -24,7 +24,10 @@ import {
 } from "@/lib/embed-tenancy-contract";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import {
+  clearWorkspaceLookup,
   pickDefaultWorkbench,
+  stampSessionPrincipal,
+  workspaceLookupBelongsToSession,
   workspaceLookupFromMembership,
 } from "@/lib/default-workbench";
 import { callIdentityProxy } from "@/lib/identity-client";
@@ -86,10 +89,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[] | null>(null);
   const [tenancyMismatch, setTenancyMismatch] = useState(false);
 
+  const sessionPrincipal = useMemo(
+    () => ({
+      active: session.active,
+      issuer: session.session.issuer,
+      subject: session.session.subject,
+      displayName: session.session.displayName,
+    }),
+    [
+      session.active,
+      session.session.issuer,
+      session.session.subject,
+      session.session.displayName,
+    ],
+  );
   const canListMemberships =
     hasOperatorCaller(session.active, identity, headerFallback) &&
     (!embed || Boolean(verified));
-  const ready = canListMemberships && hasWorkspaceLookup(identity);
+  const lookupOwned =
+    hasWorkspaceLookup(identity) &&
+    workspaceLookupBelongsToSession(identity, sessionPrincipal);
+  const ready = canListMemberships && lookupOwned;
 
   useEffect(() => {
     if (!embed || !verified) {
@@ -104,8 +124,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!canListMemberships) {
       return;
     }
+    if (
+      session.active &&
+      hasWorkspaceLookup(identity) &&
+      !workspaceLookupBelongsToSession(identity, sessionPrincipal)
+    ) {
+      saveDevIdentity(
+        clearWorkspaceLookup(stampSessionPrincipal(identity, sessionPrincipal)),
+      );
+      return;
+    }
     let cancelled = false;
-    const lookup = hasWorkspaceLookup(identity);
+    const lookup = lookupOwned;
     void Promise.all([
       lookup
         ? callIdentityProxy<CurrentWorkspace>("/workspace", identity)
@@ -121,10 +151,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!embed && !lookup) {
           const pick = pickDefaultWorkbench(items);
           if (pick) {
-            saveDevIdentity({
-              ...identity,
-              ...workspaceLookupFromMembership(pick),
-            });
+            saveDevIdentity(
+              stampSessionPrincipal(
+                {
+                  ...identity,
+                  ...workspaceLookupFromMembership(pick),
+                },
+                sessionPrincipal,
+              ),
+            );
           }
         }
       }
@@ -158,19 +193,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [canListMemberships, identity, embed, verified]);
+  }, [canListMemberships, identity, embed, verified, lookupOwned, session.active, sessionPrincipal]);
 
   const switchWorkspace = useCallback(
     (membership: Membership) => {
       if (embed && verified) {
         return;
       }
-      saveDevIdentity({
-        ...identity,
-        ...workspaceLookupFromMembership(membership),
-      });
+      saveDevIdentity(
+        stampSessionPrincipal(
+          {
+            ...identity,
+            ...workspaceLookupFromMembership(membership),
+          },
+          sessionPrincipal,
+        ),
+      );
     },
-    [embed, verified, identity],
+    [embed, verified, identity, sessionPrincipal],
   );
 
   const value = useMemo<WorkspaceContextValue>(
