@@ -55,7 +55,7 @@ export const X1_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
 
 export const EXPLORER_HEADING = "Explorer";
 export const EXPLORER_HELP =
-  "Windows Explorer-style home: folder tree, selected-folder content pane, and ancestry breadcrumb. Unfiled is virtual. The selected list is this folder only — not descendants. Drafts do not run — publish, then start a published version.";
+  "Windows Explorer-style home: folder tree, selected-folder content pane, and ancestry breadcrumb. Unfiled is virtual. The selected list is this folder only — not descendants. Single-click selects a row; double-click or Enter opens a workflow in the editor or navigates into a folder. Drafts do not run — publish, then start a published version.";
 export const EXPLORER_TREE_LABEL = "Folder tree";
 export const EXPLORER_PANE_LABEL = "Folder contents";
 export const EXPLORER_CRUMB_LABEL = "Folder path";

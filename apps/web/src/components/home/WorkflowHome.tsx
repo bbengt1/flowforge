@@ -144,6 +144,18 @@ import {
   type ExplorerContextVerb,
 } from "@/lib/explorer-context-menu";
 import {
+  EXPLORER_SELECT_HELP,
+  FF_EXPLORER_ROW_SELECTED_CLASS,
+  explorerAdvancePaneSelection,
+  explorerExpandIdsForOpenFolder,
+  explorerOpenKind,
+  explorerPaneRowEquals,
+  explorerPaneRowKey,
+  explorerPaneRows,
+  explorerPaneSelectionStillVisible,
+  type ExplorerPaneRow,
+} from "@/lib/explorer-select-open";
+import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
   workflowTemplateById,
@@ -386,6 +398,9 @@ function WorkflowHomeSession() {
     x: number;
     y: number;
   } | null>(null);
+  const [paneSelection, setPaneSelection] = useState<ExplorerPaneRow | null>(
+    null,
+  );
   const [folderNameDraft, setFolderNameDraft] = useState("");
   const [folderNameError, setFolderNameError] = useState<string | null>(null);
   const [folderChrome, setFolderChrome] =
@@ -539,6 +554,12 @@ function WorkflowHomeSession() {
     [acrossFolderSearch, folders, selection],
   );
   const paneHasRows = visible.length > 0 || paneFolders.length > 0;
+  const paneRows = useMemo(
+    () => explorerPaneRows(paneFolders, visible),
+    [paneFolders, visible],
+  );
+  const folderSelectionKey =
+    selection.kind === "folder" ? selection.id : "unfiled";
   const selectedChildFolderCount =
     selection.kind === "folder" ? childFolderCount(folders, selection.id) : 0;
   const folderEmptyDeleteAllowed =
@@ -956,6 +977,16 @@ function WorkflowHomeSession() {
       gate.begin();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    setPaneSelection(null);
+  }, [folderSelectionKey]);
+
+  useEffect(() => {
+    setPaneSelection((current) =>
+      explorerPaneSelectionStillVisible(paneRows, current) ? current : null,
+    );
+  }, [paneRows]);
 
   useEffect(() => {
     if (!canView || !acrossFolderSearch) {
@@ -1421,6 +1452,29 @@ function WorkflowHomeSession() {
     setExplorerMenu({ target, x: event.clientX, y: event.clientY });
   }
 
+  function selectPaneRow(row: ExplorerPaneRow) {
+    setPaneSelection(row);
+  }
+
+  function openPaneRow(row: ExplorerPaneRow) {
+    setPaneSelection(row);
+    if (explorerOpenKind(row) === "editor") {
+      router.push(workflowEditorHref(row.id));
+      return;
+    }
+    setExpandedIds((current) => {
+      const next = [
+        ...new Set([
+          ...current,
+          ...explorerExpandIdsForOpenFolder(folders, row.id),
+        ]),
+      ];
+      writeExpandedFolderIds(workspaceKey, next);
+      return next;
+    });
+    selectFolder({ kind: "folder", id: row.id });
+  }
+
   function runExplorerMenuVerb(
     target: ExplorerContextTarget,
     verb: ExplorerContextVerb,
@@ -1484,6 +1538,7 @@ function WorkflowHomeSession() {
       data-o4-viewer={canMutateFolders ? "editor" : "select-only"}
       data-ff-overview={FF_OVERVIEW_VALUE}
       data-x1="explorer-shell"
+      data-x3="select-open"
       className={`${FF_OVERVIEW_ROOT_CLASS} ${FF_EXPLORER_SHELL_CLASS} space-y-4`}
     >
       {!ready ? (
@@ -1657,6 +1712,9 @@ function WorkflowHomeSession() {
             <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{OVERVIEW_HELP}</p>
             <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-x1="explorer-help">
               {EXPLORER_HELP}
+            </p>
+            <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-x3="select-help">
+              {EXPLORER_SELECT_HELP}
             </p>
             <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-f6="search-help">
               {FOLDER_SEARCH_HELP} Folder membership is not in YAML.
@@ -1935,10 +1993,16 @@ function WorkflowHomeSession() {
       <div
         data-x2="pane-surface"
         className="min-h-[12rem]"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setPaneSelection(null);
+          }
+        }}
         onContextMenu={(event) => {
           if (event.defaultPrevented) {
             return;
           }
+          setPaneSelection(null);
           openExplorerMenu({ kind: "empty-pane" }, event);
         }}
       >
@@ -1974,6 +2038,8 @@ function WorkflowHomeSession() {
         <WorkflowHomeCards
           items={visible}
           folderRows={paneFolders}
+          paneRows={paneRows}
+          paneSelection={paneSelection}
           pending={pending !== null}
           canCreate={canCreate}
           canMove={canMutateFolders}
@@ -1992,14 +2058,18 @@ function WorkflowHomeSession() {
           onExport={(item) => void exportItem(item)}
           onMove={openMoveDialog}
           onSelectFolder={selectFolder}
+          onSelectRow={selectPaneRow}
+          onOpenRow={openPaneRow}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
-          onWorkflowContextMenu={(item, event) =>
-            openExplorerMenu({ kind: "workflow", id: item.id }, event)
-          }
-          onFolderContextMenu={(folder, event) =>
-            openExplorerMenu({ kind: "folder", id: folder.id }, event)
-          }
+          onWorkflowContextMenu={(item, event) => {
+            selectPaneRow({ kind: "workflow", id: item.id });
+            openExplorerMenu({ kind: "workflow", id: item.id }, event);
+          }}
+          onFolderContextMenu={(folder, event) => {
+            selectPaneRow({ kind: "folder", id: folder.id });
+            openExplorerMenu({ kind: "folder", id: folder.id }, event);
+          }}
         />
       ) : emptyKind === "folder" ? (
         <FolderEmpty
@@ -2033,6 +2103,8 @@ function WorkflowHomeSession() {
         <WorkflowHomeCards
           items={visible}
           folderRows={paneFolders}
+          paneRows={paneRows}
+          paneSelection={paneSelection}
           pending={pending !== null}
           canCreate={canCreate}
           canMove={canMutateFolders}
@@ -2051,14 +2123,18 @@ function WorkflowHomeSession() {
           onExport={(item) => void exportItem(item)}
           onMove={openMoveDialog}
           onSelectFolder={selectFolder}
+          onSelectRow={selectPaneRow}
+          onOpenRow={openPaneRow}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
-          onWorkflowContextMenu={(item, event) =>
-            openExplorerMenu({ kind: "workflow", id: item.id }, event)
-          }
-          onFolderContextMenu={(folder, event) =>
-            openExplorerMenu({ kind: "folder", id: folder.id }, event)
-          }
+          onWorkflowContextMenu={(item, event) => {
+            selectPaneRow({ kind: "workflow", id: item.id });
+            openExplorerMenu({ kind: "workflow", id: item.id }, event);
+          }}
+          onFolderContextMenu={(folder, event) => {
+            selectPaneRow({ kind: "folder", id: folder.id });
+            openExplorerMenu({ kind: "folder", id: folder.id }, event);
+          }}
         />
       )}
       </div>
@@ -2987,6 +3063,8 @@ function WorkflowFolderPath({
       data-o2="path-pills"
       aria-label={pathLabel}
       className="mt-1 flex flex-wrap items-center gap-1"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
     >
       {pills.map((pill, index) => (
         <span key={pill.id} className="flex items-center gap-1">
@@ -3014,6 +3092,8 @@ function WorkflowFolderPath({
 function WorkflowHomeCards({
   items,
   folderRows = [],
+  paneRows,
+  paneSelection,
   pending,
   canCreate,
   canMove,
@@ -3032,6 +3112,8 @@ function WorkflowHomeCards({
   onExport,
   onMove,
   onSelectFolder,
+  onSelectRow,
+  onOpenRow,
   onDragStart,
   onDragEnd,
   onWorkflowContextMenu,
@@ -3039,6 +3121,8 @@ function WorkflowHomeCards({
 }: {
   items: WorkflowHomeItem[];
   folderRows?: readonly WorkflowFolder[];
+  paneRows: readonly ExplorerPaneRow[];
+  paneSelection: ExplorerPaneRow | null;
   pending: boolean;
   canCreate: boolean;
   canMove: boolean;
@@ -3057,6 +3141,8 @@ function WorkflowHomeCards({
   onExport: (item: WorkflowHomeItem) => void;
   onMove: (item: WorkflowHomeItem) => void;
   onSelectFolder: (next: FolderSelection) => void;
+  onSelectRow: (row: ExplorerPaneRow) => void;
+  onOpenRow: (row: ExplorerPaneRow) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
   onWorkflowContextMenu: (
@@ -3068,6 +3154,12 @@ function WorkflowHomeCards({
     event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
   ) => void;
 }) {
+  const listRef = useRef<HTMLUListElement>(null);
+
+  function focusPaneList() {
+    listRef.current?.focus();
+  }
+
   return (
     <div data-o1="card-list" data-x1="content-list">
       <div
@@ -3081,39 +3173,110 @@ function WorkflowHomeCards({
           </span>
         ))}
       </div>
-      <ul className={FF_EXPLORER_LIST_CLASS}>
-        {folderRows.map((folder) => (
+      <ul
+        ref={listRef}
+        role="listbox"
+        tabIndex={0}
+        aria-label={EXPLORER_PANE_LABEL}
+        aria-activedescendant={
+          paneSelection
+            ? `explorer-row-${explorerPaneRowKey(paneSelection)}`
+            : undefined
+        }
+        data-x3="pane-list"
+        className={FF_EXPLORER_LIST_CLASS}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            if (!paneSelection) {
+              return;
+            }
+            event.preventDefault();
+            onOpenRow(paneSelection);
+            return;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const next = explorerAdvancePaneSelection(
+              paneRows,
+              paneSelection,
+              event.key === "ArrowDown" ? "next" : "prev",
+            );
+            if (next) {
+              onSelectRow(next);
+            }
+          }
+        }}
+      >
+        {folderRows.map((folder) => {
+          const row: ExplorerPaneRow = { kind: "folder", id: folder.id };
+          const selected = explorerPaneRowEquals(row, paneSelection);
+          return (
           <li
             key={`folder-${folder.id}`}
-            className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}`}
+            id={`explorer-row-${explorerPaneRowKey(row)}`}
+            role="option"
+            aria-selected={selected}
+            className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}${
+              selected ? ` ${FF_EXPLORER_ROW_SELECTED_CLASS}` : ""
+            }`}
             data-x1="content-row"
             data-x2="folder-row"
+            data-x3="pane-row"
+            data-x3-kind="folder"
+            data-x3-selected={selected ? "true" : undefined}
             data-folder-id={folder.id}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectRow(row);
+              focusPaneList();
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              onOpenRow(row);
+            }}
             onContextMenu={(event) => onFolderContextMenu(folder, event)}
           >
             <div className={FF_OVERVIEW_CARD_ROW_CLASS}>
-              <button
-                type="button"
-                onClick={() => onSelectFolder({ kind: "folder", id: folder.id })}
-                className={`${FF_OVERVIEW_TITLE_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left text-base hover:underline`}
+              <div
+                className={`${FF_OVERVIEW_TITLE_CLASS} flex min-w-0 flex-1 items-center gap-2 text-sm`}
               >
                 <FinderFolderIcon />
                 <span className="truncate">{folder.name}</span>
-              </button>
+              </div>
             </div>
           </li>
-        ))}
+          );
+        })}
         {items.map((item) => {
           const dates = overviewCardTimestamps(item);
           const published = overviewPublishedBadge(item.status);
+          const row: ExplorerPaneRow = { kind: "workflow", id: item.id };
+          const selected = explorerPaneRowEquals(row, paneSelection);
           return (
             <li
               key={item.id}
-              className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}`}
+              id={`explorer-row-${explorerPaneRowKey(row)}`}
+              role="option"
+              aria-selected={selected}
+              className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}${
+                selected ? ` ${FF_EXPLORER_ROW_SELECTED_CLASS}` : ""
+              }`}
               data-o1="card"
               data-x1="content-row"
               data-x2="content-row"
+              data-x3="pane-row"
+              data-x3-kind="workflow"
+              data-x3-selected={selected ? "true" : undefined}
               data-home-row-scan="card"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectRow(row);
+                focusPaneList();
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                onOpenRow(row);
+              }}
               onContextMenu={(event) => onWorkflowContextMenu(item, event)}
               {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
             >
@@ -3125,13 +3288,12 @@ function WorkflowHomeCards({
                   <HomeActivationStatus column={item.activation} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/workflows/${item.id}`}
-                    className={`${FF_OVERVIEW_TITLE_CLASS} text-base hover:underline`}
+                  <span
                     data-o1="card-name"
+                    className={`${FF_OVERVIEW_TITLE_CLASS} text-sm`}
                   >
                     {item.name}
-                  </Link>
+                  </span>
                   {showFolderPath ? (
                     <WorkflowFolderPath
                       item={item}
@@ -3163,7 +3325,15 @@ function WorkflowHomeCards({
                     canSeeLastRun={canSeeLastRun}
                   />
                 </div>
-                <details data-o1="kebab" className="relative">
+                <details
+                  data-o1="kebab"
+                  className="relative"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectRow(row);
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
                   <summary
                     aria-label={OVERVIEW_KEBAB_LABEL}
                     className={`${FF_OVERVIEW_KEBAB_CLASS} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}
