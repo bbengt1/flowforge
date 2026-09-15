@@ -51,7 +51,7 @@ export function SessionStatusChip() {
       <a
         href={sessionHref}
         aria-label={accessibleName}
-        className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900"
+        className="ff-shell-chip-danger rounded-full px-2.5 py-0.5 text-xs font-medium"
       >
         {label}
       </a>
@@ -63,7 +63,7 @@ export function SessionStatusChip() {
       <a
         href={sessionHref}
         aria-label={accessibleName}
-        className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-600"
+        className="ff-shell-chip rounded-full px-2.5 py-0.5 text-xs"
       >
         {label}
       </a>
@@ -74,8 +74,8 @@ export function SessionStatusChip() {
   const state = sessionExpiryState(expiresAt, now);
   const tone =
     state === "expired" || state === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-900"
-      : "border-teal-200 bg-teal-50 text-teal-900";
+      ? "ff-shell-chip-danger"
+      : "ff-shell-chip-accent";
 
   return (
     <a

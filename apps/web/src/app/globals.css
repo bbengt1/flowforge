@@ -55,6 +55,91 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * V.2 shell restyle — consume V.1 tokens. Relates to #358 / Part of #353.
+ * Keep #358 open. No second theme tree. No n8n orange.
+ */
+.ff-shell-aside {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border-right: 1px solid var(--ff-border);
+}
+
+.ff-shell-header {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-shell-control {
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+}
+
+.ff-shell-panel {
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+}
+
+.ff-shell-muted {
+  color: var(--ff-muted);
+}
+
+.ff-shell-brand {
+  color: var(--ff-text);
+}
+
+.ff-shell-scrim {
+  background: color-mix(in srgb, var(--ff-canvas) 72%, transparent);
+}
+
+.ff-nav-group-label {
+  color: var(--ff-muted);
+}
+
+.ff-nav-item {
+  color: var(--ff-text);
+  border-radius: var(--ff-radius-sm);
+}
+
+.ff-nav-item:hover {
+  background: var(--ff-canvas);
+}
+
+.ff-nav-item-active,
+.ff-nav-item[aria-current="page"] {
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+}
+
+.ff-nav-item-active:hover,
+.ff-nav-item[aria-current="page"]:hover {
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+}
+
+.ff-shell-chip {
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-muted);
+}
+
+.ff-shell-chip-accent {
+  border-color: var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+}
+
+.ff-shell-chip-danger {
+  border-color: var(--ff-danger);
+  background: var(--ff-danger-surface);
+  color: var(--ff-danger);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

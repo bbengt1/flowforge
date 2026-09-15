@@ -25,8 +25,8 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
     <select
       className={
         compact
-          ? "w-full max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
-          : "w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium text-zinc-900"
+          ? "ff-shell-control w-full max-w-56 px-2 py-1.5 text-sm font-medium"
+          : "ff-shell-control w-full px-2 py-1.5 text-sm font-medium"
       }
       value={
         current
@@ -71,32 +71,32 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
   return (
     <section
       aria-label="Workspace switcher"
-      className="rounded-xl border border-zinc-200 bg-white px-3 py-2"
+      className="ff-shell-panel px-3 py-2"
     >
-      <p className="text-[11px] font-medium tracking-wide text-teal-800 uppercase">
+      <p className="ff-nav-group-label text-[11px] font-medium tracking-wide uppercase">
         Workspace
       </p>
       <label className="mt-1 block">
         <span className="sr-only">Current workspace</span>
         {select}
       </label>
-      <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-zinc-600">
+      <dl className="mt-2 grid grid-cols-2 gap-2 text-xs ff-shell-muted">
         <div>
-          <dt className="text-zinc-500">Role</dt>
-          <dd className="font-medium text-zinc-800">{roleLabel}</dd>
+          <dt>Role</dt>
+          <dd className="font-medium text-[var(--ff-text)]">{roleLabel}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Environment</dt>
-          <dd className="font-mono font-medium text-zinc-800">
+          <dt>Environment</dt>
+          <dd className="font-mono font-medium text-[var(--ff-text)]">
             {environment || "—"}
           </dd>
         </div>
       </dl>
       {tenantName ? (
-        <p className="mt-1 truncate text-[11px] text-zinc-500">{tenantName}</p>
+        <p className="mt-1 truncate text-[11px] ff-shell-muted">{tenantName}</p>
       ) : null}
       {embedLocked ? (
-        <p className="mt-2 text-[11px] text-zinc-500">
+        <p className="mt-2 text-[11px] ff-shell-muted">
           Locked to the FlowForge-verified tenant/workbench.
         </p>
       ) : null}
