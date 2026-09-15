@@ -130,6 +130,20 @@ import {
   FF_EXPLORER_TREE_CLASS,
 } from "@/lib/explorer-shell";
 import {
+  EXPLORER_MENU_LABEL,
+  FF_EXPLORER_MENU_CLASS,
+  FF_EXPLORER_MENU_ITEM_CLASS,
+  childFoldersForPane,
+  explorerEmptyPaneMenuItems,
+  explorerFolderMenuItems,
+  explorerMenuPosition,
+  explorerWorkflowMenuItems,
+  visibleExplorerMenuItems,
+  type ExplorerContextItem,
+  type ExplorerContextTarget,
+  type ExplorerContextVerb,
+} from "@/lib/explorer-context-menu";
+import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
   workflowTemplateById,
@@ -363,8 +377,15 @@ function WorkflowHomeSession() {
   const [createSlug, setCreateSlug] = useState("");
 
   const [folderDialog, setFolderDialog] = useState<
-    { kind: "create" } | { kind: "rename"; id: string } | null
+    | { kind: "create"; parent?: FolderSelection }
+    | { kind: "rename"; id: string }
+    | null
   >(null);
+  const [explorerMenu, setExplorerMenu] = useState<{
+    target: ExplorerContextTarget;
+    x: number;
+    y: number;
+  } | null>(null);
   const [folderNameDraft, setFolderNameDraft] = useState("");
   const [folderNameError, setFolderNameError] = useState<string | null>(null);
   const [folderChrome, setFolderChrome] =
@@ -510,6 +531,14 @@ function WorkflowHomeSession() {
     workspaceWorkflowCount,
   });
   const unfiledShowsHomeVerbs = unfiledEmptyUsesHomeVerbs(workspaceWorkflowCount);
+  const paneFolders = useMemo(
+    () =>
+      childFoldersForPane(folders, selection, {
+        acrossSearch: acrossFolderSearch,
+      }),
+    [acrossFolderSearch, folders, selection],
+  );
+  const paneHasRows = visible.length > 0 || paneFolders.length > 0;
   const selectedChildFolderCount =
     selection.kind === "folder" ? childFolderCount(folders, selection.id) : 0;
   const folderEmptyDeleteAllowed =
@@ -713,11 +742,11 @@ function WorkflowHomeSession() {
   const selectedWorkflowCount =
     selection.kind === "folder" ? records.length : null;
 
-  function openCreateFolder() {
+  function openCreateFolder(parent?: FolderSelection) {
     if (!canMutateFolders) {
       return;
     }
-    setFolderDialog({ kind: "create" });
+    setFolderDialog({ kind: "create", parent });
     setFolderNameDraft("");
     setFolderNameError(null);
     setProblem(null);
@@ -749,7 +778,7 @@ function WorkflowHomeSession() {
     }
     const parentId =
       folderDialog.kind === "create"
-        ? createFolderParentId(selection)
+        ? createFolderParentId(folderDialog.parent ?? selection)
         : (folders.find((item) => item.id === folderDialog.id)?.parentId ??
           null);
     const nameError = folderNameSubmitError(
@@ -1333,6 +1362,118 @@ function WorkflowHomeSession() {
     });
   }
 
+  const importExistsInHomeChrome = canCreate;
+
+  function folderMenuInput(folderId: string) {
+    return explorerFolderMenuItems({
+      canMutate: canMutateFolders,
+      isUnfiled: false,
+      canCreateChild: canCreateChildFolder(folders, folderId),
+      deleteBlocked: folderDeleteBlocked({
+        childFolderCount: childFolderCount(folders, folderId),
+        workflowCount:
+          selection.kind === "folder" && selection.id === folderId
+            ? records.length
+            : null,
+      }),
+      canExpand: childFolderCount(folders, folderId) > 0,
+      expanded: expandedIds.includes(folderId) || visibleExpandedIds.includes(folderId),
+    });
+  }
+
+  function itemsForExplorerMenu(
+    target: ExplorerContextTarget,
+  ): ExplorerContextItem[] {
+    if (target.kind === "unfiled") {
+      return explorerFolderMenuItems({
+        canMutate: canMutateFolders,
+        isUnfiled: true,
+        canCreateChild: canCreateChildFolder(folders, null),
+        deleteBlocked: true,
+        canExpand: false,
+        expanded: false,
+      });
+    }
+    if (target.kind === "folder") {
+      return folderMenuInput(target.id);
+    }
+    if (target.kind === "workflow") {
+      return explorerWorkflowMenuItems({ canMutate: canMutateFolders });
+    }
+    return explorerEmptyPaneMenuItems({
+      canMutateFolders,
+      canCreate,
+      importExistsInHomeChrome,
+    });
+  }
+
+  function openExplorerMenu(
+    target: ExplorerContextTarget,
+    event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const items = visibleExplorerMenuItems(itemsForExplorerMenu(target));
+    if (items.length === 0) {
+      setExplorerMenu(null);
+      return;
+    }
+    setExplorerMenu({ target, x: event.clientX, y: event.clientY });
+  }
+
+  function runExplorerMenuVerb(
+    target: ExplorerContextTarget,
+    verb: ExplorerContextVerb,
+  ) {
+    if (verb === "new-folder") {
+      if (target.kind === "folder") {
+        openCreateFolder({ kind: "folder", id: target.id });
+        return;
+      }
+      if (target.kind === "unfiled") {
+        openCreateFolder({ kind: "unfiled" });
+        return;
+      }
+      openCreateFolder();
+      return;
+    }
+    if (verb === "rename" && target.kind === "folder") {
+      openRenameFolder(target.id);
+      return;
+    }
+    if (verb === "delete" && target.kind === "folder") {
+      void removeFolder(target.id);
+      return;
+    }
+    if (verb === "expand" && target.kind === "folder") {
+      toggleFolderExpanded(target.id);
+      return;
+    }
+    if (verb === "open" && target.kind === "workflow") {
+      router.push(workflowEditorHref(target.id));
+      return;
+    }
+    if (verb === "move" && target.kind === "workflow") {
+      const item =
+        items.find((row) => row.id === target.id) ??
+        visible.find((row) => row.id === target.id);
+      if (item) {
+        openMoveDialog(item);
+      }
+      return;
+    }
+    if (verb === "create-workflow") {
+      const blank = workflowTemplateById("blank");
+      if (blank) {
+        void createFromYaml(blank.definitionYaml);
+      }
+      return;
+    }
+    if (verb === "import") {
+      importRef.current?.click();
+    }
+  }
+
   return (
     <div
       data-uxl8="home"
@@ -1378,6 +1519,12 @@ function WorkflowHomeSession() {
         onSubmit={() => void submitFolderDialog()}
         onCancel={closeFolderDialog}
         onDropWorkflow={(workflowId, target) => void moveItem(workflowId, target)}
+        onFolderContextMenu={(folderId, event) =>
+          openExplorerMenu({ kind: "folder", id: folderId }, event)
+        }
+        onUnfiledContextMenu={(event) =>
+          openExplorerMenu({ kind: "unfiled" }, event)
+        }
       />
       <div
         data-x1="content-pane"
@@ -1785,6 +1932,16 @@ function WorkflowHomeSession() {
         />
       ) : null}
 
+      <div
+        data-x2="pane-surface"
+        className="min-h-[12rem]"
+        onContextMenu={(event) => {
+          if (event.defaultPrevented) {
+            return;
+          }
+          openExplorerMenu({ kind: "empty-pane" }, event);
+        }}
+      >
       {emptyKind === "teach" ||
       (emptyKind === "unfiled" && unfiledShowsHomeVerbs) ? (
         <>
@@ -1800,7 +1957,7 @@ function WorkflowHomeSession() {
               }
             }}
             onImport={() => importRef.current?.click()}
-            onNewFolder={openCreateFolder}
+            onNewFolder={() => openCreateFolder()}
           />
           <TemplateGrid
             canCreate={canCreate}
@@ -1808,10 +1965,41 @@ function WorkflowHomeSession() {
             onSelect={(template) => void createFromTemplate(template)}
           />
         </>
-      ) : emptyKind === "unfiled" ? (
+      ) : emptyKind === "unfiled" && !paneHasRows ? (
         <UnfiledEmptyFiled
           folders={folders}
           onSelectFolder={selectFolder}
+        />
+      ) : paneHasRows ? (
+        <WorkflowHomeCards
+          items={visible}
+          folderRows={paneFolders}
+          pending={pending !== null}
+          canCreate={canCreate}
+          canMove={canMutateFolders}
+          canExecute={canExecute}
+          canPublish={canPublish}
+          canViewWebhooks={canViewWebhooks}
+          canViewSchedules={canViewSchedules}
+          canSeeLastRun={canSeeLastRun}
+          showFolderPath
+          folders={folders}
+          onStart={(item) => openHomeOverlay("start", item.id)}
+          onTestRun={(item) => void testRunItem(item)}
+          onWebhooks={(item) => openHomeOverlay("webhooks", item.id)}
+          onSchedules={(item) => openHomeOverlay("schedules", item.id)}
+          onDuplicate={(item) => void duplicateItem(item)}
+          onExport={(item) => void exportItem(item)}
+          onMove={openMoveDialog}
+          onSelectFolder={selectFolder}
+          onDragStart={setDragging}
+          onDragEnd={() => setDragging(null)}
+          onWorkflowContextMenu={(item, event) =>
+            openExplorerMenu({ kind: "workflow", id: item.id }, event)
+          }
+          onFolderContextMenu={(folder, event) =>
+            openExplorerMenu({ kind: "folder", id: folder.id }, event)
+          }
         />
       ) : emptyKind === "folder" ? (
         <FolderEmpty
@@ -1844,6 +2032,7 @@ function WorkflowHomeSession() {
       ) : (
         <WorkflowHomeCards
           items={visible}
+          folderRows={paneFolders}
           pending={pending !== null}
           canCreate={canCreate}
           canMove={canMutateFolders}
@@ -1864,10 +2053,30 @@ function WorkflowHomeSession() {
           onSelectFolder={selectFolder}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
+          onWorkflowContextMenu={(item, event) =>
+            openExplorerMenu({ kind: "workflow", id: item.id }, event)
+          }
+          onFolderContextMenu={(folder, event) =>
+            openExplorerMenu({ kind: "folder", id: folder.id }, event)
+          }
         />
       )}
       </div>
       </div>
+      </div>
+      {explorerMenu ? (
+        <ExplorerContextMenu
+          items={itemsForExplorerMenu(explorerMenu.target)}
+          x={explorerMenu.x}
+          y={explorerMenu.y}
+          onClose={() => setExplorerMenu(null)}
+          onAction={(verb) => {
+            const target = explorerMenu.target;
+            setExplorerMenu(null);
+            runExplorerMenuVerb(target, verb);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -2006,6 +2215,8 @@ function FolderRail({
   onSubmit,
   onCancel,
   onDropWorkflow,
+  onFolderContextMenu,
+  onUnfiledContextMenu,
 }: {
   tree: FolderTreeNode[];
   folders: readonly WorkflowFolder[];
@@ -2014,7 +2225,10 @@ function FolderRail({
   canMutate: boolean;
   pending: boolean;
   selectedWorkflowCount: number | null;
-  dialog: { kind: "create" } | { kind: "rename"; id: string } | null;
+  dialog:
+    | { kind: "create"; parent?: FolderSelection }
+    | { kind: "rename"; id: string }
+    | null;
   nameDraft: string;
   nameError: string | null;
   chrome: FolderMutateChrome;
@@ -2024,15 +2238,27 @@ function FolderRail({
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
   onNameDraft: (value: string) => void;
-  onCreate: () => void;
+  onCreate: (parent?: FolderSelection) => void;
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onDropWorkflow: (workflowId: string, target: FolderSelection) => void;
+  onFolderContextMenu: (
+    folderId: string,
+    event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+  ) => void;
+  onUnfiledContextMenu: (event: {
+    clientX: number;
+    clientY: number;
+    preventDefault(): void;
+    stopPropagation(): void;
+  }) => void;
 }) {
   const unfiledCurrent = selection.kind === "unfiled";
-  const createParentId = createFolderParentId(selection);
+  const createParentId = createFolderParentId(
+    dialog?.kind === "create" && dialog.parent ? dialog.parent : selection,
+  );
   const canCreateHere = canCreateChildFolder(folders, createParentId);
   const mutateLabel = folderMutateLabel(chrome);
   return (
@@ -2041,6 +2267,7 @@ function FolderRail({
       data-home-folder-rail="nav"
       data-o2="finder-rail"
       data-x1="folder-tree"
+      data-x2="folder-tree"
       className={`h-full ${FF_OVERVIEW_RAIL_CLASS} ${FF_EXPLORER_TREE_CLASS}`}
     >
       <div className="flex items-start justify-between gap-2 px-2">
@@ -2053,7 +2280,7 @@ function FolderRail({
             data-home-folder-verb="new"
             disabled={pending || !canCreateHere}
             title={!canCreateHere ? FOLDER_DEPTH_HELP : undefined}
-            onClick={onCreate}
+            onClick={() => onCreate()}
             className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             {NEW_FOLDER_LABEL}
@@ -2148,6 +2375,7 @@ function FolderRail({
             type="button"
             data-home-folder-rail="unfiled"
             aria-current={unfiledCurrent ? "true" : undefined}
+            onContextMenu={(event) => onUnfiledContextMenu(event)}
             onClick={() => onSelect({ kind: "unfiled" })}
             className={
               (unfiledCurrent
@@ -2189,6 +2417,7 @@ function FolderRail({
             onRename={onRename}
             onDelete={onDelete}
             onDropWorkflow={onDropWorkflow}
+            onFolderContextMenu={onFolderContextMenu}
           />
         ))}
       </ul>
@@ -2211,6 +2440,7 @@ function FolderRailNode({
   onRename,
   onDelete,
   onDropWorkflow,
+  onFolderContextMenu,
 }: {
   node: FolderTreeNode;
   depth: number;
@@ -2226,6 +2456,10 @@ function FolderRailNode({
   onRename: (folderId: string) => void;
   onDelete: (folderId: string) => void;
   onDropWorkflow: (workflowId: string, target: FolderSelection) => void;
+  onFolderContextMenu: (
+    folderId: string,
+    event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+  ) => void;
 }) {
   const selected = selection.kind === "folder" && selection.id === node.id;
   const hasChildren = node.children.length > 0;
@@ -2260,6 +2494,7 @@ function FolderRailNode({
           data-home-folder-rail="folder"
           data-folder-id={node.id}
           aria-current={selected ? "true" : undefined}
+          onContextMenu={(event) => onFolderContextMenu(node.id, event)}
           onClick={() => onSelect({ kind: "folder", id: node.id })}
           className={
             (selected
@@ -2330,6 +2565,7 @@ function FolderRailNode({
               onRename={onRename}
               onDelete={onDelete}
               onDropWorkflow={onDropWorkflow}
+              onFolderContextMenu={onFolderContextMenu}
             />
           ))}
         </ul>
@@ -2365,6 +2601,103 @@ function FolderBreadcrumb({
         </span>
       ))}
     </nav>
+  );
+}
+
+function ExplorerContextMenu({
+  items,
+  x,
+  y,
+  onClose,
+  onAction,
+}: {
+  items: ExplorerContextItem[];
+  x: number;
+  y: number;
+  onClose: () => void;
+  onAction: (verb: ExplorerContextVerb) => void;
+}) {
+  const visible = visibleExplorerMenuItems(items);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) {
+      return;
+    }
+    setPos(
+      explorerMenuPosition(
+        x,
+        y,
+        { width: el.offsetWidth, height: el.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
+    );
+  }, [x, y, visible.length]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (event.defaultPrevented) {
+          return;
+        }
+        event.preventDefault();
+        onClose();
+      }
+    }
+    function onPointerDown(event: PointerEvent) {
+      if (menuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [onClose]);
+
+  if (visible.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label={EXPLORER_MENU_LABEL}
+      data-x2="context-menu"
+      className={`${FF_OVERVIEW_MENU_CLASS} ${FF_EXPLORER_MENU_CLASS}`}
+      style={{ left: pos.left, top: pos.top }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      {visible.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="menuitem"
+          data-x2-verb={item.id}
+          data-x2-mutate={item.mutate ? "true" : undefined}
+          disabled={item.disabled}
+          title={item.reason}
+          className={FF_EXPLORER_MENU_ITEM_CLASS}
+          onClick={() => {
+            if (item.disabled) {
+              return;
+            }
+            onAction(item.id);
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -2680,6 +3013,7 @@ function WorkflowFolderPath({
 
 function WorkflowHomeCards({
   items,
+  folderRows = [],
   pending,
   canCreate,
   canMove,
@@ -2700,8 +3034,11 @@ function WorkflowHomeCards({
   onSelectFolder,
   onDragStart,
   onDragEnd,
+  onWorkflowContextMenu,
+  onFolderContextMenu,
 }: {
   items: WorkflowHomeItem[];
+  folderRows?: readonly WorkflowFolder[];
   pending: boolean;
   canCreate: boolean;
   canMove: boolean;
@@ -2722,6 +3059,14 @@ function WorkflowHomeCards({
   onSelectFolder: (next: FolderSelection) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
+  onWorkflowContextMenu: (
+    item: WorkflowHomeItem,
+    event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+  ) => void;
+  onFolderContextMenu: (
+    folder: WorkflowFolder,
+    event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+  ) => void;
 }) {
   return (
     <div data-o1="card-list" data-x1="content-list">
@@ -2737,6 +3082,27 @@ function WorkflowHomeCards({
         ))}
       </div>
       <ul className={FF_EXPLORER_LIST_CLASS}>
+        {folderRows.map((folder) => (
+          <li
+            key={`folder-${folder.id}`}
+            className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}`}
+            data-x1="content-row"
+            data-x2="folder-row"
+            data-folder-id={folder.id}
+            onContextMenu={(event) => onFolderContextMenu(folder, event)}
+          >
+            <div className={FF_OVERVIEW_CARD_ROW_CLASS}>
+              <button
+                type="button"
+                onClick={() => onSelectFolder({ kind: "folder", id: folder.id })}
+                className={`${FF_OVERVIEW_TITLE_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left text-base hover:underline`}
+              >
+                <FinderFolderIcon />
+                <span className="truncate">{folder.name}</span>
+              </button>
+            </div>
+          </li>
+        ))}
         {items.map((item) => {
           const dates = overviewCardTimestamps(item);
           const published = overviewPublishedBadge(item.status);
@@ -2746,7 +3112,9 @@ function WorkflowHomeCards({
               className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}`}
               data-o1="card"
               data-x1="content-row"
+              data-x2="content-row"
               data-home-row-scan="card"
+              onContextMenu={(event) => onWorkflowContextMenu(item, event)}
               {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
             >
               <div className={FF_OVERVIEW_CARD_ROW_CLASS}>

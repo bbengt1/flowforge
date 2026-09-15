@@ -399,6 +399,45 @@ body {
 }
 
 /*
+ * X.2 Explorer context menus — consume V.1 tokens. Relates to #381 /
+ * Part of #379. Keep #381 open. Keep #379 open. Grant-gated folder /
+ * workflow / empty-pane menus. No n8n orange. Not a second theme.
+ */
+.ff-explorer-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 12rem;
+  padding: var(--ff-space-1);
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ff-canvas) 55%, transparent);
+}
+
+.ff-explorer-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--ff-text);
+  border-radius: var(--ff-radius-sm);
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+}
+
+.ff-explorer-menu-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ff-accent) 18%, var(--ff-surface));
+  color: var(--ff-text);
+}
+
+.ff-explorer-menu-item:disabled {
+  color: var(--ff-muted);
+  opacity: 0.7;
+}
+
+/*
  * V.4 Editor chrome — consume V.1 tokens. Relates to #360 / Part of #353.
  * Keep #360 open. Dark canvas + satellites. One teal accent ring.
  * No n8n orange. Not a branded NDV clone. Not a second theme tree.

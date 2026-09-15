@@ -93,6 +93,11 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    link). The content pane lists that folder only. The breadcrumb
    shows ancestry (Unfiled is virtual). Explorer is the default
    home chrome (X.1 / #380 — **keep #380 open**; **keep #379 open**).
+   Right-click a folder, workflow, or empty pane for grant-gated
+   Explorer menus (X.2 / #381 — **keep #381 open**; **keep #379 open**)
+   that call the existing create / rename / delete / move / import
+   verbs. Viewers get Open / select only. Unfiled cannot be renamed
+   or deleted. Delete stays disabled when a folder is not empty.
    Then filter by search, tag, owner, trigger, environment,
    status, **activation**, last run, last modified. Prefix-in-name is
    no longer the primary organizer (F.2 / #309 — **keep #309 open**).

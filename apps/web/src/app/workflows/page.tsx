@@ -26,7 +26,14 @@ export default function WorkflowsPage() {
           disclosure and folder icons (Unfiled is virtual), right
           content pane for the selected folder only, and a breadcrumb
           from ancestry. Overview cards are demoted from the primary
-          layout; dense content-pane rows are the default. The left rail
+          layout; dense content-pane rows are the default. Right-click
+          a folder, workflow, or empty pane for grant-gated Explorer
+          menus (X.2 / #381 — <strong>keep #381 open</strong>; Part of
+          #379 — <strong>keep #379 open</strong>) wired to the existing
+          create / rename / delete / Move… / import verbs. Viewers get
+          Open / select only. Unfiled cannot be renamed or deleted.
+          Folder delete stays disabled when the folder is not empty.
+          The left rail
           lists Unfiled and this workspace&apos;s folders; the main list
           is the selected folder. Unfiled is always in the rail and is
           not a persisted folder.           Empty home
