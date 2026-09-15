@@ -13,6 +13,7 @@ function subscribeBrowserLocation(onChange: () => void) {
   };
 }
 import { BootstrapGate } from "@/components/bootstrap/BootstrapGate";
+import { SignedOutGate } from "@/components/session/SignedOutGate";
 import { EmbedChrome } from "@/components/embed/EmbedChrome";
 import { EmbedDeepLinkGuard } from "@/components/embed/EmbedDeepLinkGuard";
 import { EmbedExchangeGate } from "@/components/embed/EmbedExchangeGate";
@@ -184,6 +185,7 @@ export function WorkspaceShell({
   ) : (
     <WorkspaceProvider>
       <BootstrapGate>
+      <SignedOutGate>
       <div
         className={`${FF_SHELL_ROOT_CLASS} flex h-full min-h-0 overflow-hidden`}
         data-ff-tokens={FF_SHELL_ROOT_VALUE}
@@ -272,6 +274,7 @@ export function WorkspaceShell({
           </div>
         </div>
       </div>
+      </SignedOutGate>
       </BootstrapGate>
     </WorkspaceProvider>
   );
