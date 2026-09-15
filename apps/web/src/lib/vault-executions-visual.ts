@@ -387,6 +387,7 @@ export function vaultExecutionsVisualHoldsHardLines(): boolean {
     FF_ACCENT.toLowerCase() === "#0f766e" &&
     FF_CANVAS.toLowerCase() === "#0f1218" &&
     FF_SURFACE.toLowerCase() === "#171b22" &&
+    FF_DANGER.toLowerCase() === "#fb7185" &&
     CREDENTIAL_VAULT.displayNamePlusUuidOnly &&
     CREDENTIAL_VAULT.noKekInBrowser &&
     R5_SECURITY_LINE.noKekInBrowser &&

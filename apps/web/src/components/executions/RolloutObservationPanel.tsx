@@ -131,7 +131,7 @@ export function RolloutObservationPanel({
               ) : null}
               {item.resources.length > 0 ? (
                 <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                  {item.resources}
+                  {item.resources
                     .map((resource) =>
                       [resource.kind, resource.namespace, resource.name]
                         .filter(Boolean)

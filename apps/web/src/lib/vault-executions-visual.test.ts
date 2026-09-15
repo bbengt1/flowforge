@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  ISOLATION_DENIAL_LABEL,
   LOUD_ADV024_DENIAL_CLASS,
   LOUD_ADV024_LEAK_CLASS,
   LOUD_ERROR_CLASS,
@@ -21,7 +22,6 @@ import {
   executionInboxIndeterminateIsLoud,
 } from "./execution-inbox.ts";
 import {
-  ISOLATION_DENIAL_LABEL,
   MEMBERSHIP_ISOLATION_CHROME,
   isolationHeldIsSuccess,
 } from "./membership-isolation-chrome.ts";
