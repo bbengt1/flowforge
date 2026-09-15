@@ -135,13 +135,16 @@ Source: Mobbin paid plan, 2026-09-15 (`search_screens`, `platform=web`, `mode=de
 
 **Honorable (pattern support, not the top 20):** [Modal Deployment History](https://mobbin.com/screens/2988dfe5-56b1-46b2-a042-d9b73a8de152) · [Railway logs](https://mobbin.com/screens/3f38e15c-d2fe-4315-8262-3bd3dbb08d83) · [Vercel Deployments](https://mobbin.com/screens/e9576405-bcef-419a-922a-8fb84b044a54).
 
-**Login / entry — OIDC first** (live Mobbin, 2026-09-15 — same `task_intent`; URLs not invented):
+**Login / entry — OIDC first** (live Mobbin login brief, 2026-09-15 — URLs not invented). Visual lean: **full-dark**; **SSO / OIDC as the primary CTA**; not email-password-first. **No password in V.0.**
 
 | Screen | TAKE | SKIP |
 | --- | --- | --- |
-| [Cursor — Continue with …](https://mobbin.com/screens/7be66c2e-dd07-49cb-9594-e4dd435204d9) | Full-dark; **Continue with IdP** as the one job; no workbench behind the form. | Consumer IdP pile as required. Password field on first paint (**no password in V.0**). |
-| [Modal — Continue with Google](https://mobbin.com/screens/eac946fc-7909-478d-926e-02b07cc840be) | Full-dark; one solid IdP CTA; email-continue as secondary (we skip email-password). | Neon CTA for its own sake. Sign-up as a second product. |
-| [Resend — Google / GitHub](https://mobbin.com/screens/bd1fb374-7cf2-4584-a56c-ea98c8b2f286) | Full-dark; IdP buttons as the primary verbs. | Password fields on the same paint (not V.0). Public self-serve sign-up. |
+| [Better Stack](https://mobbin.com/screens/9fa0ac37-55dc-43cb-850c-c9780ef9274f) | Full-page dark charcoal; SSO button present; minimal chrome; no workbench behind the form. | Email / magic-link as the **V.0** primary. Password as a path (**no password in V.0**). |
+| [Vapi](https://mobbin.com/screens/a07f8358-1beb-424e-ad91-650d4947cc3d) | Full-dark; SSO row + **Sign in with SSO**; teal brand accent as the one accent. | Email + password form as the V.0 door. Testimonial pane as required chrome. |
+| [incident.io](https://mobbin.com/screens/d320f96d-739d-45ea-a4a7-8c8f92fcaf90) | Centered dark card; **SSO buttons first**; **Sign in with SAML SSO** as the enterprise verb. | Email field as the first job. Consumer IdP pile as required. |
+| [Resend](https://mobbin.com/screens/f66a3de6-e328-43db-87eb-9a2271aab64f) | Atmospheric full-page dark; **Google / GitHub** as the primary verbs. | Email + password + “Last used” as V.0. Public self-serve sign-up. |
+
+**SKIP (brief):** [Cursor](https://mobbin.com/screens/55a4edff-ccc5-42dc-9548-8be0d68871dc) — no SSO. [Basedash](https://mobbin.com/screens/6cac49d7-9304-4243-80a6-3f2487186207) — email-only Continue.
 
 **Password login — deferred reference only** (not V.0): [Better Stack — email + password](https://mobbin.com/screens/f9c7a948-be6a-4258-a97e-2ead3a8e0838) · [Cursor — email + password](https://mobbin.com/screens/097f40e5-0eca-4890-a326-45dbbc3bc869) · [Featurebase — Log in](https://mobbin.com/screens/ebdc03bf-cdfe-416b-a0d4-bac8d618b578). SKIP as the V.0 front door.
 
@@ -274,8 +277,8 @@ Trusted-dev `POST /session` + identity headers stay **local only** ([frontend UI
 
 #### Login chrome
 
-- Full-dark charcoal; one accent **Continue with IdP** (Cursor / Modal / Resend SSO screens).
-- **No password fields** on V.0 Login. Password Mobbin cites are deferred-reference only.
+- Full-dark charcoal; one accent **Continue with IdP** (Better Stack / Vapi / incident.io / Resend SSO screens).
+- **No password fields** on V.0 Login. Password Mobbin cites are deferred-reference only. SSO / OIDC is the primary CTA — not email-password-first.
 - Signed-out gate on standalone product routes: no session → Login (or wizard if incomplete). `401` after complete → Login, **not** wizard.
 - Errors are icon + text. No client secret, code verifier, or tokens in chrome, query leftovers, or `localStorage` beyond the PKCE handshake the contract requires.
 - After success: Overview. Switcher works as today. Embed never mounts this screen.
