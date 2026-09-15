@@ -66,6 +66,26 @@ describe("proxy CSRF fail-closed", () => {
     assert.equal(
       proxyCsrfDenial({
         method: "POST",
+        proxyPath: "/api/v1/bootstrap/persistence",
+        cookieHeader: `${SESSION_COOKIE_NAME}=opaque`,
+        csrfHeader: null,
+        requestId: "req-id-16charsxxx",
+      }),
+      null,
+    );
+    assert.equal(
+      proxyCsrfDenial({
+        method: "POST",
+        proxyPath: "/api/control-plane/bootstrap/tls",
+        cookieHeader: `${SESSION_COOKIE_NAME}=opaque`,
+        csrfHeader: null,
+        requestId: "req-id-16charsxxx",
+      }),
+      null,
+    );
+    assert.equal(
+      proxyCsrfDenial({
+        method: "POST",
         proxyPath: "/api/control-plane/tenants",
         cookieHeader: null,
         csrfHeader: null,

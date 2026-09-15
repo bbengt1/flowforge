@@ -123,6 +123,92 @@ export function requestIsSecure(request: {
   }
 }
 
+/**
+ * Expire first-party and CHIPS ff_session / ff_csrf pairs. Matches
+ * Go clearSessionCookies: empty value, Max-Age=0, Path=/api/v1.
+ * Used when a wizard POST cannot present a hydrated CSRF token.
+ */
+export function expireSessionCookies(options: {
+  requestSecure: boolean;
+}): string[] {
+  return [
+    expireOneCookie("ff_session", {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: options.requestSecure,
+      partitioned: false,
+    }),
+    expireOneCookie("ff_csrf", {
+      httpOnly: false,
+      sameSite: "Strict",
+      secure: options.requestSecure,
+      partitioned: false,
+    }),
+    expireOneCookie("ff_session", {
+      httpOnly: true,
+      sameSite: "None",
+      secure: true,
+      partitioned: true,
+    }),
+    expireOneCookie("ff_csrf", {
+      httpOnly: false,
+      sameSite: "None",
+      secure: true,
+      partitioned: true,
+    }),
+  ];
+}
+
+function expireOneCookie(
+  name: "ff_session" | "ff_csrf",
+  flags: {
+    httpOnly: boolean;
+    sameSite: "Lax" | "Strict" | "None";
+    secure: boolean;
+    partitioned: boolean;
+  },
+): string {
+  const parts = [`${name}=`, "Path=/api/v1", "Max-Age=0", `SameSite=${flags.sameSite}`];
+  if (flags.httpOnly) {
+    parts.push("HttpOnly");
+  }
+  if (flags.secure || flags.partitioned || flags.sameSite === "None") {
+    parts.push("Secure");
+  }
+  if (flags.partitioned || flags.sameSite === "None") {
+    parts.push("Partitioned");
+  }
+  return parts.join("; ");
+}
+
+/** Drop ff_session / ff_csrf from a Cookie header. Other cookies stay. */
+export function stripSessionCookieHeader(
+  cookieHeader: string | null | undefined,
+): string {
+  if (!cookieHeader?.trim()) {
+    return "";
+  }
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => {
+      const name = part.split("=")[0]?.trim();
+      return name !== "ff_session" && name !== "ff_csrf";
+    })
+    .join("; ");
+}
+
+export function headersWithoutSessionCookies(source: Headers): Headers {
+  const next = new Headers(source);
+  const stripped = stripSessionCookieHeader(source.get("cookie"));
+  if (stripped) {
+    next.set("cookie", stripped);
+  } else {
+    next.delete("cookie");
+  }
+  return next;
+}
+
 export function collectSetCookies(headers: Headers): string[] {
   const getter = (
     headers as Headers & { getSetCookie?: () => string[] }

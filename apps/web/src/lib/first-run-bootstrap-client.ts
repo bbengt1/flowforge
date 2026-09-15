@@ -5,6 +5,9 @@
  * Mutations POST once; secrets are not kept on the parsed status.
  * Skip TLS POSTs `{action:"skip"}` only — no PEM in the body.
  * CSRF is attached by callIdentityProxy when a session is present.
+ * Wizard POSTs are CSRF-exempt at the Next proxy. A stale ff_session
+ * without a hydrated CSRF token is stripped and expired there — do
+ * not call logout (that still needs CSRF).
  */
 
 import { callIdentityProxy } from "./identity-client.ts";
@@ -21,6 +24,7 @@ import {
   decideBootstrapChrome,
   emptyTlsUploadDraft,
   parseBootstrapStatus,
+  wizardMutation401IsStaleSession,
   type BootstrapAdminInput,
   type BootstrapChromeDecision,
   type BootstrapStatus,
@@ -182,12 +186,13 @@ export async function confirmBootstrapPersistence(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_PERSISTENCE_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_PERSISTENCE_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: { confirm: true } },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_PERSISTENCE_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: { confirm: true } },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function createBootstrapAdmin(input: {
@@ -198,12 +203,13 @@ export async function createBootstrapAdmin(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_ADMINS_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_ADMINS_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: bootstrapAdminBody(input.admin) },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_ADMINS_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: bootstrapAdminBody(input.admin) },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function setBootstrapPublicUrl(input: {
@@ -214,12 +220,13 @@ export async function setBootstrapPublicUrl(input: {
   if (input.embed) {
     return embedDenied(BOOTSTRAP_PUBLIC_URL_PATH);
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_PUBLIC_URL_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body: { publicBaseUrl: input.publicBaseUrl } },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_PUBLIC_URL_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body: { publicBaseUrl: input.publicBaseUrl } },
+    ),
   );
-  return finishMutation(result);
 }
 
 export async function setBootstrapTls(input: {
@@ -251,12 +258,25 @@ export async function setBootstrapTls(input: {
       strippedKeys: [],
     };
   }
-  const result = await callIdentityProxy<unknown>(
-    BOOTSTRAP_TLS_PATH,
-    identityOrEmpty(input.identity),
-    { method: "POST", body },
+  return postWizardMutation(() =>
+    callIdentityProxy<unknown>(
+      BOOTSTRAP_TLS_PATH,
+      identityOrEmpty(input.identity),
+      { method: "POST", body },
+    ),
   );
-  return finishMutation(result);
+}
+
+async function postWizardMutation(
+  send: () => ReturnType<typeof callIdentityProxy<unknown>>,
+): Promise<BootstrapStatusResult> {
+  const first = finishMutation(await send());
+  if (first.ok || !wizardMutation401IsStaleSession(first.statusCode, first.problem)) {
+    return first;
+  }
+  // The 401 response expires ff_session / ff_csrf (Path=/api/v1).
+  // Retry once without depending on a hydrated CSRF token or logout.
+  return finishMutation(await send());
 }
 
 function finishMutation(

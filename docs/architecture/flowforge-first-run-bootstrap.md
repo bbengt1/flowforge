@@ -96,7 +96,7 @@ Adapter: `apps/web/src/lib/first-run-bootstrap.ts`. Gate: `BootstrapGate` on the
 
 1. Call `GET /api/control-plane/bootstrap` only from **standalone** shell (not `/embed/v1`).
 2. `200` + `incomplete` → wizard. `200` + `complete` → product home (`/workflows`).
-3. `401` → treat as complete (login / home). Do not invent a second gate.
+3. `GET` `401` → treat as complete (login / home). Do not invent a second gate. A **mutation** `401` while incomplete is a stale `ff_session` cookie (the GET is still anonymous-open). The Next proxy expires first-party and CHIPS `ff_session` / `ff_csrf` (`Path=/api/v1`) on that 401, and strips an unhydrated session cookie before the upstream call when the wizard POST has no `X-CSRF-Token`. Wizard POSTs are CSRF-exempt at the proxy so this does not depend on `POST /session/logout` or a readable `ff_csrf`. Retry the step once. Do not skip the wizard.
 4. `standaloneOnly` / this doc: ignore the payload on embed. Embed chrome stays ADV-021 (`GET /session` `session.embed`).
 5. Step `ready` flags are progress only. **Fail closed:** do not skip ahead. B.2–B.5 mutations will reject out-of-order writes.
 6. After `complete`, never remount the wizard. Link Settings for URL / TLS / users / persistence (`/membership` for users).
