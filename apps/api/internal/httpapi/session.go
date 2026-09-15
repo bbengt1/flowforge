@@ -252,6 +252,16 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		WriteForbidden(w, r)
 		return
 	}
+	s.mintStandaloneSession(w, r, user, "issued")
+}
+
+// mintStandaloneSession issues the existing ff_session / ff_csrf pair
+// (standalone Lax / Strict). Used by trusted-dev POST /session and
+// local POST /login. Never binds session.embed.
+func (s *Server) mintStandaloneSession(w http.ResponseWriter, r *http.Request, user identity.User, reason string) {
+	if !s.requireSessions(w, r) {
+		return
+	}
 	policy := s.sec.sessionPolicy()
 	issued, err := s.sessions.Create(r.Context(), user.ID, s.clockNow(), policy.IdleTimeout, policy.AbsoluteTimeout)
 	if err != nil {
@@ -259,7 +269,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.issueSessionCookies(w, r, issued)
-	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, "issued")
+	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, reason)
 	writeJSON(w, http.StatusCreated, sessionResponse{
 		Session:   s.viewSession(r.Context(), issued.Record),
 		Principal: user,

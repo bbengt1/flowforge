@@ -21,7 +21,7 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 | Landing page | `GET /api/v1/swagger` (links to the two documents; not an interactive explorer) |
 
 OpenAPI **3.0.3**. `info.version` is the document version (currently
-`0.23.0` in the YAML). That is not the URL prefix.
+`0.24.0` in the YAML). That is not the URL prefix.
 
 There is no code-generated spec. When a route or problem code changes,
 update `apps/api/openapi/openapi.yaml` in the same change as
@@ -46,8 +46,9 @@ There are no `/healthz` / `/readyz` aliases. See
 
 ## How operators obtain the published spec
 
-Production identity is a cookie session from `POST /embed/exchange` (or
-a future OIDC login). Metrics and OpenAPI/swagger require
+Production identity is a cookie session from standalone `POST /login`
+or `POST /embed/exchange` (OIDC Authorization Code + PKCE is a
+deferred stub). Metrics and OpenAPI/swagger require
 `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`). Empty
 allowlist is fail-closed (`403`). Workspace `admin` is not enough.
 Unauthenticated is `401`. There is no anonymous scrape token and no

@@ -10,7 +10,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
 | `GET` | `/api/v1/bootstrap` | First-run wizard gate. Status flags only. Unauthenticated when incomplete; session required when complete. Never gates `/embed/v1`. |
 | `POST` | `/api/v1/bootstrap/persistence` | Wizard step 1. Body `{confirm:true}` only (no DSN). `200` status with `steps.persistence.ready=true`. Does not mark complete. Incomplete installs may call without a session. Already complete → `409`. PostgreSQL down → `503`. |
-| `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Non-empty password → `400` (local login has not landed). Never echoes credentials. |
+| `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?, password?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Optional password is stored as a hash for `POST /login` and is never echoed. |
 | `POST` | `/api/v1/bootstrap/public-url` | Wizard step 3. Body `{publicBaseUrl}`. `200` status with `steps.publicUrl.ready=true`. Does not mark complete. First admin must be ready (`409`). Already complete → `409`. HTTPS preferred; HTTP allowed for local. Never echoes the URL. |
 | `POST` | `/api/v1/bootstrap/tls` | Wizard step 4. Body `{action:"create-self-signed"}`, `{action:"upload", certPem, keyPem}`, or `{action:"skip"}`. `200` status with `steps.tls.ready=true`, `steps.tls.mode` (`self_signed` \| `uploaded` \| `skipped`), and `complete=true` (`MarkComplete`). Public URL must be ready (`409`). Already complete → `409`. Never echoes key/PEM. Skip writes no files. ACME out of scope. Create/upload require `TLS_CERT_FILE` / `TLS_KEY_FILE` (`503` if unset). |
 | `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
@@ -38,7 +38,8 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
-| `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /embed/exchange`). |
+| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. Never echoes the password. Embed stays `POST /embed/exchange`. |
+| `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |

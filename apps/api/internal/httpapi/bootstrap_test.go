@@ -441,7 +441,42 @@ func TestBootstrapAdminsCompleteIs409(t *testing.T) {
 	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
 }
 
-func TestBootstrapAdminsNeverEchoesPassword(t *testing.T) {
+func TestBootstrapAdminsStoresPasswordWithoutEcho(t *testing.T) {
+	store := bootstrap.NewMemory()
+	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	idStore := identity.NewMemory()
+	h := NewWithDeps(Deps{Bootstrap: store, Store: idStore, Sessions: session.NewMemory(), Security: Security{}})
+
+	secretBody := `{"issuer":"https://idp.example","external_subject":"admin-1","password":"super-secret-hunter2"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, firstAdminRequest(secretBody))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create admin with password: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "super-secret-hunter2") {
+		t.Fatal("success must not echo credentials")
+	}
+	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
+
+	st, err := store.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.FirstAdminReady {
+		t.Fatal("password POST must still set firstAdmin ready")
+	}
+	user, hash, err := idStore.LookupLocalLogin(t.Context(), "admin-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.ExternalSubject != "admin-1" || hash == "" || strings.Contains(hash, "super-secret-hunter2") {
+		t.Fatalf("stored login: user=%+v hash=%q", user, hash)
+	}
+}
+
+func TestBootstrapAdminsRejectsShortPasswordWithoutStoring(t *testing.T) {
 	store := bootstrap.NewMemory()
 	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
 		t.Fatal(err)
@@ -449,12 +484,15 @@ func TestBootstrapAdminsNeverEchoesPassword(t *testing.T) {
 	idStore := identity.NewMemory()
 	h := NewWithDeps(Deps{Bootstrap: store, Store: idStore, Security: Security{}})
 
-	secretBody := `{"issuer":"https://idp.example","external_subject":"admin-1","password":"super-secret-hunter2"}`
+	secretBody := `{"issuer":"https://idp.example","external_subject":"admin-1","password":"short"}`
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, firstAdminRequest(secretBody))
 	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
-	if strings.Contains(rec.Body.String(), "super-secret-hunter2") {
-		t.Fatal("problem must not echo credentials")
+	if strings.Contains(rec.Body.String(), "short") && strings.Count(rec.Body.String(), "short") > 1 {
+		t.Fatal("problem must not echo the password value")
+	}
+	if strings.Contains(rec.Body.String(), `"password":`) {
+		t.Fatal("problem must not include a password field")
 	}
 
 	st, err := store.Get(t.Context())
@@ -462,10 +500,10 @@ func TestBootstrapAdminsNeverEchoesPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.FirstAdminReady {
-		t.Fatal("rejected credential body must not set firstAdmin ready")
+		t.Fatal("rejected password must not set firstAdmin ready")
 	}
 	if idStore.HasPrincipal("https://idp.example", "admin-1") {
-		t.Fatal("must not upsert a user when credentials are rejected")
+		t.Fatal("must not upsert a user when the password is rejected")
 	}
 }
 

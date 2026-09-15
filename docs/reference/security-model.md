@@ -23,13 +23,16 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 - Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
   `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
   authentication and must not upsert principals. Prefer the cookie session
-  issued by `POST /embed/exchange` (or a future OIDC login). Self-asserted
-  header identity is enabled only by the explicit, non-default
-  `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
+  issued by standalone `POST /login` (local email/username + password) or
+  `POST /embed/exchange`. **OIDC Authorization Code + PKCE is a deferred
+  stub (V.0c)** — not day-one; this model does not add IdP start/callback
+  or IdP-admin APIs. Self-asserted header identity is enabled only by the
+  explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
   `APP_ENV=development|dev|local|test`. Empty or missing config denies
   header identity. The process refuses to start if the flag is set in
   production (`APP_ENV` empty/production) or when `REQUIRE_TLS=true`, so
-  it cannot stay on accidentally. See [deployment](../deployment.md).
+  it cannot stay on accidentally. Never rewrite product login onto
+  trusted-dev `POST /session`. See [deployment](../deployment.md).
 - Tenant and workspace bootstrap (`POST /tenants`, `POST /workspaces`)
   requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`)
   on a **non-embed** session (or trusted-dev header identity).
@@ -54,8 +57,13 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   `POST /api/v1/bootstrap/tls` use the same incomplete-install
   openness; after complete they are `409` (Settings-only). Persistence
   confirm is `{confirm:true}` only — never a DSN or password. First
-  admin is `{issuer, external_subject, display_name?}`; a non-empty
-  `password` is rejected until local login lands and is never echoed.
+  admin is `{issuer, external_subject, display_name?, password?}`.
+  Optional `password` is POSTed once, stored only as a bcrypt hash on
+  `local_logins` (identifier = `external_subject`), and is **never
+  echoed**. `POST /login` verifies that hash and mints the same
+  standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`).
+  Unknown identifier and wrong password are the same `401` without
+  saying which field failed.
   Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
   the value is stored server-side and never echoed. TLS is
   `{action:"create-self-signed"}`, `{action:"upload", certPem,

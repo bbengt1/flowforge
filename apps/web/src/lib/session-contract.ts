@@ -22,9 +22,18 @@ export const SESSION_BROWSER_PREFIX = "/api/v1";
 export const SESSION_PROXY_PREFIX = "/api/control-plane";
 
 export const SESSION_PATH = "/session";
+export const SESSION_LOGIN_PATH = "/login";
 export const SESSION_REFRESH_PATH = "/session/refresh";
 export const SESSION_LOGOUT_PATH = "/session/logout";
 export const SESSION_AUDIT_PATH = "/session/audit-events";
+
+/** V.0a local login body. Password POST once; never persist. */
+export type LocalLoginBody = {
+  identifier?: string;
+  email?: string;
+  username?: string;
+  password: string;
+};
 
 /** HttpOnly session cookie issued by the API. Never read from JS. */
 export const SESSION_COOKIE_NAME = "ff_session";
@@ -142,6 +151,10 @@ export function csrfRequiredFor(method: string, proxyPath: string): boolean {
   }
   const normalized = normalizeApiPath(proxyPath);
   if (method.toUpperCase() === "POST" && normalized === SESSION_PATH) {
+    return false;
+  }
+  // V.0a local login has no session yet — same exemption as POST /session.
+  if (method.toUpperCase() === "POST" && normalized === SESSION_LOGIN_PATH) {
     return false;
   }
   // E11.1 exchange has no session yet — same bootstrap exemption as POST /session.

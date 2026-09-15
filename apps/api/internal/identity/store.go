@@ -10,6 +10,13 @@ import (
 type Store interface {
 	UpsertUser(ctx context.Context, issuer, subject, displayName string) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
+	// SetLocalPassword stores a bcrypt hash for local login. identifier
+	// is the already-normalized email or username. The hash is never
+	// copied onto User JSON.
+	SetLocalPassword(ctx context.Context, userID, identifier, passwordHash string) error
+	// LookupLocalLogin finds a user by normalized identifier. The hash
+	// is returned only for Verify; callers must not serialize it.
+	LookupLocalLogin(ctx context.Context, identifier string) (user User, passwordHash string, err error)
 
 	CreateTenant(ctx context.Context, slug, name string) (Tenant, error)
 	GetTenant(ctx context.Context, id string) (Tenant, error)

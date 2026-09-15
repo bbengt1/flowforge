@@ -31,6 +31,7 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | `tenants` | `id`, `slug`, `name`, `status` | Organization/host isolation root. |
 | `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. App delete is soft (`status=disabled`). ADV-019 triggers revoke embed-bound `browser_sessions` on disable and on hard `DELETE` (and clear embed tenancy columns on hard delete so `ON DELETE SET NULL` cannot violate the embed CHECK). |
 | `users` | `id`, `issuer`, `external_subject`, `display_name`, `status` | OIDC/host identity reference; unique `(issuer, external_subject)`; no provider token. |
+| `local_logins` | `user_id`, `identifier`, `password_hash` | V.0a (`000026_local_logins.sql`). Standalone email/username + password. Identity substrate; **no FORCE RLS**. Unique `lower(identifier)`. Hash is bcrypt only — never selected into `User` JSON, `GET /session`, bootstrap status, logs, or `localStorage`. Identifier is the normalized B.3 `external_subject`. |
 | `roles` | `id`, `key`, `description` | Stable role vocabulary. |
 | `permissions` | `id`, `key` | Examples: `workflow.execute`, `kubernetes.apply`, `ssh.run`, `platform.administer`, `embed.impersonate`. |
 | `role_permissions` | `role_id`, `permission_id` | Role capability map. |

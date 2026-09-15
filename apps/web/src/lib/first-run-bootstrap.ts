@@ -187,7 +187,7 @@ export const BOOTSTRAP_STEP_HELP = {
   persistence:
     "Confirm that process PostgreSQL is reachable. Do not enter a DSN, password, or DATABASE_URL — the server already uses its environment.",
   firstAdmin:
-    "Create the first admin from an identity issuer and external subject. Local login has not landed — there is no password field. Include this issuer|subject on PLATFORM_ADMINS for platform.administer.",
+    "Create the first admin from an identity issuer and external subject. An optional password may be POSTed once on the API for local login (`POST /login`) and is never echoed. Wizard chrome does not collect a password. Include this issuer|subject on PLATFORM_ADMINS for platform.administer.",
   publicUrl:
     "Public origin only (https://host[:port]). HTTPS is preferred; HTTP is allowed for local installs. No userinfo, query, fragment, or path. The URL is never echoed on status.",
   tls:
@@ -588,7 +588,7 @@ export function bootstrapProblemMessage(
   if (statusCode === 400) {
     return (
       detail ||
-      "The request was rejected. Check the fields — passwords are not accepted, and the public URL must be an origin."
+      "The request was rejected. Check the fields — credentials are never echoed, and the public URL must be an origin."
     );
   }
   if (statusCode === 503) {

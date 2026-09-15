@@ -88,6 +88,7 @@ describe("resolveIdentityProxyTarget", () => {
       ["POST", ["bootstrap", "admins"], "/api/v1/bootstrap/admins"],
       ["POST", ["bootstrap", "public-url"], "/api/v1/bootstrap/public-url"],
       ["POST", ["bootstrap", "tls"], "/api/v1/bootstrap/tls"],
+      ["POST", ["login"], "/api/v1/login"],
       ["GET", ["session"], "/api/v1/session"],
       ["POST", ["session"], "/api/v1/session"],
       ["POST", ["session", "refresh"], "/api/v1/session/refresh"],

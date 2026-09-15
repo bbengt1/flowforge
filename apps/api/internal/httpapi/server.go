@@ -441,6 +441,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/workspace/cache/{key}", s.putCache)
 	mux.HandleFunc("POST /api/v1/workspace/realtime/channels/{id}/subscribe", s.subscribeRealtime)
 	mux.HandleFunc("GET /api/v1/workspace/audit-events", s.listAuditEvents)
+	mux.HandleFunc("POST /api/v1/login", s.postLogin)
 	mux.HandleFunc("POST /api/v1/session", s.createSession)
 	mux.HandleFunc("GET /api/v1/session", s.getSession)
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
