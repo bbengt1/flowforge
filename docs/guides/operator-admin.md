@@ -89,8 +89,11 @@ Rewrite surface map and operator migration notes (Chloe, docs only;
 charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes)):
 [rewrite-ui-surfaces.md](../reference/rewrite-ui-surfaces.md).
 
-1. Select **Unfiled** or a folder in the left rail (`?folder=` deep
-   link). Then filter by search, tag, owner, trigger, environment,
+1. Select **Unfiled** or a folder in the Explorer folder tree (`?folder=` deep
+   link). The content pane lists that folder only. The breadcrumb
+   shows ancestry (Unfiled is virtual). Explorer is the default
+   home chrome (X.1 / #380 — **keep #380 open**; **keep #379 open**).
+   Then filter by search, tag, owner, trigger, environment,
    status, **activation**, last run, last modified. Prefix-in-name is
    no longer the primary organizer (F.2 / #309 — **keep #309 open**).
    Editors can **New folder**, **Rename folder**, or **Delete folder**
