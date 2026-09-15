@@ -56,6 +56,7 @@ import {
   FOLDER_NAME_RULES_HELP,
   FOLDER_NOT_EMPTY_HELP,
   FOLDER_PATH_REVEAL_LABEL,
+  HOME_SEARCH_METADATA_LIMIT,
   FOLDER_QUERY,
   FOLDER_RAIL_FILTER_LABEL,
   FOLDER_SEARCH_ACROSS_LABEL,
@@ -108,8 +109,11 @@ import {
   folderPath,
   folderPathLabel,
   folderQueryValue,
+  folderRailReady,
   folderSelectionsEqual,
   homeFolderRailHasMoveVerb,
+  homeExtrasIdsToLoad,
+  homeListMetadataRecords,
   homeFolderRailHasOrganizeVerbs,
   homeWorkflowRowHasDragMove,
   homeWorkflowRowHasMoveVerb,
@@ -127,6 +131,7 @@ import {
   parseWorkflowMoveDragPayload,
   railFilterKeepsUnfiled,
   readExpandedFolderIds,
+  renderedFolderSelection,
   resolveFolderSelection,
   selectedFolderListFolderId,
   selectedFolderListIncludesDescendants,
@@ -139,6 +144,8 @@ import {
   unfiledIsAlwaysPresentAndNotPersisted,
   workflowAlreadyInFolder,
   workflowFolderPathLabel,
+  workspaceWideWorkflowsOrScoped,
+  workspaceWideWorkflowsResult,
   workflowMoveBody,
   workflowMoveDragPayload,
   workflowMoveFolderPath,
@@ -996,6 +1003,11 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_HOME_FOLDER.foldersNotInYaml, true);
     assert.equal(F6_HOME_FOLDER.draftsNeverRun, true);
     assert.equal(F6_HOME_FOLDER.noKekInBrowser, true);
+    assert.equal(F6_HOME_FOLDER.searchJoinsWorkspaceMetadata, true);
+    assert.equal(F6_HOME_FOLDER.searchExtrasBoundedToNameSlugHits, true);
+    assert.equal(F6_HOME_FOLDER.preserveScopedRecordsWhenWorkspaceListFails, true);
+    assert.equal(F6_HOME_FOLDER.keepIntendedFolderWhenFolderListFails, true);
+    assert.equal(F6_HOME_FOLDER.folderReadyFalseOnFolderListFailure, true);
     const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
     assert.match(brief, /F\.6/);
     assert.match(brief, /Across folders/);
@@ -1005,6 +1017,10 @@ describe("F.6 search / filter across folders", () => {
     assert.match(frontend, /across folders/i);
     assert.match(frontend, /not a tree walk of children/i);
     assert.match(frontend, /separate mode/i);
+    assert.match(frontend, /draft \/ last-run \/ activation extras/);
+    assert.match(frontend, /name\/slug hits only/);
+    assert.match(frontend, /keeps the selected-folder rows/);
+    assert.match(frontend, /stale cache or empty tree as Unfiled/);
   });
 
   it("keeps selected-folder GET /workflows?folderId= non-recursive", () => {
@@ -1187,6 +1203,104 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
     assert.match(home, /subscribeWorkspaceCommands/);
     assert.match(home, /createFromYaml/);
+  });
+
+  it("joins workspace-wide extras and keeps scoped rows if the full list fails", () => {
+    const scoped = [{ id: "scoped", name: "Ops deploy", slug: "ops" }];
+    const workspace = [
+      scoped[0]!,
+      { id: "other", name: "Platform deploy", slug: "plat" },
+    ];
+    assert.deepEqual(workspaceWideWorkflowsResult(true, workspace), workspace);
+    assert.equal(workspaceWideWorkflowsResult(false, workspace), null);
+    assert.deepEqual(
+      workspaceWideWorkflowsOrScoped(workspace, scoped).map((item) => item.id),
+      ["scoped", "other"],
+    );
+    assert.deepEqual(
+      workspaceWideWorkflowsOrScoped(null, scoped).map((item) => item.id),
+      ["scoped"],
+    );
+    assert.deepEqual(
+      homeListMetadataRecords(scoped, workspace, "", false).map((item) => item.id),
+      ["scoped"],
+    );
+    assert.deepEqual(
+      homeListMetadataRecords(scoped, workspace, "deploy", false).map(
+        (item) => item.id,
+      ),
+      ["scoped", "other"],
+    );
+    assert.deepEqual(
+      homeListMetadataRecords(scoped, null, "deploy", false).map((item) => item.id),
+      ["scoped"],
+    );
+    assert.deepEqual(
+      homeListMetadataRecords(scoped, workspace, "deploy", true).map(
+        (item) => item.id,
+      ),
+      ["scoped"],
+    );
+    assert.equal(HOME_SEARCH_METADATA_LIMIT, 64);
+    const many = Array.from({ length: HOME_SEARCH_METADATA_LIMIT + 8 }, (_, i) => ({
+      id: `w${i}`,
+      name: "Deploy app",
+      slug: `deploy-${i}`,
+    }));
+    assert.equal(
+      homeListMetadataRecords(scoped, many, "deploy", false).length,
+      HOME_SEARCH_METADATA_LIMIT,
+    );
+    assert.deepEqual(homeExtrasIdsToLoad(workspace, new Set(["scoped"])), ["other"]);
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /workspaceWideWorkflowsResult/);
+    assert.match(home, /homeListMetadataRecords/);
+    assert.match(home, /homeExtrasIdsToLoad/);
+    assert.match(home, /fetchHomeRowExtras/);
+    assert.match(home, /workspaceWideWorkflowsOrScoped/);
+    assert.doesNotMatch(home, /all\.ok \? all\.items : \[\]/);
+    assert.doesNotMatch(
+      home,
+      /setWorkspaceWorkflows\(all\.ok \? all\.items : \[\]\)/,
+    );
+  });
+
+  it("keeps the intended folder when GET /workflow-folders fails", () => {
+    const intended = { kind: "folder" as const, id: ops.id };
+    assert.equal(folderRailReady(false), false);
+    assert.equal(folderRailReady(true), true);
+    assert.deepEqual(renderedFolderSelection(intended, [], false), intended);
+    assert.deepEqual(
+      renderedFolderSelection(intended, [ops, oncall], true),
+      intended,
+    );
+    assert.deepEqual(
+      renderedFolderSelection(intended, [platform], true),
+      { kind: "unfiled" },
+    );
+    assert.deepEqual(
+      renderedFolderSelection(intended, [platform], false),
+      intended,
+    );
+    assert.deepEqual(breadcrumbSegments([], intended), [
+      { selection: intended, label: ops.id },
+    ]);
+    assert.equal(
+      workflowFolderPathLabel({ folderId: ops.id, folder: "" }),
+      ops.id,
+    );
+    assert.equal(
+      workflowFolderPathLabel({ folderId: null, folder: "" }),
+      UNFILED_FOLDER_LABEL,
+    );
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /renderedFolderSelection/);
+    assert.match(home, /folderRailReady/);
+    assert.match(home, /setFoldersReady\(folderRailReady\(false\)\)/);
+    assert.doesNotMatch(
+      home,
+      /if \(!folderList\.ok\) \{\s*setFolders\(\[\]\);\s*setFoldersReady\(true\);/,
+    );
   });
 });
 
