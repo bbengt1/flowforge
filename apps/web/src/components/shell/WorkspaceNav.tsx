@@ -6,16 +6,17 @@ import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { embedDeepLinkIsActive } from "@/lib/embed-tenancy-contract";
 import {
+  FF_NAV_GROUP_LABEL_CLASS,
+  FF_NAV_ITEM_ACTIVE_CLASS,
+  FF_NAV_ITEM_CLASS,
+  SHELL_NAV_GROUP_LABELS,
+  SHELL_NAV_GROUP_ORDER,
+} from "@/lib/shell-restyle";
+import {
   editorWorkspaceNav,
   workspaceNavMark,
   type WorkspaceNavItem,
 } from "@/lib/workspace-nav";
-
-const groupLabel: Record<WorkspaceNavItem["group"], string> = {
-  primary: "Authoring",
-  ops: "Operations",
-  foundation: "Workspace",
-};
 
 type WorkspaceNavProps = {
   variant?: "full" | "rail";
@@ -27,7 +28,7 @@ export function WorkspaceNav({ variant = "full", onNavigate }: WorkspaceNavProps
   const embed = useEmbedMode();
   const { permissions } = useWorkspace();
   const items = editorWorkspaceNav(permissions, { embed });
-  const groups: WorkspaceNavItem["group"][] = ["primary", "ops", "foundation"];
+  const groups = SHELL_NAV_GROUP_ORDER;
   const rail = variant === "rail";
 
   return (
@@ -47,13 +48,13 @@ export function WorkspaceNav({ variant = "full", onNavigate }: WorkspaceNavProps
               className={
                 rail
                   ? "sr-only"
-                  : "px-2 text-[11px] font-medium tracking-wide text-zinc-500 uppercase"
+                  : `px-2 text-[11px] font-medium tracking-wide uppercase ${FF_NAV_GROUP_LABEL_CLASS}`
               }
             >
-              {groupLabel[group]}
+              {SHELL_NAV_GROUP_LABELS[group]}
             </p>
             <ul className={rail ? "mt-0 space-y-0.5" : "mt-1 space-y-0.5"}>
-              {groupItems.map((item) => {
+              {groupItems.map((item: WorkspaceNavItem) => {
                 const active = embedDeepLinkIsActive(item.href, pathname);
                 return (
                   <li key={item.id}>
@@ -66,11 +67,11 @@ export function WorkspaceNav({ variant = "full", onNavigate }: WorkspaceNavProps
                       className={
                         rail
                           ? active
-                            ? "flex h-9 w-full items-center justify-center rounded-lg bg-teal-50 text-xs font-semibold text-teal-950"
-                            : "flex h-9 w-full items-center justify-center rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                            ? `flex h-9 w-full items-center justify-center text-xs font-semibold ${FF_NAV_ITEM_CLASS} ${FF_NAV_ITEM_ACTIVE_CLASS}`
+                            : `flex h-9 w-full items-center justify-center text-xs font-semibold ${FF_NAV_ITEM_CLASS}`
                           : active
-                            ? "flex items-center justify-between rounded-lg bg-teal-50 px-2 py-1.5 text-sm font-medium text-teal-950"
-                            : "flex items-center justify-between rounded-lg px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
+                            ? `flex items-center justify-between px-2 py-1.5 text-sm font-medium ${FF_NAV_ITEM_CLASS} ${FF_NAV_ITEM_ACTIVE_CLASS}`
+                            : `flex items-center justify-between px-2 py-1.5 text-sm ${FF_NAV_ITEM_CLASS}`
                       }
                     >
                       {rail ? (
@@ -79,7 +80,7 @@ export function WorkspaceNav({ variant = "full", onNavigate }: WorkspaceNavProps
                         <>
                           <span>{item.label}</span>
                           {item.placeholder ? (
-                            <span className="text-[10px] font-medium text-zinc-500">
+                            <span className="text-[10px] font-medium ff-shell-muted">
                               soon
                             </span>
                           ) : null}

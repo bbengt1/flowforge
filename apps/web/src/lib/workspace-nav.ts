@@ -39,13 +39,16 @@ export type WorkspaceNavId =
   | "isolation"
   | "portal";
 
+/** Chrome-only grouping. Same routes; V.2 labels Build / Observe / Vault / Settings. */
+export type WorkspaceNavGroup = "build" | "observe" | "vault" | "settings";
+
 export type WorkspaceNavItem = {
   id: WorkspaceNavId;
   label: string;
   href: string;
   permission: string | null;
   placeholder?: boolean;
-  group: "primary" | "ops" | "foundation";
+  group: WorkspaceNavGroup;
 };
 
 /** Short marks for the editor icon-rail. Original abbreviations — not cloned icons. */
@@ -77,105 +80,105 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
     label: "Workflows",
     href: "/workflows",
     permission: WORKFLOW_VIEW_PERMISSION,
-    group: "primary",
+    group: "build",
   },
   {
     id: "actions",
     label: "Actions",
     href: "/actions",
     permission: WORKFLOW_VIEW_PERMISSION,
-    group: "primary",
-  },
-  {
-    id: "credentials",
-    label: "Credentials",
-    href: "/credentials",
-    permission: CREDENTIAL_VIEW_PERMISSION,
-    group: "primary",
-  },
-  {
-    id: "targets",
-    label: "Targets",
-    href: "/config?group=targets",
-    permission: "opsconfig.view",
-    group: "primary",
-  },
-  {
-    id: "profiles",
-    label: "Profiles",
-    href: "/config?group=profiles",
-    permission: "opsconfig.view",
-    group: "primary",
-  },
-  {
-    id: "config",
-    label: "Config",
-    href: "/config?group=config",
-    permission: "opsconfig.view",
-    group: "primary",
-  },
-  {
-    id: "executions",
-    label: "Executions",
-    href: "/executions",
-    permission: "execution.view",
-    group: "ops",
+    group: "build",
   },
   {
     id: "templates",
     label: "Templates",
     href: "/templates",
     permission: WORKFLOW_VIEW_PERMISSION,
-    group: "ops",
+    group: "build",
+  },
+  {
+    id: "targets",
+    label: "Targets",
+    href: "/config?group=targets",
+    permission: "opsconfig.view",
+    group: "build",
+  },
+  {
+    id: "profiles",
+    label: "Profiles",
+    href: "/config?group=profiles",
+    permission: "opsconfig.view",
+    group: "build",
+  },
+  {
+    id: "config",
+    label: "Config",
+    href: "/config?group=config",
+    permission: "opsconfig.view",
+    group: "build",
+  },
+  {
+    id: "executions",
+    label: "Executions",
+    href: "/executions",
+    permission: "execution.view",
+    group: "observe",
   },
   {
     id: "approvals",
     label: "Approvals",
     href: "/approvals",
     permission: "approval.view",
-    group: "ops",
+    group: "observe",
   },
   {
     id: "alerts",
     label: "Alerts",
     href: "/alerts",
     permission: "alert.view",
-    group: "ops",
+    group: "observe",
   },
   {
     id: "audit",
     label: "Audit",
     href: "/audit",
     permission: "alert.view",
-    group: "ops",
+    group: "observe",
+  },
+  {
+    id: "credentials",
+    label: "Credentials",
+    href: "/credentials",
+    permission: CREDENTIAL_VIEW_PERMISSION,
+    group: "vault",
   },
   {
     id: "settings",
     label: "Settings",
     href: "/settings",
     permission: null,
-    group: "foundation",
+    group: "settings",
   },
   {
     id: "membership",
     label: "Membership",
     href: "/membership",
     permission: WORKSPACE_ADMIN_PERMISSION,
-    group: "foundation",
+    group: "settings",
   },
   {
     id: "isolation",
     label: "Isolation",
     href: "/isolation",
     permission: WORKSPACE_ADMIN_PERMISSION,
-    group: "foundation",
+    group: "settings",
   },
   {
     id: "portal",
     label: "Portal host",
     href: "/portal/workflows",
     permission: null,
-    group: "foundation",
+    group: "settings",
   },
 ];
 

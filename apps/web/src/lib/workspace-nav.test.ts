@@ -98,6 +98,22 @@ describe("visibleWorkspaceNav", () => {
     assert.equal(canCreateWorkflows(editor), true);
     assert.equal(canCreateWorkflows(null), false);
   });
+
+  it("groups product destinations as Build / Observe / Vault / Settings", () => {
+    const byId = Object.fromEntries(
+      visibleWorkspaceNav([...editor, "workspace.administer"]).map((item) => [
+        item.id,
+        item.group,
+      ]),
+    );
+    assert.equal(byId.workflows, "build");
+    assert.equal(byId.templates, "build");
+    assert.equal(byId.executions, "observe");
+    assert.equal(byId.credentials, "vault");
+    assert.equal(byId.settings, "settings");
+    assert.equal(byId.membership, undefined);
+    assert.equal(byId.isolation, undefined);
+  });
 });
 
 describe("navItemIsActive", () => {

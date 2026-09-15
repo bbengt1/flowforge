@@ -27,6 +27,11 @@ import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
 import { SessionStatusChip } from "@/components/session/SessionStatusChip";
 import { editorNavMode, isWorkflowEditorPath } from "@/lib/editor-chrome";
 import {
+  FF_SHELL_ASIDE_CLASS,
+  FF_SHELL_HEADER_CLASS,
+  FF_SHELL_VALUE,
+} from "@/lib/shell-restyle";
+import {
   FF_SHELL_ROOT_CLASS,
   FF_SHELL_ROOT_VALUE,
 } from "@/lib/visual-tokens";
@@ -157,7 +162,7 @@ export function WorkspaceShell({
           />
           <div id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto outline-none">
             {!sessionChecked ? (
-              <p className="px-6 py-10 text-sm text-zinc-500">
+              <p className="ff-shell-muted px-6 py-10 text-sm">
                 Checking FlowForge session…
               </p>
             ) : session.active &&
@@ -187,7 +192,7 @@ export function WorkspaceShell({
         {editorRoute && navOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-10 bg-zinc-900/30 lg:hidden"
+            className="ff-shell-scrim fixed inset-0 z-10 lg:hidden"
             aria-label="Close workspace navigation"
             onClick={() => setNavOpen(false)}
           />
@@ -196,22 +201,23 @@ export function WorkspaceShell({
           id="workspace-nav"
           aria-label="Workspace navigation"
           data-nav-mode={navMode}
+          data-ff-shell={FF_SHELL_VALUE}
           className={
             editorRoute
               ? navOpen
-                ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex lg:w-14 lg:items-center lg:gap-3 lg:p-2"
-                : "hidden w-14 shrink-0 flex-col items-center gap-3 border-r border-zinc-200 bg-[var(--background)] p-2 lg:flex"
+                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex lg:w-14 lg:items-center lg:gap-3 lg:p-2`
+                : `${FF_SHELL_ASIDE_CLASS} hidden w-14 shrink-0 flex-col items-center gap-3 p-2 lg:flex`
               : navOpen
-                ? "fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:static lg:flex"
-                : "hidden w-64 shrink-0 flex-col gap-4 border-r border-zinc-200 bg-[var(--background)] p-4 lg:flex"
+                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex`
+                : `${FF_SHELL_ASIDE_CLASS} hidden w-64 shrink-0 flex-col gap-4 p-4 lg:flex`
           }
         >
           <Link
             href="/workflows"
             className={
               editorRoute && !navOpen
-                ? "text-xs font-semibold tracking-tight"
-                : "text-sm font-semibold tracking-tight"
+                ? "ff-shell-brand text-xs font-semibold tracking-tight"
+                : "ff-shell-brand text-sm font-semibold tracking-tight"
             }
             onClick={() => setNavOpen(false)}
           >
@@ -225,9 +231,9 @@ export function WorkspaceShell({
           {editorRoute && !navOpen ? (
             <p className="sr-only">Workflows is the way back to workflow home.</p>
           ) : (
-            <p className="mt-auto text-[11px] text-zinc-500">
+            <p className="ff-shell-muted mt-auto text-[11px]">
               <Link
-                className="underline decoration-zinc-300 hover:decoration-zinc-600"
+                className="underline decoration-[var(--ff-border)] hover:decoration-[var(--ff-muted)]"
                 href="/settings"
               >
                 Health / OpenAPI
@@ -236,11 +242,14 @@ export function WorkspaceShell({
           )}
         </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="border-b border-zinc-200 bg-white/80">
+          <header
+            className={FF_SHELL_HEADER_CLASS}
+            data-ff-shell={FF_SHELL_VALUE}
+          >
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <button
                 type="button"
-                className="rounded-lg border border-zinc-300 px-2 py-1 text-xs lg:hidden"
+                className="ff-shell-control px-2 py-1 text-xs lg:hidden"
                 onClick={() => setNavOpen((open) => !open)}
                 aria-expanded={navOpen}
                 aria-controls="workspace-nav"
@@ -274,7 +283,7 @@ function EmbedTenancyGate({ children }: { children: ReactNode }) {
   const { tenancyMismatch } = useWorkspace();
   if (tenancyMismatch) {
     return (
-      <p className="px-6 py-10 text-sm text-zinc-600">
+      <p className="ff-shell-muted px-6 py-10 text-sm">
         {EMBED_TENANCY_MISMATCH_MESSAGE}
       </p>
     );

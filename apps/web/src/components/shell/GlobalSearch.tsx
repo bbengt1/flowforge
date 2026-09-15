@@ -131,7 +131,7 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
             window.setTimeout(() => setOpen(false), 150);
           }}
           placeholder="Search workflows, actions, credentials, executions, docs"
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+          className="ff-shell-control w-full px-3 py-1.5 text-sm"
           autoComplete="off"
           role="combobox"
           aria-expanded={open && Boolean(query.trim())}
@@ -145,10 +145,10 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
           id="workspace-search-results"
           role="listbox"
           aria-label="Search results"
-          className="absolute z-30 mt-1 max-h-80 w-full overflow-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
+          className="ff-shell-panel absolute z-30 mt-1 max-h-80 w-full overflow-auto py-1 shadow-lg"
         >
           {hits.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-zinc-500" role="option" aria-selected="false">
+            <li className="ff-shell-muted px-3 py-2 text-sm" role="option" aria-selected="false">
               No safe matches
             </li>
           ) : (
@@ -158,12 +158,12 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
                   type="button"
                   role="option"
                   aria-selected="false"
-                  className="flex w-full flex-col px-3 py-2 text-left hover:bg-zinc-50"
+                  className="ff-nav-item flex w-full flex-col px-3 py-2 text-left"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openHit(hit)}
                 >
-                  <span className="text-sm font-medium text-zinc-900">{hit.title}</span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-sm font-medium">{hit.title}</span>
+                  <span className="ff-shell-muted text-xs">
                     {hit.kind} · {hit.subtitle}
                   </span>
                 </button>

@@ -150,21 +150,21 @@ export function CommandPalette() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="command-palette-dialog"
-        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+        className="ff-shell-control shrink-0 px-3 py-1.5 text-sm font-medium"
       >
         Commands
       </button>
       {open ? (
         <div
           id="command-palette-dialog"
-          className="fixed inset-0 z-50 flex items-start justify-center bg-zinc-900/40 px-4 pt-24"
+          className="ff-shell-scrim fixed inset-0 z-50 flex items-start justify-center px-4 pt-24"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
           onClick={() => closePalette()}
         >
       <div
-        className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+        className="ff-shell-panel w-full max-w-lg p-3 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <label className="block">
@@ -177,7 +177,7 @@ export function CommandPalette() {
               setHighlight(0);
             }}
             placeholder="Type a command…"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            className="ff-shell-control w-full px-3 py-2 text-sm"
             role="combobox"
             aria-expanded
             aria-controls={PALETTE_RESULTS_ID}
@@ -207,7 +207,7 @@ export function CommandPalette() {
           className="mt-2 max-h-80 overflow-auto"
         >
           {visible.length === 0 ? (
-            <li className="px-2 py-2 text-sm text-zinc-500">No commands</li>
+            <li className="ff-shell-muted px-2 py-2 text-sm">No commands</li>
           ) : (
             visible.map((command, index) => (
               <li key={command.id} role="presentation">
@@ -219,20 +219,20 @@ export function CommandPalette() {
                   onClick={() => run(command.id)}
                   className={
                     index === highlight
-                      ? "flex w-full flex-col rounded-lg bg-zinc-100 px-2 py-2 text-left"
-                      : "flex w-full flex-col rounded-lg px-2 py-2 text-left hover:bg-zinc-50"
+                      ? "ff-nav-item ff-nav-item-active flex w-full flex-col px-2 py-2 text-left"
+                      : "ff-nav-item flex w-full flex-col px-2 py-2 text-left"
                   }
                 >
-                  <span className="text-sm font-medium text-zinc-900">
+                  <span className="text-sm font-medium">
                     {command.label}
                   </span>
-                  <span className="text-xs text-zinc-500">{command.hint}</span>
+                  <span className="ff-shell-muted text-xs">{command.hint}</span>
                 </button>
               </li>
             ))
           )}
         </ul>
-        <p className="mt-2 px-1 text-[11px] text-zinc-500">
+        <p className="ff-shell-muted mt-2 px-1 text-[11px]">
           {PALETTE_SHORTCUT_HELP}
         </p>
       </div>

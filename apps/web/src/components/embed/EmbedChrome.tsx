@@ -42,6 +42,12 @@ import {
   embedChromeChipLabel,
   type SessionEmbedChrome,
 } from "@/lib/session-embed-contract";
+import {
+  FF_NAV_ITEM_ACTIVE_CLASS,
+  FF_NAV_ITEM_CLASS,
+  FF_SHELL_HEADER_CLASS,
+  FF_SHELL_VALUE,
+} from "@/lib/shell-restyle";
 import { editorWorkspaceNav } from "@/lib/workspace-nav";
 
 /**
@@ -102,20 +108,21 @@ export function EmbedChrome({
 
   return (
     <header
-      className="border-b border-zinc-200 bg-white/80"
+      className={FF_SHELL_HEADER_CLASS}
+      data-ff-shell={FF_SHELL_VALUE}
       data-rewrite-embed-mount={mountState}
       data-uxl8="embed"
     >
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <Link
           href={EMBED_MOUNT_PREFIX}
-          className="text-sm font-semibold tracking-tight"
+          className="ff-shell-brand text-sm font-semibold tracking-tight"
         >
           FlowForge embed
         </Link>
         {chrome ? (
           <p
-            className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 font-mono text-xs font-medium text-teal-950"
+            className="ff-shell-chip-accent rounded-full px-2.5 py-0.5 font-mono text-xs font-medium"
             title={SESSION_EMBED_CHROME_HELP}
           >
             {embedChromeChipLabel(chrome)}
@@ -124,7 +131,7 @@ export function EmbedChrome({
           <p
             role="alert"
             data-doherty-wait="session-embed"
-            className={`${TYPE_CAPTION_CLASS} font-semibold text-red-800`}
+            className={`${TYPE_CAPTION_CLASS} font-semibold text-[var(--ff-danger)]`}
             title={SESSION_EMBED_CHROME_HELP}
           >
             {EMBED_CHROME_MISSING_SESSION_MESSAGE}
@@ -132,7 +139,7 @@ export function EmbedChrome({
         ) : (
           <p
             data-doherty-wait="session-embed"
-            className={`${TYPE_CAPTION_CLASS} text-zinc-500`}
+            className={`${TYPE_CAPTION_CLASS} ff-shell-muted`}
           >
             {EMBED_MOUNT_PREFIX} · {SESSION_EMBED_ROUTE_MAP_SOURCE} ·{" "}
             {SESSION_EMBED_WAITING_HELP}
@@ -152,7 +159,7 @@ export function EmbedChrome({
         </div>
       </div>
       {chrome ? (
-        <p className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} text-zinc-500`}>
+        <p className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} ff-shell-muted`}>
           {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}{" "}
           {REWRITE_EMBED_MOUNT_HELP}
         </p>
@@ -160,7 +167,7 @@ export function EmbedChrome({
         <p
           role="alert"
           data-doherty-wait="session-embed"
-          className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} font-semibold text-red-800`}
+          className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} font-semibold text-[var(--ff-danger)]`}
         >
           {EMBED_CHROME_MISSING_SESSION_MESSAGE}
         </p>
@@ -168,7 +175,7 @@ export function EmbedChrome({
       {items.length > 0 ? (
         <nav
           aria-label="Embed workspace"
-          className="flex flex-wrap gap-1 border-t border-zinc-100 px-4 py-2"
+          className="flex flex-wrap gap-1 border-t border-[var(--ff-border)] px-4 py-2"
         >
           {items.map((item) => {
             const active = embedDeepLinkIsActive(item.href, pathname);
@@ -179,8 +186,8 @@ export function EmbedChrome({
                 aria-current={active ? "page" : undefined}
                 className={
                   active
-                    ? "rounded-lg bg-teal-50 px-2 py-1 text-xs font-medium text-teal-950"
-                    : "rounded-lg px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100"
+                    ? `px-2 py-1 text-xs font-medium ${FF_NAV_ITEM_CLASS} ${FF_NAV_ITEM_ACTIVE_CLASS}`
+                    : `px-2 py-1 text-xs ${FF_NAV_ITEM_CLASS}`
                 }
               >
                 {item.label}
@@ -223,7 +230,7 @@ export function EmbedChrome({
       {hostPreview ? (
         <p
           data-doherty-wait="host-query"
-          className="px-4 pb-3 text-xs text-zinc-500"
+          className="ff-shell-muted px-4 pb-3 text-xs"
         >
           {EMBED_HOST_DISPLAY_HELP} Host shows{" "}
           {[
@@ -238,7 +245,7 @@ export function EmbedChrome({
       {!sessionActive && !hostPreview ? (
         <p
           data-doherty-wait="host-query"
-          className="px-4 pb-3 text-xs text-zinc-500"
+          className="ff-shell-muted px-4 pb-3 text-xs"
         >
           {EMBED_HOST_DISPLAY_HELP}
         </p>
