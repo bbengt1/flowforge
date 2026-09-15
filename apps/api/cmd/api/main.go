@@ -19,6 +19,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -32,13 +33,22 @@ func main() {
 	}
 
 	pool := postgres.NewPool(cfg.DatabaseURL, log, cfg.MigrateTimeout)
+	bootstrapLogin := localseed.BootstrapLoginHook(log)
 	if cfg.SeedLocalDefaults {
-		pool.SetAfterReady(localseed.Hook(localseed.Input{
+		localDefaults := localseed.Hook(localseed.Input{
 			Keys:           cfg.VaultKeys,
 			PlatformAdmins: cfg.PlatformAdmins,
 			PublicBaseURL:  cfg.PublicBaseURL,
 			Log:            log,
-		}))
+		})
+		pool.SetAfterReady(func(ctx context.Context, db *pgxpool.Pool) error {
+			if err := localDefaults(ctx, db); err != nil {
+				return err
+			}
+			return bootstrapLogin(ctx, db)
+		})
+	} else {
+		pool.SetAfterReady(bootstrapLogin)
 	}
 	bg, stopBG := context.WithCancel(context.Background())
 	go pool.Start(bg)

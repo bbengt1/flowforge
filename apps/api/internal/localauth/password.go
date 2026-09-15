@@ -20,6 +20,10 @@ import (
 var (
 	ErrInvalidPassword   = errors.New("invalid password")
 	ErrInvalidIdentifier = errors.New("invalid identifier")
+	// ErrReusedPassword is a replacement that matches the current secret.
+	ErrReusedPassword = errors.New("reused password")
+	// ErrOneTimePassword is a replacement that matches the first-run default.
+	ErrOneTimePassword = errors.New("one-time password")
 )
 
 const (
@@ -29,6 +33,14 @@ const (
 	MaxPasswordLength = 72
 	// MaxIdentifierLength matches users.external_subject.
 	MaxIdentifierLength = 256
+
+	// OneTimeIdentifier is the documented first-run operator.
+	// Seeded only when local_logins is empty; never overwrites.
+	OneTimeIdentifier = "admin"
+	// OneTimePassword is the documented first-run password. It is
+	// shorter than MinPasswordLength and is rejected as a replacement.
+	// Never log or echo this value.
+	OneTimePassword = "admin"
 )
 
 var dummyHash []byte
@@ -73,11 +85,45 @@ func HashPassword(password string) (string, error) {
 	if err := ValidatePassword(password); err != nil {
 		return "", err
 	}
+	return hashPassword(password)
+}
+
+// HashOneTimePassword hashes the documented first-run password without
+// applying the normal minimum length. Used only by the empty-table seed.
+func HashOneTimePassword() (string, error) {
+	if OneTimePassword == "" || len(OneTimePassword) > MaxPasswordLength {
+		return "", ErrInvalidPassword
+	}
+	return hashPassword(OneTimePassword)
+}
+
+func hashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
 	return string(hash), nil
+}
+
+// IsOneTimePassword reports whether password is the documented first-run
+// default. Comparison is exact; callers must not log the value.
+func IsOneTimePassword(password string) bool {
+	return password == OneTimePassword
+}
+
+// ValidateReplacementPassword checks a change-password value: min length,
+// not the current password, and not the one-time default.
+func ValidateReplacementPassword(password, current string) error {
+	if IsOneTimePassword(password) {
+		return ErrOneTimePassword
+	}
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	if current != "" && password == current {
+		return ErrReusedPassword
+	}
+	return nil
 }
 
 // Verify compares password to a stored bcrypt hash. Unknown users

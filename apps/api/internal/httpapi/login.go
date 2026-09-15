@@ -39,7 +39,7 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 		s.writeLoginRateLimited(w, r)
 		return
 	}
-	user, hash, err := s.store.LookupLocalLogin(r.Context(), identifier)
+	cred, err := s.store.LookupLocalLogin(r.Context(), identifier)
 	if err != nil {
 		if !errors.Is(err, identity.ErrNotFound) {
 			if s.log != nil {
@@ -56,12 +56,12 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
 		return
 	}
-	if user.Status != "active" || !localauth.Verify(password, hash) {
+	if cred.User.Status != "active" || !localauth.Verify(password, cred.PasswordHash) {
 		s.auditLoginRejected(r, "invalid credentials")
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
 		return
 	}
-	s.mintStandaloneSession(w, r, user, "local-login")
+	s.mintStandaloneSessionWithClaim(w, r, cred.User, "local-login", cred.MustChangePassword)
 }
 
 func decodeLocalLogin(w http.ResponseWriter, r *http.Request) (identifier, password string, ok bool) {
@@ -195,10 +195,14 @@ func (s *Server) auditLoginRejected(r *http.Request, reason string) {
 
 func writeLocalPasswordError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, localauth.ErrOneTimePassword), errors.Is(err, localauth.ErrReusedPassword):
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Choose a new password that is not the one-time default and is not the current password.")
 	case errors.Is(err, localauth.ErrInvalidPassword), errors.Is(err, localauth.ErrInvalidIdentifier), errors.Is(err, identity.ErrInvalid):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Password does not meet the required length.")
 	case errors.Is(err, identity.ErrConflict):
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "That login identifier is already in use.")
+	case errors.Is(err, identity.ErrNotFound):
+		WriteProblem(w, r, http.StatusNotFound, CodeNotFound, "Not Found", "No local-login credential is configured for this session.")
 	default:
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
 	}

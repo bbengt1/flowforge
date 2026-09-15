@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "node:test";
 import { PROBLEM_JSON } from "./problem.ts";
 import { REQUEST_ID_HEADER } from "./request-id.ts";
 import {
+  changeLocalPassword,
   endSession,
   establishSession,
   loadCurrentSession,
@@ -212,5 +213,38 @@ describe("session-client", () => {
     assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
     assert.equal(getSessionSnapshot().session.idleExpiresAt, "2026-09-08T21:30:00.000Z");
     assert.equal(getSessionSnapshot().session.csrfToken, "csrf-rotated");
+  });
+
+  it("POSTs the new password once to /api/v1/session/password with CSRF", async () => {
+    setActiveSession(active);
+    const seen: { url?: string; method?: string; headers?: Headers; body?: string } = {};
+    globalThis.fetch = (async (input, init) => {
+      seen.url = String(input);
+      seen.method = init?.method;
+      seen.headers = new Headers(init?.headers);
+      seen.body = String(init?.body ?? "");
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "sess-1",
+            must_change_password: false,
+          },
+          principal: {
+            issuer: "local",
+            external_subject: "admin",
+          },
+          csrf_token: "csrf-ok",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await changeLocalPassword("correct-horse");
+    assert.equal(result.ok, true);
+    assert.equal(seen.method, "POST");
+    assert.equal(seen.url, "/api/v1/session/password");
+    assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
+    assert.equal(seen.body, JSON.stringify({ password: "correct-horse" }));
+    assert.equal(getSessionSnapshot().session.mustChangePassword, false);
   });
 });

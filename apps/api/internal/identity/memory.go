@@ -14,9 +14,10 @@ import (
 
 // Memory is an in-process Store used by HTTP unit tests.
 type localLogin struct {
-	userID       string
-	identifier   string
-	passwordHash string
+	userID             string
+	identifier         string
+	passwordHash       string
+	mustChangePassword bool
 }
 
 type Memory struct {
@@ -125,23 +126,90 @@ func (m *Memory) SetLocalPassword(_ context.Context, userID, identifier, passwor
 	return nil
 }
 
-func (m *Memory) LookupLocalLogin(_ context.Context, identifier string) (User, string, error) {
+func (m *Memory) LookupLocalLogin(_ context.Context, identifier string) (LocalLogin, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	identifier = strings.TrimSpace(identifier)
 	userID, ok := m.localByID[identifier]
 	if !ok {
-		return User{}, "", ErrNotFound
+		return LocalLogin{}, ErrNotFound
 	}
+	return m.localLoginLocked(userID)
+}
+
+func (m *Memory) LookupLocalLoginByUser(_ context.Context, userID string) (LocalLogin, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.localLoginLocked(strings.TrimSpace(userID))
+}
+
+func (m *Memory) localLoginLocked(userID string) (LocalLogin, error) {
 	login, ok := m.localLogins[userID]
 	if !ok {
-		return User{}, "", ErrNotFound
+		return LocalLogin{}, ErrNotFound
 	}
 	u, ok := m.users[userID]
 	if !ok {
-		return User{}, "", ErrNotFound
+		return LocalLogin{}, ErrNotFound
 	}
-	return u, login.passwordHash, nil
+	return LocalLogin{
+		User:               u,
+		Identifier:         login.identifier,
+		PasswordHash:       login.passwordHash,
+		MustChangePassword: login.mustChangePassword,
+	}, nil
+}
+
+func (m *Memory) HasLocalLogins(_ context.Context) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.localLogins) > 0, nil
+}
+
+func (m *Memory) InsertBootstrapLocalLogin(_ context.Context, userID, identifier, passwordHash string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	userID = strings.TrimSpace(userID)
+	identifier = strings.TrimSpace(identifier)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || identifier == "" || passwordHash == "" {
+		return false, ErrInvalid
+	}
+	if _, ok := m.users[userID]; !ok {
+		return false, ErrNotFound
+	}
+	if len(m.localLogins) > 0 {
+		return false, nil
+	}
+	if existing, ok := m.localByID[identifier]; ok && existing != userID {
+		return false, ErrConflict
+	}
+	m.localLogins[userID] = localLogin{
+		userID:             userID,
+		identifier:         identifier,
+		passwordHash:       passwordHash,
+		mustChangePassword: true,
+	}
+	m.localByID[identifier] = userID
+	return true, nil
+}
+
+func (m *Memory) ChangeLocalPassword(_ context.Context, userID, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	userID = strings.TrimSpace(userID)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || passwordHash == "" {
+		return ErrInvalid
+	}
+	login, ok := m.localLogins[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	login.passwordHash = passwordHash
+	login.mustChangePassword = false
+	m.localLogins[userID] = login
+	return nil
 }
 
 func (m *Memory) CreateTenant(_ context.Context, slug, name string) (Tenant, error) {

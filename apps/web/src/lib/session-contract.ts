@@ -25,6 +25,7 @@ export const SESSION_PATH = "/session";
 export const SESSION_LOGIN_PATH = "/login";
 export const SESSION_REFRESH_PATH = "/session/refresh";
 export const SESSION_LOGOUT_PATH = "/session/logout";
+export const SESSION_PASSWORD_PATH = "/session/password";
 export const SESSION_AUDIT_PATH = "/session/audit-events";
 
 /** V.0a local login body. Password POST once; never persist. */
@@ -85,6 +86,11 @@ export type SessionView = {
   last_seen_at?: string;
   idle_expires_at?: string;
   absolute_expires_at?: string;
+  /**
+   * First-run one-time local login. Chloe gates product chrome to the
+   * change-password screen until this is false. Never a password or hash.
+   */
+  must_change_password?: boolean;
   /**
    * Present only on embed-exchanged sessions (ADV-021). Authoritative
    * chrome payload. Standalone sessions omit this object.

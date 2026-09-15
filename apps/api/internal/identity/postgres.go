@@ -75,11 +75,12 @@ func (p *Postgres) SetLocalPassword(ctx context.Context, userID, identifier, pas
 		return ErrInvalid
 	}
 	_, err := p.db.Exec(ctx, `
-		INSERT INTO local_logins (user_id, identifier, password_hash)
-		VALUES ($1::uuid, $2, $3)
+		INSERT INTO local_logins (user_id, identifier, password_hash, must_change_password)
+		VALUES ($1::uuid, $2, $3, false)
 		ON CONFLICT (user_id) DO UPDATE
 		    SET identifier = EXCLUDED.identifier,
 		        password_hash = EXCLUDED.password_hash,
+		        must_change_password = false,
 		        updated_at = now()
 	`, userID, identifier, passwordHash)
 	if err != nil {
@@ -88,27 +89,93 @@ func (p *Postgres) SetLocalPassword(ctx context.Context, userID, identifier, pas
 	return nil
 }
 
-func (p *Postgres) LookupLocalLogin(ctx context.Context, identifier string) (User, string, error) {
+func (p *Postgres) LookupLocalLogin(ctx context.Context, identifier string) (LocalLogin, error) {
 	identifier = strings.TrimSpace(identifier)
 	if identifier == "" {
-		return User{}, "", ErrNotFound
+		return LocalLogin{}, ErrNotFound
 	}
-	var u User
-	var hash string
-	err := p.db.QueryRow(ctx, `
+	return p.scanLocalLogin(ctx, `
 		SELECT u.id::text, u.issuer, u.external_subject, u.display_name, u.status,
-		       u.created_at, u.updated_at, l.password_hash
+		       u.created_at, u.updated_at, l.identifier, l.password_hash, l.must_change_password
 		FROM local_logins l
 		JOIN users u ON u.id = l.user_id
 		WHERE lower(l.identifier) = $1
-	`, identifier).Scan(
-		&u.ID, &u.Issuer, &u.ExternalSubject, &u.DisplayName, &u.Status,
-		&u.CreatedAt, &u.UpdatedAt, &hash,
+	`, identifier)
+}
+
+func (p *Postgres) LookupLocalLoginByUser(ctx context.Context, userID string) (LocalLogin, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return LocalLogin{}, ErrNotFound
+	}
+	return p.scanLocalLogin(ctx, `
+		SELECT u.id::text, u.issuer, u.external_subject, u.display_name, u.status,
+		       u.created_at, u.updated_at, l.identifier, l.password_hash, l.must_change_password
+		FROM local_logins l
+		JOIN users u ON u.id = l.user_id
+		WHERE l.user_id = $1::uuid
+	`, userID)
+}
+
+func (p *Postgres) scanLocalLogin(ctx context.Context, query string, arg any) (LocalLogin, error) {
+	var out LocalLogin
+	err := p.db.QueryRow(ctx, query, arg).Scan(
+		&out.User.ID, &out.User.Issuer, &out.User.ExternalSubject, &out.User.DisplayName, &out.User.Status,
+		&out.User.CreatedAt, &out.User.UpdatedAt, &out.Identifier, &out.PasswordHash, &out.MustChangePassword,
 	)
 	if err != nil {
-		return User{}, "", mapDBErr(err)
+		return LocalLogin{}, mapDBErr(err)
 	}
-	return u, hash, nil
+	return out, nil
+}
+
+func (p *Postgres) HasLocalLogins(ctx context.Context) (bool, error) {
+	var n int
+	err := p.db.QueryRow(ctx, `SELECT COUNT(*) FROM local_logins`).Scan(&n)
+	if err != nil {
+		return false, mapDBErr(err)
+	}
+	return n > 0, nil
+}
+
+func (p *Postgres) InsertBootstrapLocalLogin(ctx context.Context, userID, identifier, passwordHash string) (bool, error) {
+	userID = strings.TrimSpace(userID)
+	identifier = strings.TrimSpace(identifier)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || identifier == "" || passwordHash == "" {
+		return false, ErrInvalid
+	}
+	tag, err := p.db.Exec(ctx, `
+		INSERT INTO local_logins (user_id, identifier, password_hash, must_change_password)
+		SELECT $1::uuid, $2, $3, true
+		WHERE NOT EXISTS (SELECT 1 FROM local_logins)
+	`, userID, identifier, passwordHash)
+	if err != nil {
+		return false, mapDBErr(err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (p *Postgres) ChangeLocalPassword(ctx context.Context, userID, passwordHash string) error {
+	userID = strings.TrimSpace(userID)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || passwordHash == "" {
+		return ErrInvalid
+	}
+	tag, err := p.db.Exec(ctx, `
+		UPDATE local_logins
+		   SET password_hash = $2,
+		       must_change_password = false,
+		       updated_at = now()
+		 WHERE user_id = $1::uuid
+	`, userID, passwordHash)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (p *Postgres) CreateTenant(ctx context.Context, slug, name string) (Tenant, error) {

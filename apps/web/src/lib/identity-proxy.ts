@@ -150,6 +150,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["session", "password"]) },
   { methods: ["GET"], match: (s) => eq(s, ["session", "audit-events"]) },
   // E11.1 embed catalog / JWKS / mint / exchange. Paths live in embed-contract.ts.
   ...EMBED_PROXY_ROUTES,

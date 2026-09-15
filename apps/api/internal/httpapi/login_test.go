@@ -23,8 +23,8 @@ type lookupErrorStore struct {
 	err error
 }
 
-func (s lookupErrorStore) LookupLocalLogin(_ context.Context, _ string) (identity.User, string, error) {
-	return identity.User{}, "", s.err
+func (s lookupErrorStore) LookupLocalLogin(_ context.Context, _ string) (identity.LocalLogin, error) {
+	return identity.LocalLogin{}, s.err
 }
 
 func newLoginEnv(t *testing.T) (*identity.Memory, http.Handler) {
@@ -78,9 +78,7 @@ func TestLocalLoginMintsStandaloneSession(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "correct-horse") {
 		t.Fatal("login must not echo the password")
 	}
-	if strings.Contains(strings.ToLower(rec.Body.String()), "password") {
-		t.Fatal("login must not include a password field")
-	}
+	assertNoPasswordField(t, rec.Body.String())
 
 	var payload sessionResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -88,6 +86,9 @@ func TestLocalLoginMintsStandaloneSession(t *testing.T) {
 	}
 	if payload.Session.Embed != nil {
 		t.Fatalf("login session must omit session.embed: %+v", payload.Session.Embed)
+	}
+	if payload.Session.MustChangePassword {
+		t.Fatal("operator-set password must not force change")
 	}
 	if payload.Principal.ID != user.ID || payload.Principal.ExternalSubject != "admin@example.com" {
 		t.Fatalf("principal: %+v", payload.Principal)

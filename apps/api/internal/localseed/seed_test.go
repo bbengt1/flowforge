@@ -372,3 +372,86 @@ func TestApplyAttachesExistingWorkspaceAdmin(t *testing.T) {
 		t.Fatalf("admin-1 must be workspace admin, roles=%v", roles)
 	}
 }
+
+func TestEnsureBootstrapLoginSeedsOnlyWhenEmpty(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+	if err := EnsureBootstrapLogin(ctx, store, nil); err != nil {
+		t.Fatal(err)
+	}
+	login, err := store.LookupLocalLogin(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.User.Issuer != BootstrapIssuer || login.User.ExternalSubject != BootstrapSubject {
+		t.Fatalf("bootstrap user %+v", login.User)
+	}
+	if !login.MustChangePassword || login.PasswordHash == "" {
+		t.Fatalf("must_change + hash required: %+v", login)
+	}
+	if login.PasswordHash == "admin" {
+		t.Fatal("must store a hash, not the one-time password")
+	}
+	memberships, err := store.ListWorkspacesForUser(ctx, login.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 || memberships[0].Tenant.Slug != TenantSlug || memberships[0].Workspace.WorkbenchKey != WorkbenchKey {
+		t.Fatalf("workbench %+v", memberships)
+	}
+
+	firstHash := login.PasswordHash
+	if err := EnsureBootstrapLogin(ctx, store, nil); err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.LookupLocalLogin(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.PasswordHash != firstHash || !again.MustChangePassword {
+		t.Fatalf("second seed must not overwrite: %+v", again)
+	}
+}
+
+func TestEnsureBootstrapLoginDoesNotOverwriteExisting(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+	user, err := store.UpsertUser(ctx, "https://idp.example", "ops@example.com", "Ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(ctx, user.ID, "ops@example.com", "$2a$10$already-set"); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureBootstrapLogin(ctx, store, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LookupLocalLogin(ctx, "admin"); !errors.Is(err, identity.ErrNotFound) {
+		t.Fatalf("must not invent admin when a credential exists: %v", err)
+	}
+	got, err := store.LookupLocalLogin(ctx, "ops@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PasswordHash != "$2a$10$already-set" || got.MustChangePassword {
+		t.Fatalf("existing credential changed: %+v", got)
+	}
+}
+
+func TestLocalseedApplyDoesNotCreateLocalLogin(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+	if _, err := Apply(ctx, Input{
+		Store:          store,
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: "admin-1"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	has, err := store.HasLocalLogins(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has {
+		t.Fatal("PLATFORM_ADMINS / localseed must not create a local-login password")
+	}
+}

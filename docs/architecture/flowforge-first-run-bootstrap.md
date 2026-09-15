@@ -4,7 +4,7 @@ Status: **B.1–B.7 landed** (this page is the contract map). Parent epic [#333]
 
 **Owners:** jonny (gate + B.2–B.5 / B.7 APIs), Chloe (B.6 wizard chrome + Settings handoff; B.7 Skip chrome). Product hard lines: Gracie.
 
-**Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). Settings already hold session/health/OpenAPI.
+**Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). When `local_logins` is empty, first boot seeds a one-time `admin` / `admin` credential (`must_change_password`) — rotate via `POST /session/password`. That identity is **not** `PLATFORM_ADMINS`. Settings already hold session/health/OpenAPI.
 
 ---
 

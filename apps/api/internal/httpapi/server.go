@@ -460,6 +460,7 @@ func newServer(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/session", s.getSession)
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
 	mux.HandleFunc("POST /api/v1/session/logout", s.logoutSession)
+	mux.HandleFunc("POST /api/v1/session/password", s.postSessionPassword)
 	mux.HandleFunc("GET /api/v1/session/audit-events", s.listSessionAudit)
 	mux.HandleFunc("GET /api/v1/embed/catalog", s.getEmbedCatalog)
 	mux.HandleFunc("GET /api/v1/embed/jwks", s.getEmbedJWKS)

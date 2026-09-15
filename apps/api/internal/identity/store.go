@@ -12,11 +12,22 @@ type Store interface {
 	GetUser(ctx context.Context, id string) (User, error)
 	// SetLocalPassword stores a bcrypt hash for local login. identifier
 	// is the already-normalized email or username. The hash is never
-	// copied onto User JSON.
+	// copied onto User JSON. Operator-chosen passwords clear
+	// must_change_password (B.3).
 	SetLocalPassword(ctx context.Context, userID, identifier, passwordHash string) error
-	// LookupLocalLogin finds a user by normalized identifier. The hash
-	// is returned only for Verify; callers must not serialize it.
-	LookupLocalLogin(ctx context.Context, identifier string) (user User, passwordHash string, err error)
+	// LookupLocalLogin finds a credential by normalized identifier.
+	// PasswordHash is returned only for Verify; callers must not serialize it.
+	LookupLocalLogin(ctx context.Context, identifier string) (LocalLogin, error)
+	// LookupLocalLoginByUser finds a credential by user id.
+	LookupLocalLoginByUser(ctx context.Context, userID string) (LocalLogin, error)
+	// HasLocalLogins is true when at least one local credential exists.
+	HasLocalLogins(ctx context.Context) (bool, error)
+	// InsertBootstrapLocalLogin inserts the first-run one-time credential
+	// only when the table is empty. Never updates an existing row.
+	InsertBootstrapLocalLogin(ctx context.Context, userID, identifier, passwordHash string) (created bool, err error)
+	// ChangeLocalPassword replaces the hash for userID and clears
+	// must_change_password. Missing login is ErrNotFound.
+	ChangeLocalPassword(ctx context.Context, userID, passwordHash string) error
 
 	CreateTenant(ctx context.Context, slug, name string) (Tenant, error)
 	GetTenant(ctx context.Context, id string) (Tenant, error)

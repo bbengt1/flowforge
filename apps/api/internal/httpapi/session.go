@@ -26,12 +26,13 @@ type createSessionRequest struct {
 }
 
 type sessionView struct {
-	ID                string            `json:"id"`
-	CreatedAt         time.Time         `json:"created_at"`
-	LastSeenAt        time.Time         `json:"last_seen_at"`
-	IdleExpiresAt     time.Time         `json:"idle_expires_at"`
-	AbsoluteExpiresAt time.Time         `json:"absolute_expires_at"`
-	Embed             *sessionEmbedView `json:"embed,omitempty"`
+	ID                 string            `json:"id"`
+	CreatedAt          time.Time         `json:"created_at"`
+	LastSeenAt         time.Time         `json:"last_seen_at"`
+	IdleExpiresAt      time.Time         `json:"idle_expires_at"`
+	AbsoluteExpiresAt  time.Time         `json:"absolute_expires_at"`
+	MustChangePassword bool              `json:"must_change_password,omitempty"`
+	Embed              *sessionEmbedView `json:"embed,omitempty"`
 }
 
 // sessionEmbedView is the authoritative embed-chrome payload on a bound
@@ -256,9 +257,16 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // mintStandaloneSession issues the existing ff_session / ff_csrf pair
-// (standalone Lax / Strict). Used by trusted-dev POST /session and
-// local POST /login. Never binds session.embed.
+// (standalone Lax / Strict). Used by trusted-dev POST /session.
+// Never binds session.embed. Trusted-dev is not the local one-time
+// credential — must_change_password stays false here.
 func (s *Server) mintStandaloneSession(w http.ResponseWriter, r *http.Request, user identity.User, reason string) {
+	s.mintStandaloneSessionWithClaim(w, r, user, reason, false)
+}
+
+// mintStandaloneSessionWithClaim is POST /login: same cookies, plus the
+// session claim Chloe uses to gate product chrome until change-password.
+func (s *Server) mintStandaloneSessionWithClaim(w http.ResponseWriter, r *http.Request, user identity.User, reason string, mustChange bool) {
 	if !s.requireSessions(w, r) {
 		return
 	}
@@ -270,8 +278,10 @@ func (s *Server) mintStandaloneSession(w http.ResponseWriter, r *http.Request, u
 	}
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventCreated, session.OutcomeAllowed, reason)
+	view := s.viewSession(r.Context(), issued.Record)
+	view.MustChangePassword = mustChange
 	writeJSON(w, http.StatusCreated, sessionResponse{
-		Session:   s.viewSession(r.Context(), issued.Record),
+		Session:   view,
 		Principal: user,
 		CSRFToken: issued.CSRF,
 	})
@@ -296,7 +306,7 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		csrf = c.Value
 	}
 	writeJSON(w, http.StatusOK, sessionResponse{
-		Session:   s.viewSession(r.Context(), *pc.session),
+		Session:   s.viewSessionForUser(r.Context(), *pc.session, user.ID),
 		Principal: user,
 		CSRFToken: csrf,
 	})
@@ -333,7 +343,7 @@ func (s *Server) refreshSession(w http.ResponseWriter, r *http.Request) {
 	s.issueSessionCookies(w, r, issued)
 	s.auditSession(r, issued.Record, session.EventRefreshed, session.OutcomeAllowed, "refreshed")
 	writeJSON(w, http.StatusOK, sessionResponse{
-		Session:   s.viewSession(r.Context(), issued.Record),
+		Session:   s.viewSessionForUser(r.Context(), issued.Record, user.ID),
 		Principal: user,
 		CSRFToken: issued.CSRF,
 	})
@@ -392,9 +402,27 @@ func (s *Server) listSessionAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) viewSession(ctx context.Context, rec session.Record) sessionView {
+	return s.viewSessionForUser(ctx, rec, rec.UserID)
+}
+
+func (s *Server) viewSessionForUser(ctx context.Context, rec session.Record, userID string) sessionView {
 	view := viewSession(rec)
 	s.attachEmbedChrome(ctx, view.Embed)
+	if userID != "" {
+		view.MustChangePassword = s.localLoginMustChange(ctx, userID)
+	}
 	return view
+}
+
+func (s *Server) localLoginMustChange(ctx context.Context, userID string) bool {
+	if s.store == nil || strings.TrimSpace(userID) == "" {
+		return false
+	}
+	cred, err := s.store.LookupLocalLoginByUser(ctx, userID)
+	if err != nil {
+		return false
+	}
+	return cred.MustChangePassword
 }
 
 func viewSession(rec session.Record) sessionView {

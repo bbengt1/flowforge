@@ -38,11 +38,12 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
-| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). Embed stays `POST /embed/exchange`. |
-| `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). |
-| `GET` | `/api/v1/session` | Current browser session (cookie required). |
+| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. First-run one-time `admin`/`admin` sets `session.must_change_password`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). Embed stays `POST /embed/exchange`. |
+| `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). Not the local one-time credential. |
+| `GET` | `/api/v1/session` | Current browser session (cookie required). Exposes `session.must_change_password` so chrome can gate until rotation. |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
+| `POST` | `/api/v1/session/password` | Change local-login password (CSRF). New ≠ old, ≠ `admin`, min length. Success clears `must_change_password` and kills the one-time hash. Embed is `403`. Never echoes the password. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
 | `GET` | `/api/v1/embed/catalog` | Versioned embed SDK/contract. No auth required. Membership/isolation omitted unless the peeked session grants `workspace.administer` or `platform.administer`. `frameAncestors` always published. |
 | `GET` | `/api/v1/embed/jwks` | Public embed keys (active + overlap). |
