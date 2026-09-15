@@ -1,0 +1,87 @@
+/*
+ * V.1 token foundation — one tree for standalone and /embed/v1.
+ * Relates to #357 / Part of #353. Keep #357 open.
+ *
+ * Dark-first charcoal. One teal-family accent. Danger/denial is not
+ * the accent. Light theme is not required. Do not add a second theme
+ * tree or default shadcn zinc/orange skin.
+ *
+ * Consume via var(--ff-*) or the shadcn-friendly aliases below.
+ * Do not proliferate one-off hex in feature chrome after this file.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --ff-canvas: #0f1218;
+  --ff-surface: #171b22;
+  --ff-text: #f4f4f5;
+  --ff-muted: #b4b8c0;
+  --ff-accent: #0f766e;
+  --ff-accent-foreground: #ecfdf8;
+  --ff-danger: #fb7185;
+  --ff-danger-foreground: #fff1f2;
+  --ff-danger-surface: #3f151c;
+  --ff-focus-ring: #0f766e;
+  --ff-border: rgb(255 255 255 / 0.10);
+
+  --ff-space: 4px;
+  --ff-space-2: 8px;
+  --ff-space-3: 12px;
+  --ff-space-4: 16px;
+
+  --ff-radius-sm: 8px;
+  --ff-radius: 10px;
+  --ff-radius-lg: 12px;
+
+  --ff-font-sans: ui-sans-serif, system-ui, sans-serif;
+  --ff-type-caption: 0.75rem;
+  --ff-type-body: 0.875rem;
+  --ff-type-page: 1rem;
+  --ff-type-heading: 1.875rem;
+
+  /* shadcn-friendly aliases — FlowForge values, not zinc/orange. */
+  --background: var(--ff-canvas);
+  --foreground: var(--ff-text);
+  --card: var(--ff-surface);
+  --card-foreground: var(--ff-text);
+  --popover: var(--ff-surface);
+  --popover-foreground: var(--ff-text);
+  --primary: var(--ff-accent);
+  --primary-foreground: var(--ff-accent-foreground);
+  --secondary: var(--ff-surface);
+  --secondary-foreground: var(--ff-text);
+  --muted: var(--ff-surface);
+  --muted-foreground: var(--ff-muted);
+  --destructive: var(--ff-danger);
+  --destructive-foreground: var(--ff-danger-foreground);
+  --border: var(--ff-border);
+  --input: var(--ff-border);
+  --ring: var(--ff-focus-ring);
+  --radius: var(--ff-radius);
+  --focus-ring: var(--ff-focus-ring);
+}
+
+@theme inline {
+  --color-background: var(--ff-canvas);
+  --color-foreground: var(--ff-text);
+  --color-card: var(--ff-surface);
+  --color-card-foreground: var(--ff-text);
+  --color-popover: var(--ff-surface);
+  --color-popover-foreground: var(--ff-text);
+  --color-primary: var(--ff-accent);
+  --color-primary-foreground: var(--ff-accent-foreground);
+  --color-secondary: var(--ff-surface);
+  --color-secondary-foreground: var(--ff-text);
+  --color-muted: var(--ff-surface);
+  --color-muted-foreground: var(--ff-muted);
+  --color-destructive: var(--ff-danger);
+  --color-destructive-foreground: var(--ff-danger-foreground);
+  --color-border: var(--ff-border);
+  --color-input: var(--ff-border);
+  --color-ring: var(--ff-focus-ring);
+  --radius-sm: var(--ff-radius-sm);
+  --radius-md: var(--ff-radius);
+  --radius-lg: var(--ff-radius-lg);
+  --font-sans: var(--ff-font-sans);
+}

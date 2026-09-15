@@ -27,6 +27,10 @@ import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
 import { SessionStatusChip } from "@/components/session/SessionStatusChip";
 import { editorNavMode, isWorkflowEditorPath } from "@/lib/editor-chrome";
 import {
+  FF_SHELL_ROOT_CLASS,
+  FF_SHELL_ROOT_VALUE,
+} from "@/lib/visual-tokens";
+import {
   isEmbedUiPath,
   urlRejectedAssertion,
 } from "@/lib/embed-contract";
@@ -138,7 +142,10 @@ export function WorkspaceShell({
   const shell = embed ? (
     <WorkspaceProvider>
       <EmbedDeepLinkGuard>
-        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div
+          className={`${FF_SHELL_ROOT_CLASS} flex h-full min-h-0 flex-col overflow-hidden`}
+          data-ff-tokens={FF_SHELL_ROOT_VALUE}
+        >
           {skipLink}
           <EmbedChrome
             hostDisplay={hostDisplay}
@@ -172,7 +179,10 @@ export function WorkspaceShell({
   ) : (
     <WorkspaceProvider>
       <BootstrapGate>
-      <div className="flex h-full min-h-0 overflow-hidden">
+      <div
+        className={`${FF_SHELL_ROOT_CLASS} flex h-full min-h-0 overflow-hidden`}
+        data-ff-tokens={FF_SHELL_ROOT_VALUE}
+      >
         {skipLink}
         {editorRoute && navOpen ? (
           <button

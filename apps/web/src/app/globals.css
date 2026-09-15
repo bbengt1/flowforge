@@ -1,35 +1,43 @@
 @import "tailwindcss";
-
-:root {
-  --background: #f6f5f1;
-  --foreground: #18181b;
-  --focus-ring: #0f766e;
-}
+@import "./tokens.css";
 
 html,
 body {
   min-height: 100%;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  font-family: var(--ff-font-sans);
+  font-size: var(--ff-type-body);
+}
+
+.ff-shell {
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  font-family: var(--ff-font-sans);
+  font-size: var(--ff-type-body);
+  --radius: var(--ff-radius);
 }
 
 .skip-link {
   position: absolute;
-  left: 0.75rem;
-  top: 0.75rem;
+  left: var(--ff-space-3);
+  top: var(--ff-space-3);
   z-index: 100;
   transform: translateY(-200%);
-  border-radius: 0.5rem;
-  background: #fff;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  border-radius: var(--ff-radius-sm);
+  background: var(--ff-accent);
+  padding: var(--ff-space-2) var(--ff-space-3);
+  font-size: var(--ff-type-body);
   font-weight: 600;
-  color: #134e4a;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  color: var(--ff-accent-foreground);
+  box-shadow: 0 0 0 2px var(--ff-canvas), 0 0 0 4px var(--ff-focus-ring);
 }
 
 .skip-link:focus,
@@ -38,12 +46,12 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ff-focus-ring);
   outline-offset: 2px;
 }
 
 .outline-none:focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ff-focus-ring);
   outline-offset: 2px;
 }
 

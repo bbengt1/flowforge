@@ -8,6 +8,10 @@ import {
   readConfiguredHostIssuers,
 } from "@/lib/embed-contract";
 import { SESSION_COOKIE_NAME } from "@/lib/session-contract";
+import {
+  FF_SHELL_ROOT_CLASS,
+  FF_SHELL_ROOT_VALUE,
+} from "@/lib/visual-tokens";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,7 +30,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     NEXT_PUBLIC_EMBED_ISSUER: process.env.NEXT_PUBLIC_EMBED_ISSUER,
   });
   return (
-    <html lang="en" className="h-full">
+    <html
+      lang="en"
+      className={`h-full ${FF_SHELL_ROOT_CLASS}`}
+      data-ff-tokens={FF_SHELL_ROOT_VALUE}
+    >
       <body className="h-full min-h-full antialiased">
         <WorkspaceShell
           swaggerUrl={getPublicSwaggerUrl()}
