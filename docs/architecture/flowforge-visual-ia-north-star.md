@@ -100,9 +100,40 @@ Prefer **already specified** over inventing work. F / O / B / UXL / R stories st
 
 **Home visual lean (attached):** Brent’s Overview-style screenshot (dark cards, search / sort / filter, Create CTA, folder/path pills). Use it as **density and arrangement**, not as a product to clone. Stats strip, Personal badge, pin-as-product, and link-count stay **out** (O.1–O.4).
 
+Workflow / ops chrome **leads with Mobbin**. Public products stay as **backup** class references. Hard lines in [§3](#3-hard-lines) still win.
+
+### Mobbin screen citations
+
+Source: Mobbin paid plan, 2026-09-15 (`search_screens`, `platform=web`, `mode=deep`, `task_intent`: Flowforge visual IA north-star reference research). Every URL is a live `mobbin_url` from that brief — **none invented**. TAKE/SKIP is from the screen, not the app name.
+
+| # | Surface | Screen | TAKE | SKIP |
+| --- | --- | --- | --- | --- |
+| 1 | **Home** | [Vapi — Workflows list](https://mobbin.com/screens/33f7fbe8-0b96-4dec-97de-0a0984187b2e) | Full-dark home; slim icon rail; teal **Create**; table (name, dates); secondary Upload JSON / Docs. | Ultra-sparse rows if last-run / activation must scan. Table-only as the *only* browse (Overview **cards** stay primary). |
+| 2 | **Home** | [incident.io — Workflows](https://mobbin.com/screens/eb672c81-90ee-4b8b-970d-47de14a97241) | Labeled left-nav groups; ⌘K; **+ New workflow** placement. | **Light main pane** on a dark shell. Low metadata on rows. |
+| 3 | **Home** | [Asana — Workflow canvas](https://mobbin.com/screens/75489bc8-85dc-45f7-bfb6-7268e9c52f74) | Dot-grid; dashed **+ Add** empty states. | 10+ horizontal tabs (chrome overload). |
+| 4 | **Editor** | [Vapi — Squad canvas + inspector](https://mobbin.com/screens/16bbb954-fd24-4b49-8f21-b110a03a6c16) | **Three-pane** (nav \| canvas \| inspector); accent **selection ring**; inspector tabs; floating zoom / undo dock. | Assistant-specific tabs; cost/latency as required chrome; start-node as a trigger. |
+| 5 | **Editor** | [Webflow — Flows](https://mobbin.com/screens/ed0176f0-e437-4d9d-bf52-153873c8cc71) | Left **Add blocks** palette; right Settings/Output; inline **+** on the spine; **Test / Publish** header. | Overly dense block grid — prefer a **searchable** list. Marketplace tiles. |
+| 6 | **Editor** | [Weavy — canvas + palette](https://mobbin.com/screens/990421f6-789d-4be5-9b17-9e3fec19aa2f) | **Searchable** left palette; category chips; floating bottom canvas tools. | **Neon / rainbow** category colors. Missing right inspector. |
+| 7 | **Editor** | [Runway — workflow canvas](https://mobbin.com/screens/034eb22c-a167-489c-8b1a-699f7e846442) | Max canvas; slim icon rail; dot grid; Save separate from run. | No persistent palette **and** inspector (too minimal). **Run** on unsaved. Credits-as-product. |
+| 8 | **Editor** | [Lindy — Flow editor](https://mobbin.com/screens/0fb15b25-218d-4bf7-a712-6f31c0dbcdc8) | **Test vs Publish** header split; branch edge labels; orthogonal wires. | Floating Agent Builder covering the canvas — dock the inspector. Test that runs an unsaved buffer (D5 = mint published test version, then start). |
+| 9 | **Editor** | [Railway — graph + Variables](https://mobbin.com/screens/6dedaaac-55c5-49b4-8a73-d31f5e15dfed) | Selected node → right drawer with tabs; masked `••••` inline; icon rail maximizes canvas. | Infra “Online / URL” chrome. Secrets as the inspector primary (display-name + UUID stays). |
+| 10 | **Vault** | [Vapi — API Keys](https://mobbin.com/screens/2643a442-d170-4d50-9d50-7a06046c8027) | Group cards; **masked** values; adjacent **View / Copy / Delete**; scoped pills; per-group Add. | Credits FAB on the vault. Key material as list identity (list stays display-name + UUID). |
+| 11 | **Vault** | [Copy.ai — API Keys](https://mobbin.com/screens/8c444549-4b1b-4425-bbc0-3e67726417c2) | Audit columns (created / last used / expires / status); **one-time reveal** + eye + copy. | **White modal** on a dark shell — use an elevated dark panel. |
+| 12 | **Vault** | [Modal — Secrets](https://mobbin.com/screens/e11ade6b-7c86-4534-b83a-471f6f64263a) | Quiet Create; created / last-used columns; “credentials” subtitle. | List with **no** mask/copy. Promo banner. |
+| 13 | **Runs** | [Vapi — Call Logs](https://mobbin.com/screens/ade375a8-2dcf-43cf-b00a-972495b2e3d0) | Status summary chips (All / Successful / Failed); filter-chip bar; high-contrast Fail; **Build vs Observe** nav split. | Call-domain columns. Inbox as a second replay graph. |
+| 14 | **Runs** | [Databricks — Query History](https://mobbin.com/screens/da9a44b9-1634-4f2b-8378-04f1dfd29e80) | Leading **status icon**; duration + mini bar; dense filters; Editor vs History grouping. | Enterprise nav depth. Color-only status. |
+| 15 | **Runs** | [Snowflake — Task History](https://mobbin.com/screens/5c191780-0a36-4707-a5ed-e248ce66c1e0) | Status pills; duration cues; previous-run squares. | Chart-as-home. PREVIEW noise. Wide column sprawl. Sparkline is **not** a home stats strip. |
+| 16 | **Wizard** | [Higgsfield — 3 of 5](https://mobbin.com/screens/02e5ec2b-1406-4eb7-b1aa-cdd62a3b9b64) | Progress + **n of m**; one Continue; 3–5 steps. | Low-contrast disabled Continue. Use-case grid as FlowForge B-steps. |
+| 17 | **Wizard** | [Vapi — use-case tiles](https://mobbin.com/screens/e8106529-4db7-4d84-971c-8d2dbda936d5) | Dark; step dots; Back + primary; accent selection ring. | >6 tiles on one step. Persona / “what are you using this for” as bootstrap (B-order stays persistence → admin → URL → TLS). |
+| 18 | **Wizard** | [Figma — Dev Mode](https://mobbin.com/screens/68c2e030-6eac-46f0-9b0d-9aead62e27c1) | Numbered fail-closed rail; Next names the next step. | Light content pane. Remount after complete. |
+| 19 | **Wizard** | [Modal — Welcome](https://mobbin.com/screens/a255484d-9fea-4ee4-a928-66d186219dee) | First-run over the shell; one accent CTA. | Many questions in one modal — **one decision per step**. Neon-for-its-own-sake. |
+| 20 | **Wizard** | [Deel — org size](https://mobbin.com/screens/dbe85af1-ec59-464f-874e-c541236407f8) | One question per screen; pills; full-width progress; “Next step: …” preview. | Disabled Continue that blends into the footer. Personal-profile content. Embed. |
+
+**Honorable (pattern support, not the top 20):** [Modal Deployment History](https://mobbin.com/screens/2988dfe5-56b1-46b2-a042-d9b73a8de152) · [Railway logs](https://mobbin.com/screens/3f38e15c-d2fe-4315-8262-3bd3dbb08d83) · [Vercel Deployments](https://mobbin.com/screens/e9576405-bcef-419a-922a-8fb84b044a54).
+
 ### Public products (backup)
 
-Keep these even when Mobbin citations exist. They are the IA/visual *class*, not pixel specs. No invented Mobbin URLs here.
+IA/visual *class* only — not pixel specs. Use when a Mobbin screen is SKIP’d. No invented Mobbin URLs here.
 
 | Reference | TAKE | SKIP |
 | --- | --- | --- |
@@ -115,33 +146,23 @@ Keep these even when Mobbin citations exist. They are the IA/visual *class*, not
 | **Retool-class internal tools** | App-list → editor workbench; dark chrome; inspector + canvas as one product. | Builder-as-marketplace; drag-any-widget canvas; a second “studio” origin. |
 | **n8n** | **Nothing visual.** Behavior/coverage only — already locked in the [parity charter](flowforge-rewrite-n8n-class-parity.md). | Colors, CSS, icons, NDV branding, Overview tabs, orange accent, “run the unsaved graph,” canvas triggers. |
 
-### Mobbin screen citations
+### Mobbin anti-patterns (keep SKIP’d)
 
-Live MCP searches on 2026-09-15 (`task_intent`: Flowforge visual IA north-star reference research). Every `mobbin_url` below was returned by Mobbin — **none invented**. TAKE/SKIP is from the screen preview, not the app name. Hard lines in [§3](#3-hard-lines) still win.
-
-A forthcoming research brief may add or replace rows. Do not treat this table as closed.
-
-**PENDING (no `mobbin_url` yet — do not invent):** named-app deep-links for **Linear**, **Notion**, **Stripe Dashboard**, and **macOS Finder**. Public TAKE/SKIP above remains the backup until those URLs land.
-
-| Surface | Screen | TAKE | SKIP |
-| --- | --- | --- | --- |
-| **Home** | [Cursor Automations](https://mobbin.com/screens/9642254c-bab4-4f0c-883b-c6ce766dd6ff) | Dark charcoal workbench; dense list + suggested cards; **New** as a first-class verb. | Stats / success-rate strip (O.1 deferred). Suggested-card marketplace as primary browse. |
-| **Home** | [Vapi Workflows](https://mobbin.com/screens/33f7fbe8-0b96-4dec-97de-0a0984187b2e) | Dark list; header **Create**; search + sort; import JSON as a *secondary* verb. | Table-only as the primary browse (Overview cards stay primary). Step-count as a required column. |
-| **Home** | [Lindy My Agents](https://mobbin.com/screens/c1a6ac79-67b6-454e-9716-48d1c4136182) | Dark pane; compact folder / agent rail; **last run** on the row; New folder + New agent. | Enable-toggle that reads as “this draft is live.” D2 activation stays published-version only. |
-| **Home** | [StackAI Projects](https://mobbin.com/screens/e3467ab7-14ed-490a-ac81-324d9bd813bd) | Dark cards + folder rail + search + **New**. | 2-up tile grid as primary (we want ~56–72px **row** cards). Plan-limit / upgrade banners on home. |
-| **Editor** | [Vapi canvas](https://mobbin.com/screens/e499c56a-5997-485c-aced-c4b3f57deac7) | Dark dotted viewport; canvas **+**; right inspector; Save in the top bar; unsaved called out. | Start / trigger **on the canvas**. Cost/latency chrome. A single **Run** that starts the open buffer. |
-| **Editor** | [Runway workflow](https://mobbin.com/screens/034eb22c-a167-489c-8b1a-699f7e846442) | Dark canvas as the viewport; compact icon rail; Save separate from run. | **Run** on unsaved / credits-as-product. Drafts never run. |
-| **Editor** | [Plain workflow](https://mobbin.com/screens/a797b6af-e877-4896-8dca-a3217dbc8ba6) | Dark graph; right category palette; **Published** + Save in the top bar. | Start-node-as-trigger. Palette as a marketplace. |
-| **Editor** | [OpenAI Agent canvas](https://mobbin.com/screens/395dde29-c7f9-4346-b241-41e7f6b02354) | Dark canvas; **category-first** left palette; Publish in the trail. | Expression-on-node as chrome. Triggers as graph nodes. |
-| **Editor** | [Lindy flow editor](https://mobbin.com/screens/0fb15b25-218d-4bf7-a712-6f31c0dbcdc8) | Dark graph; **Test** and **Publish** as distinct verbs. | Chat-builder as the editor. Test that runs an unsaved buffer (D5 = mint published test version, then start). |
-| **Vault** | [Proton Pass](https://mobbin.com/screens/0089156e-8614-414f-82d4-b2b7c2363843) | Dark list + detail; find by display name; secret field **masked**. | Showing a password/value pane after submit. FlowForge stays display-name + UUID only. |
-| **Vault** | [Vapi API Keys](https://mobbin.com/screens/d820e5e0-0cc7-481b-8a24-86a54cf2bfa4) | Dark lifted cards; **Add**; values masked. | Key material (even masked) as the list primary. No KEK / fingerprint-as-secret. |
-| **Vault** | [n8n Credentials](https://mobbin.com/screens/3043ed66-1286-4d46-8c44-b347d4607917) | **Nothing visual.** | Entire screen — Overview tabs, stats strip, Personal, orange Create. Behavior reference only. |
-| **Runs** | [Vercel Deployments](https://mobbin.com/screens/e9576405-bcef-419a-922a-8fb84b044a54) | Dark dense inbox; status as **icon + label** (Ready / Error); filters; loud **Action required**. | Deploy-metrics / observability as FlowForge home. Color-only status. |
-| **Runs** | [Vapi Evaluation Runs](https://mobbin.com/screens/02a7a8be-1109-4b68-ba46-9989dba1e6c0) | Dark table; **Failed** is text, not color alone; **View details** → existing detail (not a second graph). | Inbox as a replay canvas. Silent success. |
-| **Wizard** | [Vapi first-run](https://mobbin.com/screens/e8106529-4db7-4d84-971c-8d2dbda936d5) | Dark charcoal; progress; Back + primary CTA; one accent. | Persona / “what are you using this for” as bootstrap. B-order stays persistence → admin → URL → TLS. |
-| **Wizard** | [Deel profile setup](https://mobbin.com/screens/14170d69-45fd-43e5-85ff-0396e030f1f5) | Dark form; required fields labeled; next step named. | Personal-profile steps. Secrets in the form. Embed. |
-| **Wizard** | [Figma Dev Mode wizard](https://mobbin.com/screens/68c2e030-6eac-46f0-9b0d-9aead62e27c1) | Numbered **fail-closed** steps; Back / Next. | Light dialog as the default (north star is dark). Remount after complete. |
+| Anti-pattern | Why it fails here |
+| --- | --- |
+| Mixed **light content** on a dark shell | Breaks full-dark north star (incident.io). |
+| **White security modal** on dark chrome | Use an elevated dark panel (Copy.ai). |
+| Floating AI / builder covering the canvas | Dock inspector (Lindy). |
+| Editor with **neither** palette nor inspector | Config depth needs both (Runway minimal). |
+| 10+ top tabs | Collapse into sidebar groups (Asana). |
+| Vault list with no mask / copy | Secrets never plaintext in tables (Modal Secrets). |
+| Promo banners / credit FABs on Vault or Observe | Keep those surfaces quiet. |
+| Wizard with many questions or >6 tiles | One decision per step; B.1–B.7 stay 3–5 steps. |
+| Low-contrast disabled Continue | Disabled must still read as a button. |
+| Status by **color only** | Icon + text; loud `indeterminate`. |
+| ID-hash as the row primary | Lead with workflow / run name. |
+| **Rainbow** category chips | Icon + label; one accent for selection only. |
+| **n8n visual clone** / marketplace | Hard line. Enabled catalog only. |
 
 ---
 
@@ -153,10 +174,10 @@ Dark-first. One accent. Workbench density. Status is never color-only.
 
 | Rule | Apply |
 | --- | --- |
-| Workbench, not marketing | Linear / Vercel scan density. Cards are **rows**, not hero tiles. |
-| Home cards | One line of identity; one line of meta (updated / created / activation / last run); path pills; kebab. ~56–72px tall, not dashboard widgets. |
+| Workbench, not marketing | Linear / Vercel / Databricks scan density. Cards or table rows — not hero tiles. Wizard stays low-density. |
+| Home cards | One line of identity; one line of **status metadata** (updated / created / activation / last run); path pills; kebab. ~56–72px tall. Dense enough to scan; not Vapi-ultra-sparse. |
 | Finder rail | Compact disclosure + folder icons. Filter-only. Not primary browse (O.1). |
-| Editor | Canvas takes the viewport. Satellites are tools, not a second page. |
+| Editor | **Three-pane:** searchable palette \| dot-grid canvas \| inspector. Medium node spacing. Satellites are tools, not a second page. |
 | Touch | Existing `max-width: 767px` breakpoint. Not a mobile app. Labeled verbs — do not icon-only the tree or Save / Publish. |
 
 ### Typography
@@ -165,16 +186,16 @@ Dark-first. One accent. Workbench density. Status is never color-only.
 | --- | --- |
 | One UI sans | System stack or one licensed geometric (e.g. Geist / Inter). No display serif. No n8n-branded type. |
 | Hierarchy | Page title (Overview / workflow name) is the only large line. Meta is smaller, lower contrast, still readable. |
-| Numbers | Tabular figures for timestamps and run counts. |
-| Verbs | Sentence case. FlowForge verbs stay **Save draft / Publish / Start published / Test run / Create**. |
+| Mono | **Monospace only** for IDs, durations, hashes — never for display names. Tabular figures for timestamps. |
+| Verbs | Sentence case. FlowForge verbs stay **Save draft / Publish / Start published / Test run / Create**. Header: max one solid primary + one–two ghost (Test, Import). |
 
 ### Color (dark-first charcoal + one accent)
 
 | Token intent | Direction | Forbidden |
 | --- | --- | --- |
-| Canvas / page | Near-black charcoal, not pure `#000` and not navy-blue “dashboard skin.” | Light-first as the default. Cream `#f6f5f1` as the north-star canvas. |
-| Surfaces | Cards and rails **lift** one step (border + 1–2% lighter fill). | Heavy drop shadows; glassmorphism. |
-| **One FlowForge accent** | A single CTA / active-tab / focus color. Candidate: keep the current teal-family (`--focus-ring` `#0f766e`) as the **starting** accent so we do not invent a second brand in this PR. Gracie locks the hex after Brent yes. | **n8n orange / amber / coral.** Multi-accent rainbow. Accent-as-status. |
+| Canvas / page | Near-black charcoal (`#0B0D10`–`#12141A` candidate), not pure `#000` and not navy-blue “dashboard skin.” **Full dark** — no light content pane on a dark shell. | Light-first as the default. Cream `#f6f5f1` as the north-star canvas. Mixed light/dark product chrome. |
+| Surfaces | Cards and rails **lift** one step (border + 1–2% lighter fill). | Heavy drop shadows; glassmorphism; white modals on dark. |
+| **One FlowForge accent** | A single CTA / active-tab / focus / **selection ring**. Candidate: keep the current teal-family (`--focus-ring` `#0f766e`) as the **starting** accent so we do not invent a second brand in this PR. Gracie locks the hex after Brent yes. | **n8n orange / amber / coral.** **Neon rainbow** category chips. Accent-as-status. |
 | Text | High-contrast primary; muted secondary for meta. WCAG on dark cards. | Grey-on-grey meta that fails contrast. |
 | Danger / denial | Distinct from the accent. Isolation **success** stays a denial — never a friendly green “pass.” | Pretty-ing ADV-024. |
 
@@ -185,14 +206,14 @@ Light theme may exist later as a **follow** token map. It is not the north star.
 | Rule | Apply |
 | --- | --- |
 | Spacing | 4px base. Home header / filter row / card stack use a tight 8–16px rhythm. Do not add a 48px marketing gap to “look premium.” |
-| Radii | Cards and inputs **8–12px**. Path pills may be fully rounded. Not pill-everything. |
+| Radii | Cards and inputs **8–12px**; nodes **6–10px**. Path pills may be fully rounded. Not pill-everything. |
 | Borders | 1px hairline at ~white 8–12% opacity. Cards read as rows in a list, not floating islands. |
 
 ### Status semantics
 
 | State | Treatment |
 | --- | --- |
-| All node / run / activation states | **Icon + text.** Color never the only signal (UX.10 / R7.4). |
+| All node / run / activation states | **Icon + text** (badge or dot + label). Color never the only signal (UX.10 / R7.4). |
 | `indeterminate` | **Loud** — icon + text + explanation on overlay **and** inbox. Never a quiet toast that could be silent success. |
 | Success vs indeterminate | Explicitly distinct. Peak-end success is focused/selected only. |
 | Fail / waiting / approval | Jump-to-node / decide stay on the one operate path. |
@@ -208,45 +229,50 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share componen
 
 ### Shell
 
+- **Full-dark** charcoal on every product route. No light content pane on a dark rail (incident.io SKIP). No second embed skin.
 - Persistent workspace switcher (role + environment). Embed switcher stays **locked** to the exchanged workspace.
-- Left nav: capability-gated from `GET /workspace`. Editor **collapses** to an icon-rail (original marks — not cloned icons).
+- Left nav: capability-gated from `GET /workspace`. **Labeled groups** — Build (Workflows, Actions, Templates, Config/targets), Observe (Executions, Approvals, Alerts), Vault-class (Credentials), Settings. Same routes; grouping is chrome only.
+- Editor **collapses** to an icon-rail (Vapi / Railway / Runway) — original marks, not cloned icons. Labeled rail ~220–260px; icon rail ~48–56px.
 - Membership / Isolation stay **off** product chrome (R7.2). Settings may link when granted.
 - Search + Commands (Ctrl+Shift+K) stay. Never index secrets.
-- Dark charcoal shell on every product route (Cursor Automations, Vapi, Lindy). No second embed skin.
 - Single `<main>`, skip `#main-content`, Esc / focus return on drawers.
 
 ### Home / Overview (`/workflows`)
 
-- **Card list is primary browse** (O.1). Compact Finder rail is **filter-only**, non-recursive `?folderId=` (F.2 / O.1). Not Miller columns.
-- Header: product title + **Create** (draft) — same visual weight as Vapi / Cursor **New**, not a marketing hero. Import YAML / template remain secondary, still POST a draft.
-- One row: search (default **across folders**) + sort + filter (Vapi Workflows). Optional “in this folder.”
-- Cards: name; last updated / created; **path pills** from `GET /workflow-folders` ancestry (O.2); published / activation / last-run at the scan ends (UXL.5; last-run also on Lindy). Row-height cards, not StackAI 2-up tiles. Kebab. Unfiled has **no** path pills and is not a persisted folder. No Lindy-style live toggle on a draft.
-- Skip on cards: stats strip, Personal badge, link-count (O.1–O.4). No pin-as-product until a pin API exists.
-- Empty home / empty folder / Unfiled-empty use **Overview card chrome** (O.3 / UXL.6). Drafts do not run. No Developer fixtures.
+- **Card list is primary browse** (O.1) — Brent Overview screenshot remains the home lean. A dense table with the **same status metadata** is an allowed alternate density, not a second home. Compact Finder rail is **filter-only**, non-recursive `?folderId=` (F.2 / O.1). Not Miller columns.
+- Header: product title + **Create** (draft) as the one solid primary (Vapi / incident.io). Import YAML / template remain secondary, still POST a draft.
+- One row: search (default **across folders**) + sort + filter. Optional “in this folder.”
+- Cards (or table rows): name first; last updated / created; **path pills** from `GET /workflow-folders` ancestry (O.2); published / activation / last-run at the scan ends (UXL.5). Kebab. Unfiled has **no** path pills and is not a persisted folder. No live-toggle on a draft.
+- Skip on cards: stats strip, Personal badge, link-count (O.1–O.4). No pin-as-product until a pin API exists. No marketplace / suggested-app grid.
+- Empty home / empty folder / Unfiled-empty use **Overview card chrome** (O.3 / UXL.6) — dashed **+ Add** is fine. Drafts do not run. No Developer fixtures.
 - Move = drag or **Move…** → `PATCH …/folder` `{folderId}` only. Refuse-if-nonempty delete. Viewers select-only.
 - Same `WorkflowHome` on `/embed/v1/workflows` after `session.embed` (O.4 / F.7).
 
 ### Editor (`/workflows/{id}`)
 
-- Graph is the viewport. Dark dotted canvas (Vapi / Runway / Plain); nodes keep family **shape + icon + label**.
-- Top bar: UXL.1 groups (authoring / satellites / run). Identity + draft/published working memory (UXL.2). Save / Publish stay large — Plain’s **Published** badge is the lean; Runway’s unsaved **Run** is not.
-- Library / Inspector / YAML / Runs stay satellites (Vapi inspector + OpenAI / Plain category palette). Category-first enabled catalog only (UXL.7).
-- Invalid YAML does not paint a guessed graph. Triggers stay workflow-level — do not TAKE Vapi/Plain start-nodes onto the canvas.
-- After Start published / Test run → Runs overlay (UXL.4). No `/replay`.
+- **Three-pane default:** searchable left palette (categories + search, Weavy / Webflow) \| dark dot-grid canvas \| right inspector (Params / I/O / Credentials / Advanced — FlowForge names, not branded NDV). Inspector ~280–320px.
+- Nodes: family **shape + icon + label**; accent **selection ring**; clear ports. Optional branch-edge labels. Add via palette drag **and** canvas / spine **+**.
+- Top bar: UXL.1 groups. Identity + unsaved + draft/published working memory (UXL.2). **Test run** vs **Publish** stay distinct (Webflow / Lindy). Save / Publish stay large. Runway’s unsaved **Run** is not the verb.
+- Floating dock: select / pan / zoom / fit / undo (Vapi Squad). Do not hide Save / Publish into the dock.
+- Library / YAML / Runs stay satellites. Category-first **enabled catalog only** (UXL.7). No rainbow category chips. No marketplace.
+- Invalid YAML does not paint a guessed graph. Triggers stay workflow-level — do not TAKE start-nodes onto the canvas.
+- After Start published / Test run → Runs overlay (UXL.4). No `/replay`. No floating builder that covers the graph.
 
 ### Vault (`/credentials`)
 
-- Display-name find; type/status/tag filters; detail test / rotate / usage / deletion-impact (Proton Pass list + detail density).
-- Masked wizard. Selectors stay display-name + UUID. Unexpected plaintext → strip + stop. Do not land Vapi-style key material (even masked) as the list primary.
-- **No KEK chrome.** No fingerprint-as-secret. Empty vault: add, no sample secrets.
+- List identity is **display-name + UUID** only. Group by type or a Type column. Audit: created / last used / expires / status (Copy.ai columns) — metadata, not secrets.
+- **Always mask** in the list. **View / Copy** sit on create / rotate as a **one-time reveal**, then dismiss (Copy.ai, dark panel — not a white modal). After submit, chrome returns to display-name + UUID.
+- Detail: test / rotate / usage / deletion-impact. Unexpected plaintext → strip + stop.
+- **No KEK chrome.** No fingerprint-as-secret. No credits FAB. Empty vault: add, no sample secrets.
 - NDV add returns to the graph. Dedicated routes remain.
 
 ### Executions
 
-- Inbox `/executions` + detail `/{id}` stay the workspace operate path (Vercel Deployments density; Vapi **View details**).
+- Inbox `/executions` + detail `/{id}` stay the workspace operate path. Columns: status badge · run / workflow name · trigger · started · **duration** (± bar). Lead with the human name, not a hash.
+- Summary **filter chips**: All / Succeeded / Failed / Running / waiting / `indeterminate` (Vapi Call Logs). Error rows may use a left accent bar — still icon + text.
 - Editor overlay is the in-graph path. **Open execution** deep-links to detail — not a second inbox graph.
 - Loud `indeterminate`. Cancel / retry / stop / decide on the same path.
-- Compare stays client-side redacted. No second graph.
+- Compare stays client-side redacted. No second graph. No promo FAB. Duration cues stay; home stats strip stays out.
 
 ### Settings
 
@@ -261,7 +287,9 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share componen
 - Fail-closed order: persistence → first admin → public URL → TLS (create / upload / **Skip for now**).
 - Skip is first-class, not a silent default. Loud HTTP-until-Settings. `{action:"skip"}` only — no PEM in `localStorage`.
 - After `complete` or `401`, product home. Wizard never remounts.
-- Dark charcoal + same accent as the product (Vapi / Deel first-run). Numbered fail-closed steps (Figma Dev Mode). Not a marketing onboarding microsite. No secrets / KEK in JSON or chrome.
+- **3–5 steps** matching B.1–B.7 (persistence → first admin → public URL → TLS create / upload / skip). Progress bar or numbered rail; **one decision per step** (Deel / Higgsfield). Next may preview the following step.
+- Full-dark + one accent. Back \| Continue (disabled still reads as a button). Dedicated full-screen or a dark modal over the empty shell — never a light pane, never `/embed/v1`.
+- Not a marketing onboarding microsite. No use-case tile dump, no >6 tiles, no secrets / KEK in JSON or chrome.
 
 ---
 
@@ -271,13 +299,13 @@ Chrome-only. Invariants **keep**. Visual treatment **reshape**. Do not replace r
 
 | Surface | Keep | Reshape | Do not |
 | --- | --- | --- | --- |
-| **Shell** | Routes, RBAC nav, Commands, switcher, embed lock, ADV-024 off-chrome | Dark charcoal, type, icon-rail marks (still original), accent on the active item | Second embed tree; Membership on the nav; cloned icons |
-| **Home / Overview** | `/workflows`; F.1–F.7; O.1–O.4; UXL.5–UXL.6; Create / Import / template → draft; `?folder=` / `?start=` / `?webhooks=` / `?schedules=` | Dark cards, search/sort/filter row, Create CTA, path-pill styling | Stats; Personal; Miller columns; tags-first; `/studio`; n8n Overview tabs |
-| **Editor** | YAML projection; D1 layout; D2/D5; UXL.1–UXL.4 / UXL.7; satellites; one overlay | Dark canvas, satellite chrome, top-bar grouping visuals | Run draft; canvas triggers; branded “NDV”; `/replay`; guessed graphs |
-| **Vault** | Display-name + UUID; masked wizard; R5 routes | Dark list/detail density | KEK; plaintext; secret search |
-| **Executions** | Inbox + overlay; loud `indeterminate`; decide / cancel / retry / stop | Dark inbox rows; status icon+text restyle (not quieter) | Second replay graph; silent success |
+| **Shell** | Routes, RBAC nav, Commands, switcher, embed lock, ADV-024 off-chrome | Full-dark charcoal; **Build / Observe / Vault-class** labels; icon-rail collapse; one accent | Second embed tree; Membership on the nav; cloned icons; mixed light/dark |
+| **Home / Overview** | `/workflows`; F.1–F.7; O.1–O.4; UXL.5–UXL.6; Create / Import / template → draft; `?folder=` / `?start=` / `?webhooks=` / `?schedules=` | Dark **cards** (Overview lean) or dense table with the same metadata; Create; search/sort/filter; path pills | Stats; Personal; Miller columns; tags-first; `/studio`; n8n Overview tabs; marketplace |
+| **Editor** | YAML projection; D1 layout; D2/D5; UXL.1–UXL.4 / UXL.7; satellites; one overlay | Three-pane; searchable palette; Test vs Publish; floating zoom/undo; selection ring | Run draft; canvas triggers; branded “NDV”; `/replay`; guessed graphs; rainbow palette |
+| **Vault** | Display-name + UUID; masked wizard; R5 routes | Dark list; mask; View/Copy **one-time reveal**; audit columns | KEK; plaintext in the list; secret search; white modal |
+| **Executions** | Inbox + overlay; loud `indeterminate`; decide / cancel / retry / stop | Status badges; filter chips; duration cues | Second replay graph; silent success; color-only status |
 | **Settings** | Health / OpenAPI / Developer / bootstrap handoff | Match shell tokens | Metrics dashboards; wizard remount |
-| **Wizard** | B.1–B.7 order, skip semantics, standalone-only | Same visual language as Settings / shell | Embed gate; ACME; secrets in chrome |
+| **Wizard** | B.1–B.7 order, skip semantics, standalone-only | Full-dark 3–5 steps; progress; one decision per step | Embed gate; ACME; secrets in chrome; light pane; use-case tile dump |
 | **Actions / Templates / Config** | Existing routes; `/actions` is reference | Same tokens so they do not look like a second app | Marketplace; filing cabinet via `/actions` |
 | **APIs / YAML / ADV** | All of [§3](#3-hard-lines) | — | Greenfield contracts “for the look” |
 
@@ -308,6 +336,7 @@ Not this brief. Do not smuggle them into a V-slice “because the screenshot had
 | **Personal badge / pin-as-product / link-count** | No pin or “personal workspace” API. Skip until Brent promotes a D. |
 | **ACME / Let’s Encrypt** | B.5/B.7 stay create / upload / skip. Settings later. |
 | **Marketplace / disabled catalog / `workflow.call`** | Enabled catalog only. `/actions` stays reference. |
+| **Neon rainbow palettes / mixed light-dark chrome** | One accent; full-dark product surfaces. |
 | **KEK / secret chrome** | Server-only. Unexpected plaintext is strip + stop. |
 | **Greenfield APIs or a second UI package** | D6. jonny only on a real gap. |
 | **n8n visual clone** | Hard line. |
