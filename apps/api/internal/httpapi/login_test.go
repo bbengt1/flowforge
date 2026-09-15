@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
+	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
@@ -215,6 +217,101 @@ func TestBootstrapPasswordThenLocalLogin(t *testing.T) {
 	}
 	if payload.Session.Embed != nil {
 		t.Fatal("bootstrap login must mint a non-embed session")
+	}
+}
+
+// Path-2: B.3 without localseed.Apply still create-or-binds local/default
+// so POST /login + GET /workspaces shows a selectable workbench.
+func TestBootstrapPath2LoginListsDefaultWorkbench(t *testing.T) {
+	boot := bootstrap.NewMemory()
+	if err := boot.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
+		t.Fatal(err)
+	}
+	store := identity.NewMemory()
+	h := NewWithDeps(Deps{
+		Bootstrap: boot,
+		Store:     store,
+		Sessions:  session.NewMemory(),
+		Security:  Security{},
+	})
+	if _, err := store.GetTenantBySlug(t.Context(), localseed.TenantSlug); !errors.Is(err, identity.ErrNotFound) {
+		t.Fatalf("path-2 must start without localseed tenant: %v", err)
+	}
+
+	secret := "correct-horse-path2"
+	create := httptest.NewRecorder()
+	h.ServeHTTP(create, firstAdminRequest(`{"issuer":"https://idp.example","external_subject":"admin-1","display_name":"Operator","password":"`+secret+`"}`))
+	if create.Code != http.StatusCreated {
+		t.Fatalf("B.3: %d %s", create.Code, create.Body.String())
+	}
+	if strings.Contains(create.Body.String(), secret) || strings.Contains(create.Body.String(), `"password"`) {
+		t.Fatal("B.3 must not echo password")
+	}
+
+	user, err := store.UpsertUser(t.Context(), "https://idp.example", "admin-1", "Operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberships, err := store.ListWorkspacesForUser(t.Context(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 || memberships[0].Tenant.Slug != localseed.TenantSlug || memberships[0].Workspace.WorkbenchKey != localseed.WorkbenchKey {
+		t.Fatalf("B.3 must create-or-bind local/default: %+v", memberships)
+	}
+	if !authz.Allows(memberships[0].Permissions, authz.PermWorkspaceAdminister) {
+		t.Fatalf("first admin must be workspace admin: %+v", memberships[0].Roles)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, loginRequest(`{"identifier":"admin-1","password":"`+secret+`"}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), secret) {
+		t.Fatal("login must not echo password")
+	}
+	assertSessionCookies(t, rec, false)
+	var payload sessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Session.Embed != nil {
+		t.Fatalf("path-2 login must omit session.embed: %+v", payload.Session.Embed)
+	}
+
+	token, csrf := sessionPair(t, rec)
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf))
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET /session: %d %s", get.Code, get.Body.String())
+	}
+	var current sessionResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Session.Embed != nil {
+		t.Fatalf("GET /session after path-2 login must be non-embed: %+v", current.Session.Embed)
+	}
+
+	listed := httptest.NewRecorder()
+	h.ServeHTTP(listed, sessionAPIRequest(http.MethodGet, "/api/v1/workspaces", "", token, csrf))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("GET /workspaces: %d %s", listed.Code, listed.Body.String())
+	}
+	var workspaces listResponse[identity.Membership]
+	if err := json.Unmarshal(listed.Body.Bytes(), &workspaces); err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces.Items) != 1 {
+		t.Fatalf("selectable workbenches: %+v", workspaces.Items)
+	}
+	item := workspaces.Items[0]
+	if item.Tenant.Slug != localseed.TenantSlug || item.Workspace.WorkbenchKey != localseed.WorkbenchKey {
+		t.Fatalf("want local/default, got tenant=%q workbench=%q", item.Tenant.Slug, item.Workspace.WorkbenchKey)
+	}
+	if !authz.Allows(item.Permissions, authz.PermWorkflowEdit) && !authz.Allows(item.Permissions, authz.PermWorkspaceAdminister) {
+		t.Fatalf("listed workbench must be usable, perms=%v", item.Permissions)
 	}
 }
 

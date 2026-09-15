@@ -187,7 +187,7 @@ export const BOOTSTRAP_STEP_HELP = {
   persistence:
     "Confirm that process PostgreSQL is reachable. Do not enter a DSN, password, or DATABASE_URL — the server already uses its environment.",
   firstAdmin:
-    "Create the first admin from an identity issuer and external subject. An optional password may be POSTed once on the API for local login (`POST /login`) and is never echoed. Wizard chrome does not collect a password. Include this issuer|subject on PLATFORM_ADMINS for platform.administer.",
+    "Create the first admin from an identity issuer and external subject. B.3 create-or-binds workspace admin on localseed `local` / `default` (created if missing) so path-2 Login has a selectable workbench. An optional password may be POSTed once on the API for local login (`POST /login`) and is never echoed. Wizard chrome does not collect a password. Include this issuer|subject on PLATFORM_ADMINS for platform.administer.",
   publicUrl:
     "Public origin only (https://host[:port]). HTTPS is preferred; HTTP is allowed for local installs. No userinfo, query, fragment, or path. The URL is never echoed on status.",
   tls:

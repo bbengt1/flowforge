@@ -265,6 +265,9 @@ func TestProvisionAdminCreatesWorkspaceAdmin(t *testing.T) {
 	if len(memberships) != 1 || memberships[0].Workspace.WorkbenchKey != WorkbenchKey {
 		t.Fatalf("memberships %+v", memberships)
 	}
+	if memberships[0].Tenant.Slug != TenantSlug {
+		t.Fatalf("tenant slug = %q, want %q", memberships[0].Tenant.Slug, TenantSlug)
+	}
 	if !authz.Allows(memberships[0].Permissions, authz.PermWorkspaceAdminister) {
 		t.Fatalf("must be workspace admin, roles=%v", memberships[0].Roles)
 	}
@@ -274,6 +277,39 @@ func TestProvisionAdminCreatesWorkspaceAdmin(t *testing.T) {
 	}
 	if again.ID != user.ID {
 		t.Fatal("second provision must reuse the user")
+	}
+	after, err := store.ListWorkspacesForUser(ctx, again.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 {
+		t.Fatalf("idempotent provision must not duplicate memberships: %d", len(after))
+	}
+}
+
+func TestProvisionAdminAfterApplyIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store := identity.NewMemory()
+	res, err := Apply(ctx, Input{
+		Store:          store,
+		PlatformAdmins: []authz.PrincipalRef{{Issuer: "https://idp.example", Subject: "admin-1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := ProvisionAdmin(ctx, store, "https://idp.example", "admin-1", "Local platform admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.ID != res.Users[0].ID {
+		t.Fatal("path-1 seed then B.3 must reuse the same user")
+	}
+	memberships, err := store.ListWorkspacesForUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 || memberships[0].Workspace.ID != res.Workspace.ID {
+		t.Fatalf("path-1 create-or-bind must reuse local/default: %+v", memberships)
 	}
 }
 

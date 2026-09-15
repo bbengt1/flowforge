@@ -254,6 +254,10 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
       source("src/lib/first-run-bootstrap.ts"),
       /optional password may be POSTed once on the API/,
     );
+    assert.match(
+      source("src/lib/first-run-bootstrap.ts"),
+      /create-or-binds workspace admin on localseed `local` \/ `default`/,
+    );
     assert.doesNotMatch(wizard, /password\?:/);
 
     const client = source("src/lib/first-run-bootstrap-client.ts");

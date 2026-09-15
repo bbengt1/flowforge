@@ -98,7 +98,9 @@ func (s *Server) postBootstrapPersistence(w http.ResponseWriter, r *http.Request
 
 // postBootstrapAdmins is wizard step 2 (B.3). It upserts the first
 // admin identity (localseed PLATFORM_ADMINS / workspace-admin pattern),
-// then sets steps.firstAdmin.ready via Store.SetStep. It never marks
+// create-or-binds workspace admin on local/default (created if missing
+// so path-2 without localseed still has a selectable workbench), then
+// sets steps.firstAdmin.ready via Store.SetStep. It never marks
 // bootstrap complete, never returns a password / hash / KEK, and stores
 // an optional password only as a bcrypt hash for POST /login.
 //
