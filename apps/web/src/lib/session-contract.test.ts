@@ -4,11 +4,14 @@ import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER,
   csrfRequiredFor,
+  LOGIN_RATE_LIMIT_RULES,
+  LOGIN_RATE_LIMITED_MESSAGE,
   sameOriginProxyUrl,
   sessionApiPath,
   sessionBrowserPath,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_PATH,
+  SESSION_LOGIN_PATH,
   SESSION_LOGOUT_PATH,
   SESSION_PATH,
   SESSION_REFRESH_PATH,
@@ -22,16 +25,29 @@ describe("session-contract", () => {
     assert.equal(sessionBrowserPath(), "/api/v1/session");
     assert.equal(sessionBrowserPath(SESSION_REFRESH_PATH), "/api/v1/session/refresh");
     assert.equal(sessionBrowserPath(SESSION_LOGOUT_PATH), "/api/v1/session/logout");
+    assert.equal(sessionBrowserPath(SESSION_LOGIN_PATH), "/api/v1/login");
     assert.equal(SESSION_PATH, "/session");
+    assert.equal(SESSION_LOGIN_PATH, "/login");
     assert.equal(CSRF_HEADER, "X-CSRF-Token");
     assert.equal(SESSION_COOKIE_NAME, "ff_session");
     assert.equal(CSRF_COOKIE_NAME, "ff_csrf");
     assert.equal(SESSION_COOKIE_PATH, "/api/v1");
   });
 
+  it("treats POST /login 429 as backoff, not invalid credentials", () => {
+    assert.equal(LOGIN_RATE_LIMIT_RULES.loginRateLimited, true);
+    assert.equal(LOGIN_RATE_LIMIT_RULES.status, 429);
+    assert.equal(LOGIN_RATE_LIMIT_RULES.code, "rate-limited");
+    assert.equal(LOGIN_RATE_LIMIT_RULES.treatAsBackoff, true);
+    assert.match(LOGIN_RATE_LIMITED_MESSAGE, /429/);
+    assert.match(LOGIN_RATE_LIMITED_MESSAGE, /invalid credentials/i);
+  });
+
   it("requires CSRF on mutations except bootstrap POST /session", () => {
     assert.equal(csrfRequiredFor("GET", "/api/v1/session"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/session"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/login"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/control-plane/login"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/exchange"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/assertions"), true);
     assert.equal(csrfRequiredFor("POST", "/api/v1/portal/adapter/assertions"), true);

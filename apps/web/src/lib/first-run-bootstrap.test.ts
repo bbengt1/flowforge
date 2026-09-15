@@ -252,7 +252,7 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.match(wizard, /BOOTSTRAP_STEP_HELP.firstAdmin/);
     assert.match(
       source("src/lib/first-run-bootstrap.ts"),
-      /Local login has not landed/,
+      /optional password may be POSTed once on the API/,
     );
     assert.doesNotMatch(wizard, /password\?:/);
 
@@ -300,7 +300,7 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
       /Persistence must be ready/,
     );
     assert.match(bootstrapProblemMessage(403), /standalone only/);
-    assert.match(bootstrapProblemMessage(400), /passwords are not accepted/);
+    assert.match(bootstrapProblemMessage(400), /credentials are never echoed/);
     assert.match(bootstrapProblemMessage(503), /PostgreSQL/);
     assert.equal(
       mutationConflictIsComplete(409, {

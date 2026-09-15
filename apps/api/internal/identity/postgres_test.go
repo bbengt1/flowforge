@@ -227,6 +227,67 @@ func containsString(in []string, want string) bool {
 	return false
 }
 
+func TestMemoryLocalLoginRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	user, err := store.UpsertUser(ctx, "https://idp.example", "admin@example.com", "Operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(ctx, user.ID, "admin@example.com", "$2a$10$not-a-real-hash-but-stored"); err != nil {
+		t.Fatal(err)
+	}
+	got, hash, err := store.LookupLocalLogin(ctx, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != user.ID || hash == "" {
+		t.Fatalf("lookup: %+v hash=%q", got, hash)
+	}
+	other, err := store.UpsertUser(ctx, "https://idp.example", "other", "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(ctx, other.ID, "admin@example.com", "other-hash"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate identifier = %v", err)
+	}
+}
+
+func TestPostgresLocalLoginRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	pool, err := postgres.Open(ctx, testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	store := NewPostgres(pool)
+	suffix := newID()[:8]
+	user, err := store.UpsertUser(ctx, "https://idp.example", "login-"+suffix, "Login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := "user-" + suffix
+	if err := store.SetLocalPassword(ctx, user.ID, ident, "$2a$10$stored-hash-only"); err != nil {
+		t.Fatal(err)
+	}
+	got, hash, err := store.LookupLocalLogin(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != user.ID || hash != "$2a$10$stored-hash-only" {
+		t.Fatalf("lookup: %+v hash=%q", got, hash)
+	}
+	other, err := store.UpsertUser(ctx, "https://idp.example", "other-"+suffix, "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(ctx, other.ID, ident, "other-hash"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate identifier = %v", err)
+	}
+}
+
 func TestMemoryUniqueTenantWorkbench(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()

@@ -67,6 +67,50 @@ func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 	return u, nil
 }
 
+func (p *Postgres) SetLocalPassword(ctx context.Context, userID, identifier, passwordHash string) error {
+	userID = strings.TrimSpace(userID)
+	identifier = strings.TrimSpace(identifier)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || identifier == "" || passwordHash == "" {
+		return ErrInvalid
+	}
+	_, err := p.db.Exec(ctx, `
+		INSERT INTO local_logins (user_id, identifier, password_hash)
+		VALUES ($1::uuid, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE
+		    SET identifier = EXCLUDED.identifier,
+		        password_hash = EXCLUDED.password_hash,
+		        updated_at = now()
+	`, userID, identifier, passwordHash)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	return nil
+}
+
+func (p *Postgres) LookupLocalLogin(ctx context.Context, identifier string) (User, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return User{}, "", ErrNotFound
+	}
+	var u User
+	var hash string
+	err := p.db.QueryRow(ctx, `
+		SELECT u.id::text, u.issuer, u.external_subject, u.display_name, u.status,
+		       u.created_at, u.updated_at, l.password_hash
+		FROM local_logins l
+		JOIN users u ON u.id = l.user_id
+		WHERE lower(l.identifier) = $1
+	`, identifier).Scan(
+		&u.ID, &u.Issuer, &u.ExternalSubject, &u.DisplayName, &u.Status,
+		&u.CreatedAt, &u.UpdatedAt, &hash,
+	)
+	if err != nil {
+		return User{}, "", mapDBErr(err)
+	}
+	return u, hash, nil
+}
+
 func (p *Postgres) CreateTenant(ctx context.Context, slug, name string) (Tenant, error) {
 	slug = strings.TrimSpace(slug)
 	name = strings.TrimSpace(name)

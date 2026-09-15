@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 const problemTypePrefix = "urn:flowforge:problem:"
@@ -92,6 +93,18 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, titl
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+}
+
+// writeRateLimited writes 429 rate-limited with Retry-After. Detail must
+// not include secrets. retry < 1s is raised to 1 so clients always get
+// a usable backoff.
+func writeRateLimited(w http.ResponseWriter, r *http.Request, retry time.Duration, detail string) {
+	secs := int(retry.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	WriteProblem(w, r, http.StatusTooManyRequests, CodeRateLimited, "Rate Limited", detail)
 }
 
 // WriteUnauthenticated writes the documented 401 problem for missing or invalid credentials.

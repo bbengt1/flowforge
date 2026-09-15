@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
+	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
@@ -97,8 +99,8 @@ func (s *Server) postBootstrapPersistence(w http.ResponseWriter, r *http.Request
 // postBootstrapAdmins is wizard step 2 (B.3). It upserts the first
 // admin identity (localseed PLATFORM_ADMINS / workspace-admin pattern),
 // then sets steps.firstAdmin.ready via Store.SetStep. It never marks
-// bootstrap complete, never returns a password / hash / KEK, and never
-// stores a password (local login has not landed).
+// bootstrap complete, never returns a password / hash / KEK, and stores
+// an optional password only as a bcrypt hash for POST /login.
 //
 // Auth matches incomplete-install GET /bootstrap and B.2: no session is
 // required while the gate is incomplete. After complete, this wizard
@@ -127,13 +129,20 @@ func (s *Server) postBootstrapAdmins(w http.ResponseWriter, r *http.Request) {
 	if !s.requireStore(w, r) {
 		return
 	}
-	issuer, subject, display, ok := decodeFirstAdmin(w, r)
+	issuer, subject, display, password, ok := decodeFirstAdmin(w, r)
 	if !ok {
 		return
 	}
-	if _, err := localseed.ProvisionAdmin(r.Context(), s.store, issuer, subject, display); err != nil {
+	user, err := localseed.ProvisionAdmin(r.Context(), s.store, issuer, subject, display)
+	if err != nil {
 		writeIdentityError(w, r, err)
 		return
+	}
+	if password != "" {
+		if err := s.storeLocalPassword(r.Context(), user.ID, subject, password); err != nil {
+			writeLocalPasswordError(w, r, err)
+			return
+		}
 	}
 	if err := s.bootstrap.SetStep(r.Context(), bootstrap.StepFirstAdmin, true); err != nil {
 		writeBootstrapError(w, r, err)
@@ -361,18 +370,18 @@ func persistenceBodyForbidden(key string) bool {
 	}
 }
 
-func decodeFirstAdmin(w http.ResponseWriter, r *http.Request) (issuer, subject, display string, ok bool) {
+func decodeFirstAdmin(w http.ResponseWriter, r *http.Request) (issuer, subject, display, password string, ok bool) {
 	var raw map[string]any
 	if !DecodeJSON(w, r, &raw) {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	var password any
+	var passwordVal any
 	hasPassword := false
 	for key, value := range raw {
 		norm := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
 		if firstAdminBodyForbidden(norm) {
-			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, and optional display_name. Credentials are not accepted.")
-			return "", "", "", false
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, optional display_name, and optional password.")
+			return "", "", "", "", false
 		}
 		switch norm {
 		case "issuer":
@@ -382,32 +391,52 @@ func decodeFirstAdmin(w http.ResponseWriter, r *http.Request) (issuer, subject, 
 		case "display_name":
 			display, _ = value.(string)
 		case "password":
-			password = value
+			passwordVal = value
 			hasPassword = true
 		default:
-			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, and optional display_name.")
-			return "", "", "", false
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "First admin accepts issuer, external_subject, optional display_name, and optional password.")
+			return "", "", "", "", false
 		}
 	}
-	if hasPassword && password != nil {
-		s, isStr := password.(string)
-		if !isStr || strings.TrimSpace(s) != "" {
-			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Local login is not available. Credentials are not stored.")
-			return "", "", "", false
+	if hasPassword && passwordVal != nil {
+		s, isStr := passwordVal.(string)
+		if !isStr {
+			WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "password must be a string.")
+			return "", "", "", "", false
 		}
+		password = s
 	}
 	issuer = strings.TrimSpace(issuer)
 	subject = strings.TrimSpace(subject)
 	display = strings.TrimSpace(display)
 	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "issuer and external_subject are required.")
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	if len(display) > 200 {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "display_name is too long.")
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	return issuer, subject, display, true
+	if strings.TrimSpace(password) == "" {
+		return issuer, subject, display, "", true
+	}
+	if err := localauth.ValidatePassword(password); err != nil {
+		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Password does not meet the required length.")
+		return "", "", "", "", false
+	}
+	return issuer, subject, display, password, true
+}
+
+func (s *Server) storeLocalPassword(ctx context.Context, userID, rawIdentifier, password string) error {
+	identifier, err := localauth.NormalizeIdentifier(rawIdentifier)
+	if err != nil {
+		return err
+	}
+	hash, err := localauth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	return s.store.SetLocalPassword(ctx, userID, identifier, hash)
 }
 
 func firstAdminBodyForbidden(key string) bool {

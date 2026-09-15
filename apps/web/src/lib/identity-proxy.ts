@@ -146,6 +146,7 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "admins"]) },
   { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "public-url"]) },
   { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "tls"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["login"]) },
   { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },

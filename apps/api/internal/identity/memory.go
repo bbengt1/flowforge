@@ -13,21 +13,31 @@ import (
 )
 
 // Memory is an in-process Store used by HTTP unit tests.
+type localLogin struct {
+	userID       string
+	identifier   string
+	passwordHash string
+}
+
 type Memory struct {
-	mu         sync.Mutex
-	tenants    map[string]Tenant
-	workspaces map[string]Workspace
-	users      map[string]User
-	bindings   map[string][]string // workspaceID + "\x00" + userID -> role keys
+	mu          sync.Mutex
+	tenants     map[string]Tenant
+	workspaces  map[string]Workspace
+	users       map[string]User
+	bindings    map[string][]string // workspaceID + "\x00" + userID -> role keys
+	localLogins map[string]localLogin
+	localByID   map[string]string // normalized identifier -> userID
 }
 
 // NewMemory returns a store seeded with the in-process permission catalog.
 func NewMemory() *Memory {
 	return &Memory{
-		tenants:    map[string]Tenant{},
-		workspaces: map[string]Workspace{},
-		users:      map[string]User{},
-		bindings:   map[string][]string{},
+		tenants:     map[string]Tenant{},
+		workspaces:  map[string]Workspace{},
+		users:       map[string]User{},
+		bindings:    map[string][]string{},
+		localLogins: map[string]localLogin{},
+		localByID:   map[string]string{},
 	}
 }
 
@@ -90,6 +100,48 @@ func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 		return User{}, ErrNotFound
 	}
 	return u, nil
+}
+
+func (m *Memory) SetLocalPassword(_ context.Context, userID, identifier, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	userID = strings.TrimSpace(userID)
+	identifier = strings.TrimSpace(identifier)
+	passwordHash = strings.TrimSpace(passwordHash)
+	if userID == "" || identifier == "" || passwordHash == "" {
+		return ErrInvalid
+	}
+	if _, ok := m.users[userID]; !ok {
+		return ErrNotFound
+	}
+	if existing, ok := m.localByID[identifier]; ok && existing != userID {
+		return ErrConflict
+	}
+	if prev, ok := m.localLogins[userID]; ok && prev.identifier != identifier {
+		delete(m.localByID, prev.identifier)
+	}
+	m.localLogins[userID] = localLogin{userID: userID, identifier: identifier, passwordHash: passwordHash}
+	m.localByID[identifier] = userID
+	return nil
+}
+
+func (m *Memory) LookupLocalLogin(_ context.Context, identifier string) (User, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	identifier = strings.TrimSpace(identifier)
+	userID, ok := m.localByID[identifier]
+	if !ok {
+		return User{}, "", ErrNotFound
+	}
+	login, ok := m.localLogins[userID]
+	if !ok {
+		return User{}, "", ErrNotFound
+	}
+	u, ok := m.users[userID]
+	if !ok {
+		return User{}, "", ErrNotFound
+	}
+	return u, login.passwordHash, nil
 }
 
 func (m *Memory) CreateTenant(_ context.Context, slug, name string) (Tenant, error) {
