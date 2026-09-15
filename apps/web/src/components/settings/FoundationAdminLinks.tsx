@@ -13,6 +13,12 @@ import {
   SETTINGS_ADMIN_LINKS_HELP,
   settingsMayLinkMembershipIsolation,
 } from "@/lib/membership-isolation-chrome";
+import {
+  FF_SETTINGS_LINK_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 export function FoundationAdminLinks() {
   const embed = useEmbedMode();
@@ -32,29 +38,29 @@ export function FoundationAdminLinks() {
   const auditHref = embed ? embedDeepLink("/audit") : "/audit";
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold">Workspace administration</h2>
-      <p className="mt-1 text-sm text-zinc-600">{SETTINGS_ADMIN_LINKS_HELP}</p>
+    <section className={FF_SETTINGS_PANEL_CLASS}>
+      <h2 className={`text-base ${FF_SETTINGS_TITLE_CLASS}`}>Workspace administration</h2>
+      <p className={`mt-1 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>{SETTINGS_ADMIN_LINKS_HELP}</p>
       <ul className="mt-3 space-y-2 text-sm">
         {showAdmin ? (
           <>
             <li>
-              <Link href={membershipHref} className="text-teal-800 underline">
+              <Link href={membershipHref} className={FF_SETTINGS_LINK_CLASS}>
                 Workspace members
               </Link>
-              <span className="text-zinc-600"> — {MEMBERSHIP_ADMIN_HELP}</span>
+              <span className={FF_SETTINGS_MUTED_CLASS}> — {MEMBERSHIP_ADMIN_HELP}</span>
             </li>
             <li>
-              <Link href={isolationHref} className="text-teal-800 underline">
+              <Link href={isolationHref} className={FF_SETTINGS_LINK_CLASS}>
                 Isolation check
               </Link>
-              <span className="text-zinc-600"> — {ISOLATION_CHECK_HELP}</span>
+              <span className={FF_SETTINGS_MUTED_CLASS}> — {ISOLATION_CHECK_HELP}</span>
             </li>
           </>
         ) : null}
         {showAudit ? (
           <li>
-            <Link href={auditHref} className="text-teal-800 underline">
+            <Link href={auditHref} className={FF_SETTINGS_LINK_CLASS}>
               Workspace audit
             </Link>
           </li>

@@ -12,6 +12,13 @@ import {
   getPublicSwaggerUrl,
 } from "@/lib/config";
 import { checkApiHealth, checkApiReadiness } from "@/lib/health";
+import {
+  FF_SETTINGS_EYEBROW_CLASS,
+  FF_SETTINGS_HELP_CLASS,
+  FF_SETTINGS_ROOT_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+  FF_SETTINGS_VALUE,
+} from "@/lib/settings-wizard-visual";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +29,16 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
+    <main
+      data-ff-settings={FF_SETTINGS_VALUE}
+      className={`${FF_SETTINGS_ROOT_CLASS} mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12`}
+    >
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          E6.1 · Settings
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="max-w-3xl text-base leading-7 text-zinc-600">
+        <p className={FF_SETTINGS_EYEBROW_CLASS}>E6.1 · Settings</p>
+        <h1 className={`text-3xl tracking-tight ${FF_SETTINGS_TITLE_CLASS}`}>
+          Settings
+        </h1>
+        <p className={FF_SETTINGS_HELP_CLASS}>
           Session, workspace context, instance setup (URL / TLS / users /
           persistence), control-plane health, and OpenAPI. Cookie
           session + CSRF are unchanged. Members and isolation stay

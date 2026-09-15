@@ -7,6 +7,10 @@ import {
   sessionExpiryBannerState,
 } from "@/lib/session";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
+import {
+  FF_SETTINGS_LINK_CLASS,
+  FF_SETTINGS_SKIP_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 export function SessionExpiryBanner() {
   const snapshot = useSyncExternalStore(
@@ -33,13 +37,13 @@ export function SessionExpiryBanner() {
     return (
       <div
         role={banner.role}
-        className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        className={`${FF_SETTINGS_SKIP_CLASS} px-4 py-3 text-sm`}
       >
         <p className="font-medium">{banner.title}</p>
         <p className="mt-1">
           The control plane returned{" "}
           <code className="font-mono text-xs">401 unauthenticated</code>.{" "}
-          <a className="underline" href="#session">
+          <a className={FF_SETTINGS_LINK_CLASS} href="#session">
             Re-establish a cookie session
           </a>
           . Header identity is not used while a stale session is latched.
@@ -52,14 +56,14 @@ export function SessionExpiryBanner() {
   return (
     <div
       role={banner.role}
-      className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+      className={`${FF_SETTINGS_SKIP_CLASS} px-4 py-3 text-sm`}
     >
       <p className="font-medium">{banner.title}</p>
       <p className="mt-1">
         {formatSessionCountdown(expiresAt, now)} (idle{" "}
         {snapshot.session.idleExpiresAt || "—"}, absolute{" "}
         {snapshot.session.absoluteExpiresAt || "—"}).{" "}
-        <a className="underline" href="#session">
+        <a className={FF_SETTINGS_LINK_CLASS} href="#session">
           Open session controls
         </a>
       </p>

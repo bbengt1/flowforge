@@ -25,6 +25,17 @@ import {
   LOCAL_SEED_ISSUER,
   LOCAL_SEED_SUBJECT,
 } from "@/lib/local-seed-example";
+import {
+  FF_SETTINGS_CONTROL_CLASS,
+  FF_SETTINGS_EYEBROW_CLASS,
+  FF_SETTINGS_GHOST_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_NESTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_PRIMARY_CLASS,
+  FF_SETTINGS_SKIP_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 const EXAMPLE_LOGIN = {
   issuer: LOCAL_SEED_ISSUER,
@@ -124,17 +135,17 @@ export function SessionPanel() {
     <section
       id="session"
       aria-labelledby="session-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className={FF_SETTINGS_PANEL_CLASS}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+          <p className={FF_SETTINGS_EYEBROW_CLASS}>
             Browser session · E2.3
           </p>
-          <h2 id="session-heading" className="mt-1 text-lg font-semibold">
+          <h2 id="session-heading" className={`mt-1 text-lg ${FF_SETTINGS_TITLE_CLASS}`}>
             Cookie session
           </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-600">
+          <p className={`mt-1 max-w-2xl text-sm leading-6 ${FF_SETTINGS_MUTED_CLASS}`}>
             Calls jonny&apos;s{" "}
             <code className="font-mono text-xs">/api/v1/session</code> through
             the same-origin proxy with{" "}
@@ -155,7 +166,7 @@ export function SessionPanel() {
               type="button"
               onClick={() => void extendIdle()}
               disabled={pending !== null}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              className={FF_SETTINGS_GHOST_CLASS}
             >
               {pending === "refresh" ? "Refreshing…" : "Refresh idle"}
             </button>
@@ -163,7 +174,7 @@ export function SessionPanel() {
               type="button"
               onClick={() => void logout()}
               disabled={pending !== null}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className={FF_SETTINGS_GHOST_CLASS}
             >
               {pending === "logout" ? "Signing out…" : "Log out"}
             </button>
@@ -174,7 +185,7 @@ export function SessionPanel() {
       {snapshot.stale ? (
         <div
           role="status"
-          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          className={`${FF_SETTINGS_SKIP_CLASS} mt-4 px-4 py-3 text-sm`}
         >
           <p className="font-medium">Session expired or is no longer valid</p>
           <p className="mt-1">
@@ -187,34 +198,34 @@ export function SessionPanel() {
       {snapshot.active ? (
         <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-zinc-500">Subject</dt>
+            <dt className={FF_SETTINGS_MUTED_CLASS}>Subject</dt>
             <dd className="font-mono text-sm">{snapshot.session.subject}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Issuer</dt>
-            <dd className="font-mono text-xs break-all text-zinc-700">
+            <dt className={FF_SETTINGS_MUTED_CLASS}>Issuer</dt>
+            <dd className={`font-mono text-xs break-all ${FF_SETTINGS_MUTED_CLASS}`}>
               {snapshot.session.issuer || "—"}
             </dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Display name</dt>
+            <dt className={FF_SETTINGS_MUTED_CLASS}>Display name</dt>
             <dd>{snapshot.session.displayName || "—"}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Idle expiry (30m default)</dt>
+            <dt className={FF_SETTINGS_MUTED_CLASS}>Idle expiry (30m default)</dt>
             <dd
               className={
                 expiry === "expired" || expiry === "warning"
-                  ? "font-medium text-amber-800"
+                  ? `font-medium ${FF_SETTINGS_SKIP_CLASS} inline-block px-1.5 py-0.5 text-xs`
                   : "font-medium"
               }
             >
               {countdown}
             </dd>
-            <dd className="font-mono text-xs text-zinc-500">
+            <dd className={`font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
               idle {snapshot.session.idleExpiresAt || "—"}
             </dd>
-            <dd className="font-mono text-xs text-zinc-500">
+            <dd className={`font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
               absolute {snapshot.session.absoluteExpiresAt || "—"}
             </dd>
           </div>
@@ -234,7 +245,7 @@ export function SessionPanel() {
               onChange={(event) => setIssuer(event.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className={`mt-1 font-mono text-sm ${FF_SETTINGS_CONTROL_CLASS}`}
             />
           </label>
           <label className="text-sm">
@@ -244,7 +255,7 @@ export function SessionPanel() {
               onChange={(event) => setSubject(event.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className={`mt-1 font-mono text-sm ${FF_SETTINGS_CONTROL_CLASS}`}
             />
           </label>
           <label className="text-sm sm:col-span-2">
@@ -253,14 +264,14 @@ export function SessionPanel() {
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               autoComplete="off"
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className={`mt-1 text-sm ${FF_SETTINGS_CONTROL_CLASS}`}
             />
           </label>
           <div>
             <button
               type="submit"
               disabled={pending !== null || !issuer.trim() || !subject.trim()}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              className={FF_SETTINGS_PRIMARY_CLASS}
             >
               {pending === "login" ? "Establishing…" : "Establish session"}
             </button>
@@ -270,9 +281,9 @@ export function SessionPanel() {
 
       {snapshot.active ? (
         <div className="mt-5 space-y-4">
-          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-3">
-            <p className="text-sm font-medium">Fail-closed CSRF exercise</p>
-            <p className="mt-1 text-sm text-zinc-600">
+          <div className={`${FF_SETTINGS_NESTED_CLASS} border-dashed px-4 py-3`}>
+            <p className={`text-sm font-medium ${FF_SETTINGS_TITLE_CLASS}`}>Fail-closed CSRF exercise</p>
+            <p className={`mt-1 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
               Sends a state-changing request without{" "}
               <code className="font-mono text-xs">X-CSRF-Token</code> while{" "}
               <code className="font-mono text-xs">ff_session</code> is present.
@@ -282,39 +293,39 @@ export function SessionPanel() {
               type="button"
               onClick={() => void exerciseMissingCsrf()}
               disabled={pending !== null}
-              className="mt-3 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+              className={`mt-3 ${FF_SETTINGS_GHOST_CLASS}`}
             >
               {pending === "csrf" ? "Sending…" : "Send mutation without CSRF"}
             </button>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 px-4 py-3">
+          <div className={`${FF_SETTINGS_NESTED_CLASS} px-4 py-3`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium">Session audit</p>
+              <p className={`text-sm font-medium ${FF_SETTINGS_TITLE_CLASS}`}>Session audit</p>
               <button
                 type="button"
                 onClick={() => void loadAudit()}
                 disabled={pending !== null}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                className={FF_SETTINGS_GHOST_CLASS}
               >
                 {pending === "audit" ? "Loading…" : "Load audit events"}
               </button>
             </div>
-            <p className="mt-1 text-sm text-zinc-600">
+            <p className={`mt-1 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
               <code className="font-mono text-xs">GET /api/v1/session/audit-events</code>
               . Secret-free rows only.
             </p>
             {audit.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-600">No audit events loaded.</p>
+              <p className={`mt-3 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>No audit events loaded.</p>
             ) : (
-              <ul className="mt-3 divide-y divide-zinc-100 text-sm">
+              <ul className="mt-3 divide-y divide-white/10 text-sm">
                 {audit.map((item) => (
                   <li key={item.id || `${item.event_type}-${item.created_at}`} className="py-2">
                     <p className="font-medium">
                       {item.event_type} · {item.outcome}
                     </p>
-                    <p className="text-zinc-600">{item.reason}</p>
-                    <p className="font-mono text-xs text-zinc-500">
+                    <p className={FF_SETTINGS_MUTED_CLASS}>{item.reason}</p>
+                    <p className={`font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
                       {item.created_at}
                       {item.request_id ? ` · ${item.request_id}` : ""}
                     </p>
@@ -330,7 +341,7 @@ export function SessionPanel() {
         <div className="mt-4">
           <ProblemBanner problem={problem} />
           {isCsrfProblem(problem) ? (
-            <p className="mt-2 text-sm text-zinc-600">
+            <p className={`mt-2 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
               CSRF fail-closed: the mutation was rejected and not applied.
             </p>
           ) : null}

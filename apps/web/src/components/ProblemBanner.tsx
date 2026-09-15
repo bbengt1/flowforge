@@ -1,5 +1,6 @@
 import { problemBannerHeading, safeProblemDetail, type ProblemDetails } from "@/lib/problem";
 import { isCsrfProblem, isStaleSessionProblem } from "@/lib/session";
+import { FF_SETTINGS_LINK_CLASS, FF_SETTINGS_SKIP_CLASS } from "@/lib/settings-wizard-visual";
 
 type ProblemBannerProps = {
   problem: ProblemDetails;
@@ -12,7 +13,7 @@ export function ProblemBanner({ problem, className }: ProblemBannerProps) {
       role="alert"
       className={
         className ??
-        "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        `${FF_SETTINGS_SKIP_CLASS} px-4 py-3 text-sm`
       }
     >
       <p className="font-medium">{problemBannerHeading(problem)}</p>
@@ -20,7 +21,7 @@ export function ProblemBanner({ problem, className }: ProblemBannerProps) {
       {isStaleSessionProblem(problem) ? (
         <p className="mt-2">
           Stale or missing session.{" "}
-          <a className="underline" href="#session">
+          <a className={FF_SETTINGS_LINK_CLASS} href="#session">
             Re-establish the cookie session
           </a>
           .
@@ -31,13 +32,13 @@ export function ProblemBanner({ problem, className }: ProblemBannerProps) {
           CSRF fail-closed. The state-changing request was rejected.
         </p>
       ) : null}
-      <dl className="mt-3 grid gap-1 font-mono text-xs text-amber-900/80 sm:grid-cols-2">
+      <dl className="mt-3 grid gap-1 font-mono text-xs sm:grid-cols-2">
         <div>
-          <dt className="inline text-amber-800/70">code </dt>
+          <dt className="inline opacity-70">code </dt>
           <dd className="inline">{problem.code}</dd>
         </div>
         <div>
-          <dt className="inline text-amber-800/70">request_id </dt>
+          <dt className="inline opacity-70">request_id </dt>
           <dd className="inline break-all">{problem.request_id}</dd>
         </div>
       </dl>

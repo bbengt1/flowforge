@@ -20,6 +20,13 @@ import {
   type BootstrapStatus,
 } from "@/lib/first-run-bootstrap";
 import type { ProblemDetails } from "@/lib/problem";
+import {
+  FF_SETTINGS_LINK_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_SKIP_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 export function BootstrapSettings() {
   const embed = useEmbedMode();
@@ -54,17 +61,17 @@ export function BootstrapSettings() {
     <section
       id="bootstrap"
       aria-labelledby="settings-bootstrap-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={FF_SETTINGS_PANEL_CLASS}
     >
-      <h2 id="settings-bootstrap-heading" className="text-base font-semibold">
+      <h2 id="settings-bootstrap-heading" className={`text-base ${FF_SETTINGS_TITLE_CLASS}`}>
         Instance setup
       </h2>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
+      <p className={`mt-2 max-w-3xl text-sm leading-6 ${FF_SETTINGS_MUTED_CLASS}`}>
         After first-run setup completes, URL, TLS, users, and persistence
         edits stay here. The wizard does not remount.
       </p>
       {pending ? (
-        <p role="status" className="mt-3 text-sm text-zinc-600">
+        <p role="status" className={`mt-3 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
           Loading instance setup…
         </p>
       ) : null}
@@ -74,7 +81,7 @@ export function BootstrapSettings() {
         </div>
       ) : null}
       {problem?.status === 401 ? (
-        <p className="mt-3 text-sm text-zinc-600">
+        <p className={`mt-3 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
           Sign in to see instance setup status. The first-run wizard does
           not come back after complete.
         </p>
@@ -85,10 +92,10 @@ export function BootstrapSettings() {
         <p
           role="status"
           data-bootstrap-tls-skipped=""
-          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950"
+          className={`${FF_SETTINGS_SKIP_CLASS} mt-4 px-4 py-3 text-sm leading-6`}
         >
           {BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER}{" "}
-          <Link href={SETTINGS_TLS_HREF} className="font-medium text-teal-900 underline">
+          <Link href={SETTINGS_TLS_HREF} className={`font-medium underline ${FF_SETTINGS_LINK_CLASS}`}>
             Enable TLS later
           </Link>
           .
@@ -97,23 +104,23 @@ export function BootstrapSettings() {
       {status && settingsHandoffAfterComplete(status) ? (
         <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
           <div id="persistence">
-            <dt className="font-medium text-zinc-900">Persistence</dt>
-            <dd className="mt-1 text-zinc-600">
+            <dt className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>Persistence</dt>
+            <dd className={`mt-1 ${FF_SETTINGS_MUTED_CLASS}`}>
               {status.steps.persistence.ready
                 ? "PostgreSQL is ready. Process DATABASE_URL is not shown and is not edited as a DSN here."
                 : "Not marked ready."}
             </dd>
           </div>
           <div>
-            <dt className="font-medium text-zinc-900">Users</dt>
-            <dd className="mt-1 text-zinc-600">
+            <dt className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>Users</dt>
+            <dd className={`mt-1 ${FF_SETTINGS_MUTED_CLASS}`}>
               {status.steps.firstAdmin.ready
                 ? "First admin is ready. Edit members from "
                 : "First admin is not marked ready. "}
               {status.steps.firstAdmin.ready ? (
                 <Link
                   href={SETTINGS_USERS_HANDOFF_HREF}
-                  className="text-teal-800 underline"
+                  className={FF_SETTINGS_LINK_CLASS}
                 >
                   Workspace members
                 </Link>
@@ -122,8 +129,8 @@ export function BootstrapSettings() {
             </dd>
           </div>
           <div id="public-url">
-            <dt className="font-medium text-zinc-900">Public URL</dt>
-            <dd className="mt-1 text-zinc-600">
+            <dt className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>Public URL</dt>
+            <dd className={`mt-1 ${FF_SETTINGS_MUTED_CLASS}`}>
               {status.steps.publicUrl.ready
                 ? "A public origin is configured. The URL is not echoed here."
                 : "Public URL is not marked ready."}
@@ -133,12 +140,12 @@ export function BootstrapSettings() {
             id="tls"
             data-bootstrap-tls-mode={status.steps.tls.mode ?? "none"}
           >
-            <dt className="font-medium text-zinc-900">TLS</dt>
+            <dt className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>TLS</dt>
             <dd
               className={
                 tlsStepIsSkipped(status.steps.tls)
-                  ? "mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950"
-                  : "mt-1 text-zinc-600"
+                  ? `${FF_SETTINGS_SKIP_CLASS} mt-1 px-3 py-2`
+                  : `mt-1 ${FF_SETTINGS_MUTED_CLASS}`
               }
             >
               {tlsSettingsDescription(status.steps.tls)}
@@ -146,21 +153,21 @@ export function BootstrapSettings() {
           </div>
         </dl>
       ) : null}
-      <p className="mt-3 text-xs text-zinc-500">
+      <p className={`mt-3 text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
         Permalinks:{" "}
-        <Link href={SETTINGS_BOOTSTRAP_HREF} className="font-mono underline">
+        <Link href={SETTINGS_BOOTSTRAP_HREF} className={`font-mono ${FF_SETTINGS_LINK_CLASS}`}>
           {SETTINGS_BOOTSTRAP_HREF}
         </Link>
         ,{" "}
-        <Link href={SETTINGS_PERSISTENCE_HREF} className="font-mono underline">
+        <Link href={SETTINGS_PERSISTENCE_HREF} className={`font-mono ${FF_SETTINGS_LINK_CLASS}`}>
           {SETTINGS_PERSISTENCE_HREF}
         </Link>
         ,{" "}
-        <Link href={SETTINGS_PUBLIC_URL_HREF} className="font-mono underline">
+        <Link href={SETTINGS_PUBLIC_URL_HREF} className={`font-mono ${FF_SETTINGS_LINK_CLASS}`}>
           {SETTINGS_PUBLIC_URL_HREF}
         </Link>
         ,{" "}
-        <Link href={SETTINGS_TLS_HREF} className="font-mono underline">
+        <Link href={SETTINGS_TLS_HREF} className={`font-mono ${FF_SETTINGS_LINK_CLASS}`}>
           {SETTINGS_TLS_HREF}
         </Link>
       </p>
