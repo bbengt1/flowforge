@@ -7,6 +7,7 @@
 - [FlowForge UX Laws](architecture/flowforge-ux-laws.md): post-R1–R7 chrome polish using [Laws of UX](https://lawsofux.com/) — selective Must / Should / already-covered / out-of-scope. Docs-only; Arie opens the epic. Not a security/product-model redesign.
 - [Workflows home folder hierarchy](architecture/flowforge-workflow-folders.md): Nested, server-backed folders on `/workflows` (per workspace). F.1 API landed; chrome is F.2+. Not tags-first; not client-only persistence.
 - [First-run bootstrap gate](architecture/flowforge-first-run-bootstrap.md): B.1 `GET /api/v1/bootstrap` + B.2–B.5 / B.7 wizard APIs (`persistence`, `admins`, `public-url`, `tls` create/upload/skip + `MarkComplete`). B.6 chrome landed; B.7 Skip for now chrome landed — **keep #347 open**. Standalone wizard only — never `/embed/v1`.
+- [Visual + IA north star](architecture/flowforge-visual-ia-north-star.md): Brent visual-vision brief — dark-first charcoal, Overview card lean, shadcn-friendly chrome later. Docs-only until Brent yes; not an n8n clone; APIs and hard lines stay.
 - [Rewrite UI surfaces](reference/rewrite-ui-surfaces.md): Chloe’s expanded surface map, operator migration notes, and keep/replace/retire (UI). Charter §11.1 is the fold-in authority.
 - [Master implementation plan](master-implementation-plan.md): agile epic and story backlog for the shipped MVP (E1–E12).
 - [MVP workflow model](reference/workflow-model.md): resources, node types, and acceptance criteria.
