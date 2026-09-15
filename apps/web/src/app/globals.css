@@ -460,6 +460,48 @@ body {
 }
 
 /*
+ * X.4 empty / Unfiled teaching — consume V.1 tokens. Relates to
+ * #383 / Part of #379. Keep #383 open. Keep #379 open. Empty
+ * folder teaches create/move; Unfiled stays virtual. Drafts do
+ * not run stays loud. No n8n orange. Not a second theme.
+ */
+.ff-explorer-empty {
+  padding: var(--ff-space-4) var(--ff-space-3);
+  min-height: 12rem;
+}
+
+.ff-explorer-empty .ff-overview-card {
+  background: var(--ff-canvas);
+  border-color: var(--ff-border);
+  box-shadow: none;
+}
+
+.ff-explorer-empty-folder {
+  border-left: 3px solid var(--ff-accent);
+}
+
+.ff-explorer-empty-unfiled {
+  border-left: 3px solid var(--ff-muted);
+}
+
+.ff-explorer-virtual-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--ff-space-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+  background: color-mix(in srgb, var(--ff-muted) 16%, var(--ff-canvas));
+  color: var(--ff-muted);
+  font-size: var(--ff-type-caption);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ff-explorer-drafts-banner {
+  border-radius: var(--ff-radius-sm);
+}
+
+/*
  * V.4 Editor chrome — consume V.1 tokens. Relates to #360 / Part of #353.
  * Keep #360 open. Dark canvas + satellites. One teal accent ring.
  * No n8n orange. Not a branded NDV clone. Not a second theme tree.

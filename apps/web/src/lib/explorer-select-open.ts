@@ -16,7 +16,8 @@
  * (teal accent / charcoal) mark the selected row.
  *
  * Shared `WorkflowHome` stays so embed does not fork. Full embed
- * parity is X.5. Empty teaching polish is X.4. No new APIs.
+ * parity is X.5. Empty teaching polish is X.4 (#383 — keep #383
+ * open; keep #379 open). No new APIs.
  *
  * F.1–F.7 stay: Unfiled virtual, non-recursive `?folderId=`,
  * refuse-if-nonempty, move = `PATCH folderId` only. X.2 menus stay
