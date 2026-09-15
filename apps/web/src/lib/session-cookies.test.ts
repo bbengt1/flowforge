@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  expireSessionCookies,
+  headersWithoutSessionCookies,
   requestIsSecure,
   rewriteUpstreamSetCookie,
   rewriteUpstreamSetCookies,
+  stripSessionCookieHeader,
 } from "./session-cookies.ts";
 
 describe("rewriteUpstreamSetCookie", () => {
@@ -54,6 +57,30 @@ describe("rewriteUpstreamSetCookie", () => {
       }),
       ["ff_session=a; SameSite=Lax; Path=/api/v1"],
     );
+  });
+});
+
+describe("expireSessionCookies", () => {
+  it("expires first-party and CHIPS ff_session / ff_csrf without a CSRF token", () => {
+    const cookies = expireSessionCookies({ requestSecure: false });
+    assert.equal(cookies.length, 4);
+    assert.ok(cookies.every((row) => /Max-Age=0/.test(row) && /Path=\/api\/v1/.test(row)));
+    assert.match(cookies[0] ?? "", /^ff_session=;/);
+    assert.match(cookies[0] ?? "", /HttpOnly/);
+    assert.doesNotMatch(cookies[0] ?? "", /Partitioned/);
+    assert.match(cookies[1] ?? "", /^ff_csrf=;/);
+    assert.match(cookies[1] ?? "", /SameSite=Strict/);
+    assert.match(cookies[2] ?? "", /SameSite=None/);
+    assert.match(cookies[2] ?? "", /Partitioned/);
+    assert.match(cookies[2] ?? "", /Secure/);
+    assert.equal(
+      stripSessionCookieHeader("ff_session=opaque; ff_csrf=token; other=1"),
+      "other=1",
+    );
+    const headers = headersWithoutSessionCookies(
+      new Headers({ cookie: "ff_session=opaque; theme=light" }),
+    );
+    assert.equal(headers.get("cookie"), "theme=light");
   });
 });
 

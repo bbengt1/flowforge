@@ -51,6 +51,10 @@ describe("session-contract", () => {
     assert.equal(csrfRequiredFor("POST", "/api/v1/login"), false);
     assert.equal(csrfRequiredFor("POST", "/api/control-plane/login"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/exchange"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/bootstrap/persistence"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/control-plane/bootstrap/admins"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/bootstrap/public-url"), false);
+    assert.equal(csrfRequiredFor("POST", "/api/v1/bootstrap/tls"), false);
     assert.equal(csrfRequiredFor("POST", "/api/v1/embed/assertions"), true);
     assert.equal(csrfRequiredFor("POST", "/api/v1/portal/adapter/assertions"), true);
     assert.equal(csrfRequiredFor("GET", "/api/v1/portal/adapter"), false);

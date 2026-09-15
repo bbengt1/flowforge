@@ -179,6 +179,18 @@ export function csrfRequiredFor(method: string, proxyPath: string): boolean {
   if (method.toUpperCase() === "POST" && normalized === "/embed/exchange") {
     return false;
   }
+  // Incomplete wizard POSTs are anonymous-open. ff_csrf is Path=/api/v1
+  // and is not readable on product routes, so a stale ff_session must
+  // not fail closed at the Next proxy for lack of a hydrated CSRF header.
+  if (
+    method.toUpperCase() === "POST" &&
+    (normalized === "/bootstrap/persistence" ||
+      normalized === "/bootstrap/admins" ||
+      normalized === "/bootstrap/public-url" ||
+      normalized === "/bootstrap/tls")
+  ) {
+    return false;
+  }
   return true;
 }
 

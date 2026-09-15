@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { proxyCsrfDenial } from "@/lib/csrf";
+import { cookieHasSession, proxyCsrfDenial } from "@/lib/csrf";
+import {
+  isBootstrapWizardMutation,
+  shouldExpireStaleWizardCookies,
+} from "@/lib/first-run-bootstrap";
 import {
   fetchIdentityControlPlane,
   fetchIdentityControlPlaneStream,
@@ -10,7 +14,11 @@ import {
 } from "@/lib/identity-proxy";
 import { PROBLEM_JSON } from "@/lib/problem";
 import { REQUEST_ID_HEADER, resolveRequestId } from "@/lib/request-id";
-import { requestIsSecure } from "@/lib/session-cookies";
+import {
+  expireSessionCookies,
+  headersWithoutSessionCookies,
+  requestIsSecure,
+} from "@/lib/session-cookies";
 import { CSRF_HEADER } from "@/lib/session-contract";
 
 export async function forwardIdentityControlPlane(
@@ -39,6 +47,15 @@ export async function forwardIdentityControlPlane(
     return problemResponse(csrfDenial, csrfDenial.status, requestId);
   }
 
+  const wizardPost = isBootstrapWizardMutation(request.method, target.instance);
+  const stripUnhydratedWizardCookie =
+    wizardPost &&
+    cookieHasSession(request.headers.get("cookie")) &&
+    !request.headers.get(CSRF_HEADER)?.trim();
+  const identityHeaders = stripUnhydratedWizardCookie
+    ? headersWithoutSessionCookies(request.headers)
+    : request.headers;
+
   const apiPath = withRequestSearch(target.apiPath, request.url);
 
   if (isArtifactDownloadStreamTarget(request.method, segments)) {
@@ -47,7 +64,7 @@ export async function forwardIdentityControlPlane(
       apiPath,
       instance: target.instance,
       requestId,
-      identityHeaders: request.headers,
+      identityHeaders,
       requestSecure: requestIsSecure(request),
     });
     const headers = new Headers();
@@ -83,7 +100,7 @@ export async function forwardIdentityControlPlane(
     apiPath,
     instance: target.instance,
     requestId,
-    identityHeaders: request.headers,
+    identityHeaders,
     body,
     contentType: request.headers.get("content-type"),
     requestSecure: requestIsSecure(request),
@@ -92,6 +109,13 @@ export async function forwardIdentityControlPlane(
   const headers = new Headers();
   headers.set(REQUEST_ID_HEADER, result.requestId);
   applySessionResponseHeaders(headers, result);
+  expireWizardCookies(
+    headers,
+    request,
+    target.instance,
+    result.statusCode,
+    stripUnhydratedWizardCookie,
+  );
 
   if (result.ok) {
     if (result.statusCode === 204) {
@@ -109,6 +133,11 @@ export async function forwardIdentityControlPlane(
     result.statusCode,
     result.requestId,
     result,
+    {
+      request,
+      proxyPath: target.instance,
+      stripUnhydratedWizardCookie,
+    },
   );
 }
 
@@ -124,17 +153,55 @@ function applySessionResponseHeaders(
   }
 }
 
+function expireWizardCookies(
+  headers: Headers,
+  request: Request,
+  proxyPath: string,
+  statusCode: number,
+  stripUnhydratedWizardCookie: boolean,
+) {
+  if (
+    !shouldExpireStaleWizardCookies({
+      method: request.method,
+      path: proxyPath,
+      statusCode,
+      strippedUnhydratedCookie: stripUnhydratedWizardCookie,
+    })
+  ) {
+    return;
+  }
+  for (const cookie of expireSessionCookies({
+    requestSecure: requestIsSecure(request),
+  })) {
+    headers.append("Set-Cookie", cookie);
+  }
+}
+
 function problemResponse(
   problem: unknown,
   status: number,
   requestId: string,
   result?: { setCookies: string[]; csrfToken: string | null },
+  wizard?: {
+    request: Request;
+    proxyPath: string;
+    stripUnhydratedWizardCookie: boolean;
+  },
 ): NextResponse {
   const headers = new Headers();
   headers.set(REQUEST_ID_HEADER, requestId);
   headers.set("Content-Type", PROBLEM_JSON);
   if (result) {
     applySessionResponseHeaders(headers, result);
+  }
+  if (wizard) {
+    expireWizardCookies(
+      headers,
+      wizard.request,
+      wizard.proxyPath,
+      status,
+      wizard.stripUnhydratedWizardCookie,
+    );
   }
   return new NextResponse(JSON.stringify(problem), { status, headers });
 }

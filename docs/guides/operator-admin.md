@@ -505,7 +505,10 @@ headroom, queue-lag, or fencing dashboards.
 - Chip/banner warn in the last five minutes. Expired is `role="alert"`
   (`Session expired`); `401` latches `Stale session`.
 - Missing CSRF with a session cookie fails closed (`403`) before the
-  mutation is treated as done.
+  mutation is treated as done. First-run wizard POSTs are the
+  exception: the Next proxy strips an unhydrated `ff_session` and
+  expires `ff_*` without a hydrated CSRF token or
+  `POST /session/logout`.
 - Hostile `Origin` is `403` with no CORS grant.
 - Bearer tokens are never stored in `localStorage` or the URL.
 - Trusted-dev `POST /session` + identity headers are **local only**.

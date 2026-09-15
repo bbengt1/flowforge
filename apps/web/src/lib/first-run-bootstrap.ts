@@ -138,6 +138,8 @@ export const FIRST_RUN_BOOTSTRAP = {
   unauthenticated401IsHome: true,
   mutation401ClearsStaleSession: true,
   mutation401DoesNotSkipWizard: true,
+  wizardPostCsrfExemptAtProxy: true,
+  staleWizardCookiesExpireWithoutHydratedCsrf: true,
   neverInventSecondGate: true,
   failClosedStepOrder: true,
   doNotSkipAhead: true,
@@ -167,10 +169,17 @@ export const FIRST_RUN_BOOTSTRAP = {
 } as const;
 
 export const FIRST_RUN_BOOTSTRAP_HELP =
-  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — clear it and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser.";
+  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — the Next proxy expires ff_* without a hydrated CSRF token or logout; retry and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser.";
 
 export const WIZARD_STALE_SESSION_HELP =
   "The browser session expired. Clearing the stale cookie so first-run setup can continue.";
+
+export const BOOTSTRAP_WIZARD_MUTATION_PATHS = [
+  BOOTSTRAP_PERSISTENCE_PATH,
+  BOOTSTRAP_ADMINS_PATH,
+  BOOTSTRAP_PUBLIC_URL_PATH,
+  BOOTSTRAP_TLS_PATH,
+] as const;
 
 export const FIRST_RUN_BOOTSTRAP_SOURCES = [
   "src/lib/first-run-bootstrap.ts",
@@ -179,6 +188,8 @@ export const FIRST_RUN_BOOTSTRAP_SOURCES = [
   "src/components/bootstrap/FirstRunWizard.tsx",
   "src/components/settings/BootstrapSettings.tsx",
   "src/components/shell/WorkspaceShell.tsx",
+  "src/app/api/control-plane/identity-forward.ts",
+  "src/lib/session-cookies.ts",
   "src/app/settings/page.tsx",
 ] as const;
 
@@ -609,6 +620,36 @@ export function bootstrapProblemMessage(
   return detail || problem?.title || `Request failed (${statusCode}).`;
 }
 
+/** Wizard POSTs are anonymous-open while incomplete. Path=/api/v1 CSRF is unreadable on product routes. */
+export function isBootstrapWizardMutation(
+  method: string,
+  path: string,
+): boolean {
+  if (method.toUpperCase() !== "POST") {
+    return false;
+  }
+  const noQuery = (path.split("?")[0] ?? path).trim();
+  const stripped = noQuery
+    .replace(/^\/api\/control-plane/, "")
+    .replace(/^\/api\/v1/, "");
+  const normalized = stripped.startsWith("/") ? stripped : `/${stripped}`;
+  return (BOOTSTRAP_WIZARD_MUTATION_PATHS as readonly string[]).includes(
+    normalized,
+  );
+}
+
+export function shouldExpireStaleWizardCookies(input: {
+  method: string;
+  path: string;
+  statusCode: number;
+  strippedUnhydratedCookie?: boolean;
+}): boolean {
+  if (!isBootstrapWizardMutation(input.method, input.path)) {
+    return false;
+  }
+  return input.strippedUnhydratedCookie === true || input.statusCode === 401;
+}
+
 /** GET 401 after complete is home. Mutation 401 while incomplete is a stale cookie. */
 export function wizardMutation401IsStaleSession(
   statusCode: number,
@@ -664,6 +705,8 @@ export function firstRunBootstrapHoldsHardLines(): boolean {
     FIRST_RUN_BOOTSTRAP.settingsSurfacesSkippedTls &&
     FIRST_RUN_BOOTSTRAP.mutation401ClearsStaleSession &&
     FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard &&
+    FIRST_RUN_BOOTSTRAP.wizardPostCsrfExemptAtProxy &&
+    FIRST_RUN_BOOTSTRAP.staleWizardCookiesExpireWithoutHydratedCsrf &&
     R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly
   );
 }

@@ -5,12 +5,14 @@
  * Mutations POST once; secrets are not kept on the parsed status.
  * Skip TLS POSTs `{action:"skip"}` only — no PEM in the body.
  * CSRF is attached by callIdentityProxy when a session is present.
+ * Wizard POSTs are CSRF-exempt at the Next proxy. A stale ff_session
+ * without a hydrated CSRF token is stripped and expired there — do
+ * not call logout (that still needs CSRF).
  */
 
 import { callIdentityProxy } from "./identity-client.ts";
 import { emptyDevIdentity, type DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
-import { endSession } from "./session-client.ts";
 import {
   BOOTSTRAP_ADMINS_PATH,
   BOOTSTRAP_PERSISTENCE_PATH,
@@ -272,7 +274,8 @@ async function postWizardMutation(
   if (first.ok || !wizardMutation401IsStaleSession(first.statusCode, first.problem)) {
     return first;
   }
-  await endSession();
+  // The 401 response expires ff_session / ff_csrf (Path=/api/v1).
+  // Retry once without depending on a hydrated CSRF token or logout.
   return finishMutation(await send());
 }
 

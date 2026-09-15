@@ -34,11 +34,13 @@ import {
   emptyBootstrapStatus,
   emptyTlsUploadDraft,
   firstRunBootstrapHoldsHardLines,
+  isBootstrapWizardMutation,
   mutationConflictIsComplete,
   normalizePublicBaseUrl,
   parseBootstrapStatus,
   settingsHandoffAfterComplete,
   settingsSourceRemountsWizard,
+  shouldExpireStaleWizardCookies,
   shouldFetchBootstrapGate,
   shouldRemountWizard,
   tlsSettingsDescription,
@@ -108,6 +110,8 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(FIRST_RUN_BOOTSTRAP.neverInventSecondGate, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.mutation401ClearsStaleSession, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.wizardPostCsrfExemptAtProxy, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.staleWizardCookiesExpireWithoutHydratedCsrf, true);
     assert.equal(firstRunBootstrapHoldsHardLines(), true);
     assert.ok(FIRST_RUN_BOOTSTRAP_SOURCES.includes("src/components/bootstrap/FirstRunWizard.tsx"));
   });
@@ -555,8 +559,7 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     assert.equal(seen.body?.includes("keyPem"), false);
   });
 
-  it("clears a stale session on mutation 401 and retries without skipping the wizard", async () => {
-    const urls: string[] = [];
+  it("retries a wizard mutation 401 without logout CSRF and expires stale cookies at the proxy", async () => {
     let persistenceCalls = 0;
     setActiveSession({
       issuer: "https://idp.example",
@@ -569,7 +572,9 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     });
     globalThis.fetch = (async (input) => {
       const url = String(input);
-      urls.push(url);
+      if (url.includes("/session/logout")) {
+        return new Response("logout must not be required", { status: 500 });
+      }
       if (url.includes("/bootstrap/persistence")) {
         persistenceCalls += 1;
         if (persistenceCalls === 1) {
@@ -594,16 +599,12 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (url.includes("/session/logout")) {
-        return new Response(null, { status: 204 });
-      }
       return new Response("unexpected", { status: 500 });
     }) as typeof fetch;
 
     const result = await confirmBootstrapPersistence({ embed: false });
     assert.equal(result.ok, true);
     assert.equal(persistenceCalls, 2);
-    assert.ok(urls.includes("/api/v1/session/logout"));
     assert.equal(result.ok && result.status.steps.persistence.ready, true);
     assert.equal(
       decideBootstrapChrome({
@@ -615,10 +616,44 @@ describe("B.6 first-run wizard chrome + Settings handoff", () => {
     );
 
     const client = source("src/lib/first-run-bootstrap-client.ts");
-    assert.match(client, /endSession/);
+    assert.equal(client.includes("endSession"), false);
     assert.match(client, /wizardMutation401IsStaleSession/);
+    const forward = source("src/app/api/control-plane/identity-forward.ts");
+    assert.match(forward, /headersWithoutSessionCookies/);
+    assert.match(forward, /expireSessionCookies/);
+    assert.match(forward, /shouldExpireStaleWizardCookies/);
+    assert.equal(
+      isBootstrapWizardMutation("POST", "/api/v1/bootstrap/persistence"),
+      true,
+    );
+    assert.equal(
+      shouldExpireStaleWizardCookies({
+        method: "POST",
+        path: "/api/control-plane/bootstrap/tls",
+        statusCode: 200,
+        strippedUnhydratedCookie: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldExpireStaleWizardCookies({
+        method: "POST",
+        path: "/api/v1/tenants",
+        statusCode: 401,
+      }),
+      false,
+    );
     const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
     assert.doesNotMatch(wizard, /onComplete\(\);\s*\n\s*return;[\s\S]*401/);
+    const brief = readFileSync(
+      join(here, "../../../../docs/architecture/flowforge-first-run-bootstrap.md"),
+      "utf8",
+    );
+    assert.match(brief, /Wizard POSTs are CSRF-exempt at the proxy/);
+    assert.doesNotMatch(
+      brief,
+      /clear the cookie \(`POST \/session\/logout`\)/,
+    );
   });
 });
 
