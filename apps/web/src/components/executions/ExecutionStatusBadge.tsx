@@ -1,39 +1,31 @@
+import { StatusMark } from "@/components/chrome/StatusMark";
 import {
   LOUD_ERROR_CLASS,
   LOUD_INDETERMINATE_CLASS,
 } from "@/lib/aesthetic-usability-density";
 import { executionStatusPresentation } from "@/lib/execution";
 import type { ExecutionStatus } from "@/lib/execution-types";
+import { executionStatusToneClass } from "@/lib/status-embed-visual";
 
 type ExecutionStatusBadgeProps = {
   status: ExecutionStatus | undefined;
 };
 
-const TONE_CLASS: Record<
-  ReturnType<typeof executionStatusPresentation>["tone"],
-  string
-> = {
-  indeterminate: LOUD_INDETERMINATE_CLASS,
-  running: "ff-status-running",
-  canceled: "ff-status-canceled font-semibold",
-  failed: LOUD_ERROR_CLASS,
-  succeeded: "ff-status-succeeded",
-  queued: "ff-status-queued",
-  claimed: "ff-status-claimed",
-  other: "ff-status-other",
-};
-
 export function ExecutionStatusBadge({ status }: ExecutionStatusBadgeProps) {
   const presentation = executionStatusPresentation(status);
+  const toneClass =
+    presentation.tone === "indeterminate"
+      ? LOUD_INDETERMINATE_CLASS
+      : presentation.tone === "failed"
+        ? LOUD_ERROR_CLASS
+        : executionStatusToneClass(presentation.tone);
 
   return (
-    <p
-      role="status"
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs ${TONE_CLASS[presentation.tone]}`}
-    >
-      <span aria-hidden="true">{presentation.icon}</span>
-      <span>{presentation.label}</span>
-      <span className="sr-only">{presentation.description}</span>
-    </p>
+    <StatusMark
+      icon={presentation.icon}
+      label={presentation.label}
+      description={presentation.description}
+      className={`rounded-full px-2.5 py-0.5 text-xs ${toneClass}`}
+    />
   );
 }

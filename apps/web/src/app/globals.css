@@ -596,9 +596,9 @@ body {
 }
 
 .ff-inbox-row-waiting {
-  border-left: 4px solid #6366f1;
-  background: color-mix(in srgb, #6366f1 16%, var(--ff-canvas));
-  color: #c7d2fe;
+  border-left: 4px solid var(--ff-accent);
+  background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas));
+  color: var(--ff-text);
   cursor: pointer;
 }
 
@@ -876,17 +876,26 @@ body {
   border-radius: var(--ff-radius);
 }
 
-.ff-status-running {
-  border: 1px solid #38bdf8;
-  background: color-mix(in srgb, #38bdf8 16%, var(--ff-canvas));
-  color: #e0f2fe;
+/*
+ * V.7 status gate — consume V.1 tokens only.
+ * Relates to #363 / Part of #353. Keep #363 open.
+ * Success is accent-tinted and quiet. Indeterminate stays
+ * ff-loud-indeterminate (amber). Do not reuse that amber for
+ * success. Waiting uses an accent left-bar (waiting→decide).
+ * No sky / emerald / indigo hex. No second embed theme.
+ */
+.ff-status-running,
+.ff-status-claimed {
+  border: 1px solid var(--ff-accent);
+  background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas));
+  color: var(--ff-text);
   font-weight: 600;
 }
 
 .ff-status-succeeded {
-  border: 1px solid #34d399;
-  background: color-mix(in srgb, #34d399 14%, var(--ff-canvas));
-  color: #d1fae5;
+  border: 1px solid var(--ff-accent);
+  background: color-mix(in srgb, var(--ff-accent) 14%, var(--ff-surface));
+  color: var(--ff-text);
 }
 
 .ff-status-canceled,
@@ -897,10 +906,10 @@ body {
   color: var(--ff-muted);
 }
 
-.ff-status-claimed {
-  border: 1px solid #818cf8;
-  background: color-mix(in srgb, #818cf8 16%, var(--ff-canvas));
-  color: #e0e7ff;
+.ff-status-waiting {
+  border: 2px solid var(--ff-accent);
+  background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas));
+  color: var(--ff-text);
   font-weight: 600;
 }
 
