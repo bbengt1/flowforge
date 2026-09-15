@@ -14,6 +14,14 @@ import {
   type BootstrapStatus,
 } from "@/lib/first-run-bootstrap";
 import type { ProblemDetails } from "@/lib/problem";
+import {
+  FF_WIZARD_EYEBROW_CLASS,
+  FF_WIZARD_HELP_CLASS,
+  FF_WIZARD_MUTED_CLASS,
+  FF_WIZARD_ROOT_CLASS,
+  FF_WIZARD_TITLE_CLASS,
+  FF_WIZARD_VALUE,
+} from "@/lib/settings-wizard-visual";
 
 type BootstrapGateProps = {
   children: ReactNode;
@@ -61,9 +69,10 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-4 px-6 py-16 outline-none"
+        data-ff-wizard={FF_WIZARD_VALUE}
+        className={`${FF_WIZARD_ROOT_CLASS} mx-auto flex min-h-full w-full max-w-2xl flex-col gap-4 px-6 py-16 outline-none`}
       >
-        <p role="status" className="text-sm text-zinc-600">
+        <p role="status" className={`text-sm ${FF_WIZARD_MUTED_CLASS}`}>
           Checking first-run setup…
         </p>
       </main>
@@ -87,16 +96,15 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-6 px-6 py-16 outline-none"
+        data-ff-wizard={FF_WIZARD_VALUE}
+        className={`${FF_WIZARD_ROOT_CLASS} mx-auto flex min-h-full w-full max-w-2xl flex-col gap-6 px-6 py-16 outline-none`}
       >
         <header className="space-y-3">
-          <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-            B.6 · First-run setup
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight">
+          <p className={FF_WIZARD_EYEBROW_CLASS}>B.6 · First-run setup</p>
+          <h1 className={`text-3xl tracking-tight ${FF_WIZARD_TITLE_CLASS}`}>
             Setup is unavailable
           </h1>
-          <p className="text-base leading-7 text-zinc-600">
+          <p className={FF_WIZARD_HELP_CLASS}>
             The bootstrap gate could not be read. This is not a skip to
             product home and not a second login gate.
           </p>

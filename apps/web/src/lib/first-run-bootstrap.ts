@@ -2,6 +2,7 @@
  * B.6 / B.7: First-run wizard chrome + Settings handoff + Skip TLS.
  *
  * Relates to #339 / #347 / Part of #333. Keep #339 and #347 open.
+ * V.6 / #362 restyles this chrome onto V.1 tokens. Keep #362 open.
  *
  * Chloe UI only. Consumes jonny's B.1–B.5 / B.7 status-only APIs
  * (`docs/architecture/flowforge-first-run-bootstrap.md`). No new

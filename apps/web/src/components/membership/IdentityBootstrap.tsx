@@ -10,6 +10,15 @@ import {
   LOCAL_SEED_TENANT_SLUG,
   LOCAL_SEED_WORKBENCH_KEY,
 } from "@/lib/local-seed-example";
+import {
+  FF_SETTINGS_CONTROL_CLASS,
+  FF_SETTINGS_EYEBROW_CLASS,
+  FF_SETTINGS_GHOST_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_SKIP_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 type IdentityBootstrapProps = {
   identity: DevIdentity;
@@ -37,17 +46,17 @@ export function IdentityBootstrap({
   return (
     <section
       aria-labelledby="workspace-context-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className={FF_SETTINGS_PANEL_CLASS}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+          <p className={FF_SETTINGS_EYEBROW_CLASS}>
             Workspace context
           </p>
-          <h2 id="workspace-context-heading" className="mt-1 text-lg font-semibold">
+          <h2 id="workspace-context-heading" className={`mt-1 text-lg ${FF_SETTINGS_TITLE_CLASS}`}>
             Tenant + workbench
           </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-600">
+          <p className={`mt-1 max-w-2xl text-sm leading-6 ${FF_SETTINGS_MUTED_CLASS}`}>
             Workspace lookup is tenant id <em>or</em> tenant slug plus workbench
             key — not a workspace UUID. Cookie session is the subject. These
             fields stay in this tab (
@@ -61,19 +70,19 @@ export function IdentityBootstrap({
             <button
               type="button"
               onClick={onExample}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+              className={FF_SETTINGS_GHOST_CLASS}
             >
               Example context
             </button>
             <button
               type="button"
               onClick={onClear}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              className={FF_SETTINGS_GHOST_CLASS}
             >
               Clear
             </button>
           </div>
-          <p className="max-w-xs text-right text-xs leading-5 text-zinc-500">
+          <p className={`max-w-xs text-right text-xs leading-5 ${FF_SETTINGS_MUTED_CLASS}`}>
             Local-only compose localseed (
             <code className="font-mono">{LOCAL_SEED_ISSUER}</code>
             {" / "}
@@ -116,7 +125,7 @@ export function IdentityBootstrap({
         />
       </div>
 
-      <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-zinc-600">
+      <ul className={`mt-4 list-disc space-y-1 pl-5 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
         <li>
           Current workspace lookup:{" "}
           {hasWorkspaceLookup(identity)
@@ -138,13 +147,13 @@ export function IdentityBootstrap({
       </ul>
 
       <details
-        className="mt-5 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-4 py-3"
+        className={`${FF_SETTINGS_SKIP_CLASS} mt-5 border-dashed px-4 py-3`}
         open={headerFallback}
       >
-        <summary className="cursor-pointer text-sm font-medium text-amber-950">
+        <summary className="cursor-pointer text-sm font-medium">
           Temporary local-dev header identity (not for production)
         </summary>
-        <p className="mt-2 text-sm text-amber-950/80">
+        <p className="mt-2 text-sm">
           Dual-gate until jonny&apos;s session API is the only subject path.
           When this is on <em>and</em> no cookie session is active, the UI
           sends <code className="font-mono text-xs">X-FlowForge-Issuer</code>{" "}
@@ -213,7 +222,7 @@ function Field({
 }) {
   return (
     <label htmlFor={id} className="block text-sm">
-      <span className="font-medium text-zinc-800">{label}</span>
+      <span className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>{label}</span>
       <input
         id={id}
         value={value}
@@ -221,9 +230,9 @@ function Field({
         placeholder={placeholder}
         autoComplete={autoComplete}
         spellCheck={false}
-        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+        className={`mt-1 font-mono text-sm ${FF_SETTINGS_CONTROL_CLASS}`}
       />
-      {hint ? <span className="mt-1 block text-xs text-zinc-500">{hint}</span> : null}
+      {hint ? <span className={`mt-1 block text-xs ${FF_SETTINGS_MUTED_CLASS}`}>{hint}</span> : null}
     </label>
   );
 }

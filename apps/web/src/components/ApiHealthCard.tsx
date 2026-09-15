@@ -5,6 +5,15 @@ import type { ControlPlaneProbe } from "@/lib/control-plane";
 import { probeFromProxyResponse } from "@/lib/control-plane";
 import { safeProblemDetail } from "@/lib/problem";
 import { generateRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
+import {
+  FF_SETTINGS_GHOST_CLASS,
+  FF_SETTINGS_LINK_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_NESTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_SKIP_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+} from "@/lib/settings-wizard-visual";
 
 type ApiHealthCardProps = {
   initialHealth: ControlPlaneProbe;
@@ -65,26 +74,20 @@ export function ApiHealthCard({
   return (
     <section
       aria-labelledby="api-status-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className={FF_SETTINGS_PANEL_CLASS}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 id="api-status-heading" className="text-lg font-semibold">
+          <h2 id="api-status-heading" className={`text-lg ${FF_SETTINGS_TITLE_CLASS}`}>
             Control plane
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className={`mt-1 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
             Liveness is{" "}
-            <a
-              className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
-              href={publicHealthUrl}
-            >
+            <a className={FF_SETTINGS_LINK_CLASS} href={publicHealthUrl}>
               {publicHealthUrl}
             </a>
             . Readiness is{" "}
-            <a
-              className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
-              href={publicReadinessUrl}
-            >
+            <a className={FF_SETTINGS_LINK_CLASS} href={publicReadinessUrl}>
               {publicReadinessUrl}
             </a>
             . Failures keep RFC 9457 problem details and{" "}
@@ -95,7 +98,7 @@ export function ApiHealthCard({
           type="button"
           onClick={() => void refresh()}
           disabled={pending}
-          className="shrink-0 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+          className={`shrink-0 ${FF_SETTINGS_GHOST_CLASS}`}
         >
           {pending ? "Checking…" : "Check again"}
         </button>
@@ -143,15 +146,15 @@ function ProbeStatus({
   return (
     <article
       aria-labelledby={headingId}
-      className="rounded-xl bg-zinc-50 px-4 py-3 text-sm leading-6"
+      className={`${FF_SETTINGS_NESTED_CLASS} px-4 py-3 text-sm leading-6`}
     >
-      <h3 id={headingId} className="font-medium text-zinc-900">
+      <h3 id={headingId} className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>
         {label}
       </h3>
       <p role="status" className="mt-1">
         {probe.ok ? (
           <>
-            <span className="font-medium text-emerald-800">
+            <span className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>
               {expected === "ready" ? "Ready." : "Healthy."}
             </span>{" "}
             API returned <code className="font-mono">{probe.status}</code>
@@ -159,7 +162,7 @@ function ProbeStatus({
           </>
         ) : (
           <>
-            <span className="font-medium text-amber-800">
+            <span className={`font-medium ${FF_SETTINGS_SKIP_CLASS} inline px-1.5 py-0.5 text-xs`}>
               {problem ? `${problem.title}.` : "Not available yet."}
             </span>{" "}
             {problem ? (
@@ -174,20 +177,20 @@ function ProbeStatus({
         )}
       </p>
       {problem ? (
-        <dl className="mt-3 space-y-1 font-mono text-xs text-zinc-600">
+        <dl className={`mt-3 space-y-1 font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
           <div>
-            <dt className="inline text-zinc-500">code </dt>
+            <dt className="inline">code </dt>
             <dd className="inline">{problem.code}</dd>
           </div>
           {problem.request_id ? (
             <div>
-              <dt className="inline text-zinc-500">request_id </dt>
+              <dt className="inline">request_id </dt>
               <dd className="inline break-all">{problem.request_id}</dd>
             </div>
           ) : null}
         </dl>
       ) : probe.requestId ? (
-        <p className="mt-3 font-mono text-xs text-zinc-500">
+        <p className={`mt-3 font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>
           request_id {probe.requestId}
         </p>
       ) : null}

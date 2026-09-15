@@ -539,14 +539,20 @@ body {
  * Inbox is not a second replay graph. Not an n8n clone.
  */
 .ff-vault,
-.ff-inbox {
+.ff-inbox,
+.ff-settings,
+.ff-wizard {
   color: var(--ff-text);
 }
 
 .ff-vault-header,
 .ff-inbox-header,
+.ff-settings-header,
+.ff-wizard-header,
 .ff-vault-panel,
-.ff-inbox-panel {
+.ff-inbox-panel,
+.ff-settings-panel,
+.ff-wizard-panel {
   background: var(--ff-surface);
   color: var(--ff-text);
   border: 1px solid var(--ff-border);
@@ -614,7 +620,9 @@ body {
 }
 
 .ff-vault-primary,
-.ff-inbox-primary {
+.ff-inbox-primary,
+.ff-settings-primary,
+.ff-wizard-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -628,23 +636,35 @@ body {
 }
 
 .ff-vault-primary:hover,
-.ff-inbox-primary:hover {
+.ff-inbox-primary:hover,
+.ff-settings-primary:hover,
+.ff-wizard-primary:hover {
   filter: brightness(1.08);
 }
 
 .ff-vault-primary:disabled,
 .ff-inbox-primary:disabled,
+.ff-settings-primary:disabled,
+.ff-wizard-primary:disabled,
 .ff-vault-ghost:disabled,
 .ff-inbox-ghost:disabled,
+.ff-settings-ghost:disabled,
+.ff-wizard-ghost:disabled,
 .ff-vault-control:disabled,
-.ff-inbox-control:disabled {
+.ff-inbox-control:disabled,
+.ff-settings-control:disabled,
+.ff-wizard-control:disabled {
   opacity: 0.6;
 }
 
 .ff-vault-ghost,
 .ff-inbox-ghost,
+.ff-settings-ghost,
+.ff-wizard-ghost,
 .ff-vault-control,
-.ff-inbox-control {
+.ff-inbox-control,
+.ff-settings-control,
+.ff-wizard-control {
   border: 1px solid var(--ff-border);
   background: var(--ff-canvas);
   color: var(--ff-text);
@@ -652,7 +672,9 @@ body {
 }
 
 .ff-vault-ghost,
-.ff-inbox-ghost {
+.ff-inbox-ghost,
+.ff-settings-ghost,
+.ff-wizard-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -661,37 +683,49 @@ body {
 }
 
 .ff-vault-ghost:hover,
-.ff-inbox-ghost:hover {
+.ff-inbox-ghost:hover,
+.ff-settings-ghost:hover,
+.ff-wizard-ghost:hover {
   background: color-mix(in srgb, var(--ff-surface) 80%, var(--ff-canvas));
 }
 
 .ff-vault-control,
-.ff-inbox-control {
+.ff-inbox-control,
+.ff-settings-control,
+.ff-wizard-control {
   width: 100%;
   padding: 6px var(--ff-space-3);
   font-size: var(--ff-type-body);
 }
 
 .ff-vault-muted,
-.ff-inbox-muted {
+.ff-inbox-muted,
+.ff-settings-muted,
+.ff-wizard-muted {
   color: var(--ff-muted);
 }
 
 .ff-vault-title,
-.ff-inbox-title {
+.ff-inbox-title,
+.ff-settings-title,
+.ff-wizard-title {
   color: var(--ff-text);
   font-weight: 600;
 }
 
 .ff-vault-link,
-.ff-inbox-link {
+.ff-inbox-link,
+.ff-settings-link,
+.ff-wizard-link {
   color: var(--ff-accent-foreground);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .ff-vault-link:hover,
-.ff-inbox-link:hover {
+.ff-inbox-link:hover,
+.ff-settings-link:hover,
+.ff-wizard-link:hover {
   color: var(--ff-text);
 }
 
@@ -729,7 +763,9 @@ body {
 }
 
 .ff-vault-eyebrow,
-.ff-inbox-eyebrow {
+.ff-inbox-eyebrow,
+.ff-settings-eyebrow,
+.ff-wizard-eyebrow {
   color: var(--ff-accent-foreground);
   font-size: var(--ff-type-body);
   font-weight: 500;
@@ -738,7 +774,9 @@ body {
 }
 
 .ff-vault-help,
-.ff-inbox-help {
+.ff-inbox-help,
+.ff-settings-help,
+.ff-wizard-help {
   max-width: 48rem;
   color: var(--ff-muted);
   font-size: var(--ff-type-page);
@@ -746,7 +784,9 @@ body {
 }
 
 .ff-vault-danger,
-.ff-inbox-danger {
+.ff-inbox-danger,
+.ff-settings-danger,
+.ff-wizard-danger {
   color: var(--ff-danger);
 }
 
@@ -778,6 +818,62 @@ body {
   border: 2px solid var(--ff-danger);
   background: color-mix(in srgb, var(--ff-danger) 28%, var(--ff-canvas));
   color: var(--ff-danger-foreground);
+}
+
+/*
+ * V.6 Settings + first-run wizard — consume V.1 tokens.
+ * Relates to #362 / Part of #353. Keep #362 open.
+ * Same charcoal + one teal accent as the product. Wizard never
+ * on /embed/v1. Skip stays loud HTTP-until-Settings.
+ */
+.ff-wizard-progress {
+  display: grid;
+  gap: var(--ff-space-2);
+}
+
+@media (min-width: 640px) {
+  .ff-wizard-progress {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.ff-wizard-progress-item {
+  background: var(--ff-surface);
+  color: var(--ff-muted);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  padding: var(--ff-space-2) var(--ff-space-3);
+}
+
+.ff-wizard-progress-item[data-bootstrap-step-state="current"] {
+  border-color: var(--ff-accent);
+  color: var(--ff-text);
+  box-shadow: 0 0 0 1px var(--ff-accent);
+}
+
+.ff-wizard-progress-item[data-bootstrap-step-state="ready"] {
+  color: var(--ff-text);
+  background: color-mix(in srgb, var(--ff-accent) 12%, var(--ff-surface));
+}
+
+.ff-wizard-progress-item[data-bootstrap-step-state="locked"],
+.ff-wizard-progress-item[data-bootstrap-step-state="pending"] {
+  color: var(--ff-muted);
+}
+
+.ff-settings-skip,
+.ff-wizard-skip {
+  border: 1px solid #d97706;
+  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
+  color: #fde68a;
+  border-radius: var(--ff-radius);
+}
+
+.ff-settings-nested {
+  background: color-mix(in srgb, var(--ff-surface) 70%, var(--ff-canvas));
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
 }
 
 .ff-status-running {

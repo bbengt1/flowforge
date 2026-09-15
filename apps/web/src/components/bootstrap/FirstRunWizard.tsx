@@ -32,11 +32,25 @@ import {
   type BootstrapTlsAction,
 } from "@/lib/first-run-bootstrap";
 import {
-  dohertyStatusClassName,
   dohertyStatusRole,
   type DohertyPhase,
 } from "@/lib/doherty-pending-chrome";
 import type { ProblemDetails } from "@/lib/problem";
+import {
+  FF_WIZARD_CONTROL_CLASS,
+  FF_WIZARD_EYEBROW_CLASS,
+  FF_WIZARD_HELP_CLASS,
+  FF_WIZARD_MUTED_CLASS,
+  FF_WIZARD_PANEL_CLASS,
+  FF_WIZARD_PRIMARY_CLASS,
+  FF_WIZARD_PROGRESS_CLASS,
+  FF_WIZARD_PROGRESS_ITEM_CLASS,
+  FF_WIZARD_ROOT_CLASS,
+  FF_WIZARD_SKIP_CLASS,
+  FF_WIZARD_TITLE_CLASS,
+  FF_WIZARD_VALUE,
+  wizardStatusClassName,
+} from "@/lib/settings-wizard-visual";
 
 type FirstRunWizardProps = {
   initialStatus: BootstrapStatus;
@@ -143,16 +157,15 @@ export function FirstRunWizard({
     <main
       id="main-content"
       tabIndex={-1}
-      className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-8 px-6 py-12 outline-none"
+      data-ff-wizard={FF_WIZARD_VALUE}
+      className={`${FF_WIZARD_ROOT_CLASS} mx-auto flex min-h-full w-full max-w-3xl flex-col gap-8 px-6 py-12 outline-none`}
     >
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
-          B.6 · First-run setup
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <p className={FF_WIZARD_EYEBROW_CLASS}>B.6 · First-run setup</p>
+        <h1 className={`text-3xl tracking-tight ${FF_WIZARD_TITLE_CLASS}`}>
           Set up this FlowForge instance
         </h1>
-        <p className="max-w-2xl text-base leading-7 text-zinc-600">
+        <p className={FF_WIZARD_HELP_CLASS}>
           Persistence, first admin, public URL, then TLS — in that order.
           Earlier steps cannot be skipped. On TLS you may Skip for now
           (HTTP until Settings). Drafts still do not run. This wizard
@@ -160,7 +173,7 @@ export function FirstRunWizard({
         </p>
       </header>
 
-      <ol className="grid gap-2 sm:grid-cols-4" aria-label="Setup progress">
+      <ol className={FF_WIZARD_PROGRESS_CLASS} aria-label="Setup progress">
         {progress.map(({ step, index, ready, active, locked }) => (
           <li
             key={step}
@@ -169,18 +182,12 @@ export function FirstRunWizard({
             data-bootstrap-step-state={
               ready ? "ready" : active ? "current" : locked ? "locked" : "pending"
             }
-            className={
-              active
-                ? "rounded-xl border border-teal-800 bg-white px-3 py-2"
-                : ready
-                  ? "rounded-xl border border-teal-200 bg-teal-50 px-3 py-2"
-                  : "rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-500"
-            }
+            className={FF_WIZARD_PROGRESS_ITEM_CLASS}
           >
             <p className="text-[11px] font-medium tracking-wide uppercase">
               Step {index + 1}
             </p>
-            <p className="text-sm font-semibold text-zinc-900">
+            <p className={`text-sm ${FF_WIZARD_TITLE_CLASS}`}>
               {BOOTSTRAP_STEP_LABELS[step]}
             </p>
             <p className="text-xs">
@@ -196,7 +203,7 @@ export function FirstRunWizard({
           data-doherty-chrome="bootstrap"
           data-doherty-phase={feedback.phase}
           aria-busy={feedback.phase === "pending" ? true : undefined}
-          className={dohertyStatusClassName(feedback.phase)}
+          className={wizardStatusClassName(feedback.phase)}
         >
           {feedback.message}
         </p>
@@ -205,15 +212,15 @@ export function FirstRunWizard({
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       {current === "persistence" ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Persistence</h2>
-          <p className="text-sm leading-6 text-zinc-600">
+        <section className={`${FF_WIZARD_PANEL_CLASS} space-y-4`}>
+          <h2 className={`text-lg ${FF_WIZARD_TITLE_CLASS}`}>Persistence</h2>
+          <p className={`text-sm leading-6 ${FF_WIZARD_MUTED_CLASS}`}>
             {BOOTSTRAP_STEP_HELP.persistence}
           </p>
           <button
             type="button"
             disabled={busy}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            className={FF_WIZARD_PRIMARY_CLASS}
             onClick={() =>
               void runStep("persistence", () =>
                 confirmBootstrapPersistence({ embed: false, identity }),
@@ -226,9 +233,9 @@ export function FirstRunWizard({
       ) : null}
 
       {current === "firstAdmin" ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">First admin</h2>
-          <p className="text-sm leading-6 text-zinc-600">
+        <section className={`${FF_WIZARD_PANEL_CLASS} space-y-4`}>
+          <h2 className={`text-lg ${FF_WIZARD_TITLE_CLASS}`}>First admin</h2>
+          <p className={`text-sm leading-6 ${FF_WIZARD_MUTED_CLASS}`}>
             {BOOTSTRAP_STEP_HELP.firstAdmin}
           </p>
           <div className="grid gap-3">
@@ -238,7 +245,7 @@ export function FirstRunWizard({
                 value={issuer}
                 onChange={(event) => setIssuer(event.target.value)}
                 autoComplete="off"
-                className="rounded-lg border border-zinc-300 px-3 py-2"
+                className={FF_WIZARD_CONTROL_CLASS}
                 placeholder="https://idp.example"
               />
             </label>
@@ -248,7 +255,7 @@ export function FirstRunWizard({
                 value={subject}
                 onChange={(event) => setSubject(event.target.value)}
                 autoComplete="off"
-                className="rounded-lg border border-zinc-300 px-3 py-2"
+                className={FF_WIZARD_CONTROL_CLASS}
                 placeholder="admin-1"
               />
             </label>
@@ -258,14 +265,14 @@ export function FirstRunWizard({
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
                 autoComplete="off"
-                className="rounded-lg border border-zinc-300 px-3 py-2"
+                className={FF_WIZARD_CONTROL_CLASS}
               />
             </label>
           </div>
           <button
             type="button"
             disabled={busy || !issuer.trim() || !subject.trim()}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            className={FF_WIZARD_PRIMARY_CLASS}
             onClick={() =>
               void runStep("firstAdmin", () =>
                 createBootstrapAdmin({
@@ -286,9 +293,9 @@ export function FirstRunWizard({
       ) : null}
 
       {current === "publicUrl" ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Public URL</h2>
-          <p className="text-sm leading-6 text-zinc-600">
+        <section className={`${FF_WIZARD_PANEL_CLASS} space-y-4`}>
+          <h2 className={`text-lg ${FF_WIZARD_TITLE_CLASS}`}>Public URL</h2>
+          <p className={`text-sm leading-6 ${FF_WIZARD_MUTED_CLASS}`}>
             {BOOTSTRAP_STEP_HELP.publicUrl}
           </p>
           <label className="grid gap-1 text-sm">
@@ -297,14 +304,14 @@ export function FirstRunWizard({
               value={publicBaseUrl}
               onChange={(event) => setPublicBaseUrl(event.target.value)}
               autoComplete="off"
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={FF_WIZARD_CONTROL_CLASS}
               placeholder="https://flows.example.com"
             />
           </label>
           <button
             type="button"
             disabled={busy || !normalizePublicBaseUrl(publicBaseUrl)}
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            className={FF_WIZARD_PRIMARY_CLASS}
             onClick={() => {
               const origin = normalizePublicBaseUrl(publicBaseUrl);
               if (!origin) {
@@ -326,17 +333,17 @@ export function FirstRunWizard({
 
       {current === "tls" ? (
         <section
-          className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+          className={`${FF_WIZARD_PANEL_CLASS} space-y-4`}
           data-bootstrap-tls-step=""
         >
-          <h2 className="text-lg font-semibold">TLS</h2>
-          <p className="text-sm leading-6 text-zinc-600">
+          <h2 className={`text-lg ${FF_WIZARD_TITLE_CLASS}`}>TLS</h2>
+          <p className={`text-sm leading-6 ${FF_WIZARD_MUTED_CLASS}`}>
             {BOOTSTRAP_STEP_HELP.tls}
           </p>
           <p
             role="status"
             data-bootstrap-tls-skip-warning=""
-            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950"
+            className={`${FF_WIZARD_SKIP_CLASS} px-4 py-3 text-sm leading-6`}
           >
             {BOOTSTRAP_TLS_SKIP_WARNING}
           </p>
@@ -392,7 +399,7 @@ export function FirstRunWizard({
                   autoComplete="off"
                   spellCheck={false}
                   rows={6}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
+                  className={`${FF_WIZARD_CONTROL_CLASS} font-mono text-xs`}
                 />
               </label>
               <label className="grid gap-1 text-sm">
@@ -408,7 +415,7 @@ export function FirstRunWizard({
                   autoComplete="off"
                   spellCheck={false}
                   rows={6}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
+                  className={`${FF_WIZARD_CONTROL_CLASS} font-mono text-xs`}
                 />
               </label>
             </div>
@@ -420,7 +427,7 @@ export function FirstRunWizard({
               (tlsAction === "upload" &&
                 (!tlsDraft.certPem.trim() || !tlsDraft.keyPem.trim()))
             }
-            className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+            className={FF_WIZARD_PRIMARY_CLASS}
             onClick={() => {
               const tls = wizardTlsInput(tlsAction, tlsDraft);
               if (!tls) {
