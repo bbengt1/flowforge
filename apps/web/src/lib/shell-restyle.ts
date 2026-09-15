@@ -219,9 +219,14 @@ export function shellUsesV1Tokens(globals: string): boolean {
 }
 
 export function activeNavUsesOneAccent(source: string): boolean {
+  const usesActiveClass =
+    source.includes("FF_NAV_ITEM_ACTIVE_CLASS") ||
+    source.includes(FF_NAV_ITEM_ACTIVE_CLASS);
+  const usesItemClass =
+    source.includes("FF_NAV_ITEM_CLASS") || source.includes(FF_NAV_ITEM_CLASS);
   return (
-    source.includes(FF_NAV_ITEM_ACTIVE_CLASS) &&
-    source.includes(FF_NAV_ITEM_CLASS) &&
+    usesActiveClass &&
+    usesItemClass &&
     !source.includes("bg-teal-50") &&
     !source.includes("text-teal-950")
   );
@@ -255,11 +260,20 @@ export function embedNavOmitsMembershipIsolationChrome(
 }
 
 export function embedSharesShellClasses(embedChrome: string): boolean {
+  const usesHeader =
+    embedChrome.includes("FF_SHELL_HEADER_CLASS") ||
+    embedChrome.includes(FF_SHELL_HEADER_CLASS);
+  const usesNavItem =
+    embedChrome.includes("FF_NAV_ITEM_CLASS") ||
+    embedChrome.includes(FF_NAV_ITEM_CLASS);
+  const usesActive =
+    embedChrome.includes("FF_NAV_ITEM_ACTIVE_CLASS") ||
+    embedChrome.includes(FF_NAV_ITEM_ACTIVE_CLASS);
   return (
-    embedChrome.includes(FF_SHELL_HEADER_CLASS) &&
-    embedChrome.includes(FF_NAV_ITEM_CLASS) &&
-    embedChrome.includes(FF_NAV_ITEM_ACTIVE_CLASS) &&
-    embedChrome.includes(`data-ff-shell`) &&
+    usesHeader &&
+    usesNavItem &&
+    usesActive &&
+    embedChrome.includes("data-ff-shell") &&
     embedChrome.includes("FF_SHELL_VALUE") &&
     !INVENTED_EMBED_TREES.some((tree) => embedChrome.includes(tree))
   );
@@ -304,8 +318,9 @@ export function shellRestyleIsNotSurfaceRewrite(source: string): boolean {
   return (
     !source.includes("data-o1=") &&
     !source.includes("data-o3=") &&
-    !source.includes("WorkflowHome") &&
-    !source.includes("EditorTopBar") &&
-    !source.includes("WorkflowCanvas")
+    !source.includes("@/components/home/WorkflowHome") &&
+    !source.includes("@/components/workflows/EditorTopBar") &&
+    !source.includes("@/components/workflows/EditorChrome") &&
+    !source.includes("@/components/workflows/WorkflowCanvas")
   );
 }
