@@ -12,7 +12,7 @@ Status: **docs-only architecture brief**. Does not change application code, cont
 | Product yes / no | **Brent** |
 | Chrome after Brent yes | **Chloe** |
 | Epic cut after Brent yes | **Arie** |
-| Contracts | **jonny** for **V.0a** (OIDC Auth Code + PKCE → `ff_session` / `ff_csrf`, standalone Lax). Later V.* chrome: jonny only if a real gap appears. |
+| Contracts | **jonny** for **V.0a** (local password login + session mint → `ff_session` / `ff_csrf`, standalone Lax). Later V.* chrome: jonny only if a real gap appears. |
 | Verification after stories land | **Terry** |
 | Hard lines | Unchanged — [§3](#3-hard-lines) |
 
@@ -33,13 +33,13 @@ Status: **docs-only architecture brief**. Does not change application code, cont
 
 ## 1. Status / owners
 
-This brief is **Gracie’s design north star** for FlowForge chrome **plus** the Login / entry lean. It does **not** greenfield YAML, vault, or embed APIs. **V.0a is a real contract story** (jonny): **OIDC Authorization Code + PKCE** that mints the existing cookie session shape.
+This brief is **Gracie’s design north star** for FlowForge chrome **plus** the Login / entry lean. It does **not** greenfield YAML, vault, or embed APIs. **V.0a is a real contract story** (jonny): **local login** (email/username + password) that mints the existing cookie session shape.
 
 | Gate | Rule |
 | --- | --- |
 | Until Brent yes | Docs only. No V-epic. No chrome PR. No Magic Patterns as a substitute for this brief. |
-| After Brent yes | Arie opens **V.0a** (jonny) then **V.0b** and V.1–V.n (Chloe). V.0b+ stay chrome-only except V.0a. |
-| jonny | **V.0a required** (OIDC Auth Code + PKCE). **No password login in V.0.** Deeper IdP config APIs wait for the auth story after sign-off. |
+| After Brent yes | Arie opens **V.0a** (jonny) then **V.0b** and V.1–V.n (Chloe). Optional **V.0c** (OIDC stub) is later — not a V.0 ship gate. V.0b+ stay chrome-only except V.0a. |
+| jonny | **V.0a required** (local email/username + password → session mint). **OIDC Auth Code + PKCE is a deferred stub**, not day-one. Do not invent a full IdP-admin surface from this page. |
 | Terry | Secret-free evidence after each landed V-slice. Hard lines in [§3](#3-hard-lines) stay green. |
 
 Do not implement from this page.
@@ -60,7 +60,7 @@ That is not a contract problem. On `main` the product already has:
 - Overview home (O.1–O.4): **card list primary** + compact Finder rail **filter-only**; path pills; stats / Personal / link-count **deferred**
 - First-run wizard (B.1–B.7): persistence → admin → URL → TLS create / upload / skip; Settings after; `mode=skipped` loud HTTP-until-Settings
 - Standalone and `/embed/v1` same chrome; wizard never on embed
-- Day-to-day standalone identity is still **trusted-dev / Example-context / `POST /session` self-assert**. The [security model](../reference/security-model.md) marks that **not** product auth. **V.0** is **OIDC Authorization Code + PKCE** → cookie `ff_session` / `ff_csrf` (standalone **Lax**). **No password login in V.0.** Embed stays `POST /embed/exchange` → ADV-021 `session.embed`.
+- Day-to-day standalone identity is still **trusted-dev / Example-context / `POST /session` self-assert**. The [security model](../reference/security-model.md) marks that **not** product auth. **V.0 / first ship** is **local login** (email/username + password) → cookie `ff_session` / `ff_csrf` (standalone **Lax**). **OIDC Authorization Code + PKCE is a deferred stub**, not the day-one door. Embed stays `POST /embed/exchange` → ADV-021 `session.embed`.
 
 What still fails the vision:
 
@@ -90,8 +90,9 @@ Never weaken. If a visual choice tempts a shortcut, the hard line wins.
 | ADV-024 | Membership / isolation stay **grant-gated**. Isolation success is a **denial**. Denial contrast stays loud. |
 | One replay path | Editor overlay **or** `/executions/{id}` — not both graphs. Loud `indeterminate`. Fail-closed catalogs. |
 | Standalone = embed chrome | Same product tree. `/embed/v1` remaps hrefs after `session.embed`. **First-run wizard never on embed.** |
-| Standalone auth ≠ embed exchange | Product **Login** is OIDC Auth Code + PKCE → `ff_session` / `ff_csrf` (**standalone Lax**). Embed stays `POST /embed/exchange` **only** → ADV-021 `session.embed`. **Do not merge those paths.** Host query stays display-only. |
-| No password login in V.0 | Bootstrap `password` stays **rejected**. Do not ship email/username + password as the V.0 door. If a later password path lands, never echo password or hash in JSON, logs, chrome, query, or `localStorage`. |
+| Standalone auth ≠ embed exchange | Product **Login** is local email/username + password → `ff_session` / `ff_csrf` (**standalone Lax**). Embed stays `POST /embed/exchange` **only** → ADV-021 `session.embed`. **Do not merge those paths.** Host query stays display-only. |
+| Password never echoed | Password **POST once**. Never echo password or hash in JSON, logs, chrome, query, or `localStorage`. Masked field; clear after submit. Lean into OpenAPI’s deferred local-password path: bootstrap `password` stays **rejected until V.0a lands**, then that path is the lean — still never echoed. |
+| OIDC is a deferred stub | **OIDC Authorization Code + PKCE** is **future / stub only** — not V.0, not day-one. Optional later scaffold (V.0c). Do not make first-ship Login depend on an IdP. |
 | Not a literal n8n clone | n8n is a **behavior / feature** reference only. **Never** a visual reference. No n8n colors, icons, measurements, names, or Overview-tab IA. |
 
 Prefer **already specified** over inventing work. F / O / B / UXL / R stories stay; V-slices restyle them.
@@ -135,18 +136,17 @@ Source: Mobbin paid plan, 2026-09-15 (`search_screens`, `platform=web`, `mode=de
 
 **Honorable (pattern support, not the top 20):** [Modal Deployment History](https://mobbin.com/screens/2988dfe5-56b1-46b2-a042-d9b73a8de152) · [Railway logs](https://mobbin.com/screens/3f38e15c-d2fe-4315-8262-3bd3dbb08d83) · [Vercel Deployments](https://mobbin.com/screens/e9576405-bcef-419a-922a-8fb84b044a54).
 
-**Login / entry — OIDC first** (live Mobbin login brief, 2026-09-15 — URLs not invented). Visual lean: **full-dark**; **SSO / OIDC as the primary CTA**; not email-password-first. **No password in V.0.**
+**Login / entry — local sign-in first** (live Mobbin, 2026-09-15 — URLs not invented). Visual lean: **full-dark**; **email/username + masked password + Sign in** as the V.0 door. **OIDC is deferred.**
 
 | Screen | TAKE | SKIP |
 | --- | --- | --- |
-| [Better Stack](https://mobbin.com/screens/9fa0ac37-55dc-43cb-850c-c9780ef9274f) | Full-page dark charcoal; SSO button present; minimal chrome; no workbench behind the form. | Email / magic-link as the **V.0** primary. Password as a path (**no password in V.0**). |
-| [Vapi](https://mobbin.com/screens/a07f8358-1beb-424e-ad91-650d4947cc3d) | Full-dark; SSO row + **Sign in with SSO**; teal brand accent as the one accent. | Email + password form as the V.0 door. Testimonial pane as required chrome. |
-| [incident.io](https://mobbin.com/screens/d320f96d-739d-45ea-a4a7-8c8f92fcaf90) | Centered dark card; **SSO buttons first**; **Sign in with SAML SSO** as the enterprise verb. | Email field as the first job. Consumer IdP pile as required. |
-| [Resend](https://mobbin.com/screens/f66a3de6-e328-43db-87eb-9a2271aab64f) | Atmospheric full-page dark; **Google / GitHub** as the primary verbs. | Email + password + “Last used” as V.0. Public self-serve sign-up. |
+| [Better Stack — email + password](https://mobbin.com/screens/f9c7a948-be6a-4258-a97e-2ead3a8e0838) | Full-dark; email + **masked password**; one accent **Sign in**; no workbench behind the form. | Magic-link / SSO as the day-one primary. Marketing “sign up for free.” |
+| [Cursor — email + password](https://mobbin.com/screens/097f40e5-0eca-4890-a326-45dbbc3bc869) | Full-dark; email + password + **Sign in**; forgot-password as secondary chrome only. | Email sign-in code as required. Consumer IdP on this screen. |
+| [Featurebase — Log in](https://mobbin.com/screens/ebdc03bf-cdfe-416b-a0d4-bac8d618b578) | Full-dark; email + password; one solid **Log in**; quiet secondary links. | Public self-serve sign-up as the FlowForge door (first admin stays B.3). |
 
-**SKIP (brief):** [Cursor](https://mobbin.com/screens/55a4edff-ccc5-42dc-9548-8be0d68871dc) — no SSO. [Basedash](https://mobbin.com/screens/6cac49d7-9304-4243-80a6-3f2487186207) — email-only Continue.
+**OIDC / SSO — deferred reference only** (not V.0 chrome): [Better Stack](https://mobbin.com/screens/9fa0ac37-55dc-43cb-850c-c9780ef9274f) · [Vapi](https://mobbin.com/screens/a07f8358-1beb-424e-ad91-650d4947cc3d) · [incident.io](https://mobbin.com/screens/d320f96d-739d-45ea-a4a7-8c8f92fcaf90) · [Resend](https://mobbin.com/screens/f66a3de6-e328-43db-87eb-9a2271aab64f). TAKE later for Auth Code + PKCE layout. SKIP as the first-ship front door.
 
-**Password login — deferred reference only** (not V.0): [Better Stack — email + password](https://mobbin.com/screens/f9c7a948-be6a-4258-a97e-2ead3a8e0838) · [Cursor — email + password](https://mobbin.com/screens/097f40e5-0eca-4890-a326-45dbbc3bc869) · [Featurebase — Log in](https://mobbin.com/screens/ebdc03bf-cdfe-416b-a0d4-bac8d618b578). SKIP as the V.0 front door.
+**SKIP (brief):** [Cursor](https://mobbin.com/screens/55a4edff-ccc5-42dc-9548-8be0d68871dc) — no SSO (and not the password-form cite above). [Basedash](https://mobbin.com/screens/6cac49d7-9304-4243-80a6-3f2487186207) — email-only Continue.
 
 ### Public products (backup)
 
@@ -160,7 +160,7 @@ IA/visual *class* only — not pixel specs. Use when a Mobbin screen is SKIP’d
 | **Vercel Dashboard** | Project-card scan; search / sort; dark density; status as icon + label; Create is obvious without becoming a marketing hero. | Deploy-metrics as the home (no FlowForge stats until a metrics owner exists); team-plan chrome; marketplace tiles. |
 | **macOS Finder** | Compact **disclosure** folder rail; path as orientation; select-a-folder filters the pane; keyboard move, not drag-only. | **Miller columns**; desktop-icon grid as primary browse; client-only trees; recursive “this folder and children” as the default list. |
 | **Stripe Dashboard** | Operational table/card density; search + filter that do not hide fail-closed empty; errors and denials stay high contrast. | Finance IA; charts as the home; softening failures into “pretty empty.” |
-| **Linear / Vercel / Stripe login** (public class) | Full-dark (or one dark card); **Sign in** / Continue with IdP as the only job; after success, the workbench — not a setup wizard. | Light-on-dark mixed chrome (Hex-style white card). Example-context / “Establish session.” Embed exchange on this page. Password login as the **V.0** door. |
+| **Linear / Vercel / Stripe login** (public class) | Full-dark (or one dark card); **identifier + masked password + Sign in** as the only job; after success, the workbench — not a setup wizard. | Light-on-dark mixed chrome (Hex-style white card). Example-context / “Establish session.” Embed exchange on this page. OIDC / Continue with IdP as the **V.0** door. |
 | **Retool-class internal tools** | App-list → editor workbench; dark chrome; inspector + canvas as one product. | Builder-as-marketplace; drag-any-widget canvas; a second “studio” origin. |
 | **n8n** | **Nothing visual.** Behavior/coverage only — already locked in the [parity charter](flowforge-rewrite-n8n-class-parity.md). | Colors, CSS, icons, NDV branding, Overview tabs, orange accent, “run the unsaved graph,” canvas triggers. |
 
@@ -253,34 +253,34 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share product 
 
 | Step | Rule |
 | --- | --- |
-| Signed-out | Full-dark Login screen. One accent (same as the workbench). One job: **Continue with IdP**. |
-| Sign-in (**V.0**) | **OIDC Authorization Code + PKCE.** Replaces cookie-bootstrap / Example-context / Establish session. **No password login in V.0.** |
+| Signed-out | Full-dark Login screen. One accent (same as the workbench). One job: **Sign in** (identifier + password). |
+| Sign-in (**V.0**) | **Local email/username + password.** Replaces cookie-bootstrap / Example-context / Establish session. **OIDC is a deferred stub**, not V.0. |
 | Authenticated | Mint the **same** cookie session shape (`ff_session` / `ff_csrf`, standalone **Lax**). Land **Overview** (`/workflows`). Workspace / workbench switching stays the existing shell switcher. |
 | Incomplete install | First-run wizard **only** (`GET /bootstrap` `incomplete`). Same B.1–B.7 order. Never on `/embed/v1`. |
 | Complete install | **No** Establish-session / cookie-bootstrap UX. No Example-context. Wizard never remounts. |
 | Embed | **`POST /embed/exchange` only** → `GET /session` `session.embed` (ADV-021). Host query display-only. **Do not merge** Login and embed exchange. Missing bind is still an alert. |
-| Password | **Out of V.0.** Bootstrap `password` stays rejected. A later password path is a separate signed lean. |
+| Password | **V.0 door.** POST once; never echo password or hash. Lean into OpenAPI’s deferred local-password path: bootstrap `password` stays **rejected until V.0a lands**. |
 
 #### Contract lean (jonny — not chrome-only)
 
-On `main`, standalone day-to-day auth is trusted-dev / Example-context / `POST /session` self-assert. The [security model](../reference/security-model.md) already prefers a cookie session from embed exchange **or a future OIDC login**. **V.0 locks that OIDC shape** — enough for Brent yes/no. Deeper IdP config APIs live in the **auth story after sign-off**.
+On `main`, standalone day-to-day auth is trusted-dev / Example-context / `POST /session` self-assert. The [security model](../reference/security-model.md) already prefers a cookie session from embed exchange **or a future OIDC login**. **V.0 locks local login** — enough for Brent yes/no. **OIDC Authorization Code + PKCE stays a deferred stub.** Deeper IdP config APIs live in a later auth story.
 
 | Lean | Rule |
 | --- | --- |
-| **V.0 auth shape** | **OIDC Authorization Code + PKCE** → mint existing `ff_session` / `ff_csrf` (standalone **Lax**). Then Overview + existing workspace switcher. Do not twin a second session type. |
-| **Config (V.0 enough)** | **Env / Settings**: issuer, client id, redirect. No password login. No full IdP-admin CRUD in this brief. |
+| **V.0 auth shape** | **Local email/username + password** → mint existing `ff_session` / `ff_csrf` (standalone **Lax**). Then Overview + existing workspace switcher. Do not twin a second session type. |
+| **OIDC** | **Deferred stub / future only.** Not day-one. Optional later scaffold (V.0c). No IdP-admin CRUD in this brief. |
+| **Password** | POST once; **never echoed** (JSON, logs, chrome, query, `localStorage`). Lean into OpenAPI’s deferred local-password path. |
 | **Embed** | Stays `POST /embed/exchange` **only** (ADV-021 / `session.embed`). Never Login-on-embed. |
-| **Keep** | Incomplete → wizard. Complete → no Establish-session front door. Trusted-dev `POST /session` stays **non-prod fail-closed**. |
-| **After sign-off** | Deeper IdP config APIs (secrets rotation, multi-IdP directory, redirect-URI CRUD beyond issuer / client id / redirect) belong in the **auth story**, not this north-star page. |
+| **Keep** | Incomplete → wizard. Complete → no Establish-session / Example-context front door. Trusted-dev `POST /session` stays **non-prod fail-closed**. |
 
 Trusted-dev `POST /session` + identity headers stay **local only** ([frontend UI](../reference/frontend-ui.md), R7.3). Production-locked processes still refuse `TRUSTED_DEV_IDENTITY_HEADERS`.
 
 #### Login chrome
 
-- Full-dark charcoal; one accent **Continue with IdP** (Better Stack / Vapi / incident.io / Resend SSO screens).
-- **No password fields** on V.0 Login. Password Mobbin cites are deferred-reference only. SSO / OIDC is the primary CTA — not email-password-first.
+- Full-dark charcoal; one accent **Sign in** (Better Stack / Cursor / Featurebase password screens).
+- **Password fields are the V.0 door.** SSO / OIDC Mobbin cites are deferred-reference only. No IdP buttons required on first ship.
 - Signed-out gate on standalone product routes: no session → Login (or wizard if incomplete). `401` after complete → Login, **not** wizard.
-- Errors are icon + text. No client secret, code verifier, or tokens in chrome, query leftovers, or `localStorage` beyond the PKCE handshake the contract requires.
+- Errors are icon + text. Password POSTs once and is cleared. Never persist password, hash, PEM, or KEK in chrome, query, or `localStorage`.
 - After success: Overview. Switcher works as today. Embed never mounts this screen.
 
 ### Shell
@@ -355,7 +355,7 @@ Invariants **keep**. Visual treatment **reshape**. **V.0a is a contract add** (s
 
 | Surface | Keep | Reshape | Do not |
 | --- | --- | --- | --- |
-| **Login / entry** | Cookie shape `ff_session` / `ff_csrf` (standalone Lax); embed `POST /embed/exchange` only; trusted-dev local-only; incomplete → wizard | Full-dark **OIDC** Login (Auth Code + PKCE); env/Settings issuer · client id · redirect; land Overview; signed-out gate | Merge Login with embed; Example-context / Establish session as the product door; **password login in V.0**; inventing full IdP CRUD in this brief |
+| **Login / entry** | Cookie shape `ff_session` / `ff_csrf` (standalone Lax); embed `POST /embed/exchange` only; trusted-dev local-only; incomplete → wizard | Full-dark **local** Login (email/username + password + Sign in); land Overview; signed-out gate. **Defer OIDC** (Auth Code + PKCE stub) | Merge Login with embed; Example-context / Establish session as the product door; **OIDC as the V.0 door**; echoing password or hash |
 | **Shell** | Routes, RBAC nav, Commands, switcher, embed lock, ADV-024 off-chrome | Full-dark charcoal; **Build / Observe / Vault-class** labels; icon-rail collapse; one accent | Second embed tree; Membership on the nav; cloned icons; mixed light/dark |
 | **Home / Overview** | `/workflows`; F.1–F.7; O.1–O.4; UXL.5–UXL.6; Create / Import / template → draft; `?folder=` / `?start=` / `?webhooks=` / `?schedules=` | Dark **cards** (Overview lean) or dense table with the same metadata; Create; search/sort/filter; path pills | Stats; Personal; Miller columns; tags-first; `/studio`; n8n Overview tabs; marketplace |
 | **Editor** | YAML projection; D1 layout; D2/D5; UXL.1–UXL.4 / UXL.7; satellites; one overlay | Three-pane; searchable palette; Test vs Publish; floating zoom/undo; selection ring | Run draft; canvas triggers; branded “NDV”; `/replay`; guessed graphs; rainbow palette |
@@ -396,7 +396,7 @@ Not this brief. Do not smuggle them into a V-slice “because the screenshot had
 | **Neon rainbow palettes / mixed light-dark chrome** | One accent; full-dark product surfaces. |
 | **KEK / secret chrome** | Server-only. Unexpected plaintext is strip + stop. |
 | **Greenfield APIs or a second UI package** | D6. **Exception:** V.0a standalone sign-in that mints the *existing* cookie pair. Not a second session type. |
-| **Password login in V.0 / full IdP CRUD** | V.0 is **OIDC Auth Code + PKCE** only. Env/Settings: issuer, client id, redirect. Deeper IdP APIs wait for the auth story after sign-off. |
+| **Day-one OIDC / full IdP admin** | V.0 is **local login**. OIDC = deferred stub (Auth Code + PKCE). IdP-admin APIs wait for a later signed lean. |
 | **n8n visual clone** | Hard line. |
 | **Screen-reader graph rewrite / mobile app** | Still aspirational in frontend-ui. |
 | **GitHub issues from this PR** | Arie opens V-epics **after** Brent yes. |
@@ -405,27 +405,27 @@ Not this brief. Do not smuggle them into a V-slice “because the screenshot had
 
 ## 10. Proposed V.0–V.n (after Brent yes)
 
-Issue-ready **shape** for Arie. **Do not implement from this page.** **V.0a is a real API/contract story** (jonny): **OIDC Authorization Code + PKCE**. **V.0b and V.1+ stay chrome-only** on existing routes and verbs (plus the new standalone Login screen). **No password login in V.0.**
+Issue-ready **shape** for Arie. **Do not implement from this page.** **V.0a is a real API/contract story** (jonny): **local password login + session mint**. **V.0b and V.1+ stay chrome-only** on existing routes and verbs (plus the new standalone Login screen). **OIDC is a deferred stub** — optional **V.0c**, not a V.0 ship gate.
 
 Effort **S** or **M** unless noted.
 
-### V.0a — OIDC sign-in contract
+### V.0a — Local login contract
 
 **Owner:** jonny.
-**Surfaces:** `/api/v1` OIDC start/callback + session mint (standalone). Not embed.
+**Surfaces:** `/api/v1` local account + session mint (standalone). Not embed.
 **Effort:** L.
 **Blocked by:** Brent yes.
 **Blocks:** V.0b.
 
 Acceptance:
 
-- **OIDC Authorization Code + PKCE** mints the **same** `ff_session` / `ff_csrf` cookie pair (standalone **Lax**; existing `Path=/api/v1`, Secure, CSRF rules).
-- Config via **env / Settings**: issuer, client id, redirect. Enough for V.0. Deeper IdP config APIs wait for the **auth story after sign-off**.
-- **No password login in V.0.** Bootstrap `password` stays rejected.
+- **Local login accounts** (email or username + password) mint the **same** `ff_session` / `ff_csrf` cookie pair (standalone **Lax**; existing `Path=/api/v1`, Secure, CSRF rules).
+- Lean into OpenAPI’s deferred local-password path: bootstrap `password` is **rejected until this lands**; after it lands, password POST once and is **never echoed** (no hash in JSON, logs, chrome, query, or `localStorage`).
 - `GET /session` after sign-in is a normal non-embed session (no `session.embed` bind). Operator lands Overview; workspace switcher uses existing workspace APIs.
-- Embed stays `POST /embed/exchange` **only** (ADV-021). Untouched. Embed sessions still cannot escalate or create tenants/workspaces.
+- `POST /embed/exchange` and ADV-021 are **untouched**. Embed sessions still cannot escalate or create tenants/workspaces.
 - Trusted-dev `POST /session` + identity headers stay **non-prod fail-closed**. Never rewrite login. Production-locked processes still refuse `TRUSTED_DEV_IDENTITY_HEADERS`.
 - Incomplete installs still open the wizard; complete installs never use Establish-session / cookie-bootstrap UX.
+- **OIDC:** stub / scaffold only (Auth Code + PKCE **when an IdP exists**). Not day-one. No IdP-admin API in this slice.
 
 ### V.0b — Login chrome + signed-out gate
 
@@ -436,11 +436,26 @@ Acceptance:
 
 Acceptance:
 
-- Full-dark Login; one accent; **Continue with IdP** (Auth Code + PKCE). No password fields. No Example-context / Establish session / trusted-dev form as the product door.
+- Full-dark Login; one accent; **email/username + masked password + Sign in**. Password fields are OK. No Example-context / Establish session / trusted-dev form as the product door.
+- No SSO / OIDC buttons required on first ship (scaffold may exist server-side; chrome stays local-login).
 - Signed-out standalone routes → Login. Complete-install `401` → Login, **not** wizard. Incomplete → wizard only.
 - After success → `/workflows` (Overview). Switcher unchanged.
 - Embed never mounts Login. Missing `session.embed` is still an ADV-021 alert.
-- No password, client secret, PEM, or KEK in chrome or `localStorage`.
+- Password POSTs once and is cleared. Never persist password / hash / PEM / KEK in chrome, query, or `localStorage`.
+
+### V.0c — OIDC stub scaffold (optional / later)
+
+**Owner:** jonny (if opened).
+**Surfaces:** optional OIDC start/callback scaffold (standalone). Not embed.
+**Effort:** M.
+**Blocked by:** Brent yes. **Not a V.0 ship gate.** Does not block V.0b.
+
+Acceptance:
+
+- **OIDC Authorization Code + PKCE** scaffold only — Settings stub / disabled chrome is enough.
+- Does **not** replace local login as the day-one door.
+- Same `ff_session` / `ff_csrf` pair if a later IdP path lands. No second cookie family. Embed exchange stays untouched.
+- Deeper IdP config APIs (secrets rotation, multi-IdP directory, full redirect CRUD) stay out of this brief.
 
 ### V.1 — Token foundation
 
@@ -531,8 +546,9 @@ Acceptance:
 
 | ID | Slice | Owner | Blocked by | Effort |
 | --- | --- | --- | --- | --- |
-| V.0a | OIDC Auth Code + PKCE → `ff_session` / `ff_csrf` (standalone Lax) | **jonny** | Brent yes | L |
-| V.0b | Login chrome + signed-out gate | Chloe | V.0a | M |
+| V.0a | Local login contract (email/username + password → `ff_session` / `ff_csrf`) | **jonny** | Brent yes | L |
+| V.0b | Login chrome + signed-out gate (password fields OK) | Chloe | V.0a | M |
+| V.0c | OIDC stub scaffold (optional / later — not a V.0 ship gate) | jonny | Brent yes | M |
 | V.1 | Token foundation | Chloe | Brent yes | S |
 | V.2 | Shell restyle | Chloe | V.1 | S |
 | V.3 | Overview home visual rebuild | Chloe | V.1, F/O landed | M |
@@ -545,7 +561,7 @@ Acceptance:
 
 ## 11. Acceptance
 
-**Brent yes** means: this visual + IA north star is the target; Arie may open **V.0a–V.7**; jonny implements V.0a; Chloe implements V.0b and V.1+.
+**Brent yes** means: this visual + IA north star is the target; Arie may open **V.0a–V.7** (optional **V.0c** later); jonny implements V.0a (and V.0c if opened); Chloe implements V.0b and V.1+.
 
 **Brent no** means: revise this page. Do not start V-slices.
 
@@ -553,10 +569,10 @@ Acceptance:
 
 | Gate | Pass |
 | --- | --- |
-| Login | Complete install → full-dark **OIDC** Login (Auth Code + PKCE) → `ff_session` / `ff_csrf` (Lax) → Overview. No password. No Establish-session front door. |
+| Login | Complete install → full-dark **local** Login (email/username + password) → `ff_session` / `ff_csrf` (Lax) → Overview. No Establish-session front door. **OIDC deferred.** |
 | Visual | Dark-first charcoal workbench; one FlowForge accent; Overview cards match the **lean** of the attached screenshot (not an n8n clone). |
 | Home IA | Card list primary; Finder rail filter-only; path pills; no stats / Personal / Miller columns / tags-first. |
-| Hard lines | [§3](#3-hard-lines) unchanged. YAML / drafts / vault / ADV-021 / ADV-024 / one replay / fail-closed catalog / standalone=embed / wizard-never-embed / no password in V.0 / Login ≠ embed exchange. |
+| Hard lines | [§3](#3-hard-lines) unchanged. YAML / drafts / vault / ADV-021 / ADV-024 / one replay / fail-closed catalog / standalone=embed / wizard-never-embed / password never echoed / Login ≠ embed exchange / OIDC not V.0. |
 | Verbs | Save draft / Publish / Start published / Test run / Create still mean the same things. |
 | No second app | Same `apps/web` tree. Tokens + optional shadcn primitives. No `/studio`. |
 
@@ -572,11 +588,11 @@ Secret-free evidence. Do not treat this page as permission to close R / UXL / F 
 | **ADV-024** | Membership / isolation stay off product chrome. Isolation success is a denial. Denial contrast is not quieter. |
 | **Folders / Overview** | Non-recursive `?folderId=`; Unfiled virtual; refuse-if-nonempty; move = `PATCH folderId` only. No stats / Personal. |
 | **Wizard** | Never on embed. Skip still loud HTTP-until-Settings. No remount after complete. Complete-install `401` is Login, not wizard. |
-| **Login / OIDC** | Auth Code + PKCE mints `ff_session` / `ff_csrf` (Lax). No password fields. Embed stays `POST /embed/exchange` only. Env/Settings: issuer, client id, redirect. |
+| **Login / password** | Local sign-in mints `ff_session` / `ff_csrf` (Lax). Password / hash never in JSON, logs, chrome, query, or `localStorage`. Embed stays `POST /embed/exchange` only. **No day-one OIDC front door.** |
 | **Operate** | One overlay or `/executions/{id}`. Loud `indeterminate`. Fail-closed catalog. |
 | **a11y** | Single `<main>`, skip link, Esc / focus return, icon+text, reduced motion. |
 
-**Regression gates (all V-slices):** YAML round-trip unchanged; drafts never execute; vault metadata only; ADV-021 / ADV-024 unchanged; one operate path; fail-closed catalog; folders workspace-scoped; no cascade delete; no n8n visual clone; no password login in V.0; Login and embed exchange stay separate.
+**Regression gates (all V-slices):** YAML round-trip unchanged; drafts never execute; vault metadata only; ADV-021 / ADV-024 unchanged; one operate path; fail-closed catalog; folders workspace-scoped; no cascade delete; no n8n visual clone; password / hash never echoed; Login and embed exchange stay separate; OIDC is not the V.0 door.
 
 ### Optional Magic Patterns (after sign-off)
 
@@ -585,8 +601,8 @@ After **Brent yes**, Gracie / Chloe may prototype **Overview home** and **editor
 | Rule | Apply |
 | --- | --- |
 | When | After yes. Not a substitute for this brief. |
-| What | Dark Overview cards + Create + search/sort/filter + path pills; editor top bar + satellites on a dark canvas; optional full-dark **OIDC** Login. |
-| What not | Stats, Personal, Miller columns, n8n orange, embed wizard, KEK chrome, a second studio, V.0 password fields. |
+| What | Dark Overview cards + Create + search/sort/filter + path pills; editor top bar + satellites on a dark canvas; optional full-dark **local** Login. |
+| What not | Stats, Personal, Miller columns, n8n orange, embed wizard, KEK chrome, a second studio, day-one OIDC buttons. |
 | Landing | Prompts and editor links live in a later docs note or the V.3/V.4 story. Do not treat a prototype as shipped chrome. |
 
 ---
@@ -602,5 +618,5 @@ After **Brent yes**, Gracie / Chloe may prototype **Overview home** and **editor
 | [Frontend UI](../reference/frontend-ui.md) | Landed chrome. Update when V-slices land — not in this PR. |
 | [Rewrite UI surfaces](../reference/rewrite-ui-surfaces.md) | Surface map. Do not invent a second IA. |
 | [Architecture](../architecture.md) | Boundaries. Visual rebuild cannot move them. |
-| [Security model](../reference/security-model.md) | Trust boundaries. V.0a is the future OIDC login that doc already points at; trusted-dev stays non-prod. Tokens cannot move them. |
+| [Security model](../reference/security-model.md) | Trust boundaries. V.0a leans on the deferred local-password path; OIDC remains future / stub. Trusted-dev stays non-prod. Tokens cannot move them. |
 | [Embed SDK](../reference/embed-sdk.md) / [Portal adapter](../reference/portal-adapter.md) | ADV-021, CHIPS, display-only host query stay. |
