@@ -412,10 +412,6 @@ body {
   color: var(--ff-text);
 }
 
-.ff-explorer-row [data-o1="card-name"] {
-  font-size: var(--ff-type-body);
-}
-
 @media (max-width: 767px) {
   .ff-explorer-tree.ff-overview-rail {
     border-right: none;
