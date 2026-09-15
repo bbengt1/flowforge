@@ -94,6 +94,29 @@ import {
   overviewPublishedBadge,
   type OverviewHomeSort,
 } from "@/lib/overview-home";
+import {
+  FF_OVERVIEW_CARD_ROW_CLASS,
+  FF_OVERVIEW_CHIP_CLASS,
+  FF_OVERVIEW_CONTROL_CLASS,
+  FF_OVERVIEW_CREATE_CLASS,
+  FF_OVERVIEW_DANGER_CLASS,
+  FF_OVERVIEW_DIALOG_CLASS,
+  FF_OVERVIEW_GHOST_CLASS,
+  FF_OVERVIEW_HEADER_CLASS,
+  FF_OVERVIEW_KEBAB_CLASS,
+  FF_OVERVIEW_LINK_CLASS,
+  FF_OVERVIEW_MENU_CLASS,
+  FF_OVERVIEW_MUTED_CLASS,
+  FF_OVERVIEW_PILL_CLASS,
+  FF_OVERVIEW_RAIL_ACTIVE_CLASS,
+  FF_OVERVIEW_RAIL_CLASS,
+  FF_OVERVIEW_RAIL_ITEM_CLASS,
+  FF_OVERVIEW_ROOT_CLASS,
+  FF_OVERVIEW_SCAN_LEAD_CLASS,
+  FF_OVERVIEW_SCAN_TRAIL_CLASS,
+  FF_OVERVIEW_TITLE_CLASS,
+  FF_OVERVIEW_VALUE,
+} from "@/lib/overview-visual";
 import { overviewAncestryPills } from "@/lib/overview-path-pills";
 import {
   WORKFLOW_TEMPLATES,
@@ -1187,7 +1210,7 @@ function WorkflowHomeSession() {
 
   if (denied) {
     return (
-      <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
+      <p className={`${FF_OVERVIEW_DIALOG_CLASS} p-4 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
         Workflows are hidden. This workspace role does not include{" "}
         <code className="font-mono text-xs">workflow.view</code>.
       </p>
@@ -1212,7 +1235,8 @@ function WorkflowHomeSession() {
       data-o4={embed ? "embed-overview" : "standalone-overview"}
       data-o4-tree="api"
       data-o4-viewer={canMutateFolders ? "editor" : "select-only"}
-      className="space-y-6"
+      data-ff-overview={FF_OVERVIEW_VALUE}
+      className={`${FF_OVERVIEW_ROOT_CLASS} space-y-4`}
     >
       {!ready ? (
         <SessionSetupHint purpose="before listing workflows." />
@@ -1245,35 +1269,35 @@ function WorkflowHomeSession() {
         onCancel={closeFolderDialog}
         onDropWorkflow={(workflowId, target) => void moveItem(workflowId, target)}
       />
-      <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-4">
       <FolderBreadcrumb crumbs={crumbs} onSelect={selectFolder} />
       {canMutateFolders && moveIntoOpen && selection.kind === "folder" ? (
         <form
           data-f5="folder-empty-move"
           data-home-folder-empty-move-dialog=""
-          className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
+          className={`${FF_OVERVIEW_DIALOG_CLASS} space-y-3`}
           onSubmit={(event) => {
             event.preventDefault();
             void submitMoveIntoFolder();
           }}
         >
-          <p className="text-sm text-zinc-700">
+          <p className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
             Move an existing workflow into this folder. This does not change
             YAML, draft revision, or activation.
           </p>
           {moveIntoCandidates.length === 0 ? (
-            <p className="text-sm text-zinc-600">
+            <p className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
               No workflows are available to move. Create a draft here or use
               the folder rail.
             </p>
           ) : (
             <label className="block text-sm">
-              <span className="text-zinc-600">Workflow</span>
+              <span className={FF_OVERVIEW_MUTED_CLASS}>Workflow</span>
               <select
                 data-home-folder-empty-move-target=""
                 value={moveIntoWorkflowId}
                 onChange={(event) => setMoveIntoWorkflowId(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+                className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
               >
                 {moveIntoCandidates.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -1287,7 +1311,7 @@ function WorkflowHomeSession() {
             <button
               type="submit"
               disabled={pending !== null || !moveIntoWorkflowId}
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              className={FF_OVERVIEW_CREATE_CLASS}
             >
               {FOLDER_EMPTY_MOVE_LABEL}
             </button>
@@ -1295,7 +1319,7 @@ function WorkflowHomeSession() {
               type="button"
               disabled={pending !== null}
               onClick={closeMoveIntoFolder}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className={FF_OVERVIEW_GHOST_CLASS}
             >
               Cancel
             </button>
@@ -1306,26 +1330,26 @@ function WorkflowHomeSession() {
       {canMutateFolders && moveDialog ? (
         <form
           data-home-workflow-move-dialog=""
-          className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
+          className={`${FF_OVERVIEW_DIALOG_CLASS} space-y-3`}
           onSubmit={(event) => {
             event.preventDefault();
             void submitMoveDialog();
           }}
         >
-          <p className="text-sm text-zinc-700">
-            Move <span className="font-medium text-zinc-900">{moveDialog.name}</span>{" "}
+          <p className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+            Move <span className={`font-medium ${FF_OVERVIEW_TITLE_CLASS}`}>{moveDialog.name}</span>{" "}
             to a folder in this workspace. This does not change YAML, draft
             revision, or activation.
           </p>
           <label className="block text-sm">
-            <span className="text-zinc-600">Destination</span>
+            <span className={FF_OVERVIEW_MUTED_CLASS}>Destination</span>
             <select
               data-home-workflow-move-target=""
               value={folderQueryValue(moveTarget)}
               onChange={(event) =>
                 setMoveTarget(parseFolderQuery(event.target.value))
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
             >
               {workflowMoveTargets(folders).map((option) => (
                 <option
@@ -1344,7 +1368,7 @@ function WorkflowHomeSession() {
                 pending !== null ||
                 workflowAlreadyInFolder(moveDialog.folderId, moveTarget)
               }
-              className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+              className={FF_OVERVIEW_CREATE_CLASS}
             >
               {FOLDER_MOVE_VERB}
             </button>
@@ -1352,7 +1376,7 @@ function WorkflowHomeSession() {
               type="button"
               disabled={pending !== null}
               onClick={closeMoveDialog}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className={FF_OVERVIEW_GHOST_CLASS}
             >
               Cancel
             </button>
@@ -1362,15 +1386,15 @@ function WorkflowHomeSession() {
 
       <section
         data-o1="overview-header"
-        className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+        className={FF_OVERVIEW_HEADER_CLASS}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold tracking-tight text-zinc-900">
+            <h2 className={`text-xl tracking-tight ${FF_OVERVIEW_TITLE_CLASS}`}>
               {OVERVIEW_HEADING}
             </h2>
-            <p className="mt-1 text-sm text-zinc-600">{OVERVIEW_HELP}</p>
-            <p className="mt-1 text-sm text-zinc-600" data-f6="search-help">
+            <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{OVERVIEW_HELP}</p>
+            <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`} data-f6="search-help">
               {FOLDER_SEARCH_HELP} Folder membership is not in YAML.
             </p>
             <p
@@ -1395,7 +1419,7 @@ function WorkflowHomeSession() {
               type="button"
               onClick={() => void refresh()}
               disabled={pending !== null}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60"
+              className={FF_OVERVIEW_GHOST_CLASS}
             >
               {pending === "list" ? "Loading…" : "Refresh"}
             </button>
@@ -1410,7 +1434,7 @@ function WorkflowHomeSession() {
                     void createFromYaml(blank.definitionYaml);
                   }
                 }}
-                className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                className={FF_OVERVIEW_CREATE_CLASS}
               >
                 {OVERVIEW_CREATE_LABEL}
               </button>
@@ -1434,7 +1458,7 @@ function WorkflowHomeSession() {
                 setFilters((current) => ({ ...current, query: value }))
               }
             />
-            <label className="flex items-center gap-2 text-sm text-zinc-700">
+            <label className={`flex items-center gap-2 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
               <input
                 type="checkbox"
                 checked={searchInThisFolder}
@@ -1445,14 +1469,14 @@ function WorkflowHomeSession() {
             </label>
           </div>
           <label className="block min-w-[10rem] text-sm">
-            <span className="text-zinc-600">{OVERVIEW_SORT_LABEL}</span>
+            <span className={FF_OVERVIEW_MUTED_CLASS}>{OVERVIEW_SORT_LABEL}</span>
             <select
               data-o1="sort"
               value={sort}
               onChange={(event) =>
                 setSort(event.target.value as OverviewHomeSort)
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
             >
               {OVERVIEW_SORTS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -1467,9 +1491,7 @@ function WorkflowHomeSession() {
             aria-expanded={filterOpen}
             onClick={() => setFilterOpen((current) => !current)}
             className={
-              filterOpen
-                ? "rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white"
-                : "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50"
+              filterOpen ? FF_OVERVIEW_CREATE_CLASS : FF_OVERVIEW_GHOST_CLASS
             }
           >
             {OVERVIEW_FILTER_LABEL}
@@ -1514,7 +1536,7 @@ function WorkflowHomeSession() {
             onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
           />
           <label className="block text-sm">
-            <span className="text-zinc-600">Activation</span>
+            <span className={FF_OVERVIEW_MUTED_CLASS}>Activation</span>
             <select
               value={filters.activation}
               onChange={(event) =>
@@ -1523,7 +1545,7 @@ function WorkflowHomeSession() {
                   activation: event.target.value as HomeActivationFilter,
                 }))
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
             >
               {HOME_ACTIVATION_FILTERS.map((option) => (
                 <option key={option.value || "any"} value={option.value}>
@@ -1533,7 +1555,7 @@ function WorkflowHomeSession() {
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600">Last run</span>
+            <span className={FF_OVERVIEW_MUTED_CLASS}>Last run</span>
             <select
               value={filters.lastRun}
               onChange={(event) =>
@@ -1542,7 +1564,7 @@ function WorkflowHomeSession() {
                   lastRun: event.target.value as WorkflowHomeFilters["lastRun"],
                 }))
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
             >
               <option value="">Any</option>
               <option value="never">Never</option>
@@ -1555,7 +1577,7 @@ function WorkflowHomeSession() {
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600">Last modified</span>
+            <span className={FF_OVERVIEW_MUTED_CLASS}>Last modified</span>
             <select
               value={filters.lastModified}
               onChange={(event) =>
@@ -1564,7 +1586,7 @@ function WorkflowHomeSession() {
                   lastModified: event.target.value as WorkflowHomeFilters["lastModified"],
                 }))
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
             >
               <option value="">Any</option>
               <option value="24h">Last 24 hours</option>
@@ -1588,7 +1610,7 @@ function WorkflowHomeSession() {
               onChange={setCreateSlug}
             />
             <div className="flex items-end">
-              <label className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50">
+              <label className={FF_OVERVIEW_GHOST_CLASS}>
                 Import YAML
                 <input
                   ref={importRef}
@@ -1901,10 +1923,10 @@ function FolderRail({
       aria-label={FOLDER_RAIL_LABEL}
       data-home-folder-rail="nav"
       data-o2="finder-rail"
-      className="h-fit rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm"
+      className={`h-fit ${FF_OVERVIEW_RAIL_CLASS}`}
     >
       <div className="flex items-start justify-between gap-2 px-2">
-        <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+        <p className={`text-xs font-medium tracking-wide uppercase ${FF_OVERVIEW_MUTED_CLASS}`}>
           {FOLDER_RAIL_LABEL}
         </p>
         {canMutate ? (
@@ -1914,7 +1936,7 @@ function FolderRail({
             disabled={pending || !canCreateHere}
             title={!canCreateHere ? FOLDER_DEPTH_HELP : undefined}
             onClick={onCreate}
-            className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             {NEW_FOLDER_LABEL}
           </button>
@@ -1934,20 +1956,20 @@ function FolderRail({
       {canMutate && dialog ? (
         <form
           data-home-folder-dialog={dialog.kind}
-          className="mt-3 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-2"
+          className={`mt-3 space-y-2 ${FF_OVERVIEW_DIALOG_CLASS} p-2`}
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit();
           }}
         >
           <label className="block text-sm">
-            <span className="text-zinc-600">
+            <span className={FF_OVERVIEW_MUTED_CLASS}>
               {dialog.kind === "create" ? NEW_FOLDER_LABEL : RENAME_FOLDER_LABEL}
             </span>
             <input
               value={nameDraft}
               onChange={(event) => onNameDraft(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+              className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
               autoComplete="off"
               maxLength={256}
               aria-invalid={nameError ? true : undefined}
@@ -1956,7 +1978,7 @@ function FolderRail({
               }
             />
           </label>
-          <p id="home-folder-name-help" className="text-xs text-zinc-500">
+          <p id="home-folder-name-help" className={`text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
             {dialog.kind === "create"
               ? createParentId
                 ? "Creates a folder under the selection. Unfiled is not a parent."
@@ -1968,7 +1990,7 @@ function FolderRail({
               id="home-folder-name-error"
               role="alert"
               data-home-folder-name-error=""
-              className="text-xs text-rose-900"
+              className={`text-xs ${FF_OVERVIEW_DANGER_CLASS}`}
             >
               {nameError}
             </p>
@@ -1977,7 +1999,7 @@ function FolderRail({
             <button
               type="submit"
               disabled={pending}
-              className="rounded-md border border-teal-800 bg-teal-800 px-2 py-1 text-xs text-white hover:bg-teal-900 disabled:opacity-60"
+              className={`${FF_OVERVIEW_CREATE_CLASS} px-2 py-1 text-xs`}
             >
               {dialog.kind === "create" ? "Create" : "Save"}
             </button>
@@ -1985,7 +2007,7 @@ function FolderRail({
               type="button"
               disabled={pending}
               onClick={onCancel}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-800 hover:bg-white disabled:opacity-60"
+              className={`${FF_OVERVIEW_GHOST_CLASS} px-2 py-1 text-xs`}
             >
               Cancel
             </button>
@@ -1993,12 +2015,12 @@ function FolderRail({
         </form>
       ) : null}
       <label className="mt-3 block px-2 text-sm">
-        <span className="text-zinc-600">{FOLDER_RAIL_FILTER_LABEL}</span>
+        <span className={FF_OVERVIEW_MUTED_CLASS}>{FOLDER_RAIL_FILTER_LABEL}</span>
         <input
           value={railFilter}
           onChange={(event) => onRailFilter(event.target.value)}
           data-home-folder-rail-filter=""
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+          className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
           autoComplete="off"
         />
       </label>
@@ -2011,14 +2033,14 @@ function FolderRail({
             onClick={() => onSelect({ kind: "unfiled" })}
             className={
               (unfiledCurrent
-                ? "flex w-full items-center gap-1.5 rounded-lg border border-teal-800 bg-teal-800 px-2 py-1 text-left text-sm text-white"
-                : "flex w-full items-center gap-1.5 rounded-lg border border-transparent px-2 py-1 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+                ? `w-full ${FF_OVERVIEW_RAIL_ACTIVE_CLASS}`
+                : `w-full ${FF_OVERVIEW_RAIL_ITEM_CLASS}`) +
               (canMutate &&
               dragging &&
               canDropWorkflowOnFolder(true, dragging.folderId, {
                 kind: "unfiled",
               })
-                ? " ring-2 ring-teal-600 ring-offset-1"
+                ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-canvas)]"
                 : "")
             }
             {...folderDropHandlers(
@@ -2108,7 +2130,7 @@ function FolderRailNode({
             aria-expanded={expanded}
             aria-label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
             onClick={() => onToggle(node.id)}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-100"
+            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ${FF_OVERVIEW_MUTED_CLASS}`}
           >
             <FinderDisclosureIcon expanded={expanded} />
           </button>
@@ -2123,15 +2145,15 @@ function FolderRailNode({
           onClick={() => onSelect({ kind: "folder", id: node.id })}
           className={
             (selected
-              ? "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-teal-800 bg-teal-800 px-2 py-1 text-left text-sm text-white"
-              : "flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent px-2 py-1 text-left text-sm text-zinc-800 hover:bg-zinc-50") +
+              ? FF_OVERVIEW_RAIL_ACTIVE_CLASS
+              : FF_OVERVIEW_RAIL_ITEM_CLASS) +
             (canMutate &&
             dragging &&
             canDropWorkflowOnFolder(true, dragging.folderId, {
               kind: "folder",
               id: node.id,
             })
-              ? " ring-2 ring-teal-600 ring-offset-1"
+              ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-canvas)]"
               : "")
           }
           {...folderDropHandlers(
@@ -2153,7 +2175,7 @@ function FolderRailNode({
               data-folder-id={node.id}
               disabled={pending}
               onClick={() => onRename(node.id)}
-              className="shrink-0 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-1.5 py-0.5 text-xs`}
             >
               {RENAME_FOLDER_LABEL}
             </button>
@@ -2164,7 +2186,7 @@ function FolderRailNode({
               disabled={pending || deleteBlocked}
               title={deleteBlocked ? FOLDER_NOT_EMPTY_HELP : undefined}
               onClick={() => onDelete(node.id)}
-              className="shrink-0 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+              className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-1.5 py-0.5 text-xs`}
             >
               {DELETE_FOLDER_LABEL}
             </button>
@@ -2209,7 +2231,7 @@ function FolderBreadcrumb({
     <nav
       aria-label={FOLDER_CRUMB_LABEL}
       data-home-folder-crumb=""
-      className="flex flex-wrap items-center gap-1 text-sm text-zinc-600"
+      className={`flex flex-wrap items-center gap-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
     >
       {crumbs.map((crumb, index) => (
         <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
@@ -2217,7 +2239,7 @@ function FolderBreadcrumb({
           <button
             type="button"
             onClick={() => onSelect(crumb.selection)}
-            className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            className={`font-medium ${FF_OVERVIEW_LINK_CLASS}`}
           >
             {crumb.label}
           </button>
@@ -2238,11 +2260,11 @@ function FilterInput({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-zinc-600">{label}</span>
+      <span className={FF_OVERVIEW_MUTED_CLASS}>{label}</span>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+        className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
         autoComplete="off"
       />
     </label>
@@ -2262,11 +2284,11 @@ function FilterSelect({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-zinc-600">{label}</span>
+      <span className={FF_OVERVIEW_MUTED_CLASS}>{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+        className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
       >
         <option value="">Any</option>
         {options.map((option) => (
@@ -2281,7 +2303,7 @@ function FilterSelect({
 
 function WorkflowMeta({ item }: { item: WorkflowHomeItem }) {
   return (
-    <p className="text-xs text-zinc-500">
+    <p className={`text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
       {item.status}
       {item.latestVersionNumber ? ` · v${item.latestVersionNumber}` : " · unpublished"}
       {" · "}
@@ -2371,7 +2393,7 @@ function WorkflowActions({
           disabled={pending}
           onClick={() => onTestRun(item)}
           title={EDITOR_WORKING_MEMORY_TEST_RUN}
-          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+          className={`text-sm font-medium ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           Test run
         </button>
@@ -2384,18 +2406,18 @@ function WorkflowActions({
             disabled={pending}
             onClick={() => onStart(item)}
             title={EDITOR_WORKING_MEMORY_START_USES_PUBLISHED}
-            className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+            className={`text-sm font-medium ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
           >
             Start published
           </button>
         ) : (
-          <span className="text-sm text-zinc-500" title="workflow.execute required">
+          <span className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`} title="workflow.execute required">
             Start locked
           </span>
         )
       ) : (
         <span
-          className="text-sm text-zinc-500"
+          className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
           title={EDITOR_WORKING_MEMORY_START_NEEDS_PUBLISHED}
         >
           Start published
@@ -2407,7 +2429,7 @@ function WorkflowActions({
           id={homeSatelliteOverlayTriggerId("webhooks", item.id)}
           disabled={pending}
           onClick={() => onWebhooks(item)}
-          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+          className={`text-sm font-medium ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           Webhooks
         </button>
@@ -2418,14 +2440,14 @@ function WorkflowActions({
           id={homeSatelliteOverlayTriggerId("schedules", item.id)}
           disabled={pending}
           onClick={() => onSchedules(item)}
-          className="text-sm font-medium text-teal-800 underline disabled:opacity-60"
+          className={`text-sm font-medium ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           Schedules
         </button>
       ) : null}
       <Link
         href={`/workflows/${item.id}`}
-        className="text-sm font-medium text-teal-800 underline"
+        className={`text-sm font-medium ${FF_OVERVIEW_LINK_CLASS}`}
       >
         Open editor
       </Link>
@@ -2435,7 +2457,7 @@ function WorkflowActions({
             workflowId: item.id,
             lastRunId: item.lastRunId,
           })}
-          className="text-sm text-zinc-700 underline"
+          className={`text-sm ${FF_OVERVIEW_LINK_CLASS}`}
         >
           Last run
         </Link>
@@ -2445,7 +2467,7 @@ function WorkflowActions({
           type="button"
           disabled={pending}
           onClick={() => onDuplicate(item)}
-          className="text-sm text-zinc-700 underline disabled:opacity-60"
+          className={`text-sm ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           Duplicate
         </button>
@@ -2456,7 +2478,7 @@ function WorkflowActions({
           data-home-workflow-verb="move"
           disabled={pending}
           onClick={() => onMove(item)}
-          className="text-sm text-zinc-700 underline disabled:opacity-60"
+          className={`text-sm ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           {FOLDER_MOVE_VERB}
         </button>
@@ -2466,7 +2488,7 @@ function WorkflowActions({
           type="button"
           disabled={pending}
           onClick={() => onExport(item)}
-          className="text-sm text-zinc-700 underline disabled:opacity-60"
+          className={`text-sm ${FF_OVERVIEW_LINK_CLASS} disabled:opacity-60`}
         >
           Export
         </button>
@@ -2491,7 +2513,7 @@ function WorkflowFolderPath({
       <span
         data-home-folder-path=""
         data-o2="unfiled"
-        className="text-xs text-zinc-500"
+        className={`text-xs ${FF_OVERVIEW_MUTED_CLASS}`}
       >
         {UNFILED_FOLDER_LABEL}
       </span>
@@ -2503,7 +2525,7 @@ function WorkflowFolderPath({
         data-home-folder-path=""
         data-o2="path-pills"
         aria-label={pathLabel}
-        className="text-xs text-zinc-500"
+        className={`text-xs ${FF_OVERVIEW_MUTED_CLASS}`}
       />
     );
   }
@@ -2517,7 +2539,7 @@ function WorkflowFolderPath({
       {pills.map((pill, index) => (
         <span key={pill.id} className="flex items-center gap-1">
           {index > 0 ? (
-            <span aria-hidden="true" className="text-zinc-400">
+            <span aria-hidden="true" className={FF_OVERVIEW_MUTED_CLASS}>
               /
             </span>
           ) : null}
@@ -2527,7 +2549,7 @@ function WorkflowFolderPath({
             data-folder-id={pill.id}
             title={FOLDER_PATH_REVEAL_LABEL}
             onClick={() => onSelect({ kind: "folder", id: pill.id })}
-            className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:border-teal-700 hover:text-teal-800"
+            className={FF_OVERVIEW_PILL_CLASS}
           >
             {pill.name}
           </button>
@@ -2607,11 +2629,17 @@ function WorkflowHomeCards({
               data-home-row-scan="card"
               {...workflowRowDragProps(canMove, item, onDragStart, onDragEnd)}
             >
-              <div className="flex flex-wrap items-center gap-3">
+              <div className={FF_OVERVIEW_CARD_ROW_CLASS}>
+                <div
+                  data-home-row-scan-cell="activation"
+                  className={FF_OVERVIEW_SCAN_LEAD_CLASS}
+                >
+                  <HomeActivationStatus column={item.activation} />
+                </div>
                 <div className="min-w-0 flex-1">
                   <Link
                     href={`/workflows/${item.id}`}
-                    className="text-base font-medium text-zinc-900 hover:underline"
+                    className={`${FF_OVERVIEW_TITLE_CLASS} text-base hover:underline`}
                     data-o1="card-name"
                   >
                     {item.name}
@@ -2625,7 +2653,7 @@ function WorkflowHomeCards({
                   ) : null}
                 </div>
                 <p
-                  className="text-sm text-zinc-500"
+                  className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
                   data-o1="card-dates"
                 >
                   {dates.line}
@@ -2633,28 +2661,28 @@ function WorkflowHomeCards({
                 {published.shown ? (
                   <span
                     data-o1="published"
-                    className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700"
+                    className={FF_OVERVIEW_CHIP_CLASS}
                   >
                     {OVERVIEW_PUBLISHED_LABEL}
                   </span>
                 ) : null}
+                <div
+                  data-home-row-scan-cell="lastRun"
+                  className={FF_OVERVIEW_SCAN_TRAIL_CLASS}
+                >
+                  <HomeLastRunStatus
+                    item={item}
+                    canSeeLastRun={canSeeLastRun}
+                  />
+                </div>
                 <details data-o1="kebab" className="relative">
                   <summary
                     aria-label={OVERVIEW_KEBAB_LABEL}
-                    className="cursor-pointer list-none rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden"
+                    className={`${FF_OVERVIEW_KEBAB_CLASS} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}
                   >
                     ⋮
                   </summary>
-                  <div className="absolute right-0 z-10 mt-1 w-64 space-y-3 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg">
-                    <div data-home-row-scan-cell="activation">
-                      <HomeActivationStatus column={item.activation} />
-                    </div>
-                    <div data-home-row-scan-cell="lastRun">
-                      <HomeLastRunStatus
-                        item={item}
-                        canSeeLastRun={canSeeLastRun}
-                      />
-                    </div>
+                  <div className={`absolute right-0 z-10 mt-1 w-64 space-y-3 ${FF_OVERVIEW_MENU_CLASS}`}>
                     <WorkflowMeta item={item} />
                     <WorkflowActions
                       item={item}
@@ -2715,10 +2743,10 @@ function HomeEmptyTeach({
           data-uxl6="home-empty"
           data-f5={unfiledEmpty ? "unfiled-empty-none" : "home-empty"}
         >
-          <h2 className="text-base font-medium text-zinc-900">
+          <h2 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>
             {unfiledEmpty ? UNFILED_EMPTY_HEADING : HOME_EMPTY_HEADING}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
             {unfiledEmpty ? UNFILED_EMPTY_NONE_HELP : HOME_EMPTY_HELP}
           </p>
           {canCreate || canCreateFolder ? (
@@ -2729,7 +2757,7 @@ function HomeEmptyTeach({
                     type="button"
                     disabled={pending}
                     onClick={onCreate}
-                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                    className={FF_OVERVIEW_CREATE_CLASS}
                   >
                     {HOME_EMPTY_CREATE_LABEL}
                   </button>
@@ -2737,7 +2765,7 @@ function HomeEmptyTeach({
                     type="button"
                     disabled={pending}
                     onClick={onImport}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                    className={FF_OVERVIEW_GHOST_CLASS}
                   >
                     {HOME_EMPTY_IMPORT_LABEL}
                   </button>
@@ -2749,14 +2777,14 @@ function HomeEmptyTeach({
                   data-home-empty-verb="new-folder"
                   disabled={pending}
                   onClick={onNewFolder}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                  className={FF_OVERVIEW_GHOST_CLASS}
                 >
                   {NEW_FOLDER_LABEL}
                 </button>
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 text-xs text-zinc-500">
+            <p className={`mt-3 text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
               Creating a draft requires <code className="font-mono">workflow.edit</code>.
             </p>
           )}
@@ -2796,10 +2824,10 @@ function FolderEmpty({
           data-o3="empty-card"
           data-f5="folder-empty"
         >
-          <h2 className="text-base font-medium text-zinc-900">
+          <h2 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>
             {FOLDER_EMPTY_HEADING}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">{FOLDER_EMPTY_HELP}</p>
+          <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{FOLDER_EMPTY_HELP}</p>
           {canCreate || canMutate ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {canCreate ? (
@@ -2809,7 +2837,7 @@ function FolderEmpty({
                     data-home-folder-empty-verb="create"
                     disabled={pending}
                     onClick={onCreate}
-                    className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
+                    className={FF_OVERVIEW_CREATE_CLASS}
                   >
                     {FOLDER_EMPTY_CREATE_LABEL}
                   </button>
@@ -2818,7 +2846,7 @@ function FolderEmpty({
                     data-home-folder-empty-verb="import"
                     disabled={pending}
                     onClick={onImport}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                    className={FF_OVERVIEW_GHOST_CLASS}
                   >
                     {HOME_EMPTY_IMPORT_LABEL}
                   </button>
@@ -2836,7 +2864,7 @@ function FolderEmpty({
                         : "No workflows are available to move."
                     }
                     onClick={onMove}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                    className={FF_OVERVIEW_GHOST_CLASS}
                   >
                     {FOLDER_EMPTY_MOVE_LABEL}
                   </button>
@@ -2846,7 +2874,7 @@ function FolderEmpty({
                     disabled={pending || !deleteAllowed}
                     title={deleteAllowed ? undefined : FOLDER_NOT_EMPTY_HELP}
                     onClick={onDelete}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+                    className={FF_OVERVIEW_GHOST_CLASS}
                   >
                     {DELETE_FOLDER_LABEL}
                   </button>
@@ -2854,7 +2882,7 @@ function FolderEmpty({
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 text-xs text-zinc-500">{FOLDER_EMPTY_VIEWER_HELP}</p>
+            <p className={`mt-3 text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>{FOLDER_EMPTY_VIEWER_HELP}</p>
           )}
         </li>
       </ul>
@@ -2879,11 +2907,11 @@ function UnfiledEmptyFiled({
           data-o3="empty-card"
           data-f5="unfiled-empty-filed"
         >
-          <h2 className="text-base font-medium text-zinc-900">
+          <h2 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>
             {UNFILED_EMPTY_HEADING}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">{UNFILED_EMPTY_FILED_HELP}</p>
-          <p className="mt-1 text-sm text-zinc-500">{UNFILED_EMPTY_TREE_LABEL}.</p>
+          <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{UNFILED_EMPTY_FILED_HELP}</p>
+          <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{UNFILED_EMPTY_TREE_LABEL}.</p>
           {tree.length > 0 ? (
             <ul className="mt-3 flex flex-wrap gap-1">
               {tree.map((node) => (
@@ -2893,7 +2921,7 @@ function UnfiledEmptyFiled({
                     data-f5="unfiled-empty-tree"
                     data-folder-id={node.id}
                     onClick={() => onSelectFolder({ kind: "folder", id: node.id })}
-                    className="rounded-full border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:border-teal-700 hover:text-teal-800"
+                    className={FF_OVERVIEW_PILL_CLASS}
                   >
                     {node.name}
                   </button>
@@ -2917,14 +2945,14 @@ function HomeFilteredEmpty({ onClear }: { onClear: () => void }) {
           data-o3="empty-card"
           data-uxl6="home-filtered"
         >
-          <h2 className="text-base font-medium text-zinc-900">
+          <h2 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>
             {HOME_FILTERED_EMPTY_HEADING}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">{HOME_FILTERED_EMPTY_HELP}</p>
+          <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{HOME_FILTERED_EMPTY_HELP}</p>
           <button
             type="button"
             onClick={onClear}
-            className="mt-3 text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            className={`mt-3 text-sm font-medium ${FF_OVERVIEW_LINK_CLASS}`}
           >
             Clear filters
           </button>
@@ -2945,8 +2973,8 @@ export function TemplateGrid({
 }) {
   return (
     <div data-o1="card-list" data-o3="template-cards">
-      <h2 className="text-base font-medium text-zinc-900">Reviewed templates</h2>
-      <p className="mt-1 text-sm text-zinc-500">{HOME_EMPTY_TEMPLATE_HELP}</p>
+      <h2 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>Reviewed templates</h2>
+      <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{HOME_EMPTY_TEMPLATE_HELP}</p>
       <ul className="mt-3 space-y-2">
         {WORKFLOW_TEMPLATES.map((template) => (
           <li
@@ -2955,19 +2983,19 @@ export function TemplateGrid({
             data-o1="card"
             data-o3="template-card"
           >
-            <h3 className="text-base font-medium text-zinc-900">{template.title}</h3>
-            <p className="mt-1 text-sm text-zinc-500">{template.description}</p>
+            <h3 className={`text-base ${FF_OVERVIEW_TITLE_CLASS}`}>{template.title}</h3>
+            <p className={`mt-1 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>{template.description}</p>
             {canCreate ? (
               <button
                 type="button"
                 disabled={pending}
                 onClick={() => onSelect(template)}
-                className="mt-3 rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm text-white hover:bg-teal-900 disabled:opacity-60"
+                className={`mt-3 ${FF_OVERVIEW_CREATE_CLASS}`}
               >
                 {HOME_EMPTY_TEMPLATE_LABEL}
               </button>
             ) : (
-              <p className="mt-3 text-xs text-zinc-500">
+              <p className={`mt-3 text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
                 Requires <code className="font-mono">workflow.edit</code>
               </p>
             )}

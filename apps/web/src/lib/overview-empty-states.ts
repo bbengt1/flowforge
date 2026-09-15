@@ -211,7 +211,7 @@ export function overviewEmptyHoldsHardLines(): boolean {
     emptyFolderDeleteAllowed({ childFolderCount: 0, workflowCount: 0 }) &&
     !emptyFolderDeleteAllowed({ childFolderCount: 1, workflowCount: 0 }) &&
     !emptyFolderDeleteAllowed({ childFolderCount: 0, workflowCount: 1 }) &&
-    OVERVIEW_CARD_SURFACE_CLASS.includes("border-zinc-200") &&
+    OVERVIEW_CARD_SURFACE_CLASS.includes("ff-overview-card") &&
     !OVERVIEW_CARD_SURFACE_CLASS.includes("border-dashed")
   );
 }

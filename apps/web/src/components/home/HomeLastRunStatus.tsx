@@ -9,6 +9,7 @@ import {
   homeLastRunPresentation,
   type HomeLastRunKind,
 } from "@/lib/home-row-scan";
+import { FF_OVERVIEW_CHIP_CLASS } from "@/lib/overview-visual";
 import { workflowHomeLastRunHref } from "@/lib/product-home";
 import type { WorkflowHomeItem } from "@/lib/workflow-home";
 
@@ -26,17 +27,17 @@ type HomeLastRunStatusProps = {
 };
 
 function lastRunClassName(kind: HomeLastRunKind): string {
-  const chip = "inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-medium";
+  const chip = "inline-flex max-w-full items-center gap-1.5";
   if (kind === "indeterminate") {
     return `${chip} ${LOUD_INDETERMINATE_CLASS}`;
   }
   if (kind === "waiting") {
-    return `${chip} border-2 border-indigo-700 bg-indigo-50 text-indigo-950`;
+    return `${chip} ${FF_OVERVIEW_CHIP_CLASS} border-2 font-semibold`;
   }
   if (kind === "failed") {
     return `${chip} ${LOUD_ERROR_CLASS}`;
   }
-  return `${chip} border border-zinc-300 bg-zinc-50 text-zinc-700`;
+  return `${chip} ${FF_OVERVIEW_CHIP_CLASS}`;
 }
 
 export function HomeLastRunStatus({
@@ -82,7 +83,7 @@ export function HomeLastRunStatus({
         </span>
       )}
       {presentation.kind === "indeterminate" ? (
-        <p className="mt-1 text-xs text-amber-950">{INDETERMINATE_STATUS_HELP}</p>
+        <p className="mt-1 text-xs font-semibold text-amber-200">{INDETERMINATE_STATUS_HELP}</p>
       ) : null}
     </div>
   );

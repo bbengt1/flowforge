@@ -140,6 +140,194 @@ body {
   color: var(--ff-danger);
 }
 
+/*
+ * V.3 Overview home — consume V.1 tokens. Relates to #359 / Part of #353.
+ * Keep #359 open. Dark card rows. One teal accent. No n8n orange.
+ * Cards read as a list, not floating islands. Not a second theme tree.
+ */
+.ff-overview {
+  color: var(--ff-text);
+}
+
+.ff-overview-card {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  padding: var(--ff-space-3) var(--ff-space-4);
+  min-height: 56px;
+}
+
+.ff-overview-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-3);
+  min-height: 40px;
+}
+
+.ff-overview-header,
+.ff-overview-rail,
+.ff-overview-dialog,
+.ff-overview-menu {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+}
+
+.ff-overview-header {
+  padding: var(--ff-space-4);
+}
+
+.ff-overview-rail {
+  padding: var(--ff-space-2);
+}
+
+.ff-overview-dialog {
+  padding: var(--ff-space-4);
+}
+
+.ff-overview-menu {
+  padding: var(--ff-space-3);
+}
+
+.ff-overview-create {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-radius: var(--ff-radius-sm);
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+  font-weight: 600;
+}
+
+.ff-overview-create:hover {
+  filter: brightness(1.08);
+}
+
+.ff-overview-create:disabled,
+.ff-overview-ghost:disabled {
+  opacity: 0.6;
+}
+
+.ff-overview-ghost,
+.ff-overview-control,
+.ff-overview-kebab {
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-text);
+  border-radius: var(--ff-radius-sm);
+}
+
+.ff-overview-ghost,
+.ff-overview-kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+}
+
+.ff-overview-ghost:hover,
+.ff-overview-kebab:hover,
+.ff-overview-rail-item:hover {
+  background: color-mix(in srgb, var(--ff-surface) 80%, var(--ff-canvas));
+}
+
+.ff-overview-control {
+  width: 100%;
+  padding: 6px var(--ff-space-3);
+  font-size: var(--ff-type-body);
+}
+
+.ff-overview-muted {
+  color: var(--ff-muted);
+}
+
+.ff-overview-title {
+  color: var(--ff-text);
+  font-weight: 600;
+}
+
+.ff-overview-link {
+  color: var(--ff-accent-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ff-overview-link:hover {
+  color: var(--ff-text);
+}
+
+.ff-overview-pill,
+.ff-overview-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-muted);
+  border-radius: 999px;
+  padding: 2px var(--ff-space-2);
+  font-size: var(--ff-type-caption);
+  font-weight: 500;
+}
+
+.ff-overview-chip-accent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--ff-type-body);
+  font-weight: 500;
+}
+
+.ff-overview-rail-item {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ff-radius-sm);
+  padding: 4px var(--ff-space-2);
+  color: var(--ff-text);
+  text-align: left;
+  font-size: var(--ff-type-body);
+}
+
+.ff-overview-rail-active {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ff-accent);
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-radius: var(--ff-radius-sm);
+  padding: 4px var(--ff-space-2);
+  text-align: left;
+  font-size: var(--ff-type-body);
+}
+
+.ff-overview-danger {
+  color: var(--ff-danger);
+}
+
+.ff-overview-scan-lead,
+.ff-overview-scan-trail {
+  min-width: 0;
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

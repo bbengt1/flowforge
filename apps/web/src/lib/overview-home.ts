@@ -33,8 +33,7 @@ export const OVERVIEW_KEBAB_LABEL = "Workflow actions";
 export const OVERVIEW_PUBLISHED_LABEL = "Published";
 export const OVERVIEW_UPDATED_PREFIX = "Last updated";
 export const OVERVIEW_CREATED_PREFIX = "Created";
-export const OVERVIEW_CARD_SURFACE_CLASS =
-  "rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm";
+export const OVERVIEW_CARD_SURFACE_CLASS = "ff-overview-card";
 
 export const OVERVIEW_CARD_LIST_FIELDS = [
   "name",

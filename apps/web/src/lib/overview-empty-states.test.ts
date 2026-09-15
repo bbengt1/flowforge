@@ -101,7 +101,7 @@ describe("O.3 Empty / Unfiled states on Overview cards", () => {
       assert.equal(home.includes(token), false, token);
     }
     assert.doesNotMatch(home, /border-dashed/);
-    assert.match(OVERVIEW_CARD_SURFACE_CLASS, /border-zinc-200/);
+    assert.match(OVERVIEW_CARD_SURFACE_CLASS, /ff-overview-card/);
     assert.equal(OVERVIEW_CARD_SURFACE_CLASS.includes("border-dashed"), false);
     assert.match(page, /card chrome/i);
     assert.equal(OVERVIEW_EMPTY.emptyHomeUsesCardChrome, true);
