@@ -25,6 +25,7 @@ import {
   explorerBreadcrumbSegments,
   explorerCardsDemoted,
   explorerContentIsSelectedFolderOnly,
+  explorerLayoutDoesNotClipOverlays,
   explorerDocsKeepEpicOpen,
   explorerHoldsHardLines,
   explorerInheritsFolderStories,
@@ -122,6 +123,7 @@ describe("X.1 Explorer shell", () => {
     assert.match(globals, /\.ff-explorer-tree/);
     assert.match(globals, /\.ff-explorer-pane/);
     assert.match(globals, /\.ff-explorer-crumb/);
+    assert.equal(explorerLayoutDoesNotClipOverlays(globals), true);
     assert.match(globals, /var\(--ff-surface\)/);
     assert.match(globals, /var\(--ff-accent\)/);
     assert.match(page, /Explorer shell/i);

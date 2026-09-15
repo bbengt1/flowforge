@@ -343,18 +343,19 @@ body {
   border: 1px solid var(--ff-border);
   border-radius: var(--ff-radius);
   min-height: 28rem;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ff-explorer-tree.ff-overview-rail {
   border: none;
   border-right: 1px solid var(--ff-border);
-  border-radius: 0;
+  border-radius: var(--ff-radius) 0 0 var(--ff-radius);
   background: var(--ff-canvas);
 }
 
 .ff-explorer-pane {
   min-width: 0;
+  overflow: visible;
   background: var(--ff-canvas);
 }
 
@@ -393,6 +394,7 @@ body {
   .ff-explorer-tree.ff-overview-rail {
     border-right: none;
     border-bottom: 1px solid var(--ff-border);
+    border-radius: var(--ff-radius) var(--ff-radius) 0 0;
   }
 }
 

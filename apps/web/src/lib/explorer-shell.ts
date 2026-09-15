@@ -241,6 +241,20 @@ export function explorerCardsDemoted(source: string): boolean {
   );
 }
 
+export function explorerLayoutDoesNotClipOverlays(globals: string): boolean {
+  const layout = globals.match(/\.ff-explorer-layout\s*\{[^}]*\}/);
+  const pane = globals.match(/\.ff-explorer-pane\s*\{[^}]*\}/);
+  if (!layout || !pane) {
+    return false;
+  }
+  return (
+    !/overflow:\s*hidden/.test(layout[0]) &&
+    !/overflow:\s*hidden/.test(pane[0]) &&
+    /overflow:\s*visible/.test(layout[0]) &&
+    /overflow:\s*visible/.test(pane[0])
+  );
+}
+
 export function explorerSkipsDeferredChrome(source: string): boolean {
   return (
     EXPLORER_MILLER_TOKENS.every((token) => !source.includes(token)) &&
