@@ -32,6 +32,14 @@ import { embedDeepLink } from "@/lib/embed-tenancy-contract";
 import { EditorActivationChrome } from "@/components/workflows/EditorActivationChrome";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { WorkflowRecord } from "@/lib/workflow-types";
+import {
+  FF_EDITOR_CONTROL_CLASS,
+  FF_EDITOR_DIVIDER_CLASS,
+  FF_EDITOR_GHOST_CLASS,
+  FF_EDITOR_MUTED_CLASS,
+  FF_EDITOR_PRIMARY_CLASS,
+  FF_EDITOR_TOPBAR_CLASS,
+} from "@/lib/editor-visual";
 
 type EditorTopBarProps = {
   workflow: WorkflowRecord | null;
@@ -69,13 +77,10 @@ type EditorTopBarProps = {
   onRedo?: () => void;
 };
 
-const SATELLITE_CONTROL =
-  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50";
-const HISTORY_CONTROL =
-  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm hover:bg-zinc-50 disabled:opacity-60";
-const GROUP =
-  "flex shrink-0 items-center gap-1.5";
-const GROUP_DIVIDER = `${GROUP} border-l border-zinc-200 pl-3`;
+const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
+const HISTORY_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm disabled:opacity-60`;
+const GROUP = "flex shrink-0 items-center gap-1.5";
+const GROUP_DIVIDER = `${GROUP} ${FF_EDITOR_DIVIDER_CLASS} pl-3`;
 
 export function EditorTopBar({
   workflow,
@@ -127,7 +132,7 @@ export function EditorTopBar({
   return (
     <header
       data-editor-context="sticky"
-      className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2"
+      className={`sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 px-3 py-2 ${FF_EDITOR_TOPBAR_CLASS}`}
     >
       <div
         data-editor-topbar="identity"
@@ -135,16 +140,16 @@ export function EditorTopBar({
       >
         <Link
           href={backHref}
-          className="rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-800 hover:bg-zinc-50"
+          className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`}
         >
           {editorTopBarControlLabel("back")}
         </Link>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
           {context.slug ? (
-            <p className="truncate font-mono text-xs text-zinc-500">{context.slug}</p>
+            <p className={`truncate font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}>{context.slug}</p>
           ) : (
-            <p className="text-xs text-zinc-500">
+            <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`}>
               {context.loaded
                 ? "This workflow could not be loaded."
                 : "Loading this workflow…"}
@@ -152,14 +157,14 @@ export function EditorTopBar({
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <p className="text-xs text-zinc-600" role="status">
+          <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`} role="status">
             {workflow ? (
               <>
                 <span data-editor-working-memory="draft">{memory.draft}</span>
                 {" · "}
                 {editorRevisionLabel(revision)}
                 {" · "}
-                <span className={dirty ? "font-medium text-amber-900" : "text-zinc-600"}>
+                <span className={dirty ? "font-medium text-amber-200" : FF_EDITOR_MUTED_CLASS}>
                   {dirtyLabel}
                 </span>
               </>
@@ -182,7 +187,7 @@ export function EditorTopBar({
             value={publishNote}
             onChange={(event) => onPublishNote(event.target.value)}
             placeholder={editorTopBarControlLabel("publish-note")}
-            className="w-40 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+            className={`w-40 px-2 py-1 text-sm ${FF_EDITOR_CONTROL_CLASS}`}
           />
         </label>
         <button
@@ -190,7 +195,7 @@ export function EditorTopBar({
           onClick={onSave}
           disabled={!canCall || pending !== null || !workflow || revision === null || !canSave}
           aria-busy={pending === "save"}
-          className={`rounded-md border border-teal-800 bg-teal-800 ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-white hover:bg-teal-900 disabled:opacity-60`}
+          className={`${FF_EDITOR_PRIMARY_CLASS} ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} disabled:opacity-60`}
         >
           {pending === "save" ? "Saving…" : editorTopBarControlLabel("save")}
         </button>
@@ -199,7 +204,7 @@ export function EditorTopBar({
           onClick={onPublish}
           disabled={!canCall || pending !== null || !canPublish}
           aria-busy={pending === "publish"}
-          className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
+          className={`${FF_EDITOR_GHOST_CLASS} ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} disabled:opacity-60`}
         >
           {pending === "publish" ? "Publishing…" : editorTopBarControlLabel("publish")}
         </button>
@@ -209,7 +214,7 @@ export function EditorTopBar({
           type="button"
           id={satelliteOverlayTriggerId("action-wizard")}
           onClick={onAddAction}
-          className={`rounded-md border border-teal-800 bg-teal-800 ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-white hover:bg-teal-900`}
+          className={`${FF_EDITOR_PRIMARY_CLASS} ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS}`}
         >
           {editorTopBarControlLabel("add-action")}
         </button>
@@ -288,7 +293,7 @@ export function EditorTopBar({
           {editorTopBarControlLabel("runs", runsOpen)}
         </button>
       </div>
-      <div data-editor-topbar="activation" className="shrink-0 border-l border-zinc-200 pl-3">
+      <div data-editor-topbar="activation" className={`shrink-0 ${FF_EDITOR_DIVIDER_CLASS} pl-3`}>
         <EditorActivationChrome
           variant="compact"
           identity={identity}
@@ -312,7 +317,7 @@ export function EditorTopBar({
               disabled={!workflow || !memory.canStartPublished}
               aria-busy={pending === "run"}
               title={memory.startHelp}
-              className={`rounded-md border border-zinc-300 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-zinc-900 hover:bg-zinc-50 disabled:opacity-60`}
+              className={`${FF_EDITOR_GHOST_CLASS} ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} disabled:opacity-60`}
             >
               {pending === "run"
                 ? "Starting…"
@@ -324,7 +329,7 @@ export function EditorTopBar({
               disabled={!canCall || pending !== null || !canTestRun}
               aria-busy={pending === "test-run"}
               title={memory.testRunHelp}
-              className={`rounded-md border border-teal-800 bg-white ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} text-teal-900 hover:bg-teal-50 disabled:opacity-60`}
+              className={`${FF_EDITOR_PRIMARY_CLASS} ${EDITOR_TOPBAR_PRIMARY_CONTROL_CLASS} disabled:opacity-60`}
             >
               {pending === "test-run"
                 ? "Test run…"
@@ -333,7 +338,7 @@ export function EditorTopBar({
           </div>
           <p
             data-editor-working-memory="test-run"
-            className={`max-w-[16rem] ${TYPE_CAPTION_CLASS} leading-snug text-zinc-500`}
+            className={`max-w-[16rem] ${TYPE_CAPTION_CLASS} ${FF_EDITOR_MUTED_CLASS} leading-snug`}
           >
             {memory.testRunCopy}
             {memory.canTestRun ? null : ` ${memory.testRunHelp}`}

@@ -122,14 +122,14 @@ export const PAGE_HEADER_CLASS = "space-y-3";
 /** Shared satellite chrome. Library / Inspector / Runs rails align. */
 export const SATELLITE_RAIL_WIDTH = "2.75rem";
 export const SATELLITE_HEADER_CLASS =
-  "flex items-center justify-between border-b border-zinc-200 px-3 py-2";
-export const SATELLITE_TITLE_CLASS = "text-sm font-medium text-zinc-800";
+  "ff-editor-satellite-header flex items-center justify-between px-3 py-2";
+export const SATELLITE_TITLE_CLASS = "ff-editor-title text-sm font-medium";
 export const SATELLITE_HIDE_BUTTON_CLASS =
-  "rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50";
+  "ff-editor-ghost px-2 py-0.5 text-xs";
 export const SATELLITE_RAIL_BUTTON_CLASS =
-  "rounded-md px-2 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-50 md:[writing-mode:vertical-rl] md:rotate-180 md:px-1 md:py-3";
+  "ff-editor-rail-button px-2 py-2 text-xs font-medium md:[writing-mode:vertical-rl] md:rotate-180 md:px-1 md:py-3";
 export const SATELLITE_BODY_PAD_CLASS = "p-3";
-export const SATELLITE_NDV_HEADER_CLASS = "border-b border-zinc-200 px-3 py-2";
+export const SATELLITE_NDV_HEADER_CLASS = "ff-editor-satellite-header px-3 py-2";
 
 /** Loud status — do not quiet. Icon + text inherit UX.10 / R7.4. */
 export const LOUD_INDETERMINATE_SURFACE =

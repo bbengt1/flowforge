@@ -26,6 +26,16 @@ import {
   TYPE_CAPTION_CLASS,
 } from "@/lib/aesthetic-usability-density";
 import {
+  FF_EDITOR_CHIP_ACCENT_CLASS,
+  FF_EDITOR_CHIP_CLASS,
+  FF_EDITOR_GHOST_CLASS,
+  FF_EDITOR_LINK_CLASS,
+  FF_EDITOR_MUTED_CLASS,
+  FF_EDITOR_PANEL_CLASS,
+  FF_EDITOR_SATELLITE_CLASS,
+  FF_EDITOR_TITLE_CLASS,
+} from "@/lib/editor-visual";
+import {
   EDITOR_RUNS_COLUMN_WIDTH,
   EDITOR_RUNS_LIST_LIMIT,
   EDITOR_RUNS_OPERATE_HELP,
@@ -248,7 +258,7 @@ export function EditorRunsDrawer({
         aria-label="Workflow executions"
         data-editor-runs="satellite"
         data-uxl8="runs"
-        className="flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:flex-col md:border-l"
+        className={`flex w-full shrink-0 items-center justify-center border max-md:!w-full max-md:border-b md:flex-col md:border-l ${FF_EDITOR_SATELLITE_CLASS}`}
         style={{ width: EDITOR_RUNS_SATELLITE_WIDTH }}
       >
         <button
@@ -271,7 +281,7 @@ export function EditorRunsDrawer({
       aria-label="Workflow executions"
       data-editor-runs="drawer"
       data-uxl8="runs"
-      className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-zinc-200 bg-white max-md:!w-full max-md:border-b md:border-l"
+      className={`flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border max-md:!w-full max-md:border-b md:border-l ${FF_EDITOR_SATELLITE_CLASS}`}
       style={{ width: EDITOR_RUNS_COLUMN_WIDTH }}
     >
       <div className={`${SATELLITE_HEADER_CLASS} shrink-0 flex-wrap gap-2`}>
@@ -299,18 +309,18 @@ export function EditorRunsDrawer({
         </div>
       </div>
       <div className={`min-h-0 flex-1 overflow-auto ${SATELLITE_BODY_PAD_CLASS}`}>
-        <p className="text-xs text-zinc-600">{EDITOR_RUNS_OPERATE_HELP}</p>
+        <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`}>{EDITOR_RUNS_OPERATE_HELP}</p>
         {workflowName ? (
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className={`mt-1 text-xs ${FF_EDITOR_MUTED_CLASS}`}>
             <code className="font-mono">GET /workflows/{"{id}"}/executions</code>
             {" "}
-            for <span className="font-medium text-zinc-800">{workflowName}</span>
+            for <span className={`font-medium ${FF_EDITOR_TITLE_CLASS}`}>{workflowName}</span>
             .
           </p>
         ) : null}
 
         <div className="mt-3">
-          <p className="text-xs font-medium text-zinc-800">Status</p>
+          <p className={`text-xs font-medium ${FF_EDITOR_TITLE_CLASS}`}>Status</p>
           <div
             role="group"
             aria-label="Status"
@@ -339,7 +349,7 @@ export function EditorRunsDrawer({
             type="button"
             onClick={() => skipTo("failed")}
             disabled={denied || !canCall || !scopedId}
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs font-medium disabled:opacity-60`}
           >
             {EDITOR_RUNS_SKIP_FAILED_LABEL}
           </button>
@@ -355,7 +365,7 @@ export function EditorRunsDrawer({
             type="button"
             onClick={() => void refresh()}
             disabled={pending || !canCall || denied || !scopedId}
-            className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs font-medium disabled:opacity-60`}
           >
             {pending ? "Loading…" : "Refresh"}
           </button>
@@ -371,11 +381,11 @@ export function EditorRunsDrawer({
         <p className="mt-2 text-xs">
           <Link
             href={workspaceHref}
-            className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+            className={FF_EDITOR_LINK_CLASS}
           >
             Workspace executions
           </Link>
-          <span className="text-zinc-500"> — cross-workflow ops view</span>
+          <span className={FF_EDITOR_MUTED_CLASS}> — cross-workflow ops view</span>
         </p>
 
         {!canCall ? (
@@ -385,13 +395,13 @@ export function EditorRunsDrawer({
         ) : null}
 
         {!scopedId ? (
-          <p className="mt-4 text-sm text-zinc-600">
+          <p className={`mt-4 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
             Open a workflow to list its runs.
           </p>
         ) : null}
 
         {denied ? (
-          <p className="mt-4 text-sm text-zinc-600">
+          <p className={`mt-4 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
             This role cannot view executions (
             <code className="font-mono text-xs">execution.view</code> missing).
           </p>
@@ -417,10 +427,10 @@ export function EditorRunsDrawer({
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-zinc-800">
+                <p className="text-xs font-semibold">
                   {peakEndHeadline(selectedPeakEnd)}
                 </p>
-                <p className={`mt-1 font-mono ${TYPE_CAPTION_CLASS} break-all text-zinc-600`}>
+                <p className={`mt-1 font-mono ${TYPE_CAPTION_CLASS} break-all ${FF_EDITOR_MUTED_CLASS}`}>
                   {selectedRow.versionPin}
                 </p>
               </div>
@@ -429,13 +439,13 @@ export function EditorRunsDrawer({
               />
             </div>
             <PeakEndEnding kind={selectedPeakEnd} className="mt-2" />
-            <p className="mt-2 text-xs text-zinc-700">
+            <p className={`mt-2 text-xs ${FF_EDITOR_MUTED_CLASS}`}>
               {editorRunsHighlightSummary(overlayHighlightCount)}
             </p>
             <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <Link
                 href={editorRunOpenHref(selectedRow.id, scopedId || undefined, embed)}
-                className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className={FF_EDITOR_LINK_CLASS}
               >
                 Open execution
               </Link>
@@ -443,7 +453,7 @@ export function EditorRunsDrawer({
                 <button
                   type="button"
                   onClick={onClearRun}
-                  className="font-medium text-zinc-700 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                  className={`font-medium underline ${FF_EDITOR_MUTED_CLASS}`}
                 >
                   {EDITOR_RUN_CLEAR_LABEL}
                 </button>
@@ -477,11 +487,11 @@ export function EditorRunsDrawer({
         ) : null}
 
         {forbidden || denied || !canCall || !scopedId ? null : visible.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white/60 p-4 text-center">
-            <h3 className="text-sm font-semibold">
+          <div className={`mt-4 rounded-xl border border-dashed p-4 text-center ${FF_EDITOR_PANEL_CLASS}`}>
+            <h3 className={`text-sm font-semibold ${FF_EDITOR_TITLE_CLASS}`}>
               {status ? "No runs match this filter" : "No executions yet"}
             </h3>
-            <p className="mt-2 text-xs text-zinc-600">
+            <p className={`mt-2 text-xs ${FF_EDITOR_MUTED_CLASS}`}>
               Start a published version from the control next to this overlay.
               Drafts never run.
             </p>
@@ -489,7 +499,7 @@ export function EditorRunsDrawer({
               <button
                 type="button"
                 onClick={() => setStatus("")}
-                className="mt-3 text-xs font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className={`mt-3 text-xs font-medium ${FF_EDITOR_LINK_CLASS}`}
               >
                 Clear status filter
               </button>
@@ -561,8 +571,8 @@ function StatusChip({
       onClick={onClick}
       className={
         active
-          ? `rounded-full border border-teal-800 bg-teal-50 px-2 py-0.5 ${TYPE_CAPTION_CLASS} font-semibold text-teal-950 disabled:opacity-60`
-          : `rounded-full border border-zinc-300 bg-white px-2 py-0.5 ${TYPE_CAPTION_CLASS} font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60`
+          ? `${FF_EDITOR_CHIP_ACCENT_CLASS} ${TYPE_CAPTION_CLASS} disabled:opacity-60`
+          : `${FF_EDITOR_CHIP_CLASS} ${TYPE_CAPTION_CLASS} disabled:opacity-60`
       }
     >
       {label}

@@ -56,6 +56,22 @@ import {
 import { canvasAddAffordance } from "@/lib/editor-library";
 import { CANVAS_EMPTY_HELP } from "@/lib/empty-states-teach-model";
 import type { CatalogPort } from "@/lib/workflow-types";
+import { actionFamilyForType } from "@/lib/workflow-action-library";
+import {
+  FF_EDITOR_CANVAS_CLASS,
+  FF_EDITOR_GHOST_CLASS,
+  FF_EDITOR_GRID_CLASS,
+  FF_EDITOR_INVALID_CLASS,
+  FF_EDITOR_MUTED_CLASS,
+  FF_EDITOR_NODE_CLASS,
+  FF_EDITOR_NODE_SELECTED_CLASS,
+  FF_EDITOR_PANEL_CLASS,
+  FF_EDITOR_PLUS_CLASS,
+  FF_EDITOR_PORT_CLASS,
+  FF_EDITOR_TITLE_CLASS,
+  editorNodeFamilyMark,
+  editorNodeFamilyShapeClass,
+} from "@/lib/editor-visual";
 
 type WorkflowCanvasProps = {
   graph: WorkflowGraph | null;
@@ -330,12 +346,12 @@ export function WorkflowCanvas({
     return (
       <section
         aria-labelledby="canvas-heading"
-        className={`${frameClass} rounded-2xl border border-amber-200 bg-amber-50 p-5`}
+        className={`${frameClass} rounded-2xl border p-5 ${FF_EDITOR_INVALID_CLASS}`}
       >
-        <h2 id="canvas-heading" className="text-base font-semibold text-amber-950">
+        <h2 id="canvas-heading" className="text-base font-semibold">
           Canvas
         </h2>
-        <p className="mt-2 text-sm text-amber-950">
+        <p className="mt-2 text-sm">
           Invalid YAML is not projected onto the canvas. Fix the errors in
           the validation panel — the editor will not guess a graph.
         </p>
@@ -346,7 +362,7 @@ export function WorkflowCanvas({
             title={EDITOR_CANVAS_UNDO_LABEL}
             aria-keyshortcuts="Control+Z Meta+Z"
             onClick={onUndo}
-            className="mt-4 rounded-md border border-amber-800 bg-white px-3 py-1.5 text-sm text-amber-950 hover:bg-amber-100"
+            className={`mt-4 px-3 py-1.5 text-sm ${FF_EDITOR_GHOST_CLASS}`}
           >
             {EDITOR_CANVAS_UNDO_LABEL}
           </button>
@@ -358,12 +374,12 @@ export function WorkflowCanvas({
     return (
       <section
         aria-labelledby="canvas-heading"
-        className={`${frameClass} rounded-2xl border border-zinc-200 bg-white p-5`}
+        className={`${frameClass} rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
       >
-        <h2 id="canvas-heading" className="text-base font-semibold">
+        <h2 id="canvas-heading" className={`text-base font-semibold ${FF_EDITOR_TITLE_CLASS}`}>
           Canvas
         </h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className={`mt-2 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
           {pending
             ? "Validating YAML before drawing the graph…"
             : "The canvas appears after a successful validate. Invalid YAML never becomes a guessed graph."}
@@ -375,7 +391,7 @@ export function WorkflowCanvas({
                 type="button"
                 onClick={onOpenLibrary}
                 aria-label="Open action library"
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-teal-800 bg-teal-800 text-lg font-semibold leading-none text-white hover:bg-teal-900"
+                className={`flex h-9 w-9 items-center justify-center text-lg font-semibold leading-none ${FF_EDITOR_PLUS_CLASS}`}
               >
                 +
               </button>
@@ -383,13 +399,13 @@ export function WorkflowCanvas({
                 <button
                   type="button"
                   onClick={onAddAction}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className={`px-3 py-1.5 text-sm ${FF_EDITOR_GHOST_CLASS}`}
                 >
                   Add action
                 </button>
               ) : null}
             </div>
-            <p className="text-sm text-zinc-600">{CANVAS_EMPTY_HELP}</p>
+            <p className={`text-sm ${FF_EDITOR_MUTED_CLASS}`}>{CANVAS_EMPTY_HELP}</p>
           </div>
         ) : null}
       </section>
@@ -401,16 +417,16 @@ export function WorkflowCanvas({
       aria-labelledby="canvas-heading"
       className={
         fill
-          ? "flex h-full min-h-0 flex-col overflow-hidden bg-white"
-          : "overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+          ? `flex h-full min-h-0 flex-col overflow-hidden ${FF_EDITOR_CANVAS_CLASS}`
+          : `overflow-hidden rounded-2xl border ${FF_EDITOR_CANVAS_CLASS}`
       }
     >
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+      <div className="ff-editor-satellite-header flex items-center justify-between px-4 py-3">
         <div>
-          <h2 id="canvas-heading" className="text-base font-semibold">
+          <h2 id="canvas-heading" className={`text-base font-semibold ${FF_EDITOR_TITLE_CLASS}`}>
             {heading ?? (readOnly ? "Graph replay" : "Canvas")}
           </h2>
-          <p className="text-xs text-zinc-500">
+          <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`}>
             {help
               ?? (readOnly
                 ? "Read-only overlay of step status on the pinned published version. Pan, zoom, Shift+click or Shift+drag to multi-select, Fit (F)."
@@ -427,7 +443,7 @@ export function WorkflowCanvas({
               aria-keyshortcuts="Control+Z Meta+Z"
               onClick={onUndo}
               disabled={!canUndo}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-60"
+              className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs disabled:opacity-60`}
             >
               {EDITOR_CANVAS_UNDO_LABEL}
             </button>
@@ -440,7 +456,7 @@ export function WorkflowCanvas({
               aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
               onClick={onRedo}
               disabled={!canRedo}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-60"
+              className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs disabled:opacity-60`}
             >
               {EDITOR_CANVAS_REDO_LABEL}
             </button>
@@ -451,7 +467,7 @@ export function WorkflowCanvas({
               onClick={onOpenLibrary}
               aria-label="Open action library"
               title="Open action library"
-              className="rounded-md border border-teal-800 bg-teal-800 px-2 py-1 text-xs font-semibold text-white hover:bg-teal-900"
+              className={`${FF_EDITOR_PLUS_CLASS} px-2 py-1 text-xs font-semibold`}
             >
               +
             </button>
@@ -460,7 +476,7 @@ export function WorkflowCanvas({
             <button
               type="button"
               onClick={onAddAction}
-              className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50"
+              className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
             >
               Add action
             </button>
@@ -468,14 +484,14 @@ export function WorkflowCanvas({
           <button
             type="button"
             onClick={() => setPan((current) => ({ ...current, scale: Math.min(CANVAS_MAX_SCALE, current.scale * 1.1) }))}
-            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             Zoom in
           </button>
           <button
             type="button"
             onClick={() => setPan((current) => ({ ...current, scale: Math.max(CANVAS_MIN_SCALE, current.scale * 0.9) }))}
-            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             Zoom out
           </button>
@@ -485,7 +501,7 @@ export function WorkflowCanvas({
             title={EDITOR_CANVAS_FIT_LABEL}
             aria-keyshortcuts="f 1"
             onClick={fitToView}
-            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             {EDITOR_CANVAS_FIT_LABEL}
           </button>
@@ -497,11 +513,7 @@ export function WorkflowCanvas({
               aria-pressed={snapEnabled}
               aria-keyshortcuts="g"
               onClick={() => setSnapEnabled((current) => !current)}
-              className={`rounded-md border px-2 py-1 text-xs ${
-                snapEnabled
-                  ? "border-teal-800 bg-teal-50 text-teal-950"
-                  : "border-zinc-300"
-              }`}
+              className={`${snapEnabled ? FF_EDITOR_PLUS_CLASS : FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
             >
               {canvasSnapControlLabel(snapEnabled)}
             </button>
@@ -509,14 +521,14 @@ export function WorkflowCanvas({
           <button
             type="button"
             onClick={() => setPan({ x: 0, y: 0, scale: 1 })}
-            className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+            className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-xs`}
           >
             Reset
           </button>
         </div>
       </div>
       {connectError ? (
-        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950">
+        <p className={`border-b px-4 py-2 text-xs ${FF_EDITOR_INVALID_CLASS}`}>
           {connectError}
         </p>
       ) : null}
@@ -606,8 +618,8 @@ export function WorkflowCanvas({
         }}
         className={
           fill
-            ? "relative min-h-0 flex-1 cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
-            : "relative h-[28rem] cursor-grab overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e4e4e7_1px,transparent_0)] bg-size-[16px_16px] outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+            ? `relative min-h-0 flex-1 cursor-grab overflow-hidden outline-none ${FF_EDITOR_GRID_CLASS}`
+            : `relative h-[28rem] cursor-grab overflow-hidden outline-none ${FF_EDITOR_GRID_CLASS}`
         }
       >
         <div
@@ -632,7 +644,7 @@ export function WorkflowCanvas({
                   key={edge.id}
                   d={`M ${start.x} ${start.y} C ${start.x + 48} ${start.y}, ${end.x - 48} ${end.y}, ${end.x} ${end.y}`}
                   fill="none"
-                  stroke={selected ? "#115e59" : "#71717a"}
+                  stroke={selected ? "#0f766e" : "rgb(255 255 255 / 0.28)"}
                   strokeWidth={selected ? 2.5 : 1.5}
                 />
               );
@@ -696,7 +708,7 @@ export function WorkflowCanvas({
             <div
               data-canvas-marquee
               aria-hidden
-              className="pointer-events-none absolute border border-teal-700 bg-teal-700/10"
+              className="pointer-events-none absolute border border-[var(--ff-accent)] bg-[color-mix(in_srgb,var(--ff-accent)_16%,transparent)]"
               style={(() => {
                 const box = normalizeCanvasRect(marquee.start, marquee.current);
                 return {
@@ -713,13 +725,13 @@ export function WorkflowCanvas({
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div
               data-uxl6="canvas-empty"
-              className="pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white/95 px-6 py-5 shadow-sm"
+              className={`pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border px-6 py-5 ${FF_EDITOR_PANEL_CLASS}`}
             >
               <button
                 type="button"
                 onClick={onOpenLibrary}
                 aria-label="Open action library"
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-teal-800 bg-teal-800 text-2xl font-semibold leading-none text-white hover:bg-teal-900"
+                className={`flex h-12 w-12 items-center justify-center rounded-full text-2xl font-semibold leading-none ${FF_EDITOR_PLUS_CLASS}`}
               >
                 +
               </button>
@@ -727,14 +739,14 @@ export function WorkflowCanvas({
                 <button
                   type="button"
                   onClick={onAddAction}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className={`px-3 py-1.5 text-sm ${FF_EDITOR_GHOST_CLASS}`}
                 >
                   Add action
                 </button>
               ) : (
-                <p className="text-sm text-zinc-600">Add an action to the canvas</p>
+                <p className={`text-sm ${FF_EDITOR_MUTED_CLASS}`}>Add an action to the canvas</p>
               )}
-              <p className="text-center text-sm text-zinc-600">{CANVAS_EMPTY_HELP}</p>
+              <p className={`text-center text-sm ${FF_EDITOR_MUTED_CLASS}`}>{CANVAS_EMPTY_HELP}</p>
             </div>
           </div>
         ) : null}
@@ -781,10 +793,14 @@ function CanvasNode({
   onInput: (port: string) => void;
   onOpenLibrary?: () => void;
 }) {
+  const family = actionFamilyForType(node.type);
+  const familyMark = editorNodeFamilyMark(family);
+  const familyShape = editorNodeFamilyShapeClass(family);
   return (
     <div
       id={readOnly ? `replay-node-${node.id}` : undefined}
       data-canvas-node={node.id}
+      data-editor-node-family={family}
       role="group"
       aria-current={current ? "true" : undefined}
       aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}${
@@ -805,14 +821,14 @@ function CanvasNode({
           onSelect(event);
         }
       }}
-      className={`absolute rounded-xl border bg-white px-3 py-2 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-700 ${
+      className={`absolute px-3 py-2 outline-none ${FF_EDITOR_NODE_CLASS} ${familyShape} ${
         dragging ? "cursor-grabbing" : "cursor-grab"
       } ${
         selected || current
-          ? "border-teal-800 ring-2 ring-teal-700/30"
+          ? FF_EDITOR_NODE_SELECTED_CLASS
           : node.state === "indeterminate"
             ? "border-2 border-amber-700"
-            : "border-zinc-300"
+            : ""
       }`}
       style={{ left: x, top: y, width: NODE_W, minHeight: NODE_H }}
     >
@@ -828,18 +844,27 @@ function CanvasNode({
             event.stopPropagation();
             onOpenLibrary();
           }}
-          className="absolute -right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-teal-800 bg-teal-800 text-sm font-semibold leading-none text-white hover:bg-teal-900"
+          className={`absolute -right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 rounded-full text-sm font-semibold leading-none ${FF_EDITOR_PLUS_CLASS}`}
         >
           +
         </button>
       ) : null}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-sm font-medium text-zinc-900">{node.name || node.id}</p>
-          <p className="font-mono text-[11px] text-zinc-500">{node.type}</p>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <span
+              aria-hidden
+              className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-[var(--ff-border)] px-1 font-mono text-[10px] font-semibold"
+              title={family}
+            >
+              {familyMark}
+            </span>
+            <span>{node.name || node.id}</span>
+          </p>
+          <p className={`font-mono text-[11px] ${FF_EDITOR_MUTED_CLASS}`}>{node.type}</p>
         </div>
         <p
-          className="flex items-center gap-1 text-[11px] font-medium text-zinc-800"
+          className="flex items-center gap-1 text-[11px] font-medium"
           aria-label={`State ${canvasNodeStateLabel(node.state)}`}
         >
           <span aria-hidden>{canvasNodeStateIcon(node.state)}</span>
@@ -926,8 +951,8 @@ function PortButton({
         event.stopPropagation();
         onClick();
       }}
-      className={`block font-mono text-[10px] ${
-        available ? "text-zinc-700 hover:text-teal-800" : "cursor-not-allowed text-zinc-400 line-through"
+      className={`block font-mono text-[10px] ${FF_EDITOR_PORT_CLASS} ${
+        available ? "" : "cursor-not-allowed line-through opacity-50"
       }`}
     >
       {direction === "in" ? `● ${port.name}` : `${port.name} ●`}
@@ -951,7 +976,7 @@ function EdgeList({
     return null;
   }
   return (
-    <ul className="flex flex-wrap gap-2 border-t border-zinc-200 px-4 py-2 text-xs">
+    <ul className="ff-editor-satellite-header flex flex-wrap gap-2 px-4 py-2 text-xs">
       {edges.map((edge) => {
         const selected =
           selection.kind === "edge" && selection.from === edge.from && selection.to === edge.to;
@@ -961,7 +986,7 @@ function EdgeList({
               type="button"
               onClick={() => onSelect({ kind: "edge", from: edge.from, to: edge.to })}
               className={`rounded-md px-2 py-1 font-mono ${
-                selected ? "bg-teal-50 text-teal-950" : "bg-zinc-50 text-zinc-700"
+                selected ? FF_EDITOR_PLUS_CLASS : FF_EDITOR_GHOST_CLASS
               }`}
             >
               {edge.from} → {edge.to}

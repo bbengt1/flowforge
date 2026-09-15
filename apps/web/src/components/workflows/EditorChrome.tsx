@@ -13,6 +13,12 @@ import {
   SATELLITE_TITLE_CLASS,
 } from "@/lib/aesthetic-usability-density";
 import {
+  FF_EDITOR_BANNER_CLASS,
+  FF_EDITOR_ROOT_CLASS,
+  FF_EDITOR_SATELLITE_CLASS,
+  FF_EDITOR_VALUE,
+} from "@/lib/editor-visual";
+import {
   EDITOR_LIBRARY_COLUMN_WIDTH,
   EDITOR_LIBRARY_PANEL_ID,
   EDITOR_LIBRARY_SATELLITE_ID,
@@ -61,7 +67,8 @@ export function EditorChrome({
   return (
     <div
       data-uxl8="editor"
-      className="flex h-full min-h-0 flex-col bg-[var(--background)]"
+      data-ff-editor={FF_EDITOR_VALUE}
+      className={`flex h-full min-h-0 flex-col ${FF_EDITOR_ROOT_CLASS}`}
     >
       {identityGate}
       {topBar}
@@ -74,7 +81,7 @@ export function EditorChrome({
         {selectionAnnouncement}
       </p>
       {banners ? (
-        <div className="shrink-0 space-y-2 border-b border-zinc-200 px-3 py-2">
+        <div className={`shrink-0 space-y-2 px-3 py-2 ${FF_EDITOR_BANNER_CLASS}`}>
           {banners}
         </div>
       ) : null}
@@ -86,7 +93,7 @@ export function EditorChrome({
           <aside
             aria-label="Action library"
             data-editor-library="drawer"
-            className="flex w-full shrink-0 flex-col overflow-hidden border-zinc-200 bg-white max-md:!w-full max-md:border-b md:border-r"
+            className={`flex w-full shrink-0 flex-col overflow-hidden border max-md:!w-full max-md:border-b md:border-r ${FF_EDITOR_SATELLITE_CLASS}`}
             style={{ width: EDITOR_LIBRARY_COLUMN_WIDTH }}
           >
             <div className={SATELLITE_HEADER_CLASS}>
@@ -109,7 +116,7 @@ export function EditorChrome({
           <aside
             aria-label="Action library"
             data-editor-library="satellite"
-            className="flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:flex-col md:border-r"
+            className={`flex w-full shrink-0 items-center justify-center border max-md:!w-full max-md:border-b md:flex-col md:border-r ${FF_EDITOR_SATELLITE_CLASS}`}
             style={{ width: EDITOR_LIBRARY_SATELLITE_WIDTH }}
           >
             <button
@@ -133,7 +140,7 @@ export function EditorChrome({
             id={EDITOR_INSPECTOR_PANEL_ID}
             aria-label="Inspector"
             data-editor-inspector="drawer"
-            className="order-first flex max-h-[46%] w-full shrink-0 flex-col overflow-auto border-zinc-200 bg-white max-md:!w-full max-md:border-b md:order-none md:max-h-none md:border-l"
+            className={`order-first flex max-h-[46%] w-full shrink-0 flex-col overflow-auto border max-md:!w-full max-md:border-b md:order-none md:max-h-none md:border-l ${FF_EDITOR_SATELLITE_CLASS}`}
             style={{ width: EDITOR_NDV_COLUMN_WIDTH }}
           >
             <div className={SATELLITE_HEADER_CLASS}>
@@ -156,7 +163,7 @@ export function EditorChrome({
           <aside
             aria-label="Inspector"
             data-editor-inspector="satellite"
-            className="order-first flex w-full shrink-0 items-center justify-center border-zinc-200 bg-white max-md:!w-full max-md:border-b md:order-none md:flex-col md:border-l"
+            className={`order-first flex w-full shrink-0 items-center justify-center border max-md:!w-full max-md:border-b md:order-none md:flex-col md:border-l ${FF_EDITOR_SATELLITE_CLASS}`}
             style={{ width: EDITOR_NDV_SATELLITE_WIDTH }}
           >
             <button

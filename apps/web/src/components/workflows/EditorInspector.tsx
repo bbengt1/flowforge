@@ -49,6 +49,12 @@ import {
 } from "@/lib/editor-inspector";
 import { SATELLITE_NDV_HEADER_CLASS } from "@/lib/aesthetic-usability-density";
 import {
+  FF_EDITOR_LINK_CLASS,
+  FF_EDITOR_MUTED_CLASS,
+  FF_EDITOR_PANEL_CLASS,
+  FF_EDITOR_TITLE_CLASS,
+} from "@/lib/editor-visual";
+import {
   EDITOR_NDV_HEADING_ID,
   EDITOR_NDV_SHELL_ID,
   ndvConversationEyebrow,
@@ -269,16 +275,16 @@ export function EditorInspector({
           className="space-y-6"
         >
           <header data-uxl8="ndv" className={SATELLITE_NDV_HEADER_CLASS}>
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <p className={`text-xs font-medium uppercase tracking-wide ${FF_EDITOR_MUTED_CLASS}`}>
               {ndvConversationEyebrow("node")}
             </p>
-            <h2 id={EDITOR_NDV_HEADING_ID} className="text-base font-semibold">
+            <h2 id={EDITOR_NDV_HEADING_ID} className={`text-base font-semibold ${FF_EDITOR_TITLE_CLASS}`}>
               {ndvConversationTitle("node", selectedNode)}
             </h2>
-            <p className="mt-1 font-mono text-xs text-zinc-500">
+            <p className={`mt-1 font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}>
               {selectedNode.id} · {selectedNode.type}
             </p>
-            <p className="mt-2 text-sm text-zinc-600">
+            <p className={`mt-2 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
               {ndvConversationHelp("node")}
             </p>
             {selectedCount > 1 ? (
@@ -399,7 +405,7 @@ function WorkflowInspect({
   return (
     <section
       aria-labelledby="workflow-inspect-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={`rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
     >
       <h2 id="workflow-inspect-heading" className="text-base font-semibold">
         Workflow
@@ -475,7 +481,7 @@ function EdgeInspect({
     <div className="space-y-4">
     <section
       aria-labelledby="edge-inspect-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={`rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
     >
       <h2 id="edge-inspect-heading" className="text-base font-semibold">
         Edge
@@ -586,7 +592,7 @@ function SelectedNodePins({
     <section
       data-ndv-panel="pins"
       aria-labelledby="node-pins-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={`rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
     >
       <h2 id="node-pins-heading" className="text-base font-semibold">
         Pins
@@ -672,7 +678,7 @@ function SelectedNodePins({
     <section
       data-ndv-panel="credentials"
       aria-labelledby="node-credentials-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className={`rounded-2xl border p-5 ${FF_EDITOR_PANEL_CLASS}`}
     >
       <h2 id="node-credentials-heading" className="text-base font-semibold">
         Credentials
@@ -731,21 +737,21 @@ function SelectedNodePins({
                   allowedTypes: inspectorCredentialTypes(node.type),
                 })
               }
-              className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:text-teal-950 disabled:text-zinc-400 disabled:no-underline"
+              className={`text-sm font-medium ${FF_EDITOR_LINK_CLASS} disabled:no-underline disabled:opacity-60`}
             >
               Add credential
             </button>
             {returnTo ? (
               <Link
                 href={credentialNdvAddHref(returnTo, embed)}
-                className="text-xs text-zinc-600 underline decoration-zinc-200 underline-offset-2 hover:text-zinc-900"
+                className={`text-xs underline ${FF_EDITOR_MUTED_CLASS}`}
               >
                 {CREDENTIAL_NDV_ADD_OPEN_LABEL}
               </Link>
             ) : null}
             <Link
               href={vaultHomeHref(embed)}
-              className="text-xs text-zinc-600 underline decoration-zinc-200 underline-offset-2 hover:text-zinc-900"
+              className={`text-xs underline ${FF_EDITOR_MUTED_CLASS}`}
             >
               Vault home
             </Link>
