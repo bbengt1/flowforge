@@ -4,9 +4,11 @@ import { fetchSameOriginProxy, type IdentityClientResult } from "./identity-clie
 import type { ItemList } from "./identity-types.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
 import { isUnauthenticatedProblem, parseBrowserSession } from "./session.ts";
+import { localLoginBody } from "./local-login.ts";
 import {
   CSRF_HEADER,
   SESSION_AUDIT_PATH,
+  SESSION_LOGIN_PATH,
   SESSION_LOGOUT_PATH,
   SESSION_PATH,
   SESSION_REFRESH_PATH,
@@ -28,6 +30,31 @@ export type SessionForm = {
   subject: string;
   displayName: string;
 };
+
+/** V.0a local login. Password POST once; never persist the value here. */
+export async function loginWithPassword(
+  form: { identifier: string; password: string },
+): Promise<IdentityClientResult<SessionPayload>> {
+  const requestId = generateRequestId();
+  const instance = sessionBrowserPath(SESSION_LOGIN_PATH);
+  const body = localLoginBody(form.identifier, form.password);
+  const headers: Record<string, string> = {
+    Accept: "application/json, application/problem+json",
+    "Content-Type": "application/json",
+    [REQUEST_ID_HEADER]: requestId,
+  };
+  const result = await fetchSameOriginProxy<SessionPayload>({
+    instance,
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    requestId,
+  });
+  if (result.ok) {
+    applySessionPayload(result.data);
+  }
+  return result;
+}
 
 export async function establishSession(
   form: SessionForm,
