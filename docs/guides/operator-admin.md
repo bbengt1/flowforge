@@ -96,7 +96,10 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    Right-click a folder, workflow, or empty pane for grant-gated
    Explorer menus (X.2 / #381 — **keep #381 open**; **keep #379 open**)
    that call the existing create / rename / delete / move / import
-   verbs. Viewers get Open / select only. Unfiled cannot be renamed
+   verbs. Single-click selects a content-pane row; double-click or
+   Enter opens a workflow in the editor or navigates into a folder
+   (X.3 / #382 — **keep #382 open**; **keep #379 open**). Right-click
+   selects the target so the X.2 menu applies. Viewers get Open / select only. Unfiled cannot be renamed
    or deleted. Delete stays disabled when a folder is not empty.
    Then filter by search, tag, owner, trigger, environment,
    status, **activation**, last run, last modified. Prefix-in-name is

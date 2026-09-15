@@ -30,7 +30,13 @@ export default function WorkflowsPage() {
           a folder, workflow, or empty pane for grant-gated Explorer
           menus (X.2 / #381 — <strong>keep #381 open</strong>; Part of
           #379 — <strong>keep #379 open</strong>) wired to the existing
-          create / rename / delete / Move… / import verbs. Viewers get
+          create / rename / delete / Move… / import verbs. Dense rows
+          use single-click select and double-click / Enter open
+          (X.3 / #382 — <strong>keep #382 open</strong>; Part of #379
+          — <strong>keep #379 open</strong>): a workflow opens the
+          editor; a folder child expands and selects that folder in
+          the tree and content pane. Right-click selects the target
+          so X.2 menus stay. Viewers get
           Open / select only. Unfiled cannot be renamed or deleted.
           Folder delete stays disabled when the folder is not empty.
           The left rail
