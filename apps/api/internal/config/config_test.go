@@ -302,6 +302,27 @@ func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadLoginRateLimitsFromEnv(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("LOGIN_RATE_LIMIT_IP", "8")
+	t.Setenv("LOGIN_RATE_LIMIT_IDENTIFIER", "3")
+	t.Setenv("LOGIN_RATE_LIMIT_WINDOW", "45s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LoginLimits.PerIP != 8 || cfg.LoginLimits.Identifier != 3 {
+		t.Fatalf("login limits %+v", cfg.LoginLimits)
+	}
+	if cfg.LoginLimits.Window != 45*time.Second {
+		t.Fatalf("login window %s", cfg.LoginLimits.Window)
+	}
+}
+
 func TestLoadProductionRejectsHTTPIssuers(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

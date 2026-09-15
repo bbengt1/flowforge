@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -567,12 +566,7 @@ func (s *Server) writeEmbedRateLimited(w http.ResponseWriter, r *http.Request, d
 	if s.embedLimiter != nil {
 		retry = s.embedLimiter.RetryAfter(s.clockNow())
 	}
-	secs := int(retry.Seconds())
-	if secs < 1 {
-		secs = 1
-	}
-	w.Header().Set("Retry-After", strconv.Itoa(secs))
-	WriteProblem(w, r, http.StatusTooManyRequests, CodeRateLimited, "Rate Limited", detail)
+	writeRateLimited(w, r, retry, detail)
 }
 
 func (s *Server) requestClientIP(r *http.Request) string {

@@ -19,7 +19,9 @@ const invalidCredentialsDetail = "Invalid credentials."
 //
 // CSRF is not required (no session yet), matching POST /embed/exchange
 // and trusted-dev POST /session. Password is POST-once and never echoed.
-// Bad password and unknown identifier are the same 401.
+// Bad password and unknown identifier are the same 401. Rate-limited
+// by IP and identifier before lookup/bcrypt (429 + Retry-After).
+// Store failures other than unknown identifier are 503.
 //
 // OIDC Authorization Code + PKCE is deferred (V.0c). This handler is
 // the day-one door. Do not add IdP start/callback or IdP-admin routes.
@@ -32,8 +34,23 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.allowLogin(r, identifier) {
+		s.auditLoginRejected(r, "rate-limited")
+		s.writeLoginRateLimited(w, r)
+		return
+	}
 	user, hash, err := s.store.LookupLocalLogin(r.Context(), identifier)
 	if err != nil {
+		if !errors.Is(err, identity.ErrNotFound) {
+			if s.log != nil {
+				s.log.Error("local_login_lookup",
+					"request_id", RequestIDFromContext(r.Context()),
+					"error", err.Error(),
+				)
+			}
+			WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
+			return
+		}
 		localauth.DummyVerify(password)
 		s.auditLoginRejected(r, "invalid credentials")
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
@@ -125,6 +142,28 @@ func loginBodyForbidden(key string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *Server) allowLogin(r *http.Request, identifier string) bool {
+	if s.loginLimiter == nil {
+		return false
+	}
+	now := s.clockNow()
+	if !s.loginLimiter.Allow(localauth.IPKey(s.requestClientIP(r)), s.loginLimits.PerIP, now) {
+		return false
+	}
+	if !s.loginLimiter.Allow(localauth.IdentifierKey(identifier), s.loginLimits.Identifier, now) {
+		return false
+	}
+	return true
+}
+
+func (s *Server) writeLoginRateLimited(w http.ResponseWriter, r *http.Request) {
+	retry := localauth.DefaultRateWindow
+	if s.loginLimiter != nil {
+		retry = s.loginLimiter.RetryAfter(s.clockNow())
+	}
+	writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
 }
 
 func (s *Server) auditLoginRejected(r *http.Request, reason string) {

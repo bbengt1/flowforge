@@ -412,7 +412,7 @@ Cookie flags: top-level `ff_session` is `HttpOnly` + `SameSite=Lax` + `Path=/api
 
 | Method | Path | CSRF | Notes |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/login` | no | V.0a local login; sets standalone `ff_session` + `ff_csrf` |
+| `POST` | `/api/v1/login` | no | V.0a local login; sets standalone `ff_session` + `ff_csrf`. Burst is `429` backoff (`Retry-After`); not invalid credentials. |
 | `POST` | `/api/v1/session` | no | Trusted-dev create; sets `ff_session` + `ff_csrf` |
 | `GET` | `/api/v1/session` | no | Cookie required |
 | `POST` | `/api/v1/session/refresh` | required | Extend idle; rotate CSRF |

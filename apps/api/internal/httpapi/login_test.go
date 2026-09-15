@@ -1,17 +1,29 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
+
+type lookupErrorStore struct {
+	*identity.Memory
+	err error
+}
+
+func (s lookupErrorStore) LookupLocalLogin(_ context.Context, _ string) (identity.User, string, error) {
+	return identity.User{}, "", s.err
+}
 
 func newLoginEnv(t *testing.T) (*identity.Memory, http.Handler) {
 	t.Helper()
@@ -211,4 +223,103 @@ func TestLocalLoginRequiresIdentifierAndPassword(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, loginRequest(`{"identifier":"admin-1"}`))
 	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+}
+
+func TestLocalLoginRateLimitedOnBurst(t *testing.T) {
+	store := identity.NewMemory()
+	h := NewWithDeps(Deps{
+		Store:    store,
+		Sessions: session.NewMemory(),
+		Security: Security{},
+		LoginLimits: localauth.Limits{
+			Window:     time.Minute,
+			PerIP:      2,
+			Identifier: 100,
+		},
+	})
+	seedLocalLogin(t, store, "https://idp.example", "admin-1", "Operator", "correct-horse")
+
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, loginRequest(`{"identifier":"admin-1","password":"wrong-password"}`))
+	assertProblem(t, first, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, loginRequest(`{"identifier":"admin-1","password":"wrong-password"}`))
+	assertProblem(t, second, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	burst := httptest.NewRecorder()
+	h.ServeHTTP(burst, loginRequest(`{"identifier":"admin-1","password":"correct-horse"}`))
+	prob := assertProblem(t, burst, http.StatusTooManyRequests, CodeRateLimited, "caller-request-16")
+	if burst.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After")
+	}
+	if !strings.Contains(strings.ToLower(prob.Detail), "rate limit") {
+		t.Fatalf("detail %q", prob.Detail)
+	}
+	if strings.Contains(burst.Body.String(), "correct-horse") || strings.Contains(burst.Body.String(), "wrong-password") {
+		t.Fatal("429 must not echo passwords")
+	}
+	for _, c := range burst.Result().Cookies() {
+		if c.Name == session.CookieName && c.Value != "" && c.MaxAge != -1 {
+			t.Fatal("rate-limited login must not mint ff_session")
+		}
+	}
+}
+
+func TestLocalLoginRateLimitIdentifierIndependentOfIP(t *testing.T) {
+	store := identity.NewMemory()
+	h := NewWithDeps(Deps{
+		Store:    store,
+		Sessions: session.NewMemory(),
+		Security: Security{},
+		LoginLimits: localauth.Limits{
+			Window:     time.Minute,
+			PerIP:      100,
+			Identifier: 1,
+		},
+	})
+	seedLocalLogin(t, store, "https://idp.example", "admin-1", "Operator", "correct-horse")
+
+	first := loginRequest(`{"identifier":"admin-1","password":"wrong-password"}`)
+	first.RemoteAddr = "192.0.2.10:1"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, first)
+	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	second := loginRequest(`{"identifier":"admin-1","password":"correct-horse"}`)
+	second.RemoteAddr = "192.0.2.20:1"
+	burst := httptest.NewRecorder()
+	h.ServeHTTP(burst, second)
+	assertProblem(t, burst, http.StatusTooManyRequests, CodeRateLimited, "caller-request-16")
+}
+
+func TestLocalLoginLimiterNilFailsClosed(t *testing.T) {
+	s := &Server{loginLimits: localauth.DefaultLimits()}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	if s.allowLogin(req, "admin-1") {
+		t.Fatal("nil login limiter must fail closed")
+	}
+}
+
+func TestLocalLoginLookupFailureIsDependencyUnavailable(t *testing.T) {
+	store := lookupErrorStore{Memory: identity.NewMemory(), err: errors.New("connection refused")}
+	h := NewWithDeps(Deps{
+		Store:    store,
+		Sessions: session.NewMemory(),
+		Security: Security{},
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, loginRequest(`{"identifier":"admin-1","password":"correct-horse"}`))
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+	if strings.Contains(rec.Body.String(), "correct-horse") {
+		t.Fatal("503 must not echo the password")
+	}
+	if strings.Contains(strings.ToLower(rec.Body.String()), "invalid credentials") {
+		t.Fatal("store failure must not look like a credential miss")
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == session.CookieName && c.Value != "" && c.MaxAge != -1 {
+			t.Fatal("store failure must not mint ff_session")
+		}
+	}
 }

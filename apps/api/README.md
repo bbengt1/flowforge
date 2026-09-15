@@ -38,7 +38,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
-| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. Never echoes the password. Embed stays `POST /embed/exchange`. |
+| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). Embed stays `POST /embed/exchange`. |
 | `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |

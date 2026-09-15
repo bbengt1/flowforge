@@ -79,6 +79,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL` | `30` | Max exchange per peekable `iss\|sub` per window. |
 | `EMBED_MINT_RATE_LIMIT_PRINCIPAL` | `60` | Max mint per authenticated principal per window (`/embed/assertions` and Portal adapter mint). |
 | `EMBED_RATE_LIMIT_WINDOW` | `1m` | Window for the embed rate-limit counters. |
+| `LOGIN_RATE_LIMIT_IP` | `60` | Max `POST /login` per client IP per window, applied before lookup/bcrypt. Negative is unlimited. Separate from embed exchange. |
+| `LOGIN_RATE_LIMIT_IDENTIFIER` | `30` | Max `POST /login` per normalized identifier per window. Negative is unlimited. |
+| `LOGIN_RATE_LIMIT_WINDOW` | `1m` | Window for the local-login rate-limit counters. |
 | `PORTAL_ISSUER` / `PORTAL_ISSUER_ALLOWLIST` | empty | Required Portal mint `iss` allowlist. Empty fails closed (`403`). Merged into embed exchange. Compose seeds `https://portal.cp-ops.example`. Production requires every entry to be an absolute `https://` URI (ADV-018; boot-fail). |
 | `WEB_EMBED_FRAME_ANCESTORS` | unset | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `PORTAL_FRAME_ANCESTORS`). Exact origins allowed to frame `/embed/v1` and send embed postMessage. Empty keeps `frame-ancestors 'none'` and denies postMessage. `*` / `null` are ignored. Set the same values on the API so the catalog matches. |
 | `WEB_PORTAL_FRAME_ANCESTORS` | unset | Same shared list (Portal-origin name). |

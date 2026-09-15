@@ -35,6 +35,18 @@ export type LocalLoginBody = {
   password: string;
 };
 
+/** V.0a: POST /login burst is 429. Chloe treats it as backoff only. */
+export const LOGIN_RATE_LIMITED_MESSAGE =
+  "Sign-in was rate-limited (HTTP 429). Back off and retry after Retry-After. Do not treat this as invalid credentials.";
+
+export const LOGIN_RATE_LIMIT_RULES = {
+  loginRateLimited: true,
+  status: 429,
+  code: "rate-limited",
+  treatAsBackoff: true,
+  noUiChangeBeyondBackoff: true,
+} as const;
+
 /** HttpOnly session cookie issued by the API. Never read from JS. */
 export const SESSION_COOKIE_NAME = "ff_session";
 

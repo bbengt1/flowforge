@@ -4,6 +4,8 @@ import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER,
   csrfRequiredFor,
+  LOGIN_RATE_LIMIT_RULES,
+  LOGIN_RATE_LIMITED_MESSAGE,
   sameOriginProxyUrl,
   sessionApiPath,
   sessionBrowserPath,
@@ -30,6 +32,15 @@ describe("session-contract", () => {
     assert.equal(SESSION_COOKIE_NAME, "ff_session");
     assert.equal(CSRF_COOKIE_NAME, "ff_csrf");
     assert.equal(SESSION_COOKIE_PATH, "/api/v1");
+  });
+
+  it("treats POST /login 429 as backoff, not invalid credentials", () => {
+    assert.equal(LOGIN_RATE_LIMIT_RULES.loginRateLimited, true);
+    assert.equal(LOGIN_RATE_LIMIT_RULES.status, 429);
+    assert.equal(LOGIN_RATE_LIMIT_RULES.code, "rate-limited");
+    assert.equal(LOGIN_RATE_LIMIT_RULES.treatAsBackoff, true);
+    assert.match(LOGIN_RATE_LIMITED_MESSAGE, /429/);
+    assert.match(LOGIN_RATE_LIMITED_MESSAGE, /invalid credentials/i);
   });
 
   it("requires CSRF on mutations except bootstrap POST /session", () => {

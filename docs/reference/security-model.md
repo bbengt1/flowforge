@@ -63,7 +63,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   echoed**. `POST /login` verifies that hash and mints the same
   standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`).
   Unknown identifier and wrong password are the same `401` without
-  saying which field failed.
+  saying which field failed. `POST /login` is rate-limited by IP
+  (default 60/min) and identifier (default 30/min) **before** lookup
+  or bcrypt and returns `429` `rate-limited` with `Retry-After` on
+  burst. Store failures other than unknown identifier are `503`.
   Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
   the value is stored server-side and never echoed. TLS is
   `{action:"create-self-signed"}`, `{action:"upload", certPem,

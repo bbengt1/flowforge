@@ -16,6 +16,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
@@ -66,6 +67,8 @@ type Server struct {
 	portalFrames     []string
 	platformAdmins   []authz.PrincipalRef
 	embedLimiter     *embed.Limiter
+	loginLimiter     *embed.Limiter
+	loginLimits      localauth.Limits
 	embedAuditor     embed.Auditor
 	embedNBFLeeway   time.Duration
 	tlsMaterials     tlsmaterial.Store
@@ -105,7 +108,10 @@ type Deps struct {
 	PortalFrameAncestors []string
 	PlatformAdmins       []authz.PrincipalRef
 	EmbedLimits          embed.Limits
-	EmbedAuditor         embed.Auditor
+	// LoginLimits rate-limits POST /login before bcrypt. Separate from
+	// embed exchange so those IP budgets do not share a counter.
+	LoginLimits  localauth.Limits
+	EmbedAuditor embed.Auditor
 	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
@@ -374,10 +380,18 @@ func newServer(d Deps) http.Handler {
 		portalIssuers:    append([]string(nil), d.PortalIssuers...),
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
 		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
+		loginLimits:      localauth.NormalizeLimits(d.LoginLimits),
 		embedAuditor:     d.EmbedAuditor,
 		embedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
 		tlsMaterials:     d.TLSMaterials,
 	}
+	// Dedicated limiter: do not share embed's IP/principal counters.
+	s.loginLimiter = embed.NewLimiter(embed.Limits{
+		Window:            s.loginLimits.Window,
+		ExchangeIP:        -1,
+		ExchangePrincipal: -1,
+		MintPrincipal:     -1,
+	})
 	if d.PlatformAdmins != nil {
 		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
 	} else {

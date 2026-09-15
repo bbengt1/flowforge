@@ -823,6 +823,16 @@ paths:
         failed. `GET /session` after success is a normal non-embed
         session (`session.embed` omitted).
 
+        Rate-limited by client IP (default 60/min) and identifier
+        (default 30/min) **before** lookup or bcrypt (`DummyVerify`
+        included). Burst returns `429` `rate-limited` with
+        `Retry-After`. A nil limiter fails closed. These counters are
+        separate from `POST /embed/exchange` — do not share that IP
+        budget. Configurable via `LOGIN_RATE_LIMIT_IP`,
+        `LOGIN_RATE_LIMIT_IDENTIFIER`, `LOGIN_RATE_LIMIT_WINDOW`.
+        Identity-store failures other than unknown identifier are
+        `503` `dependency-unavailable` (not `401`).
+
         Do not use this from `/embed/v1`. Embed stays
         `POST /embed/exchange` only (ADV-021). Trusted-dev `POST /session`
         is unchanged and stays non-prod fail-closed.
@@ -862,6 +872,10 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /session:
     post:
       operationId: createSession
