@@ -11,6 +11,7 @@ import {
 } from "@/lib/home-row-scan";
 import { FF_OVERVIEW_CHIP_CLASS } from "@/lib/overview-visual";
 import { workflowHomeLastRunHref } from "@/lib/product-home";
+import { lastRunStatusClassName } from "@/lib/status-embed-visual";
 import type { WorkflowHomeItem } from "@/lib/workflow-home";
 
 type HomeLastRunStatusProps = {
@@ -31,13 +32,13 @@ function lastRunClassName(kind: HomeLastRunKind): string {
   if (kind === "indeterminate") {
     return `${chip} ${LOUD_INDETERMINATE_CLASS}`;
   }
-  if (kind === "waiting") {
-    return `${chip} ${FF_OVERVIEW_CHIP_CLASS} border-2 font-semibold`;
-  }
   if (kind === "failed") {
     return `${chip} ${LOUD_ERROR_CLASS}`;
   }
-  return `${chip} ${FF_OVERVIEW_CHIP_CLASS}`;
+  if (kind === "unknown" || kind === "never") {
+    return `${chip} ${FF_OVERVIEW_CHIP_CLASS}`;
+  }
+  return `${chip} ${lastRunStatusClassName(kind)}`;
 }
 
 export function HomeLastRunStatus({

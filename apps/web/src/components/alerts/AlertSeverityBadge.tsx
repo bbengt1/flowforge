@@ -1,9 +1,11 @@
+import { StatusMark } from "@/components/chrome/StatusMark";
 import { alertSeverityPresentation } from "@/lib/alert";
 import type { AlertKind, AlertSeverity } from "@/lib/alert-types";
 import {
   LOUD_ERROR_CLASS,
   LOUD_WARNING_CLASS,
 } from "@/lib/aesthetic-usability-density";
+import { FF_STATUS_OTHER_CLASS } from "@/lib/status-embed-visual";
 
 type AlertSeverityBadgeProps = {
   severity: AlertSeverity | undefined;
@@ -16,7 +18,7 @@ const TONE_CLASS: Record<
 > = {
   critical: LOUD_ERROR_CLASS,
   warning: LOUD_WARNING_CLASS,
-  other: "border-zinc-300 bg-zinc-50 text-zinc-800",
+  other: FF_STATUS_OTHER_CLASS,
 };
 
 export function AlertSeverityBadge({
@@ -26,13 +28,11 @@ export function AlertSeverityBadge({
   const presentation = alertSeverityPresentation(severity, kind);
 
   return (
-    <p
-      role="status"
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs ${TONE_CLASS[presentation.tone]}`}
-    >
-      <span aria-hidden="true">{presentation.icon}</span>
-      <span>{presentation.label}</span>
-      <span className="sr-only">{presentation.description}</span>
-    </p>
+    <StatusMark
+      icon={presentation.icon}
+      label={presentation.label}
+      description={presentation.description}
+      className={`rounded-full px-2.5 py-0.5 text-xs ${TONE_CLASS[presentation.tone]}`}
+    />
   );
 }
