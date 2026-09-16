@@ -10,6 +10,7 @@ import {
   useState,
   useSyncExternalStore,
   type DragEvent,
+  type ReactNode,
 } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
@@ -156,6 +157,23 @@ import {
   type ExplorerPaneRow,
 } from "@/lib/explorer-select-open";
 import {
+  EXPLORER_DRAFTS_DO_NOT_RUN,
+  EXPLORER_EMPTY_PANE_HINT,
+  EXPLORER_FOLDER_TEACH,
+  EXPLORER_UNFILED_FILED_TEACH,
+  EXPLORER_UNFILED_TEACH,
+  EXPLORER_UNFILED_VIRTUAL_LABEL,
+  FF_EXPLORER_DRAFTS_BANNER_CLASS,
+  FF_EXPLORER_EMPTY_CLASS,
+  FF_EXPLORER_EMPTY_FOLDER_CLASS,
+  FF_EXPLORER_EMPTY_UNFILED_CLASS,
+  FF_EXPLORER_VIRTUAL_CHIP_CLASS,
+  explorerEmptyKindFromFolderHome,
+  explorerEmptyShowsDraftsBanner,
+  explorerEmptyTeachCopy,
+  type ExplorerEmptyKind,
+} from "@/lib/explorer-empty-states";
+import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
   workflowTemplateById,
@@ -208,6 +226,7 @@ import {
   FOLDER_SEARCH_ACROSS_LABEL,
   FOLDER_SEARCH_HELP,
   FOLDER_SEARCH_IN_FOLDER_LABEL,
+  FOLDER_UNFILED_LOCKED_HELP,
   NEW_FOLDER_LABEL,
   RENAME_FOLDER_LABEL,
   UNFILED_EMPTY_FILED_HELP,
@@ -546,6 +565,10 @@ function WorkflowHomeSession() {
     workspaceWorkflowCount,
   });
   const unfiledShowsHomeVerbs = unfiledEmptyUsesHomeVerbs(workspaceWorkflowCount);
+  const explorerEmptyKind = explorerEmptyKindFromFolderHome(
+    emptyKind,
+    unfiledShowsHomeVerbs,
+  );
   const paneFolders = useMemo(
     () =>
       childFoldersForPane(folders, selection, {
@@ -1992,6 +2015,7 @@ function WorkflowHomeSession() {
 
       <div
         data-x2="pane-surface"
+        data-x4="pane-surface"
         className="min-h-[12rem]"
         onClick={(event) => {
           if (event.target === event.currentTarget) {
@@ -2008,7 +2032,9 @@ function WorkflowHomeSession() {
       >
       {emptyKind === "teach" ||
       (emptyKind === "unfiled" && unfiledShowsHomeVerbs) ? (
-        <>
+        <ExplorerEmptySurface
+          kind={explorerEmptyKind === "unfiled-none" ? "unfiled-none" : "home"}
+        >
           <HomeEmptyTeach
             canCreate={canCreate}
             canCreateFolder={canMutateFolders}
@@ -2028,12 +2054,14 @@ function WorkflowHomeSession() {
             pending={pending !== null}
             onSelect={(template) => void createFromTemplate(template)}
           />
-        </>
+        </ExplorerEmptySurface>
       ) : emptyKind === "unfiled" && !paneHasRows ? (
-        <UnfiledEmptyFiled
-          folders={folders}
-          onSelectFolder={selectFolder}
-        />
+        <ExplorerEmptySurface kind="unfiled-filed">
+          <UnfiledEmptyFiled
+            folders={folders}
+            onSelectFolder={selectFolder}
+          />
+        </ExplorerEmptySurface>
       ) : paneHasRows ? (
         <WorkflowHomeCards
           items={visible}
@@ -2072,33 +2100,37 @@ function WorkflowHomeSession() {
           }}
         />
       ) : emptyKind === "folder" ? (
-        <FolderEmpty
-          canCreate={canCreate}
-          canMutate={canMutateFolders}
-          pending={pending !== null}
-          deleteAllowed={folderEmptyDeleteAllowed}
-          moveAvailable={moveIntoCandidates.length > 0}
-          onCreate={() => {
-            const blank = workflowTemplateById("blank");
-            if (blank) {
-              void createFromYaml(blank.definitionYaml);
-            }
-          }}
-          onImport={() => importRef.current?.click()}
-          onMove={openMoveIntoFolder}
-          onDelete={() => {
-            if (selection.kind === "folder") {
-              void removeFolder(selection.id);
-            }
-          }}
-        />
+        <ExplorerEmptySurface kind="folder">
+          <FolderEmpty
+            canCreate={canCreate}
+            canMutate={canMutateFolders}
+            pending={pending !== null}
+            deleteAllowed={folderEmptyDeleteAllowed}
+            moveAvailable={moveIntoCandidates.length > 0}
+            onCreate={() => {
+              const blank = workflowTemplateById("blank");
+              if (blank) {
+                void createFromYaml(blank.definitionYaml);
+              }
+            }}
+            onImport={() => importRef.current?.click()}
+            onMove={openMoveIntoFolder}
+            onDelete={() => {
+              if (selection.kind === "folder") {
+                void removeFolder(selection.id);
+              }
+            }}
+          />
+        </ExplorerEmptySurface>
       ) : emptyKind === "filtered" ? (
-        <HomeFilteredEmpty
-          onClear={() => {
-            setFilters(EMPTY_WORKFLOW_HOME_FILTERS);
-            setSearchInThisFolder(false);
-          }}
-        />
+        <ExplorerEmptySurface kind="filtered">
+          <HomeFilteredEmpty
+            onClear={() => {
+              setFilters(EMPTY_WORKFLOW_HOME_FILTERS);
+              setSearchInThisFolder(false);
+            }}
+          />
+        </ExplorerEmptySurface>
       ) : (
         <WorkflowHomeCards
           items={visible}
@@ -2474,6 +2506,13 @@ function FolderRail({
           >
             <FinderUnfiledIcon />
             <span className="truncate">{UNFILED_FOLDER_LABEL}</span>
+            <span
+              data-x4="unfiled-virtual"
+              title={EXPLORER_UNFILED_VIRTUAL_LABEL}
+              className={`${FF_EXPLORER_VIRTUAL_CHIP_CLASS} ml-auto`}
+            >
+              Virtual
+            </span>
           </button>
         </li>
         {tree.map((node) => (
@@ -3367,6 +3406,102 @@ function WorkflowHomeCards({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function ExplorerEmptySurface({
+  kind,
+  children,
+}: {
+  kind: ExplorerEmptyKind;
+  children: ReactNode;
+}) {
+  const virtual = kind === "unfiled-none" || kind === "unfiled-filed";
+  const folder = kind === "folder";
+  const surfaceClass = [
+    FF_EXPLORER_EMPTY_CLASS,
+    folder ? FF_EXPLORER_EMPTY_FOLDER_CLASS : "",
+    virtual ? FF_EXPLORER_EMPTY_UNFILED_CLASS : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const teach = explorerEmptyTeachCopy(kind);
+  const body = (
+    <>
+      {virtual ? (
+        <p
+          data-x4="unfiled-virtual"
+          className={FF_EXPLORER_VIRTUAL_CHIP_CLASS}
+        >
+          {EXPLORER_UNFILED_VIRTUAL_LABEL}
+        </p>
+      ) : null}
+      {explorerEmptyShowsDraftsBanner(kind) ? (
+        <p
+          data-x4="drafts-do-not-run"
+          className={`${FF_EXPLORER_DRAFTS_BANNER_CLASS} mb-3 px-3 py-2 text-sm`}
+        >
+          {EXPLORER_DRAFTS_DO_NOT_RUN}
+        </p>
+      ) : null}
+      {kind === "folder" ? (
+        <p data-x4="folder-teach" className={`mb-3 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {EXPLORER_FOLDER_TEACH}
+        </p>
+      ) : null}
+      {kind === "unfiled-none" ? (
+        <p data-x4="unfiled-teach" className={`mb-3 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {EXPLORER_UNFILED_TEACH}
+        </p>
+      ) : null}
+      {kind === "unfiled-filed" ? (
+        <p data-x4="unfiled-filed-teach" className={`mb-3 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {EXPLORER_UNFILED_FILED_TEACH}
+        </p>
+      ) : null}
+      {kind === "home" ? (
+        <p data-x4="home-teach" className={`mb-3 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {teach}
+        </p>
+      ) : null}
+      {virtual ? (
+        <p data-x4="unfiled-locked" className={`mb-3 text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {FOLDER_UNFILED_LOCKED_HELP}
+        </p>
+      ) : null}
+      {children}
+      {kind !== "filtered" ? (
+        <p data-x4="empty-pane-hint" className={`mt-3 text-xs ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {EXPLORER_EMPTY_PANE_HINT}
+        </p>
+      ) : null}
+    </>
+  );
+  if (kind === "folder") {
+    return (
+      <div data-x4="empty-folder" data-x4-kind={kind} className={surfaceClass}>
+        {body}
+      </div>
+    );
+  }
+  if (kind === "home") {
+    return (
+      <div data-x4="empty-home" data-x4-kind={kind} className={surfaceClass}>
+        {body}
+      </div>
+    );
+  }
+  if (kind === "filtered") {
+    return (
+      <div data-x4="filtered-empty" data-x4-kind={kind} className={surfaceClass}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <div data-x4="empty-unfiled" data-x4-kind={kind} className={surfaceClass}>
+      {body}
     </div>
   );
 }

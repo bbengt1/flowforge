@@ -39,6 +39,14 @@ export default function WorkflowsPage() {
           so X.2 menus stay. Viewers get
           Open / select only. Unfiled cannot be renamed or deleted.
           Folder delete stays disabled when the folder is not empty.
+          Empty folder and empty Unfiled teaching states sit on
+          Explorer chrome (X.4 / #383 —{" "}
+          <strong>keep #383 open</strong>; Part of #379 —{" "}
+          <strong>keep #379 open</strong>): a real folder teaches
+          create here / move (delete only when empty); Unfiled stays
+          virtual and never looks deletable or renamable. Drafts do
+          not run stays loud on empty/home create surfaces. Empty
+          pane still right-clicks to New folder / Create / Import.
           The left rail
           lists Unfiled and this workspace&apos;s folders; the main list
           is the selected folder. Unfiled is always in the rail and is
@@ -47,9 +55,11 @@ export default function WorkflowsPage() {
           creates a draft — plus optional New folder. Empty folder
           offers create here, move, or delete when the folder has no
           workflows and no child folders. Unfiled-empty points at the
-          tree or those empty-home verbs. Those empty states use
-          Overview card chrome (O.3 / #327 —{" "}
-          <strong>keep #327 open</strong>), not dense-list empty chrome.
+          tree or those empty-home verbs. Those empty states carry
+          F.5 / O.3 teaching onto Explorer tree + pane chrome; Overview
+          card chrome (O.3 / #327 —{" "}
+          <strong>keep #327 open</strong>) remains the teaching
+          contract, not dense-list empty chrome.
           Drafts do not run.           Dark Overview card rows use V.1 tokens (V.3 / #359 —{" "}
           <strong>keep #359 open</strong>). The Overview
           card list is the primary browse surface (O.1 / #325 —{" "}
