@@ -1,8 +1,10 @@
 /**
- * B.6 / B.7: First-run wizard chrome + Settings handoff + Skip TLS.
+ * B.6 / B.7 / B.8: First-run wizard chrome + Settings handoff + Skip TLS
+ * + non-prod path-2 defaults + TLS→https localhost toast.
  *
- * Relates to #339 / #347 / Part of #333. Keep #339 and #347 open.
- * V.6 / #362 restyles this chrome onto V.1 tokens. Keep #362 open.
+ * Relates to #339 / #347 / #390 / Part of #333. Keep #339 and #347
+ * open. V.6 / #362 restyles this chrome onto V.1 tokens. Keep #362
+ * open.
  *
  * Chloe UI only. Consumes jonny's B.1–B.5 / B.7 status-only APIs
  * (`docs/architecture/flowforge-first-run-bootstrap.md`). No new
@@ -19,6 +21,15 @@
  * not a silent default. After complete the wizard never remounts.
  * URL / TLS / users / persistence edits live in Settings and link
  * out. Settings `#tls` surfaces `skipped` (HTTP until enable later).
+ *
+ * B.8: incomplete non-prod / path-2 chrome may pre-fill issuer
+ * `http://localhost`, subject `admin-1`, and public URL
+ * `http://localhost`. Production stays blank. Persistence stays as
+ * today. The #376 one-time Login password stays orthogonal — wizard
+ * chrome still does not collect or echo a password. Create / Upload
+ * may re-POST `https://localhost` while incomplete when the saved
+ * URL is still HTTP localhost, then show a loud toast. Skip does
+ * not rewrite. Non-localhost URLs are never clobbered.
  */
 
 import { PRODUCT_HOME_HREF, SETTINGS_HREF } from "./product-home.ts";
@@ -35,6 +46,11 @@ export const B7_STORY = 347;
 export const B7_EPIC = 333;
 export const B7_KEEP_STORY_OPEN = true;
 export const B7_ID = "B.7-skip-tls-wizard-chrome" as const;
+
+export const B8_STORY = 390;
+export const B8_EPIC = 333;
+export const B8_KEEP_STORY_OPEN = true;
+export const B8_ID = "B.8-dev-defaults-tls-https-toast" as const;
 
 export const FIRST_RUN_BOOTSTRAP_BRIEF =
   "docs/architecture/flowforge-first-run-bootstrap.md";
@@ -160,6 +176,15 @@ export const FIRST_RUN_BOOTSTRAP = {
   httpUntilTlsInSettings: true,
   settingsSurfacesSkippedTls: true,
   acmeOutOfScope: true,
+  devDefaultsNonProdPath2Only: true,
+  devDefaultsNeverInProduction: true,
+  persistenceDefaultsUnchanged: true,
+  neverPrefillPasswordInWizard: true,
+  oneTimePasswordStaysOrthogonal: true,
+  tlsCreateUploadRewritesHttpLocalhost: true,
+  tlsSkipDoesNotRewriteUrl: true,
+  tlsRewriteToastsOnlyWhenChanged: true,
+  tlsRewriteDoesNotClobberNonLocalhost: true,
   csrfWhenSessionPresent: true,
   sameOriginProxyOnly: true,
   noNewApi: true,
@@ -169,7 +194,7 @@ export const FIRST_RUN_BOOTSTRAP = {
 } as const;
 
 export const FIRST_RUN_BOOTSTRAP_HELP =
-  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — the Next proxy expires ff_* without a hydrated CSRF token or logout; retry and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser.";
+  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — the Next proxy expires ff_* without a hydrated CSRF token or logout; retry and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser. Non-prod path-2 chrome may pre-fill localhost issuer / subject / public URL; production stays blank. Create / Upload rewrites leftover HTTP localhost to https://localhost with a loud toast; Skip does not.";
 
 export const WIZARD_STALE_SESSION_HELP =
   "The browser session expired. Clearing the stale cookie so first-run setup can continue.";
@@ -226,6 +251,16 @@ export const BOOTSTRAP_TLS_SKIP_PENDING = "Skipping TLS…";
 
 export const BOOTSTRAP_TLS_SKIP_SUCCESS =
   "TLS skipped. This instance stays on HTTP until Settings. Opening workflows…";
+
+export const DEV_WIZARD_ADMIN_ISSUER = "http://localhost";
+export const DEV_WIZARD_ADMIN_SUBJECT = "admin-1";
+export const DEV_WIZARD_PUBLIC_URL = "http://localhost";
+export const TLS_REWRITE_PUBLIC_URL = "https://localhost";
+
+export const BOOTSTRAP_TLS_REWRITE_TOAST =
+  "Public URL set to https://localhost because TLS is enabled";
+
+export const BOOTSTRAP_TLS_REWRITE_PENDING = "Updating public URL for TLS…";
 
 export const BOOTSTRAP_SECRET_KEYS = [
   "password",
@@ -494,6 +529,83 @@ export function normalizePublicBaseUrl(raw: string): string | null {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
+export type WizardDevDefaultEnv = {
+  NODE_ENV?: string;
+};
+
+/** Non-prod / path-2 only. Production builds stay blank (fail-closed). */
+export function wizardAllowsDevDefaults(
+  env: WizardDevDefaultEnv = process.env,
+): boolean {
+  return env.NODE_ENV !== "production";
+}
+
+export function wizardDevAdminDefaults(
+  env: WizardDevDefaultEnv = process.env,
+): { issuer: string; subject: string } {
+  if (!wizardAllowsDevDefaults(env)) {
+    return { issuer: "", subject: "" };
+  }
+  return {
+    issuer: DEV_WIZARD_ADMIN_ISSUER,
+    subject: DEV_WIZARD_ADMIN_SUBJECT,
+  };
+}
+
+export function wizardDevPublicUrlDefault(
+  env: WizardDevDefaultEnv = process.env,
+): string {
+  if (!wizardAllowsDevDefaults(env)) {
+    return "";
+  }
+  return DEV_WIZARD_PUBLIC_URL;
+}
+
+function publicUrlHostname(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * HTTP localhost with no host override. `http://localhost:port` still
+ * matches (hostname is localhost). Non-localhost hosts are never
+ * rewritten.
+ */
+export function publicUrlIsHttpLocalhostDefault(raw: string): boolean {
+  const origin = normalizePublicBaseUrl(raw);
+  if (!origin) {
+    return false;
+  }
+  if (!origin.startsWith("http://")) {
+    return false;
+  }
+  return publicUrlHostname(origin) === "localhost";
+}
+
+export function tlsRewritePublicUrl(raw: string): string | null {
+  if (!publicUrlIsHttpLocalhostDefault(raw)) {
+    return null;
+  }
+  return TLS_REWRITE_PUBLIC_URL;
+}
+
+export function decideTlsPublicUrlRewrite(input: {
+  tlsAction: BootstrapTlsAction;
+  publicBaseUrl: string;
+}): { rewriteTo: string } | null {
+  if (input.tlsAction === "skip") {
+    return null;
+  }
+  const rewriteTo = tlsRewritePublicUrl(input.publicBaseUrl);
+  if (!rewriteTo) {
+    return null;
+  }
+  return { rewriteTo };
+}
+
 export function bootstrapAdminBody(
   input: BootstrapAdminInput,
 ): BootstrapAdminInput {
@@ -707,6 +819,14 @@ export function firstRunBootstrapHoldsHardLines(): boolean {
     FIRST_RUN_BOOTSTRAP.mutation401DoesNotSkipWizard &&
     FIRST_RUN_BOOTSTRAP.wizardPostCsrfExemptAtProxy &&
     FIRST_RUN_BOOTSTRAP.staleWizardCookiesExpireWithoutHydratedCsrf &&
+    FIRST_RUN_BOOTSTRAP.devDefaultsNonProdPath2Only &&
+    FIRST_RUN_BOOTSTRAP.devDefaultsNeverInProduction &&
+    FIRST_RUN_BOOTSTRAP.neverPrefillPasswordInWizard &&
+    FIRST_RUN_BOOTSTRAP.oneTimePasswordStaysOrthogonal &&
+    FIRST_RUN_BOOTSTRAP.tlsCreateUploadRewritesHttpLocalhost &&
+    FIRST_RUN_BOOTSTRAP.tlsSkipDoesNotRewriteUrl &&
+    FIRST_RUN_BOOTSTRAP.tlsRewriteToastsOnlyWhenChanged &&
+    FIRST_RUN_BOOTSTRAP.tlsRewriteDoesNotClobberNonLocalhost &&
     R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly
   );
 }

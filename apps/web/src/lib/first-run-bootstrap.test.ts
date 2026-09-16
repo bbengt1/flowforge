@@ -10,7 +10,11 @@ import {
   B7_EPIC,
   B7_KEEP_STORY_OPEN,
   B7_STORY,
+  B8_EPIC,
+  B8_KEEP_STORY_OPEN,
+  B8_STORY,
   BOOTSTRAP_STEPS,
+  BOOTSTRAP_TLS_REWRITE_TOAST,
   BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER,
   BOOTSTRAP_TLS_SKIP_LABEL,
   BOOTSTRAP_TLS_SKIP_SETTINGS_COPY,
@@ -31,6 +35,7 @@ import {
   collectForbiddenKeys,
   currentBootstrapStep,
   decideBootstrapChrome,
+  decideTlsPublicUrlRewrite,
   emptyBootstrapStatus,
   emptyTlsUploadDraft,
   firstRunBootstrapHoldsHardLines,
@@ -46,6 +51,9 @@ import {
   tlsSettingsDescription,
   tlsSkipBodyIsActionOnly,
   tlsStepIsSkipped,
+  wizardAllowsDevDefaults,
+  wizardDevAdminDefaults,
+  wizardDevPublicUrlDefault,
   wizardMutation401IsStaleSession,
   wizardSourceHasPasswordField,
   wizardSourceRetainsSecrets,
@@ -802,3 +810,135 @@ function BOOTSTRAP_STEP_HELP_HAS_SKIP(): boolean {
     adapter.includes("HTTP until you enable TLS in Settings")
   );
 }
+
+describe("B.8 dev/test wizard defaults + TLS→https URL toast", () => {
+  it("keeps #390 related and cites epic #333 without weakening B.6 / B.7", () => {
+    assert.equal(B8_STORY, 390);
+    assert.equal(B8_EPIC, 333);
+    assert.equal(B8_KEEP_STORY_OPEN, true);
+    assert.equal(B6_KEEP_STORY_OPEN, true);
+    assert.equal(B7_KEEP_STORY_OPEN, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.devDefaultsNonProdPath2Only, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.devDefaultsNeverInProduction, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.neverPrefillPasswordInWizard, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.oneTimePasswordStaysOrthogonal, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.tlsCreateUploadRewritesHttpLocalhost, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.tlsSkipDoesNotRewriteUrl, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.tlsRewriteToastsOnlyWhenChanged, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.tlsRewriteDoesNotClobberNonLocalhost, true);
+    assert.equal(firstRunBootstrapHoldsHardLines(), true);
+  });
+
+  it("pre-fills issuer, subject, and public URL only outside production", () => {
+    assert.equal(wizardAllowsDevDefaults({ NODE_ENV: "production" }), false);
+    assert.deepEqual(wizardDevAdminDefaults({ NODE_ENV: "production" }), {
+      issuer: "",
+      subject: "",
+    });
+    assert.equal(wizardDevPublicUrlDefault({ NODE_ENV: "production" }), "");
+
+    assert.equal(wizardAllowsDevDefaults({ NODE_ENV: "development" }), true);
+    assert.equal(wizardAllowsDevDefaults({ NODE_ENV: "test" }), true);
+    assert.deepEqual(wizardDevAdminDefaults({ NODE_ENV: "development" }), {
+      issuer: "http://localhost",
+      subject: "admin-1",
+    });
+    assert.equal(
+      wizardDevPublicUrlDefault({ NODE_ENV: "test" }),
+      "http://localhost",
+    );
+
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.match(wizard, /wizardDevAdminDefaults/);
+    assert.match(wizard, /wizardDevPublicUrlDefault/);
+    assert.equal(wizardSourceHasPasswordField(wizard), false);
+    assert.doesNotMatch(wizard, /type="password"/);
+    assert.doesNotMatch(wizard, /password\?:/);
+    assert.doesNotMatch(wizard, /["']admin["']/);
+    assert.doesNotMatch(
+      source("src/lib/first-run-bootstrap.ts"),
+      /["']admin["']/,
+    );
+  });
+
+  it("rewrites leftover HTTP localhost on Create/Upload and never clobbers other hosts", () => {
+    assert.deepEqual(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "create-self-signed",
+        publicBaseUrl: "http://localhost",
+      }),
+      { rewriteTo: "https://localhost" },
+    );
+    assert.deepEqual(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "upload",
+        publicBaseUrl: "http://localhost:3000",
+      }),
+      { rewriteTo: "https://localhost" },
+    );
+    assert.equal(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "skip",
+        publicBaseUrl: "http://localhost",
+      }),
+      null,
+    );
+    assert.equal(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "create-self-signed",
+        publicBaseUrl: "https://localhost",
+      }),
+      null,
+    );
+    assert.equal(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "upload",
+        publicBaseUrl: "http://flows.example.com",
+      }),
+      null,
+    );
+    assert.equal(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "create-self-signed",
+        publicBaseUrl: "http://127.0.0.1",
+      }),
+      null,
+    );
+    assert.equal(
+      BOOTSTRAP_TLS_REWRITE_TOAST,
+      "Public URL set to https://localhost because TLS is enabled",
+    );
+
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.match(wizard, /decideTlsPublicUrlRewrite/);
+    assert.match(wizard, /rewriteHttpLocalhostPublicUrlIfNeeded/);
+    assert.match(wizard, /tlsAction !== "skip"/);
+    assert.match(wizard, /setBootstrapPublicUrl/);
+    assert.match(wizard, /BOOTSTRAP_TLS_REWRITE_TOAST/);
+    assert.match(wizard, /data-bootstrap-tls-url-toast/);
+    assert.match(wizard, /setUrlRewriteToast\(true\)/);
+    assert.equal(wizard.includes("localStorage"), false);
+    assert.doesNotMatch(wizard, /console\.(log|info|debug|warn|error)/);
+  });
+
+  it("never remounts after complete and never mounts rewrite chrome on embed", () => {
+    assert.equal(
+      shouldRemountWizard({
+        embed: false,
+        complete: true,
+        settingsSurface: false,
+      }),
+      false,
+    );
+    const embed = decideBootstrapChrome({
+      embed: true,
+      statusCode: 200,
+      body: incompleteStatus(),
+    });
+    assert.equal(embed.chrome, "ignore");
+    const embedChrome = source("src/components/embed/EmbedChrome.tsx");
+    assert.equal(embedChrome.includes("FirstRunWizard"), false);
+    assert.equal(embedChrome.includes("decideTlsPublicUrlRewrite"), false);
+    assert.equal(embedChrome.includes("wizardDevAdminDefaults"), false);
+  });
+});

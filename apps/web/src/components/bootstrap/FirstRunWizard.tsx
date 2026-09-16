@@ -14,6 +14,8 @@ import {
   BOOTSTRAP_STEP_HELP,
   BOOTSTRAP_STEP_LABELS,
   BOOTSTRAP_STEPS,
+  BOOTSTRAP_TLS_REWRITE_PENDING,
+  BOOTSTRAP_TLS_REWRITE_TOAST,
   BOOTSTRAP_TLS_SKIP_LABEL,
   BOOTSTRAP_TLS_SKIP_PENDING,
   BOOTSTRAP_TLS_SKIP_SUCCESS,
@@ -23,9 +25,12 @@ import {
   bootstrapStepIsAhead,
   canOpenBootstrapStep,
   currentBootstrapStep,
+  decideTlsPublicUrlRewrite,
   emptyTlsUploadDraft,
   mutationConflictIsComplete,
   normalizePublicBaseUrl,
+  wizardDevAdminDefaults,
+  wizardDevPublicUrlDefault,
   wizardTlsInput,
   type BootstrapStatus,
   type BootstrapStepId,
@@ -87,14 +92,17 @@ export function FirstRunWizard({
     message: "",
   });
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
-  const [issuer, setIssuer] = useState("");
-  const [subject, setSubject] = useState("");
+  const [issuer, setIssuer] = useState(() => wizardDevAdminDefaults().issuer);
+  const [subject, setSubject] = useState(() => wizardDevAdminDefaults().subject);
   const [displayName, setDisplayName] = useState("");
-  const [publicBaseUrl, setPublicBaseUrl] = useState("");
+  const [publicBaseUrl, setPublicBaseUrl] = useState(
+    () => wizardDevPublicUrlDefault(),
+  );
   const [tlsAction, setTlsAction] = useState<BootstrapTlsAction>(
     DEFAULT_BOOTSTRAP_TLS_ACTION,
   );
   const [tlsDraft, setTlsDraft] = useState(emptyTlsUploadDraft);
+  const [urlRewriteToast, setUrlRewriteToast] = useState(false);
 
   const current = currentBootstrapStep(status);
   const busy = feedback.phase === "pending";
@@ -114,9 +122,9 @@ export function FirstRunWizard({
     step: BootstrapStepId,
     mutate: () => ReturnType<typeof confirmBootstrapPersistence>,
     messages?: { pending?: string; success?: string },
-  ) {
+  ): Promise<boolean> {
     if (!canOpenBootstrapStep(status, step) || busy) {
-      return;
+      return false;
     }
     setProblem(null);
     setFeedback({
@@ -134,14 +142,14 @@ export function FirstRunWizard({
           message: "Setup is already complete. Opening workflows…",
         });
         onComplete();
-        return;
+        return false;
       }
       setFeedback({
         phase: "error",
         message: bootstrapProblemMessage(result.statusCode, result.problem),
       });
       setProblem(result.problem);
-      return;
+      return false;
     }
     setStatus(result.status);
     setFeedback({
@@ -151,6 +159,60 @@ export function FirstRunWizard({
     if (result.status.complete || currentBootstrapStep(result.status) === "done") {
       onComplete();
     }
+    return true;
+  }
+
+  /**
+   * Incomplete bootstrap already overwrites public URL. Re-POST after
+   * Create/Upload while the gate is still open — do not wait for TLS
+   * MarkComplete (that 409s URL writes). Bypass the step rail; public
+   * URL is already ready.
+   */
+  async function rewriteHttpLocalhostPublicUrlIfNeeded(): Promise<boolean> {
+    const rewrite = decideTlsPublicUrlRewrite({
+      tlsAction,
+      publicBaseUrl,
+    });
+    if (!rewrite) {
+      return true;
+    }
+    if (busy) {
+      return false;
+    }
+    setProblem(null);
+    setFeedback({
+      phase: "pending",
+      message: BOOTSTRAP_TLS_REWRITE_PENDING,
+    });
+    const result = await setBootstrapPublicUrl({
+      embed: false,
+      identity,
+      publicBaseUrl: rewrite.rewriteTo,
+    });
+    if (!result.ok) {
+      if (mutationConflictIsComplete(result.statusCode, result.problem)) {
+        setFeedback({
+          phase: "success",
+          message: "Setup is already complete. Opening workflows…",
+        });
+        onComplete();
+        return false;
+      }
+      setFeedback({
+        phase: "error",
+        message: bootstrapProblemMessage(result.statusCode, result.problem),
+      });
+      setProblem(result.problem);
+      return false;
+    }
+    setStatus(result.status);
+    setPublicBaseUrl(rewrite.rewriteTo);
+    setUrlRewriteToast(true);
+    setFeedback({
+      phase: "success",
+      message: BOOTSTRAP_TLS_REWRITE_TOAST,
+    });
+    return true;
   }
 
   return (
@@ -206,6 +268,16 @@ export function FirstRunWizard({
           className={wizardStatusClassName(feedback.phase)}
         >
           {feedback.message}
+        </p>
+      ) : null}
+
+      {urlRewriteToast ? (
+        <p
+          role="status"
+          data-bootstrap-tls-url-toast=""
+          className={`${FF_WIZARD_SKIP_CLASS} px-4 py-3 text-sm leading-6`}
+        >
+          {BOOTSTRAP_TLS_REWRITE_TOAST}
         </p>
       ) : null}
 
@@ -433,21 +505,29 @@ export function FirstRunWizard({
               if (!tls) {
                 return;
               }
-              void runStep(
-                "tls",
-                () =>
-                  setBootstrapTls({
-                    embed: false,
-                    identity,
-                    tls,
-                  }),
-                tlsAction === "skip"
-                  ? {
-                      pending: BOOTSTRAP_TLS_SKIP_PENDING,
-                      success: BOOTSTRAP_TLS_SKIP_SUCCESS,
-                    }
-                  : undefined,
-              );
+              void (async () => {
+                if (tlsAction !== "skip") {
+                  const rewritten = await rewriteHttpLocalhostPublicUrlIfNeeded();
+                  if (!rewritten) {
+                    return;
+                  }
+                }
+                await runStep(
+                  "tls",
+                  () =>
+                    setBootstrapTls({
+                      embed: false,
+                      identity,
+                      tls,
+                    }),
+                  tlsAction === "skip"
+                    ? {
+                        pending: BOOTSTRAP_TLS_SKIP_PENDING,
+                        success: BOOTSTRAP_TLS_SKIP_SUCCESS,
+                      }
+                    : undefined,
+                );
+              })();
             }}
           >
             {tlsAction === "skip"
