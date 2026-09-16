@@ -962,6 +962,27 @@ describe("B.8 dev/test wizard defaults + TLS→https URL toast", () => {
     });
     assert.equal(completed, 1);
 
+    completed = 0;
+    scheduled.length = 0;
+    const cleared: unknown[] = [];
+    const hold = scheduleWizardCompleteAfterTlsRewriteToast({
+      holdToast: true,
+      onComplete: () => {
+        completed += 1;
+      },
+      schedule: (fn, delay) => {
+        scheduled.push({ delay, fn });
+        return "timer";
+      },
+      clear: (handle) => {
+        cleared.push(handle);
+      },
+    });
+    hold.cancel();
+    assert.deepEqual(cleared, ["timer"]);
+    scheduled[0]?.fn();
+    assert.equal(completed, 0);
+
     assert.equal(
       decideTlsPublicUrlRewrite({
         tlsAction: "skip",
@@ -977,6 +998,8 @@ describe("B.8 dev/test wizard defaults + TLS→https URL toast", () => {
       wizard,
       /tlsAction === "skip"[\s\S]*BOOTSTRAP_TLS_SKIP_SUCCESS[\s\S]*holdToast/,
     );
+    assert.match(wizard, /completeHoldRef\.current\?\.cancel\(\)/);
+    assert.match(wizard, /useEffect\(/);
   });
 
   it("never remounts after complete and never mounts rewrite chrome on embed", () => {

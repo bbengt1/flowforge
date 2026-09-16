@@ -611,26 +611,52 @@ export function decideTlsPublicUrlRewrite(input: {
   return { rewriteTo };
 }
 
+export type ScheduledWizardComplete = {
+  cancel: () => void;
+};
+
 /**
  * After Create/Upload rewrites HTTP localhost, keep the loud toast
  * mounted until the operator can read it. Skip / no-rewrite still
- * finish immediately. Does not drop the rewrite.
+ * finish immediately. Does not drop the rewrite. Cancel on unmount
+ * so a leftover timer cannot navigate after the wizard is gone.
  */
 export function scheduleWizardCompleteAfterTlsRewriteToast(input: {
   holdToast: boolean;
   onComplete: () => void;
   holdMs?: number;
   schedule?: (callback: () => void, delayMs: number) => unknown;
-}): void {
+  clear?: (handle: unknown) => void;
+}): ScheduledWizardComplete {
   if (!input.holdToast) {
     input.onComplete();
-    return;
+    return { cancel() {} };
   }
   const holdMs = input.holdMs ?? BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS;
   const schedule =
     input.schedule ??
     ((callback, delayMs) => globalThis.setTimeout(callback, delayMs));
-  schedule(input.onComplete, holdMs);
+  const clear =
+    input.clear ??
+    ((handle) => {
+      globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>);
+    });
+  let cancelled = false;
+  const handle = schedule(() => {
+    if (cancelled) {
+      return;
+    }
+    input.onComplete();
+  }, holdMs);
+  return {
+    cancel() {
+      if (cancelled) {
+        return;
+      }
+      cancelled = true;
+      clear(handle);
+    },
+  };
 }
 
 export function bootstrapAdminBody(

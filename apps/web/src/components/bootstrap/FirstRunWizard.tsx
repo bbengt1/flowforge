@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
@@ -104,9 +104,18 @@ export function FirstRunWizard({
   );
   const [tlsDraft, setTlsDraft] = useState(emptyTlsUploadDraft);
   const [urlRewriteToast, setUrlRewriteToast] = useState(false);
+  const completeHoldRef = useRef<ReturnType<
+    typeof scheduleWizardCompleteAfterTlsRewriteToast
+  > | null>(null);
 
   const current = currentBootstrapStep(status);
   const busy = feedback.phase === "pending";
+
+  useEffect(() => {
+    return () => {
+      completeHoldRef.current?.cancel();
+    };
+  }, []);
 
   const progress = useMemo(
     () =>
@@ -120,7 +129,8 @@ export function FirstRunWizard({
   );
 
   function finishWizard(holdToast = false) {
-    scheduleWizardCompleteAfterTlsRewriteToast({
+    completeHoldRef.current?.cancel();
+    completeHoldRef.current = scheduleWizardCompleteAfterTlsRewriteToast({
       holdToast,
       onComplete,
     });
