@@ -1559,6 +1559,9 @@ function WorkflowHomeSession() {
       data-o4={embed ? "embed-overview" : "standalone-overview"}
       data-o4-tree="api"
       data-o4-viewer={canMutateFolders ? "editor" : "select-only"}
+      data-x5={embed ? "embed-explorer" : "standalone-explorer"}
+      data-x5-tree="api"
+      data-x5-viewer={canMutateFolders ? "editor" : "select-only"}
       data-ff-overview={FF_OVERVIEW_VALUE}
       data-x1="explorer-shell"
       data-x3="select-open"

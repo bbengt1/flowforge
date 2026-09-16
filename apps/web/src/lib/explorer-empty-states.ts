@@ -16,7 +16,8 @@
  * folder / Create workflow / Import) stays on the pane surface.
  *
  * Shared `WorkflowHome` stays so embed does not fork. Full embed
- * parity is X.5. No new APIs. V.1 tokens only.
+ * parity is X.5 / #384 (keep #384 open; keep #379 open). No new
+ * APIs. V.1 tokens only.
  *
  * F.1–F.7 stay: Unfiled virtual, non-recursive `?folderId=`,
  * refuse-if-nonempty, move = `PATCH folderId` only. X.2 / X.3 stay.

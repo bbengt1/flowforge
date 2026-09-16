@@ -76,10 +76,17 @@ export default function WorkflowsPage() {
           The same Overview cards + compact Finder rail mount on{" "}
           <code className="font-mono text-sm">/embed/v1/workflows</code>{" "}
           after <code className="font-mono text-sm">session.embed</code>{" "}
-          (O.4 / #328 — <strong>keep #328 open</strong>). Missing{" "}
+          (O.4 / #328 — <strong>keep #328 open</strong>). The same
+          Explorer chrome — tree + content pane + breadcrumb, grant-gated
+          right-click menus, dense select/open, and empty / Unfiled
+          teaching — mounts on that embed surface after{" "}
+          <code className="font-mono text-sm">session.embed</code>{" "}
+          (X.5 / #384 — <strong>keep #384 open</strong>; Part of #379 —{" "}
+          <strong>keep #379 open</strong>). Missing{" "}
           <code className="font-mono text-sm">session.embed</code> is an
           ADV-021 alert. Host query is display-only. Viewers are
-          select-only. The tree comes from the API, not{" "}
+          select/open only. Wizard, Login, and Change-password never
+          mount on embed. The tree comes from the API, not{" "}
           <code className="font-mono text-sm">localStorage</code>. No
           second tree.
           Scan ends remain activation (published version active for webhook
