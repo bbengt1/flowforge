@@ -64,6 +64,6 @@ Post-R1–R7 chrome polish (Laws of UX, selective; docs-only): [flowforge-ux-law
 
 Workflows home folder hierarchy (nested, server-backed, per workspace; F.1 API landed, chrome F.2+): [flowforge-workflow-folders.md](architecture/flowforge-workflow-folders.md).
 
-First-run operator wizard (standalone only; B.1–B.7): [flowforge-first-run-bootstrap.md](architecture/flowforge-first-run-bootstrap.md).
+First-run operator wizard (standalone only; B.1–B.8): [flowforge-first-run-bootstrap.md](architecture/flowforge-first-run-bootstrap.md).
 
 Visual + IA north star (docs-only until Brent yes; chrome rebuild after): [flowforge-visual-ia-north-star.md](architecture/flowforge-visual-ia-north-star.md).

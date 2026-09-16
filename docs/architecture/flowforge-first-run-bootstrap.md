@@ -1,8 +1,8 @@
-# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5 / B.6 / B.7)
+# First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5 / B.6 / B.7 / B.8)
 
-Status: **B.1–B.7 landed** (this page is the contract map). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338). B.6: [#339](https://github.com/bbengt1/flowforge/issues/339) — **keep #339 open**. B.7: [#347](https://github.com/bbengt1/flowforge/issues/347) — **keep #347 open**.
+Status: **B.1–B.8 landed** (this page is the contract map). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338). B.6: [#339](https://github.com/bbengt1/flowforge/issues/339) — **keep #339 open**. B.7: [#347](https://github.com/bbengt1/flowforge/issues/347) — **keep #347 open**. B.8: [#390](https://github.com/bbengt1/flowforge/issues/390) — **keep #390 open**.
 
-**Owners:** jonny (gate + B.2–B.5 / B.7 APIs), Chloe (B.6 wizard chrome + Settings handoff; B.7 Skip chrome). Product hard lines: Gracie.
+**Owners:** jonny (gate + B.2–B.5 / B.7 APIs), Chloe (B.6 wizard chrome + Settings handoff; B.7 Skip chrome; B.8 non-prod defaults + TLS→https toast). Product hard lines: Gracie.
 
 **Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). When `local_logins` is empty, first boot seeds a one-time `admin` / `admin` credential (`must_change_password`) — rotate via `POST /session/password`. That identity is **not** `PLATFORM_ADMINS`. Settings already hold session/health/OpenAPI.
 
@@ -105,6 +105,14 @@ Adapter: `apps/web/src/lib/first-run-bootstrap.ts`. Gate: `BootstrapGate` on the
 ### Chloe B.7 Skip chrome (landed)
 
 TLS step offers **Create self-signed** / **Upload PEM** / **Skip for now**. Skip is a first-class exit, not a silent default (create-self-signed stays selected until the operator chooses Skip). Loud copy: the instance stays on **HTTP until TLS is enabled in Settings**. Skip POSTs `{action:"skip"}` only — no PEM in the body, never `localStorage`. On success (`complete`) the wizard leaves for product home and never remounts. Settings `#bootstrap` / `#tls` surface `steps.tls.mode=skipped` and the path to enable create/upload later. Fail-closed order is unchanged: Skip is only offered when the TLS step is current (`publicUrl` ready). Never on `/embed/v1`.
+
+### Chloe B.8 non-prod defaults + TLS→https toast (landed)
+
+Incomplete **non-prod / path-2** chrome may pre-fill first-admin issuer `http://localhost`, subject `admin-1`, and public URL `http://localhost`. Fields stay editable. Persistence is unchanged. Production builds stay blank (fail-closed). Complete installs and localseed skip still do not remount the wizard.
+
+The #376 one-time Login password stays orthogonal. Wizard chrome still does not collect, pre-fill, POST, or echo a password (B.3 `admin` is shorter than the stored-password minimum and is the Login seed only).
+
+When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
 
 ---
 
