@@ -112,7 +112,7 @@ Incomplete **non-prod / path-2** chrome may pre-fill first-admin issuer `http://
 
 The #376 one-time Login password stays orthogonal. Wizard chrome still does not collect, pre-fill, POST, or echo a password (B.3 `admin` is shorter than the stored-password minimum and is the Login seed only).
 
-When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
+When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” The toast stays mounted until it can be read; Sign in / workflows navigation is deferred. Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
 
 ---
 

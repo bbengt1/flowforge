@@ -28,8 +28,9 @@
  * today. The #376 one-time Login password stays orthogonal — wizard
  * chrome still does not collect or echo a password. Create / Upload
  * may re-POST `https://localhost` while incomplete when the saved
- * URL is still HTTP localhost, then show a loud toast. Skip does
- * not rewrite. Non-localhost URLs are never clobbered.
+ * URL is still HTTP localhost, then show a loud toast and hold
+ * navigation until that toast can be read. Skip does not rewrite.
+ * Non-localhost URLs are never clobbered.
  */
 
 import { PRODUCT_HOME_HREF, SETTINGS_HREF } from "./product-home.ts";
@@ -185,6 +186,7 @@ export const FIRST_RUN_BOOTSTRAP = {
   tlsSkipDoesNotRewriteUrl: true,
   tlsRewriteToastsOnlyWhenChanged: true,
   tlsRewriteDoesNotClobberNonLocalhost: true,
+  tlsRewriteToastVisibleBeforeComplete: true,
   csrfWhenSessionPresent: true,
   sameOriginProxyOnly: true,
   noNewApi: true,
@@ -194,7 +196,7 @@ export const FIRST_RUN_BOOTSTRAP = {
 } as const;
 
 export const FIRST_RUN_BOOTSTRAP_HELP =
-  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — the Next proxy expires ff_* without a hydrated CSRF token or logout; retry and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser. Non-prod path-2 chrome may pre-fill localhost issuer / subject / public URL; production stays blank. Create / Upload rewrites leftover HTTP localhost to https://localhost with a loud toast; Skip does not.";
+  "Standalone first-run wizard (persistence → first admin → public URL → TLS). TLS offers Create / Upload / Skip for now. Skip POSTs {action:\"skip\"} only and leaves the instance on HTTP until TLS is enabled in Settings. Incomplete GET shows the wizard; complete or GET 401 goes to product home. A mutation 401 is a stale cookie — the Next proxy expires ff_* without a hydrated CSRF token or logout; retry and continue setup; do not skip the wizard. Never on /embed/v1. After complete, Settings links out — the wizard does not remount. Passwords, PEMs, and KEK are never stored in the browser. Non-prod path-2 chrome may pre-fill localhost issuer / subject / public URL; production stays blank. Create / Upload rewrites leftover HTTP localhost to https://localhost with a loud toast held until readable, then navigates; Skip does not.";
 
 export const WIZARD_STALE_SESSION_HELP =
   "The browser session expired. Clearing the stale cookie so first-run setup can continue.";
@@ -261,6 +263,9 @@ export const BOOTSTRAP_TLS_REWRITE_TOAST =
   "Public URL set to https://localhost because TLS is enabled";
 
 export const BOOTSTRAP_TLS_REWRITE_PENDING = "Updating public URL for TLS…";
+
+/** Hold Sign in / workflows so the loud rewrite toast can paint. */
+export const BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS = 2800;
 
 export const BOOTSTRAP_SECRET_KEYS = [
   "password",
@@ -606,6 +611,28 @@ export function decideTlsPublicUrlRewrite(input: {
   return { rewriteTo };
 }
 
+/**
+ * After Create/Upload rewrites HTTP localhost, keep the loud toast
+ * mounted until the operator can read it. Skip / no-rewrite still
+ * finish immediately. Does not drop the rewrite.
+ */
+export function scheduleWizardCompleteAfterTlsRewriteToast(input: {
+  holdToast: boolean;
+  onComplete: () => void;
+  holdMs?: number;
+  schedule?: (callback: () => void, delayMs: number) => unknown;
+}): void {
+  if (!input.holdToast) {
+    input.onComplete();
+    return;
+  }
+  const holdMs = input.holdMs ?? BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS;
+  const schedule =
+    input.schedule ??
+    ((callback, delayMs) => globalThis.setTimeout(callback, delayMs));
+  schedule(input.onComplete, holdMs);
+}
+
 export function bootstrapAdminBody(
   input: BootstrapAdminInput,
 ): BootstrapAdminInput {
@@ -827,6 +854,7 @@ export function firstRunBootstrapHoldsHardLines(): boolean {
     FIRST_RUN_BOOTSTRAP.tlsSkipDoesNotRewriteUrl &&
     FIRST_RUN_BOOTSTRAP.tlsRewriteToastsOnlyWhenChanged &&
     FIRST_RUN_BOOTSTRAP.tlsRewriteDoesNotClobberNonLocalhost &&
+    FIRST_RUN_BOOTSTRAP.tlsRewriteToastVisibleBeforeComplete &&
     R7_HARD_LINE.adv021ChromeFromSessionEmbedOnly
   );
 }
