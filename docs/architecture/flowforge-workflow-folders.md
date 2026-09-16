@@ -400,6 +400,23 @@ Acceptance:
 
 Keep #328 open.
 
+### X.5 — Explorer embed parity
+
+**Owner:** Chloe.
+**Effort:** S.
+**Blocked by:** X.1–X.4 as each lands; F.7 / O.4 bind stays.
+
+Acceptance:
+
+- `/embed/v1/workflows` shows the **same** Explorer chrome after `session.embed`: tree + content pane + breadcrumb, grant-gated right-click menus, dense select/open, empty / Unfiled teaching. No second tree. Prefer shared `WorkflowHome`.
+- Viewers select/open only; mutate chrome is grant-gated (`workflow.edit`). Unfiled stays virtual.
+- Missing `session.embed` is still an ADV-021 alert (fail-closed). Host `?tenant=` / `?workbench=` stay display-only.
+- Wizard / Login / Change-password never mount on embed.
+- CHIPS / Portal iframe: tree comes from `GET /workflow-folders`, not `localStorage`.
+- Existing F.1–F.7 APIs only. No jonny change. V.1 tokens only.
+
+Keep #384 open. Keep #379 open until this lands (Arie locks the epic after merge).
+
 ---
 
 ### Story table (Arie)
@@ -414,6 +431,7 @@ Keep #328 open.
 | F.6 | Search / filter across folders | Chloe (jonny if `q`) | F.2 | M |
 | F.7 | Embed parity | Chloe | F.2–F.6 | S |
 | O.4 | Embed Overview parity | Chloe | O.1–O.3, F.7 | S |
+| X.5 | Explorer embed parity | Chloe | X.1–X.4, F.7 | S |
 
 ---
 

@@ -13,7 +13,8 @@
  * Optional view toggle waits. Full select/open polish is X.3;
  * right-click menus are X.2; empty teaching polish is X.4
  * (#383 — keep #383 open; keep #379 open); embed parity gate
- * is X.5. Shared `WorkflowHome` stays so embed does not fork.
+ * is X.5 / #384 (keep #384 open; keep #379 open). Shared
+ * `WorkflowHome` stays so embed does not fork.
  *
  * F.1–F.7 stay: server-backed nested folders, Unfiled virtual,
  * refuse-if-nonempty, move = `PATCH folderId` only, no

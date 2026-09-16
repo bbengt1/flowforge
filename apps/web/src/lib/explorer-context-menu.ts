@@ -18,10 +18,10 @@
  * (`null` = Unfiled) and does not bump draftRevision / YAML.
  * Refuse-if-nonempty still holds. V.1 tokens only.
  *
- * Out of scope: X.3 select/open polish, X.5 embed parity,
- * Miller columns, Tags, Favorites, clipboard Paste, #376
- * change-password. Empty teaching is X.4 (#383 — keep #383
- * open; keep #379 open).
+ * Out of scope for this story: Miller columns, Tags, Favorites,
+ * clipboard Paste, #376 change-password. Select/open polish is
+ * X.3 (#382). Empty teaching is X.4 (#383). Embed parity is
+ * X.5 / #384 (keep #384 open; keep #379 open).
  *
  * Hard lines: YAML SoT · drafts never run · vault display-name+UUID
  * · ADV-021/024 · folders not in YAML · Unfiled virtual ·
