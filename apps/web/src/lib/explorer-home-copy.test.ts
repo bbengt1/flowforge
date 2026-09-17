@@ -22,9 +22,13 @@ import {
 } from "./explorer-home-copy.ts";
 import {
   EXPLORER_DRAFTS_DO_NOT_RUN,
+  EXPLORER_EMPTY,
   EXPLORER_FOLDER_TEACH,
   EXPLORER_UNFILED_TEACH,
 } from "./explorer-empty-states.ts";
+import { EXPLORER_EMBED } from "./explorer-embed.ts";
+import { EXPLORER_SELECT_OPEN } from "./explorer-select-open.ts";
+import { EXPLORER_SHELL } from "./explorer-shell.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -116,6 +120,11 @@ describe("X.6 Explorer home copy", () => {
     assert.equal(EXPLORER_HOME_COPY.draftsNeverRun, true);
     assert.equal(EXPLORER_HOME_COPY.inheritV1Tokens, true);
     assert.equal(EXPLORER_HOME_COPY.adv021ChromeFromSessionEmbedOnly, true);
+    assert.equal(EXPLORER_SHELL.inheritV1Tokens, true);
+    assert.equal(EXPLORER_SELECT_OPEN.singleClickSelectsWithoutNavigate, true);
+    assert.equal(EXPLORER_EMPTY.draftsDoNotRunStaysLoud, true);
+    assert.equal(EXPLORER_EMBED.sameWorkflowHomeNoSecondTree, true);
+    assert.equal(EXPLORER_EMBED.adv021FailClosedWithoutSessionEmbed, true);
     assert.doesNotMatch(home, /#ff6d5a|#ea4b71|#e99854/);
     assert.doesNotMatch(home, /n8n-logo|Execute workflow/);
     assert.doesNotMatch(home, /CREDENTIAL_KEK|keyReference/);

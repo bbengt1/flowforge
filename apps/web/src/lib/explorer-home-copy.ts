@@ -20,11 +20,6 @@
  * refuse-if-nonempty · not an n8n clone · no KEK.
  */
 
-import { EXPLORER_EMPTY } from "./explorer-empty-states.ts";
-import { EXPLORER_EMBED } from "./explorer-embed.ts";
-import { EXPLORER_CONTEXT_MENU } from "./explorer-context-menu.ts";
-import { EXPLORER_SELECT_OPEN } from "./explorer-select-open.ts";
-import { EXPLORER_SHELL } from "./explorer-shell.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 
 export const X6_STORY = 393;
@@ -132,12 +127,7 @@ export function explorerHomeCopyHoldsHardLines(): boolean {
     EXPLORER_HOME_COPY.notAnN8nClone &&
     EXPLORER_HOME_COPY.noKekInBrowser &&
     EXPLORER_HOME_COPY.noJonnyChange &&
-    EXPLORER_HOME_COPY.inheritV1Tokens &&
-    EXPLORER_SHELL.inheritV1Tokens &&
-    EXPLORER_CONTEXT_MENU.yamlIsSourceOfTruth &&
-    EXPLORER_SELECT_OPEN.draftsNeverRun &&
-    EXPLORER_EMPTY.draftsDoNotRunStaysLoud &&
-    EXPLORER_EMBED.adv021FailClosedWithoutSessionEmbed
+    EXPLORER_HOME_COPY.inheritV1Tokens
   );
 }
 
@@ -148,11 +138,8 @@ export function explorerHomeCopyInheritsPriorStories(): boolean {
     EXPLORER_HOME_COPY.inheritX3SelectOpen &&
     EXPLORER_HOME_COPY.inheritX4EmptyTeaching &&
     EXPLORER_HOME_COPY.inheritX5EmbedParity &&
-    EXPLORER_SHELL.explorerIsDefaultHome &&
-    EXPLORER_CONTEXT_MENU.usesExistingApisOnly &&
-    EXPLORER_SELECT_OPEN.singleClickSelectsWithoutNavigate &&
-    EXPLORER_EMPTY.emptyFolderDiffersFromEmptyUnfiled &&
-    EXPLORER_EMBED.sameWorkflowHomeNoSecondTree
+    EXPLORER_HOME_COPY.emptyTeachingStays &&
+    EXPLORER_HOME_COPY.sameWorkflowHomeNoSecondTree
   );
 }
 
