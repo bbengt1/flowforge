@@ -113,9 +113,9 @@ describe("X.5 Explorer embed parity", () => {
     assert.match(brief, /X\.5/);
     assert.match(brief, /No second tree/);
     const page = source("src/app/workflows/page.tsx");
-    assert.match(page, /#384/);
-    assert.match(page, /keep #384 open/i);
-    assert.match(page, /keep #379 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
+    assert.doesNotMatch(page, /#384/);
     assert.match(EXPLORER_EMBED_HELP, /same WorkflowHome/i);
     assert.match(EXPLORER_EMBED_HELP, /ADV-021/);
     assert.match(EXPLORER_EMBED_HELP, /localStorage/);

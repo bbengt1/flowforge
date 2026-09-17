@@ -318,7 +318,8 @@ describe("R6.2 home activation column", () => {
     assert.equal(status.includes("?schedules="), false);
     assert.equal(homeActivationInventedRoute(home), false);
     assert.equal(homeActivationInventedRoute(status), false);
-    assert.match(page, /activation/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(HOME_ACTIVATION_HELP, /activation/i);
 
     assert.match(home, /canExecute/);
     assert.match(home, /canViewWebhooks/);
