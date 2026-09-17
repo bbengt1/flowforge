@@ -15,6 +15,7 @@ import {
   B8_STORY,
   BOOTSTRAP_STEPS,
   BOOTSTRAP_TLS_REWRITE_TOAST,
+  BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS,
   BOOTSTRAP_TLS_SKIP_BOOTSTRAP_BANNER,
   BOOTSTRAP_TLS_SKIP_LABEL,
   BOOTSTRAP_TLS_SKIP_SETTINGS_COPY,
@@ -36,6 +37,7 @@ import {
   currentBootstrapStep,
   decideBootstrapChrome,
   decideTlsPublicUrlRewrite,
+  scheduleWizardCompleteAfterTlsRewriteToast,
   emptyBootstrapStatus,
   emptyTlsUploadDraft,
   firstRunBootstrapHoldsHardLines,
@@ -826,6 +828,7 @@ describe("B.8 dev/test wizard defaults + TLS→https URL toast", () => {
     assert.equal(FIRST_RUN_BOOTSTRAP.tlsSkipDoesNotRewriteUrl, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.tlsRewriteToastsOnlyWhenChanged, true);
     assert.equal(FIRST_RUN_BOOTSTRAP.tlsRewriteDoesNotClobberNonLocalhost, true);
+    assert.equal(FIRST_RUN_BOOTSTRAP.tlsRewriteToastVisibleBeforeComplete, true);
     assert.equal(firstRunBootstrapHoldsHardLines(), true);
   });
 
@@ -917,8 +920,86 @@ describe("B.8 dev/test wizard defaults + TLS→https URL toast", () => {
     assert.match(wizard, /BOOTSTRAP_TLS_REWRITE_TOAST/);
     assert.match(wizard, /data-bootstrap-tls-url-toast/);
     assert.match(wizard, /setUrlRewriteToast\(true\)/);
+    assert.match(wizard, /scheduleWizardCompleteAfterTlsRewriteToast/);
+    assert.match(wizard, /holdToast/);
+    assert.match(wizard, /rewriteResult === "rewritten"/);
+    assert.doesNotMatch(
+      wizard,
+      /setUrlRewriteToast\(true\)[\s\S]*onComplete\(\)/,
+    );
     assert.equal(wizard.includes("localStorage"), false);
     assert.doesNotMatch(wizard, /console\.(log|info|debug|warn|error)/);
+  });
+
+  it("holds the loud rewrite toast before onComplete navigates away", () => {
+    let completed = 0;
+    const scheduled: Array<{ delay: number; fn: () => void }> = [];
+    scheduleWizardCompleteAfterTlsRewriteToast({
+      holdToast: true,
+      onComplete: () => {
+        completed += 1;
+      },
+      schedule: (fn, delay) => {
+        scheduled.push({ delay, fn });
+      },
+    });
+    assert.equal(completed, 0);
+    assert.equal(scheduled.length, 1);
+    assert.equal(scheduled[0]?.delay, BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS);
+    assert.ok(BOOTSTRAP_TLS_REWRITE_TOAST_HOLD_MS >= 2000);
+    scheduled[0]?.fn();
+    assert.equal(completed, 1);
+
+    completed = 0;
+    scheduleWizardCompleteAfterTlsRewriteToast({
+      holdToast: false,
+      onComplete: () => {
+        completed += 1;
+      },
+      schedule: () => {
+        throw new Error("Skip / no-rewrite must not delay complete");
+      },
+    });
+    assert.equal(completed, 1);
+
+    completed = 0;
+    scheduled.length = 0;
+    const cleared: unknown[] = [];
+    const hold = scheduleWizardCompleteAfterTlsRewriteToast({
+      holdToast: true,
+      onComplete: () => {
+        completed += 1;
+      },
+      schedule: (fn, delay) => {
+        scheduled.push({ delay, fn });
+        return "timer";
+      },
+      clear: (handle) => {
+        cleared.push(handle);
+      },
+    });
+    hold.cancel();
+    assert.deepEqual(cleared, ["timer"]);
+    scheduled[0]?.fn();
+    assert.equal(completed, 0);
+
+    assert.equal(
+      decideTlsPublicUrlRewrite({
+        tlsAction: "skip",
+        publicBaseUrl: "http://localhost",
+      }),
+      null,
+    );
+
+    const wizard = source("src/components/bootstrap/FirstRunWizard.tsx");
+    assert.match(wizard, /data-bootstrap-tls-url-toast/);
+    assert.match(wizard, /finishWizard\(messages\?\.holdToast === true\)/);
+    assert.match(
+      wizard,
+      /tlsAction === "skip"[\s\S]*BOOTSTRAP_TLS_SKIP_SUCCESS[\s\S]*holdToast/,
+    );
+    assert.match(wizard, /completeHoldRef\.current\?\.cancel\(\)/);
+    assert.match(wizard, /useEffect\(/);
   });
 
   it("never remounts after complete and never mounts rewrite chrome on embed", () => {
