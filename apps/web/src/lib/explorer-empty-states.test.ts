@@ -153,9 +153,9 @@ describe("X.4 Explorer empty / Unfiled teaching", () => {
     assert.match(globals, /\.ff-explorer-virtual-chip/);
     assert.match(globals, /\.ff-explorer-drafts-banner/);
     assert.match(globals, /var\(--ff-accent\)/);
-    assert.match(page, /empty folder|Unfiled/i);
-    assert.match(page, /keep #383 open/i);
-    assert.match(page, /keep #379 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(EXPLORER_EMPTY_HELP, /Empty folder and empty Unfiled/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
     assert.doesNotMatch(home, /includeDescendants|recursiveFolder|treeWalk/i);
     assert.doesNotMatch(home, /data-x4="favorites"|data-x4="tags-first"/);
     assert.doesNotMatch(home, /data-miller|Miller columns/);

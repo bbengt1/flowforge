@@ -126,9 +126,8 @@ describe("X.1 Explorer shell", () => {
     assert.equal(explorerLayoutDoesNotClipOverlays(globals), true);
     assert.match(globals, /var\(--ff-surface\)/);
     assert.match(globals, /var\(--ff-accent\)/);
-    assert.match(page, /Explorer shell/i);
-    assert.match(page, /keep #380 open/i);
-    assert.match(page, /keep #379 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
     assert.equal(EXPLORER_SHELL.explorerIsDefaultHome, true);
     assert.equal(EXPLORER_SHELL.treePlusContentPlusBreadcrumb, true);
     assert.equal(EXPLORER_SHELL.cardsDemotedFromPrimary, true);

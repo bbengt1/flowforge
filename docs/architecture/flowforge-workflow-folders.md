@@ -417,6 +417,21 @@ Acceptance:
 
 Keep #384 open. Keep #379 open until this lands (Arie locks the epic after merge).
 
+### X.6 — Remove visible product-commentary copy
+
+**Owner:** Chloe.
+**Effort:** S.
+**Blocked by:** X.1–X.5 (chrome already landed).
+
+Acceptance:
+
+- `/workflows` no longer shows the long X.*/O.*/V.* / “keep #N open” commentary dump.
+- Short operator help stays. Empty folder / Unfiled teaching and drafts-do-not-run copy stay. Do not gut teaching into silence.
+- `/embed/v1/workflows` after `session.embed` matches (shared `WorkflowHome`). Cold ADV-021 held.
+- Explorer chrome (tree + pane + breadcrumb, grant-gated menus, dense select/open) stays. V.1 tokens stay. No new APIs.
+
+Keep #393 open.
+
 ---
 
 ### Story table (Arie)
@@ -432,6 +447,7 @@ Keep #384 open. Keep #379 open until this lands (Arie locks the epic after merge
 | F.7 | Embed parity | Chloe | F.2–F.6 | S |
 | O.4 | Embed Overview parity | Chloe | O.1–O.3, F.7 | S |
 | X.5 | Explorer embed parity | Chloe | X.1–X.4, F.7 | S |
+| X.6 | Remove visible product-commentary copy | Chloe | X.1–X.5 | S |
 
 ---
 

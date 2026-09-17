@@ -316,9 +316,9 @@ describe("X.2 Explorer context menus", () => {
     assert.match(globals, /\.ff-explorer-menu/);
     assert.match(globals, /var\(--ff-surface\)/);
     assert.match(globals, /var\(--ff-accent\)/);
-    assert.match(page, /right-click|context menu/i);
-    assert.match(page, /keep #381 open/i);
-    assert.match(page, /keep #379 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(home, /data-x2="context-menu"/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
     for (const token of EXPLORER_INVENTED_WORKFLOW_VERBS) {
       assert.equal(home.includes(token), false, token);
     }

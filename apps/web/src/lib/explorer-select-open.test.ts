@@ -177,9 +177,10 @@ describe("X.3 Explorer select/open", () => {
     assert.match(globals, /\.ff-explorer-row-selected/);
     assert.match(globals, /var\(--ff-accent\)/);
     assert.match(globals, /var\(--ff-canvas\)/);
-    assert.match(page, /single-click|double-click|select\/open/i);
-    assert.match(page, /keep #382 open/i);
-    assert.match(page, /keep #379 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(EXPLORER_SELECT_HELP, /Single-click selects/);
+    assert.match(EXPLORER_SELECT_HELP, /Double-click or Enter/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
     assert.doesNotMatch(home, /includeDescendants|recursiveFolder|treeWalk/i);
     assert.doesNotMatch(home, /data-x3="multi-select"/);
     assert.doesNotMatch(home, /data-x3="favorites"|data-x3="tags-first"/);

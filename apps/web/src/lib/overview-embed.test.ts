@@ -110,8 +110,9 @@ describe("O.4 Embed Overview parity", () => {
     assert.match(brief, /O\.4/);
     assert.match(brief, /No second tree/);
     const page = source("src/app/workflows/page.tsx");
-    assert.match(page, /#328/);
-    assert.match(page, /keep #328 open/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.doesNotMatch(page, /keep #\d+ open/i);
+    assert.doesNotMatch(page, /#328/);
     assert.match(OVERVIEW_EMBED_HELP, /same WorkflowHome/i);
     assert.match(OVERVIEW_EMBED_HELP, /ADV-021/);
     assert.match(OVERVIEW_EMBED_HELP, /localStorage/);

@@ -102,7 +102,8 @@ describe("O.1 Overview header + card list", () => {
     assert.match(home, /OVERVIEW_HEADING/);
     assert.match(home, /OVERVIEW_CREATE_LABEL/);
     assert.match(home, /OVERVIEW_KEBAB_LABEL/);
-    assert.match(page, /card list/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(OVERVIEW_HELP, /card list is the primary browse surface/i);
     assert.equal(OVERVIEW_HOME.cardsArePrimaryBrowseSurface, true);
     assert.equal(OVERVIEW_HOME.headerHasCreateCta, true);
     assert.equal(OVERVIEW_HEADING, "Overview");

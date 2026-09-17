@@ -244,7 +244,9 @@ describe("UXL.5 home row scan order", () => {
     assert.match(home, /HOME_ROW_SCAN_HELP/);
     assert.match(lastRun, /data-home-row-scan="trail"/);
     assert.match(listStatus, /data-home-activation="status"/);
-    assert.match(page, /scan ends/i);
+    assert.match(page, /WORKFLOWS_HOME_PAGE_HELP/);
+    assert.match(HOME_ROW_SCAN_HELP, /scan ends/i);
+    assert.doesNotMatch(page, /scan ends/i);
     assert.equal(homeRowTeachesActivationDrawer(home), false);
     assert.equal(homeRowTeachesActivationDrawer(listStatus), false);
     assert.equal(HOME_ROW_SCAN.filtersDoNotGrowFourthActivationDrawer, true);
