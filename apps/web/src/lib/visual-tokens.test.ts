@@ -9,6 +9,8 @@ import {
   FF_ACCENT_FOREGROUND,
   FF_CANVAS,
   FF_COLOR_TOKENS,
+  FF_EXPLORER_FOLDER,
+  FF_EXPLORER_NAV,
   FF_CSS_VARIABLES,
   FF_DANGER,
   FF_FOCUS_RING,
@@ -98,6 +100,8 @@ describe("V.1 Token foundation", () => {
     assert.match(tokens, new RegExp(`--ff-accent:\\s*${FF_ACCENT}`));
     assert.match(tokens, new RegExp(`--ff-danger:\\s*${FF_DANGER}`));
     assert.match(tokens, new RegExp(`--ff-focus-ring:\\s*${FF_FOCUS_RING}`));
+    assert.match(tokens, new RegExp(`--ff-explorer-nav:\\s*${FF_EXPLORER_NAV}`));
+    assert.match(tokens, new RegExp(`--ff-explorer-folder:\\s*${FF_EXPLORER_FOLDER}`));
     assert.match(tokens, new RegExp(`--ff-space:\\s*${FF_SPACE}`));
     assert.match(tokens, new RegExp(`--ff-radius-sm:\\s*${FF_RADIUS_SM}`));
     assert.match(tokens, new RegExp(`--ff-radius:\\s*${FF_RADIUS}`));

@@ -108,6 +108,9 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    on the rail (F.3 / #310 — **keep #310 open**). **New folder**
    creates the folder, then names it inline in the tree (X.7 / #396 —
    **keep #396 open**; **keep #379 open**) — not a modal prompt.
+   The folder tree uses compact Windows Explorer nav chrome (X.8 /
+   #399 — **keep #399 open**; **keep #379 open**): yellow folders,
+   thin chevrons, gray selected row.
    Viewers cannot.
    Empty delete returns to the parent or Unfiled; a folder with
    children or workflows stays put (`409`). Editors **Move…** a

@@ -350,7 +350,119 @@ body {
   border: none;
   border-right: 1px solid var(--ff-border);
   border-radius: var(--ff-radius) 0 0 var(--ff-radius);
-  background: var(--ff-canvas);
+  background: var(--ff-explorer-nav);
+  color: var(--ff-text);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ff-text) 22%, transparent) transparent;
+  padding: var(--ff-space);
+}
+
+.ff-explorer-tree.ff-overview-rail::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ff-explorer-tree.ff-overview-rail::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ff-text) 22%, transparent);
+  border-radius: 4px;
+}
+
+/*
+ * X.8 Explorer folder chrome — consume V.1 tokens. Relates to
+ * #399 / Part of #379. Keep #399 open. Keep #379 open. Compact
+ * Win11 dark nav: yellow folders, thin white chevrons, gray
+ * selected row + thin light border, one-icon indent. No n8n
+ * orange. Not a second theme.
+ */
+.ff-explorer-nav-list,
+.ff-explorer-nav-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ff-explorer-nav-list {
+  margin-top: var(--ff-space-2);
+}
+
+.ff-explorer-nav-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--ff-explorer-row);
+  padding-left: calc(var(--ff-explorer-depth, 0) * var(--ff-explorer-indent));
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ff-text);
+  box-sizing: border-box;
+}
+
+.ff-explorer-nav-row:hover:not(.ff-explorer-nav-row-selected) {
+  background: color-mix(in srgb, var(--ff-text) 6%, var(--ff-explorer-nav));
+}
+
+.ff-explorer-nav-row-selected {
+  background: var(--ff-explorer-row-selected);
+  border-color: var(--ff-explorer-row-selected-border);
+}
+
+.ff-explorer-nav-chevron,
+.ff-explorer-nav-chevron-spacer {
+  display: inline-flex;
+  width: var(--ff-explorer-indent);
+  height: var(--ff-explorer-row);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ff-text);
+}
+
+.ff-explorer-nav-chevron svg {
+  display: block;
+}
+
+.ff-explorer-nav-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--ff-space);
+  min-height: var(--ff-explorer-row);
+  padding: 0 var(--ff-space);
+  border: none;
+  background: transparent;
+  color: var(--ff-text);
+  text-align: left;
+  font-size: var(--ff-type-body);
+  line-height: 1.2;
+}
+
+.ff-explorer-folder-icon {
+  flex-shrink: 0;
+  color: var(--ff-explorer-folder);
+}
+
+.ff-explorer-folder-tab {
+  fill: var(--ff-explorer-folder-tab);
+}
+
+.ff-explorer-folder-body {
+  fill: var(--ff-explorer-folder);
+}
+
+.ff-explorer-nav-row input[data-home-folder-inline-rename] {
+  height: calc(var(--ff-explorer-row) - 4px);
+  padding: 0 var(--ff-space);
+  font-size: var(--ff-type-body);
+  background: var(--ff-explorer-nav);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-explorer-row-selected-border);
+  border-radius: 2px;
 }
 
 .ff-explorer-pane {
