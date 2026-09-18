@@ -1,6 +1,6 @@
 # Workflows home: folder hierarchy
 
-Status: **F.1 API + F.2–F.7 chrome landed** (this page remains the IA). Folder membership is not in YAML.
+Status: **F.1 API + F.2–F.7 chrome landed**; **X.7 create-then-inline-rename** (this page remains the IA). Folder membership is not in YAML.
 
 **Product ask (Brent):** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
 
@@ -141,10 +141,11 @@ All mutating gestures require `workflow.edit` (or stricter). Viewers (`workflow.
 - Name: trimmed display string, 1–64 graphemes, no `/` or control chars. Unique among **siblings** in the workspace (case-insensitive). Not a path.
 - Parent = selected folder, or none (top-level) when Unfiled / nothing is selected. Creating under Unfiled creates a **top-level** folder (Unfiled is not a parent).
 - Depth check server-side. Pending → success/error (UXL.3). CSRF + cookies as existing writes.
+- **New folder** POSTs via the existing F.3 API with a unique default name, selects the new row, and enters **inline rename** in the tree (X.7 / #396 — keep #396 open; keep #379 open). No modal / `window.prompt`.
 
 ### Rename folder
 
-- Inline or dialog. Same name rules. Does not rename workflows or slugs. Does not rewrite YAML.
+- Inline in the tree/pane row (F2, Rename menu, or the post-create field). Same name rules. Enter commits the existing name PATCH. Escape / empty blur keeps the server name. Does not rename workflows or slugs. Does not rewrite YAML. Keep #396 open.
 
 ### Delete folder
 
@@ -432,6 +433,23 @@ Acceptance:
 
 Keep #393 open.
 
+### X.7 — New folder: create then inline rename
+
+**Owner:** Chloe.
+**Effort:** S–M.
+**Blocked by:** X.2 / F.3 (menus + existing create/rename verbs).
+
+Acceptance:
+
+- **New folder** (rail, empty teaching, or context menu) creates via the existing folder API, selects the new row, and focuses an inline name field on that row. No modal / blocking text-box / `window.prompt`.
+- Escape / empty blur keeps the server default name — do not strand a nameless row.
+- F2 (or Rename) still inline-renames an existing folder when grants allow. Workflows stay without Rename (no F/O client).
+- Right-click verb set unchanged. Viewers stay select/open only. Unfiled stays virtual. Refuse-if-nonempty delete held.
+- Interaction only — do not invent a new visual density/icon look until Brent’s reference screenshot lands.
+- Same `WorkflowHome` on embed after `session.embed`. Cold ADV-021 held. No new APIs.
+
+Keep #396 open. Keep #379 open. Keep #393 open.
+
 ---
 
 ### Story table (Arie)
@@ -448,6 +466,7 @@ Keep #393 open.
 | O.4 | Embed Overview parity | Chloe | O.1–O.3, F.7 | S |
 | X.5 | Explorer embed parity | Chloe | X.1–X.4, F.7 | S |
 | X.6 | Remove visible product-commentary copy | Chloe | X.1–X.5 | S |
+| X.7 | New folder: create then inline rename | Chloe | X.2, F.3 | S–M |
 
 ---
 
