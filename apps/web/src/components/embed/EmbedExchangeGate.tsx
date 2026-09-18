@@ -150,9 +150,8 @@ export function EmbedExchangeGate({
         </h1>
         <p className="text-sm leading-6 text-zinc-600">
           {EMBED_EXCHANGE_HELP} Mount is {EMBED_MOUNT_PREFIX}. Audience is{" "}
-          <code>{EMBED_AUDIENCE}</code>. Relates to #122 / Part of #120 — keep
-          #122 open. {EMBED_VERIFIED_HELP} {EMBED_HOST_ALLOWLIST_HELP}{" "}
-          {EMBED_HOST_ISSUER_HELP}
+          <code>{EMBED_AUDIENCE}</code>. {EMBED_VERIFIED_HELP}{" "}
+          {EMBED_HOST_ALLOWLIST_HELP} {EMBED_HOST_ISSUER_HELP}
         </p>
       </header>
 
