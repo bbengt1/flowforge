@@ -2649,8 +2649,10 @@ function FolderRail({
             )}
           >
             <span className="ff-explorer-nav-chevron-spacer" aria-hidden="true" />
-            <FinderUnfiledIcon />
-            <span className="min-w-0 flex-1 truncate">{UNFILED_FOLDER_LABEL}</span>
+            <span className={FF_EXPLORER_NAV_LABEL_CLASS}>
+              <FinderUnfiledIcon />
+              <span className="truncate">{UNFILED_FOLDER_LABEL}</span>
+            </span>
             <span
               data-x4="unfiled-virtual"
               title={EXPLORER_UNFILED_VIRTUAL_LABEL}
