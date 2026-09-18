@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   EMBED_CHROME_MISSING_SESSION_MESSAGE,
+  EMBED_EXCHANGE_HELP,
   parseEmbedChromeFromSession,
   parseEmbedHostDisplay,
 } from "./embed-contract.ts";
+import { EMBED_VERIFIED_HELP } from "./embed-tenancy-contract.ts";
 import {
   SESSION_EMBED_API_PR,
   SESSION_EMBED_CHROME_HELP,
@@ -30,6 +35,12 @@ import {
   embedChromeChipLabel,
   sessionEmbedGetPath,
 } from "./session-embed-contract.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+function source(relative: string): string {
+  return readFileSync(join(here, "..", "..", relative), "utf8");
+}
 
 const GET_SESSION = {
   session: {
@@ -291,5 +302,28 @@ describe("session-embed-contract", () => {
     assert.equal(verified.workspaceId, "ws-1");
     assert.equal(verified.workspaceName, "Ops");
     assert.deepEqual(verified.capabilities, ["workflow.view", "credential.view"]);
+  });
+
+  it("strips keep-#122 / Part of #120 footnotes from cold EmbedExchangeGate chrome", () => {
+    const gate = source("src/components/embed/EmbedExchangeGate.tsx");
+    const chrome = source("src/components/embed/EmbedChrome.tsx");
+    assert.doesNotMatch(gate, /keep #\d+ open/i);
+    assert.doesNotMatch(gate, /Part of #/);
+    assert.doesNotMatch(gate, /Relates to #122/);
+    assert.doesNotMatch(chrome, /keep #\d+ open/i);
+    assert.doesNotMatch(chrome, /Part of #/);
+    assert.doesNotMatch(chrome, /Relates to #122/);
+    assert.match(gate, /EMBED_EXCHANGE_HELP/);
+    assert.match(gate, /EMBED_VERIFIED_HELP/);
+    assert.match(gate, /Exchange a host assertion/);
+    assert.match(EMBED_EXCHANGE_HELP, /POST \/embed\/exchange/);
+    assert.match(EMBED_VERIFIED_HELP, /ADV-021/);
+    assert.doesNotMatch(EMBED_EXCHANGE_HELP, /keep #\d+ open/i);
+    assert.doesNotMatch(EMBED_VERIFIED_HELP, /keep #\d+ open/i);
+    assert.doesNotMatch(EMBED_EXCHANGE_HELP, /Part of #/);
+    assert.doesNotMatch(EMBED_VERIFIED_HELP, /Part of #/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome/);
+    assert.doesNotMatch(chrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome/);
   });
 });
