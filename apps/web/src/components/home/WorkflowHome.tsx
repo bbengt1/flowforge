@@ -947,7 +947,6 @@ function WorkflowHomeSession() {
       );
     }
     closeInlineRename();
-    await refresh();
     setFolderChrome(folderMutateFinish("rename", true));
     setPending(null);
   }

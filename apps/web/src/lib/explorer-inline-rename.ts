@@ -281,6 +281,22 @@ export function explorerHomeRenameStaysInline(source: string): boolean {
   );
 }
 
+export function explorerHomeRenameDoesNotRefreshAfterCommit(
+  source: string,
+): boolean {
+  const submit = source.match(
+    /async function submitInlineRename[\s\S]*?(?=\n  async function |\n  function )/,
+  );
+  if (!submit) {
+    return false;
+  }
+  return (
+    submit[0].includes("setFolders") &&
+    submit[0].includes("renameWorkflowFolder") &&
+    !submit[0].includes("refresh(")
+  );
+}
+
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
   return (
     docs.includes("#396") &&

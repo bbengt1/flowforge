@@ -18,6 +18,7 @@ import {
   explorerDocsKeepStoryOpen,
   explorerEventBlocksInlineRenameHotkey,
   explorerHomeCreatesThenInlineRenames,
+  explorerHomeRenameDoesNotRefreshAfterCommit,
   explorerHomeRenameStaysInline,
   explorerInlineRenameHoldsHardLines,
   explorerInlineRenameInheritsPriorStories,
@@ -205,6 +206,7 @@ describe("X.7 Explorer inline rename", () => {
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.equal(explorerHomeCreatesThenInlineRenames(home), true);
     assert.equal(explorerHomeRenameStaysInline(home), true);
+    assert.equal(explorerHomeRenameDoesNotRefreshAfterCommit(home), true);
     assert.equal(explorerHomeWiresExistingVerbs(home), true);
     assert.equal(EXPLORER_INLINE_RENAME.createThenInlineRename, true);
     assert.equal(EXPLORER_INLINE_RENAME.noModalNamePrompt, true);
