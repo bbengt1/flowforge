@@ -178,7 +178,7 @@ describe("X.1 Explorer shell", () => {
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.equal(explorerOrganizeVerbsStayReachable(home), true);
     assert.equal(explorerSkipsDeferredChrome(home), true);
-    assert.match(home, /data-home-folder-verb="new"/);
+    assert.match(home, /data-home-folder-verb=\{explorerMenuFolderVerb/);
     assert.match(home, /data-home-workflow-verb="move"/);
     assert.match(home, /moveWorkflowToFolder/);
     assert.doesNotMatch(home, /data-miller|Miller columns/);

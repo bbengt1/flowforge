@@ -267,10 +267,19 @@ export function explorerSkipsDeferredChrome(source: string): boolean {
 }
 
 export function explorerOrganizeVerbsStayReachable(source: string): boolean {
-  return (
+  const organizeVerbsOnMenu =
+    source.includes("explorerMenuFolderVerb") &&
+    source.includes("data-home-folder-verb={explorerMenuFolderVerb");
+  const organizeVerbsLiteral =
     source.includes('data-home-folder-verb="new"') &&
     source.includes('data-home-folder-verb="rename"') &&
-    source.includes('data-home-folder-verb="delete"') &&
+    source.includes('data-home-folder-verb="delete"');
+  return (
+    source.includes('data-x2="context-menu"') &&
+    source.includes("openCreateFolder") &&
+    source.includes("openRenameFolder") &&
+    source.includes("removeFolder") &&
+    (organizeVerbsOnMenu || organizeVerbsLiteral) &&
     source.includes('data-home-workflow-verb="move"') &&
     source.includes("moveWorkflowToFolder") &&
     source.includes("folderIdForMove")

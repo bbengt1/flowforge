@@ -29,6 +29,7 @@ import {
   explorerHomeWiresFolderChrome,
   explorerNavDepthVars,
   explorerNavIndentPx,
+  explorerRailOmitsVisibleOrganizeButtons,
 } from "./explorer-folder-chrome.ts";
 import { EXPLORER_INLINE_RENAME } from "./explorer-inline-rename.ts";
 import { EXPLORER_CONTEXT_MENU } from "./explorer-context-menu.ts";
@@ -144,6 +145,7 @@ describe("X.8 Explorer folder chrome", () => {
     assert.match(EXPLORER_FOLDER_CHROME_HELP, /yellow folders/i);
     assert.match(EXPLORER_FOLDER_CHROME_HELP, /thin white chevrons/i);
     assert.match(EXPLORER_FOLDER_CHROME_HELP, /gray selected fill/i);
+    assert.match(EXPLORER_FOLDER_CHROME_HELP, /right-click menu/i);
     assert.equal(EXPLORER_FOLDER_CHROME.compactRowDensity, true);
     assert.equal(EXPLORER_FOLDER_CHROME.yellowFolderIcons, true);
     assert.equal(EXPLORER_FOLDER_CHROME.thinWhiteChevrons, true);
@@ -171,6 +173,12 @@ describe("X.8 Explorer folder chrome", () => {
     assert.match(home, /data-home-folder-rail="unfiled"/);
     assert.match(home, /UNFILED_FOLDER_LABEL/);
     assert.match(home, /data-x2="context-menu"/);
+    assert.equal(explorerRailOmitsVisibleOrganizeButtons(home), true);
+    assert.equal(EXPLORER_FOLDER_CHROME.noVisibleRailOrganizeButtons, true);
+    assert.equal(EXPLORER_FOLDER_CHROME.railOrganizeVerbsContextMenuOnly, true);
+    assert.equal(EXPLORER_FOLDER_CHROME.noInventedToolbarChrome, true);
+    assert.match(home, /explorerMenuFolderVerb/);
+    assert.match(home, /data-home-folder-verb=\{explorerMenuFolderVerb/);
     assert.doesNotMatch(home, /data-home-folder-dialog/);
     assert.doesNotMatch(home, /window\.prompt/);
     assert.equal(UNFILED_FOLDER_LABEL, "Unfiled");

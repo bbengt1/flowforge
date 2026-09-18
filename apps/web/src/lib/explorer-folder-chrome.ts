@@ -64,7 +64,7 @@ export const X8_ID = "X.8-explorer-folder-chrome" as const;
 export const X8_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
 
 export const EXPLORER_FOLDER_CHROME_HELP =
-  "Folder tree uses compact Windows Explorer rows: yellow folders, thin white chevrons, gray selected fill with a thin light border, and one-icon indent per depth. Unfiled stays virtual. New folder still names in place.";
+  "Folder tree uses compact Windows Explorer rows: yellow folders, thin white chevrons, gray selected fill with a thin light border, and one-icon indent per depth. New folder, Rename, and Delete stay on the right-click menu — not as visible rail buttons. Unfiled stays virtual. New folder still names in place.";
 
 export const FF_EXPLORER_NAV_LIST_CLASS = "ff-explorer-nav-list";
 export const FF_EXPLORER_NAV_ROW_CLASS = "ff-explorer-nav-row";
@@ -100,6 +100,9 @@ export const EXPLORER_FOLDER_CHROME = {
   quietThinScrollbar: true,
   skipThisPcDiskNetworkGlyphs: true,
   skipStatusBarAndNewCutToolbar: true,
+  noVisibleRailOrganizeButtons: true,
+  railOrganizeVerbsContextMenuOnly: true,
+  noInventedToolbarChrome: true,
   keepUnfiledVirtual: true,
   keepInlineRename: true,
   keepGrantGatedMenus: true,
@@ -222,7 +225,29 @@ export function explorerHomeWiresFolderChrome(source: string): boolean {
     source.includes('data-x7="inline-rename"') &&
     !source.includes("data-home-folder-dialog") &&
     !source.includes("window.prompt") &&
+    explorerRailOmitsVisibleOrganizeButtons(source) &&
     EXPLORER_NAV_SKIP_TOKENS.every((token) => !source.includes(token))
+  );
+}
+
+export function explorerRailOmitsVisibleOrganizeButtons(source: string): boolean {
+  const rail = source.match(
+    /function FolderRail\([\s\S]*?\nfunction FolderBreadcrumb/,
+  );
+  if (!rail) {
+    return false;
+  }
+  return (
+    !rail[0].includes("data-home-folder-verb=") &&
+    !rail[0].includes("{NEW_FOLDER_LABEL}") &&
+    !rail[0].includes("{RENAME_FOLDER_LABEL}") &&
+    !rail[0].includes("{DELETE_FOLDER_LABEL}") &&
+    source.includes('data-x2="context-menu"') &&
+    source.includes("data-x2-verb={item.id}") &&
+    source.includes("explorerMenuFolderVerb") &&
+    source.includes("openCreateFolder") &&
+    source.includes("openRenameFolder") &&
+    source.includes("removeFolder")
   );
 }
 
@@ -258,6 +283,8 @@ export function explorerFolderChromeHoldsHardLines(): boolean {
     EXPLORER_FOLDER_CHROME.noAutoCloseEpic &&
     EXPLORER_FOLDER_CHROME.noAutoCloseUnrelated &&
     EXPLORER_FOLDER_CHROME.tokensFirstNoSecondTheme &&
+    EXPLORER_FOLDER_CHROME.noVisibleRailOrganizeButtons &&
+    EXPLORER_FOLDER_CHROME.railOrganizeVerbsContextMenuOnly &&
     EXPLORER_INLINE_RENAME.keep396Open &&
     EXPLORER_INLINE_RENAME.createThenInlineRename &&
     EXPLORER_CONTEXT_MENU.keep379Open &&

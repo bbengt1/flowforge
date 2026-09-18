@@ -521,9 +521,8 @@ describe("F.3 create / rename / delete folders", () => {
     assert.equal(homeFolderRailHasMoveVerb(home), false);
     assert.match(home, /canMutateWorkflowFolders/);
     assert.match(home, /canMutateFolders/);
-    assert.match(home, /data-home-folder-verb="new"/);
-    assert.match(home, /data-home-folder-verb="rename"/);
-    assert.match(home, /data-home-folder-verb="delete"/);
+    assert.match(home, /data-home-folder-verb=\{explorerMenuFolderVerb/);
+    assert.match(home, /data-x2="context-menu"/);
     assert.match(home, /\{canMutate \?/);
     assert.match(home, /createWorkflowFolder/);
     assert.match(home, /renameWorkflowFolder/);

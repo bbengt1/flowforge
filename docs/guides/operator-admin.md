@@ -104,8 +104,10 @@ charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe
    Then filter by search, tag, owner, trigger, environment,
    status, **activation**, last run, last modified. Prefix-in-name is
    no longer the primary organizer (F.2 / #309 — **keep #309 open**).
-   Editors can **New folder**, **Rename folder**, or **Delete folder**
-   on the rail (F.3 / #310 — **keep #310 open**). **New folder**
+   Editors **New folder**, **Rename folder**, or **Delete folder**
+   from the grant-gated right-click menu on the rail (F.3 / #310 —
+   **keep #310 open**; X.2 / #381 — **keep #381 open**; X.8 / #399 —
+   **keep #399 open**) — not as visible tree buttons. **New folder**
    creates the folder, then names it inline in the tree (X.7 / #396 —
    **keep #396 open**; **keep #379 open**) — not a modal prompt.
    The folder tree uses compact Windows Explorer nav chrome (X.8 /

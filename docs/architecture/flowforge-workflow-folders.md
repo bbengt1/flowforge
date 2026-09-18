@@ -329,7 +329,7 @@ Acceptance:
 
 Acceptance:
 
-- New folder / rename / delete on the rail. Name rules and sibling uniqueness errors are visible.
+- New folder / rename / delete via grant-gated right-click on the rail (X.2 / #381 — keep #381 open; X.8 / #399 — keep #399 open). No visible New / Rename / Delete buttons on the tree. Name rules and sibling uniqueness errors are visible.
 - Delete disabled or `409` when the folder has children or workflows. Empty delete returns to parent/Unfiled.
 - Viewers: no those verbs. Pending → success/error. CSRF on writes.
 - No `/actions` detour. No YAML / slug rewrite.
@@ -458,7 +458,7 @@ Keep #396 open. Keep #379 open. Keep #393 open.
 
 Acceptance:
 
-- Left folder **nav tree** matches the locked TAKE: compact row density; yellow folder icons; thin white ▸/▾ chevrons (no chevron on leaves); selection is medium-gray fill + thin light border on the whole row; dark near-black pane + white labels; indent ≈ one icon width per depth; quiet thin scrollbar.
+- Left folder **nav tree** matches the locked TAKE: compact row density; yellow folder icons; thin white ▸/▾ chevrons (no chevron on leaves); selection is medium-gray fill + thin light border on the whole row; dark near-black pane + white labels; indent ≈ one icon width per depth; quiet thin scrollbar. No visible New folder / Rename folder / Delete folder buttons on the rail — those verbs stay grant-gated right-click only. Do not invent toolbar chrome.
 - SKIP: This PC / Disk / Network glyphs, status bar, New/Cut toolbar — not FlowForge IA.
 - Tokens-first: map yellow folder + selection into V.1 (`tokens.css` / `visual-tokens.ts`). Do not invent a second theme.
 - No regression on #396 inline rename, X.2 grant-gated menus, Unfiled virtual, X.3 select/open, X.4 empty teaching, X.5 embed parity. Same `WorkflowHome`.

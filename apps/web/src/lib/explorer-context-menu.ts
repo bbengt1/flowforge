@@ -165,6 +165,21 @@ export type ExplorerContextVerb =
   | "create-workflow"
   | "import";
 
+export function explorerMenuFolderVerb(
+  id: ExplorerContextVerb,
+): "new" | "rename" | "delete" | undefined {
+  if (id === "new-folder") {
+    return "new";
+  }
+  if (id === "rename") {
+    return "rename";
+  }
+  if (id === "delete") {
+    return "delete";
+  }
+  return undefined;
+}
+
 export type ExplorerContextItem = {
   id: ExplorerContextVerb;
   label: string;
