@@ -176,9 +176,8 @@ describe("O.2 Path pills + compact Finder rail", () => {
     assert.match(home, /selectedFolderListFolderId/);
     assert.match(home, /folderHomeListMode/);
     assert.match(home, /constrainItemsToFolderSelection/);
-    assert.match(home, /data-home-folder-verb="new"/);
-    assert.match(home, /data-home-folder-verb="rename"/);
-    assert.match(home, /data-home-folder-verb="delete"/);
+    assert.match(home, /data-home-folder-verb=\{explorerMenuFolderVerb/);
+    assert.match(home, /data-x2="context-menu"/);
     assert.match(home, /FOLDER_MOVE_VERB/);
     for (const token of OVERVIEW_PATH_PILLS_MILLER_TOKENS) {
       assert.equal(home.includes(token), false, token);

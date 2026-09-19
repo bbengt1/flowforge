@@ -29,6 +29,7 @@ import {
   explorerHomeDismissesMenu,
   explorerHomeGrantGatesMenus,
   explorerHomeWiresExistingVerbs,
+  explorerMenuFolderVerb,
   explorerMenuPosition,
   explorerMenuShowsMutateForViewer,
   explorerWorkflowMenuItems,
@@ -114,6 +115,10 @@ describe("X.2 Explorer context menus", () => {
     assert.equal(editor[1]?.label, RENAME_FOLDER_LABEL);
     assert.equal(editor[2]?.label, DELETE_FOLDER_LABEL);
     assert.equal(editor[3]?.label, EXPLORER_EXPAND_LABEL);
+    assert.equal(explorerMenuFolderVerb("new-folder"), "new");
+    assert.equal(explorerMenuFolderVerb("rename"), "rename");
+    assert.equal(explorerMenuFolderVerb("delete"), "delete");
+    assert.equal(explorerMenuFolderVerb("expand"), undefined);
 
     const nonempty = explorerFolderMenuItems({
       canMutate: true,

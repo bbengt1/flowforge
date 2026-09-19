@@ -1,6 +1,6 @@
 # Workflows home: folder hierarchy
 
-Status: **F.1 API + F.2–F.7 chrome landed**; **X.7 create-then-inline-rename** (this page remains the IA). Folder membership is not in YAML.
+Status: **F.1 API + F.2–F.7 chrome landed**; **X.7 create-then-inline-rename**; **X.8 Explorer nav chrome** (this page remains the IA). Folder membership is not in YAML.
 
 **Product ask (Brent):** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
 
@@ -329,7 +329,7 @@ Acceptance:
 
 Acceptance:
 
-- New folder / rename / delete on the rail. Name rules and sibling uniqueness errors are visible.
+- New folder / rename / delete via grant-gated right-click on the rail (X.2 / #381 — keep #381 open; X.8 / #399 — keep #399 open). No visible New / Rename / Delete buttons on the tree. Name rules and sibling uniqueness errors are visible.
 - Delete disabled or `409` when the folder has children or workflows. Empty delete returns to parent/Unfiled.
 - Viewers: no those verbs. Pending → success/error. CSRF on writes.
 - No `/actions` detour. No YAML / slug rewrite.
@@ -450,6 +450,22 @@ Acceptance:
 
 Keep #396 open. Keep #379 open. Keep #393 open.
 
+### X.8 — Explorer folder chrome (Windows Explorer nav visual)
+
+**Owner:** Chloe.
+**Effort:** M.
+**Blocked by:** X.7 (inline rename locked) + Gracie take/skip on Brent’s Win11 dark Explorer screenshot.
+
+Acceptance:
+
+- Left folder **nav tree** matches the locked TAKE: compact row density; yellow folder icons; thin white ▸/▾ chevrons (no chevron on leaves); selection is medium-gray fill + thin light border on the whole row; dark near-black pane + white labels; indent ≈ one icon width per depth; quiet thin scrollbar. No visible New folder / Rename folder / Delete folder buttons on the rail — those verbs stay grant-gated right-click only. Do not invent toolbar chrome.
+- SKIP: This PC / Disk / Network glyphs, status bar, New/Cut toolbar — not FlowForge IA.
+- Tokens-first: map yellow folder + selection into V.1 (`tokens.css` / `visual-tokens.ts`). Do not invent a second theme.
+- No regression on #396 inline rename, X.2 grant-gated menus, Unfiled virtual, X.3 select/open, X.4 empty teaching, X.5 embed parity. Same `WorkflowHome`.
+- Hard lines stay: drafts never run, ADV-021, wizard/Login/Change-password never on embed. No new APIs. No modal New folder.
+
+Keep #399 open. Keep #379 open. Keep #396 open.
+
 ---
 
 ### Story table (Arie)
@@ -467,6 +483,7 @@ Keep #396 open. Keep #379 open. Keep #393 open.
 | X.5 | Explorer embed parity | Chloe | X.1–X.4, F.7 | S |
 | X.6 | Remove visible product-commentary copy | Chloe | X.1–X.5 | S |
 | X.7 | New folder: create then inline rename | Chloe | X.2, F.3 | S–M |
+| X.8 | Explorer folder chrome (Win11 nav visual) | Chloe | X.7 | M |
 
 ---
 

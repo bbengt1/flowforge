@@ -87,6 +87,17 @@ export const FF_DANGER_SURFACE = "#3f151c";
 export const FF_FOCUS_RING = FF_ACCENT;
 export const FF_BORDER = "rgb(255 255 255 / 0.10)";
 
+/**
+ * X.8 Explorer nav — V.1 names, not a second theme.
+ * Relates to #399. Near-black pane + Windows-folder yellow.
+ * Yellow is a glyph fill, not a second accent. Not n8n orange.
+ */
+export const FF_EXPLORER_NAV = "#1a1d24";
+export const FF_EXPLORER_FOLDER = "#e8c04a";
+export const FF_EXPLORER_FOLDER_TAB = "#d4a017";
+export const FF_EXPLORER_INDENT = "16px";
+export const FF_EXPLORER_ROW = "24px";
+
 export const FF_SPACE = "4px";
 export const FF_SPACE_2 = "8px";
 export const FF_SPACE_3 = "12px";
@@ -115,6 +126,9 @@ export const FF_COLOR_TOKENS = {
   dangerSurface: FF_DANGER_SURFACE,
   focusRing: FF_FOCUS_RING,
   border: FF_BORDER,
+  explorerNav: FF_EXPLORER_NAV,
+  explorerFolder: FF_EXPLORER_FOLDER,
+  explorerFolderTab: FF_EXPLORER_FOLDER_TAB,
 } as const;
 
 export const FF_SPACE_TOKENS = {
@@ -174,6 +188,13 @@ export const FF_CSS_VARIABLES = [
   "--ff-danger-surface",
   "--ff-focus-ring",
   "--ff-border",
+  "--ff-explorer-nav",
+  "--ff-explorer-folder",
+  "--ff-explorer-folder-tab",
+  "--ff-explorer-row-selected",
+  "--ff-explorer-row-selected-border",
+  "--ff-explorer-indent",
+  "--ff-explorer-row",
   "--ff-space",
   "--ff-space-2",
   "--ff-space-3",
@@ -373,6 +394,10 @@ export function visualTokensHoldHardLines(): boolean {
     contrastHolds(FF_DANGER, FF_CANVAS) &&
     contrastHolds(FF_DANGER, FF_SURFACE) &&
     contrastHolds(FF_ACCENT_FOREGROUND, FF_ACCENT) &&
+    contrastHolds(FF_TEXT, FF_EXPLORER_NAV) &&
+    huesAreDistinct(FF_EXPLORER_FOLDER, FF_ACCENT) &&
+    !n8nOrangePresent(FF_EXPLORER_FOLDER) &&
+    !n8nOrangePresent(FF_EXPLORER_FOLDER_TAB) &&
     FF_ACCENT.toLowerCase() === "#0f766e" &&
     FF_SPACE === "4px" &&
     FF_RADIUS_SM === "8px" &&

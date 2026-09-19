@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type DragEvent,
   type ReactNode,
 } from "react";
@@ -109,9 +110,7 @@ import {
   FF_OVERVIEW_MENU_CLASS,
   FF_OVERVIEW_MUTED_CLASS,
   FF_OVERVIEW_PILL_CLASS,
-  FF_OVERVIEW_RAIL_ACTIVE_CLASS,
   FF_OVERVIEW_RAIL_CLASS,
-  FF_OVERVIEW_RAIL_ITEM_CLASS,
   FF_OVERVIEW_ROOT_CLASS,
   FF_OVERVIEW_SCAN_LEAD_CLASS,
   FF_OVERVIEW_SCAN_TRAIL_CLASS,
@@ -137,6 +136,7 @@ import {
   childFoldersForPane,
   explorerEmptyPaneMenuItems,
   explorerFolderMenuItems,
+  explorerMenuFolderVerb,
   explorerMenuPosition,
   explorerWorkflowMenuItems,
   visibleExplorerMenuItems,
@@ -181,6 +181,15 @@ import {
   nextNewFolderName,
 } from "@/lib/explorer-inline-rename";
 import {
+  FF_EXPLORER_FOLDER_ICON_CLASS,
+  FF_EXPLORER_NAV_CHEVRON_CLASS,
+  FF_EXPLORER_NAV_LABEL_CLASS,
+  FF_EXPLORER_NAV_LIST_CLASS,
+  FF_EXPLORER_NAV_ROW_CLASS,
+  FF_EXPLORER_NAV_SELECTED_CLASS,
+  explorerNavDepthVars,
+} from "@/lib/explorer-folder-chrome";
+import {
   WORKFLOW_TEMPLATES,
   duplicateWorkflowName,
   workflowTemplateById,
@@ -216,7 +225,6 @@ import { dohertyStatusClassName } from "@/lib/doherty-pending-chrome";
 import {
   DELETE_FOLDER_LABEL,
   FOLDER_CRUMB_LABEL,
-  FOLDER_DEPTH_HELP,
   FOLDER_EMPTY_CREATE_LABEL,
   FOLDER_EMPTY_HEADING,
   FOLDER_EMPTY_HELP,
@@ -785,9 +793,6 @@ function WorkflowHomeSession() {
     ready,
     replaceFolderQuery,
   ]);
-
-  const selectedWorkflowCount =
-    selection.kind === "folder" ? records.length : null;
 
   function startInlineRename(folderId: string, name?: string) {
     if (!canMutateFolders) {
@@ -1692,12 +1697,9 @@ function WorkflowHomeSession() {
       >
       <FolderRail
         tree={visibleFolderTree}
-        folders={folders}
         selection={selection}
         expandedIds={visibleExpandedIds}
         canMutate={canMutateFolders}
-        pending={pending !== null}
-        selectedWorkflowCount={selectedWorkflowCount}
         renamingId={inlineRenameId}
         renameOriginal={inlineRenameOriginal}
         nameDraft={folderNameDraft}
@@ -1709,9 +1711,6 @@ function WorkflowHomeSession() {
         onSelect={selectFolder}
         onToggle={toggleFolderExpanded}
         onNameDraft={setFolderNameDraft}
-        onCreate={() => void openCreateFolder()}
-        onRename={openRenameFolder}
-        onDelete={(folderId) => void removeFolder(folderId)}
         onSubmit={() => void submitInlineRename(false)}
         onCancel={closeInlineRename}
         onRenameBlur={() => void submitInlineRename(true)}
@@ -2357,16 +2356,16 @@ function FinderDisclosureIcon({ expanded }: { expanded: boolean }) {
   return (
     <svg
       viewBox="0 0 12 12"
-      width="12"
-      height="12"
+      width="10"
+      height="10"
       aria-hidden="true"
-      className={expanded ? "rotate-90" : undefined}
+      data-x8={expanded ? "chevron-expanded" : "chevron-collapsed"}
     >
       <path
-        d="M4.2 2.2 9 6 4.2 9.8"
+        d={expanded ? "M2.4 4.4 6 8 9.6 4.4" : "M4.4 2.4 8 6 4.4 9.6"}
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="1.1"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -2379,17 +2378,18 @@ function FinderFolderIcon() {
     <svg
       data-o2="folder-icon"
       viewBox="0 0 16 16"
-      width="14"
-      height="14"
+      width="16"
+      height="16"
       aria-hidden="true"
-      className="shrink-0"
+      className={`shrink-0 ${FF_EXPLORER_FOLDER_ICON_CLASS}`}
     >
       <path
-        d="M2 4.5h4.2l1.2 1.3H14V12.2A1.3 1.3 0 0 1 12.7 13.5H3.3A1.3 1.3 0 0 1 2 12.2Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
+        className="ff-explorer-folder-tab"
+        d="M2 3.1h4.1l1.15 1.25H14V5.6H2Z"
+      />
+      <path
+        className="ff-explorer-folder-body"
+        d="M2 5.7h12v6.5A1.2 1.2 0 0 1 12.8 13.4H3.2A1.2 1.2 0 0 1 2 12.2Z"
       />
     </svg>
   );
@@ -2486,12 +2486,9 @@ function FolderInlineRenameField({
 
 function FolderRail({
   tree,
-  folders,
   selection,
   expandedIds,
   canMutate,
-  pending,
-  selectedWorkflowCount,
   renamingId,
   renameOriginal,
   nameDraft,
@@ -2503,9 +2500,6 @@ function FolderRail({
   onSelect,
   onToggle,
   onNameDraft,
-  onCreate,
-  onRename,
-  onDelete,
   onSubmit,
   onCancel,
   onRenameBlur,
@@ -2514,12 +2508,9 @@ function FolderRail({
   onUnfiledContextMenu,
 }: {
   tree: FolderTreeNode[];
-  folders: readonly WorkflowFolder[];
   selection: FolderSelection;
   expandedIds: readonly string[];
   canMutate: boolean;
-  pending: boolean;
-  selectedWorkflowCount: number | null;
   renamingId: string | null;
   renameOriginal: string;
   nameDraft: string;
@@ -2531,9 +2522,6 @@ function FolderRail({
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
   onNameDraft: (value: string) => void;
-  onCreate: (parent?: FolderSelection) => void;
-  onRename: (folderId: string) => void;
-  onDelete: (folderId: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onRenameBlur: () => void;
@@ -2550,8 +2538,6 @@ function FolderRail({
   }) => void;
 }) {
   const unfiledCurrent = selection.kind === "unfiled";
-  const createParentId = createFolderParentId(selection);
-  const canCreateHere = canCreateChildFolder(folders, createParentId);
   const mutateLabel = folderMutateLabel(chrome);
   return (
     <nav
@@ -2560,25 +2546,12 @@ function FolderRail({
       data-o2="finder-rail"
       data-x1="folder-tree"
       data-x2="folder-tree"
+      data-x8="folder-chrome"
       className={`h-full ${FF_OVERVIEW_RAIL_CLASS} ${FF_EXPLORER_TREE_CLASS}`}
     >
-      <div className="flex items-start justify-between gap-2 px-2">
-        <p className={`text-xs font-medium tracking-wide uppercase ${FF_OVERVIEW_MUTED_CLASS}`}>
-          {FOLDER_RAIL_LABEL}
-        </p>
-        {canMutate ? (
-          <button
-            type="button"
-            data-home-folder-verb="new"
-            disabled={pending || !canCreateHere}
-            title={!canCreateHere ? FOLDER_DEPTH_HELP : undefined}
-            onClick={() => onCreate()}
-            className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-2 py-1 text-xs`}
-          >
-            {NEW_FOLDER_LABEL}
-          </button>
-        ) : null}
-      </div>
+      <p className={`px-2 text-xs font-medium tracking-wide uppercase ${FF_OVERVIEW_MUTED_CLASS}`}>
+        {FOLDER_RAIL_LABEL}
+      </p>
       {canMutate && mutateLabel ? (
         <p
           role={chrome.phase === "error" ? "alert" : "status"}
@@ -2610,24 +2583,25 @@ function FolderRail({
           autoComplete="off"
         />
       </label>
-      <ul className="mt-2 space-y-1">
+      <ul className={FF_EXPLORER_NAV_LIST_CLASS}>
         <li>
           <button
             type="button"
             data-home-folder-rail="unfiled"
+            data-x8="nav-row"
             aria-current={unfiledCurrent ? "true" : undefined}
             onContextMenu={(event) => onUnfiledContextMenu(event)}
             onClick={() => onSelect({ kind: "unfiled" })}
             className={
-              (unfiledCurrent
-                ? `w-full ${FF_OVERVIEW_RAIL_ACTIVE_CLASS}`
-                : `w-full ${FF_OVERVIEW_RAIL_ITEM_CLASS}`) +
+              `${FF_EXPLORER_NAV_ROW_CLASS}${
+                unfiledCurrent ? ` ${FF_EXPLORER_NAV_SELECTED_CLASS}` : ""
+              }` +
               (canMutate &&
               dragging &&
               canDropWorkflowOnFolder(true, dragging.folderId, {
                 kind: "unfiled",
               })
-                ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-canvas)]"
+                ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-explorer-nav)]"
                 : "")
             }
             {...folderDropHandlers(
@@ -2637,8 +2611,11 @@ function FolderRail({
               onDropWorkflow,
             )}
           >
-            <FinderUnfiledIcon />
-            <span className="truncate">{UNFILED_FOLDER_LABEL}</span>
+            <span className="ff-explorer-nav-chevron-spacer" aria-hidden="true" />
+            <span className={FF_EXPLORER_NAV_LABEL_CLASS}>
+              <FinderUnfiledIcon />
+              <span className="truncate">{UNFILED_FOLDER_LABEL}</span>
+            </span>
             <span
               data-x4="unfiled-virtual"
               title={EXPLORER_UNFILED_VIRTUAL_LABEL}
@@ -2653,12 +2630,9 @@ function FolderRail({
             key={node.id}
             node={node}
             depth={1}
-            folders={folders}
             selection={selection}
             expandedIds={expandedIds}
             canMutate={canMutate}
-            pending={pending}
-            selectedWorkflowCount={selectedWorkflowCount}
             dragging={dragging}
             renamingId={renamingId}
             renameOriginal={renameOriginal}
@@ -2669,8 +2643,6 @@ function FolderRail({
             onRenameBlur={onRenameBlur}
             onSelect={onSelect}
             onToggle={onToggle}
-            onRename={onRename}
-            onDelete={onDelete}
             onDropWorkflow={onDropWorkflow}
             onFolderContextMenu={onFolderContextMenu}
           />
@@ -2683,12 +2655,9 @@ function FolderRail({
 function FolderRailNode({
   node,
   depth,
-  folders,
   selection,
   expandedIds,
   canMutate,
-  pending,
-  selectedWorkflowCount,
   dragging,
   renamingId,
   renameOriginal,
@@ -2699,19 +2668,14 @@ function FolderRailNode({
   onRenameBlur,
   onSelect,
   onToggle,
-  onRename,
-  onDelete,
   onDropWorkflow,
   onFolderContextMenu,
 }: {
   node: FolderTreeNode;
   depth: number;
-  folders: readonly WorkflowFolder[];
   selection: FolderSelection;
   expandedIds: readonly string[];
   canMutate: boolean;
-  pending: boolean;
-  selectedWorkflowCount: number | null;
   dragging: WorkflowMoveDragPayload | null;
   renamingId: string | null;
   renameOriginal: string;
@@ -2722,8 +2686,6 @@ function FolderRailNode({
   onRenameBlur: () => void;
   onSelect: (next: FolderSelection) => void;
   onToggle: (folderId: string) => void;
-  onRename: (folderId: string) => void;
-  onDelete: (folderId: string) => void;
   onDropWorkflow: (workflowId: string, target: FolderSelection) => void;
   onFolderContextMenu: (
     folderId: string,
@@ -2734,29 +2696,25 @@ function FolderRailNode({
   const renaming = renamingId === node.id;
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.includes(node.id);
-  const deleteBlocked = folderDeleteBlocked({
-    childFolderCount: childFolderCount(folders, node.id),
-    workflowCount: selected ? selectedWorkflowCount : null,
-  });
-  const rowClass =
-    (selected
-      ? FF_OVERVIEW_RAIL_ACTIVE_CLASS
-      : FF_OVERVIEW_RAIL_ITEM_CLASS) +
-    (canMutate &&
+  const dropRing =
+    canMutate &&
     dragging &&
     canDropWorkflowOnFolder(true, dragging.folderId, {
       kind: "folder",
       id: node.id,
     })
-      ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-canvas)]"
-      : "");
+      ? " ring-2 ring-[var(--ff-focus-ring)] ring-offset-1 ring-offset-[var(--ff-explorer-nav)]"
+      : "";
+  const rowClass = `${FF_EXPLORER_NAV_ROW_CLASS}${
+    selected ? ` ${FF_EXPLORER_NAV_SELECTED_CLASS}` : ""
+  }${dropRing}`;
   return (
     <li>
       <div
-        className="flex flex-col gap-0.5"
-        style={{ paddingLeft: `${(Math.min(depth, 4) - 1) * 0.75}rem` }}
+        data-x8="nav-row"
+        className={rowClass}
+        style={explorerNavDepthVars(depth) as CSSProperties}
       >
-        <div className="flex items-center gap-0.5">
         {hasChildren ? (
           <button
             type="button"
@@ -2764,12 +2722,12 @@ function FolderRailNode({
             aria-expanded={expanded}
             aria-label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
             onClick={() => onToggle(node.id)}
-            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ${FF_OVERVIEW_MUTED_CLASS}`}
+            className={FF_EXPLORER_NAV_CHEVRON_CLASS}
           >
             <FinderDisclosureIcon expanded={expanded} />
           </button>
         ) : (
-          <span className="inline-block h-6 w-6 shrink-0" aria-hidden="true" />
+          <span className="ff-explorer-nav-chevron-spacer" aria-hidden="true" />
         )}
         {renaming ? (
           <div
@@ -2777,7 +2735,7 @@ function FolderRailNode({
             data-folder-id={node.id}
             data-x7="inline-rename-row"
             aria-current={selected ? "true" : undefined}
-            className={rowClass}
+            className={FF_EXPLORER_NAV_LABEL_CLASS}
           >
             <FinderFolderIcon />
             <FolderInlineRenameField
@@ -2791,65 +2749,36 @@ function FolderRailNode({
             />
           </div>
         ) : (
-        <button
-          type="button"
-          data-home-folder-rail="folder"
-          data-folder-id={node.id}
-          aria-current={selected ? "true" : undefined}
-          onContextMenu={(event) => onFolderContextMenu(node.id, event)}
-          onClick={() => onSelect({ kind: "folder", id: node.id })}
-          className={rowClass}
-          {...folderDropHandlers(
-            canMutate,
-            { kind: "folder", id: node.id },
-            dragging,
-            onDropWorkflow,
-          )}
-        >
-          <FinderFolderIcon />
-          <span className="truncate">{node.name}</span>
-        </button>
+          <button
+            type="button"
+            data-home-folder-rail="folder"
+            data-folder-id={node.id}
+            aria-current={selected ? "true" : undefined}
+            onContextMenu={(event) => onFolderContextMenu(node.id, event)}
+            onClick={() => onSelect({ kind: "folder", id: node.id })}
+            className={FF_EXPLORER_NAV_LABEL_CLASS}
+            {...folderDropHandlers(
+              canMutate,
+              { kind: "folder", id: node.id },
+              dragging,
+              onDropWorkflow,
+            )}
+          >
+            <FinderFolderIcon />
+            <span className="truncate">{node.name}</span>
+          </button>
         )}
-        </div>
-        {canMutate ? (
-          <div className="flex flex-wrap gap-1 pl-6">
-            <button
-              type="button"
-              data-home-folder-verb="rename"
-              data-folder-id={node.id}
-              disabled={pending}
-              onClick={() => onRename(node.id)}
-              className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-1.5 py-0.5 text-xs`}
-            >
-              {RENAME_FOLDER_LABEL}
-            </button>
-            <button
-              type="button"
-              data-home-folder-verb="delete"
-              data-folder-id={node.id}
-              disabled={pending || deleteBlocked}
-              title={deleteBlocked ? FOLDER_NOT_EMPTY_HELP : undefined}
-              onClick={() => onDelete(node.id)}
-              className={`shrink-0 ${FF_OVERVIEW_GHOST_CLASS} px-1.5 py-0.5 text-xs`}
-            >
-              {DELETE_FOLDER_LABEL}
-            </button>
-          </div>
-        ) : null}
       </div>
       {hasChildren && expanded ? (
-        <ul className="mt-1 space-y-1">
+        <ul>
           {node.children.map((child) => (
             <FolderRailNode
               key={child.id}
               node={child}
               depth={depth + 1}
-              folders={folders}
               selection={selection}
               expandedIds={expandedIds}
               canMutate={canMutate}
-              pending={pending}
-              selectedWorkflowCount={selectedWorkflowCount}
               dragging={dragging}
               renamingId={renamingId}
               renameOriginal={renameOriginal}
@@ -2860,8 +2789,6 @@ function FolderRailNode({
               onRenameBlur={onRenameBlur}
               onSelect={onSelect}
               onToggle={onToggle}
-              onRename={onRename}
-              onDelete={onDelete}
               onDropWorkflow={onDropWorkflow}
               onFolderContextMenu={onFolderContextMenu}
             />
@@ -2982,6 +2909,7 @@ function ExplorerContextMenu({
           role="menuitem"
           data-x2-verb={item.id}
           data-x2-mutate={item.mutate ? "true" : undefined}
+          data-home-folder-verb={explorerMenuFolderVerb(item.id)}
           disabled={item.disabled}
           title={item.reason}
           className={FF_EXPLORER_MENU_ITEM_CLASS}

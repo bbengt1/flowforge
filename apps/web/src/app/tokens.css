@@ -25,6 +25,15 @@
   --ff-focus-ring: #0f766e;
   --ff-border: rgb(255 255 255 / 0.10);
 
+  /* X.8 Explorer nav — V.1 names. Relates to #399. Not a second theme. */
+  --ff-explorer-nav: #1a1d24;
+  --ff-explorer-folder: #e8c04a;
+  --ff-explorer-folder-tab: #d4a017;
+  --ff-explorer-row-selected: color-mix(in srgb, var(--ff-text) 18%, var(--ff-explorer-nav));
+  --ff-explorer-row-selected-border: color-mix(in srgb, var(--ff-text) 42%, transparent);
+  --ff-explorer-indent: 16px;
+  --ff-explorer-row: 24px;
+
   --ff-space: 4px;
   --ff-space-2: 8px;
   --ff-space-3: 12px;
