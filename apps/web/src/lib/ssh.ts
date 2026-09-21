@@ -393,7 +393,7 @@ export function writeParameterSchema(
 }
 
 export function applyParameterSchemaToSpec(
-  spec: OpsConfigSpec,
+  spec: OpsConfigSpec | Record<string, unknown>,
   rows: SshParameterConstraint[],
 ): OpsConfigSpec {
   return sanitizeSshSpec({

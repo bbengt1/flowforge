@@ -132,8 +132,8 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.match(peakEndLabel("failed"), /jump/i);
     assert.match(peakEndLabel("waiting"), /decide/i);
     assert.equal(PEAK_END_HEADLINES.success, "Run succeeded");
-    assert.equal(PEAK_END_INBOX_LABELS.success !== PEAK_END_INBOX_LABELS.indeterminate, true);
-    assert.equal(PEAK_END_NDV_LABELS.success !== PEAK_END_NDV_LABELS.indeterminate, true);
+    assert.notEqual(PEAK_END_INBOX_LABELS.success, PEAK_END_INBOX_LABELS.indeterminate);
+    assert.notEqual(PEAK_END_NDV_LABELS.success, PEAK_END_NDV_LABELS.indeterminate);
     assert.match(peakEndSurfaceClassName("success"), /ff-status-succeeded/);
     assert.match(peakEndSurfaceClassName("indeterminate"), /ff-loud-indeterminate/);
     assert.match(peakEndSurfaceClassName("failed"), /ff-loud-danger/);

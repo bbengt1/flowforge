@@ -235,7 +235,10 @@ export function inlineRenameF2Target(
 }
 
 export function explorerEventBlocksInlineRenameHotkey(
-  target: EventTarget | null,
+  target:
+    | EventTarget
+    | { tagName?: string; isContentEditable?: boolean }
+    | null,
 ): boolean {
   if (!target || typeof target !== "object") {
     return false;

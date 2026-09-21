@@ -288,7 +288,9 @@ describe("R5.1 credential vault find", () => {
         title: "Forbidden",
         status: 403,
         detail: "missing credential.view",
+        instance: "/workspace/credentials",
         code: "forbidden",
+        request_id: "req-forbidden",
       }),
       true,
     );

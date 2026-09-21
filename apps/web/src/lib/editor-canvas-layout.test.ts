@@ -103,9 +103,9 @@ describe("R2.5 persist metadata.ui.layout", () => {
       },
       yaml,
     );
+    assert.equal(Object.hasOwn(withSummary, "ghost"), false);
+    assert.equal(Object.hasOwn(withSummary, "done"), false);
     assert.deepEqual(withSummary, { seed: { x: 16, y: 32 } });
-    assert.equal(withSummary.ghost, undefined);
-    assert.equal(withSummary.done, undefined);
 
     const yamlOnly = readPersistedCanvasLayout(summary, yaml);
     assert.deepEqual(yamlOnly, {
@@ -200,8 +200,8 @@ describe("R2.5 persist metadata.ui.layout", () => {
       },
       ["seed", "done"],
     );
+    assert.equal(Object.hasOwn(ghost, "invented"), false);
     assert.deepEqual(ghost, { seed: { x: 8, y: 8 } });
-    assert.equal(ghost.invented, undefined);
   });
 
   it("merges persisted hints onto auto-layout without inventing a graph", () => {

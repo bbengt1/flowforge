@@ -145,14 +145,14 @@ describe("embed-tenancy-contract", () => {
     assert.ok(verified);
     assert.equal(
       workspaceMatchesVerified(
-        { tenant_id: "ten-1", workbench_key: "ops", id: "ws-1", name: "Ops", status: "active" },
+        { tenant_id: "ten-1", workbench_key: "ops" },
         verified,
       ),
       true,
     );
     assert.equal(
       workspaceMatchesVerified(
-        { tenant_id: "ten-9", workbench_key: "ops", id: "ws-9", name: "X", status: "active" },
+        { tenant_id: "ten-9", workbench_key: "ops" },
         verified,
       ),
       false,

@@ -48,6 +48,7 @@ const TEMPLATE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const catalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
+  triggers: [],
   nodes: [
     {
       type: "http.request",
@@ -74,7 +75,8 @@ describe("core HTTP/notification contract adapter", () => {
     assert.ok(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("token"));
     assert.ok(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("disableTLS"));
     assert.ok(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("to"));
-    assert.equal(HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS.includes("host"), false);
+    const forbiddenWithKeys: readonly string[] = HTTP_NOTIFICATION_FORBIDDEN_WITH_KEYS;
+    assert.equal(forbiddenWithKeys.includes("host"), false);
     assert.ok(HTTP_DELIVERY_SECRET_KEYS.includes("set-cookie"));
     assert.equal(HTTP_EXISTING_API_PATHS.httpCatalog, "/http/catalog");
     assert.equal(HTTP_EXISTING_API_PATHS.workflowCatalog, "/workflows/catalog");
