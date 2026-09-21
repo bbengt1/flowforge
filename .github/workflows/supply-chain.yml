@@ -220,6 +220,11 @@ jobs:
       - name: Build API image
         run: docker build -t flowforge-api:ci ./apps/api
 
+      # G.1.2: prove the script-runner Dockerfile builds. No registry push
+      # (same as the API image). Tag and push steps: docs/deployment.md.
+      - name: Build script-runner image
+        run: docker build -f apps/api/Dockerfile.script-runner -t flowforge-script-runner:ci apps/api
+
       # Install the scanner binary. Do not use aquasecurity/trivy-action
       # version tags here — GitHub could not resolve @0.28.0 or @0.36.0.
       - name: Install Trivy

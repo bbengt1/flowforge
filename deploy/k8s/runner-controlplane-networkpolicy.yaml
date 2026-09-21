@@ -1,0 +1,33 @@
+# Egress from the production runner to the control-plane API only.
+# Not part of kustomize: an unsubstituted placeholder is not a valid CIDR,
+# and kubectl apply -k must stay valid before this address is known.
+#
+#   envsubst '${CONTROL_PLANE_API_CIDR}' \
+#     < deploy/k8s/runner-controlplane-networkpolicy.yaml \
+#     | kubectl apply -n flowforge -f -
+#
+# Combined with runner-networkpolicy.yaml (PostgreSQL and DNS). Do not
+# open a world CIDR. Script Job creation still fails closed until
+# deploy/kubernetes/script-runner-networkpolicy.yaml is applied with the
+# same CONTROL_PLANE_API_CIDR.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flowforge-runner-controlplane
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: runner
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: runner
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${CONTROL_PLANE_API_CIDR}
+      ports:
+        - protocol: TCP
+          port: 443

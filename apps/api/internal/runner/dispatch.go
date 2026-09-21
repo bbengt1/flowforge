@@ -20,6 +20,7 @@ import (
 // Engines are the existing provider libraries. Nil transports use each
 // package's live default. Kube, when set, replaces Handle.Client so tests
 // can inject a fake cluster. Script nil uses the in-process harness.
+// A live script runtime (KubernetesJobRuntime) creates one isolated Job.
 // Mail nil makes notification.email fail closed inside ExecuteEmail.
 type Engines struct {
 	Kube         func(*kubernetes.Handle) (kubernetes.ClusterClient, error)
@@ -284,6 +285,9 @@ func (d *Dispatcher) script(ctx context.Context, scope isolation.Scope, perms []
 		return fail(CodeUnpublishedPin, "published runtime profile pin is required")
 	}
 	// Source stays empty so Execute uses the signed package, not YAML.
+	// A live script runtime creates one isolated Job. Nil stays the CI harness.
+	runtime := d.Engines.Script
+	requireLive := runtime != nil && runtime.Name() == scripts.IsolationModeLive
 	res := scripts.Execute(ctx, scripts.Request{
 		Artifact:         art,
 		Language:         art.Language,
@@ -297,14 +301,15 @@ func (d *Dispatcher) script(ctx context.Context, scope isolation.Scope, perms []
 			CPUMillis:      asInt(in["cpuMillis"]),
 			Processes:      asInt(in["processes"]),
 		},
-		Permissions:   perms,
-		Runtime:       d.Engines.Script,
-		CorrelationID: job.Execution.CorrelationID,
-		ActorID:       scope.ActorID(),
-		Input:         scriptInput(in),
-		InputSchema:   asMap(in["inputSchema"]),
-		OutputSchema:  asMap(in["outputSchema"]),
-		Attempt:       job.Job.Attempt,
+		Permissions:        perms,
+		Runtime:            runtime,
+		RequireLiveRuntime: requireLive,
+		CorrelationID:      job.Execution.CorrelationID,
+		ActorID:            scope.ActorID(),
+		Input:              scriptInput(in),
+		InputSchema:        asMap(in["inputSchema"]),
+		OutputSchema:       asMap(in["outputSchema"]),
+		Attempt:            job.Job.Attempt,
 	})
 	return fromEngine(res.OK, errCode(res.Error), errMessage(res.Error), res)
 }

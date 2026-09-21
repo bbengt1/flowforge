@@ -67,6 +67,9 @@ need "$prod_runner" 'automountServiceAccountToken: false'
 need "$prod_runner" '[[:space:]]+- ALL'
 need "$prod_runner" 'seccompProfile:'
 need "$prod_runner" 'command: \["/usr/local/bin/runner"\]'
+need "$prod_runner" 'serviceAccountName: flowforge-runner-scripts'
+need "$prod_runner" 'SCRIPT_RUNNER_API_SERVER'
+need "$prod_runner" 'SCRIPT_RUNNER_TOKEN_FILE'
 forbid "$prod_runner" 'image:.*:latest([[:space:]]|$)'
 need "$ROOT/deploy/k8s/runner-networkpolicy.yaml" 'port: 5432'
 
@@ -77,6 +80,9 @@ need "$ROOT/deploy/k8s/ingress.yaml" '^  tls:'
 need "$ROOT/deploy/k8s/api-configmap.yaml" 'REQUIRE_TLS: "true"'
 
 runner="$ROOT/deploy/kubernetes/script-runner-deployment.yaml"
+need "$runner" '^kind: Job$'
+need "$runner" 'restartPolicy: Never'
+need "$runner" 'ghcr.io/bbengt1/flowforge-script-runner:foundation'
 need "$runner" 'runAsUser: 65532'
 need "$runner" 'runAsNonRoot: true'
 need "$runner" 'readOnlyRootFilesystem: true'
@@ -87,9 +93,27 @@ need "$runner" 'seccompProfile:'
 need "$runner" '/workspace'
 forbid "$runner" 'docker.sock'
 forbid "$runner" 'image:.*:latest([[:space:]]|$)'
+forbid "$runner" '^[[:space:]]*replicas:'
+
+sr_df="$ROOT/apps/api/Dockerfile.script-runner"
+need "$sr_df" '^USER 65532:65532'
+need "$sr_df" '^FROM golang:1\.26-alpine@sha256:[0-9a-f]{64} AS build$'
+need "$sr_df" '^FROM golang:1\.26-alpine@sha256:[0-9a-f]{64}$'
+need "$sr_df" '/usr/local/bin/scriptrunner'
+forbid "$sr_df" ':latest'
 
 need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'policyTypes:'
 need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'port: 53'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '\$\{CONTROL_PLANE_API_CIDR\}'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'ipBlock:'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'port: 443'
+forbid "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '0\.0\.0\.0/0'
+forbid "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '::/0'
+need "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" '\$\{CONTROL_PLANE_API_CIDR\}'
+need "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" 'port: 443'
+forbid "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" '0\.0\.0\.0/0'
+forbid "$ROOT/deploy/k8s/runner-networkpolicy.yaml" '0\.0\.0\.0/0'
+need "$ROOT/deploy/k8s/script-runner-rbac.yaml" 'networkpolicies'
 
 if [[ "$fail" -eq 0 ]]; then
   echo "deploy defaults ok"

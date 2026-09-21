@@ -1,0 +1,50 @@
+# Lets the production runner create isolated script Jobs in this namespace.
+# The token is projected onto the runner pod only. Script Job pods set
+# automountServiceAccountToken: false and do not use this account.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flowforge-runner-scripts
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flowforge-runner-scripts
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: runner
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flowforge-runner-scripts
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: flowforge-runner-scripts
+subjects:
+  - kind: ServiceAccount
+    name: flowforge-runner-scripts
+    namespace: flowforge

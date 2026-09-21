@@ -1,10 +1,30 @@
-# Default-deny NetworkPolicy for isolated script runners (E9.2).
+# Default-deny NetworkPolicy for isolated script Jobs (E9.2 / G.1.2).
 #
-# Ingress is denied. Egress is default-deny except constrained cluster DNS
-# (kube-system:53) so allowlisted destinations can be resolved. Cloud
-# metadata (169.254.169.254) and the host Docker socket are not reachable.
-# Additional destination/port allowlists are applied in-process by
-# scripts.EvaluateEgress from the pinned runtime profile / script policy.
+# Ingress is denied. Egress is kube-system DNS plus the control-plane API
+# only (claim, progress, complete). Nothing else in the cluster or on the
+# public network is reachable.
+#
+# CONTROL_PLANE_API_CIDR comes from deploy config. It is not baked into
+# the script-runner image. Substitute it before apply:
+#
+#   envsubst '${CONTROL_PLANE_API_CIDR}' \
+#     < deploy/kubernetes/script-runner-networkpolicy.yaml \
+#     | kubectl apply -n flowforge -f -
+#
+# An unsubstituted placeholder is not a valid CIDR, so apply fails closed.
+# A world CIDR is forbidden. The production runner also refuses to create
+# script Jobs when this object is missing or does not match
+# CONTROL_PLANE_API_CIDR (port defaults to 443; set CONTROL_PLANE_API_PORT
+# when the applied policy uses another port).
+#
+# Service alternative, same namespace as the runner: omit the ipBlock rule
+# and select the Service's pods instead, then set CONTROL_PLANE_API_SERVICE
+# and CONTROL_PLANE_API_SERVICE_NAMESPACE. A Service with no pod selector
+# is rejected; use a CIDR for the Kubernetes API server.
+#
+# Local/dev may set SCRIPT_RUNNER_SKIP_NETWORK_POLICY=true only when the
+# process is not production-locked (APP_ENV=development|dev|local|test and
+# REQUIRE_TLS is not true). Production refuses to start if that flag is set.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -30,3 +50,9 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - ipBlock:
+            cidr: ${CONTROL_PLANE_API_CIDR}
+      ports:
+        - protocol: TCP
+          port: 443

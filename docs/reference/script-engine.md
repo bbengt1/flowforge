@@ -1,6 +1,6 @@
 # Script engine
 
-**Runtime:** `cmd/runner` calls `scripts.Execute` on the signed package through the in-process harness. `deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0`. Compose `cmd/worker` still fails `script.python` / `script.go` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+**Runtime:** `cmd/runner` creates one isolated Kubernetes Job per `script.python` / `script.go` step from [`deploy/kubernetes/script-runner-deployment.yaml`](../../deploy/kubernetes/script-runner-deployment.yaml). The image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from [`apps/api/Dockerfile.script-runner`](../../apps/api/Dockerfile.script-runner). Each Job is pinned to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. `go test` uses `HarnessRuntime` or a fake Job client and does not start pods. Compose `cmd/worker` still fails script nodes closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md) and [build/push](../deployment.md#script-runner-image).
 
 ## Purpose
 
@@ -47,7 +47,7 @@ deploy/kubernetes/
   script-runner-networkpolicy.yaml
 ```
 
-Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`, required `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`, optional `egress.destinations` (default-deny; DNS is constrained). Python uses that image+lock. Go is a precompiled signed binary from a controlled builder; CI uses a documented stub (`StubBuilder`) that still enforces isolation gates. Full containers are not started in `go test` — `HarnessRuntime` asserts UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / limits / package-install. Production pods use `deploy/kubernetes/script-runner-*.yaml` (non-root 65532, no SA token, no docker.sock, default-deny NetworkPolicy + kube-system DNS).
+Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`, required `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`, optional `egress.destinations` (default-deny; DNS is constrained). Python runs under `python3` in the script-runner image. Go is compiled inside that image (`GOPROXY=off`, stdlib only) after the in-process signature check; CI's `StubBuilder` still does not invoke `go build`. Full containers are not started in `go test` — `HarnessRuntime` asserts UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / limits / package-install, and `KubernetesJobRuntime` tests record the Job manifest. Production pods use `deploy/kubernetes/script-runner-*.yaml` (non-root 65532, no SA token, no docker.sock). The script NetworkPolicy is default-deny plus kube-system DNS and the control-plane API from `CONTROL_PLANE_API_CIDR` (or a Service in the runner namespace). The production runner refuses the Job when that config or the live policy is missing. `SCRIPT_RUNNER_SKIP_NETWORK_POLICY` is local/dev only and is a boot failure when production-locked.
 
 ## Required validation
 

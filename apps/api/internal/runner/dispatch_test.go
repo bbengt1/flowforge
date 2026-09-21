@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -211,6 +212,106 @@ func TestScriptHarnessAndMissingPin(t *testing.T) {
 	if panicRT.called {
 		t.Fatal("yaml source was executed")
 	}
+}
+
+func TestScriptJobCreatedFromTemplate(t *testing.T) {
+	r, _ := newRig(t, authz.ExpandRoles([]string{authz.RoleOperator}))
+	jobs := &recordingJobs{stdout: `{"status":"ok","runtime":"kubernetes"}`}
+	r.disp.Engines.Script = scripts.KubernetesJobRuntime{
+		Template:  scripts.EmbeddedScriptJobTemplate(),
+		Namespace: "flowforge",
+		Submitter: jobs,
+	}
+	scope, err := isolation.Authorize(wsID, actorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := r.disp.Execute(context.Background(), scope, authz.ExpandRoles([]string{authz.RoleOperator}), Job{
+		Binding:   wfstore.JobBinding{WorkspaceID: wsID, JobID: actorID, ExecutionID: targetID, ExpiresAt: time.Now().Add(time.Minute)},
+		Step:      wfstore.ExecutionStep{NodeType: scripts.NodePython, NodeID: "run"},
+		Execution: wfstore.Execution{},
+		Job:       wfstore.ExecutionJob{Status: wfstore.JobRunning},
+	})
+	if !draft.Fail || draft.Error["code"] != CodeDraftNotRunnable || jobs.n != 0 {
+		t.Fatalf("draft %+v submits %d", draft, jobs.n)
+	}
+
+	src := "import json\nprint(json.dumps({\"status\": \"ok\"}))\n"
+	ver := r.publish(t, scriptYAML(src))
+	art := r.publishScript(t, src)
+	if _, err := r.scripts.BindVersion(context.Background(), r.scope, ver.ID, []scripts.VersionPin{{
+		WorkflowVersionID: ver.ID,
+		NodeID:            "run",
+		NodeType:          scripts.NodePython,
+		ArtifactID:        art.ID,
+		Digest:            art.Digest,
+		ScanStatus:        art.ScanStatus,
+		Signature:         art.Signature,
+		Language:          art.Language,
+		Entrypoint:        art.Entrypoint,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	r.bind(t, ver.ID, runtimePin())
+	exec := r.start(t, ver)
+	if _, err := r.loop.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r.onlyJob(t, exec.ID).Status != wfstore.JobSucceeded {
+		t.Fatalf("script %v", r.onlyStep(t, exec.ID).Error)
+	}
+	if jobs.n != 1 || jobs.manifest["kind"] != "Job" {
+		t.Fatalf("jobs %d kind %v", jobs.n, jobs.manifest["kind"])
+	}
+	raw, err := json.Marshal(jobs.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := scripts.ScriptRunnerRepository + "@sha256:" + strings.Repeat("a", 64)
+	if !bytes.Contains(raw, []byte(image)) {
+		t.Fatalf("image missing: %s", raw)
+	}
+	if bytes.Contains(raw, []byte("replicas")) || bytes.Contains(raw, []byte(hex.EncodeToString(r.sign))) {
+		t.Fatalf("replicas or signing key in job: %s", raw)
+	}
+	trace := r.trace(t, exec.ID)
+	if !strings.Contains(trace, `"mode":"kubernetes"`) || strings.Contains(trace, localMsg) {
+		t.Fatalf("trace=%s", trace)
+	}
+	if strings.Contains(trace, hex.EncodeToString(r.sign)) || strings.Contains(r.log.String(), src) {
+		t.Fatal("secret or source leaked into the runner log or step output")
+	}
+
+	before := jobs.n
+	missingYAML := strings.Replace(scriptYAML("print('yaml-only-source')\n"), "name: script", "name: script-job-missing", 1)
+	missing := r.start(t, r.publish(t, missingYAML))
+	if _, err := r.loop.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	miss := r.onlyStep(t, missing.ID)
+	if r.onlyJob(t, missing.ID).Status != wfstore.JobFailed || miss.Error["code"] != CodeUnpublishedPin || jobs.n != before {
+		t.Fatalf("missing pin %v submits %d", miss.Error, jobs.n)
+	}
+}
+
+type recordingJobs struct {
+	n        int
+	manifest map[string]any
+	stdout   string
+}
+
+func (r *recordingJobs) Submit(_ context.Context, manifest map[string]any) (scripts.IsolatedResult, error) {
+	r.n++
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		return scripts.IsolatedResult{}, err
+	}
+	var clone map[string]any
+	if err := json.Unmarshal(raw, &clone); err != nil {
+		return scripts.IsolatedResult{}, err
+	}
+	r.manifest = clone
+	return scripts.IsolatedResult{OK: true, ExitCode: 0, Stdout: r.stdout}, nil
 }
 
 func TestSSHRun(t *testing.T) {

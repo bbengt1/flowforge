@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+# Isolated script-runner image for script.python / script.go Jobs.
+# Publish tag: ghcr.io/bbengt1/flowforge-script-runner:foundation
+# Build, tag, and push: docs/deployment.md#script-runner-image
+#
+#   docker build -f apps/api/Dockerfile.script-runner \
+#     -t ghcr.io/bbengt1/flowforge-script-runner:foundation \
+#     apps/api
+#
+# Base pin matches apps/api/Dockerfile (golang:1.26-alpine multi-arch index).
+# Runtime keeps that toolchain so script.go can compile stdlib-only source
+# with GOPROXY=off. python3 runs script.python. UID/GID 65532.
+
+FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
+WORKDIR /src
+ENV GOTOOLCHAIN=local
+ENV CGO_ENABLED=0
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN go build -trimpath -ldflags="-s -w" -o /out/scriptrunner ./cmd/scriptrunner
+
+FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c
+RUN apk add --no-cache python3 ca-certificates \
+ && addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
+ && mkdir -p /workspace /tmp \
+ && chown 65532:65532 /workspace /tmp \
+ && chmod 1777 /tmp
+
+COPY --from=build --chown=65532:65532 /out/scriptrunner /usr/local/bin/scriptrunner
+
+ENV GOTOOLCHAIN=local \
+    GOPROXY=off \
+    GOSUMDB=off \
+    GO111MODULE=on \
+    CGO_ENABLED=0 \
+    HOME=/workspace \
+    GOCACHE=/workspace/.cache \
+    GOMODCACHE=/workspace/.mod \
+    GOTMPDIR=/tmp
+
+USER 65532:65532
+WORKDIR /workspace
+
+LABEL org.opencontainers.image.source="https://github.com/bbengt1/flowforge" \
+      org.opencontainers.image.title="flowforge-script-runner" \
+      org.opencontainers.image.description="FlowForge isolated script.python / script.go runner"
+
+# One-shot Job process. No HTTP port. deploy/k8s runs /usr/local/bin/runner
+# from the API image; this image is only the script Job container.
+ENTRYPOINT ["/usr/local/bin/scriptrunner"]

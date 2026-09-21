@@ -156,6 +156,13 @@ and creates isolated Kubernetes Jobs from the script-runner template. Ship the
 runner image and a Deployment manifest. Until then, the README and `docs/architecture.md`
 must state plainly that provider execution is not implemented.
 
+**Status (G.1.1 / G.1.2):** `cmd/runner` ships (#439). `apps/api/Dockerfile.script-runner`
+builds `ghcr.io/bbengt1/flowforge-script-runner`. `deploy/kubernetes/script-runner-deployment.yaml`
+is a Job template (not `replicas: 0`). The production runner creates one Job from
+that template for `script.python` / `script.go` only when `CONTROL_PLANE_API_CIDR`
+(or a same-namespace Service) is set and the live script NetworkPolicy allows
+DNS plus that control-plane API. Missing config refuses the Job.
+
 ---
 
 #### A2 — S1 — No enterprise identity: no SSO, MFA, SCIM, or account lockout

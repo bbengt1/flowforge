@@ -19,7 +19,10 @@ spec:
         app.kubernetes.io/component: runner
         app.kubernetes.io/part-of: flowforge
     spec:
-      # Cluster credentials come from the vault kubeconfig, not the pod SA.
+      # Script Jobs use this account. Customer kubeconfigs stay in the vault.
+      serviceAccountName: flowforge-runner-scripts
+      # Do not automount the token. A projected token is mounted below and
+      # is never placed on script Job pods.
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -38,6 +41,21 @@ spec:
           env:
             - name: WORKER_ID
               value: production-runner
+            # Control-plane API for script Jobs. The token file is a projected
+            # SA token, not a vault credential. Do not log it.
+            # CONTROL_PLANE_API_CIDR (or SERVICE + NAMESPACE) comes from the
+            # flowforge-api ConfigMap. Missing config refuses script Jobs.
+            # Do not set SCRIPT_RUNNER_SKIP_NETWORK_POLICY on this pod.
+            - name: SCRIPT_RUNNER_API_SERVER
+              value: https://kubernetes.default.svc
+            - name: SCRIPT_RUNNER_TOKEN_FILE
+              value: /var/run/secrets/flowforge/script-runner/token
+            - name: SCRIPT_RUNNER_CA_FILE
+              value: /var/run/secrets/flowforge/script-runner/ca.crt
+            - name: SCRIPT_RUNNER_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           envFrom:
             - configMapRef:
                 name: flowforge-api
@@ -66,6 +84,20 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: script-runner-token
+              mountPath: /var/run/secrets/flowforge/script-runner
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: script-runner-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt

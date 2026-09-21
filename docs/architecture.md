@@ -1,6 +1,6 @@
 # Architecture
 
-**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress, and `deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0` (the runner uses the in-process script harness). Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live. Gap SoT: [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
+**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress. Script steps create isolated Jobs from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, built in this repo) only when `CONTROL_PLANE_API_CIDR` (or a same-namespace Service) is set and the live script NetworkPolicy allows DNS plus that destination. Missing config refuses the Job. Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live. Gap SoT: [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
 
 Hard lines stay: YAML is source of truth; drafts never run; vault chrome is display-name + UUID only; ADV-021 / ADV-024; fail-closed authorization.
 
@@ -30,9 +30,9 @@ PostgreSQL is the durable source of truth for workspace-scoped configuration, ca
 
 Workers that exist claim leased jobs and heartbeat while working; lease loss permits safe recovery only after fencing and idempotency checks. Workflow versions are immutable once run. `POST /api/v1/jobs/recover` exists but this repo ships **no scheduler** to call it (same for `POST /api/v1/schedules/dispatch` and `POST /api/v1/retention/purge`).
 
-The first **specified** worker capability is the Kubernetes API engine. It is a controlled workflow node, not a general-purpose `kubectl` proxy: policy validation precedes server-side dry-run, server-side apply, and optional rollout observation. **The engine is a library with no production caller.** See the [Kubernetes engine reference](reference/kubernetes-engine.md).
+The first **specified** worker capability is the Kubernetes API engine. It is a controlled workflow node, not a general-purpose `kubectl` proxy: policy validation precedes server-side dry-run, server-side apply, and optional rollout observation. The production runner calls that library. Live dials still fail until an operator opens API egress. See the [Kubernetes engine reference](reference/kubernetes-engine.md).
 
-SSH and script engines use the same specified control-plane/worker split. SSH is specified to run against a target and approved command profile, never a free-form terminal. Python and Go source is validated and packaged into an immutable signed artifact at publish time. The production runner executes that package in-process (harness). The separate script-runner Deployment stays `replicas: 0`. See the [SSH engine](reference/ssh-engine.md) and [script engine](reference/script-engine.md).
+SSH and script engines use the same specified control-plane/worker split. SSH is specified to run against a target and approved command profile, never a free-form terminal. Python and Go source is validated and packaged into an immutable signed artifact at publish time. The production runner creates an isolated Job from the script-runner template for that package. Drafts never run. See the [SSH engine](reference/ssh-engine.md) and [script engine](reference/script-engine.md).
 
 ## Standalone and embedded UI
 
@@ -59,7 +59,7 @@ Each embedded instance is scoped by `(tenant_id, workbench_key)`. That identity 
 - Workspace isolation is enforced in API, database queries, queue payloads, worker claims, caches, and audit records. Specified realtime subscriptions, if used, are workspace-scoped; the UI does not consume them today.
 - Kubernetes credentials are per-workspace with narrow RBAC and namespace allowlists.
 - SSH is key-only, known-host verified, target/command allowlisted, and time-bounded.
-- Python and Go artifacts are approved/signed. The production runner executes the signed package through the in-process harness (no arbitrary dependency installation). It does not start the `replicas: 0` script-runner Job.
+- Python and Go artifacts are approved/signed. The production runner creates one isolated Job per script step (no arbitrary dependency installation, no service-account token on the Job). `go test` does not start the pod.
 - Privileged nodes require explicit policy/approval before dispatch. Dispatch is not execution.
 
 Standalone identity is local Login (`POST /api/v1/login`). Embed stays `POST /embed/exchange` (ADV-021). **OIDC Authorization Code + PKCE is deferred (V.0c).** First-run bootstrap (including TLS **Skip for now**) is standalone only. Explorer chrome on `/workflows` is landed organizer UI, not a provider runtime.

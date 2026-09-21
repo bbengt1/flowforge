@@ -401,7 +401,7 @@ func TestCatalogDocumentsRunnerContract(t *testing.T) {
 	for _, e := range cat.Errors {
 		seen[e.Code] = true
 	}
-	for _, code := range []string{CodeMetadataDenied, CodeEgressDenied, CodePackageInstallDenied, CodeImageDenied, CodeResourceLimit, CodeRetryDenied, CodeHandleForbidden, CodeOutputTooLarge, CodeInputRejected, CodeEnvDenied} {
+	for _, code := range []string{CodeMetadataDenied, CodeEgressDenied, CodePackageInstallDenied, CodeImageDenied, CodeResourceLimit, CodeRetryDenied, CodeHandleForbidden, CodeOutputTooLarge, CodeInputRejected, CodeEnvDenied, CodeNetworkPolicyDenied} {
 		if !seen[code] {
 			t.Fatalf("catalog missing error %s", code)
 		}
@@ -443,10 +443,16 @@ func TestScriptRunnerManifestsEncodeIsolation(t *testing.T) {
 		"emptyDir:",
 		"/workspace",
 		"image:",
+		"kind: Job",
+		"restartPolicy: Never",
+		"ghcr.io/bbengt1/flowforge-script-runner:foundation",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("deployment missing %q", needle)
 		}
+	}
+	if strings.Contains(text, "replicas:") {
+		t.Fatal("script runner template must not set replicas")
 	}
 	if strings.Contains(text, "/var/run/docker.sock") {
 		t.Fatal("deployment must not mount the Docker socket")
@@ -470,6 +476,12 @@ func TestScriptRunnerManifestsEncodeIsolation(t *testing.T) {
 	}
 	if !strings.Contains(npText, "port: 53") {
 		t.Fatal("constrained DNS (port 53) required")
+	}
+	if !strings.Contains(npText, "CONTROL_PLANE_API_CIDR") || !strings.Contains(npText, "ipBlock:") || !strings.Contains(npText, "port: 443") {
+		t.Fatal("script network policy must allow only the configured control-plane API")
+	}
+	if strings.Contains(npText, "0.0.0.0/0") || strings.Contains(npText, "::/0") {
+		t.Fatal("script network policy must not open a world CIDR")
 	}
 }
 

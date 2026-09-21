@@ -32,6 +32,9 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-  # Provider egress (Kubernetes API, SSH, HTTP) stays closed by the
-  # namespace default-deny policy. Add an explicit destination CIDR
-  # here when an operator allowlist is ready. Do not open 0.0.0.0/0.
+  # Provider egress (Kubernetes API, SSH, HTTP) stays closed here.
+  # Script Job creation dials the control-plane API. Apply
+  # runner-controlplane-networkpolicy.yaml with CONTROL_PLANE_API_CIDR
+  # substituted from deploy config. Do not open a world CIDR. The runner
+  # refuses to create script Jobs when that CIDR or the script NetworkPolicy
+  # is missing.

@@ -4,16 +4,17 @@ These manifests are **operator-applied, namespace-scoped** defaults for a FlowFo
 
 ## Isolated script runners (E9.2)
 
-[`script-runner-deployment.yaml`](script-runner-deployment.yaml) is the isolated pod template for `script.python` / `script.go`. [`script-runner-networkpolicy.yaml`](script-runner-networkpolicy.yaml) is default-deny egress plus constrained DNS.
+[`script-runner-deployment.yaml`](script-runner-deployment.yaml) is the isolated Job template for `script.python` / `script.go`. The production runner clones it per step. Do not `kubectl apply` the template (that would start a Job with no payload). [`script-runner-networkpolicy.yaml`](script-runner-networkpolicy.yaml) is default-deny egress plus constrained DNS and the control-plane API CIDR from deploy config.
 
-Apply in the FlowForge namespace (not a workspace target namespace):
+Apply the NetworkPolicy in the FlowForge namespace (not a workspace target namespace). `CONTROL_PLANE_API_CIDR` is required and must be a canonical prefix. An unsubstituted file is rejected:
 
 ```bash
-kubectl apply -f deploy/kubernetes/script-runner-deployment.yaml
-kubectl apply -f deploy/kubernetes/script-runner-networkpolicy.yaml
+envsubst '${CONTROL_PLANE_API_CIDR}' \
+  < deploy/kubernetes/script-runner-networkpolicy.yaml \
+  | kubectl apply -n flowforge -f -
 ```
 
-Replace `ghcr.io/bbengt1/flowforge-script-runner:foundation` with the digest-pinned image from the published runtime profile before production. Do not mount `docker.sock`, a service-account token, or hostPath.
+The template image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from `apps/api/Dockerfile.script-runner`. The runner rewrites each Job to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. Replace the template tag with that digest before a production rollout. Do not mount `docker.sock`, a service-account token, or hostPath. Build and push: [deployment.md](../../docs/deployment.md#script-runner-image).
 
 CI does **not** start these pods. `go test` uses `scripts.HarnessRuntime`, which enforces the same UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / package-install gates without runc. Go binaries in CI are a documented controlled-builder stub (HMAC of the published source digest) that still runs those gates.
 

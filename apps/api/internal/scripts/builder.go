@@ -12,7 +12,7 @@ import (
 // SignedBinary is a Go artifact produced by the controlled builder.
 // CI uses a documented stub that still signs the published source digest
 // and runs every isolation gate. A live builder compiles the same source
-// in the approved image (deploy/kubernetes/script-runner-deployment.yaml).
+// in the script-runner image (apps/api/Dockerfile.script-runner).
 type SignedBinary struct {
 	Digest       string `json:"digest"`
 	Signature    string `json:"signature"`

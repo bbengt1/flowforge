@@ -75,6 +75,7 @@ const (
 	CodeOutputTooLarge           = "output-too-large"
 	CodeInputRejected            = "input-rejected"
 	CodeEnvDenied                = "env-denied"
+	CodeNetworkPolicyDenied      = "network-policy-denied"
 )
 
 // EngineError is a secret-free failure returned to publish/execute callers.
