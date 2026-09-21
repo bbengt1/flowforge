@@ -111,7 +111,7 @@ import {
   loadExecutionHistory,
   pollExecutionStatus,
 } from "@/lib/execution-client";
-import { EXECUTION_STATUS_POLL_MS } from "@/lib/execution-contract";
+import { startExecutionStatusPoll } from "@/lib/execution-poll";
 import type { ExecutionDetail, ExecutionLogSlice } from "@/lib/execution-types";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import type { KubernetesEngineCatalog } from "@/lib/kubernetes-types";
@@ -735,15 +735,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       return;
     }
     const scopedId = workflow?.id ?? workflowId ?? "";
-    const timer = window.setInterval(() => {
-      void (async () => {
+    const loop = startExecutionStatusPoll({
+      async tick() {
         const result = await pollExecutionStatus(
           identity,
           selectedRunId,
           scopedId,
         );
         if (!result.ok) {
-          return;
+          return false;
         }
         setSelectedRun(result.execution);
         setSelectedRunStrippedKeys(result.strippedKeys);
@@ -755,9 +755,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         if (currentId && yamlNodes.some((node) => node.id === currentId)) {
           applySelection({ kind: "node", id: currentId });
         }
-      })();
-    }, EXECUTION_STATUS_POLL_MS);
-    return () => window.clearInterval(timer);
+        return true;
+      },
+    });
+    return () => loop.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- poll closes over identity
   }, [selectedRunId, selectedRun?.status, identity, workflow?.id, workflowId]);
 
