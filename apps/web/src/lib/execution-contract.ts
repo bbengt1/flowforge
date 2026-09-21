@@ -124,7 +124,7 @@ export const RETRY_CSRF_HELP =
   "Retry sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 
 export const STATUS_POLL_HELP =
-  "While queued or running, this page polls GET /executions/{id} for steps and jobs. It never calls /jobs/*.";
+  "While queued or running and this tab is visible, this page polls GET /executions/{id} for steps and jobs, with backoff and jitter. Hidden tabs pause. It never calls /jobs/*.";
 
 /** E6.4 replay / pre-run / compare. No new API routes. */
 export const EXECUTION_REPLAY_STORY = 63;

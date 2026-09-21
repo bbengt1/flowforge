@@ -25,7 +25,6 @@ import {
   BOUNDED_LOG_HELP,
   CANCEL_CSRF_HELP,
   CANCEL_FORBIDDEN_MESSAGE,
-  EXECUTION_STATUS_POLL_MS,
   IDEMPOTENCY_KEY_HELP,
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
@@ -74,6 +73,7 @@ import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
 import type { CurrentWorkspace } from "@/lib/identity-types";
 import type { ProblemDetails } from "@/lib/problem";
+import { startExecutionStatusPoll } from "@/lib/execution-poll";
 import { createGenerationGate } from "@/lib/request-generation";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
@@ -507,44 +507,48 @@ export function ExecutionDetail({
     if (!ready || denied || !live) {
       return;
     }
-    const timer = window.setInterval(() => {
-      const token = gate.begin();
-      void pollExecutionStatus(identity, executionId, workflowId).then(
-        (result) => {
-          if (!gate.isCurrent(token)) {
-            return;
+    const loop = startExecutionStatusPoll({
+      async tick() {
+        const token = gate.begin();
+        const result = await pollExecutionStatus(
+          identity,
+          executionId,
+          workflowId,
+        );
+        if (!gate.isCurrent(token)) {
+          return true;
+        }
+        setLastRequestId(result.requestId);
+        if (!result.ok) {
+          if (result.forbidden) {
+            setProblem(result.problem);
+            setDetail(null);
           }
-          setLastRequestId(result.requestId);
-          if (!result.ok) {
-            if (result.forbidden) {
-              setProblem(result.problem);
-              setDetail(null);
-            }
-            return;
+          return false;
+        }
+        setDetail((current) => {
+          if (!current) {
+            return result.execution;
           }
-          setDetail((current) => {
-            if (!current) {
-              return result.execution;
-            }
-            return {
-              ...result.execution,
-              auditEvents:
-                result.execution.auditEvents.length > 0
-                  ? result.execution.auditEvents
-                  : current.auditEvents,
-              artifacts:
-                result.execution.artifacts.length > 0
-                  ? result.execution.artifacts
-                  : current.artifacts,
-            };
-          });
-          setStrippedKeys(result.strippedKeys);
-        },
-      );
-    }, EXECUTION_STATUS_POLL_MS);
+          return {
+            ...result.execution,
+            auditEvents:
+              result.execution.auditEvents.length > 0
+                ? result.execution.auditEvents
+                : current.auditEvents,
+            artifacts:
+              result.execution.artifacts.length > 0
+                ? result.execution.artifacts
+                : current.artifacts,
+          };
+        });
+        setStrippedKeys(result.strippedKeys);
+        return true;
+      },
+    });
     return () => {
       gate.begin();
-      window.clearInterval(timer);
+      loop.stop();
     };
   }, [ready, denied, live, identity, executionId, workflowId]);
 
