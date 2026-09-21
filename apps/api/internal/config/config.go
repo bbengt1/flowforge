@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
+	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -114,6 +115,12 @@ type Config struct {
 	// PublicBaseURL is the operator-facing origin (B.4). Localseed
 	// persists it on trusted-dev skip. Never returned by GET /bootstrap.
 	PublicBaseURL string
+	// SchedulerEnabled runs the in-process leader (dispatch, recover,
+	// purge). Empty SCHEDULER_ENABLED defaults on. Only the advisory-lock
+	// holder ticks, so multiple API replicas stay safe.
+	SchedulerEnabled bool
+	// SchedulerInterval is the leader tick period.
+	SchedulerInterval time.Duration
 }
 
 // Load reads configuration from the process environment.
@@ -221,6 +228,16 @@ func Load() (Config, error) {
 	if err := embed.ValidateIssuerAllowlist(cfg.PortalIssuers, requireHTTPS); err != nil {
 		return Config{}, fmt.Errorf("%s / %s: %w", portal.EnvIssuer, portal.EnvIssuerAllow, err)
 	}
+	schedOn, err := scheduler.EnabledFromEnv(os.Getenv(scheduler.EnvEnabled))
+	if err != nil {
+		return Config{}, err
+	}
+	schedEvery, err := scheduler.IntervalFromEnv(os.Getenv(scheduler.EnvInterval))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SchedulerEnabled = schedOn
+	cfg.SchedulerInterval = schedEvery
 	return cfg, nil
 }
 

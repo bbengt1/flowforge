@@ -40,6 +40,12 @@ data:
   # Application-pool checkout GUCs (Go durations). Defaults 15s / 5s.
   # STATEMENT_TIMEOUT: "15s"
   # LOCK_TIMEOUT: "5s"
+  # Leader-elected scheduler (G.1.3). One replica holds advisory lock
+  # 881726402 and ticks schedule dispatch, lease recovery, and retention
+  # purge. No CronJob for those three. "false" opts out. Invalid is a boot-fail.
+  # Encrypted backups are not this loop.
+  SCHEDULER_ENABLED: "true"
+  SCHEDULER_INTERVAL: "30s"
   # Encrypted artifact objects on the container /tmp emptyDir (read-only root).
   ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"
   ARTIFACT_DOWNLOAD_TTL: "60s"

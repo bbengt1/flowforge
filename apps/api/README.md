@@ -165,6 +165,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, demo vault credentials, and marks first-run bootstrap complete (wizard skip). Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
 | `PUBLIC_BASE_URL` | empty | Operator-facing origin (`http`/`https`) persisted by localseed skip. Never returned by `GET /api/v1/bootstrap`. Compose defaults `http://localhost:3000`. |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `SCHEDULER_ENABLED` | on | In-process leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a boot-fail. Multi-replica safe (advisory lock `881726402`). Losing the lock stops the tick immediately. |
+| `SCHEDULER_INTERVAL` | `30s` | Go duration `1s`–`24h` for all three ticks. Invalid is a boot-fail. |
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
 | `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |

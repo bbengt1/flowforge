@@ -152,12 +152,11 @@ func (s *Server) recoverJobs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	n, err := s.workflows.RecoverExpiredLeases(r.Context(), scope, s.now())
+	n, err := s.recoverWorkspace(r.Context(), scope)
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	s.syncWaitingApprovals(r.Context(), scope)
 	writeJSON(w, http.StatusOK, recoverJobsResponse{Recovered: n})
 }
 

@@ -249,7 +249,7 @@ func inferBootstrap(db postgres.Checker) bootstrap.Store {
 	return bootstrap.NewMemory()
 }
 
-func newServer(d Deps) http.Handler {
+func newServer(d Deps) *API {
 	// Production cmd/api uses NewWithDeps with a postgres.Pool and no
 	// explicit Store. Infer identity / isolation / session / workflow
 	// stores from that pool so mint, membership, and exchange can run.
@@ -618,7 +618,10 @@ func newServer(d Deps) http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 
-	return withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router))))))
+	return &API{
+		Handler: withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router)))))),
+		srv:     s,
+	}
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

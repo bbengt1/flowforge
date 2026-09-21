@@ -8,7 +8,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
-2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`. Production provider dispatch is the runner Deployment (`/usr/local/bin/runner`); see [Production runner](#production-runner).
+2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`. Production provider dispatch is the runner Deployment (`/usr/local/bin/runner`); see [Production runner](#production-runner). The API process also runs the [leader-elected scheduler](#leader-elected-scheduler) (`SCHEDULER_ENABLED`, default on) so schedule dispatch, lease recovery, and retention purge do not need an external cron. Set `SCHEDULER_ENABLED=0` to opt out.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
 4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). When `local_logins` is empty it also seeds the **one-time** local Login operator — see [First-run local Login](#first-run-local-login). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
@@ -101,6 +101,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `LOCK_TIMEOUT` | `5s` | PostgreSQL `lock_timeout` on the same checkout. Go duration. Invalid/zero keeps `5s`. Clamped at `1m` and never above `STATEMENT_TIMEOUT`. |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | **Local/dev only.** Compose `worker` claims `/api/v1/jobs/claim`. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this or run `/usr/local/bin/worker`. |
+| `SCHEDULER_ENABLED` | on | API leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a **boot-fail**. See [Leader-elected scheduler](#leader-elected-scheduler). |
+| `SCHEDULER_INTERVAL` | `30s` | Go duration `1s`–`24h` shared by those three ticks. Invalid is a **boot-fail**. |
 | `RUNNER` | unset (on when production-locked) | **Production runner only.** `0`/`false`/`off`/`no` exits 0. Any value in `development`/`dev`/`local`/`test` with `REQUIRE_TLS` false is a **boot-fail** (`use cmd/worker`). |
 | `RUNNER_USER_ID` | empty | Existing user UUID the runner claims as. Does not upsert. |
 | `RUNNER_ISSUER` / `RUNNER_SUBJECT` | first `PLATFORM_ADMINS` pair | Lookup of an existing principal (`FindUser`, no upsert) when `RUNNER_USER_ID` is empty. Must have `workflow.execute`. |
@@ -474,6 +476,29 @@ than **15s**, `GET /api/v1/executions/{id}` includes additive
 `statusReason: "no-worker"`. Status stays `queued`. Chloe can show
 “no worker is claiming jobs”. Production without a worker surfaces
 the same hint.
+
+## Leader-elected scheduler
+
+The API process ticks three loops itself. No external cron caller is required for them:
+
+| Hook | What it calls | Scope |
+| --- | --- | --- |
+| Schedule dispatch | The same path as `POST /api/v1/schedules/dispatch` | Due **enabled** schedules pinned to a **published** version. Drafts and missing versions are skipped. |
+| Lease recovery | The same path as `POST /api/v1/jobs/recover` | Expired `claimed` / `running` leases become `indeterminate`. A stale HMAC `jobToken` still cannot complete. |
+| Retention purge | The same path as `POST /api/v1/retention/purge` | Expired artifacts (payload + metadata), executions, and audits. Legal holds are skipped. |
+
+Replicas campaign with Postgres `pg_try_advisory_lock` **881726402** (not the migration lock `881726401`). The winner holds one application-pool connection (`SET ROLE flowforge_app`) until it stops. Other replicas do not tick. Workspace rows still use `app.set_workspace_id` under FORCE RLS. The lock connection is not used for those queries.
+
+Losing that session stops the replica immediately: the in-flight hook is cancelled, and dispatch, recovery, and purge do not start again until it holds the lock. A schedule fire uses one idempotency key, so a raced start replays the existing execution.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SCHEDULER_ENABLED` | on when unset | `1`/`true`/`yes`/`on` runs the loop. `0`/`false`/`no`/`off` opts out. Any other value is a **boot-fail**. |
+| `SCHEDULER_INTERVAL` | `30s` | Go duration from `1s` to `24h`. Invalid values are a **boot-fail**. Dispatch, recover, and purge share this interval. |
+
+Compose sets both (default on, `30s`). `deploy/k8s` ConfigMap does the same so multiple API replicas elect one leader. Logs record counts only (`started`, `recovered`, `purged`) and never secrets, tickets, or storage refs.
+
+Encrypted `pg_dump` is **not** this loop. Schedule `scripts/backup/encrypt-pg-dump.sh` yourself (G.1.4). The HTTP endpoints stay for an operator session (`workflow.execute` or `workspace.administer`, plus CSRF).
 
 ## Metrics and OpenAPI scrape (ADV-020)
 

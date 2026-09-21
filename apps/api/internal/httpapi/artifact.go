@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -384,20 +385,31 @@ func (s *Server) purgeRetention(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	now := s.now()
-	plan, err := s.workflows.PlanRetentionPurge(r.Context(), scope, now)
+	out, err := s.purgeWorkspace(r.Context(), scope, s.now())
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) purgeWorkspace(ctx context.Context, scope isolation.Scope, now time.Time) (retentionPurgeResponse, error) {
+	if s.workflows == nil {
+		return retentionPurgeResponse{}, wfstore.ErrStoreUnavailable
+	}
+	plan, err := s.workflows.PlanRetentionPurge(ctx, scope, now)
+	if err != nil {
+		return retentionPurgeResponse{}, err
+	}
 	purged := 0
 	for _, art := range plan.Purge {
-		_ = s.objects.Delete(scope.WorkspaceID(), art.StorageRef)
-		if err := s.workflows.DeleteArtifact(r.Context(), scope, art.ID); err != nil {
-			writeWorkflowStoreError(w, r, err)
-			return
+		if s.objects != nil {
+			_ = s.objects.Delete(scope.WorkspaceID(), art.StorageRef)
 		}
-		_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+		if err := s.workflows.DeleteArtifact(ctx, scope, art.ID); err != nil {
+			return retentionPurgeResponse{}, err
+		}
+		_, _ = s.workflows.WriteAudit(ctx, scope, wfstore.AuditWrite{
 			Action:       "artifact.retention.purged",
 			ResourceType: "artifact",
 			ResourceID:   art.ID,
@@ -407,7 +419,7 @@ func (s *Server) purgeRetention(w http.ResponseWriter, r *http.Request) {
 		purged++
 	}
 	for _, art := range plan.Hold {
-		_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+		_, _ = s.workflows.WriteAudit(ctx, scope, wfstore.AuditWrite{
 			Action:       "artifact.retention.held",
 			ResourceType: "artifact",
 			ResourceID:   art.ID,
@@ -415,17 +427,16 @@ func (s *Server) purgeRetention(w http.ResponseWriter, r *http.Request) {
 			Details:      map[string]any{"executionId": art.ExecutionID, "kind": art.Kind},
 		})
 	}
-	execs, audits, err := s.workflows.PurgeExpired(r.Context(), scope, now)
+	execs, audits, err := s.workflows.PurgeExpired(ctx, scope, now)
 	if err != nil {
-		writeWorkflowStoreError(w, r, err)
-		return
+		return retentionPurgeResponse{}, err
 	}
-	writeJSON(w, http.StatusOK, retentionPurgeResponse{
+	return retentionPurgeResponse{
 		Purged:     purged,
 		Held:       len(plan.Hold),
 		Executions: execs,
 		Audits:     audits,
-	})
+	}, nil
 }
 
 func (s *Server) authorizeArtifact(r *http.Request, scope isolation.Scope, artifactID string) (wfstore.Artifact, error) {
