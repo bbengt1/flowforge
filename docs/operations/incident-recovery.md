@@ -17,8 +17,8 @@ Companion pages: [deployment](../deployment.md),
 
 | Probe | Path | Auth | Meaning | Typical fail |
 | --- | --- | --- | --- | --- |
-| Liveness | `GET /api/v1/health` | none | Process is serving. Does **not** check PostgreSQL. | Process down / crash-loop. `200 {"status":"ok"}` otherwise. |
-| Readiness | `GET /api/v1/readiness` | none | PostgreSQL is reachable. | `503` RFC 9457 `dependency-unavailable` while the DB is down or migrations have not finished. `200 {"status":"ready"}` after connect + migrate. |
+| Liveness | `GET /api/v1/health` | none | Process is serving. Does **not** check PostgreSQL. Body includes non-secret `version` / `sha`. | Process down / crash-loop. `200 {"status":"ok","version":"…","sha":"…"}` otherwise. Missing identity is `dev`/`unknown`. |
+| Readiness | `GET /api/v1/readiness` | none | PostgreSQL is reachable. Ready body repeats `version` / `sha`. | `503` RFC 9457 `dependency-unavailable` while the DB is down or migrations have not finished. `200 {"status":"ready","version":"…","sha":"…"}` after connect + migrate. |
 
 Kubernetes (`deploy/k8s/api-deployment.yaml`):
 
@@ -41,6 +41,11 @@ The process boots even if PostgreSQL is down. On connect it applies
 forward-only migrations recorded in `schema_migrations`. Re-running
 migrate is a no-op for applied versions. Concurrent migrate runners
 serialize on advisory lock `881726401` (E12.2).
+
+`version` / `sha` on a 200 health or readiness body identify the
+running binary (image ldflags or `BUILD_VERSION` / `BUILD_SHA`). They
+are never secrets. Missing values are `dev` / `unknown` and do not
+change probe status.
 
 `GET /api/v1/metrics` is **not** a probe. It requires
 `platform.administer`. Do not point kubelet at it.

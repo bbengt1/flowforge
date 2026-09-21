@@ -24,8 +24,38 @@ func TestHealthOK(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	assertJSONStatus(t, rec.Body.Bytes(), "ok")
+	payload := assertJSONStatus(t, rec.Body.Bytes(), "ok")
+	if payload["version"] == "" || payload["sha"] == "" {
+		t.Fatalf("missing version metadata: %v", payload)
+	}
 	assertFoundationHeaders(t, rec)
+}
+
+func TestHealthPublishesSafeBuildIdentity(t *testing.T) {
+	t.Setenv("BUILD_VERSION", "1.4.0")
+	t.Setenv("BUILD_SHA", "cafebabedeadbeef")
+	h := New(nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	payload := assertJSONStatus(t, rec.Body.Bytes(), "ok")
+	if payload["version"] != "1.4.0" || payload["sha"] != "cafebabedeadbeef" {
+		t.Fatalf("identity = %v", payload)
+	}
+}
+
+func TestHealthIgnoresUnsafeBuildIdentity(t *testing.T) {
+	t.Setenv("BUILD_VERSION", "-----BEGIN PRIVATE KEY-----")
+	t.Setenv("BUILD_SHA", "not-a-git-object")
+	h := New(nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	payload := assertJSONStatus(t, rec.Body.Bytes(), "ok")
+	if payload["version"] != "dev" || payload["sha"] != "unknown" {
+		t.Fatalf("unsafe identity leaked: %v", payload)
+	}
 }
 
 func TestReadinessReady(t *testing.T) {
@@ -37,7 +67,10 @@ func TestReadinessReady(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	assertJSONStatus(t, rec.Body.Bytes(), "ready")
+	payload := assertJSONStatus(t, rec.Body.Bytes(), "ready")
+	if payload["version"] == "" || payload["sha"] == "" {
+		t.Fatalf("readiness missing version metadata: %v", payload)
+	}
 	assertFoundationHeaders(t, rec)
 }
 
@@ -213,7 +246,7 @@ func TestOpenAPIAndSwagger(t *testing.T) {
 	}
 }
 
-func assertJSONStatus(t *testing.T, body []byte, want string) {
+func assertJSONStatus(t *testing.T, body []byte, want string) map[string]string {
 	t.Helper()
 	var payload map[string]string
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -222,6 +255,7 @@ func assertJSONStatus(t *testing.T, body []byte, want string) {
 	if payload["status"] != want {
 		t.Fatalf("status = %q, want %q", payload["status"], want)
 	}
+	return payload
 }
 
 func assertFoundationHeaders(t *testing.T, rec *httptest.ResponseRecorder) {

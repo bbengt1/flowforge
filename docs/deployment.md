@@ -91,6 +91,10 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
+| `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA published on `GET /api/v1/health` and `/readiness`. Compose and CI pass it as a Docker **build arg** into Go ldflags (`apps/api/Dockerfile`). `smoke.yml` sets `BUILD_SHA=${{ github.sha }}`. Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe/missing → `unknown`. Never a secret. Health stays 200. |
+| `BUILD_VERSION` | `dev` (ldflags) | Non-secret tag/version on the same probes. Same injection path as `BUILD_SHA`. Unsafe/missing → `dev`. |
+| `STATEMENT_TIMEOUT` | `15s` | PostgreSQL `statement_timeout` on every application-pool checkout (`BeforeAcquire`). Go duration. Invalid/zero keeps `15s`. Clamped at `5m`. Not applied during migrate. |
+| `LOCK_TIMEOUT` | `5s` | PostgreSQL `lock_timeout` on the same checkout. Go duration. Invalid/zero keeps `5s`. Clamped at `1m` and never above `STATEMENT_TIMEOUT`. |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | **Local/dev only.** Compose `worker` claims `/api/v1/jobs/claim`. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this or run `/usr/local/bin/worker`. |
 | `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. |

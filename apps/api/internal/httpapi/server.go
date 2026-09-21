@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
+	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -621,7 +622,7 @@ func newServer(d Deps) http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, probeIdentity("ok"))
 }
 
 func (s *Server) readiness(w http.ResponseWriter, r *http.Request) {
@@ -633,7 +634,19 @@ func (s *Server) readiness(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "PostgreSQL is not reachable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	writeJSON(w, http.StatusOK, probeIdentity("ready"))
+}
+
+// probeIdentity is the secret-free liveness/readiness body. version/sha
+// come from ldflags or BUILD_* env; unsafe values become "dev"/"unknown"
+// and never change the probe status.
+func probeIdentity(status string) map[string]string {
+	info := buildinfo.Resolve()
+	return map[string]string{
+		"status":  status,
+		"version": info.Version,
+		"sha":     info.SHA,
+	}
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {

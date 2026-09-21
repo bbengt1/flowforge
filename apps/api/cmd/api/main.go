@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
@@ -30,6 +31,8 @@ func main() {
 		log.Error("load config", "error", err)
 		os.Exit(1)
 	}
+	ident := buildinfo.Resolve()
+	log.Info("build identity", "version", ident.Version, "sha", ident.SHA)
 
 	pool := postgres.NewPool(cfg.DatabaseURL, log, cfg.MigrateTimeout)
 	bootstrapLogin := localseed.BootstrapLoginHook(log)

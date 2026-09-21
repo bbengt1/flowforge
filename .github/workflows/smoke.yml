@@ -22,6 +22,8 @@ jobs:
     env:
       POSTGRES_USER: flowforge
       POSTGRES_DB: flowforge
+      # G.0.10: compose build args + health JSON. Non-secret commit SHA.
+      BUILD_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

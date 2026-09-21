@@ -65,8 +65,16 @@ assert_body() {
 }
 
 echo "smoke against ${BASE_URL}"
-wait_for /api/v1/health 200 '.status == "ok"'
-wait_for /api/v1/readiness 200 '.status == "ready"'
+wait_for /api/v1/health 200 '.status == "ok" and (.version | type == "string") and (.sha | type == "string")'
+wait_for /api/v1/readiness 200 '.status == "ready" and (.version | type == "string") and (.sha | type == "string")'
+if [[ -n "${BUILD_SHA:-}" && "${BUILD_SHA}" != "unknown" ]]; then
+  code="$(request "${BASE_URL}/api/v1/health")"
+  if [[ "$code" != "200" ]] || ! jq -e --arg sha "$BUILD_SHA" '.status == "ok" and .sha == $sha' "$BODY" >/dev/null 2>&1; then
+    echo "assert failed GET /api/v1/health sha: status=${code} want sha=${BUILD_SHA} body=$(cat "$BODY")" >&2
+    exit 1
+  fi
+  echo "ok GET /api/v1/health sha matches BUILD_SHA"
+fi
 
 # ADV-020: metrics and OpenAPI/swagger are gated. Probes stay open.
 for path in /api/v1/metrics /api/v1/openapi.yaml /api/v1/openapi.json /api/v1/swagger; do

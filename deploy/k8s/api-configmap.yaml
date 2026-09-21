@@ -27,6 +27,14 @@ data:
   # PORTAL_ISSUER_ALLOWLIST: "https://portal.example"
   SESSION_IDLE_TIMEOUT: "30m"
   SESSION_ABSOLUTE_TIMEOUT: "12h"
+  # Optional. Prefer baking BUILD_SHA / BUILD_VERSION into the image
+  # (Dockerfile ARG → ldflags). Runtime env overrides the baked value.
+  # Health publishes only an allowlisted tag / hex SHA.
+  # BUILD_SHA: "unknown"
+  # BUILD_VERSION: "dev"
+  # Application-pool checkout GUCs (Go durations). Defaults 15s / 5s.
+  # STATEMENT_TIMEOUT: "15s"
+  # LOCK_TIMEOUT: "5s"
   # Encrypted artifact objects on the container /tmp emptyDir (read-only root).
   ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"
   ARTIFACT_DOWNLOAD_TTL: "60s"

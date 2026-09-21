@@ -11,8 +11,15 @@ import (
 
 // applyPoolHooks resets leftover session GUCs on checkout and, when
 // assumeAppRole is true, assumes flowforge_app so FORCE RLS cannot be bypassed
-// by a superuser login role leftover from Docker/CI.
+// by a superuser login role leftover from Docker/CI. statement_timeout and
+// lock_timeout are applied on every BeforeAcquire so a prior SET cannot
+// leave a pooled connection without bounds.
 func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
+	applyPoolHooksWith(cfg, assumeAppRole, TimeoutsFromEnv())
+}
+
+func applyPoolHooksWith(cfg *pgxpool.Config, assumeAppRole bool, timeouts Timeouts) {
+	timeouts = timeouts.clamp()
 	cfg.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		if _, err := conn.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`); err != nil {
 			return false, nil
@@ -23,6 +30,12 @@ func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
 			}
 		}
 		return true, nil
+	}
+	cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+		if err := applySessionTimeouts(ctx, conn, timeouts); err != nil {
+			return false
+		}
+		return true
 	}
 	if assumeAppRole {
 		cfg.AfterRelease = func(conn *pgx.Conn) bool {
