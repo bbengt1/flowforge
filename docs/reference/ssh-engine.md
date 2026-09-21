@@ -1,8 +1,10 @@
 # SSH engine
 
+**Runtime:** specified contract and library only. **No shipped worker opens an SSH session.** Compose local worker fails `ssh.run` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+
 ## Purpose
 
-The SSH engine runs approved remote operating-system operations as a workflow node. It is not an interactive terminal and does not accept arbitrary user-provided shell commands.
+The SSH engine is specified to run approved remote operating-system operations as a workflow node. It is not an interactive terminal and does not accept arbitrary user-provided shell commands.
 
 ## Node contract
 

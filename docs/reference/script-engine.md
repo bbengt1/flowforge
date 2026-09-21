@@ -1,8 +1,10 @@
 # Script engine
 
+**Runtime:** specified contract, publish/sign pipeline, and `replicas: 0` runner template. **No shipped worker starts a script pod.** Compose local worker fails `script.python` / `script.go` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+
 ## Purpose
 
-The script engine runs Python and Go automation as isolated workflow nodes. It supports authored code without granting host access, arbitrary package installation, or implicit credentials.
+The script engine is specified to run Python and Go automation as isolated workflow nodes. It supports authored code without granting host access, arbitrary package installation, or implicit credentials.
 
 ## Node contract
 

@@ -1,8 +1,10 @@
 # Kubernetes API engine
 
+**Runtime:** specified contract and library only. **No shipped worker calls this engine.** Author → validate → publish → dispatch still ends `failed` / `local-worker-unsupported` on compose. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+
 ## Purpose
 
-The Kubernetes engine is FlowForge's first backend workflow capability. It lets an authorized workspace apply approved namespace-scoped manifests, inspect resources, and wait for rollout outcomes without exposing an unrestricted Kubernetes proxy.
+The Kubernetes engine is FlowForge's first **specified** backend workflow capability. When a production worker exists, it lets an authorized workspace apply approved namespace-scoped manifests, inspect resources, and wait for rollout outcomes without exposing an unrestricted Kubernetes proxy.
 
 ## MVP operations
 
