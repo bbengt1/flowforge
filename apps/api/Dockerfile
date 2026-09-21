@@ -16,9 +16,21 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
- && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
- && go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+# G.0.10 / C1: bake non-secret identity into the binary. Compose and CI
+# pass BUILD_SHA / BUILD_VERSION as build args (see docker-compose.yml
+# and .github/workflows/smoke.yml). Missing args stay "unknown" / "dev"
+# and never fail the image build or GET /api/v1/health.
+ARG BUILD_SHA=unknown
+ARG BUILD_VERSION=dev
+RUN go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/api ./cmd/api \
+ && go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/migrate ./cmd/migrate \
+ && go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/worker ./cmd/worker
 
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \

@@ -6,8 +6,8 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). |
-| `GET` | `/api/v1/readiness` | `200 {"status":"ready"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
+| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok","version":"…","sha":"…"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). Missing/unsafe identity is `dev` / `unknown` and never fails the probe. |
+| `GET` | `/api/v1/readiness` | `200 {"status":"ready","version":"…","sha":"…"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
 | `GET` | `/api/v1/bootstrap` | First-run wizard gate. Status flags only. Unauthenticated when incomplete; session required when complete. Never gates `/embed/v1`. |
 | `POST` | `/api/v1/bootstrap/persistence` | Wizard step 1. Body `{confirm:true}` only (no DSN). `200` status with `steps.persistence.ready=true`. Does not mark complete. Incomplete installs may call without a session. Already complete → `409`. PostgreSQL down → `503`. |
 | `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?, password?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Optional password is stored as a hash for `POST /login` and is never echoed. |
@@ -109,7 +109,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/{collection}/{resourceId}/select` | Pin a published revision. |
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/pins` | Pins bound at workflow publish. |
 
-Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout.
+Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout (`PrepareConn`) and set `statement_timeout` / `lock_timeout` (`STATEMENT_TIMEOUT` / `LOCK_TIMEOUT`, defaults 15s / 5s).
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 
@@ -123,6 +123,10 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `BUILD_VERSION` | `dev` (ldflags) | Non-secret release/tag on `/health` and `/readiness`. Image builds set this via Dockerfile `ARG BUILD_VERSION` → Go ldflags. Runtime env overrides the baked value. Unsafe values become `dev`. |
+| `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA (7–40 hex) on `/health` and `/readiness`. Compose/CI pass `BUILD_SHA` as a build arg (`smoke.yml` uses `${{ github.sha }}`). Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe values become `unknown`. Health never fails because this is missing. |
+| `STATEMENT_TIMEOUT` | `15s` | PostgreSQL `statement_timeout` applied on every application-pool checkout (`pgxpool` `PrepareConn`; the v5 checkout hook). Go duration. Invalid/zero keeps `15s`. Clamped at `5m`. Not applied to the migrate/admin pool. |
+| `LOCK_TIMEOUT` | `5s` | PostgreSQL `lock_timeout` on the same checkout. Go duration. Invalid/zero keeps `5s`. Clamped at `1m` and never above `STATEMENT_TIMEOUT`. |
 | `HTTP_ADDR` | `:8080` | Listen address. |
 | `PORT` | — | Used as `:PORT` when `HTTP_ADDR` is unset. |
 | `DATABASE_URL` | built from `POSTGRES_*` | PostgreSQL URL. Preferred. No secrets are hard-coded. |
@@ -201,11 +205,18 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+      args:
+        BUILD_SHA: ${BUILD_SHA:-unknown}
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
     ports:
       - "8080:8080"
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      BUILD_SHA: ${BUILD_SHA:-}
+      BUILD_VERSION: ${BUILD_VERSION:-}
+      STATEMENT_TIMEOUT: ${STATEMENT_TIMEOUT:-15s}
+      LOCK_TIMEOUT: ${LOCK_TIMEOUT:-5s}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}

@@ -63,7 +63,10 @@ paths:
     get:
       operationId: getHealth
       summary: Process liveness
-      description: Returns process liveness. Does not check dependencies.
+      description: |
+        Returns process liveness plus non-secret `version` / `sha`.
+        Does not check dependencies. Missing build identity is
+        `dev` / `unknown` and does not fail the probe.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -78,6 +81,8 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+                version: dev
+                sha: unknown
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -88,7 +93,10 @@ paths:
     get:
       operationId: getReadiness
       summary: PostgreSQL dependency readiness
-      description: Returns ready when PostgreSQL is reachable; otherwise a problem details response.
+      description: |
+        Returns ready when PostgreSQL is reachable, plus the same
+        non-secret `version` / `sha` as `/health`. Otherwise a
+        problem details response (no version metadata).
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -103,6 +111,8 @@ paths:
                 $ref: "#/components/schemas/Readiness"
               example:
                 status: ready
+                version: dev
+                sha: unknown
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
@@ -7539,18 +7549,37 @@ components:
               versionId: {type: string, format: uuid}
     Health:
       type: object
-      required: [status]
+      required: [status, version, sha]
+      description: |
+        Process liveness plus non-secret build identity. `version` and
+        `sha` come from image ldflags (`BUILD_VERSION` / `BUILD_SHA`
+        build args) or the same env names at runtime. Missing or
+        unsafe values are `dev` / `unknown`. Health never fails because
+        identity is absent. No secrets, DSNs, or keys.
       properties:
         status:
           type: string
           enum: [ok]
+        version:
+          type: string
+          description: Release or image tag. Default `dev`.
+        sha:
+          type: string
+          description: Git object name (7–40 hex) or `unknown`.
     Readiness:
       type: object
-      required: [status]
+      required: [status, version, sha]
+      description: |
+        PostgreSQL reachable, plus the same non-secret build identity
+        as `/health`. 503 problem responses do not include version/sha.
       properties:
         status:
           type: string
           enum: [ready]
+        version:
+          type: string
+        sha:
+          type: string
     BootstrapPersistenceConfirm:
       type: object
       additionalProperties: false

@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// TestOpenRecreatesAppRoleAfterClusterRestore drops the cluster-global
+// flowforge_app role (DROP OWNED BY, then DROP ROLE) and asserts Open
+// recreates it. That is incompatible with parallel packages sharing
+// TEST_DATABASE_URL: in-flight INSERTs see 42501, which stores map to
+// "not found". CI therefore runs `go test -p 1` (api-tests + e12-security).
 func TestOpenRecreatesAppRoleAfterClusterRestore(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

@@ -96,8 +96,14 @@ jobs:
           go-version: "1.26.x"
           check-latest: true
           cache-dependency-path: apps/api/go.sum
+      # Shared TEST_DATABASE_URL: serialize packages so parallel
+      # integration tests cannot collide on tenants/roles. e12-security
+      # does the same. The postgres package's restore rehearsal drops
+      # flowforge_app (DROP OWNED BY / DROP ROLE); that is cluster-global
+      # and revokes INSERT from in-flight opsconfig/vault tests, which
+      # map 42501 to "not found".
       - name: Test with coverage
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+        run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
       - name: Coverage summary
         if: always()
         run: |
