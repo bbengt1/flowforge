@@ -23,47 +23,47 @@ func finiteHeadroom(capacity, peak float64) float64 {
 
 // Report is the machine-readable E12.2 capacity evidence payload.
 type Report struct {
-	ID         string            `json:"id"`
-	Mode       string            `json:"mode"`
-	RanAt      string            `json:"ranAt"`
-	MinRatio   float64           `json:"minHeadroom"`
-	Peaks      Peaks             `json:"peaks"`
-	Capacity   Capacity          `json:"capacity"`
+	ID         string             `json:"id"`
+	Mode       string             `json:"mode"`
+	RanAt      string             `json:"ranAt"`
+	MinRatio   float64            `json:"minHeadroom"`
+	Peaks      Peaks              `json:"peaks"`
+	Capacity   Capacity           `json:"capacity"`
 	Headroom   map[string]float64 `json:"headroom"`
-	WorkerLoss WorkerLossProof   `json:"workerLoss"`
-	OK         bool              `json:"ok"`
-	Claims     []string          `json:"claims"`
-	Failures   []string          `json:"failures,omitempty"`
+	WorkerLoss WorkerLossProof    `json:"workerLoss"`
+	OK         bool               `json:"ok"`
+	Claims     []string           `json:"claims"`
+	Failures   []string           `json:"failures,omitempty"`
 }
 
 // Peaks are observed maxima during the bounded load window.
 type Peaks struct {
-	DBConnections     int     `json:"dbConnections"`
-	DBWritesPerSec    float64 `json:"dbWritesPerSec"`
-	QueueLagSeconds   float64 `json:"queueLagSeconds"`
-	QueueDepth        int     `json:"queueDepth"`
-	StorageGrowthBytes int64  `json:"storageGrowthBytes"`
-	LoadJobs          int     `json:"loadJobs"`
-	LoadWorkers       int     `json:"loadWorkers"`
-	LoadElapsedSec    float64 `json:"loadElapsedSec"`
+	DBConnections      int     `json:"dbConnections"`
+	DBWritesPerSec     float64 `json:"dbWritesPerSec"`
+	QueueLagSeconds    float64 `json:"queueLagSeconds"`
+	QueueDepth         int     `json:"queueDepth"`
+	StorageGrowthBytes int64   `json:"storageGrowthBytes"`
+	LoadJobs           int     `json:"loadJobs"`
+	LoadWorkers        int     `json:"loadWorkers"`
+	LoadElapsedSec     float64 `json:"loadElapsedSec"`
 }
 
 // Capacity is configured or measured headroom denominators.
 type Capacity struct {
-	DBConnections           int     `json:"dbConnections"`
-	DBWritesPerSec             float64 `json:"dbWritesPerSec"`
-	QueueLagSecondsSLO         float64 `json:"queueLagSecondsSLO"`
-	QueueDepthBudget           int     `json:"queueDepthBudget"`
-	StorageBudgetBytes         int64   `json:"storageBudgetBytes"`
-	PostgresMaxConnections     int     `json:"postgresMaxConnections"`
-	MeasuredWriteCeilingPS     float64 `json:"measuredWriteCeilingPerSec"`
+	DBConnections               int     `json:"dbConnections"`
+	DBWritesPerSec              float64 `json:"dbWritesPerSec"`
+	QueueLagSecondsSLO          float64 `json:"queueLagSecondsSLO"`
+	QueueDepthBudget            int     `json:"queueDepthBudget"`
+	StorageBudgetBytes          int64   `json:"storageBudgetBytes"`
+	PostgresMaxConnections      int     `json:"postgresMaxConnections"`
+	MeasuredWriteCeilingPS      float64 `json:"measuredWriteCeilingPerSec"`
 	DocumentedWriteBudgetPerSec float64 `json:"documentedWriteBudgetPerSec"`
 }
 
 // WorkerLossProof records the lease-expiry / fencing recovery path.
 type WorkerLossProof struct {
-	Recovered            int  `json:"recovered"`
-	BecameIndeterminate  bool `json:"becameIndeterminate"`
+	Recovered             int  `json:"recovered"`
+	BecameIndeterminate   bool `json:"becameIndeterminate"`
 	StaleCompleteRejected bool `json:"staleCompleteRejected"`
 }
 

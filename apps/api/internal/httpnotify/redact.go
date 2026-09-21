@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	redactedMarker     = "[redacted]"
+	redactedMarker      = "[redacted]"
 	minTrackedSecretLen = 4
 )
 
@@ -191,16 +191,6 @@ func looksLikeSecretString(s string) bool {
 		return true
 	}
 	return false
-}
-
-func boundBytes(b []byte, max int) ([]byte, bool) {
-	if max <= 0 {
-		max = DefaultMaxResponseBytes
-	}
-	if len(b) <= max {
-		return b, false
-	}
-	return b[:max], true
 }
 
 func decodeJSONObject(raw []byte) (map[string]any, bool) {

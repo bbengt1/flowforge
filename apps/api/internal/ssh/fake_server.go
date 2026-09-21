@@ -15,19 +15,19 @@ import (
 
 // FakeServer is an in-process SSH server for isolation tests.
 type FakeServer struct {
-	Addr           string
-	HostSigner     cryptossh.Signer
-	Fingerprint    string
-	UserSigner     cryptossh.Signer
-	Username       string
-	Password       string
-	Delay          time.Duration
-	Stdout         string
-	ExitStatus     uint32
+	Addr        string
+	HostSigner  cryptossh.Signer
+	Fingerprint string
+	UserSigner  cryptossh.Signer
+	Username    string
+	Password    string
+	Delay       time.Duration
+	Stdout      string
+	ExitStatus  uint32
 	// OnExec overrides stdout/exit per recorded command. Used by E8.3
 	// verification tests. Returning a non-nil *status uses that exit code.
-	OnExec func(cmd string) (stdout string, status uint32)
-	mu     sync.Mutex
+	OnExec         func(cmd string) (stdout string, status uint32)
+	mu             sync.Mutex
 	listener       net.Listener
 	authMethods    []string
 	passwords      []string

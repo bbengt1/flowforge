@@ -13,16 +13,16 @@ import (
 // assumeAppRole is true, assumes flowforge_app so FORCE RLS cannot be bypassed
 // by a superuser login role leftover from Docker/CI.
 func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
-	cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+	cfg.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		if _, err := conn.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`); err != nil {
-			return false
+			return false, nil
 		}
 		if assumeAppRole {
 			if _, err := conn.Exec(ctx, `SET ROLE `+AppRole); err != nil {
-				return false
+				return false, nil
 			}
 		}
-		return true
+		return true, nil
 	}
 	if assumeAppRole {
 		cfg.AfterRelease = func(conn *pgx.Conn) bool {

@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
-	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func withLayout(src string) string {

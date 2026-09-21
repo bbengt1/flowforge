@@ -188,12 +188,11 @@ func looksLikeSecret(doc Document) bool {
 }
 
 func deniedAPIGroup(apiVersion string) bool {
-	group := apiVersion
-	if i := strings.LastIndex(apiVersion, "/"); i >= 0 {
-		group = apiVersion[:i]
-	} else {
+	i := strings.LastIndex(apiVersion, "/")
+	if i < 0 {
 		return false
 	}
+	group := apiVersion[:i]
 	for _, denied := range deniedAPIGroups {
 		if strings.EqualFold(group, denied) {
 			return true
@@ -358,10 +357,7 @@ func digestPinned(image string) bool {
 }
 
 func hasMutableTag(image string) bool {
-	if strings.Contains(image, "@sha256:") {
-		return false
-	}
-	return true
+	return !strings.Contains(image, "@sha256:")
 }
 
 func imageAllowed(allow []string, image string) bool {

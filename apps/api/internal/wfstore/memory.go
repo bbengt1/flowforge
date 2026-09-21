@@ -630,9 +630,6 @@ func (m *Memory) ListSteps(_ context.Context, scope isolation.Scope, executionID
 	}
 	out := make([]ExecutionStep, len(exec.steps))
 	copy(out, exec.steps)
-	if out == nil {
-		out = []ExecutionStep{}
-	}
 	return out, nil
 }
 
@@ -656,9 +653,6 @@ func (m *Memory) ListJobs(_ context.Context, scope isolation.Scope, executionID 
 	}
 	out := make([]ExecutionJob, len(exec.jobs))
 	copy(out, exec.jobs)
-	if out == nil {
-		out = []ExecutionJob{}
-	}
 	return out, nil
 }
 

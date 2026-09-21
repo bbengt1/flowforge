@@ -4,10 +4,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/sha3"
 	"encoding/hex"
 	"strings"
-
-	"golang.org/x/crypto/sha3"
 )
 
 // SignedBinary is a Go artifact produced by the controlled builder.

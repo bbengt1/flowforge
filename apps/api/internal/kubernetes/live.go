@@ -100,9 +100,9 @@ func (c *LiveClient) Apply(ctx context.Context, obj Unstructured, opts ApplyOpti
 		q.Set("dryRun", "All")
 	}
 	_ = opts.Force // ignored; Force is never sent
-	path, err := resourceURL(kind, ns, name)
-	if err != nil {
-		return nil, err
+	path, urlErr := resourceURL(kind, ns, name)
+	if urlErr != nil {
+		return nil, urlErr
 	}
 	return c.do(ctx, http.MethodPatch, path+"?"+q.Encode(), "application/apply-patch+yaml", body)
 }

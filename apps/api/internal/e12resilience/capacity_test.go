@@ -208,13 +208,13 @@ func TestE12CapacityHeadroomAndWorkerLoss(t *testing.T) {
 			LoadElapsedSec:     loadElapsed.Seconds(),
 		},
 		Capacity: Capacity{
-			DBConnections:              int(postgres.DefaultMaxConns),
-			DBWritesPerSec:             ceiling,
-			QueueLagSecondsSLO:         lagSLO,
-			QueueDepthBudget:           depthBudget,
-			StorageBudgetBytes:         1 << 30, // 1 GiB documented working-set budget
-			PostgresMaxConnections:     maxConnsPG,
-			MeasuredWriteCeilingPS:     ceiling,
+			DBConnections:               int(postgres.DefaultMaxConns),
+			DBWritesPerSec:              ceiling,
+			QueueLagSecondsSLO:          lagSLO,
+			QueueDepthBudget:            depthBudget,
+			StorageBudgetBytes:          1 << 30, // 1 GiB documented working-set budget
+			PostgresMaxConnections:      maxConnsPG,
+			MeasuredWriteCeilingPS:      ceiling,
 			DocumentedWriteBudgetPerSec: writeBudget,
 		},
 		WorkerLoss: WorkerLossProof{

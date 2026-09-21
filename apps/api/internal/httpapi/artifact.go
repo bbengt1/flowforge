@@ -129,11 +129,12 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 	}
 	ct := strings.TrimSpace(req.ContentType)
 	if ct == "" {
-		if kind == artifact.KindLog {
+		switch kind {
+		case artifact.KindLog:
 			ct = "text/plain"
-		} else if kind == artifact.KindOutput {
+		case artifact.KindOutput:
 			ct = "application/json"
-		} else {
+		default:
 			ct = "application/octet-stream"
 		}
 	}

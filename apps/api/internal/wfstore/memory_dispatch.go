@@ -385,14 +385,12 @@ func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Ti
 	if !ok || exec.workspaceID != scope.WorkspaceID() {
 		return RetryResult{}, ErrNotFound
 	}
-	if exec.record.Status == ExecutionIndeterminate && (len(hint) == 0 || hint[0] == nil) {
-		// SSH retry-safe + verification may still queue a verify-first attempt.
-	}
 	stepIdx := indexStep(exec.steps, stepID)
 	if stepIdx < 0 {
 		return RetryResult{}, ErrNotFound
 	}
 	src := exec.steps[stepIdx]
+	// SSH retry-safe + verification may still queue a verify-first attempt.
 	if exec.record.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
 		return RetryResult{}, ErrRetryNotAllowed
 	}

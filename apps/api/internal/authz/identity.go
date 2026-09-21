@@ -130,7 +130,7 @@ func ValidWorkbenchKey(s string) bool {
 		return false
 	}
 	r0 := rune(s[0])
-	if !((r0 >= 'a' && r0 <= 'z') || (r0 >= '0' && r0 <= '9')) {
+	if (r0 < 'a' || r0 > 'z') && (r0 < '0' || r0 > '9') {
 		return false
 	}
 	for _, r := range s {
