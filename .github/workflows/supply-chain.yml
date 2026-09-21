@@ -60,6 +60,9 @@ jobs:
           govulncheck -format json ./... > "${RUNNER_TEMP}/govulncheck.json" || true
           python3 "${GITHUB_WORKSPACE}/scripts/govulncheck-gate.py" "${RUNNER_TEMP}/govulncheck.json"
 
+  # G.0.5 / H3 Go quality gates are jonny's follow (#408). go vet ./... is
+  # clean on main; gofmt -l is not (12 files). Do not add gofmt / golangci-lint
+  # as required jobs until those sources are formatted and lint-clean.
   api-tests:
     name: API unit tests
     runs-on: ubuntu-latest
@@ -99,6 +102,50 @@ jobs:
         run: pnpm install --filter @flowforge/web...
       - name: Test
         run: pnpm --filter @flowforge/web test
+
+  # G.0.5 / H3: required web quality gates. next build is the type-check
+  # (Next 16 typegen); do not use bare tsc — LayoutProps lives in .next/types.
+  web-lint:
+    name: Web lint (max-warnings=0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --filter @flowforge/web...
+      - name: Lint
+        run: pnpm lint --max-warnings=0
+
+  web-build:
+    name: Web production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --filter @flowforge/web...
+      - name: Build
+        run: pnpm build
 
   image-scan:
     name: API image SBOM and vulnerability scan
