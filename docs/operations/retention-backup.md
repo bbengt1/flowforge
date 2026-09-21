@@ -99,9 +99,11 @@ TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=dis
 
 The compose rehearsal boots an isolated API **production-locked** (no
 `APP_ENV`), so it mounts the local-only PKCS#8 PEM
-(`deploy/local/embed-signing.pem`). Do not copy that key to Kubernetes.
-Production still boot-fails without a unique Secret
-`EMBED_SIGNING_KEY` (ADV-006 / ADV-022).
+(`deploy/local/embed-signing.pem`) and uses the compose MinIO bucket
+(`ARTIFACT_S3_*`, no `ARTIFACT_S3_CREATE_BUCKET`). Do not copy that key
+or the MinIO password to Kubernetes. Production still boot-fails
+without a unique Secret `EMBED_SIGNING_KEY` (ADV-006 / ADV-022) and
+without an S3 bucket and credentials.
 
 Last-run pointers:
 

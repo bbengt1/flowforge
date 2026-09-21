@@ -557,7 +557,7 @@ bash scripts/backup/encrypt-pg-dump.sh
 bash scripts/backup/restore-rehearsal.sh
 ```
 
-`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`). CI runs the same script. Production still boot-fails without a unique Secret key.
+`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`) and points at the compose MinIO bucket that the source API already created. It does not set `ARTIFACT_S3_CREATE_BUCKET`. CI runs the same script. Production still boot-fails without a unique Secret key and without bucket credentials.
 
 E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus a schema-level isolated restore that does not need compose:
 

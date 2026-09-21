@@ -302,7 +302,8 @@ jobs:
 
       - name: Restore rehearsal
         # Isolated API is production-locked; the script mounts the local-only
-        # PKCS#8 PEM (ADV-006 / ADV-022). Production boot-fail is unchanged.
+        # PKCS#8 PEM (ADV-006 / ADV-022) and uses the compose MinIO bucket.
+        # ARTIFACT_S3_CREATE_BUCKET stays off. Production boot-fail is unchanged.
         run: bash scripts/backup/restore-rehearsal.sh
 
       - name: Compose logs (on failure)

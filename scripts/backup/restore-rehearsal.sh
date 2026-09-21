@@ -5,7 +5,7 @@
 # Prerequisites: compose `postgres` + `api` are up and /readiness is 200
 # (compose --wait only covers /health; this script waits for readiness).
 # Never prints BACKUP_ENCRYPTION_KEY, DATABASE_URL, POSTGRES_PASSWORD,
-# JOB_BINDING_SECRET, or SCRIPT_SIGNING_KEY.
+# JOB_BINDING_SECRET, SCRIPT_SIGNING_KEY, or ARTIFACT_S3_SECRET_ACCESS_KEY.
 #
 #   export POSTGRES_PASSWORD=...
 #   export BACKUP_ENCRYPTION_KEY=...
@@ -34,6 +34,17 @@ cd "$ROOT"
 # is a boot-fail. Do not copy these into production.
 : "${JOB_BINDING_SECRET:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}"
 : "${SCRIPT_SIGNING_KEY:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}"
+# Production-locked boot requires an existing S3 bucket. Compose api
+# depends_on minio and creates flowforge-artifacts before /readiness.
+# ARTIFACT_S3_CREATE_BUCKET is not passed: it boot-fails when locked.
+# These defaults match compose and are local-only — do not copy them
+# into deploy/k8s.
+: "${ARTIFACT_S3_ENDPOINT:=http://minio:9000}"
+: "${ARTIFACT_S3_BUCKET:=flowforge-artifacts}"
+: "${ARTIFACT_S3_REGION:=us-east-1}"
+: "${ARTIFACT_S3_ACCESS_KEY_ID:=${MINIO_ROOT_USER:-flowforge}}"
+: "${ARTIFACT_S3_SECRET_ACCESS_KEY:=${MINIO_ROOT_PASSWORD:-flowforge-local-dev-minio}}"
+: "${ARTIFACT_S3_USE_PATH_STYLE:=true}"
 
 WORKDIR="${BACKUP_WORKDIR:-$(mktemp -d)}"
 ENC="$WORKDIR/flowforge.sql.enc"
@@ -157,6 +168,12 @@ docker run -d --name "$RESTORE_API" --network "$network" \
   -e EMBED_SIGNING_KEY_ID="$EMBED_SIGNING_KEY_ID" \
   -e JOB_BINDING_SECRET="$JOB_BINDING_SECRET" \
   -e SCRIPT_SIGNING_KEY="$SCRIPT_SIGNING_KEY" \
+  -e ARTIFACT_S3_ENDPOINT="$ARTIFACT_S3_ENDPOINT" \
+  -e ARTIFACT_S3_BUCKET="$ARTIFACT_S3_BUCKET" \
+  -e ARTIFACT_S3_REGION="$ARTIFACT_S3_REGION" \
+  -e ARTIFACT_S3_ACCESS_KEY_ID="$ARTIFACT_S3_ACCESS_KEY_ID" \
+  -e ARTIFACT_S3_SECRET_ACCESS_KEY="$ARTIFACT_S3_SECRET_ACCESS_KEY" \
+  -e ARTIFACT_S3_USE_PATH_STYLE="$ARTIFACT_S3_USE_PATH_STYLE" \
   -v "$EMBED_SIGNING_KEY_FILE:/run/flowforge/embed-signing.pem:ro" \
   "$BACKUP_API_IMAGE" >/dev/null
 
