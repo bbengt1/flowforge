@@ -11,23 +11,28 @@ import (
 
 // Script job configuration status codes. These are safe to log.
 const (
-	ScriptJobsConfigured         = "configured"
-	ScriptJobsAPIUnconfigured    = "api-unconfigured"
-	ScriptJobsTokenUnreadable    = "token-unreadable"
-	ScriptJobsTokenInvalid       = "token-invalid"
-	ScriptJobsCAUnreadable       = "ca-unreadable"
-	ScriptJobsNamespaceInvalid   = "namespace-invalid"
-	ScriptJobsTemplateUnreadable = "template-unreadable"
-	ScriptJobsAPIServerInvalid   = "api-server-invalid"
-	ScriptJobsTokenWithoutAPI    = "token-without-api"
+	ScriptJobsConfigured                 = "configured"
+	ScriptJobsAPIUnconfigured            = "api-unconfigured"
+	ScriptJobsTokenUnreadable            = "token-unreadable"
+	ScriptJobsTokenInvalid               = "token-invalid"
+	ScriptJobsCAUnreadable               = "ca-unreadable"
+	ScriptJobsNamespaceInvalid           = "namespace-invalid"
+	ScriptJobsTemplateUnreadable         = "template-unreadable"
+	ScriptJobsAPIServerInvalid           = "api-server-invalid"
+	ScriptJobsTokenWithoutAPI            = "token-without-api"
+	ScriptJobsNetworkPolicyUnconfigured  = "network-policy-unconfigured"
+	ScriptJobsNetworkPolicyInvalid       = "network-policy-invalid"
+	ScriptJobsNetworkPolicySkipForbidden = "network-policy-skip-forbidden"
 )
 
 // ScriptRuntimeFromEnv wires script.python / script.go to isolated Job
 // creation. A missing API server returns a runtime that fails closed at
 // execution (no in-process harness fallback). A half-configured token or
-// an unreadable template is a boot error. Returned errors are static and
-// do not include token or CA bytes.
-func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]byte, error)) (scripts.IsolationRuntime, string, error) {
+// an unreadable template is a boot error. Production-locked callers refuse
+// script Jobs when CONTROL_PLANE_API_CIDR (or Service + namespace) is
+// missing, and refuse SCRIPT_RUNNER_SKIP_NETWORK_POLICY entirely.
+// Returned errors are static and do not include token or CA bytes.
+func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]byte, error), productionLocked bool) (scripts.IsolationRuntime, string, error) {
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
@@ -45,6 +50,9 @@ func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]b
 	ns := strings.TrimSpace(getenv("SCRIPT_RUNNER_NAMESPACE"))
 	if ns == "" {
 		ns = "flowforge"
+	}
+	if truthyScriptEnv(getenv(scripts.EnvSkipScriptNetworkPolicy)) && productionLocked {
+		return nil, ScriptJobsNetworkPolicySkipForbidden, errors.New("script runner network policy isolation cannot be skipped in production")
 	}
 	host := strings.TrimSpace(getenv("SCRIPT_RUNNER_API_SERVER"))
 	tokenFile := strings.TrimSpace(getenv("SCRIPT_RUNNER_TOKEN_FILE"))
@@ -79,13 +87,35 @@ func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]b
 			return nil, ScriptJobsCAUnreadable, errors.New("script runner CA file is unreadable")
 		}
 	}
-	client, err := scripts.NewAPIJobClient(scripts.APIJobConfig{
-		Host:      host,
-		TokenFile: tokenFile,
-		Token:     token,
-		CAData:    ca,
-		Namespace: ns,
-	})
+	skipPolicy := truthyScriptEnv(getenv(scripts.EnvSkipScriptNetworkPolicy))
+	cfg := scripts.APIJobConfig{
+		Host:              host,
+		TokenFile:         tokenFile,
+		Token:             token,
+		CAData:            ca,
+		Namespace:         ns,
+		SkipNetworkPolicy: skipPolicy,
+	}
+	if !skipPolicy {
+		cp, cpErr := scripts.ParseControlPlaneEnv(
+			getenv(scripts.EnvControlPlaneCIDR),
+			getenv(scripts.EnvControlPlanePort),
+			getenv(scripts.EnvControlPlaneService),
+			getenv(scripts.EnvControlPlaneServiceNamespace),
+		)
+		if cpErr != nil {
+			if errors.Is(cpErr, scripts.ErrControlPlaneMissing) {
+				return scripts.KubernetesJobRuntime{
+					Template:  template,
+					Namespace: ns,
+					Submitter: scripts.NetworkPolicyDenied{},
+				}, ScriptJobsNetworkPolicyUnconfigured, nil
+			}
+			return nil, ScriptJobsNetworkPolicyInvalid, errors.New("script runner control-plane API is invalid")
+		}
+		cfg.ControlPlane = cp
+	}
+	client, err := scripts.NewAPIJobClient(cfg)
 	if err != nil {
 		msg := err.Error()
 		switch {
@@ -93,6 +123,8 @@ func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]b
 			return nil, ScriptJobsNamespaceInvalid, errors.New("script runner namespace is invalid")
 		case strings.Contains(msg, "https"):
 			return nil, ScriptJobsAPIServerInvalid, errors.New("script runner API server must be https")
+		case strings.Contains(msg, "control-plane"):
+			return nil, ScriptJobsNetworkPolicyInvalid, errors.New("script runner control-plane API is invalid")
 		default:
 			return nil, ScriptJobsTokenInvalid, errors.New("script runner API token is missing")
 		}
@@ -102,4 +134,13 @@ func ScriptRuntimeFromEnv(getenv func(string) string, readFile func(string) ([]b
 		Namespace: ns,
 		Submitter: client,
 	}, ScriptJobsConfigured, nil
+}
+
+func truthyScriptEnv(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

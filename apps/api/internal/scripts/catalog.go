@@ -241,7 +241,7 @@ func Catalog() EngineCatalog {
 				"deploy/kubernetes/script-runner-deployment.yaml",
 				"deploy/kubernetes/script-runner-networkpolicy.yaml",
 			},
-			Note:  "E9.2 isolated runner plus E9.3 typed I/O plus E9.4 revocation/emergency-stop. Execute rechecks signature, scan, and revoked_at, validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job created by cmd/runner from deploy/kubernetes/script-runner-deployment.yaml. Lease loss and uncertain emergency stop are indeterminate — never a blind re-run.",
+			Note:  "E9.2 isolated runner plus E9.3 typed I/O plus E9.4 revocation/emergency-stop. Execute rechecks signature, scan, and revoked_at, validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job created by cmd/runner from deploy/kubernetes/script-runner-deployment.yaml. Script Jobs are refused unless the live NetworkPolicy allows only DNS and the control-plane API from CONTROL_PLANE_API_CIDR or a Service in the runner namespace. Lease loss and uncertain emergency stop are indeterminate — never a blind re-run.",
 			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec", "ValidateExecutionInput", "PublicHandles", "Revoke", "EmergencyStop"},
 		},
 		IO: IORules{
@@ -406,6 +406,7 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true without a valid idempotency key or verification.behavior, or verification set on a non-retrySafe node."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, unscoped, or contained plaintext secrets. Handles only."},
 		{Code: CodeEnvDenied, Status: 403, Meaning: "Runtime environment key is outside the allowlist, or plaintext credentials were supplied as env."},
+		{Code: CodeNetworkPolicyDenied, Status: 403, Meaning: "Script Job NetworkPolicy is missing, or egress is not limited to DNS plus the configured control-plane API. Production never skips this check."},
 		{Code: CodeRunnerNotImplemented, Status: 501, Meaning: "Live container runtime requested (RequireLiveRuntime) but only the CI harness is available."},
 	}
 }

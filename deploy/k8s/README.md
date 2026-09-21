@@ -9,7 +9,8 @@ kubectl apply -k deploy/k8s
 Replace before any real environment:
 
 - `ghcr.io/bbengt1/flowforge-api:foundation` with a **digest-pinned** image
-- `ghcr.io/bbengt1/flowforge-script-runner:foundation` (built from `apps/api/Dockerfile.script-runner`) with the runtime-profile digest. The runner creates Jobs from `deploy/kubernetes/script-runner-deployment.yaml`. Add the API server CIDR on `runner-networkpolicy.yaml` or those Jobs cannot be created. See [deployment.md](../../docs/deployment.md#script-runner-image).
+- `ghcr.io/bbengt1/flowforge-script-runner:foundation` (built from `apps/api/Dockerfile.script-runner`) with the runtime-profile digest. The runner creates Jobs from `deploy/kubernetes/script-runner-deployment.yaml` only when `CONTROL_PLANE_API_CIDR` is set on the ConfigMap and both NetworkPolicies below are applied with that CIDR. See [deployment.md](../../docs/deployment.md#script-runner-image).
+- `deploy/kubernetes/script-runner-networkpolicy.yaml` and `deploy/k8s/runner-controlplane-networkpolicy.yaml` via `envsubst '${CONTROL_PLANE_API_CIDR}'` (not part of `kubectl apply -k`; a world CIDR is forbidden). The runner refuses script Jobs when the CIDR or the live script policy is missing. `SCRIPT_RUNNER_SKIP_NETWORK_POLICY` is refused on this production-locked runner.
 - `api.example.com` and the `flowforge-tls` secret (or enable cert-manager)
 - `deploy/k8s/api-secret.example.yaml` with a real `DATABASE_URL` (external secrets / sealed secrets), unique `CREDENTIAL_KEK`, `EMBED_SIGNING_KEY`, `JOB_BINDING_SECRET`, and `SCRIPT_SIGNING_KEY` (missing/malformed HMAC keys are a **boot-fail**)
 - Database egress if PostgreSQL is not a pod labeled `app.kubernetes.io/component=postgres` in this namespace

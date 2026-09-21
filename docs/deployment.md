@@ -433,10 +433,39 @@ namespace. It cannot read Secrets. Apply the script-runner
 NetworkPolicy (`deploy/kubernetes/script-runner-networkpolicy.yaml`);
 do not apply the Job template itself.
 
-The runner NetworkPolicy does not open TCP 443 to the API server. Add
-one `ipBlock` for that address (see the comment in
-`deploy/k8s/runner-networkpolicy.yaml`) or script Jobs fail at the
-network. Do not open `0.0.0.0/0`.
+Script Job egress is fail-closed. `deploy/kubernetes/script-runner-networkpolicy.yaml`
+allows kube-system DNS and one control-plane API destination. The CIDR is
+`CONTROL_PLANE_API_CIDR` from deploy config (canonical prefix, TCP 443 unless
+`CONTROL_PLANE_API_PORT` is set). It is not baked into the script-runner
+image. Substitute before apply:
+
+```bash
+envsubst '${CONTROL_PLANE_API_CIDR}' \
+  < deploy/kubernetes/script-runner-networkpolicy.yaml \
+  | kubectl apply -n flowforge -f -
+envsubst '${CONTROL_PLANE_API_CIDR}' \
+  < deploy/k8s/runner-controlplane-networkpolicy.yaml \
+  | kubectl apply -n flowforge -f -
+```
+
+An unsubstituted placeholder is rejected by the API server. A world CIDR is
+rejected by the runner. If the CIDR and the Service alternative are both
+unset, the production runner logs `network-policy-unconfigured` and refuses
+to create script Jobs (`network-policy-denied`). It still runs other node
+types. Before each create it GETs `flowforge-script-runner` and requires
+that live policy to be DNS plus that CIDR only.
+
+The Service alternative is `CONTROL_PLANE_API_SERVICE` and
+`CONTROL_PLANE_API_SERVICE_NAMESPACE` (same namespace as the runner; the
+Role can `get` Services and NetworkPolicies there, not Secrets). The live
+policy must select that Service's pods. A Service without a pod selector
+is rejected; use a CIDR for the Kubernetes API server.
+
+`SCRIPT_RUNNER_SKIP_NETWORK_POLICY=true` skips this check only when the
+process is not production-locked (`APP_ENV` is `development`, `dev`,
+`local`, or `test`, and `REQUIRE_TLS` is not set). `cmd/runner` is
+production-locked and exits if the flag is set. Do not set it on the
+`deploy/k8s` ConfigMap.
 
 ### Unclaimed jobs
 

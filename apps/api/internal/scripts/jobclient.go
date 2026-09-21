@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,16 +28,23 @@ type APIJobConfig struct {
 	Namespace string
 	PollEvery time.Duration
 	Timeout   time.Duration
+	// ControlPlane is required unless SkipNetworkPolicy is set.
+	// SkipNetworkPolicy is local/dev only. cmd/runner never sets it
+	// while production-locked.
+	ControlPlane      ControlPlaneConfig
+	SkipNetworkPolicy bool
 }
 
 // APIJobClient submits batch/v1 Jobs and reads the runner container log.
 type APIJobClient struct {
-	host      string
-	token     string
-	tokenFile string
-	namespace string
-	pollEvery time.Duration
-	http      *http.Client
+	host         string
+	token        string
+	tokenFile    string
+	namespace    string
+	pollEvery    time.Duration
+	controlPlane ControlPlaneConfig
+	skipPolicy   bool
+	http         *http.Client
 }
 
 // NewAPIJobClient builds a TLS client. HTTP hosts are rejected. The token
@@ -88,12 +96,25 @@ func newAPIJobClient(cfg APIJobConfig, allowHTTP bool) (*APIJobClient, error) {
 	if poll <= 0 {
 		poll = 250 * time.Millisecond
 	}
+	cp := cfg.ControlPlane
+	if !cfg.SkipNetworkPolicy {
+		var normErr error
+		cp, normErr = normalizeControlPlane(cp)
+		if normErr != nil {
+			if errors.Is(normErr, ErrControlPlaneMissing) {
+				return nil, engineError(CodeNetworkPolicyDenied, "control-plane API CIDR or Service is missing.", http.StatusForbidden)
+			}
+			return nil, engineError(CodeNetworkPolicyDenied, "control-plane API CIDR or Service is invalid.", http.StatusForbidden)
+		}
+	}
 	return &APIJobClient{
-		host:      host,
-		token:     token,
-		tokenFile: tokenFile,
-		namespace: ns,
-		pollEvery: poll,
+		host:         host,
+		token:        token,
+		tokenFile:    tokenFile,
+		namespace:    ns,
+		pollEvery:    poll,
+		controlPlane: cp,
+		skipPolicy:   cfg.SkipNetworkPolicy,
 		http: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
@@ -134,6 +155,11 @@ func (c *APIJobClient) Submit(ctx context.Context, manifest map[string]any) (Iso
 	if name == "" || ns != c.namespace || !validJobNamespace(ns) {
 		return IsolatedResult{}, engineError(CodeIsolationDenied, "script Job name or namespace is invalid.", http.StatusForbidden)
 	}
+	if !c.skipPolicy {
+		if err := c.enforceNetworkPolicy(ctx, token); err != nil {
+			return IsolatedResult{}, err
+		}
+	}
 	createPath := "/apis/batch/v1/namespaces/" + url.PathEscape(ns) + "/jobs"
 	if _, err := c.do(ctx, http.MethodPost, createPath, raw, token); err != nil {
 		return IsolatedResult{}, err
@@ -162,6 +188,34 @@ func (c *APIJobClient) Submit(ctx context.Context, manifest map[string]any) (Iso
 			return IsolatedResult{}, engineError(CodeIndeterminate, "script Job stopped before a result.", http.StatusConflict)
 		}
 	}
+}
+
+// NetworkPolicyEnforced reports whether Submit refuses to create a Job
+// until the live script NetworkPolicy matches the control-plane config.
+func (c *APIJobClient) NetworkPolicyEnforced() bool {
+	return c != nil && !c.skipPolicy
+}
+
+func (c *APIJobClient) enforceNetworkPolicy(ctx context.Context, token string) error {
+	cfg := c.controlPlane
+	if cfg.Service != "" {
+		path := "/api/v1/namespaces/" + url.PathEscape(cfg.ServiceNamespace) + "/services/" + url.PathEscape(cfg.Service)
+		obj, err := c.do(ctx, http.MethodGet, path, nil, token)
+		if err != nil {
+			return networkPolicyDenied()
+		}
+		sel, selErr := serviceSelector(obj)
+		if selErr != nil {
+			return networkPolicyDenied()
+		}
+		cfg.Selector = sel
+	}
+	path := "/apis/networking.k8s.io/v1/namespaces/" + url.PathEscape(c.namespace) + "/networkpolicies/" + url.PathEscape(ScriptRunnerNetworkPolicyName)
+	obj, err := c.do(ctx, http.MethodGet, path, nil, token)
+	if err != nil {
+		return networkPolicyDenied()
+	}
+	return ValidateScriptNetworkPolicy(obj, cfg)
 }
 
 func (c *APIJobClient) containerLogs(ctx context.Context, ns, jobName, token string) (string, error) {

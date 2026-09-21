@@ -73,12 +73,16 @@ func main() {
 	}
 
 	integration := cfg.IntegrationActionsEnabled
-	scriptRT, scriptStatus, err := runner.ScriptRuntimeFromEnv(os.Getenv, os.ReadFile)
+	scriptRT, scriptStatus, err := runner.ScriptRuntimeFromEnv(os.Getenv, os.ReadFile, authz.ProductionLocked(appEnv, requireTLS))
 	if err != nil {
 		log.Error("script runner job configuration is invalid", "status", scriptStatus)
 		os.Exit(1)
 	}
-	log.Info("script runner jobs", "status", scriptStatus)
+	if scriptStatus == runner.ScriptJobsNetworkPolicyUnconfigured {
+		log.Error("script runner network policy is not configured; script Jobs will not be created", "status", scriptStatus)
+	} else {
+		log.Info("script runner jobs", "status", scriptStatus)
+	}
 	queue := &runner.StoreQueue{
 		Workflows: wfstore.NewPostgres(pool),
 		Identity:  identity.NewPostgres(pool),

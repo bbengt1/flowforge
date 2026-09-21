@@ -43,6 +43,9 @@ spec:
               value: production-runner
             # Control-plane API for script Jobs. The token file is a projected
             # SA token, not a vault credential. Do not log it.
+            # CONTROL_PLANE_API_CIDR (or SERVICE + NAMESPACE) comes from the
+            # flowforge-api ConfigMap. Missing config refuses script Jobs.
+            # Do not set SCRIPT_RUNNER_SKIP_NETWORK_POLICY on this pod.
             - name: SCRIPT_RUNNER_API_SERVER
               value: https://kubernetes.default.svc
             - name: SCRIPT_RUNNER_TOKEN_FILE

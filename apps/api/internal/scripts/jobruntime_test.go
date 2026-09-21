@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -141,6 +142,8 @@ func TestAPIJobClientCreateAndHidesToken(t *testing.T) {
 	var auth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.Contains(r.URL.Path, "/networkpolicies/"):
+			_, _ = w.Write([]byte(scriptPolicyJSON("203.0.113.10/32")))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
 			auth = r.Header.Get("Authorization")
 			posted, _ = io.ReadAll(r.Body)
@@ -159,6 +162,7 @@ func TestAPIJobClientCreateAndHidesToken(t *testing.T) {
 	defer srv.Close()
 	client, err := newAPIJobClient(APIJobConfig{
 		Host: srv.URL, Token: token, Namespace: "flowforge", PollEvery: 1,
+		ControlPlane: ControlPlaneConfig{CIDR: "203.0.113.10/32"},
 	}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +199,10 @@ func TestAPIJobClientCreateAndHidesToken(t *testing.T) {
 		http.Error(w, token, http.StatusForbidden)
 	}))
 	defer deny.Close()
-	denied, err := newAPIJobClient(APIJobConfig{Host: deny.URL, Token: token, Namespace: "flowforge"}, true)
+	denied, err := newAPIJobClient(APIJobConfig{
+		Host: deny.URL, Token: token, Namespace: "flowforge",
+		ControlPlane: ControlPlaneConfig{CIDR: "203.0.113.10/32"},
+	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +217,10 @@ func TestAPIJobClientRereadsTokenFile(t *testing.T) {
 	const second = "script-runner-token-bbbb"
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/networkpolicies/") {
+			_, _ = w.Write([]byte(scriptPolicyJSON("203.0.113.10/32")))
+			return
+		}
 		if r.Method == http.MethodPost {
 			got = append(got, r.Header.Get("Authorization"))
 			w.WriteHeader(http.StatusCreated)
@@ -233,6 +244,7 @@ func TestAPIJobClientRereadsTokenFile(t *testing.T) {
 	}
 	client, err := newAPIJobClient(APIJobConfig{
 		Host: srv.URL, TokenFile: path, Namespace: "flowforge", PollEvery: 1,
+		ControlPlane: ControlPlaneConfig{CIDR: "203.0.113.10/32"},
 	}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +287,156 @@ func TestAPIJobClientRejectsHTTP(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected https requirement")
 	}
+}
+
+func TestAPIJobClientRefusesWithoutMatchingPolicy(t *testing.T) {
+	const token = "script-runner-api-token-value"
+	const cidr = "203.0.113.10/32"
+	var posted int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posted++
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/networkpolicies/") {
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	client, err := newAPIJobClient(APIJobConfig{
+		Host: srv.URL, Token: token, Namespace: "flowforge",
+		ControlPlane: ControlPlaneConfig{CIDR: cidr},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := mustScriptManifest(t)
+	_, err = client.Submit(context.Background(), manifest)
+	if err == nil || posted != 0 {
+		t.Fatalf("posted %d err %v", posted, err)
+	}
+	var ee *EngineError
+	if !errors.As(err, &ee) || ee.Code != CodeNetworkPolicyDenied || strings.Contains(err.Error(), token) {
+		t.Fatalf("%v", err)
+	}
+
+	world := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posted++
+		}
+		_, _ = w.Write([]byte(scriptPolicyJSON("0.0.0.0/0")))
+	}))
+	defer world.Close()
+	wide, err := newAPIJobClient(APIJobConfig{
+		Host: world.URL, Token: token, Namespace: "flowforge",
+		ControlPlane: ControlPlaneConfig{CIDR: cidr},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = wide.Submit(context.Background(), mustScriptManifest(t))
+	if err == nil || posted != 0 {
+		t.Fatalf("world policy posted %d err %v", posted, err)
+	}
+
+	_, err = newAPIJobClient(APIJobConfig{
+		Host: "https://kubernetes.default.svc", Token: token, Namespace: "flowforge",
+		ControlPlane: ControlPlaneConfig{CIDR: "0.0.0.0/0"},
+	}, false)
+	if err == nil {
+		t.Fatal("world CIDR must be rejected before a client exists")
+	}
+	_, err = newAPIJobClient(APIJobConfig{
+		Host: "https://kubernetes.default.svc", Token: token, Namespace: "flowforge",
+	}, false)
+	if err == nil {
+		t.Fatal("missing control-plane config must be rejected")
+	}
+}
+
+func TestAPIJobClientServiceSelectorPolicy(t *testing.T) {
+	const token = "script-runner-api-token-value"
+	var posted bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/services/flowforge-api"):
+			_, _ = w.Write([]byte(`{"spec":{"selector":{"app.kubernetes.io/name":"flowforge","app.kubernetes.io/component":"api"}}}`))
+		case strings.Contains(r.URL.Path, "/networkpolicies/"):
+			_, _ = w.Write([]byte(scriptServicePolicyJSON()))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
+			posted = true
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"kind":"Job"}`))
+		case strings.Contains(r.URL.Path, "/log"):
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case strings.Contains(r.URL.Path, "/pods"):
+			_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"ff-pod-1"}}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":{"succeeded":1}}`))
+		}
+	}))
+	defer srv.Close()
+	client, err := newAPIJobClient(APIJobConfig{
+		Host: srv.URL, Token: token, Namespace: "flowforge", PollEvery: 1,
+		ControlPlane: ControlPlaneConfig{Service: "flowforge-api", ServiceNamespace: "flowforge", Port: 443},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Submit(context.Background(), mustScriptManifest(t))
+	if err != nil || !res.OK || !posted {
+		t.Fatalf("posted %v res %+v err %v", posted, res, err)
+	}
+}
+
+func mustScriptManifest(t *testing.T) map[string]any {
+	t.Helper()
+	spec, err := IsolationFromProfile(LanguagePython, approvedPythonProfile(), NodeLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := RenderScriptJob(EmbeddedScriptJobTemplate(), "flowforge", spec, IsolatedJob{
+		Language: LanguagePython, Entrypoint: "main.py", Source: "print('ok')\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifest
+}
+
+func scriptPolicyJSON(cidr string) string {
+	return `{
+		"apiVersion":"networking.k8s.io/v1",
+		"kind":"NetworkPolicy",
+		"metadata":{"name":"flowforge-script-runner"},
+		"spec":{
+			"podSelector":{"matchLabels":{"app.kubernetes.io/name":"flowforge","app.kubernetes.io/component":"script-runner"}},
+			"policyTypes":["Ingress","Egress"],
+			"egress":[
+				{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},
+				{"to":[{"ipBlock":{"cidr":"` + cidr + `"}}],"ports":[{"protocol":"TCP","port":443}]}
+			]
+		}
+	}`
+}
+
+func scriptServicePolicyJSON() string {
+	return `{
+		"apiVersion":"networking.k8s.io/v1",
+		"kind":"NetworkPolicy",
+		"metadata":{"name":"flowforge-script-runner"},
+		"spec":{
+			"podSelector":{"matchLabels":{"app.kubernetes.io/name":"flowforge","app.kubernetes.io/component":"script-runner"}},
+			"policyTypes":["Ingress","Egress"],
+			"egress":[
+				{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},
+				{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"flowforge"}},"podSelector":{"matchLabels":{"app.kubernetes.io/name":"flowforge","app.kubernetes.io/component":"api"}}}],"ports":[{"protocol":"TCP","port":443}]}
+			]
+		}
+	}`
 }
 
 type recordingSubmitter struct {

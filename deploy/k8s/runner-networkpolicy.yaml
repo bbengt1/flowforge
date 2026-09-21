@@ -32,13 +32,9 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-  # Provider egress (Kubernetes API, SSH, HTTP) stays closed by the
-  # namespace default-deny policy. Script Job creation dials the
-  # control-plane API on TCP 443. Add one ipBlock for that address
-  # before script Jobs can be created. Do not open 0.0.0.0/0.
-  # - to:
-  #     - ipBlock:
-  #         cidr: 203.0.113.10/32
-  #   ports:
-  #     - protocol: TCP
-  #       port: 443
+  # Provider egress (Kubernetes API, SSH, HTTP) stays closed here.
+  # Script Job creation dials the control-plane API. Apply
+  # runner-controlplane-networkpolicy.yaml with CONTROL_PLANE_API_CIDR
+  # substituted from deploy config. Do not open a world CIDR. The runner
+  # refuses to create script Jobs when that CIDR or the script NetworkPolicy
+  # is missing.

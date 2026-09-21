@@ -4,12 +4,14 @@ These manifests are **operator-applied, namespace-scoped** defaults for a FlowFo
 
 ## Isolated script runners (E9.2)
 
-[`script-runner-deployment.yaml`](script-runner-deployment.yaml) is the isolated Job template for `script.python` / `script.go`. The production runner clones it per step. Do not `kubectl apply` the template (that would start a Job with no payload). [`script-runner-networkpolicy.yaml`](script-runner-networkpolicy.yaml) is default-deny egress plus constrained DNS.
+[`script-runner-deployment.yaml`](script-runner-deployment.yaml) is the isolated Job template for `script.python` / `script.go`. The production runner clones it per step. Do not `kubectl apply` the template (that would start a Job with no payload). [`script-runner-networkpolicy.yaml`](script-runner-networkpolicy.yaml) is default-deny egress plus constrained DNS and the control-plane API CIDR from deploy config.
 
-Apply the NetworkPolicy in the FlowForge namespace (not a workspace target namespace):
+Apply the NetworkPolicy in the FlowForge namespace (not a workspace target namespace). `CONTROL_PLANE_API_CIDR` is required and must be a canonical prefix. An unsubstituted file is rejected:
 
 ```bash
-kubectl apply -f deploy/kubernetes/script-runner-networkpolicy.yaml
+envsubst '${CONTROL_PLANE_API_CIDR}' \
+  < deploy/kubernetes/script-runner-networkpolicy.yaml \
+  | kubectl apply -n flowforge -f -
 ```
 
 The template image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from `apps/api/Dockerfile.script-runner`. The runner rewrites each Job to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. Replace the template tag with that digest before a production rollout. Do not mount `docker.sock`, a service-account token, or hostPath. Build and push: [deployment.md](../../docs/deployment.md#script-runner-image).

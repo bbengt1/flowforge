@@ -104,6 +104,16 @@ forbid "$sr_df" ':latest'
 
 need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'policyTypes:'
 need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'port: 53'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '\$\{CONTROL_PLANE_API_CIDR\}'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'ipBlock:'
+need "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" 'port: 443'
+forbid "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '0\.0\.0\.0/0'
+forbid "$ROOT/deploy/kubernetes/script-runner-networkpolicy.yaml" '::/0'
+need "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" '\$\{CONTROL_PLANE_API_CIDR\}'
+need "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" 'port: 443'
+forbid "$ROOT/deploy/k8s/runner-controlplane-networkpolicy.yaml" '0\.0\.0\.0/0'
+forbid "$ROOT/deploy/k8s/runner-networkpolicy.yaml" '0\.0\.0\.0/0'
+need "$ROOT/deploy/k8s/script-runner-rbac.yaml" 'networkpolicies'
 
 if [[ "$fail" -eq 0 ]]; then
   echo "deploy defaults ok"

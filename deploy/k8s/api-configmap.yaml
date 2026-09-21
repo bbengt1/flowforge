@@ -13,6 +13,10 @@ data:
   # Do not set LOCAL_WORKER or run /usr/local/bin/worker (compose-only).
   # Production claims use /usr/local/bin/runner (deploy/k8s/runner-deployment.yaml).
   # Set PLATFORM_ADMINS on the Secret (issuer|subject). Empty is fail-closed.
+  # Required before script Jobs are created. Canonical CIDR of the control-plane
+  # API, or CONTROL_PLANE_API_SERVICE plus CONTROL_PLANE_API_SERVICE_NAMESPACE.
+  # Do not set a world CIDR. Do not set SCRIPT_RUNNER_SKIP_NETWORK_POLICY.
+  # CONTROL_PLANE_API_CIDR: "203.0.113.10/32"
   APP_ENV: "production"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.
   REQUIRE_TLS: "true"

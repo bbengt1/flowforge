@@ -2,7 +2,8 @@
 #
 # This file is a template, not a standing workload. Do not kubectl apply it.
 # cmd/runner clones it into one batch/v1 Job per script.python / script.go
-# step. Apply only script-runner-networkpolicy.yaml in this directory.
+# step. Apply script-runner-networkpolicy.yaml only after substituting
+# CONTROL_PLANE_API_CIDR. Do not apply this Job template.
 #
 # The image is built from apps/api/Dockerfile.script-runner and published as
 # ghcr.io/bbengt1/flowforge-script-runner:foundation. The runner rewrites
