@@ -6,7 +6,8 @@
 #              tmpfs, cap_drop, no-new-privileges, resource limits, secure headers.
 #   api      — Go control plane. Build context ./apps/api; HTTP_ADDR=:8080.
 #              Hardening from E1.3 #10 (UID 65532, read-only, caps, tmpfs,
-#              mem/cpu/pid limits). Matches deploy/k8s.
+#              mem/cpu/pid limits). HEALTHCHECK GET /api/v1/health.
+#              Matches deploy/k8s.
 #   worker   — Local/dev job runner. Same image as api, command worker.
 #              Claims POST /api/v1/jobs/claim (lease + HMAC ticket + fence).
 #              Required for Start published to leave queued. Not a k8s service.
@@ -147,6 +148,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Same probe as the image HEALTHCHECK and k8s liveness (process up).
+    # Does not wait for PostgreSQL — that is GET /api/v1/readiness.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # Local/dev only. Claims queued jobs so Start published can leave queued.
@@ -186,6 +195,9 @@ services:
       WORKER_SUBJECT: ${WORKER_SUBJECT:-}
     depends_on:
       - api
+    # Same image HEALTHCHECK hits :8080; this process does not listen.
+    healthcheck:
+      disable: true
     # on-failure so LOCAL_WORKER=0 (exit 0) stays down. Crashes still retry.
     restart: on-failure
 

@@ -16,8 +16,8 @@ Migrations are forward-only and recorded in `schema_migrations`; re-running the 
 
 Compose hardening (UID/GID **65532** except postgres):
 
-- **api** (`#10`): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, and CPU/memory/PID limits. Matches `deploy/k8s`.
-- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Not present in `deploy/k8s`.
+- **api** (`#10` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
+- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`.
 - **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`).
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 
@@ -38,11 +38,15 @@ Foundation files (API / supply-chain / backup from `#10`):
 
 The Kubernetes files are a foundation only: configure the database egress policy, TLS ingress host/secret (or cert-manager), backup encryption key wrapping, KMS references, and environment-specific registry credentials before deployment. TLS terminates at the ingress/proxy boundary, not inside the Next.js container.
 
+API image (`#10` / G.0.9):
+
+- `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes, `HEALTHCHECK` on `GET /api/v1/health`. Compose `worker` disables that probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
+
 Web image and Next.js headers (`#11`):
 
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, writable paths limited to `/tmp` and `/app/.next/cache`.
 - Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) lists exact host origins. That same list is published on `GET /embed/catalog` `frameAncestors` and drives postMessage. Empty fails closed. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
-- Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. The web image already pins `node:22-alpine` by digest.
+- Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. API and web Dockerfiles already pin their bases by digest.
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):
 
@@ -131,7 +135,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Compose `TLS_CERT_FILE` / `TLS_KEY_FILE` under `/tmp/flowforge-tls` (tmpfs; lost on recreate) | Durable mounted paths (or ingress-only TLS). Empty still fail-closed (`503`). Do not copy the localhost `/tmp` defaults. |
 | `POSTGRES_SSLMODE=disable` in compose DSN | `POSTGRES_SSLMODE=require` (ConfigMap). |
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
-| Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
+| Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. API and web Dockerfiles pin their bases by digest. |
 | Compose-documented `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` (local-only) | Unique durable secrets on the Secret. **Boot-fail** if missing or malformed. Do not copy the compose defaults. |
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Production workers are isolated claim clients you deploy separately. The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
@@ -146,6 +150,35 @@ root, `cap_drop: ALL`, `no_new_privs`, resource limits, default-deny
 NetworkPolicy, TLS at the ingress/proxy boundary. See
 [supply-chain policy](../deploy/supply-chain/policy.md) and
 [`deploy/k8s/README.md`](../deploy/k8s/README.md).
+
+## Refreshing Dockerfile base digests
+
+`apps/api/Dockerfile` and `apps/web/Dockerfile` pin approved bases as
+`name:tag@sha256:<digest>`. The digest must be the **multi-arch index**
+(manifest list), not a single-architecture image id from a local
+`docker pull`. `deploy/supply-chain/approved-bases.txt` stays `name:tag`
+only; `scripts/check-approved-bases.sh` requires the `@sha256:` pin on
+every registry `FROM`.
+
+After an upstream rebuild or security patch, resolve the current index
+digest and replace the matching `FROM` line:
+
+```bash
+# Preferred: Docker Buildx prints the index digest.
+docker buildx imagetools inspect golang:1.26-alpine
+docker buildx imagetools inspect alpine:3.20
+docker buildx imagetools inspect node:22-alpine
+```
+
+Copy the `Digest: sha256:…` line. If Buildx is unavailable, `crane digest
+<name>:<tag>` is the same value. Do **not** use `docker inspect … RepoDigests`
+from a pulled amd64/arm64 image — that is a platform manifest, and a pin
+to it breaks the other architecture.
+
+Then rebuild and let `.github/workflows/supply-chain.yml` `image-scan`
+regenerate the SPDX SBOM and re-run Trivy (`fs` HIGH/CRITICAL, image
+CRITICAL). Do not relax `--severity`, `--exit-code`, or `--ignore-unfixed`
+when refreshing pins.
 
 ## Local default tenant seed
 

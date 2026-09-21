@@ -1,13 +1,16 @@
 # syntax=docker/dockerfile:1
 # Control-plane API image. Runtime UID/GID 65532 is the shared FlowForge
 # non-root identity (web image aligns to the same UID).
+#
+# Base pins are the multi-arch index digests for golang:1.26-alpine and
+# alpine:3.20. Refresh: docs/deployment.md#refreshing-dockerfile-base-digests.
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 WORKDIR /src
 ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0
 
-RUN apk add --no-cache ca-certificates git
+RUN apk add --no-cache ca-certificates
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -29,7 +32,7 @@ RUN go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
     -o /out/worker ./cmd/worker
 
-FROM alpine:3.20
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
  && apk add --no-cache ca-certificates tzdata \
  && mkdir -p /tmp && chown 65532:65532 /tmp && chmod 1777 /tmp
@@ -44,6 +47,13 @@ EXPOSE 8080
 LABEL org.opencontainers.image.source="https://github.com/bbengt1/flowforge" \
       org.opencontainers.image.title="flowforge-api" \
       org.opencontainers.image.description="FlowForge control-plane API"
+
+# Liveness only (process serving). Does not check PostgreSQL — that is
+# GET /api/v1/readiness (k8s readinessProbe). Compose --wait uses this
+# probe. The worker command does not listen; compose disables HEALTHCHECK
+# on that service. Busybox wget is part of the alpine base (no extra pkg).
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/api/v1/health || exit 1
 
 # CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate
 # or /usr/local/bin/worker. The worker binary is local/dev only — do not

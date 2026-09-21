@@ -1,4 +1,6 @@
-# Approved Dockerfile bases (name:tag). Digests are optional suffixes.
+# Approved Dockerfile bases (name:tag). FROM lines must pin the matching
+# multi-arch index as name:tag@sha256:<64 hex>. scripts/check-approved-bases.sh
+# rejects unpinned tags. Refresh: docs/deployment.md#refreshing-dockerfile-base-digests.
 # Keep this list small. Web may reuse these names when aligning to UID 65532.
 golang:1.26-alpine
 alpine:3.20

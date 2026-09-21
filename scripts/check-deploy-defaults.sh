@@ -25,8 +25,10 @@ forbid() {
 
 api_df="$ROOT/apps/api/Dockerfile"
 need "$api_df" '^USER 65532:65532'
-need "$api_df" '^FROM golang:1.26-alpine AS build$'
-need "$api_df" '^FROM alpine:3.20$'
+need "$api_df" '^FROM golang:1\.26-alpine@sha256:[0-9a-f]{64} AS build$'
+need "$api_df" '^FROM alpine:3\.20@sha256:[0-9a-f]{64}$'
+need "$api_df" '^HEALTHCHECK '
+need "$api_df" '/api/v1/health'
 
 web_df="$ROOT/apps/web/Dockerfile"
 need "$web_df" '^USER 65532:65532'
@@ -37,6 +39,8 @@ need "$compose" 'read_only: true'
 need "$compose" 'no-new-privileges:true'
 need "$compose" '[[:space:]]+- ALL'
 need "$compose" 'mem_limit: 512m'
+need "$compose" 'http://127.0.0.1:8080/api/v1/health'
+need "$compose" 'disable: true'
 
 deploy="$ROOT/deploy/k8s/api-deployment.yaml"
 need "$deploy" 'runAsUser: 65532'

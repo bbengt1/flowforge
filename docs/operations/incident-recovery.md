@@ -25,6 +25,11 @@ Kubernetes (`deploy/k8s/api-deployment.yaml`):
 - Liveness: `/api/v1/health` every 15s
 - Readiness: `/api/v1/readiness` every 5s
 
+The API image `HEALTHCHECK` and compose `api.healthcheck` use the same
+liveness path (`GET /api/v1/health` every 15s). Compose `--wait` waits
+on that probe only. The local `worker` service disables the inherited
+check because `/usr/local/bin/worker` does not listen on 8080.
+
 There are no `/healthz` / `/readyz` aliases. Probe paths stay reachable
 over plain HTTP even when `REQUIRE_TLS=true`, so kubelet can hit the
 pod without Ingress TLS.
@@ -34,7 +39,7 @@ pod without Ingress TLS.
 | Health | Readiness | Interpretation |
 | --- | --- | --- |
 | 200 | 200 | Accept traffic. |
-| 200 | 503 | Process up, database (or migrate) not ready. Do not send application traffic. Compose `--wait` only waits on `/health` — wait for readiness before dump or smoke. |
+| 200 | 503 | Process up, database (or migrate) not ready. Do not send application traffic. Compose `--wait` only waits on `/api/v1/health` — wait for readiness before dump or smoke. |
 | fail | — | Restart / page the API deployment. |
 
 The process boots even if PostgreSQL is down. On connect it applies
