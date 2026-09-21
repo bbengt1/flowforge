@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
 )
 
 func TestPlanNodesIgnoresUILayout(t *testing.T) {

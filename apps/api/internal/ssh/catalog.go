@@ -24,20 +24,20 @@ type RenderRules struct {
 
 // RetryRules documents default-zero retries and the verification contract.
 type RetryRules struct {
-	DefaultMaxAttempts                int      `json:"defaultMaxAttempts"`
-	MaxAttempts                       int      `json:"maxAttempts"`
-	RetrySafeFlag                     string   `json:"retrySafeFlag"`
-	Semantics                         string   `json:"semantics"`
-	Note                              string   `json:"note"`
-	BlindRetry                        bool     `json:"blindRetry"`
-	LeaseLossOutcome                  string   `json:"leaseLossOutcome"`
-	UnknownOutcome                    string   `json:"unknownOutcome"`
-	RequiresVerificationWhenRetrySafe bool     `json:"requiresVerificationWhenRetrySafe"`
-	Verification                      string   `json:"verification"`
-	WhenRetryAllowed                  string   `json:"whenRetryAllowed"`
-	States                            []string `json:"states"`
-	UI                                RetryUI            `json:"ui"`
-	Probe                             VerificationRules  `json:"probe"`
+	DefaultMaxAttempts                int               `json:"defaultMaxAttempts"`
+	MaxAttempts                       int               `json:"maxAttempts"`
+	RetrySafeFlag                     string            `json:"retrySafeFlag"`
+	Semantics                         string            `json:"semantics"`
+	Note                              string            `json:"note"`
+	BlindRetry                        bool              `json:"blindRetry"`
+	LeaseLossOutcome                  string            `json:"leaseLossOutcome"`
+	UnknownOutcome                    string            `json:"unknownOutcome"`
+	RequiresVerificationWhenRetrySafe bool              `json:"requiresVerificationWhenRetrySafe"`
+	Verification                      string            `json:"verification"`
+	WhenRetryAllowed                  string            `json:"whenRetryAllowed"`
+	States                            []string          `json:"states"`
+	UI                                RetryUI           `json:"ui"`
+	Probe                             VerificationRules `json:"probe"`
 }
 
 // VerificationRules documents the profile-declared idempotent probe.
@@ -55,11 +55,11 @@ type VerificationRules struct {
 
 // RetryUI is the Chloe contract for badges and retry controls.
 type RetryUI struct {
-	IndeterminateBadge     string `json:"indeterminateBadge"`
-	RetrySafeFlag          string `json:"retrySafeFlag"`
-	RetryEnabledWhen       string `json:"retryEnabledWhen"`
-	HideRetryWhen          string `json:"hideRetryWhen"`
-	NeverAssumeAbsent      bool   `json:"neverAssumeAbsent"`
+	IndeterminateBadge string `json:"indeterminateBadge"`
+	RetrySafeFlag      string `json:"retrySafeFlag"`
+	RetryEnabledWhen   string `json:"retryEnabledWhen"`
+	HideRetryWhen      string `json:"hideRetryWhen"`
+	NeverAssumeAbsent  bool   `json:"neverAssumeAbsent"`
 }
 
 // IsolationRules documents hard denies and connect guarantees for Chloe.

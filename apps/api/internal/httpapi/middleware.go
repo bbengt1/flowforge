@@ -278,7 +278,7 @@ func validRequestID(id string) bool {
 		if r > unicode.MaxASCII {
 			return false
 		}
-		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-') {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' {
 			return false
 		}
 	}

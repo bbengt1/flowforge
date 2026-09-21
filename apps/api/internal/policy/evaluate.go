@@ -161,7 +161,7 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 	if scripts.IsScriptNode(op) {
 		attachScriptRetry(&item, node)
 	}
-	targetKind, targetID := targetRef(node)
+	_, targetID := targetRef(node)
 	var target opsconfig.Pin
 	if targetID != "" {
 		pin, ok := pins[targetID]
@@ -171,9 +171,6 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 			return item
 		}
 		target = pin
-		if targetKind == "" {
-			targetKind = pin.Kind
-		}
 	}
 
 	policyPin, policyReason, err := resolvePolicyPin(node, target, pins)

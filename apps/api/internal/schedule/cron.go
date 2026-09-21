@@ -158,12 +158,6 @@ func NextAfter(rec Record, after time.Time) (time.Time, error) {
 	return after.Add(d).UTC(), nil
 }
 
-func nextAfterOrEqual(rec Record, at time.Time) (time.Time, error) {
-	// NextAfter is exclusive. For catch-up enumeration we want the next slot
-	// after `at` when `at` itself is already a scheduled instant.
-	return NextAfter(rec, at)
-}
-
 func workflowParseInterval(s string) (time.Duration, error) {
 	return parseInterval(s)
 }

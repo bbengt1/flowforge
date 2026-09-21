@@ -1,0 +1,19 @@
+# Default golangci-lint v2 "standard" set. Keep aligned with
+# .github/workflows/api-quality.yml (gofmt -l and go vet run as
+# separate required jobs).
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Idiomatic defer Close/Rollback; flag every other unchecked error.
+      exclude-functions:
+        - (io.Closer).Close
+        - (github.com/jackc/pgx/v5.Tx).Rollback
+        - (*golang.org/x/crypto/ssh.Session).Close
+        - (*golang.org/x/crypto/ssh.ServerConn).Close
+        - (golang.org/x/crypto/ssh.Conn).Close
+        - (golang.org/x/crypto/ssh.Channel).Close
+        - (github.com/bbengt1/flowforge/apps/api/internal/ssh.Session).Close
+        - (*github.com/bbengt1/flowforge/apps/api/internal/ssh.FakeServer).Close

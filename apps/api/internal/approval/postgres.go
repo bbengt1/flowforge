@@ -117,7 +117,6 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 	if filter.ExecutionID != "" {
 		q += ` AND execution_id = $` + itoa(n) + `::uuid`
 		args = append(args, filter.ExecutionID)
-		n++
 	}
 	q += ` ORDER BY created_at DESC`
 	rows, err := tx.Query(ctx, q, args...)
@@ -280,11 +279,9 @@ func (p *Postgres) InvalidateMatching(ctx context.Context, scope isolation.Scope
 	if id := strings.TrimSpace(in.ResourceID); id != "" {
 		q += ` AND (target_id = $` + itoa(n) + `::uuid OR policy_resource_id = $` + itoa(n) + `::uuid)`
 		args = append(args, id)
-		n++
 	} else if id := strings.TrimSpace(in.TargetID); id != "" {
 		q += ` AND target_id = $` + itoa(n) + `::uuid`
 		args = append(args, id)
-		n++
 	} else if id := strings.TrimSpace(in.PolicyResourceID); id != "" {
 		q += ` AND policy_resource_id = $` + itoa(n) + `::uuid`
 		args = append(args, id)

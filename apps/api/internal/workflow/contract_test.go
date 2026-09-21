@@ -26,9 +26,7 @@ func TestCoreNeutralCatalogContracts(t *testing.T) {
 		if nt.Policy == nil || nt.Bounds == nil || nt.Redaction == nil {
 			t.Fatalf("%s missing policy/bounds/redaction: %+v", typ, nt)
 		}
-		if len(nt.AllowedWith) == 0 && typ != "flow.stop" {
-			// flow.stop may omit required with but still has allowedWith
-		}
+		// flow.stop may omit required with but still has allowedWith
 		if typ != "flow.stop" && len(nt.AllowedWith) == 0 {
 			t.Fatalf("%s missing allowedWith", typ)
 		}

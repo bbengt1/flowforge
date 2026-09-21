@@ -147,13 +147,12 @@ func (m *Memory) SaveDraft(_ context.Context, scope isolation.Scope, kind, id st
 	if in.ExpectedRevision < 1 {
 		return Resource{}, Draft{}, fmt.Errorf("%w: revision is required", ErrInvalid)
 	}
-	row, err := m.lookup(scope, kind, id)
-	if err != nil {
+	if _, err := m.lookup(scope, kind, id); err != nil {
 		return Resource{}, Draft{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, err = m.lookupLocked(scope, kind, id)
+	row, err := m.lookupLocked(scope, kind, id)
 	if err != nil {
 		return Resource{}, Draft{}, err
 	}

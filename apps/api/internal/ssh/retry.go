@@ -41,15 +41,15 @@ type VerificationResult struct {
 
 // RetryState is persisted on ssh.run results for Chloe and the retry APIs.
 type RetryState struct {
-	MaxAttempts            int                 `json:"maxAttempts"`
-	ExecutedAttempts       int                 `json:"executedAttempts"`
-	RetrySafe              bool                `json:"retrySafe"`
-	Allowed                bool                `json:"allowed"`
-	RequiresVerification   bool                `json:"requiresVerification"`
-	VerificationDeclared   bool                `json:"verificationDeclared"`
-	Semantics              string              `json:"semantics"`
-	Note                   string              `json:"note"`
-	Verification           *VerificationResult `json:"verification,omitempty"`
+	MaxAttempts          int                 `json:"maxAttempts"`
+	ExecutedAttempts     int                 `json:"executedAttempts"`
+	RetrySafe            bool                `json:"retrySafe"`
+	Allowed              bool                `json:"allowed"`
+	RequiresVerification bool                `json:"requiresVerification"`
+	VerificationDeclared bool                `json:"verificationDeclared"`
+	Semantics            string              `json:"semantics"`
+	Note                 string              `json:"note"`
+	Verification         *VerificationResult `json:"verification,omitempty"`
 }
 
 // RetryEval is the control-plane / engine input for EvaluateRetry.

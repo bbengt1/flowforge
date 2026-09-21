@@ -5,29 +5,29 @@ import "strings"
 // AuditSnapshot is the secret-free ssh.run record for jobs and audit_events.
 // It never includes private keys, passphrases, rendered commands, or raw logs.
 type AuditSnapshot struct {
-	ActorID           string         `json:"actorId,omitempty"`
-	Operation         string         `json:"operation"`
-	SSHTargetID       string         `json:"sshTargetId,omitempty"`
-	CommandProfileID  string         `json:"commandProfileId,omitempty"`
-	ProfileRevision   string         `json:"profileRevision,omitempty"`
-	ProfileDigest     string         `json:"profileDigest,omitempty"`
-	ParameterNames    []string       `json:"parameterNames,omitempty"`
-	Parameters        map[string]any `json:"parameters,omitempty"`
-	Hostname          string         `json:"hostname,omitempty"`
-	Port              int            `json:"port,omitempty"`
-	Username          string         `json:"username,omitempty"`
-	ResolvedAddresses []string       `json:"resolvedAddresses,omitempty"`
-	ConnectedAddress  string         `json:"connectedAddress,omitempty"`
-	ExitCode          *int           `json:"exitCode,omitempty"`
-	Outcome           string         `json:"outcome"`
-	CorrelationID     string         `json:"correlationId,omitempty"`
-	ErrorCode         string         `json:"errorCode,omitempty"`
-	PolicyRevision    string         `json:"policyRevision,omitempty"`
-	PolicyDigest      string         `json:"policyDigest,omitempty"`
-	RetryMaxAttempts      int            `json:"retryMaxAttempts"`
-	RetrySafe             bool           `json:"retrySafe"`
-	RetryAllowed          bool           `json:"retryAllowed"`
-	VerificationOutcome   string         `json:"verificationOutcome,omitempty"`
+	ActorID             string         `json:"actorId,omitempty"`
+	Operation           string         `json:"operation"`
+	SSHTargetID         string         `json:"sshTargetId,omitempty"`
+	CommandProfileID    string         `json:"commandProfileId,omitempty"`
+	ProfileRevision     string         `json:"profileRevision,omitempty"`
+	ProfileDigest       string         `json:"profileDigest,omitempty"`
+	ParameterNames      []string       `json:"parameterNames,omitempty"`
+	Parameters          map[string]any `json:"parameters,omitempty"`
+	Hostname            string         `json:"hostname,omitempty"`
+	Port                int            `json:"port,omitempty"`
+	Username            string         `json:"username,omitempty"`
+	ResolvedAddresses   []string       `json:"resolvedAddresses,omitempty"`
+	ConnectedAddress    string         `json:"connectedAddress,omitempty"`
+	ExitCode            *int           `json:"exitCode,omitempty"`
+	Outcome             string         `json:"outcome"`
+	CorrelationID       string         `json:"correlationId,omitempty"`
+	ErrorCode           string         `json:"errorCode,omitempty"`
+	PolicyRevision      string         `json:"policyRevision,omitempty"`
+	PolicyDigest        string         `json:"policyDigest,omitempty"`
+	RetryMaxAttempts    int            `json:"retryMaxAttempts"`
+	RetrySafe           bool           `json:"retrySafe"`
+	RetryAllowed        bool           `json:"retryAllowed"`
+	VerificationOutcome string         `json:"verificationOutcome,omitempty"`
 }
 
 // SnapshotAudit builds a redacted audit view of an engine result.

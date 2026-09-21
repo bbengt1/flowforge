@@ -215,7 +215,7 @@ func TestAddressAllowlistAndDNSRebinding(t *testing.T) {
 
 	t.Run("rebinding address denied", func(t *testing.T) {
 		req := baseReq(server, map[string]any{"unit": "nginx"})
-req.Target.Hostname = "bastion.example.com"
+		req.Target.Hostname = "bastion.example.com"
 		req.Resolver = mapResolver{"bastion.example.com": []net.IP{net.ParseIP("203.0.113.9")}}
 		req.Target.AllowedAddresses = []string{"127.0.0.1"}
 		req.Target.AddressesPresent = true
@@ -230,7 +230,7 @@ req.Target.Hostname = "bastion.example.com"
 
 	t.Run("any unallowlisted A record fails closed", func(t *testing.T) {
 		req := baseReq(server, map[string]any{"unit": "nginx"})
-req.Target.Hostname = "dual.example.com"
+		req.Target.Hostname = "dual.example.com"
 		req.Resolver = mapResolver{"dual.example.com": []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("198.51.100.20")}}
 		req.Target.AllowedAddresses = []string{"127.0.0.1"}
 		req.Target.AddressesPresent = true
@@ -242,7 +242,7 @@ req.Target.Hostname = "dual.example.com"
 
 	t.Run("dns name without allowlist denied", func(t *testing.T) {
 		req := baseReq(server, map[string]any{"unit": "nginx"})
-req.Target.Hostname = "open.example.com"
+		req.Target.Hostname = "open.example.com"
 		req.Resolver = mapResolver{"open.example.com": []net.IP{net.ParseIP("127.0.0.1")}}
 		req.Target.AllowedAddresses = nil
 		req.Target.AddressesPresent = false
@@ -254,7 +254,7 @@ req.Target.Hostname = "open.example.com"
 
 	t.Run("connects only to verified address", func(t *testing.T) {
 		req := baseReq(server, map[string]any{"unit": "nginx"})
-req.Target.Hostname = "edge.example.com"
+		req.Target.Hostname = "edge.example.com"
 		req.Resolver = mapResolver{"edge.example.com": []net.IP{net.ParseIP("127.0.0.1")}}
 		req.Target.AllowedAddresses = []string{"127.0.0.0/24"}
 		res := Execute(context.Background(), req)
@@ -497,4 +497,3 @@ func mustSigner(t *testing.T) cryptossh.Signer {
 	}
 	return s
 }
-

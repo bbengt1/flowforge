@@ -208,9 +208,6 @@ func (m *Memory) Events(_ context.Context, scope isolation.Scope, id string) ([]
 	src := m.events[id]
 	out := make([]Event, len(src))
 	copy(out, src)
-	if out == nil {
-		out = []Event{}
-	}
 	return out, nil
 }
 

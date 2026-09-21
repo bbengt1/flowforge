@@ -25,7 +25,6 @@ type memReplay struct {
 
 type memWindow struct {
 	count     int
-	inFlight  int
 	windowKey int64
 }
 

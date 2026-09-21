@@ -4,13 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha3"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
-
-	"golang.org/x/crypto/sha3"
 )
 
 // NewSigningKey returns a random 32-byte HMAC key for unit tests.

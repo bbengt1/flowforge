@@ -314,8 +314,8 @@ type UISummary struct {
 // UILayoutSummary is returned on validate/normalize/draft/version so Chloe
 // can read D1 positions without re-parsing YAML. Executor paths ignore it.
 type UILayoutSummary struct {
-	Version int                        `json:"version"`
-	Nodes   map[string]UINodePosition  `json:"nodes,omitempty"`
+	Version int                       `json:"version"`
+	Nodes   map[string]UINodePosition `json:"nodes,omitempty"`
 }
 
 // TriggerSummary is the catalog-facing trigger projection.

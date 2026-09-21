@@ -693,10 +693,11 @@ func directedCycle(nodes []Node, adj map[string][]string) (bool, []string) {
 			if found {
 				return
 			}
-			if color[v] == white {
+			switch color[v] {
+			case white:
 				parent[v] = u
 				visit(v)
-			} else if color[v] == gray {
+			case gray:
 				found = true
 				cycle = []string{u}
 				for x := parent[u]; x != "" && x != v; x = parent[x] {

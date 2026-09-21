@@ -577,9 +577,7 @@ func scalarString(n *yaml.Node, path string) (string, *FieldError) {
 		err := fieldError(path, n.Line, n.Column, CodeInvalidType, path+" must be a string.")
 		return "", &err
 	}
-	if n.Tag == "!!null" || n.Value == "" && n.Tag == "" && n.Style == 0 {
-		// empty string is allowed; null is not for required identifiers
-	}
+	// empty string is allowed; null is not for required identifiers
 	if n.Tag == "!!null" {
 		err := fieldError(path, n.Line, n.Column, CodeInvalidType, path+" must be a string.")
 		return "", &err

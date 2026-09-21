@@ -335,9 +335,6 @@ func (m *Memory) Events(_ context.Context, scope isolation.Scope, id string) ([]
 	src := m.evts[rowKey(scope, id)]
 	out := make([]Event, len(src))
 	copy(out, src)
-	if out == nil {
-		out = []Event{}
-	}
 	return out, nil
 }
 
@@ -494,16 +491,16 @@ func expired(exp *time.Time, now time.Time) bool {
 }
 
 func safeUnlockReason(err error) string {
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		return "payload shape is valid"
-	case err == ErrDisabled:
+	case ErrDisabled:
 		return "credential is disabled"
-	case err == ErrExpired:
+	case ErrExpired:
 		return "credential is expired"
-	case err == ErrKeyUnavailable:
+	case ErrKeyUnavailable:
 		return "encryption key is not configured"
-	case err == ErrDecrypt:
+	case ErrDecrypt:
 		return "stored payload could not be decrypted"
 	default:
 		return "credential cannot be tested"
