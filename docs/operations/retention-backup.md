@@ -39,9 +39,13 @@ Audit `artifact.legal_hold.*`.
 
 Artifact payloads use the same envelope encryption as the vault
 (`CREDENTIAL_KEK`). `storage_ref` is an opaque server locator and is
-never returned. Local MVP objects live under `ARTIFACT_STORE_DIR`
-(compose/k8s: `/tmp/flowforge-artifacts` on tmpfs). Empty store dir =
-in-process memory (lost on restart) — not a backup.
+never returned. Ciphertext is stored in an S3-compatible bucket
+(`ARTIFACT_S3_*`). Compose runs MinIO with a data volume so an API
+restart keeps the objects. A production-locked process refuses
+filesystem and in-process stores. Those remain non-production
+fallbacks (`ARTIFACT_STORE_DIR`, or memory when that is also empty)
+and are not a backup. Object-store credentials and the bucket name
+are never returned and are not written to logs.
 
 ## Backup encryption
 

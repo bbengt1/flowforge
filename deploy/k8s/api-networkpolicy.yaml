@@ -26,6 +26,9 @@ spec:
         - protocol: TCP
           port: 8080
   egress:
+    # Object-store (S3 / MinIO) egress is intentionally closed.
+    # Add an allowlisted ipBlock or pod selector for the artifact
+    # endpoint before production. Do not open 0.0.0.0/0 or ::/0.
     - to:
         - podSelector:
             matchLabels:

@@ -348,6 +348,8 @@ func newServer(d Deps) *API {
 	}
 	objects := d.Objects
 	if objects == nil {
+		// Tests omit Deps.Objects. cmd/api always injects artifact.LoadStore,
+		// which refuses filesystem and memory when the process is production-locked.
 		if root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")); root != "" {
 			if fsStore, err := artifact.NewFilesystemObjects(root); err == nil {
 				objects = fsStore

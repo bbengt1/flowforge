@@ -66,8 +66,25 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # Do not copy these into deploy/k8s.
 # JOB_BINDING_SECRET=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=
 # SCRIPT_SIGNING_KEY=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=
-# Encrypted artifact object store (E5.3). Empty = in-process memory.
-# Compose/k8s API containers are read-only; use the /tmp tmpfs:
+# Encrypted artifact object store (E5.3 / G.1.5). Compose defaults to
+# MinIO (service `minio`, volume `minio_data`) so ciphertext survives
+# an API restart. Payloads are envelope-encrypted with CREDENTIAL_KEK
+# before upload. Local-only root credentials — do not copy to k8s.
+# Production-locked processes boot-fail without bucket + access key +
+# secret, and boot-fail if ARTIFACT_S3_CREATE_BUCKET is set.
+# MINIO_ROOT_USER=flowforge
+# MINIO_ROOT_PASSWORD=flowforge-local-dev-minio
+# ARTIFACT_S3_ENDPOINT=http://minio:9000
+# ARTIFACT_S3_BUCKET=flowforge-artifacts
+# ARTIFACT_S3_REGION=us-east-1
+# ARTIFACT_S3_ACCESS_KEY_ID=flowforge
+# ARTIFACT_S3_SECRET_ACCESS_KEY=flowforge-local-dev-minio
+# ARTIFACT_S3_USE_PATH_STYLE=true
+# ARTIFACT_S3_CREATE_BUCKET=true
+# Optional extra server-side encryption (envelope encryption stays on):
+# ARTIFACT_S3_SSE=AES256
+# ARTIFACT_S3_SSE_KMS_KEY_ID=
+# Non-production filesystem fallback (unset every ARTIFACT_S3_* intent):
 # ARTIFACT_STORE_DIR=/tmp/flowforge-artifacts
 # ARTIFACT_DOWNLOAD_TTL=60s
 # ARTIFACT_MAX_BYTES=1048576

@@ -184,16 +184,5 @@ func Open(keys vault.Keys, env vault.Envelope) ([]byte, error) {
 	return vault.Decrypt(keys, env)
 }
 
-// LoadObjects returns a filesystem store when ARTIFACT_STORE_DIR is set,
-// otherwise an in-process memory store (tests / ephemeral local MVP).
-func LoadObjects() (Objects, string, error) {
-	root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR"))
-	if root == "" {
-		return NewMemoryObjects(), "memory", nil
-	}
-	fs, err := NewFilesystemObjects(root)
-	if err != nil {
-		return nil, "", err
-	}
-	return fs, root, nil
-}
+// Backend selection lives in LoadStore. Filesystem and memory stores are
+// non-production. A production-locked process requires S3.

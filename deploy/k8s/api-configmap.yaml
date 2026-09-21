@@ -46,7 +46,18 @@ data:
   # Encrypted backups are not this loop.
   SCHEDULER_ENABLED: "true"
   SCHEDULER_INTERVAL: "30s"
-  # Encrypted artifact objects on the container /tmp emptyDir (read-only root).
-  ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"
+  # Durable artifact payloads (G.1.5 / B3). Production-locked boot
+  # requires ARTIFACT_S3_BUCKET plus access key and secret on the Secret.
+  # Do not set ARTIFACT_STORE_DIR or ARTIFACT_S3_CREATE_BUCKET here —
+  # filesystem/memory stores and bucket creation are non-production and
+  # the process refuses to start. Uncomment and set the endpoint for a
+  # non-AWS S3 API. Empty endpoint uses the regional AWS endpoint.
+  # Object-store egress is not opened by the NetworkPolicy; add an
+  # allowlisted rule. Do not use 0.0.0.0/0. Never put credentials here.
+  # ARTIFACT_S3_ENDPOINT: "https://s3.example"
+  # ARTIFACT_S3_BUCKET: "flowforge-artifacts"
+  # ARTIFACT_S3_REGION: "us-east-1"
+  # ARTIFACT_S3_USE_PATH_STYLE: "false"
+  # ARTIFACT_S3_SSE: "AES256"
   ARTIFACT_DOWNLOAD_TTL: "60s"
   ARTIFACT_MAX_BYTES: "1048576"

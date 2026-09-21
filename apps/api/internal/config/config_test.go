@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
@@ -630,6 +631,34 @@ func TestLoadHMACSecretsFailClosed(t *testing.T) {
 	}
 	if len(cfg.JobBindingKey) != 32 || len(cfg.ScriptSigningKey) != 32 {
 		t.Fatalf("loaded key lengths job=%d script=%d", len(cfg.JobBindingKey), len(cfg.ScriptSigningKey))
+	}
+}
+
+func TestLoadArtifactS3(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	for _, name := range []string{
+		artifact.EnvS3Endpoint, artifact.EnvS3Bucket, artifact.EnvS3Region,
+		artifact.EnvS3AccessKeyID, artifact.EnvS3SecretAccessKey, artifact.EnvS3SessionToken,
+		artifact.EnvS3UsePathStyle, artifact.EnvS3SSE, artifact.EnvS3SSEKMSKeyID,
+		artifact.EnvS3Prefix, artifact.EnvS3CreateBucket,
+	} {
+		t.Setenv(name, "")
+	}
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ArtifactS3.Enabled {
+		t.Fatal("empty ARTIFACT_S3_* must leave the store disabled")
+	}
+	t.Setenv(artifact.EnvS3Bucket, "flowforge-artifacts")
+	t.Setenv(artifact.EnvS3SecretAccessKey, "s3-secret-do-not-leak")
+	_, err = loadTestConfig(t)
+	if err == nil {
+		t.Fatal("partial S3 config must fail closed")
+	}
+	if strings.Contains(err.Error(), "s3-secret-do-not-leak") {
+		t.Fatalf("error leaked secret: %v", err)
 	}
 }
 

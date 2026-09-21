@@ -338,6 +338,10 @@ connection limits, extensions), and add graceful-drain configuration.
 
 #### B3 — S2 — Execution artifacts are stored on ephemeral `tmpfs`
 
+**Status (G.1.5):** addressed. Production and compose use an S3-compatible
+store. Filesystem and memory remain non-production fallbacks. The notes
+below are the original finding.
+
 `ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"` on an `emptyDir` volume
 (`api-configmap.yaml`, `api-deployment.yaml`). With `ARTIFACT_STORE_DIR` unset, the
 store falls back to **in-process memory** (`cmd/api/main.go:loadArtifactObjects`).
