@@ -46,7 +46,11 @@ export function executionPollDelayMs(input: {
   );
   const random = input.random ?? Math.random;
   const unit = random() * 2 - 1;
-  return Math.max(0, Math.round(base * (1 + EXECUTION_STATUS_POLL_JITTER * unit)));
+  const jittered = Math.round(base * (1 + EXECUTION_STATUS_POLL_JITTER * unit));
+  return Math.min(
+    EXECUTION_STATUS_POLL_MAX_MS,
+    Math.max(0, jittered),
+  );
 }
 
 export type ExecutionStatusPollLoop = {

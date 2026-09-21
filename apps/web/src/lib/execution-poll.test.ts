@@ -148,6 +148,14 @@ describe("G.0.12 execution poll visibility + backoff", () => {
       }),
       EXECUTION_STATUS_POLL_MAX_MS,
     );
+    assert.equal(
+      executionPollDelayMs({
+        visible: true,
+        consecutiveFailures: 4,
+        random: () => 0.999,
+      }),
+      EXECUTION_STATUS_POLL_MAX_MS,
+    );
   });
 
   it("does not schedule ticks while hidden and resumes immediately when visible", async () => {
