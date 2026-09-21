@@ -51,7 +51,9 @@ func NewAPIJobClient(cfg APIJobConfig) (*APIJobClient, error) {
 func newAPIJobClient(cfg APIJobConfig, allowHTTP bool) (*APIJobClient, error) {
 	host := strings.TrimRight(strings.TrimSpace(cfg.Host), "/")
 	u, err := url.Parse(host)
-	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && !(allowHTTP && u.Scheme == "http")) {
+	// https, or http only when the httptest switch is on. Userinfo is rejected.
+	allowed := err == nil && u.Host != "" && u.User == nil && (u.Scheme == "https" || (allowHTTP && u.Scheme == "http"))
+	if !allowed {
 		return nil, engineError(CodeIsolationDenied, "script runner API server must be https.", http.StatusForbidden)
 	}
 	tokenFile := strings.TrimSpace(cfg.TokenFile)
