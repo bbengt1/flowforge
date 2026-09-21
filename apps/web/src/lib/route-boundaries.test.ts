@@ -88,7 +88,8 @@ describe("G.0.4 route boundaries", () => {
     assert.equal(boundaryHasRetry(panel), true);
     assert.match(segmentError, /"use client"/);
     assert.match(globalError, /"use client"/);
-    assert.match(panel, new RegExp(ROUTE_ERROR_RETRY_LABEL));
+    assert.match(panel, /ROUTE_ERROR_RETRY_LABEL/);
+    assert.match(source("src/lib/route-boundary-chrome.ts"), new RegExp(ROUTE_ERROR_RETRY_LABEL));
     assert.equal(routeErrorDigest({ digest: "abc123digestref" }), "abc123digestref");
     assert.equal(routeErrorDigest({}), "");
   });
@@ -158,9 +159,12 @@ describe("G.0.4 route boundaries", () => {
     const panel = source("src/components/chrome/RouteErrorPanel.tsx");
     const loading = source("src/components/chrome/RouteLoadingFallback.tsx");
     const notFound = source("src/components/chrome/RouteNotFound.tsx");
-    assert.match(panel, /ff-overview-create|ff-shell-panel/);
-    assert.match(loading, /ff-shell/);
+    const chrome = source("src/lib/route-boundary-chrome.ts");
+    assert.match(panel, /ROUTE_BOUNDARY_ACTION_CLASS|ff-overview-create/);
+    assert.match(loading, /ROUTE_BOUNDARY_SKELETON_CLASS|ff-shell/);
     assert.match(notFound, /EMBED_MOUNT_HEADER/);
+    assert.match(chrome, /ff-overview-create/);
+    assert.match(chrome, /ff-shell-panel/);
     assert.equal(ROUTE_BOUNDARIES.draftsNeverRun, true);
     assert.equal(ROUTE_BOUNDARIES.vaultDisplayNameUuidOnly, true);
     assert.equal(ROUTE_BOUNDARIES.noGreenfieldApis, true);

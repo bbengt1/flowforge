@@ -190,7 +190,8 @@ export function boundaryWiresReset(source: string): boolean {
 export function boundaryHasRetry(source: string): boolean {
   return (
     source.includes("reset") &&
-    source.includes(ROUTE_ERROR_RETRY_LABEL) &&
+    (source.includes(ROUTE_ERROR_RETRY_LABEL) ||
+      source.includes("ROUTE_ERROR_RETRY_LABEL")) &&
     /onClick=\{/.test(source)
   );
 }
