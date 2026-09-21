@@ -8,7 +8,7 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
-2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`.
+2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`. Production provider dispatch is the runner Deployment (`/usr/local/bin/runner`); see [Production runner](#production-runner).
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
 4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). When `local_logins` is empty it also seeds the **one-time** local Login operator — see [First-run local Login](#first-run-local-login). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
@@ -17,7 +17,7 @@ Migrations are forward-only and recorded in `schema_migrations`; re-running the 
 Compose hardening (UID/GID **65532** except postgres):
 
 - **api** (`#10` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
-- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`.
+- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
 - **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 
@@ -101,9 +101,12 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `LOCK_TIMEOUT` | `5s` | PostgreSQL `lock_timeout` on the same checkout. Go duration. Invalid/zero keeps `5s`. Clamped at `1m` and never above `STATEMENT_TIMEOUT`. |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | **Local/dev only.** Compose `worker` claims `/api/v1/jobs/claim`. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this or run `/usr/local/bin/worker`. |
-| `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. |
-| `WORKER_ID` | `compose-local` | Worker id sent on claim/heartbeat/complete. |
-| `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the worker presents. Must have `workflow.execute`. |
+| `RUNNER` | unset (on when production-locked) | **Production runner only.** `0`/`false`/`off`/`no` exits 0. Any value in `development`/`dev`/`local`/`test` with `REQUIRE_TLS` false is a **boot-fail** (`use cmd/worker`). |
+| `RUNNER_USER_ID` | empty | Existing user UUID the runner claims as. Does not upsert. |
+| `RUNNER_ISSUER` / `RUNNER_SUBJECT` | first `PLATFORM_ADMINS` pair | Lookup of an existing principal (`FindUser`, no upsert) when `RUNNER_USER_ID` is empty. Must have `workflow.execute`. |
+| `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. The production runner does not use it. |
+| `WORKER_ID` | `compose-local` (runner default `production-runner`) | Worker id sent on claim/heartbeat/complete. |
+| `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the **compose** worker presents. Must have `workflow.execute`. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
 | `BACKUP_ENCRYPTION_KEY` | (scripts only) | Passphrase for `scripts/backup/*` (AES-256-CBC + PBKDF2). Wrap with KMS before production. Not an API process env. |
@@ -137,7 +140,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. API and web Dockerfiles pin their bases by digest. |
 | Compose-documented `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` (local-only) | Unique durable secrets on the Secret. **Boot-fail** if missing or malformed. Do not copy the compose defaults. |
-| Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Production workers are isolated claim clients you deploy separately. The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. |
+| Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Run `/usr/local/bin/runner` (`deploy/k8s/runner-deployment.yaml`). The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. The runner **boot-fails** on the local/dev path. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
 | First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
@@ -338,7 +341,7 @@ does not start an in-process runner.
 | Core `data.set` / `data.map` / `data.validate` / `flow.condition` / `flow.stop` / `flow.fail` | Evaluate via the existing Go contract, then `heartbeat` + `complete` / `fail`. Enough for the blank-draft smoke. |
 | `flow.approval` | API parks the claim as `waiting` (no lease). Worker skips. |
 | `flow.delay` | Fail-closed (`local-worker-unsupported`). Durable wait is not an in-worker sleep. |
-| Provider (`k8s.*`, `ssh.run`, `script.*`, `http.request`, …) | Fail-closed (`local-worker-unsupported`). Isolated production workers stay required. |
+| Provider (`k8s.*`, `ssh.run`, `script.*`, `http.request`, …) | Fail-closed (`local-worker-unsupported`). Use the [production runner](#production-runner). |
 
 Identity is the compose trusted-dev principal (`PLATFORM_ADMINS`,
 default `https://idp.example|admin-1`). The worker lists
@@ -357,6 +360,38 @@ ids are not sent (400).
 | Production-locked `APP_ENV` without the flag | Process **refuses to start** (exit 1). |
 
 `deploy/k8s` must not set `LOCAL_WORKER` or run `/usr/local/bin/worker`.
+
+## Production runner
+
+`/usr/local/bin/runner` (`apps/api/cmd/runner`) is the production-locked
+worker. `deploy/k8s/runner-deployment.yaml` runs it at `replicas: 1`
+from the same API image. It refuses `APP_ENV=development|dev|local|test`
+when `REQUIRE_TLS` is false, so compose keeps `cmd/worker`.
+
+It claims in-process through PostgreSQL (`SET ROLE flowforge_app`,
+FORCE RLS). It mints and re-parses an HMAC job ticket
+(`JOB_BINDING_SECRET`) and completes or fails with the fencing token.
+Draft version/digest bindings fail `draft-not-runnable` and never call
+an engine. Credentials are unlocked in-process and wiped. Logs carry
+job id, node type, and error code only.
+
+| Node | Production runner |
+| --- | --- |
+| Core `data.set` / `data.map` / `data.validate` / `flow.condition` / `flow.stop` / `flow.fail` | Same in-process evaluate as the compose worker. |
+| `flow.approval` | Parked with `WaitJob` until `expiresIn`. Not executed. |
+| `flow.delay` | Fail-closed (`runner-unsupported`). Not an in-process sleep. |
+| `kubernetes.*` / `ssh.run` / `script.python` / `script.go` / `http.request` / `notification.webhook` | Existing engine packages, published pins only. |
+| `notification.email` | `ExecuteEmail`. No mailer configured → `delivery-failed`. |
+| `INTEGRATION_ACTIONS_ENABLED=false` | HTTP and notification nodes fail `integration-disabled` before `Execute`. |
+
+Identity is `RUNNER_USER_ID` or `RUNNER_ISSUER` + `RUNNER_SUBJECT`
+(else the first `PLATFORM_ADMINS` pair). Lookup does not upsert.
+`CREDENTIAL_KEK` must be ready or the process exits 1.
+
+The runner NetworkPolicy allows PostgreSQL and cluster DNS only.
+Provider CIDRs are an operator allowlist. Do not open `0.0.0.0/0`.
+`deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0`;
+scripts use the in-process harness. Do not run this binary from compose.
 
 ### Unclaimed jobs
 

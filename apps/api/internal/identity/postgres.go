@@ -67,6 +67,24 @@ func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 	return u, nil
 }
 
+// FindUser returns an existing principal. It does not upsert.
+func (p *Postgres) FindUser(ctx context.Context, issuer, subject string) (User, error) {
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
+		return User{}, ErrInvalid
+	}
+	var u User
+	err := p.db.QueryRow(ctx, `
+		SELECT id::text, issuer, external_subject, display_name, status, created_at, updated_at
+		FROM users WHERE issuer = $1 AND external_subject = $2
+	`, issuer, subject).Scan(&u.ID, &u.Issuer, &u.ExternalSubject, &u.DisplayName, &u.Status, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return User{}, mapDBErr(err)
+	}
+	return u, nil
+}
+
 func (p *Postgres) SetLocalPassword(ctx context.Context, userID, identifier, passwordHash string) error {
 	userID = strings.TrimSpace(userID)
 	identifier = strings.TrimSpace(identifier)

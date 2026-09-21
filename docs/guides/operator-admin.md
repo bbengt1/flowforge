@@ -571,7 +571,9 @@ credentials for `https://idp.example|admin-1` (opt out with
 `SEED_LOCAL_DEFAULTS=0`). How to point the membership form at that
 context: [deployment.md](../deployment.md#local-default-tenant-seed).
 The compose `worker` is required for published runs; opt out with
-`--scale worker=0` or `LOCAL_WORKER=0`.
+`--scale worker=0` or `LOCAL_WORKER=0`. It does not execute provider
+nodes. Production uses `/usr/local/bin/runner`
+([deployment](../deployment.md#production-runner)).
 
 Compose and production env stay on [deployment.md](../deployment.md).
 Do not copy `TRUSTED_DEV_IDENTITY_HEADERS`, sample `PLATFORM_ADMINS`,

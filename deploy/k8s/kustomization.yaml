@@ -7,7 +7,9 @@ resources:
   - api-secret.example.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - runner-deployment.yaml
   - default-deny-networkpolicy.yaml
   - api-networkpolicy.yaml
+  - runner-networkpolicy.yaml
   - postgres-networkpolicy.yaml
   - ingress.yaml

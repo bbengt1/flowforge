@@ -1,10 +1,10 @@
 # Kubernetes API engine
 
-**Runtime:** specified contract and library only. **No shipped worker calls this engine.** Author → validate → publish → dispatch still ends `failed` / `local-worker-unsupported` on compose. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+**Runtime:** `cmd/runner` calls this engine. Compose still ends `kubernetes.*` at `failed` / `local-worker-unsupported`. Default-deny does not open the API server. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
 
 ## Purpose
 
-The Kubernetes engine is FlowForge's first **specified** backend workflow capability. When a production worker exists, it lets an authorized workspace apply approved namespace-scoped manifests, inspect resources, and wait for rollout outcomes without exposing an unrestricted Kubernetes proxy.
+The Kubernetes engine applies approved namespace-scoped manifests, inspects resources, and waits for rollout outcomes without exposing an unrestricted Kubernetes proxy. `cmd/runner` calls `kubernetes.Execute` with a vault kubeconfig handle. Compose `cmd/worker` still refuses `kubernetes.*`. Default-deny network policy does not open the cluster API.
 
 ## MVP operations
 
