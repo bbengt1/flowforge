@@ -7,10 +7,13 @@ resources:
   - api-secret.example.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - web-deployment.yaml
+  - web-service.yaml
   - runner-deployment.yaml
   - script-runner-rbac.yaml
   - default-deny-networkpolicy.yaml
   - api-networkpolicy.yaml
+  - web-networkpolicy.yaml
   - runner-networkpolicy.yaml
   - postgres-networkpolicy.yaml
   - ingress.yaml

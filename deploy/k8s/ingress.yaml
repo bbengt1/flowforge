@@ -1,3 +1,6 @@
+# api.example.com → flowforge-api:8080
+# app.example.com → flowforge-web:3000
+# flowforge-tls must cover both hostnames.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,6 +18,7 @@ spec:
   tls:
     - hosts:
         - api.example.com
+        - app.example.com
       secretName: flowforge-tls
   rules:
     - host: api.example.com
@@ -27,3 +31,13 @@ spec:
                 name: flowforge-api
                 port:
                   number: 8080
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flowforge-web
+                port:
+                  number: 3000

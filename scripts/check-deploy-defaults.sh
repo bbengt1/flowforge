@@ -57,6 +57,47 @@ need "$deploy" 'seccompProfile:'
 need "$deploy" 'limits:'
 forbid "$deploy" 'image:.*:latest([[:space:]]|$)'
 
+web="$ROOT/deploy/k8s/web-deployment.yaml"
+need "$web" 'runAsUser: 65532'
+need "$web" 'runAsGroup: 65532'
+need "$web" 'runAsNonRoot: true'
+need "$web" 'readOnlyRootFilesystem: true'
+need "$web" 'allowPrivilegeEscalation: false'
+need "$web" 'automountServiceAccountToken: false'
+need "$web" '[[:space:]]+- ALL'
+need "$web" 'seccompProfile:'
+need "$web" 'limits:'
+need "$web" 'ghcr.io/bbengt1/flowforge-web:foundation'
+need "$web" 'command: \["node", "apps/web/server.js"\]'
+need "$web" 'API_INTERNAL_URL'
+need "$web" 'http://flowforge-api:8080'
+need "$web" 'mountPath: /tmp'
+need "$web" 'mountPath: /app/apps/web/.next/cache'
+need "$web" 'path: /'
+forbid "$web" 'image:.*:latest([[:space:]]|$)'
+forbid "$web" '://localhost'
+forbid "$web" '://127\.0\.0\.1'
+forbid "$web" 'name: TRUSTED_DEV_IDENTITY_HEADERS'
+forbid "$web" 'name: SEED_LOCAL_DEFAULTS'
+forbid "$web" '/usr/local/bin/worker'
+
+need "$ROOT/deploy/k8s/web-service.yaml" 'port: 3000'
+need "$ROOT/deploy/k8s/web-networkpolicy.yaml" 'port: 3000'
+need "$ROOT/deploy/k8s/web-networkpolicy.yaml" 'port: 8080'
+need "$ROOT/deploy/k8s/web-networkpolicy.yaml" 'port: 53'
+forbid "$ROOT/deploy/k8s/web-networkpolicy.yaml" '0\.0\.0\.0/0'
+forbid "$ROOT/deploy/k8s/web-networkpolicy.yaml" '::/0'
+need "$ROOT/deploy/k8s/kustomization.yaml" 'web-deployment.yaml'
+need "$ROOT/deploy/k8s/kustomization.yaml" 'web-service.yaml'
+need "$ROOT/deploy/k8s/kustomization.yaml" 'web-networkpolicy.yaml'
+need "$ROOT/deploy/k8s/ingress.yaml" 'app.example.com'
+need "$ROOT/deploy/k8s/ingress.yaml" 'flowforge-web'
+need "$ROOT/deploy/k8s/ingress.yaml" 'number: 3000'
+if grep -REq 'command:.*\/usr\/local\/bin\/worker' "$ROOT/deploy/k8s"; then
+  echo "forbidden compose worker command in deploy/k8s" >&2
+  fail=1
+fi
+
 prod_runner="$ROOT/deploy/k8s/runner-deployment.yaml"
 need "$prod_runner" 'runAsUser: 65532'
 need "$prod_runner" 'runAsGroup: 65532'
