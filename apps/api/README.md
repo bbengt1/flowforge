@@ -228,9 +228,17 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
   worker:
     image: flowforge-api:local
     command: ["/usr/local/bin/worker"]
+    healthcheck:
+      disable: true
     environment:
       API_URL: http://api:8080
       APP_ENV: ${APP_ENV:-development}
@@ -246,6 +254,8 @@ Conventions:
 - Host/container port: `8080`
 - Build context: `apps/api` (this Dockerfile)
 - Image user: UID/GID `65532` (non-root). Compose and `deploy/k8s` also set a read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, and CPU/memory/PID limits.
+- Base images are digest-pinned (`golang:1.26-alpine` build, `alpine:3.20` runtime). Refresh: [docs/deployment.md](../../docs/deployment.md#refreshing-dockerfile-base-digests).
+- Image `HEALTHCHECK` hits `GET /api/v1/health` (liveness, no PostgreSQL). Compose `worker` sets `healthcheck.disable` because that command does not listen.
 - Same image can run migrations as a one-shot or the local worker. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` or `command: ["/usr/local/bin/worker"]` replaces the API process. The worker is local/dev only.
 - UI (`apps/web`) should call `http://api:8080` from the compose network, or `http://localhost:8080` from the host
 - Kubernetes / TLS / supply-chain foundation: [`deploy/`](../../deploy/)

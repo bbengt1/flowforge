@@ -4,9 +4,9 @@ Implemented by `.github/workflows/supply-chain.yml` and the scripts under `scrip
 
 ## Approved bases
 
-Dockerfiles may `FROM` only names listed in `approved-bases.txt` (tag required; digest pin is allowed as `name:tag@sha256:…`). Unlisted bases fail CI.
+Dockerfiles may `FROM` only names listed in `approved-bases.txt`. Tag **and** a multi-arch index digest are required (`name:tag@sha256:…`). Unlisted or unpinned bases fail CI (`scripts/check-approved-bases.sh`). How to refresh pins: [docs/deployment.md](../../docs/deployment.md#refreshing-dockerfile-base-digests).
 
-Production images must additionally be digest-pinned at deploy time. `:latest` is rejected in `deploy/k8s`.
+Production **deployed** images must additionally be digest-pinned at deploy time. `:latest` is rejected in `deploy/k8s`.
 
 Shared runtime UID for FlowForge app images: **65532**.
 

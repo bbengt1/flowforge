@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Fail if a Dockerfile FROM line is not in deploy/supply-chain/approved-bases.txt.
+# Fail if a Dockerfile FROM line is not an approved, digest-pinned base.
+# Allowlist is name:tag in deploy/supply-chain/approved-bases.txt.
+# Every FROM that names a registry image must be name:tag@sha256:<64 hex>.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,6 +28,13 @@ approved() {
   return 1
 }
 
+digest_pinned() {
+  local image="$1"
+  local digest="${image#*@}"
+  [[ "$image" == *@sha256:* ]] || return 1
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+}
+
 failed=0
 for file in "${DOCKERFILES[@]}"; do
   while IFS= read -r raw; do
@@ -38,6 +47,11 @@ for file in "${DOCKERFILES[@]}"; do
     image="${rest%% *}"
     # Multi-stage named references have no registry/tag (FROM deps AS build).
     if [[ "$image" != *:* ]]; then
+      continue
+    fi
+    if ! digest_pinned "$image"; then
+      echo "unpinned base in ${file#"$ROOT/"}: $image (require name:tag@sha256:<64 hex>)" >&2
+      failed=1
       continue
     fi
     if ! approved "$image"; then
