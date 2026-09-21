@@ -72,8 +72,8 @@ Existing production-locked behavior (do not relax for go-live):
   the next step (E12.1 domain 5).
 - Artifacts: short-lived download grants; legal hold; purge removes
   metadata and object bytes ([retention and backup](../operations/retention-backup.md)).
-- `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` must be durable in
-  production (ephemeral process keys die on restart).
+- `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` are required at boot
+  (missing or malformed is fail-closed; no per-process random default).
 - Metrics and OpenAPI require `platform.administer` (ADV-020). Health
   and readiness stay unauthenticated for probes.
 

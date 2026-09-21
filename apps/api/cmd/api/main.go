@@ -18,7 +18,6 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
-	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -74,7 +73,8 @@ func main() {
 		Handler: httpapi.NewWithDeps(httpapi.Deps{
 			DB:                   pool,
 			Keys:                 cfg.VaultKeys,
-			JobBindingKey:        wfstore.LoadJobBindingKey(),
+			JobBindingKey:        cfg.JobBindingKey,
+			ScriptSigningKey:     cfg.ScriptSigningKey,
 			Objects:              objects,
 			TLSMaterials:         tlsMaterials,
 			DownloadTTL:          cfg.ArtifactDownloadTTL,
@@ -97,7 +97,7 @@ func main() {
 					AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
 				},
 				VaultKeys:     cfg.VaultKeys,
-				JobBindingKey: wfstore.LoadJobBindingKey(),
+				JobBindingKey: cfg.JobBindingKey,
 			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

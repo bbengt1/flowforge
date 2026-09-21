@@ -1,6 +1,9 @@
 package wfstore
 
 import (
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -78,5 +81,56 @@ func TestJobTicketRejectsAlteredExpiredAndCrossWorkspace(t *testing.T) {
 	}
 	if gotV2.TenantID != bound.TenantID || gotV2.WorkbenchKey != "ops" {
 		t.Fatalf("v2 tenancy %+v", gotV2)
+	}
+}
+
+func TestLoadJobBindingKeyFailsClosed(t *testing.T) {
+	t.Setenv(EnvJobBindingSecret, "")
+	if _, err := LoadJobBindingKey(); !errors.Is(err, ErrJobBindingSecret) {
+		t.Fatalf("empty: %v", err)
+	}
+
+	malformed := "not-a-32-byte-hmac-key"
+	t.Setenv(EnvJobBindingSecret, malformed)
+	key, err := LoadJobBindingKey()
+	if !errors.Is(err, ErrJobBindingSecret) {
+		t.Fatalf("malformed: %v", err)
+	}
+	if key != nil {
+		t.Fatal("malformed must not return a key")
+	}
+	if strings.Contains(err.Error(), malformed) {
+		t.Fatalf("error must not include the secret value: %v", err)
+	}
+
+	raw := []byte("flowforge-test-job-binding-32b!!")
+	if len(raw) != 32 {
+		t.Fatalf("fixture length %d", len(raw))
+	}
+	t.Setenv(EnvJobBindingSecret, base64.StdEncoding.EncodeToString(raw))
+	got, err := LoadJobBindingKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(raw) {
+		t.Fatalf("std base64 decoded %d bytes", len(got))
+	}
+
+	t.Setenv(EnvJobBindingSecret, hex.EncodeToString(raw))
+	got, err = LoadJobBindingKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(raw) {
+		t.Fatal("hex must decode to the same key")
+	}
+
+	t.Setenv(EnvJobBindingSecret, string(raw))
+	got, err = LoadJobBindingKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(raw) {
+		t.Fatal("raw 32-byte value must be accepted")
 	}
 }

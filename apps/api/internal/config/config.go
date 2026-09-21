@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -53,6 +54,12 @@ type Config struct {
 	// VaultKeys is the local envelope KEK loaded from CREDENTIAL_KEK /
 	// CREDENTIAL_KEK_FILE. Empty keys fail closed on vault write/unlock.
 	VaultKeys vault.Keys
+	// JobBindingKey is the 32-byte HMAC for worker job tickets
+	// (JOB_BINDING_SECRET). Missing or malformed is a boot-fail.
+	JobBindingKey []byte
+	// ScriptSigningKey is the 32-byte HMAC for script artifact
+	// signatures (SCRIPT_SIGNING_KEY). Missing or malformed is a boot-fail.
+	ScriptSigningKey []byte
 	// ArtifactStoreDir is the local MVP filesystem root for encrypted
 	// object payloads. Empty uses in-process memory storage.
 	ArtifactStoreDir string
@@ -127,6 +134,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	jobKey, err := wfstore.LoadJobBindingKey()
+	if err != nil {
+		return Config{}, err
+	}
+	scriptKey, err := scripts.LoadSigningKey()
+	if err != nil {
+		return Config{}, err
+	}
 	embedKeys, err := embed.LoadMaterial()
 	if err != nil {
 		return Config{}, err
@@ -145,6 +160,8 @@ func Load() (Config, error) {
 		SessionIdleTimeout:        durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		SessionAbsoluteTimeout:    durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
 		VaultKeys:                 keys,
+		JobBindingKey:             jobKey,
+		ScriptSigningKey:          scriptKey,
 		ArtifactStoreDir:          strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
 		ArtifactDownloadTTL:       durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
 		ArtifactMaxBytes:          intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),

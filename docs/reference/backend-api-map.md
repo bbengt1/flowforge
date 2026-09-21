@@ -1072,7 +1072,7 @@ Worker client (not the UI):
 5. Graceful idle release (no heartbeat yet): `POST /jobs/{jobId}/release`. After heartbeat, release becomes `indeterminate`.
 6. Crash/lease loss: `POST /jobs/recover` (also runs on the next claim). Expired `claimed`/`running` jobs become `indeterminate`. A stale `jobToken` cannot complete.
 
-Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex) HMACs tickets; an unset secret is an ephemeral process key.
+Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex) HMACs tickets; missing or malformed is a **boot-fail** (no per-process random default).
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |

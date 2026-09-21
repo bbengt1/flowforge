@@ -91,12 +91,12 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
-| `JOB_BINDING_SECRET` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Unset = tickets die on API restart. **Set in production.** |
+| `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for worker job tickets. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | **Local/dev only.** Compose `worker` claims `/api/v1/jobs/claim`. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this or run `/usr/local/bin/worker`. |
 | `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. |
 | `WORKER_ID` | `compose-local` | Worker id sent on claim/heartbeat/complete. |
 | `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the worker presents. Must have `workflow.execute`. |
-| `SCRIPT_SIGNING_KEY` | ephemeral process key | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Unset = signatures die on restart. **Set in production.** |
+| `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
 | `BACKUP_ENCRYPTION_KEY` | (scripts only) | Passphrase for `scripts/backup/*` (AES-256-CBC + PBKDF2). Wrap with KMS before production. Not an API process env. |
 
@@ -128,7 +128,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | `POSTGRES_SSLMODE=disable` in compose DSN | `POSTGRES_SSLMODE=require` (ConfigMap). |
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. Web already pins `node:22-alpine` by digest. |
-| `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` unset (ephemeral) | Durable secrets. Tickets and script signatures die on restart if unset. |
+| Compose-documented `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` (local-only) | Unique durable secrets on the Secret. **Boot-fail** if missing or malformed. Do not copy the compose defaults. |
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Production workers are isolated claim clients you deploy separately. The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
 | First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |

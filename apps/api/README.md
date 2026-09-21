@@ -143,8 +143,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use and for local demo credential seed. Compose may default a local-only value — do not copy it to k8s. |
 | `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
-| `JOB_BINDING_SECRET` | ephemeral | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Unset generates a process-local key (tickets die on restart). |
-| `SCRIPT_SIGNING_KEY` | ephemeral | 32-byte HMAC key (base64 or 64 hex) for script artifact signatures (E9.1). Domain-separated with SHA-3. Unset generates a process-local key (signatures die on restart). |
+| `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
+| `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for script artifact signatures (E9.1). Domain-separated with SHA-3. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
 | `ARTIFACT_STORE_DIR` | empty | Filesystem root for encrypted artifact payloads (`{dir}/{workspaceID}/{storageRef}`). Empty uses in-process memory. Compose/k8s API containers are read-only — use `/tmp/flowforge-artifacts`. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
@@ -176,6 +176,12 @@ From `apps/api`:
 
 ```bash
 go test ./...
+# config.Load requires JOB_BINDING_SECRET and SCRIPT_SIGNING_KEY
+# (boot-fail if missing/malformed), including cmd/migrate. Use the
+# documented compose local-only values or `openssl rand -base64 32`.
+# Do not copy those defaults to k8s.
+export JOB_BINDING_SECRET=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=
+export SCRIPT_SIGNING_KEY=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=
 go run ./cmd/migrate
 go run ./cmd/api
 # Local/dev only (APP_ENV=development). Claims jobs against a running API.
@@ -205,6 +211,8 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-12h}
       CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=}
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
+      JOB_BINDING_SECRET: ${JOB_BINDING_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}
+      SCRIPT_SIGNING_KEY: ${SCRIPT_SIGNING_KEY:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}
       ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}

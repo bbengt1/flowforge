@@ -21,33 +21,36 @@ const (
 	jobTicketVersionV2  = "v2"
 )
 
-// NewJobBindingKey returns a random 32-byte HMAC key. Used when the
-// process environment does not set JOB_BINDING_SECRET (local/tests).
+// NewJobBindingKey returns a random 32-byte HMAC key for unit tests.
+// It is not a production or compose default and is never used by
+// LoadJobBindingKey.
 func NewJobBindingKey() []byte {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		sum := sha256.Sum256([]byte("flowforge-ephemeral-job-binding"))
-		return sum[:]
+		panic("generate test job binding key: " + err.Error())
 	}
 	return key
 }
 
-// LoadJobBindingKey reads JOB_BINDING_SECRET or generates an ephemeral key.
-func LoadJobBindingKey() []byte {
+// LoadJobBindingKey reads JOB_BINDING_SECRET. Missing or malformed
+// values fail closed — the API must not mint a per-process random key.
+// The returned error never includes the secret value.
+func LoadJobBindingKey() ([]byte, error) {
 	raw := strings.TrimSpace(os.Getenv(EnvJobBindingSecret))
 	if raw == "" {
-		return NewJobBindingKey()
+		return nil, fmt.Errorf("%w: set %s (32-byte HMAC as base64 or 64 hex); the process refuses to start without a durable secret", ErrJobBindingSecret, EnvJobBindingSecret)
 	}
-	if key, err := parseJobBindingKey(raw); err == nil {
-		return key
+	key, err := parseJobBindingKey(raw)
+	if err != nil {
+		return nil, err
 	}
-	return NewJobBindingKey()
+	return key, nil
 }
 
 func parseJobBindingKey(raw string) ([]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, fmt.Errorf("%s is empty", EnvJobBindingSecret)
+		return nil, fmt.Errorf("%w: %s is empty", ErrJobBindingSecret, EnvJobBindingSecret)
 	}
 	if b, err := base64.StdEncoding.DecodeString(raw); err == nil && len(b) == 32 {
 		return b, nil
@@ -67,7 +70,7 @@ func parseJobBindingKey(raw string) ([]byte, error) {
 	if len(raw) == 32 {
 		return []byte(raw), nil
 	}
-	return nil, fmt.Errorf("%s must be 32 bytes (base64 or 64 hex)", EnvJobBindingSecret)
+	return nil, fmt.Errorf("%w: %s must be 32 bytes (base64 or 64 hex)", ErrJobBindingSecret, EnvJobBindingSecret)
 }
 
 // SignJobTicket returns an HMAC-authenticated ticket for a claimed job.

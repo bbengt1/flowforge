@@ -170,6 +170,12 @@ func withHTTPTestIdentity(d Deps) Deps {
 	if d.PlatformAdmins == nil {
 		d.PlatformAdmins = []authz.PrincipalRef{{Issuer: httpTestIssuer, Subject: httpTestSubject}}
 	}
+	if len(d.JobBindingKey) == 0 && len(d.Security.JobBindingKey) == 0 {
+		d.JobBindingKey = wfstore.NewJobBindingKey()
+	}
+	if len(d.ScriptSigningKey) == 0 {
+		d.ScriptSigningKey = scripts.NewSigningKey()
+	}
 	return d
 }
 
@@ -323,11 +329,17 @@ func newServer(d Deps) http.Handler {
 		jobKey = d.Security.JobBindingKey
 	}
 	if len(jobKey) == 0 {
-		jobKey = wfstore.LoadJobBindingKey()
+		// Env only — never generate a per-process key. cmd/api passes
+		// keys from config.Load(); HTTP tests inject via withHTTPTestIdentity.
+		if loaded, err := wfstore.LoadJobBindingKey(); err == nil {
+			jobKey = loaded
+		}
 	}
 	scriptKey := d.ScriptSigningKey
 	if len(scriptKey) == 0 {
-		scriptKey = scripts.LoadSigningKey()
+		if loaded, err := scripts.LoadSigningKey(); err == nil {
+			scriptKey = loaded
+		}
 	}
 	scriptStore := d.Scripts
 	if scriptStore == nil {
