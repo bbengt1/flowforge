@@ -32,9 +32,13 @@ need "$api_df" '/api/v1/health'
 
 web_df="$ROOT/apps/web/Dockerfile"
 need "$web_df" '^USER 65532:65532'
+need "$web_df" 'COPY package.json pnpm-lock.yaml pnpm-workspace.yaml'
+need "$web_df" 'pnpm install --frozen-lockfile'
 
 compose="$ROOT/docker-compose.yml"
 need "$compose" 'user: "65532:65532"'
+need "$compose" 'dockerfile: apps/web/Dockerfile'
+need "$compose" '/app/apps/web/.next/cache'
 need "$compose" 'read_only: true'
 need "$compose" 'no-new-privileges:true'
 need "$compose" '[[:space:]]+- ALL'

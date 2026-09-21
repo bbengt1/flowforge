@@ -2,8 +2,9 @@
 #   docker compose up --build
 #
 # Services:
-#   web      — Next.js UI. Build context ./apps/web. UID 65532, read-only root,
-#              tmpfs, cap_drop, no-new-privileges, resource limits, secure headers.
+#   web      — Next.js UI. Repo-root context, apps/web/Dockerfile (lockfile).
+#              UID 65532, read-only root, tmpfs, cap_drop, no-new-privileges,
+#              resource limits, secure headers.
 #   api      — Go control plane. Build context ./apps/api; HTTP_ADDR=:8080.
 #              Hardening from E1.3 #10 (UID 65532, read-only, caps, tmpfs,
 #              mem/cpu/pid limits). HEALTHCHECK GET /api/v1/health.
@@ -204,8 +205,8 @@ services:
   web:
     <<: *security
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     image: flowforge-web:local
@@ -213,7 +214,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64M,mode=1777,noexec,nosuid
-      - /app/.next/cache:size=128M,mode=1777,noexec,nosuid
+      - /app/apps/web/.next/cache:size=128M,mode=1777,noexec,nosuid
     mem_limit: 512m
     cpus: "1.0"
     pids_limit: 256
