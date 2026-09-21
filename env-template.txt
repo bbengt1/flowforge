@@ -84,6 +84,9 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # Optional extra server-side encryption (envelope encryption stays on):
 # ARTIFACT_S3_SSE=AES256
 # ARTIFACT_S3_SSE_KMS_KEY_ID=
+# ARTIFACT_S3_PREFIX is rejected. Keys are {tenant}/{workspace}/{ref}
+# (lowercase UUIDs). No filename, prefix, or credential in the key or metadata.
+# Draft executions cannot attach run artifacts.
 # Non-production filesystem fallback (unset every ARTIFACT_S3_* intent):
 # ARTIFACT_STORE_DIR=/tmp/flowforge-artifacts
 # ARTIFACT_DOWNLOAD_TTL=60s

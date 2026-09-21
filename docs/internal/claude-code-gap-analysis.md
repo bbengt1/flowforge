@@ -338,9 +338,10 @@ connection limits, extensions), and add graceful-drain configuration.
 
 #### B3 — S2 — Execution artifacts are stored on ephemeral `tmpfs`
 
-**Status (G.1.5):** addressed. Production and compose use an S3-compatible
-store. Filesystem and memory remain non-production fallbacks. The notes
-below are the original finding.
+**Status (G.1.5):** addressed. Object keys are `{tenant}/{workspace}/{ref}`
+UUIDs only. A production-locked process boot-fails without an S3 bucket
+and credentials (no tmpfs fallback). Draft executions cannot attach run
+artifacts. The notes below are the original finding.
 
 `ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"` on an `emptyDir` volume
 (`api-configmap.yaml`, `api-deployment.yaml`). With `ARTIFACT_STORE_DIR` unset, the

@@ -71,9 +71,9 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style URLs (MinIO). Set `false` for virtual-hosted AWS. | 
 | `ARTIFACT_S3_SSE` | empty | Optional server-side encryption: `AES256` or `aws:kms`. Payloads are already envelope-encrypted with `CREDENTIAL_KEK` before upload. | 
 | `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required when `ARTIFACT_S3_SSE=aws:kms`. Never logged. | 
-| `ARTIFACT_S3_PREFIX` | empty | Optional key prefix (`workspace/ref` is appended). No `..` or leading slash. | 
+| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Object keys are `{tenant}/{workspace}/{ref}` (lowercase UUIDs only). No caller prefix, filename, or credential in the key or object metadata. | 
 | `ARTIFACT_S3_CREATE_BUCKET` | false (compose: `true`) | Create the bucket at boot when it is missing. **Boot-fail** in a production-locked process. | 
-| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{workspaceID}/{ref}`). Used only when every `ARTIFACT_S3_*` intent variable is unset. Empty then uses in-process memory. Both are refused when the process is production-locked. |
+| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when every `ARTIFACT_S3_*` intent variable is unset. Empty then uses in-process memory. Both are refused when the process is production-locked. A production-locked process does not fall back to this directory. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Short-lived download grant lifetime (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |

@@ -67,7 +67,6 @@ type S3Config struct {
 	// envelope-encrypted by the caller; SSE is an additional server-side layer.
 	SSE          string
 	SSEKMSKeyID  string
-	Prefix       string
 	CreateBucket bool
 	Enabled      bool
 }
@@ -94,9 +93,8 @@ func ParseS3FromEnv() (S3Config, error) {
 	token := strings.TrimSpace(os.Getenv(EnvS3SessionToken))
 	sse := strings.TrimSpace(os.Getenv(EnvS3SSE))
 	kmsKey := strings.TrimSpace(os.Getenv(EnvS3SSEKMSKeyID))
-	prefix, err := normalizeS3Prefix(os.Getenv(EnvS3Prefix))
-	if err != nil {
-		return S3Config{}, err
+	if strings.TrimSpace(os.Getenv(EnvS3Prefix)) != "" {
+		return S3Config{}, fmt.Errorf("%s is not allowed; object keys are tenant/workspace/ref only", EnvS3Prefix)
 	}
 	createSet, createBucket, err := optionalBool(EnvS3CreateBucket)
 	if err != nil {
@@ -108,7 +106,7 @@ func ParseS3FromEnv() (S3Config, error) {
 	}
 
 	intent := endpoint != "" || bucket != "" || accessKey != "" || secret != "" || token != "" ||
-		sse != "" || kmsKey != "" || prefix != "" || createSet || pathSet
+		sse != "" || kmsKey != "" || createSet || pathSet
 	if !intent {
 		return S3Config{}, nil
 	}
@@ -143,7 +141,6 @@ func ParseS3FromEnv() (S3Config, error) {
 		UsePathStyle:    pathStyle,
 		SSE:             sse,
 		SSEKMSKeyID:     kmsKey,
-		Prefix:          prefix,
 		CreateBucket:    createBucket,
 		Enabled:         true,
 	}, nil
@@ -165,30 +162,6 @@ func parseS3Endpoint(raw string) (string, error) {
 		return "", fmt.Errorf("%s must be an origin without a path, query, or fragment", EnvS3Endpoint)
 	}
 	return u.Scheme + "://" + u.Host, nil
-}
-
-func normalizeS3Prefix(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", nil
-	}
-	if strings.Contains(raw, "..") || strings.HasPrefix(raw, "/") || strings.Contains(raw, `\`) {
-		return "", fmt.Errorf("%s is invalid", EnvS3Prefix)
-	}
-	for _, r := range raw {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '/', r == '-', r == '_', r == '.':
-		default:
-			return "", fmt.Errorf("%s is invalid", EnvS3Prefix)
-		}
-	}
-	if !strings.HasSuffix(raw, "/") {
-		raw += "/"
-	}
-	if len(raw) > 256 {
-		return "", fmt.Errorf("%s is invalid", EnvS3Prefix)
-	}
-	return raw, nil
 }
 
 func optionalBool(name string) (set, val bool, err error) {
@@ -220,6 +193,7 @@ func LoadStore(ctx context.Context, cfg StoreConfig) (Objects, string, error) {
 		return store, "s3", nil
 	}
 	if cfg.ProductionLocked {
+		// Missing bucket or credentials must not fall through to tmpfs or memory.
 		return nil, "", fmt.Errorf("production-locked process requires an S3-compatible artifact store (%s, %s, %s)", EnvS3Bucket, EnvS3AccessKeyID, EnvS3SecretAccessKey)
 	}
 	if root := strings.TrimSpace(cfg.Dir); root != "" {
@@ -232,14 +206,14 @@ func LoadStore(ctx context.Context, cfg StoreConfig) (Objects, string, error) {
 	return NewMemoryObjects(), "memory", nil
 }
 
-// S3Objects stores ciphertext at {prefix}{workspaceID}/{ref} in one bucket.
-// Callers envelope-encrypt before Put. This type never lists objects and
-// never returns bucket names, endpoints, or credentials in errors.
+// S3Objects stores ciphertext at {tenantID}/{workspaceID}/{ref}.
+// Callers envelope-encrypt before Put. Objects carry no user metadata.
+// This type never lists objects and never returns bucket names,
+// endpoints, or credentials in errors.
 type S3Objects struct {
 	client       *s3.Client
 	bucket       string
 	region       string
-	prefix       string
 	sse          string
 	kmsKeyID     string
 	createBucket bool
@@ -271,7 +245,6 @@ func newS3Objects(ctx context.Context, cfg S3Config) (*S3Objects, error) {
 		client:       client,
 		bucket:       cfg.Bucket,
 		region:       region,
-		prefix:       cfg.Prefix,
 		sse:          cfg.SSE,
 		kmsKeyID:     cfg.SSEKMSKeyID,
 		createBucket: cfg.CreateBucket,
@@ -282,11 +255,8 @@ func newS3Objects(ctx context.Context, cfg S3Config) (*S3Objects, error) {
 	return store, nil
 }
 
-func (s *S3Objects) objectKey(workspaceID, ref string) (string, error) {
-	if err := validateLocator(workspaceID, ref); err != nil {
-		return "", err
-	}
-	return s.prefix + workspaceID + "/" + ref, nil
+func (s *S3Objects) objectKey(tenantID, workspaceID, ref string) (string, error) {
+	return scopedObjectKey(tenantID, workspaceID, ref)
 }
 
 func (s *S3Objects) ensureBucket(ctx context.Context) error {
@@ -313,13 +283,15 @@ func (s *S3Objects) ensureBucket(ctx context.Context) error {
 }
 
 // Put writes ciphertext. Missing locators are rejected before any request.
-func (s *S3Objects) Put(workspaceID, ref string, ciphertext []byte) error {
-	key, err := s.objectKey(workspaceID, ref)
+func (s *S3Objects) Put(tenantID, workspaceID, ref string, ciphertext []byte) error {
+	key, err := s.objectKey(tenantID, workspaceID, ref)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s3OpTimeout)
 	defer cancel()
+	// No Metadata, Tagging, ContentType, or ContentDisposition.
+	// Those fields would put filenames or secrets on the object.
 	in := &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -339,8 +311,8 @@ func (s *S3Objects) Put(workspaceID, ref string, ciphertext []byte) error {
 }
 
 // Get reads ciphertext for one workspace-scoped ref.
-func (s *S3Objects) Get(workspaceID, ref string) ([]byte, error) {
-	key, err := s.objectKey(workspaceID, ref)
+func (s *S3Objects) Get(tenantID, workspaceID, ref string) ([]byte, error) {
+	key, err := s.objectKey(tenantID, workspaceID, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -365,8 +337,8 @@ func (s *S3Objects) Get(workspaceID, ref string) ([]byte, error) {
 }
 
 // Delete removes one object. A missing object is not an error.
-func (s *S3Objects) Delete(workspaceID, ref string) error {
-	key, err := s.objectKey(workspaceID, ref)
+func (s *S3Objects) Delete(tenantID, workspaceID, ref string) error {
+	key, err := s.objectKey(tenantID, workspaceID, ref)
 	if err != nil {
 		return err
 	}

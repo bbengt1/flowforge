@@ -157,9 +157,9 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style (MinIO). `false` for virtual-hosted AWS. |
 | `ARTIFACT_S3_SSE` | empty | Optional `AES256` or `aws:kms`. Envelope encryption still happens before upload. |
 | `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required for `aws:kms`. Never logged. |
-| `ARTIFACT_S3_PREFIX` | empty | Optional object-key prefix. |
+| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Keys are `{tenant}/{workspace}/{ref}` UUIDs only. |
 | `ARTIFACT_S3_CREATE_BUCKET` | false (compose: true) | Create a missing bucket at boot. Boot-fail when production-locked. |
-| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{workspaceID}/{ref}`). Used only when no `ARTIFACT_S3_*` intent is set. Empty then uses in-process memory. Both are refused in a production-locked process. |
+| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when no `ARTIFACT_S3_*` intent is set. Empty then uses in-process memory. Both are refused in a production-locked process. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
 | `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 PKCS#8 PEM (`crypto/x509.ParsePKCS8PrivateKey`) for embed assertions (E11.1 / ADV-022). Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64/hex is compatibility-only. Non-prod ephemeral keys use `crypto/rand` (no committed seed). Never returned from an API. |

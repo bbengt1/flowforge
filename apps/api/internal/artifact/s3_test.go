@@ -15,6 +15,7 @@ const (
 	testAccessKey = "AKIADO-NOT-LEAK"
 	testSecret    = "s3-secret-do-not-leak"
 	testKMSKey    = "arn:aws:kms:us-east-1:123:key/do-not-leak"
+	testFailRef   = "99999999-9999-4999-8999-999999999999"
 )
 
 func TestParseS3EmptyIsDisabled(t *testing.T) {
@@ -73,20 +74,20 @@ func TestParseS3KMSRequiresKeyID(t *testing.T) {
 	}
 }
 
-func TestParseS3Prefix(t *testing.T) {
+func TestParseS3PrefixRejected(t *testing.T) {
 	clearS3Env(t)
 	setCompleteS3Env(t, "")
-	t.Setenv(EnvS3Prefix, "artifacts")
-	cfg, err := ParseS3FromEnv()
-	if err != nil {
-		t.Fatal(err)
+	secretPrefix := testSecret + "/artifacts"
+	t.Setenv(EnvS3Prefix, secretPrefix)
+	_, err := ParseS3FromEnv()
+	if err == nil {
+		t.Fatal("expected a caller prefix to be rejected")
 	}
-	if cfg.Prefix != "artifacts/" {
-		t.Fatalf("prefix = %q", cfg.Prefix)
+	if strings.Contains(err.Error(), testSecret) || strings.Contains(err.Error(), secretPrefix) {
+		t.Fatalf("error leaked prefix: %v", err)
 	}
-	t.Setenv(EnvS3Prefix, "../escape")
-	if _, err := ParseS3FromEnv(); err == nil {
-		t.Fatal("expected prefix escape to fail")
+	if !strings.Contains(err.Error(), EnvS3Prefix) {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -145,19 +146,19 @@ func TestS3PutGetSurvivesNewClient(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := testS3Config(srv.URL)
-	cfg.Prefix = "artifacts/"
 	cfg.SSE = sseAES256
 	first, kind, err := LoadStore(context.Background(), StoreConfig{S3: cfg})
 	if err != nil || kind != "s3" {
 		t.Fatalf("open kind=%s err=%v", kind, err)
 	}
+	tenant := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	ws := "11111111-1111-1111-1111-111111111111"
 	ref := "22222222-2222-2222-2222-222222222222"
 	payload := []byte("ciphertext-survives-restart")
-	if err := first.Put(ws, ref, payload); err != nil {
+	if err := first.Put(tenant, ws, ref, payload); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Put(ws, "../escape", payload); err == nil {
+	if err := first.Put(tenant, ws, "../escape", payload); err == nil {
 		t.Fatal("expected locator escape to fail")
 	}
 	if fake.requestsAfterEscape() {
@@ -166,7 +167,11 @@ func TestS3PutGetSurvivesNewClient(t *testing.T) {
 	if got := fake.sse(); got != sseAES256 {
 		t.Fatalf("sse header = %q", got)
 	}
-	if !fake.hasKey("flowforge-artifacts", "artifacts/"+ws+"/"+ref) {
+	if fake.userMetadata() {
+		t.Fatal("object metadata, tagging, or content-disposition was set")
+	}
+	key := tenant + "/" + ws + "/" + ref
+	if !fake.hasKey("flowforge-artifacts", key) {
 		t.Fatal("object key missing after put")
 	}
 
@@ -175,17 +180,17 @@ func TestS3PutGetSurvivesNewClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := second.Get(ws, ref)
+	got, err := second.Get(tenant, ws, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != string(payload) {
 		t.Fatalf("got %q", got)
 	}
-	if err := second.Delete(ws, ref); err != nil {
+	if err := second.Delete(tenant, ws, ref); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.Get(ws, ref); err != ErrNotFound {
+	if _, err := first.Get(tenant, ws, ref); err != ErrNotFound {
 		t.Fatalf("get after delete = %v", err)
 	}
 }
@@ -203,7 +208,7 @@ func TestS3ErrorDoesNotLeakSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = store.Put("11111111-1111-1111-1111-111111111111", "fail", []byte("x"))
+	err = store.Put("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "11111111-1111-1111-1111-111111111111", testFailRef, []byte("x"))
 	if err == nil {
 		t.Fatal("expected put to fail")
 	}
@@ -269,6 +274,7 @@ type fakeS3 struct {
 	buckets      map[string]bool
 	objects      map[string][]byte
 	sseHeader    string
+	putHeader    http.Header
 	leak         string
 	refuseCreate bool
 	puts         int
@@ -289,6 +295,21 @@ func (f *fakeS3) hasKey(bucket, key string) bool {
 	defer f.mu.Unlock()
 	_, ok := f.objects[bucket+"\n"+key]
 	return ok
+}
+
+func (f *fakeS3) userMetadata() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.putHeader == nil {
+		return false
+	}
+	for name := range f.putHeader {
+		lower := strings.ToLower(name)
+		if strings.HasPrefix(lower, "x-amz-meta-") || lower == "content-disposition" || lower == "x-amz-tagging" {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeS3) requestsAfterEscape() bool {
@@ -333,7 +354,8 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.puts++
 		f.sseHeader = r.Header.Get("X-Amz-Server-Side-Encryption")
-		fail := key == "fail" || strings.HasSuffix(key, "/fail")
+		f.putHeader = r.Header.Clone()
+		fail := key == testFailRef || strings.HasSuffix(key, "/"+testFailRef)
 		if !fail {
 			f.buckets[bucket] = true
 			f.objects[bucket+"\n"+key] = append([]byte(nil), body...)

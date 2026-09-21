@@ -10,18 +10,21 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
 // ErrNotFound is returned when an object is missing.
 var ErrNotFound = errors.New("artifact object not found")
 
-// Objects is encrypted-at-rest object storage. Implementations never expose
-// bucket credentials or list other workspace prefixes to callers.
+// Objects is encrypted-at-rest object storage. Keys are
+// {tenantID}/{workspaceID}/{ref}, each a server UUID. Implementations
+// never put filenames, credentials, or caller metadata on the object,
+// and never expose bucket credentials.
 type Objects interface {
-	Put(workspaceID, ref string, ciphertext []byte) error
-	Get(workspaceID, ref string) ([]byte, error)
-	Delete(workspaceID, ref string) error
+	Put(tenantID, workspaceID, ref string, ciphertext []byte) error
+	Get(tenantID, workspaceID, ref string) ([]byte, error)
+	Delete(tenantID, workspaceID, ref string) error
 }
 
 // MemoryObjects is an in-process store used by unit tests.
@@ -35,29 +38,27 @@ func NewMemoryObjects() *MemoryObjects {
 	return &MemoryObjects{data: map[string][]byte{}}
 }
 
-func (m *MemoryObjects) key(workspaceID, ref string) string {
-	return workspaceID + "/" + ref
-}
-
-// Put stores ciphertext for a workspace-scoped opaque ref.
-func (m *MemoryObjects) Put(workspaceID, ref string, ciphertext []byte) error {
-	if err := validateLocator(workspaceID, ref); err != nil {
+// Put stores ciphertext for a tenant- and workspace-scoped opaque ref.
+func (m *MemoryObjects) Put(tenantID, workspaceID, ref string, ciphertext []byte) error {
+	key, err := scopedObjectKey(tenantID, workspaceID, ref)
+	if err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.data[m.key(workspaceID, ref)] = append([]byte(nil), ciphertext...)
+	m.data[key] = append([]byte(nil), ciphertext...)
 	return nil
 }
 
-// Get returns ciphertext for a workspace-scoped opaque ref.
-func (m *MemoryObjects) Get(workspaceID, ref string) ([]byte, error) {
-	if err := validateLocator(workspaceID, ref); err != nil {
+// Get returns ciphertext for a tenant- and workspace-scoped opaque ref.
+func (m *MemoryObjects) Get(tenantID, workspaceID, ref string) ([]byte, error) {
+	key, err := scopedObjectKey(tenantID, workspaceID, ref)
+	if err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	raw, ok := m.data[m.key(workspaceID, ref)]
+	raw, ok := m.data[key]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -65,18 +66,19 @@ func (m *MemoryObjects) Get(workspaceID, ref string) ([]byte, error) {
 }
 
 // Delete removes ciphertext. Missing keys are not an error.
-func (m *MemoryObjects) Delete(workspaceID, ref string) error {
-	if err := validateLocator(workspaceID, ref); err != nil {
+func (m *MemoryObjects) Delete(tenantID, workspaceID, ref string) error {
+	key, err := scopedObjectKey(tenantID, workspaceID, ref)
+	if err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.data, m.key(workspaceID, ref))
+	delete(m.data, key)
 	return nil
 }
 
-// FilesystemObjects stores ciphertext under {Root}/{workspaceID}/{ref}.
-// Root must be a dedicated directory; refs are UUID-shaped and cannot escape.
+// FilesystemObjects stores ciphertext under {Root}/{tenantID}/{workspaceID}/{ref}.
+// Root must be a dedicated directory. All three key parts are UUIDs and cannot escape.
 type FilesystemObjects struct {
 	Root string
 }
@@ -93,17 +95,17 @@ func NewFilesystemObjects(root string) (*FilesystemObjects, error) {
 	return &FilesystemObjects{Root: root}, nil
 }
 
-func (f *FilesystemObjects) path(workspaceID, ref string) (string, error) {
-	if err := validateLocator(workspaceID, ref); err != nil {
+func (f *FilesystemObjects) path(tenantID, workspaceID, ref string) (string, error) {
+	key, err := scopedObjectKey(tenantID, workspaceID, ref)
+	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(f.Root, workspaceID)
-	return filepath.Join(dir, ref), nil
+	return filepath.Join(f.Root, filepath.FromSlash(key)), nil
 }
 
 // Put writes ciphertext using restrictive permissions.
-func (f *FilesystemObjects) Put(workspaceID, ref string, ciphertext []byte) error {
-	path, err := f.path(workspaceID, ref)
+func (f *FilesystemObjects) Put(tenantID, workspaceID, ref string, ciphertext []byte) error {
+	path, err := f.path(tenantID, workspaceID, ref)
 	if err != nil {
 		return err
 	}
@@ -118,8 +120,8 @@ func (f *FilesystemObjects) Put(workspaceID, ref string, ciphertext []byte) erro
 }
 
 // Get reads ciphertext.
-func (f *FilesystemObjects) Get(workspaceID, ref string) ([]byte, error) {
-	path, err := f.path(workspaceID, ref)
+func (f *FilesystemObjects) Get(tenantID, workspaceID, ref string) ([]byte, error) {
+	path, err := f.path(tenantID, workspaceID, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +136,8 @@ func (f *FilesystemObjects) Get(workspaceID, ref string) ([]byte, error) {
 }
 
 // Delete removes the object file.
-func (f *FilesystemObjects) Delete(workspaceID, ref string) error {
-	path, err := f.path(workspaceID, ref)
+func (f *FilesystemObjects) Delete(tenantID, workspaceID, ref string) error {
+	path, err := f.path(tenantID, workspaceID, ref)
 	if err != nil {
 		return err
 	}
@@ -145,27 +147,16 @@ func (f *FilesystemObjects) Delete(workspaceID, ref string) error {
 	return nil
 }
 
-func validateLocator(workspaceID, ref string) error {
-	if !safePathPart(workspaceID) || !safePathPart(ref) {
-		return errors.New("invalid artifact locator")
+// scopedObjectKey is the only object-key shape: three lowercase UUIDs.
+// Filenames, prefixes, and credentials are rejected.
+func scopedObjectKey(tenantID, workspaceID, ref string) (string, error) {
+	tenantID = strings.ToLower(strings.TrimSpace(tenantID))
+	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
+	ref = strings.ToLower(strings.TrimSpace(ref))
+	if !authz.ValidUUID(tenantID) || !authz.ValidUUID(workspaceID) || !authz.ValidUUID(ref) {
+		return "", errors.New("invalid artifact locator")
 	}
-	return nil
-}
-
-func safePathPart(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "." || s == ".." {
-		return false
-	}
-	if strings.ContainsAny(s, `/\`) {
-		return false
-	}
-	for _, r := range s {
-		if r < 32 || r == 127 {
-			return false
-		}
-	}
-	return true
+	return tenantID + "/" + workspaceID + "/" + ref, nil
 }
 
 // Seal encrypts plaintext with the process KEK. The returned envelope
@@ -182,6 +173,31 @@ func Seal(keys vault.Keys, plaintext []byte) (vault.Envelope, string, error) {
 // Open decrypts an envelope recovered from metadata + object bytes.
 func Open(keys vault.Keys, env vault.Envelope) ([]byte, error) {
 	return vault.Decrypt(keys, env)
+}
+
+// errStoreUnavailable is returned when no durable store was configured.
+// The text never names a path, bucket, or credential.
+var errStoreUnavailable = errors.New("artifact object store is not configured")
+
+// UnavailableObjects refuses every read and write. The HTTP server uses
+// this when ARTIFACT_STORE_DIR is set on a production-locked process and
+// no store was injected, so a directory is not a silent fallback.
+func UnavailableObjects() Objects {
+	return unavailableObjects{}
+}
+
+type unavailableObjects struct{}
+
+func (unavailableObjects) Put(string, string, string, []byte) error {
+	return errStoreUnavailable
+}
+
+func (unavailableObjects) Get(string, string, string) ([]byte, error) {
+	return nil, errStoreUnavailable
+}
+
+func (unavailableObjects) Delete(string, string, string) error {
+	return errStoreUnavailable
 }
 
 // Backend selection lives in LoadStore. Filesystem and memory stores are

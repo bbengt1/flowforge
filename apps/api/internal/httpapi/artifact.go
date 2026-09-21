@@ -103,6 +103,16 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Artifact encryption key is not configured.")
 		return
 	}
+	executionID := strings.TrimSpace(r.PathValue("executionId"))
+	exec, err := s.workflows.GetExecutionByID(r.Context(), scope, executionID)
+	if err != nil {
+		writeWorkflowStoreError(w, r, err)
+		return
+	}
+	if !authz.ValidUUID(exec.WorkflowVersionID) {
+		writeWorkflowStoreError(w, r, wfstore.ErrDraftNotRunnable)
+		return
+	}
 	var req uploadArtifactRequest
 	if !DecodeJSON(w, r, &req) {
 		return
@@ -159,12 +169,11 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 	}
 	scan := artifact.Scan(kind, class, payload)
 	if scan.Reject != "" {
-		execID := strings.TrimSpace(r.PathValue("executionId"))
 		s.emitAlert(r, scope, opsalert.Signal{
 			Kind:         opsalert.KindRedaction,
 			Action:       "artifact.upload",
 			ResourceType: "execution",
-			ResourceID:   execID,
+			ResourceID:   executionID,
 			Code:         CodeInvalidRequest,
 			Details:      map[string]any{"reason": "unsafe-content"},
 		})
@@ -190,7 +199,7 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	storageRef := newOpaqueRef()
-	if err := s.objects.Put(scope.WorkspaceID(), storageRef, env.Ciphertext); err != nil {
+	if err := s.objects.Put(scope.TenantID(), scope.WorkspaceID(), storageRef, env.Ciphertext); err != nil {
 		WriteProblem(w, r, http.StatusInternalServerError, CodeInternalError, "Internal Server Error", "Artifact object could not be stored.")
 		return
 	}
@@ -211,7 +220,7 @@ func (s *Server) uploadExecutionArtifact(w http.ResponseWriter, r *http.Request)
 		EncryptionVersion:     env.Version,
 	})
 	if err != nil {
-		_ = s.objects.Delete(scope.WorkspaceID(), storageRef)
+		_ = s.objects.Delete(scope.TenantID(), scope.WorkspaceID(), storageRef)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
@@ -404,7 +413,7 @@ func (s *Server) purgeWorkspace(ctx context.Context, scope isolation.Scope, now 
 	purged := 0
 	for _, art := range plan.Purge {
 		if s.objects != nil {
-			_ = s.objects.Delete(scope.WorkspaceID(), art.StorageRef)
+			_ = s.objects.Delete(scope.TenantID(), scope.WorkspaceID(), art.StorageRef)
 		}
 		if err := s.workflows.DeleteArtifact(ctx, scope, art.ID); err != nil {
 			return retentionPurgeResponse{}, err
@@ -457,7 +466,7 @@ func (s *Server) openArtifact(scope isolation.Scope, art wfstore.Artifact) ([]by
 	if !s.keys.Ready() {
 		return nil, vault.ErrKeyUnavailable
 	}
-	ct, err := s.objects.Get(scope.WorkspaceID(), art.StorageRef)
+	ct, err := s.objects.Get(scope.TenantID(), scope.WorkspaceID(), art.StorageRef)
 	if err != nil {
 		return nil, err
 	}

@@ -40,12 +40,15 @@ Audit `artifact.legal_hold.*`.
 Artifact payloads use the same envelope encryption as the vault
 (`CREDENTIAL_KEK`). `storage_ref` is an opaque server locator and is
 never returned. Ciphertext is stored in an S3-compatible bucket
-(`ARTIFACT_S3_*`). Compose runs MinIO with a data volume so an API
-restart keeps the objects. A production-locked process refuses
-filesystem and in-process stores. Those remain non-production
-fallbacks (`ARTIFACT_STORE_DIR`, or memory when that is also empty)
-and are not a backup. Object-store credentials and the bucket name
-are never returned and are not written to logs.
+(`ARTIFACT_S3_*`) at `{tenant}/{workspace}/{ref}`. Compose runs MinIO
+with a data volume so an API restart keeps the objects. A
+production-locked process refuses filesystem and in-process stores
+and does not fall back to a directory when the bucket or credentials
+are missing. Those remain non-production fallbacks
+(`ARTIFACT_STORE_DIR`, or memory when that is also empty) and are not
+a backup. `ARTIFACT_S3_PREFIX` is rejected. Object-store credentials
+and the bucket name are never returned and are not written to logs.
+A draft execution cannot attach a run artifact.
 
 ## Backup encryption
 
