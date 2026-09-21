@@ -6,39 +6,43 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"strings"
 
 	"golang.org/x/crypto/sha3"
 )
 
-// NewSigningKey returns a random 32-byte HMAC key. Used when the process
-// environment does not set SCRIPT_SIGNING_KEY (local/tests).
+// NewSigningKey returns a random 32-byte HMAC key for unit tests.
+// It is not a production or compose default and is never used by
+// LoadSigningKey.
 func NewSigningKey() []byte {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		sum := sha256.Sum256([]byte("flowforge-ephemeral-script-signing"))
-		return sum[:]
+		panic("generate test script signing key: " + err.Error())
 	}
 	return key
 }
 
-// LoadSigningKey reads SCRIPT_SIGNING_KEY or generates an ephemeral key.
-func LoadSigningKey() []byte {
+// LoadSigningKey reads SCRIPT_SIGNING_KEY. Missing or malformed values
+// fail closed — the API must not mint a per-process random key. The
+// returned error never includes the secret value.
+func LoadSigningKey() ([]byte, error) {
 	raw := strings.TrimSpace(os.Getenv(EnvScriptSigningKey))
 	if raw == "" {
-		return NewSigningKey()
+		return nil, fmt.Errorf("%w: set %s (32-byte HMAC as base64 or 64 hex); the process refuses to start without a durable secret", ErrSigningKeyRequired, EnvScriptSigningKey)
 	}
-	if key, err := parseSigningKey(raw); err == nil {
-		return key
+	key, err := parseSigningKey(raw)
+	if err != nil {
+		return nil, err
 	}
-	return NewSigningKey()
+	return key, nil
 }
 
 func parseSigningKey(raw string) ([]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, ErrSigningKey
+		return nil, fmt.Errorf("%w: %s is empty", ErrSigningKeyRequired, EnvScriptSigningKey)
 	}
 	if b, err := base64.StdEncoding.DecodeString(raw); err == nil && len(b) == 32 {
 		return b, nil
@@ -58,7 +62,7 @@ func parseSigningKey(raw string) ([]byte, error) {
 	if len(raw) == 32 {
 		return []byte(raw), nil
 	}
-	return nil, ErrSigningKey
+	return nil, fmt.Errorf("%w: %s must be 32 bytes (base64 or 64 hex)", ErrSigningKeyRequired, EnvScriptSigningKey)
 }
 
 // SignDigest returns hmac-sha256:<hex> over the content digest. The domain

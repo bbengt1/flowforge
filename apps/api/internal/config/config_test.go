@@ -10,7 +10,25 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
+
+func requireHMACSecrets(t *testing.T) {
+	t.Helper()
+	if strings.TrimSpace(os.Getenv(wfstore.EnvJobBindingSecret)) == "" {
+		t.Setenv(wfstore.EnvJobBindingSecret, strings.Repeat("ab", 32))
+	}
+	if strings.TrimSpace(os.Getenv(scripts.EnvScriptSigningKey)) == "" {
+		t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	}
+}
+
+func loadTestConfig(t *testing.T) (Config, error) {
+	t.Helper()
+	requireHMACSecrets(t)
+	return Load()
+}
 
 func TestListenAddrDefaults(t *testing.T) {
 	t.Setenv("HTTP_ADDR", "")
@@ -121,7 +139,7 @@ func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv("FLOWFORGE_ENV", "")
 
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,23 +148,23 @@ func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
 	}
 
 	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "1")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("trusted-dev without APP_ENV must refuse to start")
 	}
 
 	t.Setenv("APP_ENV", "production")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("trusted-dev in production must refuse to start")
 	}
 
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("REQUIRE_TLS", "true")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("trusted-dev with REQUIRE_TLS must refuse to start")
 	}
 
 	t.Setenv("REQUIRE_TLS", "false")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +176,7 @@ func TestLoadTrustedDevIdentityHeadersFailClosed(t *testing.T) {
 func TestLoadRejectsWildcardCORS(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("CORS_ALLOWED_ORIGINS", "*")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected wildcard CORS load error")
 	}
 }
@@ -178,7 +196,7 @@ func TestLoadRejectsInvalidEmbedSigningKey(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("EMBED_SIGNING_KEY", "not-an-ed25519-key")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected invalid EMBED_SIGNING_KEY error")
 	}
 }
@@ -187,7 +205,7 @@ func TestLoadRejectsNonFlowForgeEmbedAudience(t *testing.T) {
 	t.Setenv("EMBED_AUDIENCE", "someone-else")
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected EMBED_AUDIENCE fail-closed")
 	}
 }
@@ -200,18 +218,18 @@ func TestLoadProductionMissingSigningKeyFails(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv("FLOWFORGE_ENV", "")
 	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("production missing EMBED_SIGNING_KEY must refuse to start")
 	}
 
 	t.Setenv("APP_ENV", "production")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("APP_ENV=production missing signing key must refuse to start")
 	}
 
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("REQUIRE_TLS", "true")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("REQUIRE_TLS missing signing key must refuse to start")
 	}
 }
@@ -223,7 +241,7 @@ func TestLoadMergesSharedHostAllowlist(t *testing.T) {
 	t.Setenv("PORTAL_FRAME_ANCESTORS", "https://portal.example *")
 	t.Setenv("WEB_PORTAL_FRAME_ANCESTORS", "'self'")
 	t.Setenv("WEB_EMBED_FRAME_ANCESTORS", "https://host.example null")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +255,7 @@ func TestLoadMergesSharedHostAllowlist(t *testing.T) {
 	t.Setenv("PORTAL_FRAME_ANCESTORS", "")
 	t.Setenv("WEB_PORTAL_FRAME_ANCESTORS", "")
 	t.Setenv("WEB_EMBED_FRAME_ANCESTORS", "")
-	empty, err := Load()
+	empty, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +271,7 @@ func TestLoadEmbedNBFLeewayFromEnv(t *testing.T) {
 	t.Setenv("REQUIRE_TLS", "")
 	t.Setenv("APP_ENV", "development")
 	t.Setenv(embed.EnvNBFLeeway, "")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +280,7 @@ func TestLoadEmbedNBFLeewayFromEnv(t *testing.T) {
 	}
 
 	t.Setenv(embed.EnvNBFLeeway, "15s")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +289,7 @@ func TestLoadEmbedNBFLeewayFromEnv(t *testing.T) {
 	}
 
 	t.Setenv(embed.EnvNBFLeeway, "5m")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +308,7 @@ func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	t.Setenv("EMBED_EXCHANGE_RATE_LIMIT_PRINCIPAL", "4")
 	t.Setenv("EMBED_MINT_RATE_LIMIT_PRINCIPAL", "9")
 	t.Setenv("EMBED_RATE_LIMIT_WINDOW", "30s")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +329,7 @@ func TestLoadLoginRateLimitsFromEnv(t *testing.T) {
 	t.Setenv("LOGIN_RATE_LIMIT_IP", "8")
 	t.Setenv("LOGIN_RATE_LIMIT_IDENTIFIER", "3")
 	t.Setenv("LOGIN_RATE_LIMIT_WINDOW", "45s")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,33 +354,33 @@ func TestLoadProductionRejectsHTTPIssuers(t *testing.T) {
 
 	t.Setenv("EMBED_ISSUER", "http://idp.example")
 	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("empty APP_ENV must boot-fail on http EMBED_ISSUER")
 	}
 
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("EMBED_ISSUER", "https://idp.example")
 	t.Setenv("EMBED_ISSUER_ALLOWLIST", "http://host-b.example")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("production must boot-fail on http EMBED_ISSUER_ALLOWLIST")
 	}
 
 	t.Setenv("EMBED_ISSUER", "")
 	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
 	t.Setenv("PORTAL_ISSUER", "idp.example")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("production must boot-fail on relative PORTAL_ISSUER")
 	}
 
 	t.Setenv("PORTAL_ISSUER", "urn:example:portal")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("production must boot-fail on opaque PORTAL_ISSUER")
 	}
 
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("REQUIRE_TLS", "true")
 	t.Setenv("PORTAL_ISSUER", "http://portal.example")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("REQUIRE_TLS must boot-fail on http PORTAL_ISSUER")
 	}
 }
@@ -380,7 +398,7 @@ func TestLoadProductionAcceptsHTTPSIssuersAndEmptyAllowlist(t *testing.T) {
 	t.Setenv("PORTAL_ISSUER", "https://portal.cp-ops.example")
 	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
 
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +413,7 @@ func TestLoadProductionAcceptsHTTPSIssuersAndEmptyAllowlist(t *testing.T) {
 	t.Setenv("EMBED_ISSUER_ALLOWLIST", "")
 	t.Setenv("PORTAL_ISSUER", "")
 	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
-	empty, err := Load()
+	empty, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +435,7 @@ func TestLoadNonProductionAllowsHTTPIssuers(t *testing.T) {
 	t.Setenv("PORTAL_ISSUER", "http://portal.example")
 	t.Setenv("PORTAL_ISSUER_ALLOWLIST", "")
 
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +455,7 @@ func TestLoadDevelopmentAllowsEphemeralSigningKey(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("FLOWFORGE_ENV", "")
 	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +479,7 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	t.Setenv(localseed.EnvSeedLocalDefaults, "")
 
 	t.Setenv("APP_ENV", "")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +488,7 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 
 	t.Setenv("APP_ENV", "production")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,14 +497,14 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 
 	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("explicit seed in production must refuse to start")
 	}
 
 	t.Setenv(localseed.EnvSeedLocalDefaults, "")
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("REQUIRE_TLS", "true")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,14 +513,14 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 
 	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("explicit seed with REQUIRE_TLS must refuse to start")
 	}
 
 	t.Setenv("REQUIRE_TLS", "false")
 	t.Setenv(localseed.EnvSeedLocalDefaults, "1")
 	t.Setenv("EMBED_SIGNING_KEY", "")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +529,7 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 
 	t.Setenv(localseed.EnvSeedLocalDefaults, "0")
-	cfg, err = Load()
+	cfg, err = loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +544,7 @@ func TestLoadPublicBaseURL(t *testing.T) {
 	t.Setenv("EMBED_AUDIENCE", "")
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("PUBLIC_BASE_URL", "http://localhost:3000")
-	cfg, err := Load()
+	cfg, err := loadTestConfig(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +553,7 @@ func TestLoadPublicBaseURL(t *testing.T) {
 	}
 
 	t.Setenv("PUBLIC_BASE_URL", "https://user:secret@example.com")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("userinfo PUBLIC_BASE_URL must fail closed")
 	}
 }
@@ -544,7 +562,7 @@ func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
 	t.Setenv("CREDENTIAL_KEK_FILE", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected invalid CREDENTIAL_KEK error")
 	}
 }
@@ -553,8 +571,64 @@ func TestLoadTLSFilesMustBePaired(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("TLS_CERT_FILE", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_FILE", "")
-	if _, err := Load(); err == nil {
+	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected paired TLS file error")
+	}
+}
+
+func TestLoadHMACSecretsFailClosed(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+
+	for _, env := range []string{"", "production", "development"} {
+		t.Setenv("APP_ENV", env)
+		t.Setenv(wfstore.EnvJobBindingSecret, "")
+		if _, err := Load(); err == nil {
+			t.Fatalf("APP_ENV=%q missing %s must refuse to start", env, wfstore.EnvJobBindingSecret)
+		} else if !strings.Contains(err.Error(), wfstore.EnvJobBindingSecret) {
+			t.Fatalf("APP_ENV=%q missing secret error = %v", env, err)
+		}
+
+		malformed := "not-a-32-byte-hmac-key"
+		t.Setenv(wfstore.EnvJobBindingSecret, malformed)
+		_, err := Load()
+		if err == nil {
+			t.Fatalf("APP_ENV=%q malformed %s must refuse to start", env, wfstore.EnvJobBindingSecret)
+		}
+		if strings.Contains(err.Error(), malformed) {
+			t.Fatalf("error must not include the secret value: %v", err)
+		}
+	}
+
+	t.Setenv(wfstore.EnvJobBindingSecret, strings.Repeat("ab", 32))
+	t.Setenv(scripts.EnvScriptSigningKey, "")
+	t.Setenv("APP_ENV", "development")
+	if _, err := Load(); err == nil {
+		t.Fatalf("missing %s must refuse to start", scripts.EnvScriptSigningKey)
+	}
+
+	malformed := "short-script-key"
+	t.Setenv(scripts.EnvScriptSigningKey, malformed)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("malformed %s must refuse to start", scripts.EnvScriptSigningKey)
+	}
+	if strings.Contains(err.Error(), malformed) {
+		t.Fatalf("error must not include the secret value: %v", err)
+	}
+
+	t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.JobBindingKey) != 32 || len(cfg.ScriptSigningKey) != 32 {
+		t.Fatalf("loaded key lengths job=%d script=%d", len(cfg.JobBindingKey), len(cfg.ScriptSigningKey))
 	}
 }
 

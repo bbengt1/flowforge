@@ -4,7 +4,8 @@
 #
 # Prerequisites: compose `postgres` + `api` are up and /readiness is 200
 # (compose --wait only covers /health; this script waits for readiness).
-# Never prints BACKUP_ENCRYPTION_KEY, DATABASE_URL, or POSTGRES_PASSWORD.
+# Never prints BACKUP_ENCRYPTION_KEY, DATABASE_URL, POSTGRES_PASSWORD,
+# JOB_BINDING_SECRET, or SCRIPT_SIGNING_KEY.
 #
 #   export POSTGRES_PASSWORD=...
 #   export BACKUP_ENCRYPTION_KEY=...
@@ -29,6 +30,10 @@ cd "$ROOT"
 : "${EMBED_SIGNING_KEY:=}"
 : "${EMBED_SIGNING_KEY_FILE:=$ROOT/deploy/local/embed-signing.pem}"
 : "${EMBED_SIGNING_KEY_ID:=local:restore-rehearsal}"
+# Same documented local-only HMAC defaults as compose. Missing/malformed
+# is a boot-fail. Do not copy these into production.
+: "${JOB_BINDING_SECRET:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}"
+: "${SCRIPT_SIGNING_KEY:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}"
 
 WORKDIR="${BACKUP_WORKDIR:-$(mktemp -d)}"
 ENC="$WORKDIR/flowforge.sql.enc"
@@ -150,6 +155,8 @@ docker run -d --name "$RESTORE_API" --network "$network" \
   -e EMBED_SIGNING_KEY="$EMBED_SIGNING_KEY" \
   -e EMBED_SIGNING_KEY_FILE="/run/flowforge/embed-signing.pem" \
   -e EMBED_SIGNING_KEY_ID="$EMBED_SIGNING_KEY_ID" \
+  -e JOB_BINDING_SECRET="$JOB_BINDING_SECRET" \
+  -e SCRIPT_SIGNING_KEY="$SCRIPT_SIGNING_KEY" \
   -v "$EMBED_SIGNING_KEY_FILE:/run/flowforge/embed-signing.pem:ro" \
   "$BACKUP_API_IMAGE" >/dev/null
 

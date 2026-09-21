@@ -83,9 +83,11 @@ explicitly retry-safe (`409` `retry-denied`). Cancel of terminal /
 | HTTP dispatch fence | `httpapi` `TestDispatchClaimFenceCancelAndLeaseLoss` |
 | Suite map | [e12-resilience-capacity.md](../reference/e12-resilience-capacity.md) |
 
-Default lease **30s** (min 1s, max 5m). Unset `JOB_BINDING_SECRET` is an
-ephemeral process key — tickets die on API restart. Production must set
-a durable secret (see [deployment](../deployment.md)).
+Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` is required
+at boot (32-byte base64 or 64 hex). Missing or malformed **refuses to
+start** — there is no per-process random default. Compose uses a
+documented local-only value so restarts stay stable (see
+[deployment](../deployment.md)).
 
 ## Restore rehearsal
 

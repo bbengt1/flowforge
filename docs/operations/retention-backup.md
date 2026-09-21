@@ -105,8 +105,9 @@ Incident steps after a real restore:
 1. `BACKUP_ENCRYPTION_KEY` is set and KMS-wrapped in production.
 2. `CREDENTIAL_KEK` is set (vault + artifact envelopes). Lost KEK =
    undecryptable credentials/artifacts after restore.
-3. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are durable in
-   production (ephemeral keys die on restart; they are not in the dump).
+3. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
+   missing or malformed). They are not in the dump; generate unique
+   values and do not copy compose defaults.
 4. Restore rehearsal is green on `main` (both CI jobs).
 5. Retention purge is exercised in a non-prod workspace (`POST /retention/purge`)
    and legal hold is verified to skip deletion.

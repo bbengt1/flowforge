@@ -79,6 +79,14 @@ services:
       # Do not copy this default into deploy/k8s.
       CREDENTIAL_KEK: ${CREDENTIAL_KEK:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=}
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
+      # Durable HMAC keys. Missing/malformed is a boot-fail (no per-process
+      # random default). Compose uses documented local-only 32-byte ASCII
+      # values as base64 so tickets/signatures survive restart. Generate
+      # your own with: openssl rand -base64 32
+      # Do not copy these defaults into deploy/k8s.
+      # "flowforge-local-dev-job-32bytes!" / "flowforge-local-dev-scr-32bytes!"
+      JOB_BINDING_SECRET: ${JOB_BINDING_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}
+      SCRIPT_SIGNING_KEY: ${SCRIPT_SIGNING_KEY:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}
       ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
