@@ -74,14 +74,37 @@ func TestApplySessionTimeoutsIssuesSetConfig(t *testing.T) {
 	}
 }
 
-func TestApplyPoolHooksInstallsBeforeAcquire(t *testing.T) {
+func TestPrepareAppConnAppliesTimeoutsOnCheckout(t *testing.T) {
+	rec := &recordingExec{}
+	timeouts := Timeouts{Statement: 8 * time.Second, Lock: 2 * time.Second}
+	ok, err := prepareAppConn(context.Background(), rec, true, timeouts)
+	if err != nil || !ok {
+		t.Fatalf("prepareAppConn: ok=%v err=%v", ok, err)
+	}
+	want := []recordedExec{
+		{sql: `SELECT set_config('app.workspace_id', '', false)`},
+		{sql: `SET ROLE ` + AppRole},
+		{sql: `SELECT set_config('statement_timeout', $1, false)`, arg: "8000"},
+		{sql: `SELECT set_config('lock_timeout', $1, false)`, arg: "2000"},
+	}
+	if len(rec.calls) != len(want) {
+		t.Fatalf("calls = %+v", rec.calls)
+	}
+	for i, got := range rec.calls {
+		if got != want[i] {
+			t.Fatalf("call %d = %+v, want %+v", i, got, want[i])
+		}
+	}
+}
+
+func TestApplyPoolHooksInstallsPrepareConn(t *testing.T) {
 	cfg, err := pgxpool.ParseConfig("postgres://flowforge:flowforge@127.0.0.1:5432/flowforge?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}
 	applyPoolHooksWith(cfg, false, DefaultTimeouts())
-	if cfg.BeforeAcquire == nil {
-		t.Fatal("expected BeforeAcquire to apply session timeouts")
+	if cfg.PrepareConn == nil {
+		t.Fatal("expected PrepareConn to apply session timeouts on checkout")
 	}
 }
 

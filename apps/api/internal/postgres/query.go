@@ -12,7 +12,8 @@ import (
 // applyPoolHooks resets leftover session GUCs on checkout and, when
 // assumeAppRole is true, assumes flowforge_app so FORCE RLS cannot be bypassed
 // by a superuser login role leftover from Docker/CI. statement_timeout and
-// lock_timeout are applied on every BeforeAcquire so a prior SET cannot
+// lock_timeout are applied in the same PrepareConn hook (pgx v5 checkout;
+// BeforeAcquire is ignored when PrepareConn is set) so a prior SET cannot
 // leave a pooled connection without bounds.
 func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
 	applyPoolHooksWith(cfg, assumeAppRole, TimeoutsFromEnv())
@@ -21,21 +22,7 @@ func applyPoolHooks(cfg *pgxpool.Config, assumeAppRole bool) {
 func applyPoolHooksWith(cfg *pgxpool.Config, assumeAppRole bool, timeouts Timeouts) {
 	timeouts = timeouts.clamp()
 	cfg.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
-		if _, err := conn.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`); err != nil {
-			return false, nil
-		}
-		if assumeAppRole {
-			if _, err := conn.Exec(ctx, `SET ROLE `+AppRole); err != nil {
-				return false, nil
-			}
-		}
-		return true, nil
-	}
-	cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
-		if err := applySessionTimeouts(ctx, conn, timeouts); err != nil {
-			return false
-		}
-		return true
+		return prepareAppConn(ctx, conn, assumeAppRole, timeouts)
 	}
 	if assumeAppRole {
 		cfg.AfterRelease = func(conn *pgx.Conn) bool {
@@ -45,6 +32,23 @@ func applyPoolHooksWith(cfg *pgxpool.Config, assumeAppRole bool, timeouts Timeou
 			return err == nil
 		}
 	}
+}
+
+func prepareAppConn(ctx context.Context, exec sessionExecer, assumeAppRole bool, timeouts Timeouts) (bool, error) {
+	if _, err := exec.Exec(ctx, `SELECT set_config('app.workspace_id', '', false)`); err != nil {
+		return false, nil
+	}
+	if assumeAppRole {
+		if _, err := exec.Exec(ctx, `SET ROLE `+AppRole); err != nil {
+			return false, nil
+		}
+	}
+	if err := applySessionTimeouts(ctx, exec, timeouts); err != nil {
+		// Destroy the connection and fail the acquire: do not hand out
+		// a session without statement/lock bounds.
+		return false, err
+	}
+	return true, nil
 }
 
 func (p *Pool) live() (*pgxpool.Pool, error) {

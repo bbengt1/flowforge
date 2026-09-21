@@ -109,7 +109,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/{collection}/{resourceId}/select` | Pin a published revision. |
 | `GET` | `/api/v1/workflows/{workflowId}/versions/{versionId}/pins` | Pins bound at workflow publish. |
 
-Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout and set `statement_timeout` / `lock_timeout` (`STATEMENT_TIMEOUT` / `LOCK_TIMEOUT`, defaults 15s / 5s).
+Subject identity uses a browser session cookie (`ff_session`) or, for non-browser callers, `X-FlowForge-Issuer` and `X-FlowForge-Subject`. A present session cookie wins; conflicting identity headers fail closed. State-changing cookie requests require `X-CSRF-Token` matching `ff_csrf`. Workspace identity is resolved from tenant + `X-FlowForge-Workbench-Key`. A host-supplied `X-FlowForge-Workspace-ID` is never the lookup key. After authorization, workspace-owned queries set transaction-local `app.workspace_id`; pooled connections reset leftover session scope on checkout (`PrepareConn`) and set `statement_timeout` / `lock_timeout` (`STATEMENT_TIMEOUT` / `LOCK_TIMEOUT`, defaults 15s / 5s).
 
 Every response sets `X-Request-ID`. A caller value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same id is echoed on the header, in problem documents as `request_id`, and in JSON request logs.
 
@@ -125,7 +125,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | --- | --- | --- |
 | `BUILD_VERSION` | `dev` (ldflags) | Non-secret release/tag on `/health` and `/readiness`. Image builds set this via Dockerfile `ARG BUILD_VERSION` → Go ldflags. Runtime env overrides the baked value. Unsafe values become `dev`. |
 | `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA (7–40 hex) on `/health` and `/readiness`. Compose/CI pass `BUILD_SHA` as a build arg (`smoke.yml` uses `${{ github.sha }}`). Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe values become `unknown`. Health never fails because this is missing. |
-| `STATEMENT_TIMEOUT` | `15s` | PostgreSQL `statement_timeout` applied on every application-pool checkout (`pgxpool` `BeforeAcquire`). Go duration. Invalid/zero keeps `15s`. Clamped at `5m`. Not applied to the migrate/admin pool. |
+| `STATEMENT_TIMEOUT` | `15s` | PostgreSQL `statement_timeout` applied on every application-pool checkout (`pgxpool` `PrepareConn`; the v5 checkout hook). Go duration. Invalid/zero keeps `15s`. Clamped at `5m`. Not applied to the migrate/admin pool. |
 | `LOCK_TIMEOUT` | `5s` | PostgreSQL `lock_timeout` on the same checkout. Go duration. Invalid/zero keeps `5s`. Clamped at `1m` and never above `STATEMENT_TIMEOUT`. |
 | `HTTP_ADDR` | `:8080` | Listen address. |
 | `PORT` | — | Used as `:PORT` when `HTTP_ADDR` is unset. |

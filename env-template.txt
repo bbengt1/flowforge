@@ -27,7 +27,7 @@ HTTP_ADDR=:8080
 # CI smoke.yml sets BUILD_SHA=${{ github.sha }}. Never put secrets here.
 # BUILD_SHA=
 # BUILD_VERSION=dev
-# Application-pool session GUCs on every checkout (pgx BeforeAcquire).
+# Application-pool session GUCs on every checkout (pgx PrepareConn).
 # Go durations. Invalid/zero keeps the defaults. Not used by migrate.
 # STATEMENT_TIMEOUT=15s
 # LOCK_TIMEOUT=5s

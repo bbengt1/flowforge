@@ -27,7 +27,8 @@ const (
 	EnvLockTimeout      = "LOCK_TIMEOUT"
 )
 
-// Timeouts are session GUCs applied on every application-pool checkout.
+// Timeouts are session GUCs applied on every application-pool checkout
+// (pgxpool PrepareConn).
 type Timeouts struct {
 	Statement time.Duration
 	Lock      time.Duration
