@@ -1,0 +1,45 @@
+# Fail-closed. Default-deny still applies. This policy only opens:
+# - ingress from the ingress-nginx namespace to the web port
+# - egress to API pods (Service flowforge-api:8080) and cluster DNS
+# No world CIDR. The compose worker is not a peer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flowforge-web
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: web
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: web
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: flowforge
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

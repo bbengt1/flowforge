@@ -50,7 +50,7 @@ Do not weaken these because a capability is unimplemented:
 | **Artifact durability** | Queue, leases, execution state, audit, and artifact metadata survive pod loss. | Metadata is in PostgreSQL. **Payloads default to `tmpfs` `/tmp/flowforge-artifacts` or in-process memory** — lost on restart; not shared across replicas. | **Partial** (gap **B3**) |
 | **OpenAPI / tracing (E1.2)** | Generated OpenAPI; API-to-worker flows traced by correlation ID. | OpenAPI is **hand-written**. `X-Request-ID` exists; **no trace store, sampling, or worker span propagation.** `GET /api/v1/health` now publishes non-secret `version` / `sha` (G.0.10 / C1 build identity). | **Partial** (gaps **B5**, **C1**) |
 | **DB session timeouts** | `statement_timeout` / `lock_timeout` on checkout so one query cannot pin the pool. | Application-pool `PrepareConn` (pgx v5 checkout) sets `15s` / `5s` (`STATEMENT_TIMEOUT` / `LOCK_TIMEOUT`). Circuit breakers and worker/UI bulkheads are still out of scope. | **Partial** (gap **C2**; G.0.11) |
-| **HA / web on Kubernetes** | Isolated worker pods + UI in cluster. | `deploy/k8s` runs API and runner at `replicas: 1`. No web Deployment, no PDB/HPA. | **Specified only** (gap **B2**) |
+| **HA / web on Kubernetes** | Isolated worker pods + UI in cluster. | `deploy/k8s` runs API, web (`flowforge-web`, `GET /` probes), and runner at `replicas: 1`. Compose `/usr/local/bin/worker` is not deployed. No PDB/HPA. | **Partial** (gap **B2**; G.1.7 / #438) |
 
 ## Provider execution
 

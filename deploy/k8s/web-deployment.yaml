@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowforge-web
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: flowforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flowforge
+        app.kubernetes.io/component: web
+        app.kubernetes.io/part-of: flowforge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # Built from apps/web/Dockerfile (context = repo root).
+          # Replace with a digest-pinned image before production.
+          # CI rejects :latest (see scripts/check-deploy-defaults.sh).
+          image: ghcr.io/bbengt1/flowforge-web:foundation
+          imagePullPolicy: IfNotPresent
+          command: ["node", "apps/web/server.js"]
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            # In-cluster API Service. Do not copy compose loopback origins
+            # or local-only identity/seed flags.
+            - name: API_INTERNAL_URL
+              value: http://flowforge-api:8080
+            # Server-rendered links. Client bundles still inline this at
+            # image build (ARG NEXT_PUBLIC_API_URL). Replace both with the
+            # public https API origin. Do not use a loopback origin.
+            - name: NEXT_PUBLIC_API_URL
+              value: https://api.example.com
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          # No process-local health route. /api/control-plane/health and
+          # /readiness proxy the Go API, so they are not a web-process probe.
+          # GET / renders the product landing without calling the API.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/apps/web/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}

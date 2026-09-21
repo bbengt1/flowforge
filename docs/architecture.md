@@ -6,7 +6,7 @@ Hard lines stay: YAML is source of truth; drafts never run; vault chrome is disp
 
 ## Deployment shape
 
-Specified target — `deploy/k8s` runs the API and the production runner at `replicas: 1`. There is still no web Deployment, PDB, or HPA. Provider network egress stays closed until an operator adds a CIDR:
+Specified target — `deploy/k8s` runs the API, the web UI, and the production runner at `replicas: 1`. There is still no PDB or HPA. The compose worker is not in `deploy/k8s`. Provider network egress stays closed until an operator adds a CIDR:
 
 ```mermaid
 flowchart LR

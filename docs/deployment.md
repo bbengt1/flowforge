@@ -29,7 +29,7 @@ Foundation files (API / supply-chain / backup from `#10`):
 
 | Area | Location |
 | --- | --- |
-| Kubernetes (Deployment, Service, default-deny + API/Postgres NetworkPolicy, TLS Ingress) | [`deploy/k8s/`](../deploy/k8s/) |
+| Kubernetes (API, web, and runner Deployments/Services; default-deny + API/web/runner/Postgres NetworkPolicy; TLS Ingress for `api.example.com` and `app.example.com`) | [`deploy/k8s/`](../deploy/k8s/) |
 | Workspace runner SA / Role / RoleBinding templates (E7.1 cluster targets) | [`deploy/kubernetes/`](../deploy/kubernetes/) |
 | TLS/proxy (Ingress + local Caddy terminator; API `REQUIRE_TLS` / `TRUSTED_PROXY_CIDRS` / `TLS_*`) | [`deploy/tls/`](../deploy/tls/), [`apps/api/README.md`](../apps/api/README.md) |
 | Supply-chain policy (approved bases, vuln gates, provenance) | [`deploy/supply-chain/policy.md`](../deploy/supply-chain/policy.md) |
@@ -45,6 +45,7 @@ API image (`#10` / G.0.9):
 Web image and Next.js headers (`#11`):
 
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, copies the workspace `pnpm-lock.yaml` and runs `pnpm install --frozen-lockfile`, writable paths limited to `/tmp` and `/app/apps/web/.next/cache`.
+- `deploy/k8s/web-deployment.yaml` runs that image (`ghcr.io/bbengt1/flowforge-web:foundation`; **digest-pin** before production; CI rejects `:latest`) as `node apps/web/server.js`. `emptyDir` covers `/tmp` and `/app/apps/web/.next/cache`. `API_INTERNAL_URL` is `http://flowforge-api:8080`. Rebuild with `NEXT_PUBLIC_API_URL` set to the public https API origin (the Deployment repeats that origin for server-rendered links; do not use localhost). There is no process-local health route — `/api/control-plane/health` proxies the Go API — so kubelet probes `GET /` on port 3000. Ingress host `app.example.com` targets `flowforge-web:3000`. The web NetworkPolicy allows ingress from `ingress-nginx` and egress only to the API Service pods (port 8080) and cluster DNS. Compose `/usr/local/bin/worker` stays out of `deploy/k8s`; production claims use `/usr/local/bin/runner`.
 - Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) lists exact host origins. That same list is published on `GET /embed/catalog` `frameAncestors` and drives postMessage. Empty fails closed. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
 - Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. API and web Dockerfiles already pin their bases by digest.
 
@@ -143,6 +144,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Postgres image tag `postgres:16-alpine` | Digest-pin every production image. CI rejects `:latest` in `deploy/k8s`. API and web Dockerfiles pin their bases by digest. |
 | Compose-documented `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` (local-only) | Unique durable secrets on the Secret. **Boot-fail** if missing or malformed. Do not copy the compose defaults. |
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Run `/usr/local/bin/runner` (`deploy/k8s/runner-deployment.yaml`). The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. The runner **boot-fails** on the local/dev path. |
+| Compose web `API_INTERNAL_URL=http://api:8080` and `NEXT_PUBLIC_API_URL=http://localhost:8080` | `deploy/k8s/web-deployment.yaml` sets `API_INTERNAL_URL=http://flowforge-api:8080`. Rebuild the web image with the public https `NEXT_PUBLIC_API_URL`. Do not copy localhost. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
 | First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
