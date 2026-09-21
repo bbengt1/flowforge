@@ -391,5 +391,5 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func writeS3Error(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><Error><Code>%s</Code><Message>%s</Message></Error>`, code, msg)
+	_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><Error><Code>%s</Code><Message>%s</Message></Error>`, code, msg)
 }
