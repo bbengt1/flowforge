@@ -1,0 +1,53 @@
+# FlowForge gitleaks config (G.0.13 / #419).
+# Extends the default rule set. Allowlists are documented local-only fixtures
+# and tests that assert reject/redact behavior on secret-shaped strings.
+# Do not add live credentials here. Fail closed on everything else.
+
+title = "FlowForge"
+
+[extend]
+useDefault = true
+
+# Documented compose / README local-only values (not production secrets).
+# generate replacements with: openssl rand -base64 32
+[[allowlists]]
+description = "Documented local-only compose fixtures (not production secrets)"
+paths = [
+  '''(^|/)env-template\.txt$''',
+  '''(^|/)apps/api/README\.md$''',
+  '''(^|/)deploy/local/embed-signing\.pem$''',
+]
+
+# Tests that assert the product rejects or redacts PEM / key-shaped input.
+# New test files that introduce secret-shaped fixtures must be listed here
+# or use a gitleaks:allow comment — do not blanket-allow *_test.go.
+[[allowlists]]
+description = "Tests that assert reject/redact behavior on secret-shaped fixtures"
+paths = [
+  '''(^|/)apps/api/internal/artifact/scan_test\.go$''',
+  '''(^|/)apps/api/internal/embed/keys_test\.go$''',
+  '''(^|/)apps/api/internal/ssh/execute_test\.go$''',
+  '''(^|/)apps/web/src/lib/credential\.test\.ts$''',
+  '''(^|/)apps/web/src/lib/editor-credential\.test\.ts$''',
+  '''(^|/)apps/web/src/lib/editor-ndv-parameters\.test\.ts$''',
+]
+
+# Evidence dump stores redacted cookie lines and UUIDs, not credentials.
+[[allowlists]]
+description = "ADV-013 evidence stores redacted session metadata and UUIDs"
+paths = [
+  '''(^|/)docs/reference/adv-013-evidence/''',
+]
+
+# Kubernetes API group names trip generic-api-key (false positive).
+# AND-gated so a real secret added to this file still fails the scan.
+[[allowlists]]
+description = "Kubernetes API group identifiers are not credentials"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''(^|/)apps/api/internal/kubernetes/validator\.go$''',
+]
+regexes = [
+  '''(?i)[a-z0-9.-]+\.k8s\.io''',
+]

@@ -60,16 +60,33 @@ jobs:
           govulncheck -format json ./... > "${RUNNER_TEMP}/govulncheck.json" || true
           python3 "${GITHUB_WORKSPACE}/scripts/govulncheck-gate.py" "${RUNNER_TEMP}/govulncheck.json"
 
-  # G.0.5 / H3 Go quality gates are jonny's follow (#408). go vet ./... is
-  # clean on main; gofmt -l is not (12 files). Do not add gofmt / golangci-lint
-  # as required jobs until those sources are formatted and lint-clean.
+  # G.0.8 / #414: PostgreSQL so TEST_DATABASE_URL-gated integration tests
+  # run. Coverage is published (artifact + job-log / step summary). No
+  # coverage threshold — none exists in-repo; do not invent a harsh gate.
+  # gofmt / go vet / golangci-lint live in api-quality.yml (#408 / G.0.5).
   api-tests:
     name: API unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flowforge
+          POSTGRES_PASSWORD: flowforge
+          POSTGRES_DB: flowforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowforge -d flowforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://flowforge:flowforge@127.0.0.1:5432/flowforge?sslmode=disable
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,8 +96,43 @@ jobs:
           go-version: "1.26.x"
           check-latest: true
           cache-dependency-path: apps/api/go.sum
-      - name: Test
-        run: go test ./...
+      - name: Test with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: Coverage summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f coverage.out ]; then
+            echo "coverage.out missing; tests did not produce a profile" >&2
+            exit 1
+          fi
+          go tool cover -func=coverage.out | tee coverage.txt
+          go tool cover -html=coverage.out -o coverage.html
+          {
+            echo "## API coverage"
+            echo
+            echo '```'
+            tail -n 1 coverage.txt
+            echo '```'
+            echo
+            echo "<details><summary>Per-function</summary>"
+            echo
+            echo '```'
+            cat coverage.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: |
+            apps/api/coverage.out
+            apps/api/coverage.txt
+            apps/api/coverage.html
+          if-no-files-found: warn
 
   web-tests:
     name: Web unit tests (ADV-013 checklist)

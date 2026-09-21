@@ -11,6 +11,9 @@ node_modules/
 # local secrets — keep env-template.txt
 .env
 .env.*
+.env.bak
+*.env.bak
+env.bak
 !.env.example
 
 # os / editor
@@ -37,6 +40,11 @@ dist/
 
 # test / coverage
 coverage/
+coverage.out
+coverage.html
+coverage.txt
+*.coverprofile
+gitleaks-report.json
 .adv013-run/
 .e12-run/
 
