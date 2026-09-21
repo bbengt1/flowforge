@@ -325,6 +325,35 @@ func (p *Postgres) GetWorkspace(ctx context.Context, id string) (Workspace, erro
 	return ws, nil
 }
 
+func (p *Postgres) ListActiveWorkspaces(ctx context.Context) ([]Workspace, error) {
+	rows, err := p.db.Query(ctx, `
+		SELECT w.id::text, w.tenant_id::text, w.workbench_key, w.name, w.status, w.created_at, w.updated_at
+		FROM workspaces w
+		JOIN tenants t ON t.id = w.tenant_id
+		WHERE w.status = 'active' AND t.status = 'active'
+		ORDER BY w.created_at, w.id
+	`)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	var out []Workspace
+	for rows.Next() {
+		var ws Workspace
+		if err := rows.Scan(&ws.ID, &ws.TenantID, &ws.WorkbenchKey, &ws.Name, &ws.Status, &ws.CreatedAt, &ws.UpdatedAt); err != nil {
+			return nil, mapDBErr(err)
+		}
+		out = append(out, ws)
+	}
+	if out == nil {
+		out = []Workspace{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+	return out, nil
+}
+
 func (p *Postgres) DeleteWorkspace(ctx context.Context, id string) (Workspace, error) {
 	var ws Workspace
 	err := p.db.QueryRow(ctx, `

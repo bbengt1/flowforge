@@ -40,6 +40,11 @@ type Store interface {
 	GetWorkspace(ctx context.Context, id string) (Workspace, error)
 	DeleteWorkspace(ctx context.Context, id string) (Workspace, error)
 	ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error)
+	// ListActiveWorkspaces returns workspaces whose tenant is also active.
+	// Identity tables are unscoped so membership can be checked before
+	// app.workspace_id is set. Callers that then touch workspace-owned
+	// rows must still set that scope (FORCE RLS). Disabled rows are omitted.
+	ListActiveWorkspaces(ctx context.Context) ([]Workspace, error)
 
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)

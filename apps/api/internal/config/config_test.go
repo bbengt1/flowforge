@@ -10,6 +10,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -638,6 +639,37 @@ func mustIP(s string) net.IP {
 		panic(s)
 	}
 	return ip
+}
+
+func TestLoadSchedulerEnv(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv(scheduler.EnvEnabled, "")
+	t.Setenv(scheduler.EnvInterval, "")
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SchedulerEnabled || cfg.SchedulerInterval != scheduler.DefaultInterval {
+		t.Fatalf("defaults enabled=%v interval=%s", cfg.SchedulerEnabled, cfg.SchedulerInterval)
+	}
+	t.Setenv(scheduler.EnvEnabled, "0")
+	t.Setenv(scheduler.EnvInterval, "2m")
+	cfg, err = loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SchedulerEnabled || cfg.SchedulerInterval != 2*time.Minute {
+		t.Fatalf("override enabled=%v interval=%s", cfg.SchedulerEnabled, cfg.SchedulerInterval)
+	}
+	t.Setenv(scheduler.EnvEnabled, "sometimes")
+	if _, err := loadTestConfig(t); err == nil {
+		t.Fatal("invalid SCHEDULER_ENABLED must fail closed")
+	}
+	t.Setenv(scheduler.EnvEnabled, "1")
+	t.Setenv(scheduler.EnvInterval, "nope")
+	if _, err := loadTestConfig(t); err == nil {
+		t.Fatal("invalid SCHEDULER_INTERVAL must fail closed")
+	}
 }
 
 func TestLoadDotEnvDoesNotOverrideEnv(t *testing.T) {

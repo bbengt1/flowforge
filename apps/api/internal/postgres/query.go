@@ -96,6 +96,63 @@ func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
 	return live.Begin(ctx)
 }
 
+// Conn is one checked-out application connection. PrepareConn has already
+// assumed flowforge_app. Release returns it to the pool. Destroy closes
+// the session instead, which drops any advisory lock still held on it.
+type Conn struct {
+	c *pgxpool.Conn
+}
+
+// Acquire checks out one application connection. Caller must Release or
+// Destroy it. The scheduler holds this for leadership so a session
+// advisory lock cannot ride back into the pool.
+func (p *Pool) Acquire(ctx context.Context) (*Conn, error) {
+	live, err := p.live()
+	if err != nil {
+		return nil, err
+	}
+	c, err := live.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Conn{c: c}, nil
+}
+
+// QueryRow runs sql on this checked-out connection.
+func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	if c == nil || c.c == nil {
+		return errRow{err: ErrUnavailable}
+	}
+	return c.c.QueryRow(ctx, sql, args...)
+}
+
+// Exec runs sql on this checked-out connection.
+func (c *Conn) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if c == nil || c.c == nil {
+		return pgconn.CommandTag{}, ErrUnavailable
+	}
+	return c.c.Exec(ctx, sql, args...)
+}
+
+// Release returns the connection to the pool.
+func (c *Conn) Release() {
+	if c == nil || c.c == nil {
+		return
+	}
+	c.c.Release()
+	c.c = nil
+}
+
+// Destroy removes the connection from the pool and closes the session.
+func (c *Conn) Destroy(ctx context.Context) {
+	if c == nil || c.c == nil {
+		return
+	}
+	raw := c.c.Hijack()
+	c.c = nil
+	_ = raw.Close(ctx)
+}
+
 type errRow struct{ err error }
 
 func (r errRow) Scan(dest ...any) error { return r.err }

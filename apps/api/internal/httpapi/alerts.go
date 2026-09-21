@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -91,11 +92,15 @@ func (s *Server) alertScope(w http.ResponseWriter, r *http.Request, perm string)
 }
 
 func (s *Server) emitAlert(r *http.Request, scope isolation.Scope, in opsalert.Signal) {
+	s.emitAlertCtx(r.Context(), scope, in)
+}
+
+func (s *Server) emitAlertCtx(ctx context.Context, scope isolation.Scope, in opsalert.Signal) {
 	if s.alerts == nil || scope.Zero() {
 		return
 	}
 	if in.RequestID == "" {
-		in.RequestID = RequestIDFromContext(r.Context())
+		in.RequestID = RequestIDFromContext(ctx)
 	}
 	if in.CorrelationID == "" {
 		in.CorrelationID = in.RequestID
@@ -106,7 +111,7 @@ func (s *Server) emitAlert(r *http.Request, scope isolation.Scope, in opsalert.S
 	if in.Outcome == "" {
 		in.Outcome = "denied"
 	}
-	alert, err := s.alerts.Emit(r.Context(), scope, in)
+	alert, err := s.alerts.Emit(ctx, scope, in)
 	if err != nil {
 		if s.log != nil {
 			s.log.Warn("operational alert emit failed", "kind", in.Kind, "request_id", in.RequestID)
@@ -116,7 +121,7 @@ func (s *Server) emitAlert(r *http.Request, scope isolation.Scope, in opsalert.S
 	if s.workflows == nil {
 		return
 	}
-	_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+	_, _ = s.workflows.WriteAudit(ctx, scope, wfstore.AuditWrite{
 		Action:        "alert." + alert.Kind,
 		ResourceType:  firstNonEmpty(alert.ResourceType, "alert"),
 		ResourceID:    alert.ResourceID,

@@ -345,6 +345,32 @@ func (m *Memory) GetWorkspace(_ context.Context, id string) (Workspace, error) {
 	return ws, nil
 }
 
+func (m *Memory) ListActiveWorkspaces(_ context.Context) ([]Workspace, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Workspace, 0, len(m.workspaces))
+	for _, ws := range m.workspaces {
+		if !strings.EqualFold(ws.Status, "active") {
+			continue
+		}
+		tenant, ok := m.tenants[ws.TenantID]
+		if !ok || !strings.EqualFold(tenant.Status, "active") {
+			continue
+		}
+		out = append(out, ws)
+	}
+	slices.SortFunc(out, func(a, b Workspace) int {
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		if a.CreatedAt.After(b.CreatedAt) {
+			return 1
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out, nil
+}
+
 func (m *Memory) DeleteWorkspace(_ context.Context, id string) (Workspace, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

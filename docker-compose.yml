@@ -105,6 +105,12 @@ services:
       # "flowforge-local-dev-job-32bytes!" / "flowforge-local-dev-scr-32bytes!"
       JOB_BINDING_SECRET: ${JOB_BINDING_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}
       SCRIPT_SIGNING_KEY: ${SCRIPT_SIGNING_KEY:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}
+      # In-process leader (G.1.3). Ticks schedule dispatch, lease recovery,
+      # and retention purge. Only the replica holding advisory lock
+      # 881726402 runs them — no CronJob for those three. Set 0 to opt out.
+      # Invalid values are a boot-fail. Encrypted backups stay an operator job.
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-1}
+      SCHEDULER_INTERVAL: ${SCHEDULER_INTERVAL:-30s}
       ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}

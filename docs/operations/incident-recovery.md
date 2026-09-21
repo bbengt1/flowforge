@@ -77,8 +77,10 @@ includes additive `statusReason: "no-worker"`.
 
 On lease expiry or a disconnected worker:
 
-1. `POST /api/v1/jobs/recover` (also runs on the next claim) marks
-   expired `claimed` / `running` jobs `indeterminate`.
+1. The API leader scheduler calls lease recovery on its interval
+   (`SCHEDULER_INTERVAL`, default 30s). `POST /api/v1/jobs/recover`
+   (also runs on the next claim) does the same sweep: expired
+   `claimed` / `running` jobs become `indeterminate`.
 2. A stale `jobToken` cannot complete or overwrite a later claim.
 3. After the first heartbeat, `POST /jobs/{id}/release` is also
    `indeterminate` (not a silent requeue).

@@ -28,6 +28,11 @@ on a cookie session. Response `{purged,held,executions,audits}`. Holds
 are counted, not deleted. Audit: `artifact.retention.held` when a hold
 blocks purge.
 
+The API leader scheduler calls that same purge on `SCHEDULER_INTERVAL`
+(default 30s) for every active workspace. Only the replica holding
+advisory lock `881726402` ticks. Set `SCHEDULER_ENABLED=0` to opt out.
+That loop does not take a backup.
+
 Legal hold: `POST /api/v1/artifacts/{artifactId}/legal-hold`
 `{hold, reason}` (`workspace.administer`). Reason is required to place.
 Audit `artifact.legal_hold.*`.
@@ -56,10 +61,11 @@ bash scripts/backup/encrypt-pg-dump.sh
 [database — Isolation model](../reference/database.md#isolation-model)).
 
 **Production:** wrap `BACKUP_ENCRYPTION_KEY` with KMS (or equivalent).
-Do not store the raw passphrase next to the ciphertext. The Kubernetes
-foundation does not ship a CronJob — schedule the encrypt script (or
-your platform dump) against the production DSN and keep ciphertext off
-the API disk.
+Do not store the raw passphrase next to the ciphertext. Retention purge
+is the in-process leader scheduler, not a CronJob. The Kubernetes
+foundation still does not ship a backup CronJob — schedule the encrypt
+script (or your platform dump) against the production DSN and keep
+ciphertext off the API disk.
 
 A successful dump is not recovery evidence and is not supply-chain
 provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).

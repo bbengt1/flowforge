@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -147,7 +148,7 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
-	s.writeScheduleAudit(r, scope, rec, "created", nil)
+	s.writeScheduleAudit(r.Context(), scope, rec, "created", nil)
 	writeJSON(w, http.StatusCreated, rec)
 }
 
@@ -211,7 +212,7 @@ func (s *Server) updateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
-	s.writeScheduleAudit(r, scope, rec, "updated", nil)
+	s.writeScheduleAudit(r.Context(), scope, rec, "updated", nil)
 	writeJSON(w, http.StatusOK, rec)
 }
 
@@ -233,7 +234,7 @@ func (s *Server) setScheduleStatus(w http.ResponseWriter, r *http.Request, statu
 		writeScheduleStoreError(w, r, err)
 		return
 	}
-	s.writeScheduleAudit(r, scope, rec, status, nil)
+	s.writeScheduleAudit(r.Context(), scope, rec, status, nil)
 	writeJSON(w, http.StatusOK, rec)
 }
 
@@ -249,7 +250,7 @@ func (s *Server) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rec.ID != "" {
-		s.writeScheduleAudit(r, scope, rec, "deleted", nil)
+		s.writeScheduleAudit(r.Context(), scope, rec, "deleted", nil)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -269,41 +270,58 @@ func (s *Server) dispatchSchedules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	now := s.clock().UTC()
-	due, err := s.schedules.ListDue(r.Context(), scope, now)
+	items, err := s.dispatchDue(r.Context(), scope, s.now(), strings.TrimSpace(req.ScheduleID))
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
-	want := strings.TrimSpace(req.ScheduleID)
-	out := scheduleDispatchResponse{Items: []scheduleDispatchItem{}}
-	for _, rec := range due {
-		if want != "" && rec.ID != want {
-			continue
-		}
-		out.Items = append(out.Items, s.dispatchOneSchedule(r, scope, rec, now)...)
+	if items == nil {
+		items = []scheduleDispatchItem{}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, scheduleDispatchResponse{Items: items})
 }
 
-func (s *Server) dispatchOneSchedule(r *http.Request, scope isolation.Scope, rec schedule.Record, now time.Time) []scheduleDispatchItem {
+// dispatchDue starts published, enabled schedules that are due in scope.
+// A missing version is skipped (drafts and unpublished pins never run).
+func (s *Server) dispatchDue(ctx context.Context, scope isolation.Scope, now time.Time, scheduleID string) ([]scheduleDispatchItem, error) {
+	if s.schedules == nil {
+		return nil, schedule.ErrStoreUnavailable
+	}
+	if s.workflows == nil {
+		return nil, wfstore.ErrStoreUnavailable
+	}
+	due, err := s.schedules.ListDue(ctx, scope, now)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]scheduleDispatchItem, 0, len(due))
+	for _, rec := range due {
+		if scheduleID != "" && rec.ID != scheduleID {
+			continue
+		}
+		out = append(out, s.dispatchOneSchedule(ctx, scope, rec, now)...)
+	}
+	return out, nil
+}
+
+func (s *Server) dispatchOneSchedule(ctx context.Context, scope isolation.Scope, rec schedule.Record, now time.Time) []scheduleDispatchItem {
 	if rec.Status != schedule.StatusEnabled {
-		next, _ := s.advanceSchedule(r, scope, rec, now, "disabled", "")
+		next, _ := s.advanceSchedule(ctx, scope, rec, now, "disabled", "")
 		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "disabled", FireAt: timePtr(next)}}
 	}
-	ver, err := s.workflows.GetVersion(r.Context(), scope, rec.WorkflowID, rec.WorkflowVersionID)
+	ver, err := s.workflows.GetVersion(ctx, scope, rec.WorkflowID, rec.WorkflowVersionID)
 	if err != nil {
-		next, _ := s.advanceSchedule(r, scope, rec, now, "unpublished", err.Error())
+		next, _ := s.advanceSchedule(ctx, scope, rec, now, "unpublished", err.Error())
 		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "unpublished", Error: "unpublished", FireAt: timePtr(next)}}
 	}
-	active := s.scheduleHasActive(r, scope, rec)
+	active := s.scheduleHasActive(ctx, scope, rec)
 	plan, err := schedule.PlanFires(rec, now, active)
 	if err != nil {
-		next, _ := s.advanceSchedule(r, scope, rec, now, "invalid", err.Error())
+		next, _ := s.advanceSchedule(ctx, scope, rec, now, "invalid", err.Error())
 		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "invalid", Error: err.Error(), FireAt: timePtr(next)}}
 	}
 	if plan.SkipReason != "" || len(plan.Fires) == 0 {
-		_, _ = s.schedules.RecordFire(r.Context(), scope, now, rec.ID, schedule.FireUpdate{NextFireAt: plan.NextFireAt})
+		_, _ = s.schedules.RecordFire(ctx, scope, now, rec.ID, schedule.FireUpdate{NextFireAt: plan.NextFireAt})
 		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: firstNonEmpty(plan.SkipReason, "not-due"), FireAt: timePtr(plan.NextFireAt)}}
 	}
 	var items []scheduleDispatchItem
@@ -311,7 +329,7 @@ func (s *Server) dispatchOneSchedule(r *http.Request, scope isolation.Scope, rec
 	lastErr := ""
 	var lastFired *time.Time
 	for _, fireAt := range plan.Fires {
-		item, execID, fireErr := s.startScheduleFire(r, scope, rec, ver, fireAt)
+		item, execID, fireErr := s.startScheduleFire(ctx, scope, rec, ver, fireAt)
 		items = append(items, item)
 		if execID != "" {
 			lastID = execID
@@ -322,7 +340,7 @@ func (s *Server) dispatchOneSchedule(r *http.Request, scope isolation.Scope, rec
 			lastErr = fireErr
 		}
 	}
-	_, _ = s.schedules.RecordFire(r.Context(), scope, now, rec.ID, schedule.FireUpdate{
+	_, _ = s.schedules.RecordFire(ctx, scope, now, rec.ID, schedule.FireUpdate{
 		NextFireAt:      plan.NextFireAt,
 		LastFiredAt:     lastFired,
 		LastExecutionID: lastID,
@@ -331,25 +349,30 @@ func (s *Server) dispatchOneSchedule(r *http.Request, scope isolation.Scope, rec
 	return items
 }
 
-func (s *Server) startScheduleFire(r *http.Request, scope isolation.Scope, rec schedule.Record, ver wfstore.Version, fireAt time.Time) (scheduleDispatchItem, string, string) {
+func (s *Server) startScheduleFire(ctx context.Context, scope isolation.Scope, rec schedule.Record, ver wfstore.Version, fireAt time.Time) (scheduleDispatchItem, string, string) {
 	item := scheduleDispatchItem{ScheduleID: rec.ID, FireAt: timePtr(fireAt.UTC())}
+	if strings.TrimSpace(ver.ID) == "" {
+		item.SkipReason = "unpublished"
+		item.Error = "unpublished"
+		return item, "", item.SkipReason
+	}
 	idem := schedule.IdempotencyKey(rec.ID, fireAt)
 	start := wfstore.StartInput{
 		VersionID:      ver.ID,
 		IdempotencyKey: idem,
 		Input:          map[string]any{},
-		CorrelationID:  RequestIDFromContext(r.Context()),
+		CorrelationID:  RequestIDFromContext(ctx),
 		TriggerID:      rec.ID,
 		TriggerType:    schedule.TypeSchedule,
 		RequestedBy:    firstNonEmpty(rec.CreatedBy, scope.ActorID()),
 		PolicySnapshot: map[string]any{"triggerType": schedule.TypeSchedule, "scheduleId": rec.ID, "scheduleCreatedBy": rec.CreatedBy},
-		HostContext:    map[string]any{"requestId": RequestIDFromContext(r.Context()), "scheduleId": rec.ID},
+		HostContext:    map[string]any{"requestId": RequestIDFromContext(ctx), "scheduleId": rec.ID},
 	}
-	exec, replayed, err := s.dispatchScheduleExecution(r, scope, rec, ver, start)
+	exec, replayed, err := s.dispatchScheduleExecution(ctx, scope, rec, ver, start)
 	if err != nil {
 		item.Error = err.Error()
 		item.SkipReason = "start-failed"
-		s.writeScheduleAudit(r, scope, rec, "denied", map[string]any{"reason": item.SkipReason, "fireAt": fireAt.UTC()})
+		s.writeScheduleAudit(ctx, scope, rec, "denied", map[string]any{"reason": item.SkipReason, "fireAt": fireAt.UTC()})
 		return item, "", item.SkipReason
 	}
 	item.ExecutionID = exec.ID
@@ -361,12 +384,15 @@ func (s *Server) startScheduleFire(r *http.Request, scope isolation.Scope, rec s
 	return item, exec.ID, ""
 }
 
-func (s *Server) dispatchScheduleExecution(r *http.Request, scope isolation.Scope, rec schedule.Record, ver wfstore.Version, start wfstore.StartInput) (wfstore.Execution, bool, error) {
+func (s *Server) dispatchScheduleExecution(ctx context.Context, scope isolation.Scope, rec schedule.Record, ver wfstore.Version, start wfstore.StartInput) (wfstore.Execution, bool, error) {
+	if strings.TrimSpace(start.VersionID) == "" {
+		return wfstore.Execution{}, false, wfstore.ErrDraftNotRunnable
+	}
 	workflowID := rec.WorkflowID
 	if start.IdempotencyKey != "" {
-		existing, peekErr := s.workflows.PeekIdempotent(r.Context(), scope, workflowID, start)
+		existing, peekErr := s.workflows.PeekIdempotent(ctx, scope, workflowID, start)
 		if peekErr == nil {
-			s.writeScheduleAudit(r, scope, rec, "replayed", map[string]any{"executionId": existing.ID})
+			s.writeScheduleAudit(ctx, scope, rec, "replayed", map[string]any{"executionId": existing.ID})
 			return existing, true, nil
 		}
 		if !errors.Is(peekErr, wfstore.ErrNotFound) {
@@ -374,17 +400,17 @@ func (s *Server) dispatchScheduleExecution(r *http.Request, scope isolation.Scop
 		}
 	}
 	if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 && s.ops != nil {
-		if _, err := s.ops.Resolve(r.Context(), scope, refs); err != nil {
+		if _, err := s.ops.Resolve(ctx, scope, refs); err != nil {
 			return wfstore.Execution{}, false, err
 		}
 	}
 	if s.approvals != nil {
-		eval, evalErr := s.evaluateVersion(r.Context(), scope, workflowID, ver.ID)
+		eval, evalErr := s.evaluateVersion(ctx, scope, workflowID, ver.ID)
 		if evalErr != nil {
 			return wfstore.Execution{}, false, evalErr
 		}
 		if eval.Decision == policy.DecisionDeny {
-			s.emitAlert(r, scope, opsalert.Signal{
+			s.emitAlertCtx(ctx, scope, opsalert.Signal{
 				Kind:         opsalert.KindPolicy,
 				Action:       "schedule.dispatch",
 				ResourceType: "workflow_schedule",
@@ -394,37 +420,37 @@ func (s *Server) dispatchScheduleExecution(r *http.Request, scope isolation.Scop
 			})
 			return wfstore.Execution{}, false, errPolicyDenied
 		}
-		if _, gateErr := s.dispatchApprovalsOK(r.Context(), scope, eval, workflowID, ver.ID); gateErr != nil {
+		if _, gateErr := s.dispatchApprovalsOK(ctx, scope, eval, workflowID, ver.ID); gateErr != nil {
 			return wfstore.Execution{}, false, gateErr
 		}
 	}
-	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, start)
+	exec, err := s.workflows.StartExecution(ctx, scope, workflowID, start)
 	if err != nil {
 		return wfstore.Execution{}, false, err
 	}
 	if exec.Replayed {
-		s.writeScheduleAudit(r, scope, rec, "replayed", map[string]any{"executionId": exec.ID})
+		s.writeScheduleAudit(ctx, scope, rec, "replayed", map[string]any{"executionId": exec.ID})
 		return exec, true, nil
 	}
 	if s.ops != nil {
-		copied, copyErr := s.ops.CopyPins(r.Context(), scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
+		copied, copyErr := s.ops.CopyPins(ctx, scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
 		if copyErr != nil {
 			return wfstore.Execution{}, false, copyErr
 		}
 		if len(copied) == 0 {
 			if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 {
-				if _, err := s.ops.CopyPins(r.Context(), scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID); err != nil {
+				if _, err := s.ops.CopyPins(ctx, scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID); err != nil {
 					return wfstore.Execution{}, false, err
 				}
 			}
 		}
 	}
-	s.writeScheduleAudit(r, scope, rec, "created", map[string]any{"executionId": exec.ID})
+	s.writeScheduleAudit(ctx, scope, rec, "created", map[string]any{"executionId": exec.ID})
 	return exec, false, nil
 }
 
-func (s *Server) scheduleHasActive(r *http.Request, scope isolation.Scope, rec schedule.Record) bool {
-	items, err := s.workflows.ListExecutions(r.Context(), scope, wfstore.ExecutionListFilter{WorkflowID: rec.WorkflowID, Limit: 100})
+func (s *Server) scheduleHasActive(ctx context.Context, scope isolation.Scope, rec schedule.Record) bool {
+	items, err := s.workflows.ListExecutions(ctx, scope, wfstore.ExecutionListFilter{WorkflowID: rec.WorkflowID, Limit: 100})
 	if err != nil {
 		return false
 	}
@@ -448,13 +474,13 @@ func wfstoreActive(status string) bool {
 	}
 }
 
-func (s *Server) advanceSchedule(r *http.Request, scope isolation.Scope, rec schedule.Record, now time.Time, reason, lastErr string) (time.Time, error) {
+func (s *Server) advanceSchedule(ctx context.Context, scope isolation.Scope, rec schedule.Record, now time.Time, reason, lastErr string) (time.Time, error) {
 	next, err := schedule.NextAfter(rec, now)
 	if err != nil {
 		return time.Time{}, err
 	}
-	_, err = s.schedules.RecordFire(r.Context(), scope, now, rec.ID, schedule.FireUpdate{NextFireAt: next, LastError: lastErr})
-	s.writeScheduleAudit(r, scope, rec, "denied", map[string]any{"reason": reason})
+	_, err = s.schedules.RecordFire(ctx, scope, now, rec.ID, schedule.FireUpdate{NextFireAt: next, LastError: lastErr})
+	s.writeScheduleAudit(ctx, scope, rec, "denied", map[string]any{"reason": reason})
 	return next, err
 }
 
@@ -508,7 +534,7 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 	}
 }
 
-func (s *Server) writeScheduleAudit(r *http.Request, scope isolation.Scope, rec schedule.Record, outcome string, extra map[string]any) {
+func (s *Server) writeScheduleAudit(ctx context.Context, scope isolation.Scope, rec schedule.Record, outcome string, extra map[string]any) {
 	if s.workflows == nil {
 		return
 	}
@@ -517,7 +543,7 @@ func (s *Server) writeScheduleAudit(r *http.Request, scope isolation.Scope, rec 
 		"workflowId":        rec.WorkflowID,
 		"workflowVersionId": rec.WorkflowVersionID,
 		"triggerType":       schedule.TypeSchedule,
-		"correlationId":     RequestIDFromContext(r.Context()),
+		"correlationId":     RequestIDFromContext(ctx),
 		"outcome":           outcome,
 	}
 	for k, v := range extra {
@@ -529,13 +555,13 @@ func (s *Server) writeScheduleAudit(r *http.Request, scope isolation.Scope, rec 
 		resourceType = "execution"
 		resourceID = execID
 	}
-	_, _ = s.workflows.WriteAudit(r.Context(), scope, wfstore.AuditWrite{
+	_, _ = s.workflows.WriteAudit(ctx, scope, wfstore.AuditWrite{
 		Action:        "execution.start",
 		ResourceType:  resourceType,
 		ResourceID:    resourceID,
 		Outcome:       outcome,
-		CorrelationID: RequestIDFromContext(r.Context()),
-		HostContext:   map[string]any{"requestId": RequestIDFromContext(r.Context())},
+		CorrelationID: RequestIDFromContext(ctx),
+		HostContext:   map[string]any{"requestId": RequestIDFromContext(ctx)},
 		Details:       details,
 	})
 }

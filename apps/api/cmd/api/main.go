@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -54,8 +56,10 @@ func main() {
 	}
 	bg, stopBG := context.WithCancel(context.Background())
 	go pool.Start(bg)
+	var schedWG sync.WaitGroup
 	defer func() {
 		stopBG()
+		schedWG.Wait()
 		pool.Close()
 	}()
 
@@ -71,38 +75,67 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: httpapi.NewWithDeps(httpapi.Deps{
-			DB:                   pool,
-			Keys:                 cfg.VaultKeys,
-			JobBindingKey:        cfg.JobBindingKey,
-			ScriptSigningKey:     cfg.ScriptSigningKey,
-			Objects:              objects,
-			TLSMaterials:         tlsMaterials,
-			DownloadTTL:          cfg.ArtifactDownloadTTL,
-			ArtifactMaxBytes:     cfg.ArtifactMaxBytes,
-			EmbedKeys:            cfg.EmbedKeys,
-			EmbedIssuers:         cfg.EmbedIssuers,
-			PortalIssuers:        cfg.PortalIssuers,
-			PortalFrameAncestors: cfg.PortalFrameAncestors,
-			PlatformAdmins:       cfg.PlatformAdmins,
-			EmbedLimits:          cfg.EmbedLimits,
-			LoginLimits:          cfg.LoginLimits,
-			EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
-			Security: httpapi.Security{
-				TrustedProxies:       cfg.TrustedProxies,
-				RequireTLS:           cfg.RequireTLS,
-				AllowedOrigins:       cfg.CORSAllowedOrigins,
-				TrustIdentityHeaders: cfg.TrustIdentityHeaders,
-				Session: httpapi.SessionPolicy{
-					IdleTimeout:     cfg.SessionIdleTimeout,
-					AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
-				},
-				VaultKeys:     cfg.VaultKeys,
-				JobBindingKey: cfg.JobBindingKey,
+	handler := httpapi.NewWithDeps(httpapi.Deps{
+		DB:                   pool,
+		Keys:                 cfg.VaultKeys,
+		JobBindingKey:        cfg.JobBindingKey,
+		ScriptSigningKey:     cfg.ScriptSigningKey,
+		Objects:              objects,
+		TLSMaterials:         tlsMaterials,
+		DownloadTTL:          cfg.ArtifactDownloadTTL,
+		ArtifactMaxBytes:     cfg.ArtifactMaxBytes,
+		EmbedKeys:            cfg.EmbedKeys,
+		EmbedIssuers:         cfg.EmbedIssuers,
+		PortalIssuers:        cfg.PortalIssuers,
+		PortalFrameAncestors: cfg.PortalFrameAncestors,
+		PlatformAdmins:       cfg.PlatformAdmins,
+		EmbedLimits:          cfg.EmbedLimits,
+		LoginLimits:          cfg.LoginLimits,
+		EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
+		Security: httpapi.Security{
+			TrustedProxies:       cfg.TrustedProxies,
+			RequireTLS:           cfg.RequireTLS,
+			AllowedOrigins:       cfg.CORSAllowedOrigins,
+			TrustIdentityHeaders: cfg.TrustIdentityHeaders,
+			Session: httpapi.SessionPolicy{
+				IdleTimeout:     cfg.SessionIdleTimeout,
+				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
 			},
-		}),
+			VaultKeys:     cfg.VaultKeys,
+			JobBindingKey: cfg.JobBindingKey,
+		},
+	})
+	if cfg.SchedulerEnabled {
+		api, ok := handler.(*httpapi.API)
+		if !ok {
+			log.Error("scheduler cannot attach to the API handler")
+			os.Exit(1)
+		}
+		loop := scheduler.New(scheduler.Config{
+			Interval: cfg.SchedulerInterval,
+			Elector:  scheduler.NewPostgresElector(pool),
+			Hooks: scheduler.Hooks{
+				Dispatch: api.TickDispatch,
+				Recover:  api.TickRecover,
+				Purge:    api.TickPurge,
+			},
+			Log: log,
+		})
+		schedWG.Add(1)
+		go func() {
+			defer schedWG.Done()
+			if err := loop.Run(bg); err != nil && !errors.Is(err, context.Canceled) {
+				log.Error("scheduler stopped", "error", err)
+			}
+		}()
+		log.Info("scheduler enabled", "interval", cfg.SchedulerInterval.String())
+	} else {
+		log.Info("scheduler disabled")
+	}
+
+	srv := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
