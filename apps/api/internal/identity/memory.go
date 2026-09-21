@@ -103,6 +103,23 @@ func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	return u, nil
 }
 
+// FindUser returns an existing principal. It does not upsert.
+func (m *Memory) FindUser(_ context.Context, issuer, subject string) (User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	if !authz.ValidIssuer(issuer) || !authz.ValidSubject(subject) {
+		return User{}, ErrInvalid
+	}
+	for _, u := range m.users {
+		if u.Issuer == issuer && u.ExternalSubject == subject {
+			return u, nil
+		}
+	}
+	return User{}, ErrNotFound
+}
+
 func (m *Memory) SetLocalPassword(_ context.Context, userID, identifier, passwordHash string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

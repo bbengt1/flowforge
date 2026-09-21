@@ -1,6 +1,6 @@
 # SSH engine
 
-**Runtime:** specified contract and library only. **No shipped worker opens an SSH session.** Compose local worker fails `ssh.run` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+**Runtime:** `cmd/runner` calls `ssh.Execute` with a vault private-key handle. Compose `cmd/worker` still fails `ssh.run` closed. Default-deny does not open SSH egress. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
 
 ## Purpose
 

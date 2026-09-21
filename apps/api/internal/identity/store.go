@@ -10,6 +10,8 @@ import (
 type Store interface {
 	UpsertUser(ctx context.Context, issuer, subject, displayName string) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
+	// FindUser returns an existing principal. It does not upsert.
+	FindUser(ctx context.Context, issuer, subject string) (User, error)
 	// SetLocalPassword stores a bcrypt hash for local login. identifier
 	// is the already-normalized email or username. The hash is never
 	// copied onto User JSON. Operator-chosen passwords clear

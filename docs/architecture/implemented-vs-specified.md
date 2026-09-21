@@ -33,8 +33,8 @@ Do not weaken these because a capability is unimplemented:
 
 | Area | Specified | Runs today | Status |
 | --- | --- | --- | --- |
-| **Production provider worker** | Isolated, production-locked worker pods execute Kubernetes, SSH, signed scripts, and HTTP one step at a time after revalidating job/version/policy/lease ([architecture](../architecture.md), engines). | **No production worker binary exists.** `apps/api/cmd/worker` is compose/dev only and **refuses** to start when production-locked. `deploy/k8s` must not run it. Engine packages (`internal/kubernetes`, `internal/ssh`, `internal/scripts`, `internal/httpnotify`) are validators, policy evaluators, or dispatch-preparers. `kubernetes.NewLiveClient` is referenced only inside its own package. | **Specified only** (gap **A1**) |
-| **Kubernetes / SSH / script / HTTP nodes** | `kubernetes.apply` / `get` / `list` / rollout, `ssh.run`, `script.python` / `script.go`, `http.request` contact real targets from a worker. | Author, validate, publish, pin, approve, and **dispatch** succeed. The only shipped worker then **fails** the step (`local-worker-unsupported`: “Deploy an isolated production worker.”). `deploy/kubernetes/script-runner-deployment.yaml` is `replicas: 0` and points at an image this repo does not build. | **Specified only** |
+| **Production provider worker** | Isolated, production-locked worker pods execute Kubernetes, SSH, signed scripts, and HTTP one step at a time after revalidating job/version/policy/lease ([architecture](../architecture.md), engines). | `apps/api/cmd/runner` is production-locked and dispatches to the existing engine packages. Compose `apps/api/cmd/worker` still refuses provider nodes and refuses to start when production-locked. `deploy/k8s` runs the runner, not `/usr/local/bin/worker`. Default-deny egress does not open provider networks. | **Partial** (G.1.1 / #432) |
+| **Kubernetes / SSH / script / HTTP nodes** | `kubernetes.apply` / `get` / `list` / rollout, `ssh.run`, `script.python` / `script.go`, `http.request` contact real targets from a worker. | The production runner calls those engines after a published pin and HMAC fence. Compose still fails the step (`local-worker-unsupported`). Live dials fail at the network until an operator allowlist exists. `notification.email` fails closed without a mailer. `deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0`; scripts run in the runner harness. | **Partial** |
 | **Compose local worker** | Dev claim loop so **Start published** can leave `queued`, same lease / HMAC ticket / fencing as any worker ([deployment](../deployment.md#local-compose-worker)). | **Runs locally** for six core nodes: `flow.condition`, `flow.stop`, `flow.fail`, `data.set`, `data.map`, `data.validate`. `flow.approval` is parked `waiting` by the API (worker skips). `flow.delay` and every provider node fail closed. Not a Kubernetes workload. | **Partial** (core eval only) |
 | **Schedules / dispatch** | Timezone-explicit schedules fire published versions; `POST /api/v1/schedules/dispatch` is the tick. | CRUD, enable/disable, and the dispatch **endpoint** exist (`workflow.execute` + CSRF). **This repository ships no CronJob, in-process ticker, or external scheduler.** Due schedules silently never fire unless an operator calls the endpoint. | **Partial** (gap **A3**) |
 | **Lease recovery** | Expired claims become `indeterminate` via fencing; `POST /api/v1/jobs/recover`. | Endpoint exists; next `claim` can also recover. **No shipped periodic caller.** Idle queues can sit stuck until the next claim. | **Partial** (gap **A3**) |
@@ -50,17 +50,18 @@ Do not weaken these because a capability is unimplemented:
 | **Artifact durability** | Queue, leases, execution state, audit, and artifact metadata survive pod loss. | Metadata is in PostgreSQL. **Payloads default to `tmpfs` `/tmp/flowforge-artifacts` or in-process memory** — lost on restart; not shared across replicas. | **Partial** (gap **B3**) |
 | **OpenAPI / tracing (E1.2)** | Generated OpenAPI; API-to-worker flows traced by correlation ID. | OpenAPI is **hand-written**. `X-Request-ID` exists; **no trace store, sampling, or worker span propagation.** `GET /api/v1/health` now publishes non-secret `version` / `sha` (G.0.10 / C1 build identity). | **Partial** (gaps **B5**, **C1**) |
 | **DB session timeouts** | `statement_timeout` / `lock_timeout` on checkout so one query cannot pin the pool. | Application-pool `PrepareConn` (pgx v5 checkout) sets `15s` / `5s` (`STATEMENT_TIMEOUT` / `LOCK_TIMEOUT`). Circuit breakers and worker/UI bulkheads are still out of scope. | **Partial** (gap **C2**; G.0.11) |
-| **HA / web on Kubernetes** | Isolated worker pods + UI in cluster. | `deploy/k8s` is **API only**, `replicas: 1`. No web Deployment, no production worker Deployment, no PDB/HPA. | **Specified only** (gap **B2**) |
+| **HA / web on Kubernetes** | Isolated worker pods + UI in cluster. | `deploy/k8s` runs API and runner at `replicas: 1`. No web Deployment, no PDB/HPA. | **Specified only** (gap **B2**) |
 
-## Provider execution (do not document as live)
+## Provider execution
 
-Until a production-locked `cmd/runner` (or equivalent) is wired to the engine packages and a runner image is shipped:
+`cmd/runner` is production-locked and calls the engine packages. Compose `cmd/worker` does not.
 
-- Do **not** say Kubernetes, SSH, or scripts “run” or that workers “call a provider.”
-- Do say: control plane can validate, authorize, policy-check, and enqueue; **the shipped worker cannot execute provider nodes.**
-- Engine references ([Kubernetes](../reference/kubernetes-engine.md), [SSH](../reference/ssh-engine.md), [script](../reference/script-engine.md)) are **specified contracts** for G.1, not a current runtime.
+- Do say: the production runner dispatches `kubernetes.*`, `ssh.run`, `script.python` / `script.go`, and `http.request` / `notification.webhook` after a published pin, HMAC ticket, and fence.
+- Do say: compose still fails those nodes with `local-worker-unsupported`.
+- Do **not** say clusters, SSH hosts, or webhooks are reachable from `deploy/k8s` until an operator adds provider egress. Default-deny stays. Script Jobs stay `replicas: 0`.
+- Engine references ([Kubernetes](../reference/kubernetes-engine.md), [SSH](../reference/ssh-engine.md), [script](../reference/script-engine.md)) describe the libraries the runner calls.
 
-Executable on compose today: **6 of 18** defined node types (`flow.condition`, `flow.stop`, `flow.fail`, `data.set`, `data.map`, `data.validate`). Non-executable on that worker: provider nodes, `flow.delay`, plus registry-disabled `data.filter` / `data.merge` / `data.sort` / `flow.join` / `flow.parallel` / `flow.switch`. `flow.approval` waits in the API.
+Executable on compose today: **6 of 18** defined node types (`flow.condition`, `flow.stop`, `flow.fail`, `data.set`, `data.map`, `data.validate`). Non-executable on that worker: provider nodes, `flow.delay`, plus registry-disabled `data.filter` / `data.merge` / `data.sort` / `flow.join` / `flow.parallel` / `flow.switch`. `flow.approval` waits in the API. The production runner also evaluates those six core nodes, parks `flow.approval`, and fails `flow.delay` with `runner-unsupported`.
 
 ## Identity doors (do not merge)
 
@@ -75,6 +76,6 @@ Executable on compose today: **6 of 18** defined node types (`flow.condition`, `
 
 - A license to weaken drafts-never-run, vault metadata-only, ADV-021/024, or YAML SoT.
 - A substitute for the [gap analysis](../internal/claude-code-gap-analysis.md) findings (A–I) or the E1–E12 [master implementation plan](../master-implementation-plan.md).
-- A claim that G.0.3+ (boot-fail secrets, CI honesty, runner, scheduler) have shipped. They have not.
+- A claim that the scheduler or the rest of G.1 has shipped. The production runner (G.1.1) has. The scheduler has not.
 
 When a later story makes a row **Runs today**, update this table in the same PR as the code.

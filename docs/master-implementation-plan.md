@@ -153,7 +153,7 @@ Tracked on GitHub as epic [#401](https://github.com/bbengt1/flowforge/issues/401
 | G.2 | Make it enterprise: OIDC/MFA/SCIM, KMS, OTel, HA | Gap analysis §4 Phase 2 |
 | G.3 | Make it maintainable | Gap analysis §4 Phase 3 |
 
-Provider gate below is **not** met on `main`: engine libraries and negative tests exist; a production worker that calls them does not.
+Provider gate below: `cmd/runner` calls the kubernetes, ssh, script, and http engines. Compose `cmd/worker` still refuses provider nodes. Negative suites remain required; a suite alone does not open provider egress.
 
 ## Story definition of ready
 
@@ -166,7 +166,7 @@ A story is done only when its acceptance criteria pass, negative tenancy/securit
 ## Release gates
 
 1. **Foundation gate:** E1–E5 pass before any provider action is enabled.
-2. **Provider gate:** enable Kubernetes, SSH, and scripts independently only after their dedicated negative/security/isolation suites pass **and** a production-locked worker actually calls those engines. Suites without a runner do not make provider execution live.
+2. **Provider gate:** Kubernetes, SSH, and scripts stay independently gated. Their negative/security/isolation suites must pass, and `cmd/runner` must be the caller. Suites alone do not make a target reachable: `deploy/k8s` default-deny does not open provider egress, and compose still refuses those nodes.
 3. **Integration gate:** feature-flag `http.request`, webhook delivery, and email until their endpoint/recipient policy, SSRF/redirect/DNS-rebinding, TLS, secret-field, retry, and redaction suites pass.
 4. **Embed gate:** enable Portal embedding only after signed assertion, one-time replay, key-rotation, and tenant/workbench propagation tests pass.
 5. **Production gate:** E12 evidence, threat review, restore rehearsal, and capacity headroom are approved; otherwise affected features remain disabled.

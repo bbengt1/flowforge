@@ -11,6 +11,7 @@ data:
   # Do not set SEED_LOCAL_DEFAULTS (local compose tenant/credential seed).
   # Do not set PUBLIC_BASE_URL from compose (localhost skip); B.4/Settings.
   # Do not set LOCAL_WORKER or run /usr/local/bin/worker (compose-only).
+  # Production claims use /usr/local/bin/runner (deploy/k8s/runner-deployment.yaml).
   # Set PLATFORM_ADMINS on the Secret (issuer|subject). Empty is fail-closed.
   APP_ENV: "production"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.

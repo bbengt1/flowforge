@@ -12,6 +12,8 @@
 #   worker   — Local/dev job runner. Same image as api, command worker.
 #              Claims POST /api/v1/jobs/claim (lease + HMAC ticket + fence).
 #              Required for Start published to leave queued. Not a k8s service.
+#              Provider nodes stay fail-closed here. Production uses
+#              /usr/local/bin/runner (deploy/k8s), which refuses this path.
 #              Opt out: docker compose up --scale worker=0  or  LOCAL_WORKER=0
 #   postgres — local PostgreSQL. Password comes from .env only.
 #              Backup encryption + restore rehearsal: scripts/backup/.
@@ -161,8 +163,10 @@ services:
 
   # Local/dev only. Claims queued jobs so Start published can leave queued.
   # Uses the same ADV fencing / lease / jobToken contract as any worker.
-  # Production/k8s must deploy a real isolated worker — do not copy this
-  # service. Opt out: --scale worker=0 or LOCAL_WORKER=0 (clean exit).
+  # Do not add a cmd/runner service here: production-locked APP_ENV or
+  # REQUIRE_TLS makes /usr/local/bin/runner boot-fail, and this worker
+  # refuses provider nodes. Production: deploy/k8s runner Deployment.
+  # Opt out: --scale worker=0 or LOCAL_WORKER=0 (clean exit).
   worker:
     <<: *security
     image: flowforge-api:local

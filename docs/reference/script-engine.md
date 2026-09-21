@@ -1,6 +1,6 @@
 # Script engine
 
-**Runtime:** specified contract, publish/sign pipeline, and `replicas: 0` runner template. **No shipped worker starts a script pod.** Compose local worker fails `script.python` / `script.go` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
+**Runtime:** `cmd/runner` calls `scripts.Execute` on the signed package through the in-process harness. `deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0`. Compose `cmd/worker` still fails `script.python` / `script.go` closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md).
 
 ## Purpose
 

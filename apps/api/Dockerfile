@@ -30,7 +30,10 @@ RUN go build -trimpath \
     -o /out/migrate ./cmd/migrate \
  && go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
-    -o /out/worker ./cmd/worker
+    -o /out/worker ./cmd/worker \
+ && go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/runner ./cmd/runner
 
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
@@ -40,6 +43,7 @@ RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
 COPY --from=build --chown=65532:65532 /out/api /usr/local/bin/api
 COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
 COPY --from=build --chown=65532:65532 /out/worker /usr/local/bin/worker
+COPY --from=build --chown=65532:65532 /out/runner /usr/local/bin/runner
 
 USER 65532:65532
 EXPOSE 8080
@@ -56,8 +60,9 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/api/v1/health || exit 1
 
 # CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate
-# or /usr/local/bin/worker. The worker binary is local/dev only — do not
-# run it from deploy/k8s.
+# or /usr/local/bin/worker. /usr/local/bin/worker is local/dev only.
+# Production uses /usr/local/bin/runner (deploy/k8s). Do not run the
+# compose worker from deploy/k8s.
 # Run this image with a read-only root filesystem, dropped capabilities,
 # no-new-privileges, and resource limits (see docker-compose.yml and deploy/k8s).
 CMD ["/usr/local/bin/api"]
