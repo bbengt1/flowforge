@@ -4,7 +4,8 @@
 # UID/GID 65532 matches apps/api. Runtime hardening that cannot live in the
 # image itself is applied by compose/K8s: read-only root, tmpfs on /tmp and
 # /app/.next/cache, cap_drop ALL, no-new-privileges, resource limits.
-# Digest pin is the multi-arch index for node:22-alpine (see docs/deployment.md).
+# Digest pin is the multi-arch index for node:22-alpine
+# (see docs/deployment.md#refreshing-dockerfile-base-digests).
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
 RUN corepack enable && corepack prepare pnpm@10.33.3 --activate
