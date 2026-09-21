@@ -51,11 +51,34 @@ func (s *pgSession) Lost(ctx context.Context) bool {
 	if s == nil || s.conn == nil {
 		return true
 	}
-	var one int
-	if err := s.conn.QueryRow(ctx, `SELECT 1`).Scan(&one); err != nil || one != 1 {
+	// Confirm this backend still holds the session advisory lock. A live
+	// connection is not enough: if the lock is gone, another replica can
+	// acquire it, and this process must not keep ticking.
+	classid, objid := advisoryLockParts(LockKey)
+	var held bool
+	err := s.conn.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_locks
+			WHERE locktype = 'advisory'
+			  AND classid = $1::oid
+			  AND objid = $2::oid
+			  AND objsubid = 1
+			  AND mode = 'ExclusiveLock'
+			  AND granted
+			  AND pid = pg_backend_pid()
+		)`, classid, objid).Scan(&held)
+	if err != nil || !held {
 		return true
 	}
 	return false
+}
+
+// advisoryLockParts splits a bigint advisory-lock key the way PostgreSQL
+// does: high 32 bits are classid, low 32 bits are objid, objsubid is 1.
+func advisoryLockParts(key int64) (classid, objid int64) {
+	classid = int64(uint32(uint64(key) >> 32))
+	objid = int64(uint32(key))
+	return classid, objid
 }
 
 func (s *pgSession) Release(ctx context.Context) {

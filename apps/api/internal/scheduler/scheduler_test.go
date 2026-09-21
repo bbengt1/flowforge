@@ -108,6 +108,152 @@ func TestOnlyLeaderTicksOnInterval(t *testing.T) {
 	}
 }
 
+func TestAdvisoryLockPartsMatchPostgresSplit(t *testing.T) {
+	classid, objid := advisoryLockParts(LockKey)
+	if classid != 0 || objid != LockKey {
+		t.Fatalf("lock key parts = %d, %d", classid, objid)
+	}
+	classid, objid = advisoryLockParts((1 << 32) | 7)
+	if classid != 1 || objid != 7 {
+		t.Fatalf("high-bit parts = %d, %d", classid, objid)
+	}
+}
+
+func TestLostLeaseBeforeTickRunsNoHooks(t *testing.T) {
+	var n atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = New(Config{
+			Interval: time.Hour,
+			Retry:    5 * time.Millisecond,
+			Elector: electorFunc(func(ctx context.Context) (Session, bool, error) {
+				if ctx.Err() != nil {
+					return nil, false, ctx.Err()
+				}
+				return lostSession{}, true, nil
+			}),
+			Hooks: countHooks(&n),
+			Log:   slog.New(slog.DiscardHandler),
+		}).Run(ctx)
+	}()
+	time.Sleep(40 * time.Millisecond)
+	if n.Load() != 0 {
+		t.Fatalf("hooks ran without a lease: %d", n.Load())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not stop")
+	}
+	if n.Load() != 0 {
+		t.Fatalf("hooks ran without a lease: %d", n.Load())
+	}
+}
+
+func TestLoseLeaseStopsHooksImmediately(t *testing.T) {
+	lock := &sharedLock{}
+	var retired atomic.Bool
+	sess := &leaseSession{lock: lock, id: "leader"}
+	var dispatch, recoverN, purge atomic.Int32
+	entered := make(chan struct{})
+	finished := make(chan struct{})
+	var enteredOnce, finishedOnce sync.Once
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- New(Config{
+			Interval: 10 * time.Millisecond,
+			Retry:    5 * time.Millisecond,
+			Elector: electorFunc(func(ctx context.Context) (Session, bool, error) {
+				if ctx.Err() != nil {
+					return nil, false, ctx.Err()
+				}
+				lock.mu.Lock()
+				defer lock.mu.Unlock()
+				if retired.Load() || (lock.owner != "" && lock.owner != "leader") {
+					return nil, false, nil
+				}
+				lock.owner = "leader"
+				return sess, true, nil
+			}),
+			Hooks: Hooks{
+				Dispatch: func(ctx context.Context) error {
+					dispatch.Add(1)
+					enteredOnce.Do(func() { close(entered) })
+					<-ctx.Done()
+					finishedOnce.Do(func() { close(finished) })
+					return ctx.Err()
+				},
+				Recover: func(context.Context) error {
+					recoverN.Add(1)
+					return nil
+				},
+				Purge: func(context.Context) error {
+					purge.Add(1)
+					return nil
+				},
+			},
+			Log: slog.New(slog.DiscardHandler),
+		}).Run(ctx)
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("leader did not start dispatch")
+	}
+	sess.drop(&retired)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight dispatch was not cancelled when the lease was lost")
+	}
+	time.Sleep(50 * time.Millisecond)
+	if dispatch.Load() != 1 || recoverN.Load() != 0 || purge.Load() != 0 {
+		t.Fatalf("orphan tick after lease loss: dispatch=%d recover=%d purge=%d", dispatch.Load(), recoverN.Load(), purge.Load())
+	}
+
+	var follower atomic.Int32
+	ctxFollower, stopFollower := context.WithCancel(context.Background())
+	defer stopFollower()
+	go func() {
+		errCh <- New(Config{
+			Interval: 10 * time.Millisecond,
+			Retry:    5 * time.Millisecond,
+			Elector:  lock.elector("follower"),
+			Hooks:    countHooks(&follower),
+			Log:      slog.New(slog.DiscardHandler),
+		}).Run(ctxFollower)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && follower.Load() < 3 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if follower.Load() < 3 {
+		t.Fatalf("follower did not tick after the leader lost the lease, count=%d", follower.Load())
+	}
+	if dispatch.Load() != 1 || recoverN.Load() != 0 || purge.Load() != 0 {
+		t.Fatalf("former leader ticked after the follower took the lock: dispatch=%d recover=%d purge=%d", dispatch.Load(), recoverN.Load(), purge.Load())
+	}
+	cancel()
+	stopFollower()
+	for range 2 {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("scheduler did not stop")
+		}
+	}
+}
+
 func TestSchedulerHookErrorDoesNotLogSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
@@ -181,6 +327,53 @@ type sharedSession struct {
 }
 
 func (s *sharedSession) Lost(context.Context) bool { return false }
+
+type lostSession struct{}
+
+func (lostSession) Lost(context.Context) bool { return true }
+func (lostSession) Release(context.Context)   {}
+
+// leaseSession is a leader whose connection can die mid-hook. drop
+// releases the shared lock the way a dead Postgres session would, and
+// retires this replica so it does not campaign again.
+type leaseSession struct {
+	lock *sharedLock
+	id   string
+	mu   sync.Mutex
+	lost bool
+}
+
+func (s *leaseSession) Lost(context.Context) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lost
+}
+
+func (s *leaseSession) Release(context.Context) {
+	s.mu.Lock()
+	lost := s.lost
+	s.mu.Unlock()
+	if lost {
+		return
+	}
+	s.lock.mu.Lock()
+	defer s.lock.mu.Unlock()
+	if s.lock.owner == s.id {
+		s.lock.owner = ""
+	}
+}
+
+func (s *leaseSession) drop(retired *atomic.Bool) {
+	s.mu.Lock()
+	s.lost = true
+	s.mu.Unlock()
+	s.lock.mu.Lock()
+	retired.Store(true)
+	if s.lock.owner == s.id {
+		s.lock.owner = ""
+	}
+	s.lock.mu.Unlock()
+}
 
 func (s *sharedSession) Release(context.Context) {
 	s.lock.mu.Lock()

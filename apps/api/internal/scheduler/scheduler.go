@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,6 +34,11 @@ const (
 	// campaigns again. Shorter than a long tick so failover is not stuck
 	// behind a 30s interval. Tests may set Config.Retry lower.
 	followerRetry = 5 * time.Second
+
+	// leaseWatch is how often the leader rechecks the advisory lock
+	// while a hook is running. A lost lease cancels that hook and does
+	// not start the next one.
+	leaseWatch = 20 * time.Millisecond
 )
 
 // Hooks are the three maintenance operations. Nil funcs are skipped.
@@ -44,7 +50,9 @@ type Hooks struct {
 }
 
 // Session is a held leadership. Lost is true when this process no longer
-// owns the lock (connection drop). Release drops the lock.
+// owns the lock (connection drop, or the advisory lock is no longer
+// granted to that session). Release drops the lock. Lost must be safe to
+// call on the leadership connection while a hook runs elsewhere.
 type Session interface {
 	Lost(ctx context.Context) bool
 	Release(ctx context.Context)
@@ -110,41 +118,108 @@ func (s *Scheduler) Run(ctx context.Context) error {
 }
 
 func (s *Scheduler) lead(ctx context.Context, session Session) {
-	if ctx.Err() != nil {
-		return
-	}
-	s.tick(ctx)
 	ticker := time.NewTicker(s.interval())
 	defer ticker.Stop()
 	for {
+		if !s.tick(ctx, session) {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if session.Lost(ctx) {
-				s.cfg.Log.Info("scheduler leadership lost")
-				return
-			}
-			s.tick(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) tick(ctx context.Context) {
+// tick runs the three hooks while session still holds the lease.
+// False means stop leading: ctx is done, or the lease was lost before
+// or during a hook. A lost lease cancels the in-flight hook and skips
+// every hook that has not started.
+func (s *Scheduler) tick(ctx context.Context, session Session) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if session.Lost(ctx) {
+		s.noteLost()
+		return false
+	}
 	if s.cfg.Log != nil {
 		s.cfg.Log.Info("scheduler tick")
 	}
-	s.call(ctx, "dispatch", s.cfg.Hooks.Dispatch)
-	s.call(ctx, "recover", s.cfg.Hooks.Recover)
-	s.call(ctx, "purge", s.cfg.Hooks.Purge)
+	if !s.call(ctx, session, "dispatch", s.cfg.Hooks.Dispatch) {
+		return false
+	}
+	if !s.call(ctx, session, "recover", s.cfg.Hooks.Recover) {
+		return false
+	}
+	return s.call(ctx, session, "purge", s.cfg.Hooks.Purge)
 }
 
-func (s *Scheduler) call(ctx context.Context, name string, fn func(context.Context) error) {
-	if fn == nil || ctx.Err() != nil {
-		return
+// call runs one hook. It returns false when leadership must end.
+// A hook error while the lease is still held is logged and the tick
+// continues. The lease is rechecked before the hook starts, and again
+// while it runs, on the leadership connection only.
+func (s *Scheduler) call(ctx context.Context, session Session, name string, fn func(context.Context) error) bool {
+	if ctx.Err() != nil {
+		return false
 	}
-	if err := fn(ctx); err != nil && s.cfg.Log != nil {
+	if session.Lost(ctx) {
+		s.noteLost()
+		return false
+	}
+	if fn == nil {
+		return true
+	}
+	hookCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var leaseLost atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watchLease(ctx, hookCtx, session, cancel, &leaseLost)
+	}()
+	err := fn(hookCtx)
+	cancel()
+	<-done
+	if ctx.Err() != nil {
+		return false
+	}
+	if leaseLost.Load() {
+		s.noteLost()
+		return false
+	}
+	if err != nil && s.cfg.Log != nil {
 		s.cfg.Log.Error("scheduler hook failed", "hook", name, "error", safeError(err))
+	}
+	return true
+}
+
+func (s *Scheduler) noteLost() {
+	if s.cfg.Log != nil {
+		s.cfg.Log.Info("scheduler leadership lost")
+	}
+}
+
+// watchLease polls the leadership connection until the hook finishes or
+// the lease is gone. The poll uses the parent context so cancelling the
+// hook does not look like a dropped lock.
+func watchLease(parent, hook context.Context, session Session, cancel context.CancelFunc, lost *atomic.Bool) {
+	ticker := time.NewTicker(leaseWatch)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-hook.Done():
+			return
+		case <-parent.Done():
+			return
+		case <-ticker.C:
+			if session.Lost(parent) {
+				lost.Store(true)
+				cancel()
+				return
+			}
+		}
 	}
 }
 

@@ -117,12 +117,19 @@ func (s *Server) eachActiveWorkspace(ctx context.Context, fn func(isolation.Scop
 	if s.store == nil {
 		return identity.ErrStoreUnavailable
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	items, err := s.store.ListActiveWorkspaces(ctx)
 	if err != nil {
 		return err
 	}
 	var errs []error
 	for _, ws := range items {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
 		if !strings.EqualFold(strings.TrimSpace(ws.Status), "active") {
 			continue
 		}

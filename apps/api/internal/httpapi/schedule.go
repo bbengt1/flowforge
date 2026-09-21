@@ -296,15 +296,24 @@ func (s *Server) dispatchDue(ctx context.Context, scope isolation.Scope, now tim
 	}
 	out := make([]scheduleDispatchItem, 0, len(due))
 	for _, rec := range due {
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 		if scheduleID != "" && rec.ID != scheduleID {
 			continue
 		}
 		out = append(out, s.dispatchOneSchedule(ctx, scope, rec, now)...)
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 	}
 	return out, nil
 }
 
 func (s *Server) dispatchOneSchedule(ctx context.Context, scope isolation.Scope, rec schedule.Record, now time.Time) []scheduleDispatchItem {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if rec.Status != schedule.StatusEnabled {
 		next, _ := s.advanceSchedule(ctx, scope, rec, now, "disabled", "")
 		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "disabled", FireAt: timePtr(next)}}
@@ -329,6 +338,12 @@ func (s *Server) dispatchOneSchedule(ctx context.Context, scope isolation.Scope,
 	lastErr := ""
 	var lastFired *time.Time
 	for _, fireAt := range plan.Fires {
+		// Stop before the next start. Skip RecordFire so the row stays
+		// due; the next leader replays any fire that already started
+		// (one idempotency key per slot) and does not double-dispatch.
+		if ctx.Err() != nil {
+			return items
+		}
 		item, execID, fireErr := s.startScheduleFire(ctx, scope, rec, ver, fireAt)
 		items = append(items, item)
 		if execID != "" {

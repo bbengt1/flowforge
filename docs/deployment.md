@@ -489,6 +489,8 @@ The API process ticks three loops itself. No external cron caller is required fo
 
 Replicas campaign with Postgres `pg_try_advisory_lock` **881726402** (not the migration lock `881726401`). The winner holds one application-pool connection (`SET ROLE flowforge_app`) until it stops. Other replicas do not tick. Workspace rows still use `app.set_workspace_id` under FORCE RLS. The lock connection is not used for those queries.
 
+Losing that session stops the replica immediately: the in-flight hook is cancelled, and dispatch, recovery, and purge do not start again until it holds the lock. A schedule fire uses one idempotency key, so a raced start replays the existing execution.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SCHEDULER_ENABLED` | on when unset | `1`/`true`/`yes`/`on` runs the loop. `0`/`false`/`no`/`off` opts out. Any other value is a **boot-fail**. |
