@@ -241,7 +241,7 @@ func Catalog() EngineCatalog {
 				"deploy/kubernetes/script-runner-deployment.yaml",
 				"deploy/kubernetes/script-runner-networkpolicy.yaml",
 			},
-			Note:  "E9.2 isolated runner plus E9.3 typed I/O plus E9.4 revocation/emergency-stop. Execute rechecks signature, scan, and revoked_at, validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job. Lease loss and uncertain emergency stop are indeterminate — never a blind re-run.",
+			Note:  "E9.2 isolated runner plus E9.3 typed I/O plus E9.4 revocation/emergency-stop. Execute rechecks signature, scan, and revoked_at, validates input, injects scoped handles and allowlisted env, then HarnessRuntime (CI) or a live Kubernetes Job created by cmd/runner from deploy/kubernetes/script-runner-deployment.yaml. Lease loss and uncertain emergency stop are indeterminate — never a blind re-run.",
 			Hooks: []string{"VerifyForDispatch", "Execute", "IsolationSpec", "ValidateExecutionInput", "PublicHandles", "Revoke", "EmergencyStop"},
 		},
 		IO: IORules{

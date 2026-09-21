@@ -73,6 +73,12 @@ func main() {
 	}
 
 	integration := cfg.IntegrationActionsEnabled
+	scriptRT, scriptStatus, err := runner.ScriptRuntimeFromEnv(os.Getenv, os.ReadFile)
+	if err != nil {
+		log.Error("script runner job configuration is invalid", "status", scriptStatus)
+		os.Exit(1)
+	}
+	log.Info("script runner jobs", "status", scriptStatus)
 	queue := &runner.StoreQueue{
 		Workflows: wfstore.NewPostgres(pool),
 		Identity:  identity.NewPostgres(pool),
@@ -89,6 +95,9 @@ func main() {
 		Scripts:            scripts.NewPostgres(pool),
 		ScriptKey:          cfg.ScriptSigningKey,
 		IntegrationEnabled: &integration,
+		Engines: runner.Engines{
+			Script: scriptRT,
+		},
 	}
 	loop := runner.NewRunner(queue, disp, runner.Config{
 		WorkerID:     workerID,

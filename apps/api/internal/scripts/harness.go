@@ -9,8 +9,9 @@ import (
 )
 
 // IsolationRuntime runs one isolated job. The MVP default is HarnessRuntime
-// so CI does not require a container runtime. Production uses the Kubernetes
-// Job spec in deploy/kubernetes/script-runner-deployment.yaml.
+// so CI does not require a container runtime. Production cmd/runner uses
+// KubernetesJobRuntime, which clones the Job template in
+// deploy/kubernetes/script-runner-deployment.yaml.
 type IsolationRuntime interface {
 	Name() string
 	Run(ctx context.Context, spec IsolationSpec, job IsolatedJob) (IsolatedResult, error)

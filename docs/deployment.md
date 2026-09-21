@@ -156,7 +156,7 @@ NetworkPolicy, TLS at the ingress/proxy boundary. See
 
 ## Refreshing Dockerfile base digests
 
-`apps/api/Dockerfile` and `apps/web/Dockerfile` pin approved bases as
+`apps/api/Dockerfile`, `apps/api/Dockerfile.script-runner`, and `apps/web/Dockerfile` pin approved bases as
 `name:tag@sha256:<digest>`. The digest must be the **multi-arch index**
 (manifest list), not a single-architecture image id from a local
 `docker pull`. `deploy/supply-chain/approved-bases.txt` stays `name:tag`
@@ -390,8 +390,53 @@ Identity is `RUNNER_USER_ID` or `RUNNER_ISSUER` + `RUNNER_SUBJECT`
 
 The runner NetworkPolicy allows PostgreSQL and cluster DNS only.
 Provider CIDRs are an operator allowlist. Do not open `0.0.0.0/0`.
-`deploy/kubernetes/script-runner-deployment.yaml` stays `replicas: 0`;
-scripts use the in-process harness. Do not run this binary from compose.
+Script steps create isolated Jobs (see [script-runner image](#script-runner-image)).
+Do not run this binary from compose.
+
+### Script-runner image
+
+`script.python` and `script.go` do not run in the runner process. The
+runner clones `deploy/kubernetes/script-runner-deployment.yaml` (a
+`batch/v1` Job template, not a Deployment) and creates one Job in the
+FlowForge namespace. The container image reference in that template is
+`ghcr.io/bbengt1/flowforge-script-runner:foundation`. On create, the
+runner rewrites it to `ghcr.io/bbengt1/flowforge-script-runner@<imageDigest>`
+using the published runtime profile. Any other repository is rejected.
+Draft workflow bindings fail `draft-not-runnable` before a Job is built.
+Missing API configuration fails the step `runner-not-implemented` and
+does not fall back to the in-process harness. `go test` uses
+`HarnessRuntime` or a fake Job client and does not start pods.
+
+Build and push locally from this repo:
+
+```bash
+docker build -f apps/api/Dockerfile.script-runner \
+  -t ghcr.io/bbengt1/flowforge-script-runner:foundation \
+  apps/api
+docker push ghcr.io/bbengt1/flowforge-script-runner:foundation
+```
+
+Record the pushed manifest-list digest as the runtime profile
+`imageDigest` (`sha256:<64 hex>`). Replace the template tag with
+`@sha256:…` before a production rollout, the same way the API image is
+pinned. CI (`.github/workflows/supply-chain.yml`, job `image-scan`)
+builds the same Dockerfile as `flowforge-script-runner:ci` on every
+pull request and does not push. A registry push stays an operator step
+until GHCR credentials are configured.
+
+`deploy/k8s` runs the runner as ServiceAccount `flowforge-runner-scripts`
+with a projected token (`SCRIPT_RUNNER_TOKEN_FILE`) and
+`SCRIPT_RUNNER_API_SERVER=https://kubernetes.default.svc`. That token
+is not mounted on script Jobs (`automountServiceAccountToken: false`).
+The Role can create and get Jobs and read pod logs in the FlowForge
+namespace. It cannot read Secrets. Apply the script-runner
+NetworkPolicy (`deploy/kubernetes/script-runner-networkpolicy.yaml`);
+do not apply the Job template itself.
+
+The runner NetworkPolicy does not open TCP 443 to the API server. Add
+one `ipBlock` for that address (see the comment in
+`deploy/k8s/runner-networkpolicy.yaml`) or script Jobs fail at the
+network. Do not open `0.0.0.0/0`.
 
 ### Unclaimed jobs
 

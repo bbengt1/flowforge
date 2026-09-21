@@ -443,10 +443,16 @@ func TestScriptRunnerManifestsEncodeIsolation(t *testing.T) {
 		"emptyDir:",
 		"/workspace",
 		"image:",
+		"kind: Job",
+		"restartPolicy: Never",
+		"ghcr.io/bbengt1/flowforge-script-runner:foundation",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("deployment missing %q", needle)
 		}
+	}
+	if strings.Contains(text, "replicas:") {
+		t.Fatal("script runner template must not set replicas")
 	}
 	if strings.Contains(text, "/var/run/docker.sock") {
 		t.Fatal("deployment must not mount the Docker socket")

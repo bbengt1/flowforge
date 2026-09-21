@@ -23,7 +23,7 @@ Unapproved or vulnerable artifacts do not pass the workflow.
 
 ## Provenance
 
-CI builds the API image from `apps/api/Dockerfile` in this repository, records the git SHA, and publishes:
+CI builds the API image from `apps/api/Dockerfile` and the script-runner image from `apps/api/Dockerfile.script-runner` (`flowforge-script-runner:ci`) in this repository. The API build records the git SHA and publishes:
 
 - an SPDX SBOM artifact
 - a SLSA-style provenance statement (source repo, revision, Dockerfile)

@@ -11,7 +11,7 @@ This is a **security-hardened prototype**, not an enterprise-ready platform. Com
 | Surface | Today |
 | --- | --- |
 | Compose `worker` | Local/dev only (`/usr/local/bin/worker`). Evaluates `flow.condition` / `flow.stop` / `flow.fail` / `data.set` / `data.map` / `data.validate`. **Fails** Kubernetes, SSH, scripts, HTTP, and `flow.delay`. Refuses production-locked env. Do not copy into Kubernetes. |
-| Production runner | `apps/api/cmd/runner` (`/usr/local/bin/runner`). Production-locked. Claims in-process and calls the kubernetes / ssh / script / http engines. Refuses local/dev. `deploy/k8s` ships a runner Deployment. Default-deny does not open provider egress; script pods stay `replicas: 0` (harness runs in the runner process). `notification.email` fails closed without a mailer. |
+| Production runner | `apps/api/cmd/runner` (`/usr/local/bin/runner`). Production-locked. Claims in-process and calls the kubernetes / ssh / script / http engines. Refuses local/dev. `deploy/k8s` ships a runner Deployment. Script steps create an isolated Job from `deploy/kubernetes/script-runner-deployment.yaml` (`apps/api/Dockerfile.script-runner`). Default-deny does not open provider egress, including the API server, until an operator adds that CIDR. `notification.email` fails closed without a mailer. |
 | Schedules / recover / purge | HTTP endpoints only. **No shipped scheduler or CronJob.** |
 | Identity | Standalone **Login** (`POST /api/v1/login`). Embed is `POST /embed/exchange` (ADV-021). **OIDC deferred (V.0c).** |
 | Bootstrap / TLS | First-run wizard including **Skip for now**. Standalone only. |

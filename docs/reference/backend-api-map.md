@@ -684,7 +684,7 @@ Workers claim an E5.2 job, then call `scripts.Execute` after `VerifyForDispatch`
 
 Non-root UID/GID `65532`, read-only root FS, ephemeral writable `/workspace`, drop `ALL` capabilities, `no_new_privs`, no host Docker socket, no cloud metadata, no Kubernetes SA mount (MVP deny), approved digest-pinned images only, runtime package install denied, default-deny egress with constrained DNS.
 
-Python: approved digest-pinned image + lock. Go: precompiled signed binary from the published source in a controlled builder. CI uses `HarnessRuntime` + `StubBuilder` (HMAC of the published digest) so `go test` does not need runc or a Go toolchain. Manifests: `deploy/kubernetes/script-runner-deployment.yaml` and `script-runner-networkpolicy.yaml`.
+Python: approved digest-pinned image + lock. Go: compiled in the script-runner image from the published source (`GOPROXY=off`). CI uses `HarnessRuntime` + `StubBuilder` (HMAC of the published digest) so `go test` does not need runc. Production `cmd/runner` creates a Job from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, Dockerfile `apps/api/Dockerfile.script-runner`). NetworkPolicy: `script-runner-networkpolicy.yaml`.
 
 ### Result shape (job output)
 

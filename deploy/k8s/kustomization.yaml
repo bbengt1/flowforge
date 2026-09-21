@@ -8,6 +8,7 @@ resources:
   - api-deployment.yaml
   - api-service.yaml
   - runner-deployment.yaml
+  - script-runner-rbac.yaml
   - default-deny-networkpolicy.yaml
   - api-networkpolicy.yaml
   - runner-networkpolicy.yaml
