@@ -1,0 +1,16 @@
+# GitHub usernames only. Docs role names (jonny / Chloe) are not accounts.
+# Sole collaborator today is @bbengt1 — used as owner on every required path.
+
+* @bbengt1
+
+# Control-plane API (jonny / API)
+/apps/api/ @bbengt1
+
+# Web UI
+/apps/web/ @bbengt1
+
+# Architecture, plans, and internal SoT
+/docs/ @bbengt1
+
+# Kubernetes, TLS, supply-chain
+/deploy/ @bbengt1

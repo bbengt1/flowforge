@@ -4,6 +4,7 @@
 
 - [Implemented vs Specified](architecture/implemented-vs-specified.md): what actually runs on `main` vs what docs specify (provider worker, schedules, OIDC, Login vs embed, bootstrap/TLS skip, Explorer). Fail-closed runtime honesty.
 - [Enterprise architecture gap analysis](internal/claude-code-gap-analysis.md): internal SoT for epic [G](https://github.com/bbengt1/flowforge/issues/401) and phase [G.0](https://github.com/bbengt1/flowforge/issues/402). Do not treat provider execution as live.
+- [LICENSE](../LICENSE), [SECURITY.md](../SECURITY.md), [CONTRIBUTING.md](../CONTRIBUTING.md): Apache-2.0 (Copyright 2026 Brent Bengtson), private vulnerability reporting on `bbengt1/flowforge`, API/web test and PR expectations.
 - [Architecture](architecture.md): component boundaries, **specified** deployment model, and embedding contract — read the matrix first.
 - [Rewrite: n8n-class parity](architecture/flowforge-rewrite-n8n-class-parity.md): successor product charter after E1–E12 and epic #195 — parity of interaction and coverage, not an n8n clone. Chloe’s UI-surface fold-in is §11.1; jonny’s control-plane fold-in is §11.2. No issues from this doc until R1 is accepted.
 - [FlowForge UX Laws](architecture/flowforge-ux-laws.md): post-R1–R7 chrome polish using [Laws of UX](https://lawsofux.com/) — selective Must / Should / already-covered / out-of-scope. Docs-only; Arie opens the epic. Not a security/product-model redesign.

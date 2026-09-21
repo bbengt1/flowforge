@@ -58,3 +58,9 @@ Compose builds `web` from `./apps/web` and `api` from `./apps/api`. This PR does
 | --- | --- |
 | Next.js UI, health/readiness/identity proxies, membership operator, secure headers, web image/compose hardening, `env-template.txt` web vars, this README | Chloe |
 | Go API, PostgreSQL, workspace model/RBAC, API image/K8s/TLS/provenance/vuln gates, backup encryption + restore rehearsal | jonny |
+
+## License and security
+
+Apache License 2.0. Copyright 2026 Brent Bengtson. See [LICENSE](LICENSE).
+
+Report vulnerabilities privately via GitHub Security Advisories — [SECURITY.md](SECURITY.md). How to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
