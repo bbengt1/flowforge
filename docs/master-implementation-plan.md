@@ -4,6 +4,8 @@
 
 This is the issue-creation backlog for the documented MVP. It turns the product and security references into small, independently testable stories. Product scope comes from the [architecture](architecture.md), while the reference documents remain normative for the detailed contracts.
 
+**Runtime honesty:** E1–E12 describe the specified MVP. What actually runs today is the [Implemented vs Specified](architecture/implemented-vs-specified.md) matrix. The adversarial review that opened the next program is [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) — durable in-repo SoT for GitHub epic [G](https://github.com/bbengt1/flowforge/issues/401) and phase [G.0](https://github.com/bbengt1/flowforge/issues/402). Hard lines are unchanged: YAML SoT, drafts never run, vault display-name+UUID only, ADV-021/024.
+
 ### Non-negotiable MVP rules
 
 - PostgreSQL is the durable source of truth; the queue, leases, execution state, audit events, and artifact metadata survive pod loss.
@@ -32,6 +34,7 @@ Create one GitHub epic per row below. Create the listed stories in sequence with
 | E10 | Triggers and approvals | Safe manual, webhook, schedule, and approval workflow starts | E5, E6 |
 | E11 | Embedding and Portal adapter | Signed, tenant/workbench-local embedded FlowForge surface | E2, E6 |
 | E12 | Production readiness | Proven security, recovery, capacity, and operator readiness | E1–E11 |
+| G | Enterprise architecture gap remediation | Truth, fail-closed ops, then a production worker / scheduler / identity — [gap analysis](internal/claude-code-gap-analysis.md) | E12 (honest baseline) |
 
 ## Issue-ready stories
 
@@ -139,6 +142,19 @@ Create one GitHub epic per row below. Create the listed stories in sequence with
 2. **Prove operational resilience and capacity.** Run backup/restore, worker-loss/recovery, queue lag, migration serialization, and load tests; document at least 2× observed peak headroom for database connections/writes, queue lag, and storage growth.
 3. **Prepare release and operations documentation.** Publish API/OpenAPI, deployment, configuration, incident/recovery, retention, backup, and operator/admin guides; perform an accessibility and threat-model review before production approval. Control-plane slice: [operations](operations/index.md), [openapi](reference/openapi.md), [threat-model review](reference/e12-threat-model-review.md). Chloe: [operator/admin UI guide](guides/operator-admin.md) and [accessibility review](reference/e12-accessibility-review.md). Keep #184 open.
 
+### G — Enterprise architecture gap remediation
+
+Tracked on GitHub as epic [#401](https://github.com/bbengt1/flowforge/issues/401) and phase [#402](https://github.com/bbengt1/flowforge/issues/402). **Do not invent issue-body edits here** — the durable SoT is [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md). Runtime claims: [Implemented vs Specified](architecture/implemented-vs-specified.md).
+
+| Phase | Goal | In-repo pointer |
+| --- | --- | --- |
+| G.0 | Truth and safety (matrix, fail-closed secrets, CI honesty, cheap UX safety) | This matrix + gap analysis. G.0.0 / G.0.2 are the doc landings. |
+| G.1 | Make it work: production runner, scheduler, durable artifacts | Gap analysis §4 Phase 1 |
+| G.2 | Make it enterprise: OIDC/MFA/SCIM, KMS, OTel, HA | Gap analysis §4 Phase 2 |
+| G.3 | Make it maintainable | Gap analysis §4 Phase 3 |
+
+Provider gate below is **not** met on `main`: engine libraries and negative tests exist; a production worker that calls them does not.
+
 ## Story definition of ready
 
 Before creating an issue, include: user/operator outcome; in/out of scope; parent epic and dependencies; API/YAML/data/UI impact; authorization and abuse-case analysis; acceptance criteria; test approach/fixtures; documentation changes; migration/rollout/rollback plan; and measurable observability/operational signals.
@@ -150,7 +166,7 @@ A story is done only when its acceptance criteria pass, negative tenancy/securit
 ## Release gates
 
 1. **Foundation gate:** E1–E5 pass before any provider action is enabled.
-2. **Provider gate:** enable Kubernetes, SSH, and scripts independently only after their dedicated negative/security/isolation suites pass.
+2. **Provider gate:** enable Kubernetes, SSH, and scripts independently only after their dedicated negative/security/isolation suites pass **and** a production-locked worker actually calls those engines. Suites without a runner do not make provider execution live.
 3. **Integration gate:** feature-flag `http.request`, webhook delivery, and email until their endpoint/recipient policy, SSRF/redirect/DNS-rebinding, TLS, secret-field, retry, and redaction suites pass.
 4. **Embed gate:** enable Portal embedding only after signed assertion, one-time replay, key-rotation, and tenant/workbench propagation tests pass.
 5. **Production gate:** E12 evidence, threat review, restore rehearsal, and capacity headroom are approved; otherwise affected features remain disabled.
