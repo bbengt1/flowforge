@@ -39,6 +39,7 @@ const PROFILE_ID = "33333333-3333-4333-8333-333333333333";
 
 const catalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
+  triggers: [],
   nodes: [
     {
       type: "ssh.run",

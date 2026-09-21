@@ -7,6 +7,7 @@
     "build": "pnpm --filter @flowforge/web build",
     "lint": "pnpm --filter @flowforge/web lint",
     "test": "pnpm --filter @flowforge/web test",
+    "typecheck:tests": "pnpm --filter @flowforge/web typecheck:tests",
     "start": "pnpm --filter @flowforge/web start"
   }
 }

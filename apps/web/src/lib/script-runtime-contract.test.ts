@@ -185,7 +185,7 @@ describe("script runtime contract adapter", () => {
     });
     const kube = pin({
       resourceId: "99999999-9999-4999-8999-999999999999",
-      spec: { engine: "kubernetes" },
+      spec: { endpoint: { apiServer: "https://k8s.example" } },
     });
     const filtered = authorizedScriptRuntimeProfiles({
       pins: [python, go, kube],

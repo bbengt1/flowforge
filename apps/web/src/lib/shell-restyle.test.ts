@@ -251,9 +251,10 @@ describe("V.2 Shell restyle", () => {
       assert.equal(text.includes("data-ff-shell"), false, relative);
       assert.equal(text.includes("FF_SHELL_ASIDE_CLASS"), false, relative);
     }
-    assert.equal(V2_SOURCES.includes("src/components/home/WorkflowHome.tsx"), false);
+    const v2Sources: readonly string[] = V2_SOURCES;
+    assert.equal(v2Sources.includes("src/components/home/WorkflowHome.tsx"), false);
     assert.equal(
-      V2_SOURCES.includes("src/components/workflows/EditorChrome.tsx"),
+      v2Sources.includes("src/components/workflows/EditorChrome.tsx"),
       false,
     );
   });

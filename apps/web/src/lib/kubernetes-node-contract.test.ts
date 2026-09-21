@@ -36,6 +36,7 @@ const TARGET_ID = "11111111-1111-4111-8111-111111111111";
 
 const catalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
+  triggers: [],
   nodes: [
     {
       type: "kubernetes.apply",
@@ -167,6 +168,7 @@ describe("kubernetes node contract adapter", () => {
   it("prefers catalog allowedWith when jonny's map lands", () => {
     const rich: WorkflowCatalog = {
       apiVersion: "flowforge/v1",
+      triggers: [],
       nodes: [
         {
           type: "kubernetes.apply",

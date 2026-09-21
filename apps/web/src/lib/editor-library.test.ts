@@ -184,7 +184,14 @@ describe("UX.3 editor library drawer", () => {
       nodes: [],
     });
     assert.equal(empty.some((item) => item.type === "manual"), false);
-    assert.equal(rejectDisabledActionType("workflow.call", { nodes: [] }).ok, false);
+    assert.equal(
+      rejectDisabledActionType("workflow.call", {
+        apiVersion: "flowforge/v1",
+        triggers: [],
+        nodes: [],
+      }).ok,
+      false,
+    );
   });
 });
 

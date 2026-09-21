@@ -45,7 +45,7 @@ pnpm lint --max-warnings=0
 pnpm build
 ```
 
-`pnpm test` is `node --experimental-strip-types --test src/lib/*.test.ts` in `@flowforge/web` (same as CI `Web unit tests`). `pnpm build` is the type-check (`next build`). Do not use bare `tsc`.
+`pnpm test` is `node --experimental-strip-types --test src/lib/*.test.ts` in `@flowforge/web` (same as CI `Web unit tests`). `pnpm typecheck:tests` type-checks `*.test.ts` via `apps/web/tsconfig.tests.json` (G.0.6 / H4). `pnpm build` is the app type-check (`next build`) and also includes test files. Do not use bare `tsc` for the app — `LayoutProps` lives in `.next/types`.
 
 ## Pull requests
 

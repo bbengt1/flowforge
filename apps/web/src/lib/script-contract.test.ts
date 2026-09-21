@@ -50,6 +50,7 @@ const PROFILE_ID = "66666666-6666-4666-8666-666666666666";
 
 const catalog: WorkflowCatalog = {
   apiVersion: "flowforge/v1",
+  triggers: [],
   nodes: [
     {
       type: "script.python",

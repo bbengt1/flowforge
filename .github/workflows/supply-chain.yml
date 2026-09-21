@@ -158,11 +158,15 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --filter @flowforge/web...
+      - name: Typecheck tests
+        run: pnpm --filter @flowforge/web typecheck:tests
       - name: Test
         run: pnpm --filter @flowforge/web test
 
-  # G.0.5 / H3: required web quality gates. next build is the type-check
+  # G.0.5 / H3: required web quality gates. next build is the app type-check
   # (Next 16 typegen); do not use bare tsc — LayoutProps lives in .next/types.
+  # G.0.6 / H4: *.test.ts are in tsconfig (and tsconfig.tests.json); web-tests
+  # runs `pnpm typecheck:tests` so CI typechecks tests without waiting on build.
   web-lint:
     name: Web lint (max-warnings=0)
     runs-on: ubuntu-latest

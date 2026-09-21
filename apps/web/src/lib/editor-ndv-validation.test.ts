@@ -302,8 +302,8 @@ describe("R3.3 NDV validation and policy", () => {
       ndvEvaluatePayloadHasGap(
         evaluation({
           operations: [
-            { operation: "ssh.run", decision: "deny" },
-            { operation: "kubernetes.apply", decision: "deny" },
+            { nodeId: "", operation: "ssh.run", decision: "deny" },
+            { nodeId: "", operation: "kubernetes.apply", decision: "deny" },
           ],
           requirements: [],
         }),
@@ -317,6 +317,7 @@ describe("R3.3 NDV validation and policy", () => {
       ndvValidationNeverGuessesGraph({
         errors: [{ path: "spec.nodes[0]", code: "invalid-with", message: "bad" }],
         summary: {
+          apiVersion: "flowforge/v1",
           name: "x",
           description: "",
           triggers: [],

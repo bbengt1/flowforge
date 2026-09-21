@@ -347,7 +347,7 @@ describe("#376 Change-password chrome", () => {
     assert.equal(snapshot.active, true);
     assert.equal(snapshot.session.mustChangePassword, false);
     assert.equal(JSON.stringify(snapshot).includes(FIXTURE_ROTATED), false);
-    assert.equal(afterLocalLoginHref(snapshot.session.mustChangePassword === true), "/workflows");
+    assert.equal(afterLocalLoginHref(snapshot.session.mustChangePassword), "/workflows");
     const client = source("src/lib/session-client.ts");
     assert.match(client, /changeLocalPassword/);
     assert.match(client, /SESSION_PASSWORD_PATH/);

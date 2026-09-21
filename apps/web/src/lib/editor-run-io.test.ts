@@ -133,8 +133,9 @@ describe("UX.11 editor last-run I/O overlay", () => {
     assert.equal(EDITOR_RUN_IO.sameCanvasOverlay, true);
     assert.equal(EDITOR_RUN_IO.noSecondReplayGraph, true);
     assert.equal(EDITOR_RUN_IO.noExecutionReplayMount, true);
+    const runIoSources: readonly string[] = EDITOR_RUN_IO_SOURCES;
     assert.equal(
-      EDITOR_RUN_IO_SOURCES.includes("src/components/executions/ExecutionReplay.tsx"),
+      runIoSources.includes("src/components/executions/ExecutionReplay.tsx"),
       false,
     );
     const base = graph();
