@@ -178,6 +178,23 @@ export function explorerPaneSelectionStillVisible(
   return rows.some((row) => explorerPaneRowEquals(row, selection));
 }
 
+/**
+ * Folder navigation always drops the highlight. Leaving a folder and
+ * coming back must not restore the previous row. When the folder is
+ * unchanged, keep the current row only if it is still in the pane.
+ */
+export function reconcileExplorerPaneSelection(
+  selection: ExplorerPaneRow | null,
+  rows: readonly ExplorerPaneRow[],
+  folderKey: string,
+  previousFolderKey: string | null,
+): ExplorerPaneRow | null {
+  if (previousFolderKey !== folderKey) {
+    return null;
+  }
+  return explorerPaneSelectionStillVisible(rows, selection) ? selection : null;
+}
+
 export function explorerOpenKind(
   row: ExplorerPaneRow,
 ): "editor" | "navigate-folder" {

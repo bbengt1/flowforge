@@ -26,6 +26,7 @@ import {
   explorerPaneRowKey,
   explorerPaneRows,
   explorerPaneSelectionStillVisible,
+  reconcileExplorerPaneSelection,
   explorerSelectHoldsHardLines,
   explorerSelectInheritsFolderStories,
 } from "./explorer-select-open.ts";
@@ -112,6 +113,37 @@ describe("X.3 Explorer select/open", () => {
       false,
     );
     assert.equal(explorerPaneSelectionStillVisible(rows, null), true);
+    assert.equal(
+      reconcileExplorerPaneSelection(
+        { kind: "workflow", id: "wf-2" },
+        rows,
+        "folder-a",
+        "folder-b",
+      ),
+      null,
+    );
+    assert.deepEqual(
+      reconcileExplorerPaneSelection(
+        { kind: "workflow", id: "wf-2" },
+        rows,
+        "folder-a",
+        "folder-a",
+      ),
+      { kind: "workflow", id: "wf-2" },
+    );
+    assert.equal(
+      reconcileExplorerPaneSelection(
+        { kind: "workflow", id: "gone" },
+        rows,
+        "folder-a",
+        "folder-a",
+      ),
+      null,
+    );
+    assert.equal(
+      reconcileExplorerPaneSelection(null, rows, "folder-a", null),
+      null,
+    );
   });
 
   it("moves highlight with arrows and expands a folder on open", () => {
@@ -169,6 +201,7 @@ describe("X.3 Explorer select/open", () => {
     assert.match(home, /event.key === "Enter"/);
     assert.match(home, /ArrowDown/);
     assert.match(home, /setPaneSelection/);
+    assert.match(home, /reconcileExplorerPaneSelection/);
     assert.match(home, /workflowEditorHref/);
     assert.match(home, /data-x2="context-menu"/);
     assert.match(home, /data-x2="content-row"/);

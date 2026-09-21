@@ -153,7 +153,7 @@ import {
   explorerPaneRowEquals,
   explorerPaneRowKey,
   explorerPaneRows,
-  explorerPaneSelectionStillVisible,
+  reconcileExplorerPaneSelection,
   type ExplorerPaneRow,
 } from "@/lib/explorer-select-open";
 import {
@@ -431,6 +431,9 @@ function WorkflowHomeSession() {
   const [paneSelection, setPaneSelection] = useState<ExplorerPaneRow | null>(
     null,
   );
+  const [paneSelectionFolderKey, setPaneSelectionFolderKey] = useState<
+    string | null
+  >(null);
   const [folderNameDraft, setFolderNameDraft] = useState("");
   const [folderNameError, setFolderNameError] = useState<string | null>(null);
   const [folderChrome, setFolderChrome] =
@@ -594,6 +597,19 @@ function WorkflowHomeSession() {
   );
   const folderSelectionKey =
     selection.kind === "folder" ? selection.id : "unfiled";
+  const nextPaneSelection = reconcileExplorerPaneSelection(
+    paneSelection,
+    paneRows,
+    folderSelectionKey,
+    paneSelectionFolderKey,
+  );
+  if (
+    paneSelectionFolderKey !== folderSelectionKey ||
+    nextPaneSelection !== paneSelection
+  ) {
+    setPaneSelectionFolderKey(folderSelectionKey);
+    setPaneSelection(nextPaneSelection);
+  }
   const selectedChildFolderCount =
     selection.kind === "folder" ? childFolderCount(folders, selection.id) : 0;
   const folderEmptyDeleteAllowed =
@@ -794,39 +810,42 @@ function WorkflowHomeSession() {
     replaceFolderQuery,
   ]);
 
-  function startInlineRename(folderId: string, name?: string) {
-    if (!canMutateFolders) {
-      return;
-    }
-    if (!folderAllowsRenameOrDelete({ kind: "folder", id: folderId })) {
-      return;
-    }
-    const current = folders.find((item) => item.id === folderId);
-    const resolved = name ?? current?.name;
-    if (!resolved) {
-      return;
-    }
-    const expandIds = ancestorIdsForSelection(folders, {
-      kind: "folder",
-      id: folderId,
-    });
-    if (expandIds.length > 0) {
-      setExpandedIds((currentIds) => {
-        const next = [...new Set([...currentIds, ...expandIds])];
-        writeExpandedFolderIds(workspaceKey, next);
-        return next;
+  const startInlineRename = useCallback(
+    (folderId: string, name?: string) => {
+      if (!canMutateFolders) {
+        return;
+      }
+      if (!folderAllowsRenameOrDelete({ kind: "folder", id: folderId })) {
+        return;
+      }
+      const current = folders.find((item) => item.id === folderId);
+      const resolved = name ?? current?.name;
+      if (!resolved) {
+        return;
+      }
+      const expandIds = ancestorIdsForSelection(folders, {
+        kind: "folder",
+        id: folderId,
       });
-    }
-    if (railFilter) {
-      setRailFilter("");
-    }
-    inlineRenameIgnoreBlur.current = false;
-    setInlineRenameId(folderId);
-    setInlineRenameOriginal(resolved);
-    setFolderNameDraft(resolved);
-    setFolderNameError(null);
-    setProblem(null);
-  }
+      if (expandIds.length > 0) {
+        setExpandedIds((currentIds) => {
+          const next = [...new Set([...currentIds, ...expandIds])];
+          writeExpandedFolderIds(workspaceKey, next);
+          return next;
+        });
+      }
+      if (railFilter) {
+        setRailFilter("");
+      }
+      inlineRenameIgnoreBlur.current = false;
+      setInlineRenameId(folderId);
+      setInlineRenameOriginal(resolved);
+      setFolderNameDraft(resolved);
+      setFolderNameError(null);
+      setProblem(null);
+    },
+    [canMutateFolders, folders, railFilter, workspaceKey],
+  );
 
   function closeInlineRename() {
     inlineRenameIgnoreBlur.current = true;
@@ -1080,16 +1099,6 @@ function WorkflowHomeSession() {
       gate.begin();
     };
   }, [refresh]);
-
-  useEffect(() => {
-    setPaneSelection(null);
-  }, [folderSelectionKey]);
-
-  useEffect(() => {
-    setPaneSelection((current) =>
-      explorerPaneSelectionStillVisible(paneRows, current) ? current : null,
-    );
-  }, [paneRows]);
 
   useEffect(() => {
     if (!canView || !acrossFolderSearch) {
@@ -1373,6 +1382,7 @@ function WorkflowHomeSession() {
     inlineRenameId,
     paneSelection,
     selection,
+    startInlineRename,
   ]);
 
   async function createFromTemplate(template: WorkflowTemplate) {
