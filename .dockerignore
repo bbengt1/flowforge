@@ -1,0 +1,15 @@
+# Web image: compose context is the repository root
+# (`dockerfile: apps/web/Dockerfile`). API keeps `context: ./apps/api`.
+.git
+.github
+**/.next
+**/node_modules
+**/.DS_Store
+.env
+.env.*
+*.log
+*.tsbuildinfo
+coverage
+apps/api
+apps/web/AGENTS.md
+apps/web/CLAUDE.md

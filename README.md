@@ -45,12 +45,12 @@ Serves [http://localhost:3000](http://localhost:3000) and checks `http://localho
 
 | Path | Role |
 | --- | --- |
-| `apps/web` | Next.js App Router UI (Compose `web` build context) |
+| `apps/web` | Next.js App Router UI (Compose `web` dockerfile; repo-root context) |
 | `apps/api` | Go control plane (PR #2). Compose `api` build context, `HTTP_ADDR=:8080` |
 | `docs/` | Normative architecture, implementation plan, and [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) |
 | `docs/internal/` | Internal SoT, including [claude-code-gap-analysis.md](docs/internal/claude-code-gap-analysis.md) (G / G.0) |
 
-Compose builds `web` from `./apps/web` and `api` from `./apps/api`. This PR does not add `apps/api` files so it cannot clobber PR #2. Either merge order works: #2 first (compose then has a real context) or #1 first (compose assumes `apps/api` from #2). pnpm workspace root is ready for more packages later.
+Compose builds `web` from the repository root (`dockerfile: apps/web/Dockerfile`, so `pnpm-lock.yaml` is in the context) and `api` from `./apps/api`. pnpm workspace root is ready for more packages later.
 
 ## E1 / E2 ownership
 
