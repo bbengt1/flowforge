@@ -592,11 +592,20 @@ enable that in production, and do not use those headers as the machine
 identity. Kubernetes liveness/readiness stay
 `GET /api/v1/health` and `GET /api/v1/readiness` with no credentials.
 
+The same scrape now includes OpenTelemetry business metrics (queue,
+lease, execution outcome, vault). W3C `traceparent` is on API responses
+and on `execution_jobs` for the worker. Optional trace export is
+`OTEL_EXPORTER_OTLP_ENDPOINT` (unset does not dial a collector). SLOs
+and example `PrometheusRule` text are in
+[SLOs and alerts](operations/slo-alerts.md). Machine-principal auth on
+this route is unchanged.
+
 ## Recovery
 
 Operator runbooks (do not duplicate here):
 
-- [Incident and recovery](operations/incident-recovery.md) — health vs readiness, worker-loss/fencing, escalation (`X-Request-ID`, alerts, metrics).
+- [Incident and recovery](operations/incident-recovery.md) — health vs readiness, worker-loss/fencing, escalation (`X-Request-ID`, `traceparent`, alerts, metrics).
+- [SLOs and alerts](operations/slo-alerts.md) — availability, latency, queue lag, lease loss, vault decrypt, example Prometheus rules.
 - [Retention and backup](operations/retention-backup.md) — encryption, CronJob, RPO/RTO, restore cadence, `POST /retention/purge`, legal hold.
 - [E12.3 threat-model review](reference/e12-threat-model-review.md) — production-gate sign-off.
 

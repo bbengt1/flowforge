@@ -49,7 +49,8 @@ func NewMemory(keys Keys, refs RefFinder) *Memory {
 	}
 }
 
-func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput) (Metadata, error) {
+func (m *Memory) Create(ctx context.Context, scope isolation.Scope, in CreateInput) (meta Metadata, err error) {
+	defer func() { noteVault(ctx, "create", err) }()
 	if scope.Zero() {
 		return Metadata{}, ErrNoScope
 	}
@@ -164,7 +165,8 @@ func (m *Memory) Update(_ context.Context, scope isolation.Scope, id string, in 
 	return cloneMeta(meta), nil
 }
 
-func (m *Memory) Rotate(_ context.Context, scope isolation.Scope, id string, in RotateInput) (Metadata, error) {
+func (m *Memory) Rotate(ctx context.Context, scope isolation.Scope, id string, in RotateInput) (meta Metadata, err error) {
+	defer func() { noteVault(ctx, "rotate", err) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	row, err := m.lookupLocked(scope, id)
@@ -242,7 +244,8 @@ func (m *Memory) Test(ctx context.Context, scope isolation.Scope, id string) (Te
 	return TestResult{Status: status, Reason: reason, CheckedAt: checked}, meta, nil
 }
 
-func (m *Memory) Use(_ context.Context, scope isolation.Scope, id string) error {
+func (m *Memory) Use(ctx context.Context, scope isolation.Scope, id string) (err error) {
+	defer func() { noteVault(ctx, "use", err) }()
 	if _, _, err := m.unlockForUse(scope, id, true); err != nil {
 		return err
 	}

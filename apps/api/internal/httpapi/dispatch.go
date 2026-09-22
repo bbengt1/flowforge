@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
@@ -91,9 +92,13 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		observability.NoteLeaseClaim(r.Context(), "error", 0)
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	jobCtx, span := observability.Continue(r.Context(), result.Job.TraceParent, result.Job.TraceState, "job.claim")
+	defer span.End()
+	observability.PublishResponseTrace(r.Context(), jobCtx, w.Header())
 	if err := wfstore.AuthorizeJobBinding(result.Binding, scope.WorkspaceID(), result.Execution.WorkflowVersionID, result.Execution.WorkflowDigest, s.now()); err != nil {
 		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
@@ -261,6 +266,11 @@ func (s *Server) workerJobAction(w http.ResponseWriter, r *http.Request, fn func
 		}
 		writeWorkflowStoreError(w, r, err)
 		return
+	}
+	if strings.TrimSpace(r.Header.Get(observability.TraceParentHeader)) == "" && result.Job.TraceParent != "" {
+		jobCtx, span := observability.Continue(r.Context(), result.Job.TraceParent, result.Job.TraceState, "job.action")
+		defer span.End()
+		observability.PublishResponseTrace(r.Context(), jobCtx, w.Header())
 	}
 	writeJSON(w, http.StatusOK, dispatchJobResponse{Job: result.Job, Step: result.Step, Execution: result.Execution})
 }

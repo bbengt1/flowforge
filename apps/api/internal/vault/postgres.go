@@ -35,7 +35,8 @@ func NewPostgres(db DB, keys Keys, refs RefFinder) *Postgres {
 	return &Postgres{db: db, keys: keys, refs: refs, now: func() time.Time { return time.Now().UTC() }}
 }
 
-func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Metadata, error) {
+func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateInput) (meta Metadata, err error) {
+	defer func() { noteVault(ctx, "create", err) }()
 	if scope.Zero() {
 		return Metadata{}, ErrNoScope
 	}
@@ -214,7 +215,8 @@ func (p *Postgres) Update(ctx context.Context, scope isolation.Scope, id string,
 	return out, nil
 }
 
-func (p *Postgres) Rotate(ctx context.Context, scope isolation.Scope, id string, in RotateInput) (Metadata, error) {
+func (p *Postgres) Rotate(ctx context.Context, scope isolation.Scope, id string, in RotateInput) (meta Metadata, err error) {
+	defer func() { noteVault(ctx, "rotate", err) }()
 	current, err := p.Get(ctx, scope, id)
 	if err != nil {
 		return Metadata{}, err
@@ -325,7 +327,8 @@ func (p *Postgres) Test(ctx context.Context, scope isolation.Scope, id string) (
 	return TestResult{Status: status, Reason: reason, CheckedAt: checked}, out, nil
 }
 
-func (p *Postgres) Use(ctx context.Context, scope isolation.Scope, id string) error {
+func (p *Postgres) Use(ctx context.Context, scope isolation.Scope, id string) (err error) {
+	defer func() { noteVault(ctx, "use", err) }()
 	if _, _, err := p.unlockRow(ctx, scope, id, true); err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"io/fs"
 	"log/slog"
@@ -694,9 +695,17 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePlatformOpsRead(w, r) {
 		return
 	}
+	var buf bytes.Buffer
+	if err := s.registry.WritePrometheus(&buf); err != nil {
+		WriteProblem(w, r, http.StatusInternalServerError, CodeInternalError, "Internal Server Error", "Metrics could not be published.")
+		return
+	}
+	if err := observability.WriteOTelPrometheus(&buf); err != nil && s.log != nil {
+		s.log.Error("opentelemetry metrics", "error", err)
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_ = s.registry.WritePrometheus(w)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *Server) openapiYAML(w http.ResponseWriter, r *http.Request) {

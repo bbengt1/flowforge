@@ -22,6 +22,15 @@ func main() {
 	log := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(log)
 
+	if err := observability.Install(context.Background()); err != nil {
+		log.Error("opentelemetry", "error", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = observability.Shutdown(ctx)
+	}()
+
 	appEnv := firstNonEmpty(os.Getenv(authz.EnvAppEnv), os.Getenv(authz.EnvFlowforgeEnv))
 	requireTLS := truthy(os.Getenv(authz.EnvRequireTLS))
 	enabled, err := localworker.Resolve(os.Getenv(localworker.EnvLocalWorker), appEnv, requireTLS)

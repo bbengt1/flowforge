@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
@@ -407,16 +408,19 @@ func insertPlanTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executi
 			return mapDBErr(err)
 		}
 	}
+	stampJobs(ctx, jobs)
 	for _, job := range jobs {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO execution_jobs (
-				workspace_id, id, execution_id, execution_step_id, status, available_at, attempt, created_at, updated_at
-			) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $6, $6)
-		`, scope.WorkspaceID(), job.ID, executionID, job.ExecutionStepID, job.Status, now, job.Attempt)
+				workspace_id, id, execution_id, execution_step_id, status, available_at, attempt,
+				created_at, updated_at, traceparent, tracestate
+			) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $6, $6, NULLIF($8, ''), NULLIF($9, ''))
+		`, scope.WorkspaceID(), job.ID, executionID, job.ExecutionStepID, job.Status, now, job.Attempt, job.TraceParent, job.TraceState)
 		if err != nil {
 			return mapDBErr(err)
 		}
 	}
+	observability.NoteJobEnqueued(ctx, len(jobs))
 	return nil
 }
 
@@ -464,7 +468,7 @@ const stepColumns = `
 const jobColumns = `
 	id::text, execution_id::text, execution_step_id::text, status, available_at,
 	lease_expires_at, heartbeat_at, COALESCE(worker_id, ''), fencing_token, attempt,
-	created_at, updated_at
+	created_at, updated_at, COALESCE(traceparent, ''), COALESCE(tracestate, '')
 `
 
 const auditColumns = `
@@ -519,7 +523,7 @@ func scanJob(row rowScanner) (ExecutionJob, error) {
 	if err := row.Scan(
 		&job.ID, &job.ExecutionID, &job.ExecutionStepID, &job.Status, &job.AvailableAt,
 		&job.LeaseExpiresAt, &job.HeartbeatAt, &job.WorkerID, &job.FencingToken, &job.Attempt,
-		&job.CreatedAt, &job.UpdatedAt,
+		&job.CreatedAt, &job.UpdatedAt, &job.TraceParent, &job.TraceState,
 	); err != nil {
 		return ExecutionJob{}, mapDBErr(err)
 	}

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -53,7 +54,8 @@ func Encrypt(keys Keys, plaintext []byte) (Envelope, error) {
 }
 
 // Decrypt recovers plaintext. Callers must not persist or log the result.
-func Decrypt(keys Keys, env Envelope) ([]byte, error) {
+func Decrypt(keys Keys, env Envelope) (plain []byte, err error) {
+	defer func() { noteVault(context.Background(), "decrypt", err) }()
 	if !keys.Ready() {
 		return nil, ErrKeyUnavailable
 	}
@@ -64,7 +66,7 @@ func Decrypt(keys Keys, env Envelope) ([]byte, error) {
 	if err != nil {
 		return nil, ErrDecrypt
 	}
-	plain, err := open(dek, env.Ciphertext)
+	plain, err = open(dek, env.Ciphertext)
 	if err != nil {
 		return nil, ErrDecrypt
 	}

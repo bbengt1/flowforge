@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -346,7 +347,7 @@ func (m *Memory) Restore(_ context.Context, scope isolation.Scope, workflowID st
 	return publicWorkflow(row), cloneDraft(row.draft), nil
 }
 
-func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
+func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
 	prepared, err := prepareStart(scope, workflowID, in)
 	if err != nil {
 		return Execution{}, err
@@ -408,6 +409,8 @@ func (m *Memory) StartExecution(_ context.Context, scope isolation.Scope, workfl
 		RetentionUntil:    now.Add(DefaultExecutionRetention),
 	}
 	steps, jobs := materializePlan(exec.ID, planNodes(ver.DefinitionYAML, ver.Summary), now)
+	stampJobs(ctx, jobs)
+	observability.NoteJobEnqueued(ctx, len(jobs))
 	m.executions[exec.ID] = memExecution{
 		workspaceID: scope.WorkspaceID(),
 		record:      exec,

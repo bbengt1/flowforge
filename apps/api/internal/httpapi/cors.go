@@ -9,7 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
-const corsAllowHeaders = "Content-Type, X-CSRF-Token, X-Request-ID, X-FlowForge-Issuer, X-FlowForge-Subject, X-FlowForge-Display-Name, X-FlowForge-Tenant-ID, X-FlowForge-Tenant-Slug, X-FlowForge-Workbench-Key, X-FlowForge-Workspace-ID, X-FlowForge-Signature, X-FlowForge-Timestamp, Idempotency-Key"
+const corsAllowHeaders = "Content-Type, X-CSRF-Token, X-Request-ID, traceparent, tracestate, X-FlowForge-Issuer, X-FlowForge-Subject, X-FlowForge-Display-Name, X-FlowForge-Tenant-ID, X-FlowForge-Tenant-Slug, X-FlowForge-Workbench-Key, X-FlowForge-Workspace-ID, X-FlowForge-Signature, X-FlowForge-Timestamp, Idempotency-Key"
 const corsAllowMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
 
 func (s Security) classifyOrigin(r *http.Request) (allowed bool, emitCORS bool, origin string) {
@@ -67,7 +67,7 @@ func writeCORSHeaders(w http.ResponseWriter, origin string) {
 	h.Set("Access-Control-Allow-Credentials", "true")
 	h.Set("Access-Control-Allow-Headers", corsAllowHeaders)
 	h.Set("Access-Control-Allow-Methods", corsAllowMethods)
-	h.Set("Access-Control-Expose-Headers", RequestIDHeader)
+	h.Set("Access-Control-Expose-Headers", RequestIDHeader+", traceparent, tracestate")
 	h.Set("Access-Control-Max-Age", "600")
 	h.Add("Vary", "Origin")
 }

@@ -15,6 +15,9 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Security is the TLS/proxy/CORS/session policy applied at the HTTP boundary.
@@ -168,10 +171,17 @@ func withObserve(log *slog.Logger, registry *observability.Registry, next http.H
 	if log == nil {
 		log = slog.Default()
 	}
+	_ = observability.Install(context.Background())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		ctx := observability.WithResponseSlot(observability.ExtractHTTP(r.Context(), r.Header))
+		ctx, span := observability.Tracer().Start(ctx, "http.server", trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
 		meta := &requestMeta{route: "unmatched"}
-		r = r.WithContext(context.WithValue(r.Context(), metaKey, meta))
+		r = r.WithContext(context.WithValue(ctx, metaKey, meta))
+		// Set traceparent before the handler writes. WriteHeader snapshots
+		// headers; a later Set is not sent on a real connection.
+		observability.InjectHTTP(r.Context(), w.Header())
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
 
@@ -182,9 +192,21 @@ func withObserve(log *slog.Logger, registry *observability.Registry, next http.H
 		status := sw.status
 		duration := time.Since(start)
 		registry.Observe(r.Method, route, status, duration)
+		span.SetAttributes(
+			attribute.String("http.request.method", r.Method),
+			attribute.String("http.route", route),
+			attribute.Int("http.response.status_code", status),
+		)
+		if status >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, "server error")
+		}
+		if !sw.wrote {
+			observability.InjectHTTP(r.Context(), w.Header())
+		}
 
 		// Path only — never RawQuery, headers, cookies, or bodies.
-		log.Info("request",
+		// trace_id is a correlation id, not a credential.
+		args := []any{
 			"request_id", RequestIDFromContext(r.Context()),
 			"method", r.Method,
 			"path", r.URL.Path,
@@ -192,7 +214,11 @@ func withObserve(log *slog.Logger, registry *observability.Registry, next http.H
 			"status", status,
 			"duration_ms", duration.Milliseconds(),
 			"bytes", sw.bytes,
-		)
+		}
+		if sc := span.SpanContext(); sc.HasTraceID() {
+			args = append(args, "trace_id", sc.TraceID().String())
+		}
+		log.Info("request", args...)
 	})
 }
 

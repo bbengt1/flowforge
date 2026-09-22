@@ -42,6 +42,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	if err := observability.Install(context.Background()); err != nil {
+		log.Error("opentelemetry", "error", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = observability.Shutdown(ctx)
+	}()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Error("runner configuration is invalid")
