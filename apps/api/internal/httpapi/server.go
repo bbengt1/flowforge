@@ -348,7 +348,14 @@ func newServer(d Deps) *API {
 	}
 	objects := d.Objects
 	if objects == nil {
-		if root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")); root != "" {
+		// Tests omit Deps.Objects and leave ARTIFACT_STORE_DIR unset, so they
+		// keep the memory store. cmd/api always injects artifact.LoadStore.
+		// A production-locked process with a directory set must not use it:
+		// empty APP_ENV is production-locked, and that path used to be tmpfs.
+		root := strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR"))
+		if root != "" && authz.ProductionLockedFromEnv() {
+			objects = artifact.UnavailableObjects()
+		} else if root != "" {
 			if fsStore, err := artifact.NewFilesystemObjects(root); err == nil {
 				objects = fsStore
 			}

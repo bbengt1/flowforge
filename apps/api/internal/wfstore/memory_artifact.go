@@ -28,6 +28,9 @@ func (m *Memory) CreateArtifact(_ context.Context, scope isolation.Scope, in Cre
 	if !ok || exec.workspaceID != scope.WorkspaceID() {
 		return Artifact{}, ErrNotFound
 	}
+	if !authz.ValidUUID(exec.record.WorkflowVersionID) {
+		return Artifact{}, ErrDraftNotRunnable
+	}
 	if in.StepID != "" {
 		found := false
 		for _, step := range exec.steps {

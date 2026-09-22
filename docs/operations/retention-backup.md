@@ -39,9 +39,16 @@ Audit `artifact.legal_hold.*`.
 
 Artifact payloads use the same envelope encryption as the vault
 (`CREDENTIAL_KEK`). `storage_ref` is an opaque server locator and is
-never returned. Local MVP objects live under `ARTIFACT_STORE_DIR`
-(compose/k8s: `/tmp/flowforge-artifacts` on tmpfs). Empty store dir =
-in-process memory (lost on restart) — not a backup.
+never returned. Ciphertext is stored in an S3-compatible bucket
+(`ARTIFACT_S3_*`) at `{tenant}/{workspace}/{ref}`. Compose runs MinIO
+with a data volume so an API restart keeps the objects. A
+production-locked process refuses filesystem and in-process stores
+and does not fall back to a directory when the bucket or credentials
+are missing. Those remain non-production fallbacks
+(`ARTIFACT_STORE_DIR`, or memory when that is also empty) and are not
+a backup. `ARTIFACT_S3_PREFIX` is rejected. Object-store credentials
+and the bucket name are never returned and are not written to logs.
+A draft execution cannot attach a run artifact.
 
 ## Backup encryption
 
@@ -92,9 +99,11 @@ TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=dis
 
 The compose rehearsal boots an isolated API **production-locked** (no
 `APP_ENV`), so it mounts the local-only PKCS#8 PEM
-(`deploy/local/embed-signing.pem`). Do not copy that key to Kubernetes.
-Production still boot-fails without a unique Secret
-`EMBED_SIGNING_KEY` (ADV-006 / ADV-022).
+(`deploy/local/embed-signing.pem`) and uses the compose MinIO bucket
+(`ARTIFACT_S3_*`, no `ARTIFACT_S3_CREATE_BUCKET`). Do not copy that key
+or the MinIO password to Kubernetes. Production still boot-fails
+without a unique Secret `EMBED_SIGNING_KEY` (ADV-006 / ADV-022) and
+without an S3 bucket and credentials.
 
 Last-run pointers:
 

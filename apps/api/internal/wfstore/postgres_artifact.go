@@ -60,6 +60,9 @@ func (p *Postgres) CreateArtifact(ctx context.Context, scope isolation.Scope, in
 	if err != nil {
 		return Artifact{}, err
 	}
+	if !authz.ValidUUID(exec.WorkflowVersionID) {
+		return Artifact{}, ErrDraftNotRunnable
+	}
 	if in.StepID != "" {
 		if _, err := scanStep(tx.QueryRow(ctx, `
 			SELECT `+strings.TrimSpace(stepColumns)+`

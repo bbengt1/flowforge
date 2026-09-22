@@ -13,6 +13,7 @@ flowchart LR
   U[Operator or host application] --> UI[Next.js UI / embed SDK]
   UI --> API[Go control-plane API]
   API --> DB[(PostgreSQL)]
+  API --> OBJ[(S3-compatible artifacts)]
   API --> Q[Durable execution queue]
   Q --> W[Isolated worker pods]
   W --> K[Kubernetes API]
@@ -26,7 +27,7 @@ The control plane owns workflow validation, workspace RBAC, credential authoriza
 
 Most control-plane boundaries fail closed: the API authenticates and authorizes server-derived workspace context, and webhook ingress verifies a replay-resistant signature before parsing. The production runner revalidates the job's version, digest, and expiry before a provider call. Drafts never run. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are required at boot (missing or malformed fails closed; no per-process random default). Live kubernetes, ssh, and http dials still fail at the network until an operator opens an allowlisted egress; that failure is an engine code, not the compose local-worker sentence. The [security model](reference/security-model.md) defines the required controls and negative tests. Production-gate review of those existing controls: [E12.3 threat-model review](reference/e12-threat-model-review.md). Operator runbooks: [release and operations](operations/index.md).
 
-PostgreSQL is the durable source of truth for workspace-scoped configuration, canonical workflow YAML, immutable versions, encrypted credential payload metadata, policy snapshots, durable job leases, redacted execution state, and audit **metadata**. See the [database specification](reference/database.md). Artifact **payloads** today live on `tmpfs` or in-process memory and do **not** survive pod loss (gap B3). Queue rows, leases, execution rows, and audit events in PostgreSQL do.
+PostgreSQL is the durable source of truth for workspace-scoped configuration, canonical workflow YAML, immutable versions, encrypted credential payload metadata, policy snapshots, durable job leases, redacted execution state, and audit **metadata**. See the [database specification](reference/database.md). Artifact **payloads** are envelope-encrypted and stored in a configurable S3-compatible bucket (compose: MinIO). Object keys are `{tenant}/{workspace}/{ref}` (three UUIDs) with no caller prefix or object metadata. A production-locked process refuses to start on filesystem or memory storage and does not fall back to a directory when the bucket or credentials are missing. Draft executions cannot attach run artifacts. Queue rows, leases, execution rows, and audit events in PostgreSQL do.
 
 Workers that exist claim leased jobs and heartbeat while working; lease loss permits safe recovery only after fencing and idempotency checks. Workflow versions are immutable once run. The API process runs a leader-elected scheduler (advisory lock `881726402`) that calls schedule dispatch, lease recovery, and retention purge on an interval. Only the leader ticks. Losing the lock cancels the in-flight hook and stops further ticks until the replica holds it again. `POST /api/v1/schedules/dispatch`, `POST /api/v1/jobs/recover`, and `POST /api/v1/retention/purge` remain for an operator. Encrypted backups are still an operator job (no CronJob).
 

@@ -8,18 +8,19 @@ the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
 ## Local startup
 
 1. Copy `env-template.txt` to `.env` and replace the local PostgreSQL password.
-2. Run `docker compose up --build`. Compose starts `postgres`, `api`, **`worker`**, and `web`. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`. Production provider dispatch is the runner Deployment (`/usr/local/bin/runner`); see [Production runner](#production-runner). The API process also runs the [leader-elected scheduler](#leader-elected-scheduler) (`SCHEDULER_ENABLED`, default on) so schedule dispatch, lease recovery, and retention purge do not need an external cron. Set `SCHEDULER_ENABLED=0` to opt out.
+2. Run `docker compose up --build`. Compose starts `postgres`, **`minio`**, `api`, **`worker`**, and `web`. MinIO (`minio_data`) holds envelope-encrypted artifact payloads so they survive an API restart. Local-only MinIO credentials are not production secrets. The worker is required for **Start published** to leave `queued` (it claims `POST /api/v1/jobs/claim`). Opt out with `docker compose up --scale worker=0` or `LOCAL_WORKER=0` (process exits 0). Do not add this service to `deploy/k8s`. Production provider dispatch is the runner Deployment (`/usr/local/bin/runner`); see [Production runner](#production-runner). The API process also runs the [leader-elected scheduler](#leader-elected-scheduler) (`SCHEDULER_ENABLED`, default on) so schedule dispatch, lease recovery, and retention purge do not need an external cron. Set `SCHEDULER_ENABLED=0` to opt out.
 3. Verify `GET http://localhost:8080/api/v1/health` returns `200`, then `GET http://localhost:8080/api/v1/readiness` returns `200` after migrations finish.
 4. Open `http://localhost:3000`. The UI response includes `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, and `X-Frame-Options: DENY` (CSP `frame-ancestors 'none'`). `Strict-Transport-Security` is omitted on this HTTP origin so local HTTP is not pinned to HTTPS. Product home is `/workflows`. `/membership` is grant-gated members admin (off product chrome after R7.2; Settings may link carefully). `/isolation` is the negative isolation check (success is a denial). Local compose sets `APP_ENV=development`, `TRUSTED_DEV_IDENTITY_HEADERS=1`, and a sample `PLATFORM_ADMINS` so local bootstrap still works; do not copy those into production, and do not treat trusted-dev headers as rewrite login. After readiness, the API also seeds one local tenant/workbench and demo vault credentials (see [Local default tenant seed](#local-default-tenant-seed)). When `local_logins` is empty it also seeds the **one-time** local Login operator — see [First-run local Login](#first-run-local-login). To walk the first-run wizard instead (path-2 / B.5 TLS), see [Path-2 first-run wizard](#path-2-first-run-wizard). Published runs need the worker (see [Local compose worker](#local-compose-worker)).
 
 Migrations are forward-only and recorded in `schema_migrations`; re-running the migration service is safe.
 
-Compose hardening (UID/GID **65532** except postgres):
+Compose hardening (UID/GID **65532** except postgres and MinIO):
 
 - **api** (`#10` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
 - **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
 - **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
+- **minio** (local/dev artifact store): `no-new-privileges` only, same reason as postgres. Volume `minio_data` keeps ciphertext across API restarts. Do not add this service to `deploy/k8s`. Production sets `ARTIFACT_S3_*` and opens allowlisted object-store egress.
 
 ## Deployment controls
 
@@ -62,7 +63,17 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `CREDENTIAL_KEK` | empty (compose: documented local-only default) | 32-byte AES-256 credential envelope KEK (base64 or hex). Generate with `openssl rand -base64 32`. Required to create/rotate vault secrets and to seed demo credentials. Compose may default a local-only value (`CREDENTIAL_KEK_ID=local:compose`). Never copy that default to k8s. |
 | `CREDENTIAL_KEK_FILE` | empty | Optional KEK file path (same encoding, or raw 32 bytes). |
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Key reference stored with ciphertext (not the key). |
-| `ARTIFACT_STORE_DIR` | empty | Encrypted artifact payload root. Empty = in-process memory. Read-only containers should use `/tmp/flowforge-artifacts`. |
+| `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. | 
+| `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted artifact payloads. Required with the access key and secret. Production-locked processes **boot-fail** without this set. | 
+| `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Region for signing and for `CreateBucket` outside `us-east-1`. | 
+| `ARTIFACT_S3_ACCESS_KEY_ID` / `ARTIFACT_S3_SECRET_ACCESS_KEY` | empty (compose: MinIO root user/password) | Static credentials. Never logged. Compose defaults are local-only — do not copy them to k8s. | 
+| `ARTIFACT_S3_SESSION_TOKEN` | empty | Optional temporary-credential token. Never logged. | 
+| `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style URLs (MinIO). Set `false` for virtual-hosted AWS. | 
+| `ARTIFACT_S3_SSE` | empty | Optional server-side encryption: `AES256` or `aws:kms`. Payloads are already envelope-encrypted with `CREDENTIAL_KEK` before upload. | 
+| `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required when `ARTIFACT_S3_SSE=aws:kms`. Never logged. | 
+| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Object keys are `{tenant}/{workspace}/{ref}` (lowercase UUIDs only). No caller prefix, filename, or credential in the key or object metadata. | 
+| `ARTIFACT_S3_CREATE_BUCKET` | false (compose: `true`) | Create the bucket at boot when it is missing. **Boot-fail** in a production-locked process. | 
+| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when every `ARTIFACT_S3_*` intent variable is unset. Empty then uses in-process memory. Both are refused when the process is production-locked. A production-locked process does not fall back to this directory. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Short-lived download grant lifetime (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |
@@ -146,6 +157,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Run `/usr/local/bin/runner` (`deploy/k8s/runner-deployment.yaml`). The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. The runner **boot-fails** on the local/dev path. |
 | Compose web `API_INTERNAL_URL=http://api:8080` and `NEXT_PUBLIC_API_URL=http://localhost:8080` | `deploy/k8s/web-deployment.yaml` sets `API_INTERNAL_URL=http://flowforge-api:8080`. Rebuild the web image with the public https `NEXT_PUBLIC_API_URL`. Do not copy localhost. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
+| Compose MinIO (`ARTIFACT_S3_*`, `ARTIFACT_S3_CREATE_BUCKET=true`, local root password) | S3-compatible bucket required. **Boot-fail** without bucket + access key + secret. `ARTIFACT_S3_CREATE_BUCKET` is a boot-fail. Do not copy the MinIO password. Object-store egress is not opened by the default NetworkPolicy. |
 | First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
 | `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
@@ -545,7 +557,7 @@ bash scripts/backup/encrypt-pg-dump.sh
 bash scripts/backup/restore-rehearsal.sh
 ```
 
-`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`). CI runs the same script. Production still boot-fails without a unique Secret key.
+`restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`) and points at the compose MinIO bucket that the source API already created. It does not set `ARTIFACT_S3_CREATE_BUCKET`. CI runs the same script. Production still boot-fails without a unique Secret key and without bucket credentials.
 
 E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus a schema-level isolated restore that does not need compose:
 

@@ -88,6 +88,35 @@ func TestMemoryArtifactHoldAndPurgePlan(t *testing.T) {
 	}
 }
 
+func TestMemoryCreateArtifactRejectsDraftExecution(t *testing.T) {
+	m := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	execID := "55555555-5555-4555-8555-555555555555"
+	m.executions[execID] = memExecution{
+		workspaceID: scope.WorkspaceID(),
+		record:      Execution{ID: execID},
+	}
+	_, err = m.CreateArtifact(context.Background(), scope, CreateArtifactInput{
+		ExecutionID:        execID,
+		Kind:               "file",
+		Digest:             "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		StorageRef:         "66666666-6666-4666-8666-666666666666",
+		MetadataCiphertext: []byte("meta"),
+		DEKEnvelope:        []byte("dek"),
+		KeyReference:       "test",
+		EncryptionVersion:  1,
+	})
+	if err != ErrDraftNotRunnable {
+		t.Fatalf("draft artifact = %v", err)
+	}
+	if len(m.artifacts) != 0 {
+		t.Fatal("draft execution stored an artifact row")
+	}
+}
+
 func TestMemoryDownloadGrantExpiry(t *testing.T) {
 	m := NewMemory()
 	scope, err := isolation.Authorize("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")

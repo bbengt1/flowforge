@@ -298,16 +298,17 @@ jobs:
           echo "BACKUP_ENCRYPTION_KEY=${key}" >> "$GITHUB_ENV"
 
       - name: Start Postgres and hardened API
-        run: docker compose up --build -d --wait --wait-timeout 180 postgres api
+        run: docker compose up --build -d --wait --wait-timeout 300 postgres api
 
       - name: Restore rehearsal
         # Isolated API is production-locked; the script mounts the local-only
-        # PKCS#8 PEM (ADV-006 / ADV-022). Production boot-fail is unchanged.
+        # PKCS#8 PEM (ADV-006 / ADV-022) and uses the compose MinIO bucket.
+        # ARTIFACT_S3_CREATE_BUCKET stays off. Production boot-fail is unchanged.
         run: bash scripts/backup/restore-rehearsal.sh
 
       - name: Compose logs (on failure)
         if: failure()
-        run: docker compose logs --no-color --tail=200 postgres api
+        run: docker compose logs --no-color --tail=200 postgres minio api
 
       - name: Tear down
         if: always()

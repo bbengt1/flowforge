@@ -61,9 +61,14 @@ type Config struct {
 	// ScriptSigningKey is the 32-byte HMAC for script artifact
 	// signatures (SCRIPT_SIGNING_KEY). Missing or malformed is a boot-fail.
 	ScriptSigningKey []byte
-	// ArtifactStoreDir is the local MVP filesystem root for encrypted
-	// object payloads. Empty uses in-process memory storage.
+	// ArtifactStoreDir is the non-production filesystem root for encrypted
+	// object payloads. Empty uses in-process memory. Ignored when
+	// ArtifactS3 is enabled. A production-locked process refuses both.
 	ArtifactStoreDir string
+	// ArtifactS3 is the durable S3-compatible object store. Enabled is
+	// false when no ARTIFACT_S3_* intent is set. Secret fields must not
+	// be logged.
+	ArtifactS3 artifact.S3Config
 	// ArtifactDownloadTTL is the lifetime of a short-lived download grant.
 	ArtifactDownloadTTL time.Duration
 	// ArtifactMaxBytes is the upload size cap (logs use a tighter bound).
@@ -149,6 +154,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	s3cfg, err := artifact.ParseS3FromEnv()
+	if err != nil {
+		return Config{}, err
+	}
 	embedKeys, err := embed.LoadMaterial()
 	if err != nil {
 		return Config{}, err
@@ -170,6 +179,7 @@ func Load() (Config, error) {
 		JobBindingKey:             jobKey,
 		ScriptSigningKey:          scriptKey,
 		ArtifactStoreDir:          strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
+		ArtifactS3:                s3cfg,
 		ArtifactDownloadTTL:       durationEnv("ARTIFACT_DOWNLOAD_TTL", wfstore.DefaultDownloadTTL),
 		ArtifactMaxBytes:          intEnv("ARTIFACT_MAX_BYTES", artifact.DefaultMaxBytes),
 		IntegrationActionsEnabled: boolEnv("INTEGRATION_ACTIONS_ENABLED", true),

@@ -149,7 +149,17 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for script artifact signatures (E9.1). Domain-separated with SHA-3. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
-| `ARTIFACT_STORE_DIR` | empty | Filesystem root for encrypted artifact payloads (`{dir}/{workspaceID}/{storageRef}`). Empty uses in-process memory. Compose/k8s API containers are read-only — use `/tmp/flowforge-artifacts`. |
+| `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. |
+| `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted payloads. Required with the key pair. Production-locked boot-fail when unset. |
+| `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Signing region. |
+| `ARTIFACT_S3_ACCESS_KEY_ID` / `ARTIFACT_S3_SECRET_ACCESS_KEY` | empty | Static credentials. Never logged. Compose MinIO defaults are local-only — do not copy them to k8s. |
+| `ARTIFACT_S3_SESSION_TOKEN` | empty | Optional STS token. Never logged. |
+| `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style (MinIO). `false` for virtual-hosted AWS. |
+| `ARTIFACT_S3_SSE` | empty | Optional `AES256` or `aws:kms`. Envelope encryption still happens before upload. |
+| `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required for `aws:kms`. Never logged. |
+| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Keys are `{tenant}/{workspace}/{ref}` UUIDs only. |
+| `ARTIFACT_S3_CREATE_BUCKET` | false (compose: true) | Create a missing bucket at boot. Boot-fail when production-locked. |
+| `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when no `ARTIFACT_S3_*` intent is set. Empty then uses in-process memory. Both are refused in a production-locked process. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
 | `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 PKCS#8 PEM (`crypto/x509.ParsePKCS8PrivateKey`) for embed assertions (E11.1 / ADV-022). Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64/hex is compatibility-only. Non-prod ephemeral keys use `crypto/rand` (no committed seed). Never returned from an API. |
@@ -232,7 +242,13 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       CREDENTIAL_KEK_ID: ${CREDENTIAL_KEK_ID:-local:compose}
       JOB_BINDING_SECRET: ${JOB_BINDING_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}
       SCRIPT_SIGNING_KEY: ${SCRIPT_SIGNING_KEY:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}
-      ARTIFACT_STORE_DIR: /tmp/flowforge-artifacts
+      ARTIFACT_S3_ENDPOINT: http://minio:9000
+      ARTIFACT_S3_BUCKET: flowforge-artifacts
+      ARTIFACT_S3_REGION: us-east-1
+      ARTIFACT_S3_ACCESS_KEY_ID: flowforge
+      ARTIFACT_S3_SECRET_ACCESS_KEY: flowforge-local-dev-minio
+      ARTIFACT_S3_USE_PATH_STYLE: "true"
+      ARTIFACT_S3_CREATE_BUCKET: "true"
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
       EMBED_SIGNING_KEY: ${EMBED_SIGNING_KEY:-}

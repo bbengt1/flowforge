@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
@@ -63,11 +64,12 @@ func main() {
 		pool.Close()
 	}()
 
-	objects, _, err := loadArtifactObjects(cfg.ArtifactStoreDir)
+	objects, backend, err := loadArtifactObjects(cfg)
 	if err != nil {
 		log.Error("artifact store", "error", err)
 		os.Exit(1)
 	}
+	log.Info("artifact store", "backend", backend)
 
 	tlsMaterials, err := loadTLSMaterials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
@@ -216,13 +218,12 @@ func shouldListenTLS(certPath, keyPath string) bool {
 	return true
 }
 
-func loadArtifactObjects(root string) (artifact.Objects, string, error) {
-	if strings.TrimSpace(root) == "" {
-		return artifact.NewMemoryObjects(), "memory", nil
-	}
-	fs, err := artifact.NewFilesystemObjects(root)
-	if err != nil {
-		return nil, "", err
-	}
-	return fs, root, nil
+func loadArtifactObjects(cfg config.Config) (artifact.Objects, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return artifact.LoadStore(ctx, artifact.StoreConfig{
+		Dir:              cfg.ArtifactStoreDir,
+		S3:               cfg.ArtifactS3,
+		ProductionLocked: authz.ProductionLocked(cfg.AppEnv, cfg.RequireTLS),
+	})
 }

@@ -17,11 +17,15 @@
 #              Opt out: docker compose up --scale worker=0  or  LOCAL_WORKER=0
 #   postgres — local PostgreSQL. Password comes from .env only.
 #              Backup encryption + restore rehearsal: scripts/backup/.
+#   minio    — local S3-compatible artifact store (G.1.5). Volume
+#              minio_data keeps ciphertext across API restarts.
+#              Local-only root credentials. Do not copy them to deploy/k8s.
 #
 # Published ports (host):
-#   UI   http://localhost:3000
-#   API  http://localhost:8080/api/v1/health
-#        http://localhost:8080/api/v1/readiness
+#   UI    http://localhost:3000
+#   API   http://localhost:8080/api/v1/health
+#         http://localhost:8080/api/v1/readiness
+#   MinIO http://localhost:9000  (console http://localhost:9001)
 
 name: flowforge
 
@@ -111,7 +115,19 @@ services:
       # Invalid values are a boot-fail. Encrypted backups stay an operator job.
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-1}
       SCHEDULER_INTERVAL: ${SCHEDULER_INTERVAL:-30s}
-      ARTIFACT_STORE_DIR: ${ARTIFACT_STORE_DIR:-/tmp/flowforge-artifacts}
+      # Durable artifact payloads (G.1.5). Ciphertext is envelope-encrypted
+      # with CREDENTIAL_KEK before upload. MinIO volume survives API
+      # restart. Local-only credentials — do not copy to deploy/k8s.
+      # Production-locked processes refuse to start without S3 and refuse
+      # ARTIFACT_S3_CREATE_BUCKET. Filesystem fallback: unset every
+      # ARTIFACT_S3_* value and set ARTIFACT_STORE_DIR (non-production).
+      ARTIFACT_S3_ENDPOINT: ${ARTIFACT_S3_ENDPOINT:-http://minio:9000}
+      ARTIFACT_S3_BUCKET: ${ARTIFACT_S3_BUCKET:-flowforge-artifacts}
+      ARTIFACT_S3_REGION: ${ARTIFACT_S3_REGION:-us-east-1}
+      ARTIFACT_S3_ACCESS_KEY_ID: ${ARTIFACT_S3_ACCESS_KEY_ID:-${MINIO_ROOT_USER:-flowforge}}
+      ARTIFACT_S3_SECRET_ACCESS_KEY: ${ARTIFACT_S3_SECRET_ACCESS_KEY:-${MINIO_ROOT_PASSWORD:-flowforge-local-dev-minio}}
+      ARTIFACT_S3_USE_PATH_STYLE: ${ARTIFACT_S3_USE_PATH_STYLE:-true}
+      ARTIFACT_S3_CREATE_BUCKET: ${ARTIFACT_S3_CREATE_BUCKET:-true}
       ARTIFACT_DOWNLOAD_TTL: ${ARTIFACT_DOWNLOAD_TTL:-60s}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-1048576}
       # Local-only PKCS#8 PEM (ADV-022). Production Secret must set a unique
@@ -156,6 +172,8 @@ services:
       - ./deploy/local/embed-signing.pem:/run/flowforge/embed-signing.pem:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     # Same probe as the image HEALTHCHECK and k8s liveness (process up).
     # Does not wait for PostgreSQL — that is GET /api/v1/readiness.
@@ -244,5 +262,33 @@ services:
       - api
     restart: unless-stopped
 
+  # Local/dev S3 (G.1.5). Not merged into x-security: the image
+  # starts as root. no-new-privileges matches postgres. Data volume
+  # keeps artifact ciphertext when the API container is recreated.
+  # Root user/password are local-only — do not copy to deploy/k8s.
+  minio:
+    # Last community image published to Quay. Later source tags are not
+    # published as images (MinIO source-only distribution).
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-flowforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-flowforge-local-dev-minio}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  minio_data:

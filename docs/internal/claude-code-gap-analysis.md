@@ -338,6 +338,11 @@ connection limits, extensions), and add graceful-drain configuration.
 
 #### B3 — S2 — Execution artifacts are stored on ephemeral `tmpfs`
 
+**Status (G.1.5):** addressed. Object keys are `{tenant}/{workspace}/{ref}`
+UUIDs only. A production-locked process boot-fails without an S3 bucket
+and credentials (no tmpfs fallback). Draft executions cannot attach run
+artifacts. The notes below are the original finding.
+
 `ARTIFACT_STORE_DIR: "/tmp/flowforge-artifacts"` on an `emptyDir` volume
 (`api-configmap.yaml`, `api-deployment.yaml`). With `ARTIFACT_STORE_DIR` unset, the
 store falls back to **in-process memory** (`cmd/api/main.go:loadArtifactObjects`).
