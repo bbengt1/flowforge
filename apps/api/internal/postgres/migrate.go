@@ -65,10 +65,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 
-	for _, m := range all {
-		if applied[m.Version] {
-			continue
-		}
+	pending, err := pendingMigrations(all, applied)
+	if err != nil {
+		return err
+	}
+	for _, m := range pending {
 		if err := applyMigration(ctx, conn, m); err != nil {
 			return err
 		}
@@ -106,19 +107,35 @@ func loadMigrations() ([]migration, error) {
 		out = append(out, migration{Version: version, Name: name, SQL: string(body)})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Version == out[j].Version {
-			return out[i].Name < out[j].Name
+		if out[i].Version != out[j].Version {
+			return out[i].Version < out[j].Version
 		}
-		return out[i].Version < out[j].Version
+		return out[i].Name < out[j].Name
 	})
-	seen := map[int64]string{}
-	for _, m := range out {
-		if prev, ok := seen[m.Version]; ok {
-			return nil, fmt.Errorf("duplicate migration version %d (%s and %s)", m.Version, prev, m.Name)
+	for i := 1; i < len(out); i++ {
+		if out[i].Version == out[i-1].Version {
+			return nil, fmt.Errorf("duplicate migration version %d (%s and %s)", out[i].Version, out[i-1].Name, out[i].Name)
 		}
-		seen[m.Version] = m.Name
 	}
 	return out, nil
+}
+
+// pendingMigrations returns files whose version is not yet recorded.
+// A recorded version whose name does not match the file fails closed so a
+// collided version cannot silently skip a different migration.
+func pendingMigrations(all []migration, applied map[int64]string) ([]migration, error) {
+	pending := make([]migration, 0, len(all))
+	for _, m := range all {
+		name, ok := applied[m.Version]
+		if !ok {
+			pending = append(pending, m)
+			continue
+		}
+		if name != m.Name {
+			return nil, fmt.Errorf("schema_migrations version %d is %q but migration file is %q", m.Version, name, m.Name)
+		}
+	}
+	return pending, nil
 }
 
 func parseMigrationName(filename string) (int64, string, error) {
@@ -134,20 +151,21 @@ func parseMigrationName(filename string) (int64, string, error) {
 	return version, rest, nil
 }
 
-func appliedVersions(ctx context.Context, conn *pgxpool.Conn) (map[int64]bool, error) {
-	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
+func appliedVersions(ctx context.Context, conn *pgxpool.Conn) (map[int64]string, error) {
+	rows, err := conn.Query(ctx, `SELECT version, name FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("list schema_migrations: %w", err)
 	}
 	defer rows.Close()
 
-	applied := make(map[int64]bool)
+	applied := make(map[int64]string)
 	for rows.Next() {
 		var version int64
-		if err := rows.Scan(&version); err != nil {
+		var name string
+		if err := rows.Scan(&version, &name); err != nil {
 			return nil, fmt.Errorf("scan schema_migrations: %w", err)
 		}
-		applied[version] = true
+		applied[version] = name
 	}
 	return applied, rows.Err()
 }
