@@ -1,8 +1,9 @@
 # E1.3: provenance, vulnerability, and restore-rehearsal gates.
 # Policy: deploy/supply-chain/policy.md
-# E12.1 provenance domain: this workflow's govulncheck + image-scan jobs
-# stay required; the named suite re-runs approved-bases / deploy-defaults /
-# govulncheck fixtures (see .github/workflows/e12-security.yml).
+# E12.1 provenance domain: this workflow's govulncheck, image-scan, and
+# web-image-scan jobs stay required; the named suite re-runs approved-bases /
+# deploy-defaults / govulncheck fixtures (see .github/workflows/e12-security.yml).
+# G.2.10 / #455: web Trivy fs + image, SPDX SBOM, provenance. Keep #455 open.
 name: supply-chain
 
 on:
@@ -273,6 +274,74 @@ jobs:
           path: |
             api-sbom.spdx.json
             api-provenance.json
+
+  # G.2.10 / #455: same Trivy gates as image-scan, for the Next.js app.
+  # Build context is the repo root (compose / G.0.7). apps/web alone cannot
+  # see pnpm-lock.yaml, so `docker build ./apps/web` fails the lockfile copy.
+  web-image-scan:
+    name: Web image SBOM and vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t flowforge-web:ci .
+
+      # Install the scanner binary. Do not use aquasecurity/trivy-action
+      # version tags here — GitHub could not resolve @0.28.0 or @0.36.0.
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: "0.74.0"
+        run: |
+          set -euo pipefail
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      # apps/web has no lockfile. Trivy 0.74.0 on that directory alone
+      # reports no packages. The pnpm workspace lockfile at the repo root
+      # is the apps/web library graph. Skip apps/api so this job does not
+      # duplicate the API filesystem gate.
+      - name: Application dependency scan
+        run: >
+          trivy fs
+          --scanners vuln
+          --pkg-types library
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          --skip-dirs apps/api
+          .
+
+      - name: Image scan (fixed CRITICAL)
+        run: >
+          trivy image
+          --severity CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          flowforge-web:ci
+
+      - name: SPDX SBOM
+        run: >
+          trivy image
+          --format spdx-json
+          --output web-sbom.spdx.json
+          flowforge-web:ci
+
+      - name: Provenance statement
+        run: bash scripts/write-provenance.sh flowforge-web:ci web-provenance.json apps/web/Dockerfile
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Upload SBOM and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-supply-chain
+          path: |
+            web-sbom.spdx.json
+            web-provenance.json
 
   # E12.2 sibling: full encrypted compose dump + isolated API boot.
   # The named resilience suite runs a schema-level isolated restore

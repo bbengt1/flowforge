@@ -5,6 +5,8 @@ set -euo pipefail
 
 IMAGE="${1:?image tag required}"
 OUT="${2:?output path required}"
+# Optional third arg keeps the API call (two args) on apps/api/Dockerfile.
+DOCKERFILE="${3:-apps/api/Dockerfile}"
 
 digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE" 2>/dev/null || true)"
 id="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
@@ -30,7 +32,7 @@ cat > "$OUT" <<EOF
       "externalParameters": {
         "source": "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-bbengt1/flowforge}",
         "revision": "${GITHUB_SHA:-unknown}",
-        "dockerfile": "apps/api/Dockerfile",
+        "dockerfile": "${DOCKERFILE}",
         "workflow": "${GITHUB_WORKFLOW:-local}"
       }
     },

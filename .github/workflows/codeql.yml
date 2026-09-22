@@ -1,0 +1,74 @@
+# G.2.10 / #455: CodeQL for apps/web (JavaScript/TypeScript) and apps/api (Go).
+# Keep #455 open.
+#
+# Code scanning must be enabled for alerts to show and for pull-request
+# checks to fail on findings (Settings → Code security → Code scanning).
+# This repository is public, so CodeQL does not need GitHub Advanced Security.
+# github/codeql-action has no severity input. With code scanning enabled,
+# GitHub's default alert rules fail the check on high and critical security
+# alerts and on error-level non-security alerts. This workflow keeps the
+# default query suite and uploads results (do not set upload: false).
+# Database creation or query execution errors fail the job.
+name: codeql
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+            source-root: apps/web
+          - language: go
+            build-mode: autobuild
+            source-root: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Go 1.26 is not assumed to be on the runner. Install before init
+      # so autobuild uses the same toolchain as supply-chain.yml.
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config: |
+            paths:
+              - ${{ matrix.source-root }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -206,7 +206,8 @@ from a pulled amd64/arm64 image — that is a platform manifest, and a pin
 to it breaks the other architecture.
 
 Then rebuild and let `.github/workflows/supply-chain.yml` `image-scan`
-regenerate the SPDX SBOM and re-run Trivy (`fs` HIGH/CRITICAL, image
+(API and script-runner) and `web-image-scan` (web, repo-root context)
+regenerate the SPDX SBOMs and re-run Trivy (`fs` HIGH/CRITICAL, image
 CRITICAL). Do not relax `--severity`, `--exit-code`, or `--ignore-unfixed`
 when refreshing pins.
 
