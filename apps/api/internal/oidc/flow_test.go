@@ -82,10 +82,6 @@ func TestPKCERejectsBadCodeNonceAndAlg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authURL, err = url.Parse(started.AuthorizationURL)
-	if err != nil {
-		t.Fatal(err)
-	}
 	idp.rejectCode = false
 	idp.useWrongNonce = true
 	if _, err := client.Complete(t.Context(), "good-code", started.State); err == nil {
