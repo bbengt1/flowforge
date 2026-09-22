@@ -39,6 +39,9 @@ const (
 	CodeImageDenied           = "image-denied"
 	CodeResourceLimit         = "resource-limit"
 	CodeIndeterminate         = "indeterminate"
+	// CodeMFARequired is the step-up denial for platform.administer and
+	// credential.* on a local-login or OIDC session.
+	CodeMFARequired = "mfa-required"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

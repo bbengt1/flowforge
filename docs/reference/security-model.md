@@ -23,10 +23,15 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 - Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
   `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
   authentication and must not upsert principals. Prefer the cookie session
-  issued by standalone `POST /login` (local email/username + password) or
-  `POST /embed/exchange`. **OIDC Authorization Code + PKCE is a deferred
-  stub (V.0c)** — not day-one; this model does not add IdP start/callback
-  or IdP-admin APIs. Self-asserted header identity is enabled only by the
+  issued by standalone `POST /login` (local email/username + password),
+  OIDC Authorization Code + PKCE (`POST /oidc/start` then
+  `POST /oidc/callback`), or `POST /embed/exchange`. OIDC is opt-in:
+  all `OIDC_*` unset fails those routes closed (`503`); a partial set
+  refuses process start. `client_secret` and the PKCE verifier stay on
+  the server. There is no IdP-admin API. TOTP MFA gates
+  `platform.administer` and `credential.*` on local-login and OIDC
+  sessions (`403` `mfa-required`) until enroll and verify. Machine,
+  trusted-dev, and embed sessions are not that gate. Self-asserted header identity is enabled only by the
   explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
   `APP_ENV=development|dev|local|test`. Empty or missing config denies
   header identity. The process refuses to start if the flag is set in
@@ -66,7 +71,8 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   are deny-by-default; an empty list authorizes nothing.
   `embed.impersonate` is not grantable. Rotate replaces the credential
   only. Revoke disables the user and revokes live sessions.
-  `PLATFORM_ADMINS` is not the machine identity. OIDC stays deferred.
+  `PLATFORM_ADMINS` is not the machine identity. OIDC and MFA do not
+  merge into this door.
   First-run `GET /api/v1/bootstrap` returns status flags only (no
   secrets, never the stored public URL). Incomplete installs may call
   it without a session; after bootstrap is complete, normal session

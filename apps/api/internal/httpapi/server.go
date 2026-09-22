@@ -19,7 +19,9 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
+	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/oidc"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -74,6 +76,9 @@ type Server struct {
 	loginLimits      localauth.Limits
 	machines         machine.Store
 	machineConsumers machine.Consumers
+	oidc             *oidc.Client
+	mfa              mfa.Store
+	mfaKey           []byte
 	embedAuditor     embed.Auditor
 	embedNBFLeeway   time.Duration
 	tlsMaterials     tlsmaterial.Store
@@ -122,7 +127,13 @@ type Deps struct {
 	// MachineConsumers fails closed for scrapers and the scheduler when
 	// a named consumer's principal is missing, revoked, or ungranted.
 	MachineConsumers machine.Consumers
-	EmbedAuditor     embed.Auditor
+	// OIDC is Authorization Code + PKCE. Zero value fails closed on
+	// /oidc/start and /oidc/callback. It does not replace local login.
+	OIDC oidc.Settings
+	// MFAKey encrypts TOTP secrets. Empty fails closed when a
+	// local-login or OIDC session needs step-up, enroll, or verify.
+	MFAKey       []byte
+	EmbedAuditor embed.Auditor
 	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
@@ -442,6 +453,16 @@ func newServer(d Deps) *API {
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
+	if p, ok := d.DB.(*postgres.Pool); ok {
+		s.mfa = mfa.NewPostgres(p)
+		s.oidc = oidc.NewClient(d.OIDC, oidc.NewPostgres(p))
+	} else {
+		s.mfa = mfa.NewMemory()
+		s.oidc = oidc.NewClient(d.OIDC, oidc.NewMemory())
+	}
+	if len(d.MFAKey) == 32 {
+		s.mfaKey = append([]byte(nil), d.MFAKey...)
+	}
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
 			s.embedKeys = loaded
@@ -501,6 +522,8 @@ func newServer(d Deps) *API {
 	mux.HandleFunc("POST /api/v1/workspace/realtime/channels/{id}/subscribe", s.subscribeRealtime)
 	mux.HandleFunc("GET /api/v1/workspace/audit-events", s.listAuditEvents)
 	mux.HandleFunc("POST /api/v1/login", s.postLogin)
+	mux.HandleFunc("POST /api/v1/oidc/start", s.postOIDCStart)
+	mux.HandleFunc("POST /api/v1/oidc/callback", s.postOIDCCallback)
 	mux.HandleFunc("POST /api/v1/machine/token", s.postMachineToken)
 	mux.HandleFunc("GET /api/v1/machine/principals", s.listMachinePrincipals)
 	mux.HandleFunc("POST /api/v1/machine/principals", s.postMachinePrincipal)
@@ -512,6 +535,9 @@ func newServer(d Deps) *API {
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)
 	mux.HandleFunc("POST /api/v1/session/logout", s.logoutSession)
 	mux.HandleFunc("POST /api/v1/session/password", s.postSessionPassword)
+	mux.HandleFunc("GET /api/v1/session/mfa", s.getSessionMFA)
+	mux.HandleFunc("POST /api/v1/session/mfa/enroll", s.postSessionMFAEnroll)
+	mux.HandleFunc("POST /api/v1/session/mfa/verify", s.postSessionMFAVerify)
 	mux.HandleFunc("GET /api/v1/session/audit-events", s.listSessionAudit)
 	mux.HandleFunc("GET /api/v1/embed/catalog", s.getEmbedCatalog)
 	mux.HandleFunc("GET /api/v1/embed/jwks", s.getEmbedJWKS)

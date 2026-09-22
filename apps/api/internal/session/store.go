@@ -19,6 +19,9 @@ type Store interface {
 	Touch(ctx context.Context, token string, now time.Time) error
 	Audit(ctx context.Context, event AuditEvent) error
 	ListAudit(ctx context.Context, userID string, limit int) ([]AuditEvent, error)
+	// MarkMFAVerified records a successful step-up on the live session.
+	// It does not rotate cookies. Unknown or expired tokens fail closed.
+	MarkMFAVerified(ctx context.Context, token string, now time.Time) error
 }
 
 // Valid reports whether rec is usable at now.
@@ -62,6 +65,56 @@ func revokeWorkspaceArgs(workspaceID, tenantID, workbenchKey string) (string, st
 		return "", "", "", ErrInvalid
 	}
 	return workspaceID, tenantID, workbenchKey, nil
+}
+
+// AuthMethodForReason maps mint reasons onto the session auth method.
+// Unknown reasons stay empty so they are not treated as local login or OIDC.
+func AuthMethodForReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "local-login":
+		return AuthMethodLocal
+	case "oidc":
+		return AuthMethodOIDC
+	case "machine-principal":
+		return AuthMethodMachine
+	case "issued":
+		return AuthMethodTrustedDev
+	case "embed exchange":
+		return AuthMethodEmbed
+	default:
+		return ""
+	}
+}
+
+// NormalizeAuthMethod accepts only the stamped door names.
+func NormalizeAuthMethod(method string) string {
+	switch strings.TrimSpace(method) {
+	case AuthMethodLocal, AuthMethodOIDC, AuthMethodMachine, AuthMethodTrustedDev, AuthMethodEmbed:
+		return strings.TrimSpace(method)
+	default:
+		return ""
+	}
+}
+
+// RequiresMFA reports whether this door must step up before privileged grants.
+// Machine, trusted-dev, embed, and empty methods are not MFA subjects.
+func RequiresMFA(method string) bool {
+	switch NormalizeAuthMethod(method) {
+	case AuthMethodLocal, AuthMethodOIDC:
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeAuthMethod(opts []CreateOpts) string {
+	method := ""
+	for _, opt := range opts {
+		if m := NormalizeAuthMethod(opt.AuthMethod); m != "" {
+			method = m
+		}
+	}
+	return method
 }
 
 func mergeCreateBinding(opts []CreateOpts) Binding {

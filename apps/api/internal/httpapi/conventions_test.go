@@ -218,9 +218,12 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 	paths, _ := doc["paths"].(map[string]any)
 	for _, p := range []string{
 		"/health", "/readiness", "/bootstrap", "/bootstrap/persistence", "/bootstrap/admins", "/bootstrap/public-url", "/bootstrap/tls", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
-		"/login", "/machine/token", "/machine/principals", "/machine/principals/{id}",
+		"/login", "/oidc/start", "/oidc/callback",
+		"/machine/token", "/machine/principals", "/machine/principals/{id}",
 		"/machine/principals/{id}/rotate", "/machine/principals/{id}/revoke",
-		"/session", "/session/refresh", "/session/logout", "/session/password", "/session/audit-events",
+		"/session", "/session/refresh", "/session/logout", "/session/password",
+		"/session/mfa", "/session/mfa/enroll", "/session/mfa/verify",
+		"/session/audit-events",
 		"/embed/catalog", "/embed/jwks", "/embed/assertions", "/embed/exchange", "/embed/keys/rotate",
 		"/portal/adapter", "/portal/adapter/assertions",
 		"/permission-matrix", "/roles", "/permissions", "/tenants", "/workspaces", "/workspace",

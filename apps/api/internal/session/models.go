@@ -23,6 +23,17 @@ const (
 	CookiePath     = "/api/v1"
 )
 
+// Auth methods stamped on a session at mint. MFA step-up applies only
+// to local-login and oidc. Machine, trusted-dev, and embed stay on
+// their own doors.
+const (
+	AuthMethodLocal      = "local-login"
+	AuthMethodOIDC       = "oidc"
+	AuthMethodMachine    = "machine"
+	AuthMethodTrustedDev = "trusted-dev"
+	AuthMethodEmbed      = "embed"
+)
+
 // Default lifetimes when process config omits overrides.
 const (
 	DefaultIdleTimeout     = 30 * time.Minute
@@ -59,7 +70,8 @@ func (b Binding) Bound() bool {
 
 // CreateOpts are optional Create arguments.
 type CreateOpts struct {
-	Binding Binding
+	Binding    Binding
+	AuthMethod string
 }
 
 // Record is a server-side session. Token and CSRF secrets are never stored
@@ -73,7 +85,11 @@ type Record struct {
 	AbsoluteExpiresAt time.Time  `json:"absolute_expires_at"`
 	RevokedAt         *time.Time `json:"-"`
 	Binding           Binding    `json:"-"`
-	csrfHash          []byte
+	// AuthMethod is the door that minted the session. Empty is not an
+	// MFA subject. Never serialize the session token beside it.
+	AuthMethod    string     `json:"-"`
+	MFAVerifiedAt *time.Time `json:"-"`
+	csrfHash      []byte
 }
 
 // CSRFHash returns a copy of the stored CSRF hash.

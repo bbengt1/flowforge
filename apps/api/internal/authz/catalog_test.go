@@ -139,3 +139,14 @@ func TestKnown(t *testing.T) {
 		t.Fatal("KnownRole mismatch")
 	}
 }
+
+func TestMFARequiredForPrivilegedPermissions(t *testing.T) {
+	for _, action := range []string{PermPlatformAdminister, PermCredentialView, PermCredentialUse, PermCredentialManage} {
+		if !MFARequired(action) {
+			t.Fatalf("%s must require MFA", action)
+		}
+	}
+	if MFARequired(PermWorkflowView) || MFARequired(PermOpsMetricsRead) || MFARequired(PermWorkspaceAdminister) || MFARequired("") {
+		t.Fatal("non-privileged permissions must not require MFA")
+	}
+}

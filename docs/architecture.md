@@ -63,7 +63,7 @@ Each embedded instance is scoped by `(tenant_id, workbench_key)`. That identity 
 - Python and Go artifacts are approved/signed. The production runner creates one isolated Job per script step (no arbitrary dependency installation, no service-account token on the Job). `go test` does not start the pod.
 - Privileged nodes require explicit policy/approval before dispatch. Dispatch is not execution.
 
-Standalone identity is local Login (`POST /api/v1/login`). Embed stays `POST /embed/exchange` (ADV-021). **OIDC Authorization Code + PKCE is deferred (V.0c).** First-run bootstrap (including TLS **Skip for now**) is standalone only. Explorer chrome on `/workflows` is landed organizer UI, not a provider runtime.
+Standalone identity is local Login (`POST /api/v1/login`) or OIDC Authorization Code + PKCE (`POST /api/v1/oidc/start`, `POST /api/v1/oidc/callback`). Both mint `ff_session` / `ff_csrf`. Embed stays `POST /embed/exchange` (ADV-021). OIDC is opt-in and fail-closed when unset. TOTP MFA gates `platform.administer` and `credential.*` on local-login and OIDC sessions only. Machine, trusted-dev, and embed are not that gate. SCIM stays deferred. First-run bootstrap (including TLS **Skip for now**) is standalone only. Explorer chrome on `/workflows` is landed organizer UI, not a provider runtime.
 
 ## Successor rewrite (charter)
 

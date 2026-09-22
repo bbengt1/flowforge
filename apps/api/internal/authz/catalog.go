@@ -3,7 +3,10 @@
 // the evaluation gate for unknown actions and host-supplied workspace IDs.
 package authz
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Permission families required by E2.1.
 const (
@@ -236,6 +239,28 @@ func KnownRole(role string) bool {
 		}
 	}
 	return false
+}
+
+// MFARequired reports whether action is unusable until the human session
+// has completed MFA step-up. platform.administer and every credential.*
+// permission are in this set. Other permissions are unchanged.
+func MFARequired(action string) bool {
+	if action == PermPlatformAdminister {
+		return true
+	}
+	return strings.HasPrefix(action, "credential.")
+}
+
+// MFAPrivilegedPermissions is the stable list Chloe can show. It is the
+// current catalog slice of MFARequired, not a second policy.
+func MFAPrivilegedPermissions() []string {
+	out := []string{PermPlatformAdminister}
+	for _, p := range Permissions() {
+		if strings.HasPrefix(p.Key, "credential.") {
+			out = append(out, p.Key)
+		}
+	}
+	return out
 }
 
 // Allows is deny-by-default: unknown, empty, or ungranted actions are denied.

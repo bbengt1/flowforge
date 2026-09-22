@@ -27,8 +27,14 @@ info:
       `X-FlowForge-Subject` as authentication. That path exists only when
       `TRUSTED_DEV_IDENTITY_HEADERS` is explicitly enabled in a non-production
       `APP_ENV`. A session cookie wins; conflicting identity headers fail
-      closed. OIDC Authorization Code + PKCE is a deferred stub (V.0c) —
-      this document does not publish IdP start/callback or IdP-admin routes.
+      closed. OIDC Authorization Code + PKCE is `POST /oidc/start` and
+      `POST /oidc/callback` (enterprise IdP). It mints the same
+      `ff_session` / `ff_csrf` pair as local login. `client_secret` and
+      the PKCE verifier stay on the server. MFA step-up (`GET`/`POST`
+      `/session/mfa`) gates `platform.administer` and `credential.*` on
+      local-login and OIDC sessions (`403` `mfa-required`). Trusted-dev,
+      machine, and embed sessions are not that gate. There is no
+      IdP-admin API.
       `POST /tenants` and `POST /workspaces` require
       `platform.administer` (`PLATFORM_ADMINS`) on a non-embed session.
       Embed-origin sessions are `403` and cannot bootstrap tenants or
@@ -1101,8 +1107,9 @@ paths:
         `POST /embed/exchange` only (ADV-021). Trusted-dev `POST /session`
         is unchanged and stays non-prod fail-closed.
 
-        OIDC Authorization Code + PKCE is a deferred stub (V.0c) — not
-        day-one. This path is not an IdP start or callback.
+        This path is local password only. OIDC Authorization Code +
+        PKCE is `POST /oidc/start` and `POST /oidc/callback`. Do not
+        fold an IdP code, verifier, or `client_secret` into this body.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       requestBody:
@@ -1136,6 +1143,219 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /oidc/start:
+    post:
+      operationId: oidcStart
+      summary: Begin OIDC Authorization Code + PKCE
+      description: |
+        Enterprise IdP start. No session and no CSRF (there is no
+        `ff_session` yet). Body is empty or `{}`. The response is the
+        IdP authorize URL, `state`, and `expires_at`. Sets
+        `ff_oidc_state` (`HttpOnly`, `SameSite=Lax`, `Path=/api/v1`,
+        `Secure` on HTTPS, about 10 minutes). That cookie is not the
+        PKCE verifier. `authorization_url` includes `response_type=code`,
+        server-configured `client_id` and `redirect_uri`, `scope`,
+        `state`, `nonce`, `code_challenge`, and
+        `code_challenge_method=S256`. It never includes `client_secret`
+        or `code_verifier`. Chrome redirects the browser to
+        `authorization_url`, then posts `code` and `state` to
+        `POST /oidc/callback`. Rate-limited 30/min per client IP (`429`).
+        All `OIDC_*` unset returns `503` `OIDC is not configured.`
+        Discovery or IdP failure is `503` `Identity provider is not
+        available.` Partial `OIDC_*` or a malformed `OIDC_STATE_KEY`
+        refuses process start. Production requires `https` issuer and
+        redirect URI. This door is not local login, trusted-dev
+        `POST /session`, machine token, or `POST /embed/exchange`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OIDCStartRequest"
+      responses:
+        "200":
+          description: Authorize URL issued
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Set-Cookie:
+              description: "ff_oidc_state (HttpOnly, SameSite=Lax). Not the PKCE verifier."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCStartResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /oidc/callback:
+    post:
+      operationId: oidcCallback
+      summary: Complete OIDC Authorization Code + PKCE
+      description: |
+        Exchanges `code` and `state` at the IdP and mints the same
+        `ff_session` / `ff_csrf` pair as `POST /login` (`201`
+        `SessionResponse`). Requires the `ff_oidc_state` cookie from
+        start to match `state` (constant-time). The cookie is cleared
+        on success and on failure. Body is only `code` and `state`.
+        `client_secret`, `code_verifier`, `id_token`, and access or
+        refresh tokens are never accepted and never returned. Unknown
+        or replayed state, a bad code, a bad signature, or an
+        issuer/audience/nonce mismatch is `401` `Invalid credentials.`
+        A disabled user is the same `401`. IdP unavailability is `503`.
+        Unconfigured OIDC is `503` `OIDC is not configured.` Subject is
+        the IdP `sub` (never the email). Display name is `name`, else
+        email, else `sub`. Rate-limited 30/min per client IP. Does not
+        set `must_change_password`.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OIDCCallbackRequest"
+      responses:
+        "201":
+          description: Standalone session issued
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Set-Cookie:
+              description: "Clears ff_oidc_state. Sets ff_session (HttpOnly, SameSite=Lax) and ff_csrf (readable, SameSite=Strict)."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /session/mfa:
+    get:
+      operationId: getSessionMFA
+      summary: MFA status for the current session
+      description: |
+        Session required. Returns TOTP enrollment and whether this
+        session has completed step-up. No secret and no `otpauth_uri`.
+        `applicable` is true only for local-login and OIDC sessions.
+        Machine, trusted-dev, embed, and header-only sessions report
+        `applicable: false` and `satisfied: true` — chrome must not
+        force MFA on those doors. `privileged_permissions` is the
+        stable list gated after step-up (`platform.administer` and
+        every `credential.*`).
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: MFA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /session/mfa/enroll:
+    post:
+      operationId: enrollSessionMFA
+      summary: Enroll a TOTP factor
+      description: |
+        Session and CSRF required. Body is empty or `{}`. On first
+        enroll (or while enrollment is still pending) the `200` status
+        includes `otpauth_uri` once. That URI contains the TOTP secret.
+        Chrome may display it once for the authenticator app and must
+        not store it in `localStorage`, the room, or logs. `GET
+        /session/mfa` never returns it. A confirmed factor is `409`
+        `MFA is already enrolled.` with no URI. A missing
+        `MFA_SECRET_KEY` is `503` `MFA is not configured.` The secret
+        at rest is AES-GCM sealed with that key. Pending enrollment can
+        be replaced; a confirmed factor cannot.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OIDCStartRequest"
+      responses:
+        "200":
+          description: Enrollment started; otpauth URI returned once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /session/mfa/verify:
+    post:
+      operationId: verifySessionMFA
+      summary: Verify a TOTP code and step up the session
+      description: |
+        Session and CSRF required. Body is `{code}` (six digits). A
+        matching RFC 6238 SHA1 code (30s step, window ±1, replay
+        rejected) marks this session stepped up (`mfa_verified_at`)
+        until it ends. Refresh keeps that stamp. Success is the status
+        object with `enrolled` and `satisfied` true and no
+        `otpauth_uri` and no echoed code. A bad, replayed, or missing
+        factor is `401` `Invalid credentials.` Rate-limited 8/min per
+        user (`429`). Missing `MFA_SECRET_KEY` or a decrypt failure is
+        `503` `MFA is not configured.` Privileged grants
+        (`platform.administer`, `credential.*`) on a local-login or
+        OIDC session that has not enrolled return `403` `mfa-required`
+        (`Enroll and verify MFA before using this permission.`). An
+        enrolled session that has not verified returns `403`
+        `mfa-required` (`Verify MFA before using this permission.`).
+        Machine, trusted-dev, and embed sessions are not this gate.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAVerifyRequest"
+      responses:
+        "200":
+          description: Session stepped up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/RateLimited"
         "503":
@@ -7998,6 +8218,7 @@ components:
             - artifact-unscanned
             - artifact-unsigned
             - artifact-scan-failed
+            - mfa-required
         request_id:
           type: string
         errors:
@@ -8206,6 +8427,74 @@ components:
           maxLength: 72
           format: password
           description: POST once. Never returned.
+    OIDCStartRequest:
+      type: object
+      additionalProperties: false
+      description: Empty object. Extra fields are rejected.
+    OIDCStartResponse:
+      type: object
+      additionalProperties: false
+      required: [authorization_url, state, expires_at]
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+          description: IdP authorize URL. No client_secret and no code_verifier.
+        state:
+          type: string
+          description: Matches the ff_oidc_state cookie. Not a secret the chrome may persist beyond the redirect.
+        expires_at:
+          type: string
+          format: date-time
+    OIDCCallbackRequest:
+      type: object
+      additionalProperties: false
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Authorization code. POST once. Never echoed.
+        state:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Must match the ff_oidc_state cookie.
+    MFAStatus:
+      type: object
+      additionalProperties: false
+      required: [method, enrolled, satisfied, applicable, privileged_permissions]
+      properties:
+        method:
+          type: string
+          enum: [totp]
+        enrolled:
+          type: boolean
+        satisfied:
+          type: boolean
+          description: True when this session has stepped up, or when MFA does not apply to the door.
+        applicable:
+          type: boolean
+          description: True only for local-login and OIDC sessions.
+        privileged_permissions:
+          type: array
+          items:
+            type: string
+          description: platform.administer and credential.*
+        otpauth_uri:
+          type: string
+          description: Present only on the enroll response, once. Contains the TOTP secret. Do not store.
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 8
+          description: TOTP code. POST once. Never echoed.
     ChangePasswordRequest:
       type: object
       additionalProperties: false

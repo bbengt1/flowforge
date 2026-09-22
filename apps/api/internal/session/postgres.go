@@ -62,17 +62,20 @@ func (p *Postgres) Create(ctx context.Context, userID string, now time.Time, idl
 		INSERT INTO browser_sessions (
 			user_id, token_hash, csrf_hash, created_at, last_seen_at,
 			idle_expires_at, absolute_expires_at,
-			embed_tenant_id, embed_workbench_key, embed_workspace_id, embed_capabilities
-		) VALUES ($1::uuid, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10)
+			embed_tenant_id, embed_workbench_key, embed_workspace_id, embed_capabilities,
+			auth_method
+		) VALUES ($1::uuid, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id::text, user_id::text, created_at, last_seen_at,
-		          idle_expires_at, absolute_expires_at, csrf_hash,
+		          idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
 		          COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
-		          COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+		          COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}'),
+		          COALESCE(auth_method, ''), mfa_verified_at
 	`, userID, hashToken(token), hashToken(csrf), now, now.Add(idle), now.Add(absolute),
-		tenantID, workbench, workspaceID, caps).Scan(
+		tenantID, workbench, workspaceID, caps, mergeAuthMethod(opts)).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
-		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash,
+		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+		&rec.AuthMethod, &rec.MFAVerifiedAt,
 	)
 	if err != nil {
 		return Issued{}, mapDBErr(err)
@@ -127,11 +130,13 @@ func (p *Postgres) Refresh(ctx context.Context, token, presentedCSRF string, now
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
 		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
 		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
-		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}'),
+		           COALESCE(auth_method, ''), mfa_verified_at
 	`, hashToken(token), hashToken(presentedCSRF), hashToken(csrf), now, nextIdle).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+		&rec.AuthMethod, &rec.MFAVerifiedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -176,11 +181,13 @@ func (p *Postgres) Revoke(ctx context.Context, token string, now time.Time) (Rec
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
 		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
 		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
-		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}'),
+		           COALESCE(auth_method, ''), mfa_verified_at
 	`, hashToken(token), now).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+		&rec.AuthMethod, &rec.MFAVerifiedAt,
 	)
 	if err != nil {
 		return Record{}, mapDBErr(err)
@@ -220,7 +227,8 @@ func (p *Postgres) RevokeBoundToWorkspace(ctx context.Context, workspaceID, tena
 		 RETURNING id::text, user_id::text, created_at, last_seen_at,
 		           idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
 		           COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
-		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+		           COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}'),
+		           COALESCE(auth_method, ''), mfa_verified_at
 	`, wsArg, tenantArg, workbenchKey, now)
 	if err != nil {
 		return nil, mapDBErr(err)
@@ -234,6 +242,7 @@ func (p *Postgres) RevokeBoundToWorkspace(ctx context.Context, workspaceID, tena
 			&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 			&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 			&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+			&rec.AuthMethod, &rec.MFAVerifiedAt,
 		); err != nil {
 			return nil, mapDBErr(err)
 		}
@@ -241,6 +250,29 @@ func (p *Postgres) RevokeBoundToWorkspace(ctx context.Context, workspaceID, tena
 		out = append(out, rec)
 	}
 	return out, mapDBErr(rows.Err())
+}
+
+// MarkMFAVerified stamps step-up on a live session without rotating cookies.
+func (p *Postgres) MarkMFAVerified(ctx context.Context, token string, now time.Time) error {
+	if strings.TrimSpace(token) == "" {
+		return ErrNotFound
+	}
+	now = now.UTC()
+	tag, err := p.db.Exec(ctx, `
+		UPDATE browser_sessions
+		   SET mfa_verified_at = $2
+		 WHERE token_hash = $1
+		   AND revoked_at IS NULL
+		   AND idle_expires_at > $2
+		   AND absolute_expires_at > $2
+	`, hashToken(token), now)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Touch updates last_seen without rotating CSRF.
@@ -327,13 +359,15 @@ func (p *Postgres) load(ctx context.Context, token string) (Record, error) {
 		SELECT id::text, user_id::text, created_at, last_seen_at,
 		       idle_expires_at, absolute_expires_at, csrf_hash, revoked_at,
 		       COALESCE(embed_tenant_id::text, ''), COALESCE(embed_workbench_key, ''),
-		       COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}')
+		       COALESCE(embed_workspace_id::text, ''), COALESCE(embed_capabilities, '{}'),
+		       COALESCE(auth_method, ''), mfa_verified_at
 		  FROM browser_sessions
 		 WHERE token_hash = $1
 	`, hashToken(token)).Scan(
 		&rec.ID, &rec.UserID, &rec.CreatedAt, &rec.LastSeenAt,
 		&rec.IdleExpiresAt, &rec.AbsoluteExpiresAt, &csrfHash, &rec.RevokedAt,
 		&rec.Binding.TenantID, &rec.Binding.WorkbenchKey, &rec.Binding.WorkspaceID, &rec.Binding.Capabilities,
+		&rec.AuthMethod, &rec.MFAVerifiedAt,
 	)
 	if err != nil {
 		return Record{}, mapDBErr(err)
