@@ -6,6 +6,7 @@
 # (compose --wait only covers /health; this script waits for readiness).
 # Never prints BACKUP_ENCRYPTION_KEY, DATABASE_URL, POSTGRES_PASSWORD,
 # JOB_BINDING_SECRET, SCRIPT_SIGNING_KEY, or ARTIFACT_S3_SECRET_ACCESS_KEY.
+# Dump format is FFB1 AEAD (scripts/backup/aead.py).
 #
 #   export POSTGRES_PASSWORD=...
 #   export BACKUP_ENCRYPTION_KEY=...
