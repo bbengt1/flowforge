@@ -16,11 +16,13 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/lockout"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/oidc"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
+	"github.com/bbengt1/flowforge/apps/api/internal/scim"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -138,6 +140,11 @@ type Config struct {
 	// MFAKey encrypts TOTP secrets. Empty does not change boot.
 	// Malformed MFA_SECRET_KEY is a boot-fail.
 	MFAKey []byte
+	// SCIM is opt-in. Partial SCIM_* config is a boot-fail. All empty
+	// leaves /scim/v2 fail-closed when called. The bearer is not logged.
+	SCIM scim.Settings
+	// LockoutMaxFailures is the durable local-login failure threshold.
+	LockoutMaxFailures int
 }
 
 // Load reads configuration from the process environment.
@@ -275,6 +282,16 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.OIDC = oidcSettings
+	scimSettings, err := scim.Load(requireHTTPS, oidcSettings.Issuer)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SCIM = scimSettings
+	lockMax, err := lockout.LoadMaxFailures()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.LockoutMaxFailures = lockMax
 	mfaKey, err := mfa.LoadKey()
 	if err != nil {
 		return Config{}, err

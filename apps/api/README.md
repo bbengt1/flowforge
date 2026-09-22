@@ -42,7 +42,12 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/machine/principals` | Create a machine principal (`platform.administer` + CSRF). Secret or assertion public key POST once; response is display name, UUID, `client_id`, status, grants. |
 | `POST` | `/api/v1/machine/principals/{id}/rotate` | Replace the credential. Grants stay fixed. New secret is not echoed. |
 | `POST` | `/api/v1/machine/principals/{id}/revoke` | Disable the user and revoke live sessions. |
-| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. First-run one-time `admin`/`admin` sets `session.must_change_password`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). Embed stays `POST /embed/exchange`. |
+| `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. First-run one-time `admin`/`admin` sets `session.must_change_password`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). A durable `auth_lockouts` row is the same `401` after a correct password. Embed stays `POST /embed/exchange`. |
+| `GET` | `/api/v1/users/{userID}/lockout` | Durable lock state (`platform.administer`). `user_id`, `locked`, `failed_count`, optional `locked_at`. No hash. Embed is `403`. |
+| `POST` | `/api/v1/users/{userID}/unlock` | Clear the lockout row (CSRF + `platform.administer`). Does not re-enable a disabled user. |
+| `GET` / `POST` | `/scim/v2/Users` | SCIM 2.0 provision. Bearer `SCIM_BEARER_TOKEN` only. Unset is `503`. `externalId` should be the OIDC `sub`. Passwords are `400` and are not echoed. |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/scim/v2/Users/{id}` | Read, replace, patch (`active: false` disables and revokes sessions), or deprovision (`204`, later GET `404`). |
+| `GET` / `PATCH` | `/scim/v2/Groups` | Groups are existing workspaces. PATCH adds or removes members. Add grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing other roles. POST/PUT/DELETE of a group are `400`. |
 | `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). Not the local one-time credential. |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). Exposes `session.must_change_password` so chrome can gate until rotation. |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
@@ -184,6 +189,10 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
 | `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |
+| `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from the in-process login rate limit. |
+| `SCIM_BEARER_TOKEN` | empty | Dedicated `/scim/v2` bearer (32–256 chars, no spaces). Never logged or returned. Empty with the other `SCIM_*` unset fails SCIM closed (`503`). Not an `ff_session`. |
+| `SCIM_ISSUER` | `OIDC_ISSUER` when the bearer is set and this is omitted | Issuer on provisioned users. Must match `OIDC_ISSUER` when both are set. Production requires `https`. Map IdP `externalId` to the OIDC `sub`. |
+| `SCIM_DEFAULT_ROLE` | `viewer` | Workspace role added for a new SCIM Group member. Non-workspace roles (including `platform-admin`) are a boot-fail. |
 
 Suggested local URL (compose service hostname `postgres`):
 

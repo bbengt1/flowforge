@@ -19,6 +19,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
+	"github.com/bbengt1/flowforge/apps/api/internal/lockout"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -27,6 +28,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/schedule"
+	"github.com/bbengt1/flowforge/apps/api/internal/scim"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
@@ -80,6 +82,10 @@ type Server struct {
 	oidc             *oidc.Client
 	mfa              mfa.Store
 	mfaKey           []byte
+	scimSettings     scim.Settings
+	scimDir          scim.Store
+	lockouts         lockout.Store
+	lockoutMax       int
 	embedAuditor     embed.Auditor
 	embedNBFLeeway   time.Duration
 	tlsMaterials     tlsmaterial.Store
@@ -133,8 +139,21 @@ type Deps struct {
 	OIDC oidc.Settings
 	// MFAKey encrypts TOTP secrets. Empty fails closed when a
 	// local-login or OIDC session needs step-up, enroll, or verify.
-	MFAKey       []byte
-	EmbedAuditor embed.Auditor
+	MFAKey []byte
+	// SCIM is the dedicated /scim/v2 bearer. Zero value fails closed
+	// when those routes are called. It does not replace local login,
+	// OIDC, machine principals, or embed exchange.
+	SCIM scim.Settings
+	// SCIMDir stores directory rows. Nil selects Postgres when DB is a
+	// pool and an in-memory store otherwise.
+	SCIMDir scim.Store
+	// Lockouts is the durable failed-auth counter. Nil selects Postgres
+	// when DB is a pool and an in-memory store otherwise.
+	Lockouts lockout.Store
+	// LockoutMaxFailures locks an account after this many bad local
+	// passwords. Zero uses the default. Values outside 1..50 fail closed.
+	LockoutMaxFailures int
+	EmbedAuditor       embed.Auditor
 	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
@@ -464,6 +483,30 @@ func newServer(d Deps) *API {
 	if len(d.MFAKey) == 32 {
 		s.mfaKey = append([]byte(nil), d.MFAKey...)
 	}
+	s.scimSettings = d.SCIM
+	s.scimDir = d.SCIMDir
+	if s.scimDir == nil {
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			s.scimDir = scim.NewPostgres(p)
+		} else {
+			s.scimDir = scim.NewMemory()
+		}
+	}
+	s.lockouts = d.Lockouts
+	if s.lockouts == nil {
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			s.lockouts = lockout.NewPostgres(p)
+		} else {
+			s.lockouts = lockout.NewMemory()
+		}
+	}
+	s.lockoutMax = d.LockoutMaxFailures
+	if s.lockoutMax == 0 {
+		s.lockoutMax = lockout.DefaultMaxFailures
+	}
+	if s.lockoutMax < lockout.MinMaxFailures || s.lockoutMax > lockout.MaxMaxFailures {
+		s.lockoutMax = 0
+	}
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
 			s.embedKeys = loaded
@@ -525,6 +568,23 @@ func newServer(d Deps) *API {
 	mux.HandleFunc("POST /api/v1/login", s.postLogin)
 	mux.HandleFunc("POST /api/v1/oidc/start", s.postOIDCStart)
 	mux.HandleFunc("POST /api/v1/oidc/callback", s.postOIDCCallback)
+	mux.HandleFunc("GET /api/v1/users/{userID}/lockout", s.getAccountLockout)
+	mux.HandleFunc("POST /api/v1/users/{userID}/unlock", s.postAccountUnlock)
+	mux.HandleFunc("GET /scim/v2/ServiceProviderConfig", s.getSCIMServiceProviderConfig)
+	mux.HandleFunc("GET /scim/v2/Schemas", s.getSCIMSchemas)
+	mux.HandleFunc("GET /scim/v2/ResourceTypes", s.getSCIMResourceTypes)
+	mux.HandleFunc("GET /scim/v2/Users", s.listSCIMUsers)
+	mux.HandleFunc("POST /scim/v2/Users", s.postSCIMUser)
+	mux.HandleFunc("GET /scim/v2/Users/{id}", s.getSCIMUser)
+	mux.HandleFunc("PUT /scim/v2/Users/{id}", s.putSCIMUser)
+	mux.HandleFunc("PATCH /scim/v2/Users/{id}", s.patchSCIMUser)
+	mux.HandleFunc("DELETE /scim/v2/Users/{id}", s.deleteSCIMUser)
+	mux.HandleFunc("GET /scim/v2/Groups", s.listSCIMGroups)
+	mux.HandleFunc("POST /scim/v2/Groups", s.postSCIMGroup)
+	mux.HandleFunc("GET /scim/v2/Groups/{id}", s.getSCIMGroup)
+	mux.HandleFunc("PUT /scim/v2/Groups/{id}", s.putSCIMGroup)
+	mux.HandleFunc("PATCH /scim/v2/Groups/{id}", s.patchSCIMGroup)
+	mux.HandleFunc("DELETE /scim/v2/Groups/{id}", s.deleteSCIMGroup)
 	mux.HandleFunc("POST /api/v1/machine/token", s.postMachineToken)
 	mux.HandleFunc("GET /api/v1/machine/principals", s.listMachinePrincipals)
 	mux.HandleFunc("POST /api/v1/machine/principals", s.postMachinePrincipal)

@@ -21,7 +21,9 @@ const invalidCredentialsDetail = "Invalid credentials."
 // and trusted-dev POST /session. Password is POST-once and never echoed.
 // Bad password and unknown identifier are the same 401. Rate-limited
 // by IP and identifier before lookup/bcrypt (429 + Retry-After).
-// Store failures other than unknown identifier are 503.
+// Durable lockout (auth_lockouts) is separate from that window: a
+// locked account is the same 401 after a correct password and survives
+// process restart. Store failures other than unknown identifier are 503.
 //
 // OIDC Authorization Code + PKCE is POST /oidc/start and POST /oidc/callback.
 // This handler stays the local password door. Do not fold IdP exchange
@@ -56,9 +58,30 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
 		return
 	}
-	if cred.User.Status != "active" || !localauth.Verify(password, cred.PasswordHash) {
+	verified := localauth.Verify(password, cred.PasswordHash)
+	if cred.User.Status != "active" {
 		s.auditLoginRejected(r, "invalid credentials")
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
+		return
+	}
+	locked, ok := s.accountLocked(w, r, cred.User.ID)
+	if !ok {
+		return
+	}
+	if !verified {
+		if !s.noteAccountFailure(w, r, cred.User.ID) {
+			return
+		}
+		s.auditLoginRejected(r, "invalid credentials")
+		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
+		return
+	}
+	if locked {
+		s.auditLoginRejected(r, "account locked")
+		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
+		return
+	}
+	if !s.clearAccountFailures(w, r, cred.User.ID) {
 		return
 	}
 	s.mintStandaloneSessionWithClaim(w, r, cred.User, "local-login", cred.MustChangePassword)

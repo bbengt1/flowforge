@@ -155,6 +155,8 @@ services:
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
       # OIDC is opt-in. Leave OIDC_* and MFA_SECRET_KEY unset: start/callback
       # and MFA enroll return 503. Do not put a client_secret default here.
+      # SCIM is opt-in. Leave SCIM_BEARER_TOKEN unset: /scim/v2 returns 503.
+      # Do not put a bearer default here. LOCKOUT_MAX_FAILURES defaults to 5.
       # Default on when APP_ENV is development|dev|local|test and REQUIRE_TLS
       # is false. Set 0 to skip. Do not set in deploy/k8s.
       SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}

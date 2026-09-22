@@ -24,6 +24,14 @@ data:
   # OIDC_ISSUER: "https://idp.example"
   # OIDC_CLIENT_ID: "flowforge"
   # OIDC_REDIRECT_URI: "https://app.example.com/oidc/callback"
+  # SCIM 2.0. Leave SCIM_BEARER_TOKEN unset to fail /scim/v2 closed.
+  # SCIM_ISSUER must match OIDC_ISSUER when both are set (https here).
+  # Omit SCIM_ISSUER to reuse OIDC_ISSUER. The bearer lives on the Secret.
+  # Map the IdP externalId to the OIDC sub. Groups are workspaces.
+  # SCIM_ISSUER: "https://idp.example"
+  # SCIM_DEFAULT_ROLE: "viewer"
+  # Durable lockout. Unset uses 5. Integer 1-50. 0 is a boot-fail.
+  # LOCKOUT_MAX_FAILURES: "5"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.
   REQUIRE_TLS: "true"
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
