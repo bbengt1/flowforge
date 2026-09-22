@@ -18,6 +18,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
@@ -69,7 +70,10 @@ type Server struct {
 	platformAdmins   []authz.PrincipalRef
 	embedLimiter     *embed.Limiter
 	loginLimiter     *embed.Limiter
+	machineLimiter   *embed.Limiter
 	loginLimits      localauth.Limits
+	machines         machine.Store
+	machineConsumers machine.Consumers
 	embedAuditor     embed.Auditor
 	embedNBFLeeway   time.Duration
 	tlsMaterials     tlsmaterial.Store
@@ -111,8 +115,14 @@ type Deps struct {
 	EmbedLimits          embed.Limits
 	// LoginLimits rate-limits POST /login before bcrypt. Separate from
 	// embed exchange so those IP budgets do not share a counter.
-	LoginLimits  localauth.Limits
-	EmbedAuditor embed.Auditor
+	LoginLimits localauth.Limits
+	// Machines is the service-principal store. Nil selects Postgres when
+	// DB is a pool and an in-memory store otherwise.
+	Machines machine.Store
+	// MachineConsumers fails closed for scrapers and the scheduler when
+	// a named consumer's principal is missing, revoked, or ungranted.
+	MachineConsumers machine.Consumers
+	EmbedAuditor     embed.Auditor
 	// EmbedNBFLeeway is nbf clock-skew only (ADV-017). Zero uses the
 	// documented default (30s). Values above 60s are clamped.
 	EmbedNBFLeeway time.Duration
@@ -417,6 +427,21 @@ func newServer(d Deps) *API {
 	} else {
 		s.platformAdmins = authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
 	}
+	s.machines = d.Machines
+	if s.machines == nil {
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			s.machines = machine.NewPostgres(p)
+		} else {
+			s.machines = machine.NewMemory()
+		}
+	}
+	s.machineConsumers = d.MachineConsumers
+	s.machineLimiter = embed.NewLimiter(embed.Limits{
+		Window:            time.Minute,
+		ExchangeIP:        -1,
+		ExchangePrincipal: -1,
+		MintPrincipal:     -1,
+	})
 	if !s.embedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
 			s.embedKeys = loaded
@@ -476,6 +501,12 @@ func newServer(d Deps) *API {
 	mux.HandleFunc("POST /api/v1/workspace/realtime/channels/{id}/subscribe", s.subscribeRealtime)
 	mux.HandleFunc("GET /api/v1/workspace/audit-events", s.listAuditEvents)
 	mux.HandleFunc("POST /api/v1/login", s.postLogin)
+	mux.HandleFunc("POST /api/v1/machine/token", s.postMachineToken)
+	mux.HandleFunc("GET /api/v1/machine/principals", s.listMachinePrincipals)
+	mux.HandleFunc("POST /api/v1/machine/principals", s.postMachinePrincipal)
+	mux.HandleFunc("GET /api/v1/machine/principals/{id}", s.getMachinePrincipal)
+	mux.HandleFunc("POST /api/v1/machine/principals/{id}/rotate", s.rotateMachinePrincipal)
+	mux.HandleFunc("POST /api/v1/machine/principals/{id}/revoke", s.revokeMachinePrincipal)
 	mux.HandleFunc("POST /api/v1/session", s.createSession)
 	mux.HandleFunc("GET /api/v1/session", s.getSession)
 	mux.HandleFunc("POST /api/v1/session/refresh", s.refreshSession)

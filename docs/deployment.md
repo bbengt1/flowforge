@@ -89,7 +89,11 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `EMBED_ASSERTION_TTL` | `60s` | Default mint TTL (15s–5m). |
 | `EMBED_NBF_LEEWAY` | `30s` | Clock-skew for embed assertion `nbf` only (ADV-017). Hard max `60s` (clamped). `exp` is exact. |
 | `EMBED_OVERLAP_KEYS` | empty | JSON JWKS / array of previous public keys for the embed overlap window. Each key requires `overlapUntil` (RFC3339, max 4h from boot). Missing, zero, or far-future is a boot-fail. The active `EMBED_SIGNING_KEY` is not an overlap key and does not use `overlapUntil`. |
-| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, read `GET /metrics` / OpenAPI / swagger, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). |
+| `PLATFORM_ADMINS` / `PLATFORM_ADMIN` | empty | Comma-separated `issuer\|subject` pairs that may `POST /tenants`, `POST /workspaces`, `POST /embed/keys/rotate`, read `GET /metrics` / OpenAPI / swagger, and mint an assertion for another subject (`embed.impersonate`). Empty is fail-closed (`403`). This is a human allowlist, not the machine principal. |
+| `MACHINE_REQUIRE` | empty | Opt-in consumers that must have a live principal: `metrics`, `scheduler`, `automation` (comma-separated). Empty does not change existing boots. A required consumer with a missing or invalid client id is a **boot-fail** in every environment. |
+| `MACHINE_METRICS_CLIENT_ID` | empty | Public `client_id` for the metrics scraper. Required when `MACHINE_REQUIRE` includes `metrics`. The principal must grant `ops.metrics.read` or explicit `platform.administer`. A missing, revoked, or ungranted row is `503` on metrics/OpenAPI/swagger. |
+| `MACHINE_SCHEDULER_CLIENT_ID` | empty | Public `client_id` for the scheduler consumer. Required when `MACHINE_REQUIRE` includes `scheduler`. The principal must grant `workflow.execute` and be bound to a workspace. Ticks do not run until that principal is healthy. |
+| `MACHINE_AUTOMATION_CLIENT_ID` | empty | Public `client_id` for other automation. Required when `MACHINE_REQUIRE` includes `automation`. The principal must hold at least one grantable permission. |
 | `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity and local seed require `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | **Local/dev only.** When `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is false, the API seeds one tenant (`local`), workbench (`default`), attaches `PLATFORM_ADMINS` as workspace admin, writes demo vault credentials if `CREDENTIAL_KEK` is set, and marks first-run bootstrap **complete** (wizard skip) when that admin + public URL exist. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this. |
@@ -526,14 +530,52 @@ RPO/RTO and restore cadence: [retention and backup](operations/retention-backup.
 The HTTP endpoints stay for an operator session (`workflow.execute` or
 `workspace.administer`, plus CSRF).
 
+When `MACHINE_REQUIRE` includes `scheduler`, each tick checks
+`MACHINE_SCHEDULER_CLIENT_ID` first. A missing, revoked, or ungranted
+principal (needs `workflow.execute`) skips the hook. Create and rotate
+that principal with `POST /api/v1/machine/principals` (secret is not
+echoed). The in-process loop does not log in as the principal.
+
 ## Metrics and OpenAPI scrape (ADV-020)
 
 `GET /api/v1/metrics`, `/openapi.yaml`, `/openapi.json`, and `/swagger` are
-not anonymous. Scrapers must authenticate as a `PLATFORM_ADMINS` principal
-(`platform.administer`). Fail closed when the allowlist is empty.
+not anonymous. A human caller needs `platform.administer`
+(`PLATFORM_ADMINS`). A scraper uses a machine principal granted
+`ops.metrics.read`. Fail closed when neither is present.
 
-Prometheus example (Bearer is the session token from `POST /embed/exchange`
-or trusted-dev `POST /session`; refresh before idle/absolute expiry):
+Create the principal once (platform-admin session + CSRF). The response
+is display name, UUID, `client_id`, status, and grants. The secret is
+not returned and must be stored in the operator secret manager:
+
+```bash
+curl -fsS -c /tmp/ff.cj -b /tmp/ff.cj \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: ${FF_CSRF}" \
+  -d '{"display_name":"Prometheus","client_id":"prom-scrape","secret":"'"${MACHINE_SECRET}"'","grants":["ops.metrics.read"]}' \
+  "${API_ORIGIN}/api/v1/machine/principals"
+```
+
+Mint the same `ff_session` humans use. Do not call `POST /login`,
+`POST /session`, or `POST /embed/exchange` for this identity:
+
+```bash
+curl -fsS -c /tmp/scrape.cj \
+  -H "Content-Type: application/json" \
+  -d '{"client_id":"prom-scrape","secret":"'"${MACHINE_SECRET}"'"}' \
+  "${API_ORIGIN}/api/v1/machine/token"
+```
+
+Rotate with `POST /api/v1/machine/principals/{id}/rotate` and revoke with
+`POST /api/v1/machine/principals/{id}/revoke`. Both require
+`platform.administer` and CSRF. Revoke disables the user and kills live
+sessions. Put `MACHINE_REQUIRE=metrics` and
+`MACHINE_METRICS_CLIENT_ID=prom-scrape` in the API environment when the
+scraper must exist; a missing client id is a boot-fail, and a missing
+or revoked row is `503` on the scrape routes.
+
+Prometheus example (Bearer is the opaque `ff_session` from
+`POST /machine/token`; refresh before idle/absolute expiry). Do not put
+the client secret in the scrape file:
 
 ```yaml
 scrape_configs:
@@ -546,7 +588,8 @@ scrape_configs:
 
 Local compose may instead send `X-FlowForge-Issuer` / `X-FlowForge-Subject`
 matching `PLATFORM_ADMINS` because `TRUSTED_DEV_IDENTITY_HEADERS=1`. Do not
-enable that in production. Kubernetes liveness/readiness stay
+enable that in production, and do not use those headers as the machine
+identity. Kubernetes liveness/readiness stay
 `GET /api/v1/health` and `GET /api/v1/readiness` with no credentials.
 
 ## Recovery

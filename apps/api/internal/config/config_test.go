@@ -11,6 +11,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -698,6 +699,43 @@ func TestLoadSchedulerEnv(t *testing.T) {
 	t.Setenv(scheduler.EnvInterval, "nope")
 	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("invalid SCHEDULER_INTERVAL must fail closed")
+	}
+}
+
+func TestLoadMachineRequireFailClosed(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(machine.EnvRequire, "")
+	t.Setenv(machine.EnvMetricsClientID, "")
+	t.Setenv(machine.EnvSchedulerClientID, "")
+	t.Setenv(machine.EnvAutomationClientID, "")
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MachineConsumers.Requires(machine.ConsumerMetrics) {
+		t.Fatal("empty MACHINE_REQUIRE must leave metrics optional")
+	}
+	t.Setenv(machine.EnvRequire, "metrics")
+	if _, err := loadTestConfig(t); err == nil {
+		t.Fatal("MACHINE_REQUIRE=metrics without a client id must fail closed")
+	}
+	t.Setenv(machine.EnvMetricsClientID, "prom-scrape")
+	cfg, err = loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.MachineConsumers.Requires(machine.ConsumerMetrics) || cfg.MachineConsumers.ClientID(machine.ConsumerMetrics) != "prom-scrape" {
+		t.Fatalf("consumers: %+v", cfg.MachineConsumers)
+	}
+	t.Setenv(machine.EnvSchedulerClientID, "NOT VALID")
+	if _, err := loadTestConfig(t); err == nil {
+		t.Fatal("invalid client id must fail closed even when that consumer is not required")
+	}
+	t.Setenv(machine.EnvSchedulerClientID, "")
+	t.Setenv(machine.EnvRequire, "not-a-consumer")
+	if _, err := loadTestConfig(t); err == nil {
+		t.Fatal("unknown MACHINE_REQUIRE consumer must fail closed")
 	}
 }
 

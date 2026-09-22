@@ -471,10 +471,15 @@ Additionally, `/api/v1/metrics` requires `platform.administer` via an `ff_sessio
 bearer token, which is awkward for a Prometheus scraper and has no documented
 machine-credential path.
 
+**Status (G.1.6 / #437):** scrapers and automation now mint that same
+`ff_session` from a server-side machine principal (`POST /api/v1/machine/token`,
+grant `ops.metrics.read`). OpenTelemetry, queue metrics, alerting, and SLOs
+in this finding are still open.
+
 **Recommendation:** Adopt OpenTelemetry for traces and metrics with W3C trace-context
 propagation into workers. Instrument the queue, lease, execution, and vault paths.
-Publish version metadata on `/health`. Define production SLOs with alert rules. Add a
-scrape-credential mechanism that is not a browser session.
+Publish version metadata on `/health`. Define production SLOs with alert rules. The
+scrape credential is the machine principal, not a browser-held secret.
 
 ---
 

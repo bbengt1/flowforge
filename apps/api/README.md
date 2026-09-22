@@ -13,7 +13,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?, password?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Optional password is stored as a hash for `POST /login` and is never echoed. |
 | `POST` | `/api/v1/bootstrap/public-url` | Wizard step 3. Body `{publicBaseUrl}`. `200` status with `steps.publicUrl.ready=true`. Does not mark complete. First admin must be ready (`409`). Already complete → `409`. HTTPS preferred; HTTP allowed for local. Never echoes the URL. |
 | `POST` | `/api/v1/bootstrap/tls` | Wizard step 4. Body `{action:"create-self-signed"}`, `{action:"upload", certPem, keyPem}`, or `{action:"skip"}`. `200` status with `steps.tls.ready=true`, `steps.tls.mode` (`self_signed` \| `uploaded` \| `skipped`), and `complete=true` (`MarkComplete`). Public URL must be ready (`409`). Already complete → `409`. Never echoes key/PEM. Skip writes no files. ACME out of scope. Create/upload require `TLS_CERT_FILE` / `TLS_KEY_FILE` (`503` if unset). |
-| `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`). Scrapers: `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
+| `GET` | `/api/v1/metrics` | Prometheus 0.0.4 text: request counts and duration histograms (method/route/status labels only). Requires `platform.administer` (`PLATFORM_ADMINS`) or machine `ops.metrics.read`. Scrapers: `POST /machine/token`, then `Authorization: Bearer <ff_session>` or `ff_session` cookie. |
 | `GET` | `/api/v1/openapi.yaml` | Published OpenAPI YAML. Same authz as metrics. |
 | `GET` | `/api/v1/openapi.json` | Published OpenAPI JSON. Same authz as metrics. |
 | `GET` | `/api/v1/swagger` | Specification landing page. Same authz as metrics. |
@@ -38,6 +38,10 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` / `PUT` | `/api/v1/workspace/cache/{key}` | Workspace-prefixed cache. |
 | `POST` | `/api/v1/workspace/realtime/channels/{id}/subscribe` | Realtime subscribe. |
 | `GET` | `/api/v1/workspace/audit-events` | Audit hooks (`workspace.administer`). |
+| `POST` | `/api/v1/machine/token` | Machine principal (`client_id` + secret or signed assertion). Mints the same standalone `ff_session` / `ff_csrf`. Not Login, trusted-dev, or embed exchange. Never echoes the secret. |
+| `POST` | `/api/v1/machine/principals` | Create a machine principal (`platform.administer` + CSRF). Secret or assertion public key POST once; response is display name, UUID, `client_id`, status, grants. |
+| `POST` | `/api/v1/machine/principals/{id}/rotate` | Replace the credential. Grants stay fixed. New secret is not echoed. |
+| `POST` | `/api/v1/machine/principals/{id}/revoke` | Disable the user and revoke live sessions. |
 | `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. First-run one-time `admin`/`admin` sets `session.must_change_password`. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). Embed stays `POST /embed/exchange`. |
 | `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). Not the local one-time credential. |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). Exposes `session.must_change_password` so chrome can gate until rotation. |

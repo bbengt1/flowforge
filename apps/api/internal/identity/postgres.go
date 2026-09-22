@@ -67,6 +67,24 @@ func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 	return u, nil
 }
 
+func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string) error {
+	userID = strings.TrimSpace(userID)
+	status = strings.TrimSpace(status)
+	if userID == "" || (status != "active" && status != "disabled") {
+		return ErrInvalid
+	}
+	tag, err := p.db.Exec(ctx, `
+		UPDATE users SET status = $2, updated_at = now() WHERE id = $1::uuid
+	`, userID, status)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // FindUser returns an existing principal. It does not upsert.
 func (p *Postgres) FindUser(ctx context.Context, issuer, subject string) (User, error) {
 	issuer = strings.TrimSpace(issuer)

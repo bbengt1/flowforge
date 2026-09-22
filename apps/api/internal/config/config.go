@@ -16,6 +16,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -126,6 +127,9 @@ type Config struct {
 	SchedulerEnabled bool
 	// SchedulerInterval is the leader tick period.
 	SchedulerInterval time.Duration
+	// MachineConsumers names automation callers that require a live
+	// machine principal. Empty does not change boot.
+	MachineConsumers machine.Consumers
 }
 
 // Load reads configuration from the process environment.
@@ -248,6 +252,16 @@ func Load() (Config, error) {
 	}
 	cfg.SchedulerEnabled = schedOn
 	cfg.SchedulerInterval = schedEvery
+	consumers, err := machine.ParseConsumers(
+		os.Getenv(machine.EnvRequire),
+		os.Getenv(machine.EnvMetricsClientID),
+		os.Getenv(machine.EnvSchedulerClientID),
+		os.Getenv(machine.EnvAutomationClientID),
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MachineConsumers = consumers
 	return cfg, nil
 }
 

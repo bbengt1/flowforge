@@ -143,6 +143,23 @@ func (p *Postgres) Refresh(ctx context.Context, token, presentedCSRF string, now
 	return Issued{Record: rec, Token: token, CSRF: csrf}, nil
 }
 
+// RevokeByUser marks every live session for userID unusable.
+func (p *Postgres) RevokeByUser(ctx context.Context, userID string, now time.Time) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrInvalid
+	}
+	now = now.UTC()
+	_, err := p.db.Exec(ctx, `
+		UPDATE browser_sessions
+		   SET revoked_at = COALESCE(revoked_at, $2),
+		       last_seen_at = $2
+		 WHERE user_id = $1::uuid
+		   AND revoked_at IS NULL
+	`, userID, now)
+	return mapDBErr(err)
+}
+
 // Revoke marks the session unusable.
 func (p *Postgres) Revoke(ctx context.Context, token string, now time.Time) (Record, error) {
 	rec, err := p.load(ctx, token)

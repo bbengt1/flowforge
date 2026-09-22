@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: FlowForge Control Plane API
-  version: 0.25.0
+  version: 0.26.0
   description: |
     Versioned control-plane API. Conventions:
 
@@ -45,10 +45,13 @@ info:
     - Request bodies are capped at 1048576 bytes.
     - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
       and `/api/v1/swagger`. Those routes and `/metrics` require an
-      authenticated principal with `platform.administer` (`PLATFORM_ADMINS`).
-      Scrapers send `Authorization: Bearer <ff_session>` or the `ff_session`
-      cookie. `GET /health` and `GET /readiness` stay unauthenticated for
-      Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
+      authenticated principal with `platform.administer` (`PLATFORM_ADMINS`)
+      or a machine principal granted `ops.metrics.read`. Scrapers mint
+      `ff_session` at `POST /machine/token` (`client_id` + secret or
+      signed assertion) and send `Authorization: Bearer <ff_session>` or
+      the `ff_session` cookie. That door is not `POST /login`, trusted-dev
+      `POST /session`, or `POST /embed/exchange`. `GET /health` and
+      `GET /readiness` stay unauthenticated for Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
       normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
       `POST /bootstrap/admins` is wizard step 2 (B.3).
@@ -704,12 +707,16 @@ paths:
       description: |
         Prometheus 0.0.4 text exposition of HTTP request counts and
         duration histograms. Labels are method, route, and status only.
-        Requires `platform.administer` (`PLATFORM_ADMINS`) on an
-        authenticated principal. Scrapers send `Authorization: Bearer`
-        with the opaque `ff_session` token, or the `ff_session` cookie.
-        Trusted-dev identity headers work only when
-        `TRUSTED_DEV_IDENTITY_HEADERS` is on. Empty `PLATFORM_ADMINS`
-        is fail-closed (`403`). Health and readiness stay unauthenticated.
+        Requires `platform.administer` (`PLATFORM_ADMINS`) or a machine
+        principal granted `ops.metrics.read` (or an explicit machine
+        `platform.administer` grant). Scrapers send `Authorization: Bearer`
+        with the opaque `ff_session` token from `POST /machine/token`, or
+        the `ff_session` cookie. Trusted-dev identity headers work only when
+        `TRUSTED_DEV_IDENTITY_HEADERS` is on. A human who is not a platform
+        admin is `403`. There is no anonymous scrape. When `MACHINE_REQUIRE`
+        includes `metrics`, a missing, revoked, or ungranted
+        `MACHINE_METRICS_CLIENT_ID` is `503` before the scrape is served.
+        Health and readiness stay unauthenticated.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -732,14 +739,27 @@ paths:
           $ref: "#/components/responses/RequestTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          description: |
+            `MACHINE_REQUIRE` includes `metrics` and the named principal
+            is missing, revoked, or lacks `ops.metrics.read`.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
       summary: Published OpenAPI YAML
       description: |
-        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
-        credentials as `GET /metrics` (session cookie, Bearer session
-        token, or trusted-dev headers).
+        Requires `platform.administer` (`PLATFORM_ADMINS`) or machine
+        `ops.metrics.read`. Same credentials as `GET /metrics` (session
+        cookie, Bearer session token from `POST /machine/token`, or
+        trusted-dev headers). `503` when `MACHINE_REQUIRE` includes
+        `metrics` and that principal is missing, revoked, or ungranted.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -767,8 +787,8 @@ paths:
       operationId: getOpenAPIJSON
       summary: Published OpenAPI JSON
       description: |
-        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
-        credentials as `GET /metrics`.
+        Requires `platform.administer` (`PLATFORM_ADMINS`) or machine
+        `ops.metrics.read`. Same credentials as `GET /metrics`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -796,8 +816,8 @@ paths:
       operationId: getSwagger
       summary: Specification landing page
       description: |
-        Requires `platform.administer` (`PLATFORM_ADMINS`). Same
-        credentials as `GET /metrics`.
+        Requires `platform.administer` (`PLATFORM_ADMINS`) or machine
+        `ops.metrics.read`. Same credentials as `GET /metrics`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -820,6 +840,235 @@ paths:
           $ref: "#/components/responses/RequestTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
+  /machine/token:
+    post:
+      operationId: mintMachineSession
+      summary: Mint a session for a machine principal
+      description: |
+        Non-human door for scrapers, the scheduler consumer, and
+        automation. Body is `client_id` plus exactly one factor:
+        `secret` or a short-lived Ed25519 `assertion`
+        (`typ=machine-assertion`, `aud=flowforge:machine`, max TTL 5m).
+        Success mints the **same** standalone `ff_session` / `ff_csrf`
+        pair as `POST /login` (no `session.embed`). This route is not
+        local Login, not trusted-dev `POST /session`, and not
+        `POST /embed/exchange`. Unknown client and bad secret are the
+        same `401` (`Invalid credentials.`). The secret, hash, assertion,
+        and public key are never echoed. Rate-limited by client IP
+        (60/min) and `client_id` (30/min) on a counter separate from
+        login and embed exchange. A nil limiter fails closed.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MachineTokenRequest"
+      responses:
+        "201":
+          description: Standalone session issued
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+            Set-Cookie:
+              description: "ff_session (HttpOnly, SameSite=Lax) and ff_csrf (readable, SameSite=Strict)."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /machine/principals:
+    get:
+      operationId: listMachinePrincipals
+      summary: List machine principals
+      description: |
+        Requires `platform.administer` and CSRF when a session cookie is
+        present. Items are display name, UUID, `client_id`, status, and
+        grants. No secret, hash, assertion, or public key.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Machine principals
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachinePrincipalList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    post:
+      operationId: createMachinePrincipal
+      summary: Create a machine principal
+      description: |
+        Requires `platform.administer` and CSRF. `secret` or
+        `assertion_public_key` (raw 32-byte Ed25519, base64) is POST once
+        and is not returned. Grants are explicit and deny-by-default;
+        empty authorizes nothing. `embed.impersonate` is not grantable.
+        Workspace-scoped grants require `tenant_slug` or `tenant_id` plus
+        `workbench_key`. `platform.administer` is granted only when listed.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MachinePrincipalCreate"
+      responses:
+        "201":
+          description: Principal created. Secret material is omitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachinePrincipal"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /machine/principals/{id}:
+    get:
+      operationId: getMachinePrincipal
+      summary: Get a machine principal
+      description: |
+        Requires `platform.administer`. Display name, UUID, `client_id`,
+        status, and grants only.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Machine principal
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachinePrincipal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /machine/principals/{id}/rotate:
+    post:
+      operationId: rotateMachinePrincipal
+      summary: Rotate a machine credential
+      description: |
+        Requires `platform.administer` and CSRF. Replaces `secret` and/or
+        `assertion_public_key`. Grants stay as created. The new secret is
+        not echoed. Previous secret and assertions stop working.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MachinePrincipalRotate"
+      responses:
+        "200":
+          description: Credential rotated. Secret material is omitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachinePrincipal"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /machine/principals/{id}/revoke:
+    post:
+      operationId: revokeMachinePrincipal
+      summary: Revoke a machine principal
+      description: |
+        Requires `platform.administer` and CSRF. Disables the user and
+        revokes live `ff_session` cookies for that principal. Empty body.
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Principal revoked
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachinePrincipal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /login:
     post:
       operationId: localLogin
@@ -7815,6 +8064,118 @@ components:
         status:
           type: string
           enum: [active, disabled]
+    MachineTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [client_id]
+      description: |
+        Exactly one of `secret` or `assertion`. Both are POST once and
+        never returned.
+      properties:
+        client_id:
+          type: string
+          minLength: 2
+          maxLength: 64
+          description: Public identifier. Not a secret.
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion:
+          type: string
+          description: Compact Ed25519 assertion. aud=flowforge:machine. Max TTL 5 minutes.
+    MachinePrincipalCreate:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      description: |
+        `secret` or `assertion_public_key` is required and is not echoed.
+        Grants default to empty (authorize nothing).
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        client_id:
+          type: string
+          minLength: 2
+          maxLength: 64
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion_public_key:
+          type: string
+          description: Base64 raw 32-byte Ed25519 public key. Not a private key.
+        grants:
+          type: array
+          items:
+            type: string
+        tenant_id:
+          type: string
+          format: uuid
+        tenant_slug:
+          type: string
+        workbench_key:
+          type: string
+    MachinePrincipalRotate:
+      type: object
+      additionalProperties: false
+      description: Credential only. Grants are not changed. Secret is not echoed.
+      properties:
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion_public_key:
+          type: string
+    MachinePrincipal:
+      type: object
+      required: [id, client_id, display_name, status, grants, created_at]
+      description: Operator view. No secret, hash, assertion, or public key.
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        grants:
+          type: array
+          items:
+            type: string
+        tenant_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        workbench_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        rotated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    MachinePrincipalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachinePrincipal"
     LocalLoginRequest:
       type: object
       additionalProperties: false

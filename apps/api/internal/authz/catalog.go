@@ -34,6 +34,10 @@ const (
 	PermWorkspaceAdminister = "workspace.administer"
 	PermPlatformAdminister  = "platform.administer"
 	PermEmbedImpersonate    = "embed.impersonate"
+	// PermOpsMetricsRead is the scraper grant. It is platform-scoped, so
+	// workspace roles never receive it. Machine principals hold it only
+	// when an operator lists it. It is not platform.administer.
+	PermOpsMetricsRead      = "ops.metrics.read"
 	PermKubernetesApply     = "kubernetes.apply"
 	PermKubernetesRead      = "kubernetes.read"
 	PermSSHRun              = "ssh.run"
@@ -98,6 +102,7 @@ func Permissions() []Permission {
 		{Key: PermWorkspaceAdminister, Family: FamilyAdministration},
 		{Key: PermPlatformAdminister, Family: FamilyAdministration},
 		{Key: PermEmbedImpersonate, Family: FamilyAdministration},
+		{Key: PermOpsMetricsRead, Family: FamilyAdministration},
 		{Key: PermKubernetesApply, Family: FamilyExecute},
 		{Key: PermKubernetesRead, Family: FamilyExecute},
 		{Key: PermSSHRun, Family: FamilyExecute},
@@ -179,10 +184,12 @@ func PermissionKeys() []string {
 	return out
 }
 
-// PlatformScopedPermission reports whether key is granted only by the
-// platform-admin allowlist, never by a workspace role binding.
+// PlatformScopedPermission reports whether key is withheld from
+// workspace role bindings. platform.administer and embed.impersonate
+// are granted to humans only by PLATFORM_ADMINS. ops.metrics.read is
+// granted only by an explicit machine-principal grant.
 func PlatformScopedPermission(key string) bool {
-	return key == PermPlatformAdminister || key == PermEmbedImpersonate
+	return key == PermPlatformAdminister || key == PermEmbedImpersonate || key == PermOpsMetricsRead
 }
 
 // WorkspacePermissionKeys is every catalog permission except platform-scoped ones.

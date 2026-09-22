@@ -9,6 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
@@ -101,6 +102,9 @@ func (s *Server) requirePrincipal(w http.ResponseWriter, r *http.Request) (ident
 	if token := sessionCookieValue(r); token != "" {
 		return s.requireSessionPrincipal(w, r, token)
 	}
+	if token := bearerSessionToken(r); token != "" {
+		return s.requireSessionPrincipal(w, r, token)
+	}
 	return s.requireHeaderPrincipal(w, r)
 }
 
@@ -172,6 +176,15 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 	roles, perms, err := s.store.EffectiveAccess(r.Context(), ws.ID, user.ID)
 	if err != nil {
 		writeIdentityError(w, r, err)
+		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+	}
+	perms, err = s.unionMachinePerms(r, user, ws, perms)
+	if err != nil {
+		if errors.Is(err, machine.ErrRevoked) || errors.Is(err, machine.ErrWorkspace) {
+			WriteForbidden(w, r)
+			return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+		}
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Machine principal store is not available.")
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}
 	if pc := principalFromRequest(r); pc != nil && pc.session != nil && pc.session.Binding.Bound() {

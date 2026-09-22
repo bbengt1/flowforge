@@ -21,7 +21,7 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 | Landing page | `GET /api/v1/swagger` (links to the two documents; not an interactive explorer) |
 
 OpenAPI **3.0.3**. `info.version` is the document version (currently
-`0.25.0` in the YAML). That is not the URL prefix.
+`0.26.0` in the YAML). That is not the URL prefix.
 
 There is no code-generated spec. When a route or problem code changes,
 update `apps/api/openapi/openapi.yaml` in the same change as
@@ -49,10 +49,12 @@ There are no `/healthz` / `/readyz` aliases. See
 Production identity is a cookie session from standalone `POST /login`
 or `POST /embed/exchange` (OIDC Authorization Code + PKCE is a
 deferred stub). Metrics and OpenAPI/swagger require
-`platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`). Empty
-allowlist is fail-closed (`403`). Workspace `admin` is not enough.
-Unauthenticated is `401`. There is no anonymous scrape token and no
-`ops.metrics.read` grant.
+`platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`) or a
+machine principal granted `ops.metrics.read`. Empty human allowlist is
+fail-closed (`403`) unless that machine grant is present. Workspace
+`admin` is not enough. Unauthenticated is `401`. There is no anonymous
+scrape token. `ops.metrics.read` is platform-scoped and is not a
+workspace role. Scrapers mint `ff_session` at `POST /api/v1/machine/token`.
 
 ```bash
 # Source tree (no auth)
@@ -84,7 +86,7 @@ in [deployment](../deployment.md#metrics-and-openapi-scrape-adv-020).
 | Caller | How identity is established | Notes |
 | --- | --- | --- |
 | Browser / embed | `POST /embed/exchange` → `ff_session` + `ff_csrf` | Production path. Embed sessions use CHIPS (`SameSite=None; Secure; Partitioned`). Mutations need `X-CSRF-Token`. |
-| Platform scraper | `Authorization: Bearer <ff_session>` | Preferred for Prometheus / OpenAPI fetch. Refresh before idle (`SESSION_IDLE_TIMEOUT`, default 30m) or absolute (`SESSION_ABSOLUTE_TIMEOUT`, default 12h) expiry. |
+| Platform scraper | `POST /api/v1/machine/token` then `Authorization: Bearer <ff_session>` | Preferred for Prometheus / OpenAPI fetch. `client_id` + secret or signed assertion. Refresh before idle (`SESSION_IDLE_TIMEOUT`, default 30m) or absolute (`SESSION_ABSOLUTE_TIMEOUT`, default 12h) expiry. Distinct from Login, trusted-dev, and embed exchange. |
 | Trusted-dev only | `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` | Local/compose only. Not authentication in production. |
 | Kubernetes probes | none | `/health` and `/readiness` stay unauthenticated. |
 
