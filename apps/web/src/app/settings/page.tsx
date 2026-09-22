@@ -1,6 +1,7 @@
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { MfaAccountPanel } from "@/components/session/MfaAccountPanel";
 import { BootstrapSettings } from "@/components/settings/BootstrapSettings";
 import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
 import { FoundationAdminLinks } from "@/components/settings/FoundationAdminLinks";
@@ -48,6 +49,7 @@ export default async function SettingsPage() {
         </p>
       </header>
       <BootstrapSettings />
+      <MfaAccountPanel />
       <IsolationIdentityPanel />
       <div id="health">
         <ApiHealthCard

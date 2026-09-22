@@ -99,11 +99,12 @@ describe("V.0b Login chrome + signed-out gate", () => {
     assert.match(chrome, /Email or username/);
     assert.match(chrome, /type="password"/);
     assert.match(chrome, /"Sign in"/);
+    assert.match(chrome, /Sign in with SSO/);
+    assert.match(chrome, /startOidcLogin/);
     assert.doesNotMatch(chrome, /Establish session/);
     assert.doesNotMatch(chrome, /Example context/);
     assert.doesNotMatch(chrome, /trusted-dev/);
-    assert.doesNotMatch(chrome, /SSO|OIDC|Continue with|Sign in with Google/i);
-    assert.doesNotMatch(chrome, /magic.?link/i);
+    assert.doesNotMatch(chrome, /Sign in with Google|magic.?link|Continue with/i);
     assert.equal(loginSourceConsumesV1Tokens(chrome), true);
     assert.match(chrome, /--ff-canvas/);
     assert.match(chrome, /--ff-accent/);

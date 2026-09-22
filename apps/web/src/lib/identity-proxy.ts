@@ -147,6 +147,12 @@ const ALLOWED_ROUTES: readonly AllowedRoute[] = [
   { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "public-url"]) },
   { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "tls"]) },
   { methods: ["POST"], match: (s) => eq(s, ["login"]) },
+  // G.2.1 OIDC + MFA (#446 / API #466). Verifier and TOTP secret stay on the API.
+  { methods: ["POST"], match: (s) => eq(s, ["oidc", "start"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["oidc", "callback"]) },
+  { methods: ["GET"], match: (s) => eq(s, ["session", "mfa"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["session", "mfa", "enroll"]) },
+  { methods: ["POST"], match: (s) => eq(s, ["session", "mfa", "verify"]) },
   { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
   { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },

@@ -47,7 +47,11 @@ export const LOCAL_LOGIN = {
   consumeV1Tokens: true,
   oneAccentSignIn: true,
   identifierPlusMaskedPassword: true,
-  noSsoOidcButtons: true,
+  // G.2.1 adds “Sign in with SSO” beside this door. Password stays the
+  // accent submit. The SSO control disables when OIDC is not configured.
+  noSsoOidcButtons: false,
+  passwordDoorStays: true,
+  ssoBesidePasswordWhenConfigured: true,
   noExampleContextAsProductDoor: true,
   noEstablishSessionAsProductDoor: true,
   signedOutStandaloneGoesToLogin: true,
@@ -205,7 +209,7 @@ export function loginSourceIsProductDoor(source: string): boolean {
     /email|username|identifier/i.test(source) &&
     !/Establish session/.test(source) &&
     !/Example context/.test(source) &&
-    !/SSO|OIDC|Continue with|Sign in with Google|magic.?link/i.test(source)
+    !/Sign in with Google|magic.?link|Continue with/i.test(source)
   );
 }
 
@@ -250,7 +254,8 @@ export function localLoginHoldsHardLines(): boolean {
     LOCAL_LOGIN.b1GateUnchanged &&
     LOCAL_LOGIN.passwordPostsOnceAndClears &&
     LOCAL_LOGIN.neverPersistPasswordHashPemKek &&
-    LOCAL_LOGIN.noSsoOidcButtons &&
+    LOCAL_LOGIN.passwordDoorStays &&
+    LOCAL_LOGIN.ssoBesidePasswordWhenConfigured &&
     LOCAL_LOGIN.successLandsOverview &&
     LOCAL_LOGIN.consumeV1Tokens &&
     LOCAL_LOGIN.notAnN8nClone &&

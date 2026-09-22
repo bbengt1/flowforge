@@ -54,7 +54,7 @@ export async function loginWithPassword(
     requestId,
   });
   if (result.ok) {
-    applySessionPayload(result.data);
+    rememberSessionPayload(result.data);
   }
   return result;
 }
@@ -89,7 +89,7 @@ export async function establishSession(
     requestId,
   });
   if (result.ok) {
-    applySessionPayload(result.data);
+    rememberSessionPayload(result.data);
   }
   return result;
 }
@@ -107,7 +107,7 @@ export async function loadCurrentSession(): Promise<IdentityClientResult<Session
     requestId,
   });
   if (result.ok) {
-    applySessionPayload(result.data);
+    rememberSessionPayload(result.data);
     return result;
   }
   if (isUnauthenticatedProblem(result.problem)) {
@@ -140,7 +140,7 @@ export async function refreshSession(): Promise<IdentityClientResult<SessionPayl
     requestId,
   });
   if (result.ok) {
-    applySessionPayload(result.data);
+    rememberSessionPayload(result.data);
     return result;
   }
   if (isUnauthenticatedProblem(result.problem)) {
@@ -174,7 +174,7 @@ export async function changeLocalPassword(
     requestId,
   });
   if (result.ok) {
-    applySessionPayload(result.data);
+    rememberSessionPayload(result.data);
   }
   return result;
 }
@@ -225,7 +225,7 @@ export async function loadSessionAudit(): Promise<
   });
 }
 
-function applySessionPayload(payload: SessionPayload): void {
+export function rememberSessionPayload(payload: SessionPayload): void {
   const parsed = parseBrowserSession(payload);
   if (!parsed) {
     return;

@@ -13,6 +13,7 @@ function subscribeBrowserLocation(onChange: () => void) {
   };
 }
 import { BootstrapGate } from "@/components/bootstrap/BootstrapGate";
+import { MfaStepUpHost } from "@/components/session/MfaStepUpHost";
 import { MustChangePasswordGate } from "@/components/session/MustChangePasswordGate";
 import { SignedOutGate } from "@/components/session/SignedOutGate";
 import { EmbedChrome } from "@/components/embed/EmbedChrome";
@@ -51,6 +52,7 @@ import {
   EMBED_TENANCY_MISMATCH_MESSAGE,
   hostDisplayFromSearch,
 } from "@/lib/embed-tenancy-contract";
+import { isOidcCallbackPath } from "@/lib/oidc-mfa";
 import { loadCurrentSession } from "@/lib/session-client";
 import { isSessionEmbedMode } from "@/lib/session-embed-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
@@ -138,6 +140,11 @@ export function WorkspaceShell({
 
   if (portalHost) {
     return <>{children}</>;
+  }
+
+  // IdP redirect lands here signed-out. Skip Login, the wizard, and MFA.
+  if (!embed && isOidcCallbackPath(pathname)) {
+    return <EmbedModeProvider embed={false}>{children}</EmbedModeProvider>;
   }
 
   const skipLink = (
@@ -272,6 +279,7 @@ export function WorkspaceShell({
             </div>
           </header>
           <div id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto outline-none">
+            <MfaStepUpHost />
             {children}
           </div>
         </div>

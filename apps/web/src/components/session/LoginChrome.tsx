@@ -10,6 +10,13 @@ import {
   loginFormIsSubmittable,
   type LocalLoginForm,
 } from "@/lib/local-login";
+import {
+  OIDC_UNAVAILABLE,
+  isSafeAuthorizationUrl,
+  oidcFailureMessage,
+  oidcIsUnconfigured,
+} from "@/lib/oidc-mfa";
+import { startOidcLogin } from "@/lib/oidc-mfa-client";
 import { loginWithPassword } from "@/lib/session-client";
 import { getSessionSnapshot } from "@/lib/session-store";
 import {
@@ -24,6 +31,8 @@ type LoginChromeProps = {
 export function LoginChrome({ onSuccess }: LoginChromeProps) {
   const [form, setForm] = useState<LocalLoginForm>(emptyLoginForm);
   const [pending, setPending] = useState(false);
+  const [ssoPending, setSsoPending] = useState(false);
+  const [ssoAvailable, setSsoAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
@@ -42,6 +51,29 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
       getSessionSnapshot().session.mustChangePassword === true,
     );
     onSuccess?.(href === LOGIN_SUCCESS_HREF ? LOGIN_SUCCESS_HREF : href);
+  }
+
+  async function startSso() {
+    setForm(clearLoginPassword(form));
+    setSsoPending(true);
+    setError(null);
+    const result = await startOidcLogin();
+    if (!result.ok) {
+      setSsoPending(false);
+      if (oidcIsUnconfigured(result.statusCode, result.problem.detail)) {
+        setSsoAvailable(false);
+        return;
+      }
+      setError(oidcFailureMessage(result.statusCode, result.problem.detail));
+      return;
+    }
+    const authorizationUrl = result.data.authorization_url;
+    if (!isSafeAuthorizationUrl(authorizationUrl)) {
+      setSsoPending(false);
+      setError(oidcFailureMessage(502, null));
+      return;
+    }
+    window.location.assign(authorizationUrl);
   }
 
   return (
@@ -148,7 +180,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
             ) : null}
             <button
               type="submit"
-              disabled={pending || !loginFormIsSubmittable(form)}
+              disabled={pending || ssoPending || !loginFormIsSubmittable(form)}
               className="w-full px-3 py-2 text-sm font-semibold disabled:opacity-60"
               style={{
                 background: "var(--ff-accent)",
@@ -159,6 +191,32 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
               {pending ? "Signing in…" : "Sign in"}
             </button>
           </form>
+          <div className="mt-4 grid gap-3">
+            <p className="text-center text-xs" style={{ color: "var(--ff-muted)" }}>
+              or
+            </p>
+            <button
+              type="button"
+              disabled={pending || ssoPending || !ssoAvailable}
+              onClick={() => {
+                void startSso();
+              }}
+              className="w-full px-3 py-2 text-sm font-semibold disabled:opacity-60"
+              style={{
+                background: "var(--ff-canvas)",
+                color: "var(--ff-text)",
+                border: "1px solid var(--ff-border)",
+                borderRadius: "var(--ff-radius)",
+              }}
+            >
+              {ssoPending ? "Redirecting…" : "Sign in with SSO"}
+            </button>
+            {!ssoAvailable ? (
+              <p className="text-sm" style={{ color: "var(--ff-muted)" }}>
+                {OIDC_UNAVAILABLE}
+              </p>
+            ) : null}
+          </div>
         </section>
       </main>
     </div>
