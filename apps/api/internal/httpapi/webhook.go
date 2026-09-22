@@ -74,12 +74,19 @@ func (s *Server) listWorkflowTriggers(w http.ResponseWriter, r *http.Request) {
 	if !ok || !s.requireHooks(w, r) {
 		return
 	}
-	items, err := s.hooks.List(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")))
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.hooks.ListPage(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWebhookStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[webhook.Trigger]{Items: redactWebhookTriggers(items)})
+	writePage(w, redactWebhookTriggers(items), q, next)
 }
 
 func (s *Server) createWorkflowTrigger(w http.ResponseWriter, r *http.Request) {

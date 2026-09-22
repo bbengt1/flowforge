@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -122,6 +123,7 @@ type TestResult struct {
 type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Metadata, error)
 	List(ctx context.Context, scope isolation.Scope) ([]Metadata, error)
+	ListPage(ctx context.Context, scope isolation.Scope, q page.Query) ([]Metadata, string, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Metadata, error)
 	Update(ctx context.Context, scope isolation.Scope, id string, in UpdateInput) (Metadata, error)
 	Rotate(ctx context.Context, scope isolation.Scope, id string, in RotateInput) (Metadata, error)
@@ -133,6 +135,7 @@ type Store interface {
 	DeletionImpact(ctx context.Context, scope isolation.Scope, id string) (DeletionImpact, error)
 	Delete(ctx context.Context, scope isolation.Scope, id string, in DeleteInput) error
 	Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error)
+	EventsPage(ctx context.Context, scope isolation.Scope, id string, q page.Query) ([]Event, string, error)
 	// Unlock is in-process only (future workers). HTTP handlers must not
 	// serialize the returned plaintext.
 	Unlock(ctx context.Context, scope isolation.Scope, id string) ([]byte, error)

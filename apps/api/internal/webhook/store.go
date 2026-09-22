@@ -13,6 +13,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -133,6 +134,8 @@ type DeliveryLimits struct {
 type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Trigger, error)
 	List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Trigger, error)
+	// ListPage is the HTTP keyset page. Search matches public id, status, and content type — never the secret.
+	ListPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Trigger, string, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Trigger, error)
 	Update(ctx context.Context, scope isolation.Scope, id string, in UpdateInput) (Trigger, error)
 	SetStatus(ctx context.Context, scope isolation.Scope, id, status string) (Trigger, error)

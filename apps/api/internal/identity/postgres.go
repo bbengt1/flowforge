@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -388,7 +389,16 @@ func (p *Postgres) DeleteWorkspace(ctx context.Context, id string) (Workspace, e
 }
 
 func (p *Postgres) ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error) {
-	rows, err := p.db.Query(ctx, `
+	items, _, err := p.ListWorkspacesForUserPage(ctx, userID, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListWorkspacesForUserPage(ctx context.Context, userID string, q page.Query) ([]Membership, string, error) {
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
+	}
+	args := []any{userID}
+	sql := `
 		SELECT w.id::text, w.tenant_id::text, w.workbench_key, w.name, w.status, w.created_at, w.updated_at,
 		       t.id::text, t.slug, t.name, t.status, t.created_at, t.updated_at,
 		       ARRAY(SELECT r.key FROM workspace_role_bindings b2
@@ -400,11 +410,24 @@ func (p *Postgres) ListWorkspacesForUser(ctx context.Context, userID string) ([]
 		WHERE EXISTS (
 		    SELECT 1 FROM workspace_role_bindings b
 		    WHERE b.workspace_id = w.id AND b.user_id = $1::uuid
-		)
-		ORDER BY w.created_at
-	`, userID)
+		)`
+	if pred := page.SearchPredicate(&args, q.Q, "w.name", "w.workbench_key"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := ` ORDER BY w.created_at`
+	if q.Bound {
+		keyset, err := page.AscTimePredicate(&args, page.ColWorkspace, "w.created_at", "w.id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = ` ORDER BY w.created_at ASC, w.id ASC` + page.LimitSQL(&args, q)
+	}
+	rows, err := p.db.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Membership
@@ -416,12 +439,23 @@ func (p *Postgres) ListWorkspacesForUser(ctx context.Context, userID string) ([]
 			&m.Tenant.ID, &m.Tenant.Slug, &m.Tenant.Name, &m.Tenant.Status, &m.Tenant.CreatedAt, &m.Tenant.UpdatedAt,
 			&m.Roles,
 		); err != nil {
-			return nil, mapDBErr(err)
+			return nil, "", mapDBErr(err)
 		}
 		m.Permissions = authz.ExpandWorkspaceRoles(m.Roles)
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	if !q.Bound {
+		if out == nil {
+			out = []Membership{}
+		}
+		return out, "", nil
+	}
+	return page.Trim(page.ColWorkspace, q, out, func(m Membership) page.Key {
+		return page.Key{K: page.TimeKey(m.Workspace.CreatedAt), ID: m.Workspace.ID}
+	})
 }
 
 func (p *Postgres) ListRoles(ctx context.Context) ([]Role, error) {
@@ -504,10 +538,19 @@ func (p *Postgres) EffectiveAccess(ctx context.Context, workspaceID, userID stri
 }
 
 func (p *Postgres) ListMembers(ctx context.Context, workspaceID string) ([]Member, error) {
+	items, _, err := p.ListMembersPage(ctx, workspaceID, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListMembersPage(ctx context.Context, workspaceID string, q page.Query) ([]Member, string, error) {
 	if _, err := p.GetWorkspace(ctx, workspaceID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	rows, err := p.db.Query(ctx, `
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
+	}
+	args := []any{workspaceID}
+	sql := `
 		SELECT u.id::text, u.issuer, u.external_subject, u.display_name, u.status, u.created_at, u.updated_at,
 		       ARRAY(SELECT r.key FROM workspace_role_bindings b2
 		             JOIN roles r ON r.id = b2.role_id
@@ -517,11 +560,24 @@ func (p *Postgres) ListMembers(ctx context.Context, workspaceID string) ([]Membe
 		WHERE EXISTS (
 		    SELECT 1 FROM workspace_role_bindings b
 		    WHERE b.workspace_id = $1::uuid AND b.user_id = u.id
-		)
-		ORDER BY u.created_at
-	`, workspaceID)
+		)`
+	if pred := page.SearchPredicate(&args, q.Q, "u.display_name"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := ` ORDER BY u.created_at`
+	if q.Bound {
+		keyset, err := page.AscTimePredicate(&args, page.ColMember, "u.created_at", "u.id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = ` ORDER BY u.created_at ASC, u.id ASC` + page.LimitSQL(&args, q)
+	}
+	rows, err := p.db.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Member
@@ -531,12 +587,20 @@ func (p *Postgres) ListMembers(ctx context.Context, workspaceID string) ([]Membe
 			&m.User.ID, &m.User.Issuer, &m.User.ExternalSubject, &m.User.DisplayName,
 			&m.User.Status, &m.User.CreatedAt, &m.User.UpdatedAt, &m.Roles,
 		); err != nil {
-			return nil, mapDBErr(err)
+			return nil, "", mapDBErr(err)
 		}
 		m.Permissions = authz.ExpandWorkspaceRoles(m.Roles)
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Trim(page.ColMember, q, out, func(m Member) page.Key {
+		return page.Key{K: page.TimeKey(m.User.CreatedAt), ID: m.User.ID}
+	})
 }
 
 func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5"
@@ -62,41 +63,78 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 }
 
 func (p *Postgres) List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Trigger, error) {
+	items, _, err := p.ListPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Trigger, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
+	}
+	wf := strings.TrimSpace(workflowID)
+	if wf != "" && !authz.ValidUUID(wf) {
+		return []Trigger{}, "", nil
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	q := `SELECT ` + triggerColumns + ` FROM workflow_triggers`
 	args := []any{}
-	if strings.TrimSpace(workflowID) != "" {
-		if !authz.ValidUUID(workflowID) {
-			return []Trigger{}, nil
-		}
-		q += ` WHERE workflow_id = $1`
-		args = append(args, workflowID)
+	var parts []string
+	if wf != "" {
+		parts = append(parts, "workflow_id = $"+page.Place(&args, wf))
 	}
-	q += ` ORDER BY created_at DESC`
-	rows, err := tx.Query(ctx, q, args...)
+	order := ` ORDER BY created_at DESC`
+	if q.Bound {
+		if pred := page.SearchPredicate(&args, q.Q, "public_id", "status", "content_type"); pred != "" {
+			parts = append(parts, pred)
+		}
+		keyset, err := page.DescTimePredicate(&args, page.ColTrigger, "created_at", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY created_at DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	sql := `SELECT ` + triggerColumns + ` FROM workflow_triggers`
+	if len(parts) > 0 {
+		sql += " WHERE " + page.And(parts...)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Trigger
 	for rows.Next() {
 		trig, err := scanTrigger(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, trig)
 	}
 	if out == nil {
 		out = []Trigger{}
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColTrigger, q, out, func(trig Trigger) page.Key {
+			return page.Key{K: page.TimeKey(trig.CreatedAt), ID: trig.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	return out, next, nil
 }
 
 func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, id string) (Trigger, error) {

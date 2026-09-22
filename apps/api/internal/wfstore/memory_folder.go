@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 type memFolder struct {
@@ -54,9 +55,14 @@ func (m *Memory) CreateFolder(_ context.Context, scope isolation.Scope, in Creat
 	return cloneFolder(rec), nil
 }
 
-func (m *Memory) ListFolders(_ context.Context, scope isolation.Scope) ([]Folder, error) {
+func (m *Memory) ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error) {
+	items, _, err := m.ListFoldersPage(ctx, scope, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListFoldersPage(_ context.Context, scope isolation.Scope, q page.Query) ([]Folder, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -67,11 +73,18 @@ func (m *Memory) ListFolders(_ context.Context, scope isolation.Scope) ([]Folder
 		}
 		out = append(out, cloneFolder(row.record))
 	}
-	sortFolders(out)
-	if out == nil {
-		out = []Folder{}
+	if !q.Bound {
+		sortFolders(out)
+		if out == nil {
+			out = []Folder{}
+		}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColFolder, q, false, out, func(folder Folder) page.Key {
+		return page.Key{K: strings.ToLower(folder.Name), ID: folder.ID}
+	}, func(folder Folder) bool {
+		return page.Hit(q.Q, folder.Name)
+	})
 }
 
 func (m *Memory) GetFolder(_ context.Context, scope isolation.Scope, folderID string) (Folder, error) {

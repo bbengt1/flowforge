@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 )
 
@@ -91,12 +92,14 @@ type Event struct {
 	OccurredAt time.Time      `json:"occurredAt"`
 }
 
-// Filter lists approvals.
+// Filter lists approvals. Page, when Bound, is the HTTP keyset page.
+// Search matches node id, node name, operation, and status — never decision notes.
 type Filter struct {
 	Status            string
 	WorkflowID        string
 	WorkflowVersionID string
 	ExecutionID       string
+	Page              page.Query
 }
 
 // CreateInput materializes one evaluation requirement.

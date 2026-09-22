@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 type memRow struct {
@@ -41,9 +42,14 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, now time.Time,
 	return cloneRecord(rec), nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope, workflowID string) ([]Record, error) {
+func (m *Memory) List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Record, error) {
+	items, _, err := m.ListPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListPage(_ context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Record, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -57,13 +63,20 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, workflowID strin
 		}
 		out = append(out, cloneRecord(row.record))
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.After(out[j].CreatedAt)
-	})
-	if out == nil {
-		out = []Record{}
+	if !q.Bound {
+		sort.Slice(out, func(i, j int) bool {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		})
+		if out == nil {
+			out = []Record{}
+		}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColSchedule, q, true, out, func(rec Record) page.Key {
+		return page.Key{K: page.TimeKey(rec.CreatedAt), ID: rec.ID}
+	}, func(rec Record) bool {
+		return page.Hit(q.Q, rec.Cron, rec.Interval, rec.Timezone, rec.TriggerID, rec.Status)
+	})
 }
 
 func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Record, error) {

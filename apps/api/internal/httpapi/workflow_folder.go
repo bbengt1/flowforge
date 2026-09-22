@@ -52,12 +52,19 @@ func (s *Server) listWorkflowFolders(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.workflows.ListFolders(r.Context(), scope)
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.workflows.ListFoldersPage(r.Context(), scope, q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeFolderStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.Folder]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) createWorkflowFolder(w http.ResponseWriter, r *http.Request) {

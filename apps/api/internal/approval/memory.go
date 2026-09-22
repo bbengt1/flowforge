@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 type memRow struct {
@@ -69,6 +70,18 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter Filter) (
 			continue
 		}
 		out = append(out, cloneRecord(row.record))
+	}
+	if filter.Page.Bound {
+		items, next, err := page.Select(page.ColApproval, filter.Page, true, out, func(rec Record) page.Key {
+			return page.Key{K: page.TimeKey(rec.CreatedAt), ID: rec.ID}
+		}, func(rec Record) bool {
+			return page.Hit(filter.Page.Q, rec.NodeID, rec.NodeName, rec.Operation, rec.Status)
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		return items, nil
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)

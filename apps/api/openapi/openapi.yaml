@@ -913,8 +913,11 @@ paths:
       description: |
         Requires `platform.administer` and CSRF when a session cookie is
         present. Items are display name, UUID, `client_id`, status, and
-        grants. No secret, hash, assertion, or public key.
+        grants. No secret, hash, assertion, or public key. Keyset page. `q` matches display name and client id — not secret hashes or keys.
       parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
@@ -2044,9 +2047,9 @@ paths:
       operationId: listWorkflowFolders
       summary: List workspace workflow folders
       description: |
-        Requires `workflow.view`. Returns a flat `{items}` list with `parentId`
-        (null = top-level). Unfiled is not a persisted folder. This workspace
-        only. Embed capabilities cannot escalate.
+        Requires `workflow.view`. Returns a keyset page of folders with `parentId`
+        (null = top-level), ordered by lower(name), then id. `q` matches the folder name.
+        Unfiled is not a persisted folder. This workspace only. Embed capabilities cannot escalate.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2054,6 +2057,9 @@ paths:
         - $ref: "#/components/parameters/TenantID"
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/HostWorkspaceID"
       responses:
         "200":
@@ -2230,7 +2236,9 @@ paths:
       description: |
         Requires `workflow.view`. Returns summaries without YAML bodies.
         Each item includes `folderId` (null = Unfiled). Additive query
-        `folderId` (UUID) or `folderId=unfiled`. Omit = today's full list.
+        `folderId` (UUID) or `folderId=unfiled`. The list is a keyset page
+        (default 50, max 100) with `limit`, `cursor`, and `next`. `q` matches
+        name and slug, not YAML.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2239,6 +2247,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/WorkflowFolderQuery"
       responses:
         "200":
@@ -2537,7 +2548,7 @@ paths:
     get:
       operationId: listWorkflowVersions
       summary: List immutable versions
-      description: Requires `workflow.view`. Newest version first.
+      description: Requires `workflow.view`. Newest version first. Keyset page; `q` matches the publish note, not YAML.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2546,6 +2557,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/WorkflowID"
       responses:
         "200":
@@ -2676,7 +2690,7 @@ paths:
     get:
       operationId: listWorkflowExecutions
       summary: List executions for a workflow
-      description: Requires `execution.view`. Newest first. Query `status` and `limit` (1-100, default 50).
+      description: Requires `execution.view`. Newest first (`started_at` nulls last). Keyset page via `limit`, `cursor`, and `q` (workflow name, slug, correlation id, status — not input). Invalid limit or cursor is 400.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2689,9 +2703,9 @@ paths:
         - name: status
           in: query
           schema: {type: string}
-        - name: limit
-          in: query
-          schema: {type: integer, minimum: 1, maximum: 100}
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
       responses:
         "200":
           description: Execution summaries
@@ -2813,7 +2827,7 @@ paths:
     get:
       operationId: listWorkspaceExecutions
       summary: List workspace executions
-      description: Requires `execution.view`. Newest first. Query `workflowId`, `status`, and `limit`.
+      description: Requires `execution.view`. Newest first (`started_at` nulls last). Keyset page via `limit`, `cursor`, and `q` (workflow name, slug, correlation id, status — not input). Query `workflowId` and `status` still filter. Invalid limit or cursor is 400.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2828,9 +2842,9 @@ paths:
         - name: status
           in: query
           schema: {type: string}
-        - name: limit
-          in: query
-          schema: {type: integer, minimum: 1, maximum: 100}
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
       responses:
         "200":
           description: Execution summaries
@@ -2985,7 +2999,7 @@ paths:
     get:
       operationId: listExecutionAuditEvents
       summary: List redacted audit events for one execution
-      description: Requires `execution.view`.
+      description: Requires `execution.view`. Keyset page of redacted audit events. `q` matches action and resource type, not details.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2994,6 +3008,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - name: executionId
           in: path
           required: true
@@ -3932,7 +3949,7 @@ paths:
     get:
       operationId: listWorkspaceAuditEvents
       summary: List workspace audit events
-      description: Requires `execution.view`. Redacted details only. Distinct from E2.2 `GET /workspace/audit-events` isolation hooks.
+      description: Requires `execution.view`. Redacted details only. Keyset page. `q` matches action and resource type, not details. Distinct from E2.2 `GET /workspace/audit-events` isolation hooks.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -3950,9 +3967,9 @@ paths:
         - name: action
           in: query
           schema: {type: string}
-        - name: limit
-          in: query
-          schema: {type: integer, minimum: 1, maximum: 100}
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
       responses:
         "200":
           description: Audit events
@@ -3975,7 +3992,7 @@ paths:
         Actionable authorization, replay, policy, and redaction failures.
         Rows contain correlation/resource identifiers only — never secrets,
         headers, or unredacted payloads. Requires `alert.view`.
-        Distinct from `GET /audit-events`.
+        Distinct from `GET /audit-events`. Keyset page. `q` matches kind, action, code, and outcome — not details.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -3996,9 +4013,9 @@ paths:
         - name: resourceId
           in: query
           schema: {type: string, format: uuid}
-        - name: limit
-          in: query
-          schema: {type: integer, minimum: 1, maximum: 100}
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
       responses:
         "200":
           description: Operational alerts
@@ -4196,10 +4213,13 @@ paths:
     get:
       operationId: listWorkspaces
       summary: List workspaces the caller belongs to
-      description: Memberships are loaded from server-side bindings. Host workspace IDs are ignored.
+      description: Memberships are loaded from server-side bindings. Host workspace IDs are ignored. Keyset page. `q` matches workspace name and workbench key.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/Subject"
       responses:
         "200":
@@ -4336,7 +4356,7 @@ paths:
     get:
       operationId: listWorkspaceMembers
       summary: List workspace members
-      description: Requires `workspace.administer`. Workspace is server-derived.
+      description: Requires `workspace.administer`. Workspace is server-derived. Keyset page. `q` matches display name only.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4344,6 +4364,9 @@ paths:
         - $ref: "#/components/parameters/TenantID"
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/HostWorkspaceID"
       responses:
         "200":
@@ -4911,7 +4934,7 @@ paths:
     get:
       operationId: listWorkflowTriggers
       summary: List webhook triggers for a workflow
-      description: E10.2 admin list. Requires `workflow.view`. Never returns plaintext secrets.
+      description: E10.2 admin list. Requires `workflow.view`. Never returns plaintext secrets. Keyset page. `q` matches public id, status, and content type — not the signing secret.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -4920,6 +4943,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/WorkflowID"
       responses:
         "200":
@@ -4933,6 +4959,17 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/WebhookTrigger"
+                  limit:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                    description: Applied page size. Default 50. Always present.
+                  cursor:
+                    type: string
+                    description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+                  next:
+                    type: string
+                    description: Opaque token for the following page. Empty when this page is the last. Always present.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -5268,7 +5305,7 @@ paths:
     get:
       operationId: listSchedules
       summary: List workspace schedules
-      description: Requires `workflow.view`. Optional `workflowId` query.
+      description: Requires `workflow.view`. Optional `workflowId` query. Keyset page. `q` matches cron, interval, timezone, trigger id, and status — not lastError.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -5277,6 +5314,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - name: workflowId
           in: query
           schema: {type: string, format: uuid}
@@ -5292,6 +5332,17 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Schedule"
+                  limit:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                    description: Applied page size. Default 50. Always present.
+                  cursor:
+                    type: string
+                    description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+                  next:
+                    type: string
+                    description: Opaque token for the following page. Empty when this page is the last. Always present.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -5540,7 +5591,7 @@ paths:
     get:
       operationId: listCredentials
       summary: List credential metadata
-      description: Requires `credential.view`. Responses never include plaintext, ciphertext, or DEK material.
+      description: Requires `credential.view`. Responses never include plaintext, ciphertext, or DEK material. Keyset page. `q` matches display name only.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -5548,6 +5599,9 @@ paths:
         - $ref: "#/components/parameters/TenantID"
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/HostWorkspaceID"
       responses:
         "200":
@@ -5952,7 +6006,7 @@ paths:
     get:
       operationId: listCredentialEvents
       summary: Credential audit events
-      description: Requires `credential.view`. Append-only, secret-free rows.
+      description: Requires `credential.view`. Append-only, secret-free rows. Keyset page. `q` matches event type only.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -5961,6 +6015,9 @@ paths:
         - $ref: "#/components/parameters/TenantSlug"
         - $ref: "#/components/parameters/WorkbenchKey"
         - $ref: "#/components/parameters/HostWorkspaceID"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - $ref: "#/components/parameters/CredentialID"
       responses:
         "200":
@@ -6606,7 +6663,7 @@ paths:
     get:
       operationId: listApprovals
       summary: List approval requirements
-      description: Requires `approval.view`. Stale bindings are refreshed fail-closed.
+      description: Requires `approval.view`. Stale bindings are refreshed fail-closed. Keyset page. `q` matches node id, node name, operation, and status — not the decision note.
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -6626,6 +6683,9 @@ paths:
         - name: workflowVersionId
           in: query
           schema: {type: string, format: uuid}
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
         - name: executionId
           in: query
           schema: {type: string, format: uuid}
@@ -6793,7 +6853,7 @@ components:
     OpsCollection:
       get:
         summary: List operational configuration resources
-        description: Requires `opsconfig.view`. Returns heads only (no draft spec).
+        description: Requires `opsconfig.view`. Returns heads only (no draft spec). Keyset page. `q` matches name and slug, not spec.
         parameters:
           - $ref: "#/components/parameters/RequestID"
           - $ref: "#/components/parameters/Issuer"
@@ -6801,6 +6861,9 @@ components:
           - $ref: "#/components/parameters/TenantID"
           - $ref: "#/components/parameters/TenantSlug"
           - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/PageLimit"
+          - $ref: "#/components/parameters/PageCursor"
+          - $ref: "#/components/parameters/PageSearch"
           - $ref: "#/components/parameters/HostWorkspaceID"
         responses:
           "200":
@@ -6972,6 +7035,7 @@ components:
     OpsVersions:
       get:
         summary: Version history
+        description: Keyset page. `q` matches the publish note, not the spec.
         parameters:
           - $ref: "#/components/parameters/RequestID"
           - $ref: "#/components/parameters/Issuer"
@@ -6980,6 +7044,9 @@ components:
           - $ref: "#/components/parameters/TenantSlug"
           - $ref: "#/components/parameters/WorkbenchKey"
           - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/PageLimit"
+          - $ref: "#/components/parameters/PageCursor"
+          - $ref: "#/components/parameters/PageSearch"
           - $ref: "#/components/parameters/OpsResourceID"
         responses:
           "200":
@@ -7111,6 +7178,42 @@ components:
           "409":
             $ref: "#/components/responses/Conflict"
   parameters:
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: |
+        Page size. Default 50 when omitted. Values outside 1–100 are 400.
+        The applied size is always returned as `limit`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque keyset token from a previous response `next`. Empty selects the first page.
+        A malformed token, or a token minted for a different collection, is 400.
+        The error body does not echo the token.
+      schema:
+        type: string
+        maxLength: 1024
+    PageSearch:
+      name: q
+      in: query
+      required: false
+      description: |
+        Case-insensitive substring search over the collection's safe fields
+        (names, slugs, statuses, and similar identifiers). Secret material,
+        ciphertext, YAML bodies, specs, and free-form details are not searched.
+        Longer than 200 runes, or containing ASCII controls, is 400.
+        The error body does not echo `q`.
+      schema:
+        type: string
+        maxLength: 200
     RequestID:
       name: X-Request-ID
       in: header
@@ -7835,6 +7938,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/OpsResource"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     OpsVersionList:
       type: object
       required: [items]
@@ -7842,6 +7956,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/OpsVersion"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     OpsPinList:
       type: object
       required: [items]
@@ -7941,6 +8066,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/Approval"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     ApprovalCatalog:
       type: object
       required: [statuses, decisions, defaultExpiresIn]
@@ -8406,6 +8542,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MachinePrincipal"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     LocalLoginRequest:
       type: object
       additionalProperties: false
@@ -9300,6 +9447,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowRecord"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     WorkflowDraft:
       type: object
       required: [workflowId, revision, definitionYaml, digest, summary, warnings, validationState, updatedAt]
@@ -9369,6 +9527,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowVersion"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     CreateWorkflowRequest:
       type: object
       required: [definitionYaml]
@@ -9416,6 +9585,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowFolder"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     CreateWorkflowFolderRequest:
       type: object
       required: [name]
@@ -9781,6 +9961,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/WorkflowExecution"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     ExecutionStep:
       type: object
       required: [id, executionId, nodeId, nodeType, attempt, status, input, output, error]
@@ -10026,6 +10217,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/AuditEvent"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     OperationalAlert:
       type: object
       required: [id, kind, severity, outcome, code, occurredAt]
@@ -10051,6 +10253,17 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/OperationalAlert"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     CurrentWorkspace:
       type: object
       required: [workspace, tenant, principal, roles, permissions]
@@ -10091,6 +10304,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Member"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     MembershipList:
       type: object
       required: [items]
@@ -10113,6 +10337,17 @@ components:
                 type: array
                 items:
                   type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     PermissionMatrix:
       type: object
       required: [permissions, roles]
@@ -10238,6 +10473,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Credential"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     CreateCredentialRequest:
       type: object
       required: [type, displayName, secret]
@@ -10434,6 +10680,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CredentialEvent"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
     IsolationKind:
       type: string
       enum: [credential, artifact, job, cache, realtime, audit]

@@ -93,7 +93,14 @@ func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
 		writeVaultError(w, r, err)
 		return
 	}
-	items, err := s.vault.List(r.Context(), scope)
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.vault.ListPage(r.Context(), scope, q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeVaultError(w, r, err)
 		return
@@ -101,7 +108,7 @@ func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
 	for i := range items {
 		items[i].PermittedActions = permittedCredentialActions(perms)
 	}
-	writeJSON(w, http.StatusOK, listResponse[vault.Metadata]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) createCredential(w http.ResponseWriter, r *http.Request) {
@@ -322,12 +329,19 @@ func (s *Server) deleteCredential(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listCredentialEvents(w http.ResponseWriter, r *http.Request) {
 	s.withCredential(w, r, authz.PermCredentialView, func(scope isolation.Scope, id string, _ []string) {
-		items, err := s.vault.Events(r.Context(), scope, id)
+		q, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+		items, next, err := s.vault.EventsPage(r.Context(), scope, id, q)
+		if rejectPageErr(w, r, err) {
+			return
+		}
 		if err != nil {
 			writeVaultError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, listResponse[vault.Event]{Items: items})
+		writePage(w, items, q, next)
 	})
 }
 

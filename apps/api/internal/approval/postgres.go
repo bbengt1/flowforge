@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -96,30 +97,42 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 	}
 	defer tx.Rollback(ctx)
 
-	q := `SELECT ` + recordColumns + ` FROM approvals WHERE 1=1`
+	if filter.Page.Bound && (filter.Page.Limit < 1 || filter.Page.Limit > page.MaxLimit) {
+		return nil, page.ErrInvalid
+	}
 	args := []any{}
-	n := 1
+	var parts []string
 	if filter.Status != "" {
-		q += ` AND status = $` + itoa(n)
-		args = append(args, filter.Status)
-		n++
+		parts = append(parts, "status = $"+page.Place(&args, filter.Status))
 	}
 	if filter.WorkflowID != "" {
-		q += ` AND workflow_id = $` + itoa(n) + `::uuid`
-		args = append(args, filter.WorkflowID)
-		n++
+		parts = append(parts, "workflow_id = $"+page.Place(&args, filter.WorkflowID)+"::uuid")
 	}
 	if filter.WorkflowVersionID != "" {
-		q += ` AND workflow_version_id = $` + itoa(n) + `::uuid`
-		args = append(args, filter.WorkflowVersionID)
-		n++
+		parts = append(parts, "workflow_version_id = $"+page.Place(&args, filter.WorkflowVersionID)+"::uuid")
 	}
 	if filter.ExecutionID != "" {
-		q += ` AND execution_id = $` + itoa(n) + `::uuid`
-		args = append(args, filter.ExecutionID)
+		parts = append(parts, "execution_id = $"+page.Place(&args, filter.ExecutionID)+"::uuid")
 	}
-	q += ` ORDER BY created_at DESC`
-	rows, err := tx.Query(ctx, q, args...)
+	order := ` ORDER BY created_at DESC`
+	if filter.Page.Bound {
+		if pred := page.SearchPredicate(&args, filter.Page.Q, "node_id", "node_name", "operation", "status"); pred != "" {
+			parts = append(parts, pred)
+		}
+		keyset, err := page.DescTimePredicate(&args, page.ColApproval, "created_at", "id", filter.Page.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY created_at DESC, id DESC` + page.LimitSQL(&args, filter.Page)
+	}
+	q := `SELECT ` + recordColumns + ` FROM approvals`
+	if len(parts) > 0 {
+		q += " WHERE " + page.And(parts...)
+	}
+	rows, err := tx.Query(ctx, q+order, args...)
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -134,6 +147,16 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 	}
 	if err := rows.Err(); err != nil {
 		return nil, mapDBErr(err)
+	}
+	if filter.Page.Bound {
+		paged, next, err := page.Trim(page.ColApproval, filter.Page, out, func(rec Record) page.Key {
+			return page.Key{K: page.TimeKey(rec.CreatedAt), ID: rec.ID}
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		out = paged
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)

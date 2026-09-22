@@ -119,10 +119,17 @@ func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
 	filter, ok := parseWorkflowListFolderQuery(w, r)
 	if !ok {
 		return
 	}
+	var next string
+	q.Next = &next
+	filter.Page = q
 	if filter.FolderID != "" {
 		if _, err := s.workflows.GetFolder(r.Context(), scope, filter.FolderID); err != nil {
 			writeFolderStoreError(w, r, err)
@@ -130,11 +137,14 @@ func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	items, err := s.workflows.List(r.Context(), scope, filter)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.Workflow]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func parseWorkflowListFolderQuery(w http.ResponseWriter, r *http.Request) (wfstore.WorkflowListFilter, bool) {
@@ -335,12 +345,19 @@ func (s *Server) listWorkflowVersions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.workflows.ListVersions(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")))
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.workflows.ListVersionsPage(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.Version]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) getWorkflowVersion(w http.ResponseWriter, r *http.Request) {

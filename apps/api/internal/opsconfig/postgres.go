@@ -9,6 +9,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5"
@@ -110,45 +111,76 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 }
 
 func (p *Postgres) List(ctx context.Context, scope isolation.Scope, kind string) ([]Resource, error) {
+	items, _, err := p.ListPage(ctx, scope, kind, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListPage(ctx context.Context, scope isolation.Scope, kind string, q page.Query) ([]Resource, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	if kind != "" && !ValidKind(kind) {
-		return nil, fmt.Errorf("%w: unknown kind", ErrInvalid)
+		return nil, "", fmt.Errorf("%w: unknown kind", ErrInvalid)
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 
-	q := `SELECT ` + resourceColumns + ` FROM ops_resources r
+	args := []any{kind}
+	sql := `SELECT ` + resourceColumns + ` FROM ops_resources r
 		LEFT JOIN ops_resource_drafts d ON d.resource_id = r.id
-		WHERE ($1 = '' OR r.kind = $1)
-		ORDER BY r.updated_at DESC, r.name`
-	rows, err := tx.Query(ctx, q, kind)
+		WHERE ($1 = '' OR r.kind = $1)`
+	if pred := page.SearchPredicate(&args, q.Q, "r.name", "r.slug"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := ` ORDER BY r.updated_at DESC, r.name`
+	if q.Bound {
+		keyset, err := page.DescTimePredicate(&args, page.ColOps, "r.updated_at", "r.id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = ` ORDER BY r.updated_at DESC, r.id DESC` + page.LimitSQL(&args, q)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Resource
 	for rows.Next() {
 		rec, err := scanResource(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, rec)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColOps, q, out, func(rec Resource) page.Key {
+			return page.Key{K: page.TimeKey(rec.UpdatedAt), ID: rec.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Resource{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, kind, id string) (Resource, error) {
@@ -333,45 +365,76 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, kind, id 
 }
 
 func (p *Postgres) ListVersions(ctx context.Context, scope isolation.Scope, kind, id string) ([]Version, error) {
+	items, _, err := p.ListVersionsPage(ctx, scope, kind, id, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListVersionsPage(ctx context.Context, scope isolation.Scope, kind, id string, q page.Query) ([]Version, string, error) {
 	if err := requireRef(scope, kind, id); err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 	if err := assertKind(ctx, tx, kind, id); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	rows, err := tx.Query(ctx, `
+	args := []any{id}
+	sql := `
 		SELECT id::text, resource_id::text, version_number, payload, digest, publish_note,
 		       COALESCE(published_by::text, ''), published_at
-		FROM ops_resource_versions WHERE resource_id = $1::uuid
-		ORDER BY version_number DESC
-	`, id)
+		FROM ops_resource_versions WHERE resource_id = $1::uuid`
+	if pred := page.SearchPredicate(&args, q.Q, "publish_note"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := ` ORDER BY version_number DESC`
+	if q.Bound {
+		keyset, err := page.DescIntPredicate(&args, page.ColOpsVersion, "version_number", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = ` ORDER BY version_number DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Version
 	for rows.Next() {
 		ver, err := scanVersion(rows, kind)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, ver)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColOpsVersion, q, out, func(ver Version) page.Key {
+			return page.Key{K: page.IntKey(ver.VersionNumber), ID: ver.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Version{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) GetVersion(ctx context.Context, scope isolation.Scope, kind, id, versionID string) (Version, error) {

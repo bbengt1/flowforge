@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/jackc/pgx/v5"
@@ -109,8 +110,11 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Workf
 	}
 	defer tx.Rollback(ctx)
 
-	q := listWorkflowSQL + listWorkflowFolderClause(filter)
-	rows, err := tx.Query(ctx, q, listWorkflowFolderArgs(filter)...)
+	q, args, err := listWorkflowQuery(filter)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -126,6 +130,16 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Workf
 	if err := rows.Err(); err != nil {
 		return nil, mapDBErr(err)
 	}
+	if filter.Page.Bound {
+		paged, next, err := page.Trim(page.ColWorkflow, filter.Page, out, func(wf Workflow) page.Key {
+			return page.Key{K: page.TimeKey(wf.UpdatedAt), ID: wf.ID}
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		out = paged
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -133,6 +147,38 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Workf
 		out = []Workflow{}
 	}
 	return out, nil
+}
+
+func listWorkflowQuery(filter WorkflowListFilter) (string, []any, error) {
+	if !filter.Page.Bound {
+		return listWorkflowSQL + listWorkflowFolderClause(filter), listWorkflowFolderArgs(filter), nil
+	}
+	if filter.Page.Limit < 1 || filter.Page.Limit > page.MaxLimit {
+		return "", nil, page.ErrInvalid
+	}
+	args := []any{}
+	var parts []string
+	if filter.Unfiled {
+		parts = append(parts, "w.folder_id IS NULL")
+	} else if id := strings.TrimSpace(filter.FolderID); id != "" {
+		parts = append(parts, "w.folder_id = $"+page.Place(&args, id)+"::uuid")
+	}
+	if pred := page.SearchPredicate(&args, filter.Page.Q, "w.name", "w.slug"); pred != "" {
+		parts = append(parts, pred)
+	}
+	keyset, err := page.DescTimePredicate(&args, page.ColWorkflow, "w.updated_at", "w.id", filter.Page.Cursor)
+	if err != nil {
+		return "", nil, err
+	}
+	if keyset != "" {
+		parts = append(parts, keyset)
+	}
+	q := listWorkflowSQL
+	if len(parts) > 0 {
+		q += " WHERE " + strings.Join(parts, " AND ")
+	}
+	q += " ORDER BY w.updated_at DESC, w.id DESC" + page.LimitSQL(&args, filter.Page)
+	return q, args, nil
 }
 
 func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, id string) (Workflow, error) {
@@ -324,50 +370,81 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 }
 
 func (p *Postgres) ListVersions(ctx context.Context, scope isolation.Scope, workflowID string) ([]Version, error) {
+	items, _, err := p.ListVersionsPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListVersionsPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Version, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	if !authz.ValidUUID(workflowID) {
-		return nil, ErrNotFound
+		return nil, "", ErrNotFound
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 
 	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	rows, err := tx.Query(ctx, `
+	args := []any{workflowID}
+	sql := `
 		SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
 		       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
 		FROM workflow_versions
-		WHERE workflow_id = $1::uuid
-		ORDER BY version_number DESC
-	`, workflowID)
+		WHERE workflow_id = $1::uuid`
+	if pred := page.SearchPredicate(&args, q.Q, "publish_note"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := " ORDER BY version_number DESC"
+	if q.Bound {
+		keyset, err := page.DescIntPredicate(&args, page.ColWorkflowVersion, "version_number", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = " ORDER BY version_number DESC, id DESC" + page.LimitSQL(&args, q)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Version
 	for rows.Next() {
 		ver, err := scanVersion(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, ver)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColWorkflowVersion, q, out, func(ver Version) page.Key {
+			return page.Key{K: page.IntKey(ver.VersionNumber), ID: ver.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Version{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) GetVersion(ctx context.Context, scope isolation.Scope, workflowID, versionID string) (Version, error) {

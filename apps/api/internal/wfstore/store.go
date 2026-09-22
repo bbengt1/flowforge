@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -318,18 +319,22 @@ type AuditEvent struct {
 }
 
 // ExecutionListFilter selects workspace-scoped executions.
+// Page, when Bound, replaces Limit with keyset pagination.
 type ExecutionListFilter struct {
 	WorkflowID string
 	Status     string
 	Limit      int
+	Page       page.Query
 }
 
 // AuditListFilter selects workspace-scoped audit events.
+// Page, when Bound, replaces Limit with keyset pagination.
 type AuditListFilter struct {
 	ResourceType string
 	ResourceID   string
 	Action       string
 	Limit        int
+	Page         page.Query
 }
 
 // CompareRef selects a draft or published version for comparison.
@@ -369,10 +374,12 @@ type Folder struct {
 }
 
 // WorkflowListFilter is an additive list selector. Zero value lists all
-// workflows in the workspace (today's unfiltered home / across-folders).
+// workflows in the workspace (internal callers). Page.Bound is the HTTP
+// keyset page: default 50, max 100, optional q on name and slug.
 type WorkflowListFilter struct {
 	Unfiled  bool
 	FolderID string
+	Page     page.Query
 }
 
 // CreateFolderInput creates a folder under an optional parent.
@@ -542,6 +549,7 @@ type Store interface {
 	SetWorkflowFolder(ctx context.Context, scope isolation.Scope, workflowID, folderID string) (Workflow, error)
 	CreateFolder(ctx context.Context, scope isolation.Scope, in CreateFolderInput) (Folder, error)
 	ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error)
+	ListFoldersPage(ctx context.Context, scope isolation.Scope, q page.Query) ([]Folder, string, error)
 	GetFolder(ctx context.Context, scope isolation.Scope, folderID string) (Folder, error)
 	UpdateFolder(ctx context.Context, scope isolation.Scope, folderID string, in UpdateFolderInput) (Folder, error)
 	DeleteFolder(ctx context.Context, scope isolation.Scope, folderID string) error
@@ -549,6 +557,7 @@ type Store interface {
 	SaveDraft(ctx context.Context, scope isolation.Scope, workflowID string, in SaveInput) (Workflow, Draft, error)
 	Publish(ctx context.Context, scope isolation.Scope, workflowID string, in PublishInput) (Workflow, Version, error)
 	ListVersions(ctx context.Context, scope isolation.Scope, workflowID string) ([]Version, error)
+	ListVersionsPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Version, string, error)
 	GetVersion(ctx context.Context, scope isolation.Scope, workflowID, versionID string) (Version, error)
 	Compare(ctx context.Context, scope isolation.Scope, workflowID string, left, right CompareRef) (CompareResult, error)
 	Restore(ctx context.Context, scope isolation.Scope, workflowID string, in RestoreInput) (Workflow, Draft, error)

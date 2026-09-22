@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 type memAlert struct {
@@ -78,6 +79,18 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter ListFilte
 			continue
 		}
 		out = append(out, cloneAlert(row.record))
+	}
+	if filter.Page.Bound {
+		items, next, err := page.Select(page.ColAlert, filter.Page, true, out, func(alert Alert) page.Key {
+			return page.Key{K: page.TimeKey(alert.OccurredAt), ID: alert.ID}
+		}, func(alert Alert) bool {
+			return page.Hit(filter.Page.Q, alert.Kind, alert.Action, alert.Code, alert.Outcome)
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		return items, nil
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].OccurredAt.After(out[j].OccurredAt)

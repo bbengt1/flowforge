@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -64,9 +65,14 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	return cloneTrigger(trig), nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope, workflowID string) ([]Trigger, error) {
+func (m *Memory) List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Trigger, error) {
+	items, _, err := m.ListPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListPage(_ context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Trigger, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -80,10 +86,17 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, workflowID strin
 		}
 		out = append(out, cloneTrigger(row.record))
 	}
-	if out == nil {
-		out = []Trigger{}
+	if !q.Bound {
+		if out == nil {
+			out = []Trigger{}
+		}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColTrigger, q, true, out, func(trig Trigger) page.Key {
+		return page.Key{K: page.TimeKey(trig.CreatedAt), ID: trig.ID}
+	}, func(trig Trigger) bool {
+		return page.Hit(q.Q, trig.PublicID, trig.Status, trig.ContentType)
+	})
 }
 
 func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Trigger, error) {
