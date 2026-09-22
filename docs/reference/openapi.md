@@ -46,9 +46,8 @@ There are no `/healthz` / `/readyz` aliases. See
 
 ## How operators obtain the published spec
 
-Production identity is a cookie session from standalone `POST /login`
-or `POST /embed/exchange` (OIDC Authorization Code + PKCE is a
-deferred stub). Metrics and OpenAPI/swagger require
+Production identity is a cookie session from standalone `POST /login`,
+OIDC Authorization Code + PKCE, or `POST /embed/exchange`. Metrics and OpenAPI/swagger require
 `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`) or a
 machine principal granted `ops.metrics.read`. Empty human allowlist is
 fail-closed (`403`) unless that machine grant is present. Workspace

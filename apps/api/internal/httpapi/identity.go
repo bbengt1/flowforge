@@ -214,6 +214,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 		WriteForbidden(w, r)
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}
+	if !s.allowMFAGrant(w, r, action) {
+		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+	}
 	return ws, tenant, roles, perms, true
 }
 

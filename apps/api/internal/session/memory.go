@@ -48,6 +48,7 @@ func (m *Memory) Create(_ context.Context, userID string, now time.Time, idle, a
 		IdleExpiresAt:     now.Add(idle),
 		AbsoluteExpiresAt: now.Add(absolute),
 		Binding:           mergeCreateBinding(opts),
+		AuthMethod:        mergeAuthMethod(opts),
 	}
 	rec.setCSRFHash(hashToken(csrf))
 	m.mu.Lock()
@@ -170,6 +171,25 @@ func (m *Memory) RevokeBoundToWorkspace(_ context.Context, workspaceID, tenantID
 		out = append(out, row.record)
 	}
 	return out, nil
+}
+
+// MarkMFAVerified stamps step-up on a live session without rotating cookies.
+func (m *Memory) MarkMFAVerified(_ context.Context, token string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := string(hashToken(token))
+	row, ok := m.byHash[key]
+	if !ok {
+		return ErrNotFound
+	}
+	now = now.UTC()
+	if err := Valid(row.record, now); err != nil {
+		return err
+	}
+	t := now
+	row.record.MFAVerifiedAt = &t
+	m.byHash[key] = row
+	return nil
 }
 
 // Touch updates last_seen without rotating CSRF.

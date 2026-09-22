@@ -271,7 +271,9 @@ func (s *Server) mintStandaloneSessionWithClaim(w http.ResponseWriter, r *http.R
 		return
 	}
 	policy := s.sec.sessionPolicy()
-	issued, err := s.sessions.Create(r.Context(), user.ID, s.clockNow(), policy.IdleTimeout, policy.AbsoluteTimeout)
+	issued, err := s.sessions.Create(r.Context(), user.ID, s.clockNow(), policy.IdleTimeout, policy.AbsoluteTimeout, session.CreateOpts{
+		AuthMethod: session.AuthMethodForReason(reason),
+	})
 	if err != nil {
 		writeSessionError(w, r, err)
 		return

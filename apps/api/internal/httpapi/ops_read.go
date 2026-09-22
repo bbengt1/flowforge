@@ -71,6 +71,9 @@ func (s *Server) requirePlatformOpsRead(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if s.allowOpsRead(r, user) {
+		if authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) {
+			return s.allowMFAGrant(w, r, authz.PermPlatformAdminister)
+		}
 		return true
 	}
 	if pc := principalFromRequest(r); pc != nil && pc.session != nil {

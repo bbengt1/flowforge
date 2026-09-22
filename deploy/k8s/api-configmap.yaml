@@ -18,6 +18,12 @@ data:
   # Do not set a world CIDR. Do not set SCRIPT_RUNNER_SKIP_NETWORK_POLICY.
   # CONTROL_PLANE_API_CIDR: "203.0.113.10/32"
   APP_ENV: "production"
+  # OIDC Authorization Code + PKCE. Leave all OIDC_* unset to fail closed.
+  # Production requires https issuer and redirect. client_secret and
+  # OIDC_STATE_KEY live on the Secret. No IdP-admin API.
+  # OIDC_ISSUER: "https://idp.example"
+  # OIDC_CLIENT_ID: "flowforge"
+  # OIDC_REDIRECT_URI: "https://app.example.com/oidc/callback"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.
   REQUIRE_TLS: "true"
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"

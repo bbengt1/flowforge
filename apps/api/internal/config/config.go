@@ -17,6 +17,8 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
+	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
+	"github.com/bbengt1/flowforge/apps/api/internal/oidc"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -130,6 +132,12 @@ type Config struct {
 	// MachineConsumers names automation callers that require a live
 	// machine principal. Empty does not change boot.
 	MachineConsumers machine.Consumers
+	// OIDC is opt-in. Partial OIDC_* config is a boot-fail. All empty
+	// leaves the routes fail-closed when called.
+	OIDC oidc.Settings
+	// MFAKey encrypts TOTP secrets. Empty does not change boot.
+	// Malformed MFA_SECRET_KEY is a boot-fail.
+	MFAKey []byte
 }
 
 // Load reads configuration from the process environment.
@@ -262,6 +270,16 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.MachineConsumers = consumers
+	oidcSettings, err := oidc.Load(requireHTTPS)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OIDC = oidcSettings
+	mfaKey, err := mfa.LoadKey()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MFAKey = mfaKey
 	return cfg, nil
 }
 

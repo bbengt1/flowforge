@@ -23,9 +23,9 @@ const invalidCredentialsDetail = "Invalid credentials."
 // by IP and identifier before lookup/bcrypt (429 + Retry-After).
 // Store failures other than unknown identifier are 503.
 //
-// OIDC Authorization Code + PKCE is deferred (V.0c). This handler is
-// the day-one door. Do not add IdP start/callback or IdP-admin routes.
-// Embed stays POST /embed/exchange only — do not merge those paths.
+// OIDC Authorization Code + PKCE is POST /oidc/start and POST /oidc/callback.
+// This handler stays the local password door. Do not fold IdP exchange
+// or MFA into it. Embed stays POST /embed/exchange only.
 func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.requireStore(w, r) || !s.requireSessions(w, r) {
 		return

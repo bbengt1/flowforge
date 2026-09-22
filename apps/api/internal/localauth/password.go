@@ -3,8 +3,8 @@
 // V.0a door: email/username + password. Password material is POST-once
 // and never echoed. Hashes never appear on identity.User or in JSON.
 //
-// OIDC Authorization Code + PKCE is deferred (V.0c). This package does
-// not implement IdP start/callback or IdP-admin APIs.
+// OIDC Authorization Code + PKCE lives in package oidc. This package
+// does not implement IdP start/callback or MFA.
 package localauth
 
 import (

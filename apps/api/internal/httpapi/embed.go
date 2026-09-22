@@ -423,7 +423,7 @@ func (s *Server) requireBootstrapAdmin(w http.ResponseWriter, r *http.Request, u
 
 func (s *Server) requirePlatformAdmin(w http.ResponseWriter, r *http.Request, user identity.User) bool {
 	if authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) || s.machineAllows(r, user, authz.PermPlatformAdminister) {
-		return true
+		return s.allowMFAGrant(w, r, authz.PermPlatformAdminister)
 	}
 	if pc := principalFromRequest(r); pc != nil && pc.session != nil {
 		s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing platform.administer")

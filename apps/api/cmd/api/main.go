@@ -96,6 +96,8 @@ func main() {
 		LoginLimits:          cfg.LoginLimits,
 		EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
 		MachineConsumers:     cfg.MachineConsumers,
+		OIDC:                 cfg.OIDC,
+		MFAKey:               cfg.MFAKey,
 		Security: httpapi.Security{
 			TrustedProxies:       cfg.TrustedProxies,
 			RequireTLS:           cfg.RequireTLS,
