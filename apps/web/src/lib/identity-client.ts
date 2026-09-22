@@ -19,6 +19,7 @@ import {
   upstreamProblem,
 } from "./problem.ts";
 import { generateRequestId, REQUEST_ID_HEADER, resolveRequestId } from "./request-id.ts";
+import { noteMfaRequiredProblem } from "./oidc-mfa.ts";
 import { isStaleSessionProblem } from "./session.ts";
 import { sameOriginProxyUrl } from "./session-contract.ts";
 import {
@@ -192,6 +193,7 @@ export async function streamIdentityProxy(
       if (isStaleSessionProblem(problem)) {
         markSessionStale();
       }
+      noteMfaRequiredProblem(instance, problem);
       return {
         ok: false,
         statusCode: response.status,
@@ -265,6 +267,7 @@ export async function fetchSameOriginProxy<T>(options: {
       if (isStaleSessionProblem(problem)) {
         markSessionStale();
       }
+      noteMfaRequiredProblem(options.instance, problem);
       return {
         ok: false,
         statusCode: response.status,
