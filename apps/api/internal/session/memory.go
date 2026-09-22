@@ -105,6 +105,27 @@ func (m *Memory) Refresh(_ context.Context, token, presentedCSRF string, now tim
 	return Issued{Record: row.record, Token: token, CSRF: csrf}, nil
 }
 
+// RevokeByUser marks every live session for userID unusable.
+func (m *Memory) RevokeByUser(_ context.Context, userID string, now time.Time) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrInvalid
+	}
+	now = now.UTC()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, row := range m.byHash {
+		if row.record.UserID != userID || row.record.RevokedAt != nil {
+			continue
+		}
+		t := now
+		row.record.RevokedAt = &t
+		row.record.LastSeenAt = now
+		m.byHash[key] = row
+	}
+	return nil
+}
+
 // Revoke marks the session unusable.
 func (m *Memory) Revoke(_ context.Context, token string, now time.Time) (Record, error) {
 	m.mu.Lock()

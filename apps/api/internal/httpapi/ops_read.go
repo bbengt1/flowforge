@@ -4,7 +4,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
 )
 
 // bearerSessionToken returns the opaque ff_session token from
@@ -41,8 +44,10 @@ func (s *Server) requirePrincipalOrBearer(w http.ResponseWriter, r *http.Request
 // requirePlatformOpsRead gates metrics and OpenAPI/swagger. Callers must
 // present an authenticated principal (ff_session cookie, Authorization
 // Bearer session token, or trusted-dev identity headers) and hold
-// platform.administer via PLATFORM_ADMINS. Missing credentials are 401;
-// any other caller (including empty PLATFORM_ADMINS) is 403. Fail closed.
+// platform.administer or an explicit machine grant of ops.metrics.read.
+// Missing credentials are 401. Any other caller is 403. When
+// MACHINE_REQUIRE includes metrics, a missing, revoked, or ungranted
+// principal fails closed with 503 before the scrape is served.
 func (s *Server) requirePlatformOpsRead(w http.ResponseWriter, r *http.Request) bool {
 	if !hasOpsReadCredential(r) {
 		WriteUnauthenticated(w, r)
@@ -52,5 +57,32 @@ func (s *Server) requirePlatformOpsRead(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return false
 	}
-	return s.requirePlatformAdmin(w, r, user)
+	if s.machineConsumers.Requires(machine.ConsumerMetrics) {
+		if err := machine.CheckConsumer(r.Context(), s.machines, s.machineConsumers, machine.ConsumerMetrics); err != nil {
+			if s.log != nil {
+				s.log.Error("machine_consumer",
+					"request_id", RequestIDFromContext(r.Context()),
+					"consumer", machine.ConsumerMetrics,
+					"error", err.Error(),
+				)
+			}
+			WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Machine principal for metrics is not configured.")
+			return false
+		}
+	}
+	if s.allowOpsRead(r, user) {
+		return true
+	}
+	if pc := principalFromRequest(r); pc != nil && pc.session != nil {
+		s.auditSession(r, *pc.session, session.EventPrivilegeDenied, session.OutcomeDenied, "missing ops read")
+	}
+	WriteForbidden(w, r)
+	return false
+}
+
+func (s *Server) allowOpsRead(r *http.Request, user identity.User) bool {
+	if authz.IsPlatformAdmin(user.Issuer, user.ExternalSubject, s.platformAdmins) {
+		return true
+	}
+	return s.machineAllows(r, user, authz.PermOpsMetricsRead) || s.machineAllows(r, user, authz.PermPlatformAdminister)
 }

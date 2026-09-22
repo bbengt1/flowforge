@@ -39,15 +39,34 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   Unauthenticated callers are `401`; any other caller is `403`. Empty
   `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
 - Metrics and OpenAPI/swagger (`GET /api/v1/metrics`, `/openapi.yaml`,
-  `/openapi.json`, `/swagger`) require the same `platform.administer`
-  allowlist on an authenticated principal. Unauthenticated is `401`;
-  any other caller (including empty `PLATFORM_ADMINS`) is `403`. There
-  is no anonymous scrape token and no workspace-assignable
-  `ops.metrics.read`. Scrapers send `Authorization: Bearer` with the
-  opaque `ff_session` token, or the `ff_session` cookie. Trusted-dev
-  identity headers work only when that flag is on. Health and
+  `/openapi.json`, `/swagger`) require an authenticated principal with
+  `platform.administer` (`PLATFORM_ADMINS`) or a machine principal
+  granted `ops.metrics.read` (or an explicit machine grant of
+  `platform.administer`). Unauthenticated is `401`. A human workspace
+  `admin` is `403`. `ops.metrics.read` is platform-scoped and is not
+  assigned to any workspace role. There is no anonymous scrape token.
+  Scrapers send `Authorization: Bearer` with the opaque `ff_session`
+  token minted by `POST /api/v1/machine/token`, or the `ff_session`
+  cookie. Trusted-dev identity headers work only when that flag is on.
+  When `MACHINE_REQUIRE` includes `metrics`, a missing, revoked, or
+  ungranted `MACHINE_METRICS_CLIENT_ID` fails closed (`503`) before the
+  scrape is served, including for a human platform-admin. Health and
   readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
   unauthenticated so Kubernetes probes keep working.
+- Machine principals (`issuer=flowforge:machine`) are the non-human
+  door for scrapers, the scheduler consumer, and automation.
+  `POST /api/v1/machine/token` takes `client_id` plus one factor
+  (secret or a short-lived Ed25519 assertion with
+  `aud=flowforge:machine`) and mints the **same** standalone
+  `ff_session` / `ff_csrf` pair humans use. It is not `POST /login`,
+  not trusted-dev `POST /session`, and not `POST /embed/exchange`.
+  Create, rotate, and revoke require `platform.administer` and CSRF.
+  The secret and assertion public key are POST-once and never echoed
+  (display name, UUID, `client_id`, status, and grants only). Grants
+  are deny-by-default; an empty list authorizes nothing.
+  `embed.impersonate` is not grantable. Rotate replaces the credential
+  only. Revoke disables the user and revokes live sessions.
+  `PLATFORM_ADMINS` is not the machine identity. OIDC stays deferred.
   First-run `GET /api/v1/bootstrap` returns status flags only (no
   secrets, never the stored public URL). Incomplete installs may call
   it without a session; after bootstrap is complete, normal session

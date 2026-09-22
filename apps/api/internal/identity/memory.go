@@ -103,6 +103,24 @@ func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	return u, nil
 }
 
+func (m *Memory) SetUserStatus(_ context.Context, userID, status string) error {
+	userID = strings.TrimSpace(userID)
+	status = strings.TrimSpace(status)
+	if userID == "" || (status != "active" && status != "disabled") {
+		return ErrInvalid
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	u.Status = status
+	u.UpdatedAt = time.Now().UTC()
+	m.users[userID] = u
+	return nil
+}
+
 // FindUser returns an existing principal. It does not upsert.
 func (m *Memory) FindUser(_ context.Context, issuer, subject string) (User, error) {
 	m.mu.Lock()

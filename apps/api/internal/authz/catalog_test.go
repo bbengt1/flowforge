@@ -93,6 +93,9 @@ func TestAdminHasEveryWorkspacePermission(t *testing.T) {
 	if Allows(granted, PermEmbedImpersonate) {
 		t.Fatal("workspace admin must not have embed.impersonate")
 	}
+	if Allows(granted, PermOpsMetricsRead) {
+		t.Fatal("workspace admin must not have ops.metrics.read")
+	}
 }
 
 func TestPlatformAdminRoleIsNotWorkspaceAssignable(t *testing.T) {
@@ -113,6 +116,12 @@ func TestPlatformAdminRoleIsNotWorkspaceAssignable(t *testing.T) {
 	}
 	if !Allows(ExpandRoles([]string{RolePlatformAdmin}), PermEmbedImpersonate) {
 		t.Fatal("ExpandRoles(platform-admin) should grant embed.impersonate")
+	}
+	if Allows(ExpandRoles([]string{RolePlatformAdmin}), PermOpsMetricsRead) {
+		t.Fatal("platform-admin role must not grant ops.metrics.read")
+	}
+	if !PlatformScopedPermission(PermOpsMetricsRead) {
+		t.Fatal("ops.metrics.read is not a workspace role grant")
 	}
 }
 

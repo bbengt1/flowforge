@@ -18,6 +18,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
@@ -94,6 +95,7 @@ func main() {
 		EmbedLimits:          cfg.EmbedLimits,
 		LoginLimits:          cfg.LoginLimits,
 		EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
+		MachineConsumers:     cfg.MachineConsumers,
 		Security: httpapi.Security{
 			TrustedProxies:       cfg.TrustedProxies,
 			RequireTLS:           cfg.RequireTLS,
@@ -113,15 +115,30 @@ func main() {
 			log.Error("scheduler cannot attach to the API handler")
 			os.Exit(1)
 		}
+		hooks := scheduler.Hooks{
+			Dispatch: api.TickDispatch,
+			Recover:  api.TickRecover,
+			Purge:    api.TickPurge,
+		}
+		if cfg.MachineConsumers.Requires(machine.ConsumerScheduler) {
+			gate := machine.NewPostgres(pool)
+			wrap := func(next func(context.Context) error) func(context.Context) error {
+				return func(ctx context.Context) error {
+					if err := machine.CheckConsumer(ctx, gate, cfg.MachineConsumers, machine.ConsumerScheduler); err != nil {
+						return err
+					}
+					return next(ctx)
+				}
+			}
+			hooks.Dispatch = wrap(api.TickDispatch)
+			hooks.Recover = wrap(api.TickRecover)
+			hooks.Purge = wrap(api.TickPurge)
+		}
 		loop := scheduler.New(scheduler.Config{
 			Interval: cfg.SchedulerInterval,
 			Elector:  scheduler.NewPostgresElector(pool),
-			Hooks: scheduler.Hooks{
-				Dispatch: api.TickDispatch,
-				Recover:  api.TickRecover,
-				Purge:    api.TickPurge,
-			},
-			Log: log,
+			Hooks:    hooks,
+			Log:      log,
 		})
 		schedWG.Add(1)
 		go func() {

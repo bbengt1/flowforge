@@ -42,6 +42,7 @@ Do not weaken these because a capability is unimplemented:
 | **OIDC / SSO / MFA / SCIM** | Enterprise identity; architecture mentions host/OIDC subjects. | **OIDC Authorization Code + PKCE is deferred (V.0c).** No SAML, SCIM, MFA, or durable account lockout. | **Deferred** (gap **A2**) |
 | **Standalone Login** | Local email/username + password mints `ff_session` / `ff_csrf`. | **Runs today.** `POST /api/v1/login`. First-run one-time `admin` / `admin` sets `must_change_password` until `POST /api/v1/session/password`. Never on `/embed/v1`. Trusted-dev `POST /session` is local/dev only — not the product door. | **Runs today** |
 | **Embed exchange** | Host backend exchanges a signed assertion; chrome reads `session.embed` only (ADV-021). | **Runs today.** `POST /embed/exchange`. Embed never mounts Login, the first-run wizard, or change-password. Host `?tenant=` / `?workbench=` stay display-only. | **Runs today** |
+| **Machine principal** | Non-human `client_id` + secret or signed assertion mints the same `ff_session` authz path for scrapers, scheduler, and automation. | **Runs today.** `POST /api/v1/machine/token` plus create/rotate/revoke under `platform.administer`. Grants deny-by-default (`ops.metrics.read` is explicit, not a workspace role). Secret is never echoed. Distinct from Login, trusted-dev, and embed exchange. `MACHINE_REQUIRE` fails closed when a named consumer is missing. | **Runs today** (G.1.6 / #437) |
 | **Bootstrap / TLS skip** | Standalone first-run wizard: persistence → admin → public URL → TLS (create, upload, or skip). | **Runs today (B.1–B.8).** Incomplete → wizard only. Complete or `401` → Login, not wizard. **Skip for now** POSTs `{action:"skip"}` (no PEM); instance stays HTTP until Settings. Localseed / migrate backfill can mark complete + skipped. **Never on `/embed/v1`.** ACME is out of scope. | **Runs today** |
 | **Explorer chrome** | `/workflows` Explorer: server-backed folder tree, content pane, breadcrumb, grant-gated menus (F.1–F.7, X.1–X.8). | **Runs today (chrome + API).** Same `WorkflowHome` on standalone and `/embed/v1/workflows` after `session.embed`. Tree is not `localStorage`. Folder membership is **not** in YAML. This is organizer chrome, not provider execution. | **Runs today** |
 | **Web route boundaries** | App Router `error` / `loading` / `not-found` on primary segments; retry on error ([gap F1](../internal/claude-code-gap-analysis.md)). | **Runs today.** Root `global-error.tsx` + segment `error.tsx` with Try again. `loading.tsx` and `not-found.tsx` on primary product segments. Embed ADV-021 fail-closed unchanged. | **Runs today** (gap **F1**; G.0.4) |
@@ -70,12 +71,13 @@ Executable on compose today: **6 of 18** defined node types (`flow.condition`, `
 | Standalone Login | Operator | `POST /api/v1/login` | Local password. Product door after bootstrap complete. |
 | Embed exchange | Host backend | `POST /embed/exchange` | ADV-021. Never Login chrome. |
 | Trusted-dev session | Local/dev only | `POST /api/v1/session` + identity headers | Fail-closed outside non-prod + `TRUSTED_DEV_IDENTITY_HEADERS`. Not rewrite login. |
-| OIDC | — | — | **Deferred (V.0c).** No start/callback, no IdP-admin API. |
+| Machine principal | Scheduler, scrapers, automation | `POST /api/v1/machine/token` | Same `ff_session` authz. Server-side secret. Not Login, trusted-dev, or embed exchange. |
+| OIDC | — | — | **Deferred (V.0c / G.2).** No start/callback, no IdP-admin API. |
 
 ## What this page is not
 
 - A license to weaken drafts-never-run, vault metadata-only, ADV-021/024, or YAML SoT.
 - A substitute for the [gap analysis](../internal/claude-code-gap-analysis.md) findings (A–I) or the E1–E12 [master implementation plan](../master-implementation-plan.md).
-- A claim that the rest of G.1 has shipped. The production runner (G.1.1), leader-elected scheduler (G.1.3), encrypted backup CronJob (G.1.4), durable artifact storage (G.1.5), and web Deployment (G.1.7) have. Machine/service-principal credentials (G.1.6) have not.
+- A claim that later identity work has shipped. The production runner (G.1.1), leader-elected scheduler (G.1.3), encrypted backup CronJob (G.1.4), durable artifact storage (G.1.5), machine/service-principal credentials (G.1.6), and web Deployment (G.1.7) have. OIDC, MFA, and SCIM (G.2) have not.
 
 When a later story makes a row **Runs today**, update this table in the same PR as the code.

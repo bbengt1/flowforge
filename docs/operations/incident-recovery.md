@@ -53,7 +53,9 @@ are never secrets. Missing values are `dev` / `unknown` and do not
 change probe status.
 
 `GET /api/v1/metrics` is **not** a probe. It requires
-`platform.administer`. Do not point kubelet at it.
+`platform.administer` or a machine principal with `ops.metrics.read`.
+When `MACHINE_REQUIRE` includes `metrics`, a missing principal is
+`503`. Do not point kubelet at it.
 
 ## Worker-loss and fencing
 

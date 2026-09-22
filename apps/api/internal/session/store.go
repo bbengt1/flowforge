@@ -12,6 +12,9 @@ type Store interface {
 	Lookup(ctx context.Context, token string, now time.Time) (Record, error)
 	Refresh(ctx context.Context, token, presentedCSRF string, now time.Time, idle time.Duration) (Issued, error)
 	Revoke(ctx context.Context, token string, now time.Time) (Record, error)
+	// RevokeByUser marks every live session for userID unusable.
+	// Used when a machine principal is revoked. An unknown user is nil.
+	RevokeByUser(ctx context.Context, userID string, now time.Time) error
 	RevokeBoundToWorkspace(ctx context.Context, workspaceID, tenantID, workbenchKey string, now time.Time) ([]Record, error)
 	Touch(ctx context.Context, token string, now time.Time) error
 	Audit(ctx context.Context, event AuditEvent) error
