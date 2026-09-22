@@ -11,9 +11,12 @@ resources:
   - web-service.yaml
   - runner-deployment.yaml
   - script-runner-rbac.yaml
+  - backup-secret.example.yaml
+  - backup-cronjob.yaml
   - default-deny-networkpolicy.yaml
   - api-networkpolicy.yaml
   - web-networkpolicy.yaml
   - runner-networkpolicy.yaml
+  - backup-networkpolicy.yaml
   - postgres-networkpolicy.yaml
   - ingress.yaml

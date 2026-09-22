@@ -297,6 +297,12 @@ jobs:
           echo "POSTGRES_PASSWORD=${pass}" >> "$GITHUB_ENV"
           echo "BACKUP_ENCRYPTION_KEY=${key}" >> "$GITHUB_ENV"
 
+      - name: Install AEAD helper dependency
+        run: sudo apt-get update && sudo apt-get install -y python3-cryptography
+
+      - name: AEAD selftest
+        run: python3 scripts/backup/aead.py selftest
+
       - name: Start Postgres and hardened API
         run: docker compose up --build -d --wait --wait-timeout 300 postgres api
 

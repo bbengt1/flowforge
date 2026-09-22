@@ -1,6 +1,7 @@
 # Retention and backup operations
 
-Relates to #184 / Part of #181. **Keep #184 open.**
+Relates to #184 / Part of #181. **Keep #184 open.** G.1.4 / #435
+ships the Kubernetes CronJob and RPO/RTO rehearsal.
 
 How backups are encrypted, how restore is rehearsed, and how retention
 purge / legal hold work. Schema and invariants stay in the
@@ -50,29 +51,67 @@ a backup. `ARTIFACT_S3_PREFIX` is rejected. Object-store credentials
 and the bucket name are never returned and are not written to logs.
 A draft execution cannot attach a run artifact.
 
+## RPO and RTO
+
+| Target | Value | How it is met |
+| --- | --- | --- |
+| **RPO** | **24 hours** | `deploy/k8s/backup-cronjob.yaml` schedule `0 2 * * *` (UTC). Maximum acceptable Postgres data loss is one successful CronJob interval. Tighten the schedule only with a matching load test. |
+| **RTO** | **≤ 30 minutes** (CI-sized) | Wall-clock for encrypted DSN dump → decrypt → isolated restore → `schema_migrations` + `execution_jobs` check. Gate: `scripts/backup/rpo-rto-rehearsal.sh` (`BACKUP_RTO_BUDGET_SECONDS`, default `1800`). Production-sized dumps need a measured budget in the same runbook before go-live. |
+
+A successful CronJob is **not** recovery evidence. RTO proof is the
+rehearsal (CI + pre-prod), not the backup Job status.
+
+Point-in-time recovery (WAL archiving) is out of scope for G.1.4.
+
 ## Backup encryption
 
-Hooks from E1.3 (`scripts/backup/`). Cipher is **AES-256-CBC** with
-**PBKDF2** via OpenSSL, passphrase in `BACKUP_ENCRYPTION_KEY`. Scripts
-never print that key, `DATABASE_URL`, or `POSTGRES_PASSWORD`.
+Hooks from E1.3 / G.1.4 (`scripts/backup/`). Cipher is **AES-256-GCM**
+(AEAD) with **PBKDF2-HMAC-SHA256** (default **600 000** iterations) via
+`scripts/backup/aead.py` (format **FFB1**). Passphrase in
+`BACKUP_ENCRYPTION_KEY`. Scripts never print that key, `DATABASE_URL`,
+`POSTGRES_PASSWORD`, or object-store credentials. The whole dump is
+sealed — vault rows in Postgres are already envelope-encrypted with
+`CREDENTIAL_KEK`, and the backup blob itself carries no plaintext
+secrets. Tampered ciphertext fails authentication on open.
+
+| Path | Script | When |
+| --- | --- | --- |
+| Compose (local) | `scripts/backup/encrypt-pg-dump.sh` | `docker compose exec` into the postgres service |
+| DSN / Kubernetes | `scripts/backup/run-encrypted-backup.sh` | CronJob image `flowforge-backup`; CI RPO/RTO rehearsal |
 
 ```bash
+# Compose
 export POSTGRES_PASSWORD=...
 export BACKUP_ENCRYPTION_KEY=...   # passphrase; wrap with KMS before production
 bash scripts/backup/encrypt-pg-dump.sh
 # default outfile: flowforge-YYYYmmddTHHMMSSZ.sql.enc
+
+# DSN (same cipher; used by the CronJob)
+export DATABASE_URL='postgres://…'
+export BACKUP_ENCRYPTION_KEY=...
+export BACKUP_S3_BUCKET=...        # required when BACKUP_REQUIRE_S3=1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+bash scripts/backup/run-encrypted-backup.sh
 ```
 
 `pg_dump` uses `--no-owner --no-acl`. After restore the API recreates
 `flowforge_app` and GRANTs on connect (see
 [database — Isolation model](../reference/database.md#isolation-model)).
+FORCE RLS stays on; the dump role is not `flowforge_app`. Drafts never
+run — backups do not start executions.
 
 **Production:** wrap `BACKUP_ENCRYPTION_KEY` with KMS (or equivalent).
 Do not store the raw passphrase next to the ciphertext. Retention purge
-is the in-process leader scheduler, not a CronJob. The Kubernetes
-foundation still does not ship a backup CronJob — schedule the encrypt
-script (or your platform dump) against the production DSN and keep
-ciphertext off the API disk.
+is the in-process leader scheduler, not a CronJob. Encrypted backups are
+the `flowforge-db-backup` CronJob in `deploy/k8s` (image
+`ghcr.io/bbengt1/flowforge-backup`, built from
+`scripts/backup/Dockerfile`). Apply the example Secret
+`backup-secret.example.yaml`, digest-pin the image, and open allowlisted
+object-store egress on `flowforge-backup` (and Postgres ingress already
+allows the `backup` component). Ciphertext lands in `BACKUP_S3_BUCKET`
+under `flowforge-db/` — **not** the `ARTIFACT_S3_*`
+`{tenant}/{workspace}/{ref}` layout.
 
 A successful dump is not recovery evidence and is not supply-chain
 provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).
@@ -83,8 +122,9 @@ provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).
 | --- | --- | --- |
 | Every PR and `main` push | `supply-chain.yml` `restore-rehearsal` → `scripts/backup/restore-rehearsal.sh` | Encrypted compose dump, isolated Postgres, hardened API `/health` + `/readiness` |
 | Every PR and `main` push | E12.2 `e12-resilience.yml` → `scripts/backup/restore-schema-rehearsal.sh` | Isolated schema restore + `execution_jobs` present |
-| Before production enablement | Both rehearsals in an environment that matches production pinning / TLS / secrets | Required by the [security model](../reference/security-model.md) operational controls and E12 epic acceptance |
-| After schema migrations land | Re-run both scripts; commit updated E12.2 last-run JSON when the resilience suite changes | Do not hand-edit pass/fail flags |
+| Every PR and `main` push | E12.2 → `scripts/backup/rpo-rto-rehearsal.sh` | DSN path used by the CronJob; records RPO hours + RTO seconds; fails if RTO budget exceeded |
+| Before production enablement | All rehearsals in an environment that matches production pinning / TLS / secrets | Required by the [security model](../reference/security-model.md) operational controls and E12 epic acceptance |
+| After schema migrations land | Re-run the rehearsals; commit updated E12.2 last-run JSON when the resilience suite changes | Do not hand-edit pass/fail flags |
 
 ```bash
 # Compose + hardened API (needs postgres + api up and /readiness 200)
@@ -95,6 +135,10 @@ bash scripts/backup/restore-rehearsal.sh
 # Schema-only (needs pg_dump/psql + migrated TEST_DATABASE_URL)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
   bash scripts/backup/restore-schema-rehearsal.sh
+
+# RPO/RTO (same DSN path as the CronJob)
+TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
+  bash scripts/backup/rpo-rto-rehearsal.sh
 ```
 
 The compose rehearsal boots an isolated API **production-locked** (no
@@ -108,6 +152,7 @@ without an S3 bucket and credentials.
 Last-run pointers:
 
 - [e12-resilience-evidence/restore-schema-last-run.json](../reference/e12-resilience-evidence/restore-schema-last-run.json)
+- [e12-resilience-evidence/rpo-rto-last-run.json](../reference/e12-resilience-evidence/rpo-rto-last-run.json)
 - [e12-resilience-evidence/last-run.json](../reference/e12-resilience-evidence/last-run.json)
 - CI artifact `e12-resilience-suite`; sibling job name
   `restore-rehearsal` on `supply-chain.yml`
@@ -117,23 +162,26 @@ Incident steps after a real restore:
 
 ## Operator checklist (existing controls only)
 
-1. `BACKUP_ENCRYPTION_KEY` is set and KMS-wrapped in production.
-2. `CREDENTIAL_KEK` is set (vault + artifact envelopes). Lost KEK =
+1. `BACKUP_ENCRYPTION_KEY` is set and KMS-wrapped in production
+   (`flowforge-backup` Secret).
+2. `flowforge-db-backup` CronJob is applied; image is digest-pinned;
+   object-store egress is allowlisted.
+3. `CREDENTIAL_KEK` is set (vault + artifact envelopes). Lost KEK =
    undecryptable credentials/artifacts after restore.
-3. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
+4. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
    missing or malformed). They are not in the dump; generate unique
    values and do not copy compose defaults.
-4. Restore rehearsal is green on `main` (both CI jobs).
-5. Retention purge is exercised in a non-prod workspace (`POST /retention/purge`)
+5. Restore + RPO/RTO rehearsals are green on `main`.
+6. Retention purge is exercised in a non-prod workspace (`POST /retention/purge`)
    and legal hold is verified to skip deletion.
-6. Audit rows older than 365 days leave only via
+7. Audit rows older than 365 days leave only via
    `app.purge_expired_audit_events`.
 
 ## Chloe map
 
 | Surface | This PR | Chloe / E12.3 |
 | --- | --- | --- |
-| Backup scripts, encryption, cadence | This page | **No UI** |
+| Backup scripts, CronJob, RPO/RTO, cadence | This page | **No UI** |
 | `POST /retention/purge`, legal hold API | Linked from the backend map | **Operator UI guide — Chloe / E12.3** |
 | Legal-hold badge / denied download copy | Out of scope (optional E12.1 Chloe row) | **Operator UI guide — Chloe / E12.3** |
 | Accessibility of hold/purge dialogs | Out of scope | **Accessibility review — Chloe / E12.3** |

@@ -49,6 +49,11 @@
           "id": "restore-schema",
           "title": "Encrypted dump into isolated database (schema + execution_jobs)",
           "argv": ["bash", "scripts/backup/restore-schema-rehearsal.sh"]
+        },
+        {
+          "id": "rpo-rto",
+          "title": "DSN encrypted backup path + RPO/RTO wall-clock gate (G.1.4)",
+          "argv": ["bash", "scripts/backup/rpo-rto-rehearsal.sh"]
         }
       ]
     },

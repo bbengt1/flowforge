@@ -30,12 +30,12 @@ Foundation files (API / supply-chain / backup from `#10`):
 
 | Area | Location |
 | --- | --- |
-| Kubernetes (API, web, and runner Deployments/Services; default-deny + API/web/runner/Postgres NetworkPolicy; TLS Ingress for `api.example.com` and `app.example.com`) | [`deploy/k8s/`](../deploy/k8s/) |
+| Kubernetes (API, web, runner Deployments/Services; encrypted backup CronJob; default-deny + API/web/runner/backup/Postgres NetworkPolicy; TLS Ingress for `api.example.com` and `app.example.com`) | [`deploy/k8s/`](../deploy/k8s/) |
 | Workspace runner SA / Role / RoleBinding templates (E7.1 cluster targets) | [`deploy/kubernetes/`](../deploy/kubernetes/) |
 | TLS/proxy (Ingress + local Caddy terminator; API `REQUIRE_TLS` / `TRUSTED_PROXY_CIDRS` / `TLS_*`) | [`deploy/tls/`](../deploy/tls/), [`apps/api/README.md`](../apps/api/README.md) |
 | Supply-chain policy (approved bases, vuln gates, provenance) | [`deploy/supply-chain/policy.md`](../deploy/supply-chain/policy.md) |
 | CI gates | [`.github/workflows/supply-chain.yml`](../.github/workflows/supply-chain.yml) |
-| Encrypted backup + restore rehearsal | [`scripts/backup/`](../scripts/backup/) |
+| Encrypted backup CronJob + restore / RPO-RTO rehearsal | [`scripts/backup/`](../scripts/backup/), [`deploy/k8s/backup-cronjob.yaml`](../deploy/k8s/backup-cronjob.yaml) |
 
 The Kubernetes files are a foundation only: configure the database egress policy, TLS ingress host/secret (or cert-manager), backup encryption key wrapping, KMS references, and environment-specific registry credentials before deployment. TLS terminates at the ingress/proxy boundary, not inside the Next.js container.
 
@@ -48,7 +48,11 @@ Web image and Next.js headers (`#11`):
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, copies the workspace `pnpm-lock.yaml` and runs `pnpm install --frozen-lockfile`, writable paths limited to `/tmp` and `/app/apps/web/.next/cache`.
 - `deploy/k8s/web-deployment.yaml` runs that image (`ghcr.io/bbengt1/flowforge-web:foundation`; **digest-pin** before production; CI rejects `:latest`) as `node apps/web/server.js`. `emptyDir` covers `/tmp` and `/app/apps/web/.next/cache`. `API_INTERNAL_URL` is `http://flowforge-api:8080`. Rebuild with `NEXT_PUBLIC_API_URL` set to the public https API origin (the Deployment repeats that origin for server-rendered links; do not use localhost). There is no process-local health route — `/api/control-plane/health` proxies the Go API — so kubelet probes `GET /` on port 3000. Ingress host `app.example.com` targets `flowforge-web:3000`. The web NetworkPolicy allows ingress from `ingress-nginx` and egress only to the API Service pods (port 8080) and cluster DNS. Compose `/usr/local/bin/worker` stays out of `deploy/k8s`; production claims use `/usr/local/bin/runner`.
 - Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) lists exact host origins. That same list is published on `GET /embed/catalog` `frameAncestors` and drives postMessage. Empty fails closed. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
-- Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. API and web Dockerfiles already pin their bases by digest.
+- Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. API, web, and backup Dockerfiles already pin their bases by digest.
+
+Backup image (G.1.4):
+
+- `scripts/backup/Dockerfile`: `USER 65532:65532`, digest-pinned `alpine:3.20`, `postgresql16-client`, `python3` + `py3-cryptography` (AEAD helper), `aws-cli`, entrypoint `/usr/local/bin/run-encrypted-backup`. Build from the repository root. `deploy/k8s/backup-cronjob.yaml` runs `ghcr.io/bbengt1/flowforge-backup:foundation` (**digest-pin** before production; CI rejects `:latest`).
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):
 
@@ -123,13 +127,16 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the **compose** worker presents. Must have `workflow.execute`. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
-| `BACKUP_ENCRYPTION_KEY` | (scripts only) | Passphrase for `scripts/backup/*` (AES-256-CBC + PBKDF2). Wrap with KMS before production. Not an API process env. |
+| `BACKUP_ENCRYPTION_KEY` | (scripts / CronJob only) | Passphrase for `scripts/backup/*` (AES-256-GCM AEAD + PBKDF2, format FFB1). Wrap with KMS before production. Not an API process env. Kubernetes: `flowforge-backup` Secret. |
+| `BACKUP_S3_BUCKET` / `BACKUP_S3_ENDPOINT` / `BACKUP_S3_REGION` | (CronJob) | Durable landing for encrypted dumps under `flowforge-db/`. Prefer a bucket separate from `ARTIFACT_S3_BUCKET`. Endpoint optional (AWS regional default). |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (CronJob) | Object-store credentials for backup upload. Never logged. Do not copy compose MinIO defaults. |
 
 Sources for this inventory (prefer these over copying compose):
 [`env-template.txt`](../env-template.txt),
 [`apps/api/README.md`](../apps/api/README.md) Environment table,
 [`deploy/k8s/api-configmap.yaml`](../deploy/k8s/api-configmap.yaml),
-[`deploy/k8s/api-secret.example.yaml`](../deploy/k8s/api-secret.example.yaml).
+[`deploy/k8s/api-secret.example.yaml`](../deploy/k8s/api-secret.example.yaml),
+[`deploy/k8s/backup-secret.example.yaml`](../deploy/k8s/backup-secret.example.yaml).
 
 Published OpenAPI for operators: [openapi.md](reference/openapi.md).
 
@@ -512,7 +519,12 @@ Losing that session stops the replica immediately: the in-flight hook is cancell
 
 Compose sets both (default on, `30s`). `deploy/k8s` ConfigMap does the same so multiple API replicas elect one leader. Logs record counts only (`started`, `recovered`, `purged`) and never secrets, tickets, or storage refs.
 
-Encrypted `pg_dump` is **not** this loop. Schedule `scripts/backup/encrypt-pg-dump.sh` yourself (G.1.4). The HTTP endpoints stay for an operator session (`workflow.execute` or `workspace.administer`, plus CSRF).
+Encrypted `pg_dump` is **not** this loop. `deploy/k8s` ships
+`flowforge-db-backup` (`scripts/backup/run-encrypted-backup.sh`, daily
+UTC, RPO 24h). Compose still uses `scripts/backup/encrypt-pg-dump.sh`.
+RPO/RTO and restore cadence: [retention and backup](operations/retention-backup.md).
+The HTTP endpoints stay for an operator session (`workflow.execute` or
+`workspace.administer`, plus CSRF).
 
 ## Metrics and OpenAPI scrape (ADV-020)
 
@@ -542,12 +554,12 @@ enable that in production. Kubernetes liveness/readiness stay
 Operator runbooks (do not duplicate here):
 
 - [Incident and recovery](operations/incident-recovery.md) — health vs readiness, worker-loss/fencing, escalation (`X-Request-ID`, alerts, metrics).
-- [Retention and backup](operations/retention-backup.md) — encryption, restore cadence, `POST /retention/purge`, legal hold.
+- [Retention and backup](operations/retention-backup.md) — encryption, CronJob, RPO/RTO, restore cadence, `POST /retention/purge`, legal hold.
 - [E12.3 threat-model review](reference/e12-threat-model-review.md) — production-gate sign-off.
 
-Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup job as recovery evidence.
+Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup CronJob as recovery evidence. Documented targets: **RPO 24h** (daily CronJob), **RTO ≤ 30m** for CI-sized dumps (`scripts/backup/rpo-rto-rehearsal.sh`).
 
-Hooks from `#10` (AES-256-CBC + PBKDF2 via `BACKUP_ENCRYPTION_KEY`; wrap that key with KMS before production):
+Hooks from `#10` / G.1.4 (AES-256-GCM AEAD + PBKDF2 via `BACKUP_ENCRYPTION_KEY` / `scripts/backup/aead.py`; wrap that key with KMS before production):
 
 ```bash
 export POSTGRES_PASSWORD=...
@@ -555,11 +567,18 @@ export BACKUP_ENCRYPTION_KEY=...
 # compose postgres + api already up
 bash scripts/backup/encrypt-pg-dump.sh
 bash scripts/backup/restore-rehearsal.sh
+
+# DSN path (same cipher as the k8s CronJob)
+export DATABASE_URL='postgres://…'
+bash scripts/backup/run-encrypted-backup.sh
+bash scripts/backup/rpo-rto-rehearsal.sh
 ```
 
 `restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`) and points at the compose MinIO bucket that the source API already created. It does not set `ARTIFACT_S3_CREATE_BUCKET`. CI runs the same script. Production still boot-fails without a unique Secret key and without bucket credentials.
 
-E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus a schema-level isolated restore that does not need compose:
+Kubernetes: `deploy/k8s/backup-cronjob.yaml` (`flowforge-db-backup`) runs `/usr/local/bin/run-encrypted-backup` from `ghcr.io/bbengt1/flowforge-backup` (`scripts/backup/Dockerfile`). Apply `backup-secret.example.yaml` and open allowlisted object-store egress.
+
+E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus schema-level isolated restore and RPO/RTO rehearsal that do not need compose:
 
 ```bash
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
