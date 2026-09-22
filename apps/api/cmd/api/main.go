@@ -109,6 +109,8 @@ func main() {
 		MachineConsumers:     cfg.MachineConsumers,
 		OIDC:                 cfg.OIDC,
 		MFAKey:               cfg.MFAKey,
+		SCIM:                 cfg.SCIM,
+		LockoutMaxFailures:   cfg.LockoutMaxFailures,
 		Security: httpapi.Security{
 			TrustedProxies:       cfg.TrustedProxies,
 			RequireTLS:           cfg.RequireTLS,

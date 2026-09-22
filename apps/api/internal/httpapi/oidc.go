@@ -93,6 +93,18 @@ func (s *Server) postOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
 		return
 	}
+	locked, ok := s.accountLocked(w, r, user.ID)
+	if !ok {
+		return
+	}
+	if locked {
+		s.auditLoginRejected(r, "account locked")
+		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", invalidCredentialsDetail)
+		return
+	}
+	if !s.clearAccountFailures(w, r, user.ID) {
+		return
+	}
 	s.mintStandaloneSession(w, r, user, "oidc")
 }
 

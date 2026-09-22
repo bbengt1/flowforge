@@ -160,6 +160,18 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # WORKER_LEASE=30s
 # WORKER_ISSUER=
 # WORKER_SUBJECT=
+# Durable account lockout (Postgres auth_lockouts). Unset uses 5.
+# Integer 1-50. 0, negative, and non-integers are a boot-fail.
+# Separate from the in-process LOGIN_RATE_LIMIT_* window.
+# LOCKOUT_MAX_FAILURES=5
+# SCIM 2.0 (/scim/v2). Leave unset to fail closed (503).
+# Bearer is 32-256 chars, no spaces. Never log it. Not an ff_session.
+# SCIM_ISSUER must match OIDC_ISSUER when both are set. Omit SCIM_ISSUER
+# to reuse OIDC_ISSUER. Set the IdP externalId to the OIDC sub.
+# SCIM_DEFAULT_ROLE defaults to viewer (workspace role only).
+# SCIM_BEARER_TOKEN=
+# SCIM_ISSUER=
+# SCIM_DEFAULT_ROLE=viewer
 
 # --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
 # Preferred: Ed25519 PKCS#8 PEM (crypto/x509.ParsePKCS8PrivateKey).

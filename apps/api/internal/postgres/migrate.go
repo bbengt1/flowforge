@@ -105,7 +105,19 @@ func loadMigrations() ([]migration, error) {
 		}
 		out = append(out, migration{Version: version, Name: name, SQL: string(body)})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Version < out[j].Version })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Version == out[j].Version {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Version < out[j].Version
+	})
+	seen := map[int64]string{}
+	for _, m := range out {
+		if prev, ok := seen[m.Version]; ok {
+			return nil, fmt.Errorf("duplicate migration version %d (%s and %s)", m.Version, prev, m.Name)
+		}
+		seen[m.Version] = m.Name
+	}
 	return out, nil
 }
 

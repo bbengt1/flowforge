@@ -122,6 +122,16 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if !sawWorkflowFolders {
 		t.Fatal("expected 000023_workflow_folders.sql")
 	}
+	seen := map[int64]string{}
+	for _, m := range all {
+		if prev, ok := seen[m.Version]; ok {
+			t.Fatalf("duplicate migration version %d (%s and %s)", m.Version, prev, m.Name)
+		}
+		seen[m.Version] = m.Name
+	}
+	if seen[31] != "scim_lockout" {
+		t.Fatalf("migration 31 = %q, want scim_lockout", seen[31])
+	}
 }
 
 func TestMigrateSerializesConcurrentRunners(t *testing.T) {

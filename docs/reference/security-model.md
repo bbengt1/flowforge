@@ -31,7 +31,23 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   the server. There is no IdP-admin API. TOTP MFA gates
   `platform.administer` and `credential.*` on local-login and OIDC
   sessions (`403` `mfa-required`) until enroll and verify. Machine,
-  trusted-dev, and embed sessions are not that gate. Self-asserted header identity is enabled only by the
+  trusted-dev, and embed sessions are not that gate. SCIM 2.0 is a
+  separate door at `/scim/v2`, authenticated only by
+  `SCIM_BEARER_TOKEN` (constant-time compare). It is not an
+  `ff_session`, not `POST /machine/token`, and not
+  `POST /embed/exchange`. All `SCIM_*` unset fails those routes
+  closed (`503`). A partial set refuses process start. The bearer is
+  never stored, logged, or returned. Provisioning writes the existing
+  `users` row: issuer is `SCIM_ISSUER`, or `OIDC_ISSUER` when the SCIM
+  issuer is omitted, and both set must match. Set `externalId` to the
+  OIDC `sub` (otherwise `userName` becomes `external_subject`).
+  Passwords and secret-like fields are `400` and are not echoed.
+  `active: false` and `DELETE` disable the user, revoke sessions, and
+  drop workspace memberships except the last admin. `DELETE` also hides
+  the user from SCIM (`404`). Groups are existing workspaces; adding a
+  member grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing
+  other roles. Group create, replace, and delete are rejected. A query
+  `access_token` is `401` and is not echoed. Self-asserted header identity is enabled only by the
   explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
   `APP_ENV=development|dev|local|test`. Empty or missing config denies
   header identity. The process refuses to start if the flag is set in
@@ -106,7 +122,23 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   saying which field failed. `POST /login` is rate-limited by IP
   (default 60/min) and identifier (default 30/min) **before** lookup
   or bcrypt and returns `429` `rate-limited` with `Retry-After` on
-  burst. Store failures other than unknown identifier are `503`.
+  burst. Durable account lockout is separate from that in-process
+  window. `auth_lockouts` stores the failed-password count and
+  `locked_at` in Postgres so the lock survives process restart.
+  `LOCKOUT_MAX_FAILURES` defaults to 5 and must be an integer from 1
+  to 50 (unset uses 5; `0`, negative, or non-integer is a boot-fail).
+  After the threshold, Local Login and an otherwise valid OIDC
+  callback return the same `401` `Invalid credentials.` and do not
+  mint a session. A successful password, or an unlocked OIDC
+  callback, clears the counter. Unknown identifiers do not create a
+  row. Disabled users do not increment it. Lockout store errors are
+  `503` and do not mint. Platform admins read
+  `GET /api/v1/users/{userID}/lockout` and clear with
+  `POST /api/v1/users/{userID}/unlock` (CSRF,
+  `platform.administer`; embed sessions are `403`). Unlock does not
+  re-enable a disabled user. The JSON is `user_id`, `locked`,
+  `failed_count`, and optional `locked_at` — no hash or password.
+  Store failures other than unknown identifier are `503`.
   Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
   the value is stored server-side and never echoed. TLS is
   `{action:"create-self-signed"}`, `{action:"upload", certPem,
