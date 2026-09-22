@@ -2,11 +2,32 @@ package page
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestParseIntKeyRejectsOutOfRange(t *testing.T) {
+	got, err := ParseIntKey(IntKey(7))
+	if err != nil || got != 7 {
+		t.Fatalf("round trip = %d %v", got, err)
+	}
+	got, err = ParseIntKey(IntKey(0))
+	if err != nil || got != 0 {
+		t.Fatalf("zero = %d %v", got, err)
+	}
+	got, err = ParseIntKey("2147483647")
+	if err != nil || got != math.MaxInt32 {
+		t.Fatalf("max int32 = %d %v", got, err)
+	}
+	for _, raw := range []string{"-1", "2147483648", "9223372036854775807", "9223372036854775808"} {
+		if _, err := ParseIntKey(raw); err != ErrInvalid {
+			t.Fatalf("ParseIntKey(%q) err = %v, want ErrInvalid", raw, err)
+		}
+	}
+}
 
 func TestParseLimitCapsAndRejects(t *testing.T) {
 	q, err := Parse(url.Values{})

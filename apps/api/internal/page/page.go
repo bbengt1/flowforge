@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/url"
 	"regexp"
 	"sort"
@@ -243,7 +244,9 @@ func ParseIntKey(k string) (int, error) {
 		return 0, ErrInvalid
 	}
 	n, err := strconv.ParseInt(k, 10, 64)
-	if err != nil || n < 0 {
+	// version_number is a PostgreSQL integer, and the keyset value is a Go int.
+	// Reject anything outside that range before the conversion.
+	if err != nil || n < 0 || n > math.MaxInt32 {
 		return 0, ErrInvalid
 	}
 	return int(n), nil
