@@ -51,7 +51,10 @@ jobs:
           cache-dependency-path: apps/api/go.sum
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client python3-cryptography
+
+      - name: AEAD selftest
+        run: python3 scripts/backup/aead.py selftest
 
       - name: Run E12.2 resilience suite
         env:
@@ -68,3 +71,4 @@ jobs:
             docs/reference/e12-resilience-evidence/last-run.json
             docs/reference/e12-resilience-evidence/capacity-last-run.json
             docs/reference/e12-resilience-evidence/restore-schema-last-run.json
+            docs/reference/e12-resilience-evidence/rpo-rto-last-run.json

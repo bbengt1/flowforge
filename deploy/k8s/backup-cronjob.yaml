@@ -1,0 +1,125 @@
+# Daily encrypted Postgres backup (G.1.4 / findings A3, C3).
+# Runs scripts/backup/run-encrypted-backup.sh (baked into the backup image).
+# Ciphertext lands in BACKUP_S3_BUCKET under flowforge-db/ — not the
+# ARTIFACT_S3_* tenant/workspace/ref object layout.
+#
+# Replace ghcr.io/bbengt1/flowforge-backup:foundation with a digest-pinned
+# image before production. CI rejects :latest.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: flowforge-db-backup
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: flowforge
+spec:
+  # RPO target: 24h (see docs/operations/retention-backup.md).
+  schedule: "0 2 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: flowforge
+            app.kubernetes.io/component: backup
+            app.kubernetes.io/part-of: flowforge
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              # Replace with a digest-pinned image before production.
+              image: ghcr.io/bbengt1/flowforge-backup:foundation
+              imagePullPolicy: IfNotPresent
+              command: ["/usr/local/bin/run-encrypted-backup"]
+              env:
+                - name: BACKUP_OUTDIR
+                  value: /backups
+                - name: BACKUP_REQUIRE_S3
+                  value: "1"
+                - name: BACKUP_S3_PREFIX
+                  value: flowforge-db
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: DATABASE_URL
+                - name: BACKUP_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: BACKUP_ENCRYPTION_KEY
+                - name: BACKUP_S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: BACKUP_S3_BUCKET
+                - name: BACKUP_S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: BACKUP_S3_ENDPOINT
+                      optional: true
+                - name: BACKUP_S3_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: BACKUP_S3_REGION
+                      optional: true
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: AWS_SESSION_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: flowforge-backup
+                      key: AWS_SESSION_TOKEN
+                      optional: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

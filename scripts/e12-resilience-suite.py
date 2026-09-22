@@ -245,6 +245,8 @@ def main() -> int:
 
     restore_path = run_dir / "restore-schema-last-run.json"
     restore_evidence = json.loads(restore_path.read_text()) if restore_path.exists() else None
+    rpo_path = run_dir / "rpo-rto-last-run.json"
+    rpo_evidence = json.loads(rpo_path.read_text()) if rpo_path.exists() else None
 
     domains_out: list[dict[str, Any]] = []
     for domain in catalog["domains"]:
@@ -302,6 +304,7 @@ def main() -> int:
         "scripts": script_results,
         "capacity": capacity,
         "restoreSchema": restore_evidence,
+        "rpoRto": rpo_evidence,
         "domains": domains_out,
         "restoreSibling": catalog["restoreSibling"],
         "securitySibling": catalog["securitySibling"],
@@ -328,6 +331,10 @@ def main() -> int:
             rst_out = evidence_dir / "restore-schema-last-run.json"
             rst_out.write_text(json.dumps(restore_evidence, indent=2) + "\n")
             print(f"wrote {rst_out}", flush=True)
+        if rpo_evidence is not None:
+            rpo_out = evidence_dir / "rpo-rto-last-run.json"
+            rpo_out.write_text(json.dumps(rpo_evidence, indent=2) + "\n")
+            print(f"wrote {rpo_out}", flush=True)
 
     if failed:
         print("\nE12.2 operational resilience suite FAILED", file=sys.stderr)

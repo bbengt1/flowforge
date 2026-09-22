@@ -37,7 +37,7 @@ a queue-lag SLO, and a 1 GiB storage-growth budget.
 
 | # | Domain | Primary proof | What runs |
 | --- | --- | --- | --- |
-| 1 | Backup / restore | Script + sibling CI | `scripts/backup/restore-schema-rehearsal.sh` — encrypted `pg_dump` of the migrated test database, restore into a throwaway database, `schema_migrations` version match, `execution_jobs` present. **Sibling (required on the same PR):** `supply-chain.yml` `restore-rehearsal` (`scripts/backup/restore-rehearsal.sh`) — encrypted compose dump, isolated Postgres, hardened API `/health` + `/readiness`. |
+| 1 | Backup / restore | Script + sibling CI | `scripts/backup/restore-schema-rehearsal.sh` — encrypted `pg_dump` of the migrated test database, restore into a throwaway database, `schema_migrations` version match, `execution_jobs` present. `scripts/backup/rpo-rto-rehearsal.sh` — same DSN path as the k8s CronJob; records RPO (24h) and RTO wall-clock; fails if `BACKUP_RTO_BUDGET_SECONDS` (default 1800) is exceeded. **Sibling (required on the same PR):** `supply-chain.yml` `restore-rehearsal` (`scripts/backup/restore-rehearsal.sh`) — encrypted compose dump, isolated Postgres, hardened API `/health` + `/readiness`. |
 | 2 | Worker-loss / lease / fencing | Go | `internal/e12resilience` `TestE12CapacityHeadroomAndWorkerLoss` (expire lease → `indeterminate`, stale complete rejected); `wfstore` `TestPostgresDispatchSkipLockedAndLeaseLoss`, `TestMemoryDispatchLeaseFenceCancelRetry`; `httpapi` `TestDispatchClaimFenceCancelAndLeaseLoss`. |
 | 3 | Queue lag under load | Go + JSON | Same capacity test enqueues a bounded job burst, drains with two slow workers, and records peak queued age and depth. |
 | 4 | Migration serialization | Go | `internal/postgres` `TestMigrateSerializesConcurrentRunners` (advisory lock `881726401`) plus migration name/load checks. Re-running migrate is a no-op for applied versions. |
@@ -66,6 +66,7 @@ updated JSON when the load shape or pool limit changes.
 - Suite summary: [e12-resilience-evidence/last-run.json](e12-resilience-evidence/last-run.json)
 - Capacity peaks/ratios: [e12-resilience-evidence/capacity-last-run.json](e12-resilience-evidence/capacity-last-run.json)
 - Schema restore: [e12-resilience-evidence/restore-schema-last-run.json](e12-resilience-evidence/restore-schema-last-run.json)
+- RPO/RTO: [e12-resilience-evidence/rpo-rto-last-run.json](e12-resilience-evidence/rpo-rto-last-run.json)
 - CI artifact name: `e12-resilience-suite`
 
 ## Chloe map

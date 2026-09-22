@@ -7,7 +7,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ALLOW="$ROOT/deploy/supply-chain/approved-bases.txt"
 # API (#10) and web (#11) images share UID 65532 and this allowlist.
-DOCKERFILES=("$ROOT/apps/api/Dockerfile" "$ROOT/apps/api/Dockerfile.script-runner" "$ROOT/apps/web/Dockerfile")
+DOCKERFILES=(
+  "$ROOT/apps/api/Dockerfile"
+  "$ROOT/apps/api/Dockerfile.script-runner"
+  "$ROOT/apps/web/Dockerfile"
+  "$ROOT/scripts/backup/Dockerfile"
+)
 
 if [[ ! -f "$ALLOW" ]]; then
   echo "missing $ALLOW" >&2

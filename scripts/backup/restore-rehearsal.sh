@@ -82,7 +82,7 @@ fi
 echo "encrypting dump from compose service ${BACKUP_SOURCE_SERVICE}"
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" "$BACKUP_SOURCE_SERVICE" \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl \
-  | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_KEY \
+  | python3 "$ROOT/scripts/backup/aead.py" seal \
   > "$ENC"
 
 if [[ ! -s "$ENC" ]]; then
@@ -114,7 +114,7 @@ if [[ "$ready" -ne 1 ]]; then
 fi
 
 echo "decrypting and restoring"
-openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY -in "$ENC" \
+python3 "$ROOT/scripts/backup/aead.py" open < "$ENC" \
   | docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$ISOLATED" \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 >/dev/null
 
