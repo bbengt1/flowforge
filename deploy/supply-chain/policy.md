@@ -19,7 +19,7 @@ Shared runtime UID for FlowForge app images: **65532**.
 | Trivy filesystem (`library`) | Go modules in `apps/api` (`image-scan`) | HIGH or CRITICAL (`--severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed`) |
 | Trivy filesystem (`library`) | `apps/web` npm dependencies via the workspace `pnpm-lock.yaml` (`web-image-scan`) | HIGH or CRITICAL, same flags as the API filesystem scan. `apps/web` has no lockfile of its own; the job scans the repo root and skips `apps/api`. |
 | Trivy image | OS + app packages in `flowforge-api` | CRITICAL **with a vendor fix**. Unfixed OS CVEs are recorded, not rejected (MVP). Digest-pin and patch before production enablement |
-| Trivy image | OS + app packages in `flowforge-web` | Same CRITICAL gate as the API image (`--severity CRITICAL --exit-code 1 --ignore-unfixed`) |
+| Trivy image | OS + app packages in `flowforge-web` | Same CRITICAL gate as the API image (`--severity CRITICAL --exit-code 1 --ignore-unfixed`). The runner stage removes npm and corepack so the base image's bundled `tar` 7.5.11 (CVE-2026-59873) is not in the runtime filesystem. |
 | SPDX SBOM | `api-sbom.spdx.json` (`api-supply-chain`), `web-sbom.spdx.json` (`web-supply-chain`) | The SBOM step is part of the job. A failed image scan or SBOM generation fails the workflow. |
 
 Unapproved or vulnerable artifacts do not pass the workflow.
