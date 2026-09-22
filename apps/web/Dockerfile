@@ -39,8 +39,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # 65532 matches apps/api (non-root). Pre-create tmpfs mount points so a
 # read-only root filesystem can still serve the standalone Next server.
 # Workspace standalone output lives under apps/web/.
+# The standalone server only runs `node`. node:22-alpine bundles npm's
+# tar 7.5.11 (CVE-2026-59873, fixed in 7.5.19). That copy is not in
+# pnpm-lock.yaml. Drop npm and corepack so the runtime image does not
+# ship it. Build stages above still use corepack/pnpm.
 RUN addgroup -S -g 65532 flowforge \
  && adduser -S -u 65532 -G flowforge -H -D flowforge \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
  && mkdir -p /tmp /app/apps/web/.next/cache \
  && chown -R 65532:65532 /tmp /app
 
