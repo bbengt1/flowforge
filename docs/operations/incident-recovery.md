@@ -140,9 +140,10 @@ tickets or alert payloads.
 | Signal | Where | Use |
 | --- | --- | --- |
 | `X-Request-ID` / `request_id` | Response header, problem JSON, structured request logs | Trace one HTTP call end to end. Caller values accepted only when 16–128 ASCII letters, digits, or hyphens. |
+| `traceparent` / `tracestate` | Response headers, `execution_jobs` columns, worker claim/complete | W3C trace context for one enqueue-to-worker flow. Invalid or secret-like values are dropped. Not a credential. |
 | `correlation_id` | Executions, audit events, operational alerts | Tie a run / decision across API and workers. |
 | Structured logs | API stdout JSON | `method`, `path`, `route`, `status`, `duration`, `bytes`, `request_id`. Secret-free. |
-| `GET /api/v1/metrics` | Prometheus text | Request count/duration by method/route/status. `platform.administer` only. |
+| `GET /api/v1/metrics` | Prometheus text | HTTP count/duration plus OpenTelemetry business series (queue, lease, execution outcome, vault). `platform.administer` or machine `ops.metrics.read`. SLOs: [slo-alerts.md](slo-alerts.md). |
 | `GET /api/v1/alerts` | API | Kinds `authorization`, `replay`, `policy`, `redaction`. Identifiers only (`correlationId`, `requestId`, `resourceType`, `resourceId`, `code`). Ack: `POST /alerts/{id}/ack` (`alert.ack`). |
 | `GET /api/v1/audit-events` | API | Append-only, redacted. `flowforge_app` cannot UPDATE or DELETE live rows. |
 | Session audit | `GET /api/v1/session/audit-events` | `session.created` / `revoked` / `expired` / `csrf_rejected` / … — no cookie values. |

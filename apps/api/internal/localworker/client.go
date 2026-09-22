@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -22,12 +24,16 @@ const (
 )
 
 // Claim is a successful POST /jobs/claim ticket.
+// TraceParent and TraceState are the W3C context from the claim
+// response so later heartbeats continue the enqueue trace.
 type Claim struct {
-	JobToken  string
-	Binding   wfstore.JobBinding
-	Job       wfstore.ExecutionJob
-	Step      wfstore.ExecutionStep
-	Execution wfstore.Execution
+	JobToken    string
+	Binding     wfstore.JobBinding
+	Job         wfstore.ExecutionJob
+	Step        wfstore.ExecutionStep
+	Execution   wfstore.Execution
+	TraceParent string
+	TraceState  string
 }
 
 // API is the control-plane surface the local worker needs.
@@ -112,7 +118,7 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 	if h.lease > 0 {
 		body["leaseSeconds"] = int(h.lease / time.Second)
 	}
-	status, raw, err := h.do(ctx, http.MethodPost, "/api/v1/jobs/claim", tenantSlug, workbenchKey, body)
+	status, raw, hdr, err := h.do(ctx, http.MethodPost, "/api/v1/jobs/claim", tenantSlug, workbenchKey, body)
 	if err != nil {
 		return nil, err
 	}
@@ -136,12 +142,23 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 	if !payload.Claimed {
 		return nil, nil
 	}
+	parent := strings.TrimSpace(hdr.Get(observability.TraceParentHeader))
+	state := strings.TrimSpace(hdr.Get(observability.TraceStateHeader))
+	if !observability.ValidTraceParent(parent) {
+		parent = ""
+		state = ""
+	}
+	if !observability.ValidTraceState(state) {
+		state = ""
+	}
 	return &Claim{
-		JobToken:  payload.JobToken,
-		Binding:   payload.Binding,
-		Job:       payload.Job,
-		Step:      payload.Step,
-		Execution: payload.Execution,
+		JobToken:    payload.JobToken,
+		Binding:     payload.Binding,
+		Job:         payload.Job,
+		Step:        payload.Step,
+		Execution:   payload.Execution,
+		TraceParent: parent,
+		TraceState:  state,
 	}, nil
 }
 
@@ -171,6 +188,11 @@ func (h *HTTP) jobAction(ctx context.Context, tenantSlug, workbenchKey string, c
 	if strings.TrimSpace(claim.JobToken) == "" || strings.TrimSpace(claim.Job.ID) == "" {
 		return fmt.Errorf("job action requires a ticket")
 	}
+	if !observability.HasSpan(ctx) && claim.TraceParent != "" {
+		var span trace.Span
+		ctx, span = observability.Continue(ctx, claim.TraceParent, claim.TraceState, "worker.http")
+		defer span.End()
+	}
 	body := map[string]any{
 		"jobToken":     claim.JobToken,
 		"workerId":     h.workerID,
@@ -183,7 +205,7 @@ func (h *HTTP) jobAction(ctx context.Context, tenantSlug, workbenchKey string, c
 }
 
 func (h *HTTP) doJSON(ctx context.Context, method, path, tenantSlug, workbenchKey string, body any, want int, dest any) error {
-	status, raw, err := h.do(ctx, method, path, tenantSlug, workbenchKey, body)
+	status, raw, _, err := h.do(ctx, method, path, tenantSlug, workbenchKey, body)
 	if err != nil {
 		return err
 	}
@@ -196,22 +218,23 @@ func (h *HTTP) doJSON(ctx context.Context, method, path, tenantSlug, workbenchKe
 	return json.Unmarshal(raw, dest)
 }
 
-func (h *HTTP) do(ctx context.Context, method, path, tenantSlug, workbenchKey string, body any) (int, []byte, error) {
+func (h *HTTP) do(ctx context.Context, method, path, tenantSlug, workbenchKey string, body any) (int, []byte, http.Header, error) {
 	var rdr io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 		rdr = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, h.base+path, rdr)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	observability.InjectHTTP(ctx, req.Header)
 	req.Header.Set(headerIssuer, h.issuer)
 	req.Header.Set(headerSubject, h.subject)
 	if tenantSlug != "" {
@@ -222,14 +245,14 @@ func (h *HTTP) do(ctx context.Context, method, path, tenantSlug, workbenchKey st
 	}
 	res, err := h.client.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
-		return res.StatusCode, nil, err
+		return res.StatusCode, nil, res.Header.Clone(), err
 	}
-	return res.StatusCode, raw, nil
+	return res.StatusCode, raw, res.Header.Clone(), nil
 }
 
 func formatProblem(status int, raw []byte) string {

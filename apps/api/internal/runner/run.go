@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -114,6 +115,8 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	if job == nil {
 		return false, nil
 	}
+	ctx, span := observability.Continue(ctx, job.Job.TraceParent, job.Job.TraceState, "runner.job")
+	defer span.End()
 	if job.Job.Status == wfstore.JobWaiting || job.Step.NodeType == "flow.approval" {
 		until, decision := approvalDeadline(job.Step, r.now())
 		if decision.Fail {

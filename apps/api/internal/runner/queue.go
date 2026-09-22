@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -132,6 +133,7 @@ func (q *StoreQueue) Claim(ctx context.Context, ws Workspace) (*Job, error) {
 		return nil, nil
 	}
 	if err != nil {
+		observability.NoteLeaseClaim(ctx, "error", 0)
 		return nil, err
 	}
 	token, err := wfstore.SignJobTicket(q.JobKey, res.Binding)

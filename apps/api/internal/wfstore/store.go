@@ -296,6 +296,10 @@ type ExecutionJob struct {
 	Attempt         int        `json:"attempt"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
+	// TraceParent and TraceState are W3C trace-context captured when the
+	// job was queued. They are not part of the browser JSON contract.
+	TraceParent string `json:"-"`
+	TraceState  string `json:"-"`
 }
 
 // AuditEvent is an append-only, secret-free workspace audit row.

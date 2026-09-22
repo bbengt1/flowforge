@@ -473,8 +473,13 @@ machine-credential path.
 
 **Status (G.1.6 / #437):** scrapers and automation now mint that same
 `ff_session` from a server-side machine principal (`POST /api/v1/machine/token`,
-grant `ops.metrics.read`). OpenTelemetry, queue metrics, alerting, and SLOs
-in this finding are still open.
+grant `ops.metrics.read`).
+
+**Status (G.2.4 / #449):** the API installs the OpenTelemetry SDK for
+traces and business metrics, propagates W3C `traceparent`/`tracestate`
+onto `execution_jobs` and worker claim/complete, and documents SLOs
+plus example alert rules in `docs/operations/slo-alerts.md`. The
+hand-rolled HTTP series and `ops.metrics.read` scrape path stay.
 
 **Recommendation:** Adopt OpenTelemetry for traces and metrics with W3C trace-context
 propagation into workers. Instrument the queue, lease, execution, and vault paths.

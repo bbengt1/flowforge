@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 )
 
@@ -26,7 +27,7 @@ func (m *Memory) GetJob(_ context.Context, scope isolation.Scope, jobID string) 
 	return cloneJob(job), nil
 }
 
-func (m *Memory) ClaimJob(_ context.Context, scope isolation.Scope, now time.Time, in ClaimInput) (DispatchResult, error) {
+func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.Time, in ClaimInput) (DispatchResult, error) {
 	if scope.Zero() {
 		return DispatchResult{}, ErrNoScope
 	}
@@ -72,6 +73,7 @@ func (m *Memory) ClaimJob(_ context.Context, scope isolation.Scope, now time.Tim
 		}
 	}
 	if chosen == nil || jobIdx < 0 {
+		observability.NoteLeaseClaim(ctx, "empty", 0)
 		if recovered > 0 {
 			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 		}
@@ -111,6 +113,8 @@ func (m *Memory) ClaimJob(_ context.Context, scope isolation.Scope, now time.Tim
 
 	wf := m.workflows[chosen.record.WorkflowID]
 	binding := buildBinding(scope, chosen.record, step, job, now.Add(ttl), leaseExp)
+	observability.NoteLeaseClaim(ctx, "claimed", now.Sub(job.AvailableAt))
+	observability.NoteQueueLeft(ctx, 1)
 	return DispatchResult{
 		Execution: cloneExecution(chosen.record, wf.record),
 		Step:      cloneStep(step),
@@ -216,7 +220,7 @@ func (m *Memory) FailJob(_ context.Context, scope isolation.Scope, now time.Time
 	}, "job.fail", "failed")
 }
 
-func (m *Memory) CancelExecution(_ context.Context, scope isolation.Scope, now time.Time, executionID string) (Execution, error) {
+func (m *Memory) CancelExecution(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) (Execution, error) {
 	if scope.Zero() {
 		return Execution{}, ErrNoScope
 	}
@@ -239,12 +243,18 @@ func (m *Memory) CancelExecution(_ context.Context, scope isolation.Scope, now t
 	if isTerminalExecution(exec.record.Status) && exec.record.Status != ExecutionPinned {
 		return Execution{}, ErrAlreadyTerminal
 	}
+	queued := 0
 	for i := range exec.jobs {
+		if exec.jobs[i].Status == JobQueued {
+			queued++
+		}
 		if jobIsOpen(exec.jobs[i].Status) {
 			exec.jobs[i].Status = JobCanceled
 			exec.jobs[i].UpdatedAt = now
 		}
 	}
+	observability.NoteQueueLeft(ctx, queued)
+	observability.NoteExecutionOutcome(ctx, "canceled")
 	for i := range exec.steps {
 		if exec.steps[i].Status == ExecutionQueued || exec.steps[i].Status == ExecutionRunning || exec.steps[i].Status == ExecutionWaiting {
 			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
@@ -369,7 +379,7 @@ func (m *Memory) EmergencyStop(_ context.Context, scope isolation.Scope, now tim
 	}, nil
 }
 
-func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {
+func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error) {
 	if scope.Zero() {
 		return RetryResult{}, ErrNoScope
 	}
@@ -422,6 +432,10 @@ func (m *Memory) RetryStep(_ context.Context, scope isolation.Scope, now time.Ti
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
+	stamped := []ExecutionJob{job}
+	stampJobs(ctx, stamped)
+	job = stamped[0]
+	observability.NoteJobEnqueued(ctx, 1)
 	exec.steps = append(exec.steps, next)
 	exec.jobs = append(exec.jobs, job)
 	m.rollupLocked(&exec, now)
@@ -549,6 +563,7 @@ func (m *Memory) mutateWait(scope isolation.Scope, now time.Time, jobID string, 
 	if job.LeaseExpiresAt != nil {
 		leaseExp = *job.LeaseExpiresAt
 	}
+	observability.NoteExecutionOutcome(context.Background(), outcome)
 	return DispatchResult{
 		Execution: cloneExecution(exec.record, wf.record),
 		Step:      cloneStep(step),
@@ -614,6 +629,7 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 
 func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int {
 	n := 0
+	expiredLeases := 0
 	for id, exec := range m.executions {
 		if exec.workspaceID != scope.WorkspaceID() {
 			continue
@@ -660,6 +676,7 @@ func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int 
 			}
 			changed = true
 			n++
+			expiredLeases++
 		}
 		if changed {
 			m.rollupLocked(&exec, now)
@@ -673,6 +690,10 @@ func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int 
 				Details:       map[string]any{"reason": "lease-expired"},
 			}, now)
 		}
+	}
+	observability.NoteLeaseExpired(context.Background(), expiredLeases)
+	for range expiredLeases {
+		observability.NoteExecutionOutcome(context.Background(), "indeterminate")
 	}
 	return n
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/jackc/pgx/v5"
@@ -82,6 +83,7 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 			if commitErr := tx.Commit(ctx); commitErr != nil {
 				return DispatchResult{}, mapDBErr(commitErr)
 			}
+			observability.NoteLeaseClaim(ctx, "empty", 0)
 			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 		}
 		return DispatchResult{}, mapDBErr(err)
@@ -133,6 +135,9 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	if err := tx.Commit(ctx); err != nil {
 		return DispatchResult{}, mapDBErr(err)
 	}
+	lag := now.Sub(job.AvailableAt)
+	observability.NoteLeaseClaim(ctx, "claimed", lag)
+	observability.NoteQueueLeft(ctx, 1)
 	return DispatchResult{
 		Execution: exec,
 		Step:      step,
@@ -248,6 +253,13 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	if isTerminalExecution(exec.Status) && exec.Status != ExecutionPinned {
 		return Execution{}, ErrAlreadyTerminal
 	}
+	var queued int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM execution_jobs
+		WHERE execution_id = $1::uuid AND status = 'queued'
+	`, executionID).Scan(&queued); err != nil {
+		return Execution{}, mapDBErr(err)
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_jobs
 		SET status = 'canceled', updated_at = $1
@@ -280,6 +292,8 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	if err := tx.Commit(ctx); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
+	observability.NoteQueueLeft(ctx, queued)
+	observability.NoteExecutionOutcome(ctx, "canceled")
 	return exec, nil
 }
 
@@ -512,13 +526,18 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
+	stamped := []ExecutionJob{job}
+	stampJobs(ctx, stamped)
+	job = stamped[0]
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO execution_jobs (
-			workspace_id, id, execution_id, execution_step_id, status, available_at, attempt, created_at, updated_at
-		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $6, $6)
-	`, scope.WorkspaceID(), job.ID, executionID, job.ExecutionStepID, job.Status, now, job.Attempt); err != nil {
+			workspace_id, id, execution_id, execution_step_id, status, available_at, attempt,
+			created_at, updated_at, traceparent, tracestate
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $6, $6, NULLIF($8, ''), NULLIF($9, ''))
+	`, scope.WorkspaceID(), job.ID, executionID, job.ExecutionStepID, job.Status, now, job.Attempt, job.TraceParent, job.TraceState); err != nil {
 		return RetryResult{}, mapDBErr(err)
 	}
+	observability.NoteJobEnqueued(ctx, 1)
 	if err := rollupExecutionTx(ctx, tx, executionID, now); err != nil {
 		return RetryResult{}, err
 	}
@@ -874,6 +893,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	if err := tx.Commit(ctx); err != nil {
 		return DispatchResult{}, mapDBErr(err)
 	}
+	observability.NoteExecutionOutcome(ctx, opts.outcome)
 	exp := now.Add(DefaultJobBindingTTL)
 	leaseAt := now
 	if job.LeaseExpiresAt != nil {
@@ -948,6 +968,10 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	}
 	if err := finishRecoverPairs(ctx, tx, scope, now, pairs, "indeterminate"); err != nil {
 		return 0, err
+	}
+	observability.NoteLeaseExpired(ctx, len(pairs))
+	for range pairs {
+		observability.NoteExecutionOutcome(ctx, "indeterminate")
 	}
 
 	expired, err := tx.Query(ctx, `

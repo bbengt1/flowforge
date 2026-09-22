@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -124,6 +125,8 @@ func (r *Runner) claimOne(ctx context.Context, tenantSlug, workbenchKey, workspa
 	if claim == nil {
 		return false, nil
 	}
+	ctx, span := observability.Continue(ctx, claim.TraceParent, claim.TraceState, "worker.job")
+	defer span.End()
 	if claim.Job.Status == wfstore.JobWaiting || strings.TrimSpace(claim.JobToken) == "" {
 		r.log.Info("local worker skipped parked job",
 			"job_id", claim.Job.ID,

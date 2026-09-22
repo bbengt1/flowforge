@@ -55,7 +55,12 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
   cookie. Trusted-dev identity headers work only when that flag is on.
   When `MACHINE_REQUIRE` includes `metrics`, a missing, revoked, or
   ungranted `MACHINE_METRICS_CLIENT_ID` fails closed (`503`) before the
-  scrape is served, including for a human platform-admin. Health and
+  scrape is served, including for a human platform-admin. Metric labels
+  are closed enums (method/route/status, or vault/queue `op` /
+  `result` / `outcome`). They do not carry secret material, request
+  ids, or credential ids. W3C `traceparent` is a correlation id on the
+  response and on `execution_jobs`, not a credential; secret-like
+  `tracestate` is dropped. Health and
   readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
   unauthenticated so Kubernetes probes keep working.
 - Machine principals (`issuer=flowforge:machine`) are the non-human

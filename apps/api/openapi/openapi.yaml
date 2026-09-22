@@ -711,18 +711,27 @@ paths:
       operationId: getMetrics
       summary: Baseline Prometheus metrics
       description: |
-        Prometheus 0.0.4 text exposition of HTTP request counts and
-        duration histograms. Labels are method, route, and status only.
-        Requires `platform.administer` (`PLATFORM_ADMINS`) or a machine
-        principal granted `ops.metrics.read` (or an explicit machine
-        `platform.administer` grant). Scrapers send `Authorization: Bearer`
-        with the opaque `ff_session` token from `POST /machine/token`, or
-        the `ff_session` cookie. Trusted-dev identity headers work only when
+        Prometheus 0.0.4 text exposition. The hand-rolled HTTP series
+        (`flowforge_http_requests_total`,
+        `flowforge_http_request_duration_seconds`) keep method, route, and
+        status labels only. OpenTelemetry adds business series for queue
+        depth, queue lag, lease claims, lease expirations, execution
+        outcomes, and vault operations. Those labels are closed enums
+        (`result`, `outcome`, `op`) and never carry secrets, request ids,
+        or credential material. Requires `platform.administer`
+        (`PLATFORM_ADMINS`) or a machine principal granted
+        `ops.metrics.read` (or an explicit machine `platform.administer`
+        grant). Scrapers send `Authorization: Bearer` with the opaque
+        `ff_session` token from `POST /machine/token`, or the `ff_session`
+        cookie. Trusted-dev identity headers work only when
         `TRUSTED_DEV_IDENTITY_HEADERS` is on. A human who is not a platform
         admin is `403`. There is no anonymous scrape. When `MACHINE_REQUIRE`
         includes `metrics`, a missing, revoked, or ungranted
         `MACHINE_METRICS_CLIENT_ID` is `503` before the scrape is served.
-        Health and readiness stay unauthenticated.
+        Health and readiness stay unauthenticated. Responses also carry
+        W3C `traceparent` (and `tracestate` when it passes validation).
+        SLOs and example alert rules are in
+        `docs/operations/slo-alerts.md`.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
