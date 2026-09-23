@@ -7,6 +7,7 @@ import {
   FLOWFORGE_WORKBENCH_KEY_HEADER,
   FLOWFORGE_WORKSPACE_ID_HEADER,
 } from "./identity-headers.ts";
+import { GENERATED_PROXY_ROUTES } from "./identity-proxy-allowlist.gen.ts";
 import {
   fetchIdentityControlPlane,
   fetchIdentityControlPlaneStream,
@@ -26,6 +27,32 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe("generated identity-proxy allowlist", () => {
+  it("classifies embed, public, and authenticated routes from the route table", () => {
+    const catalog = GENERATED_PROXY_ROUTES.find(
+      (route) => route.pattern.join("/") === "embed/catalog",
+    );
+    assert.equal(catalog?.auth, "embed");
+    assert.deepEqual(catalog?.methods, ["GET"]);
+    const exchange = GENERATED_PROXY_ROUTES.find(
+      (route) => route.pattern.join("/") === "embed/exchange",
+    );
+    assert.equal(exchange?.auth, "embed");
+    const login = GENERATED_PROXY_ROUTES.find(
+      (route) => route.pattern.join("/") === "login",
+    );
+    assert.equal(login?.auth, "public");
+    const workflows = GENERATED_PROXY_ROUTES.find(
+      (route) => route.pattern.join("/") === "workflows",
+    );
+    assert.equal(workflows?.auth, "authenticated");
+    const joined = GENERATED_PROXY_ROUTES.map((route) => route.pattern.join("/"));
+    for (const absent of ["health", "hooks/{publicId}", "jobs/claim", "metrics", "scim/v2/Users"]) {
+      assert.equal(joined.includes(absent), false, absent);
+    }
+  });
 });
 
 describe("resolveIdentityProxyTarget", () => {
@@ -422,17 +449,6 @@ describe("resolveIdentityProxyTarget", () => {
         "POST",
         ["executions", "33333333-3333-4333-8333-333333333333", "cancel"],
         "/api/v1/executions/33333333-3333-4333-8333-333333333333/cancel",
-      ],
-      [
-        "POST",
-        [
-          "workflows",
-          "11111111-1111-4111-8111-111111111111",
-          "executions",
-          "33333333-3333-4333-8333-333333333333",
-          "cancel",
-        ],
-        "/api/v1/workflows/11111111-1111-4111-8111-111111111111/executions/33333333-3333-4333-8333-333333333333/cancel",
       ],
       [
         "POST",
@@ -1192,6 +1208,18 @@ describe("resolveIdentityProxyTarget", () => {
       assert.equal(missing.status, 404);
       const problem = missing.problem("/api/control-plane/not-a-route", "id-16-characters");
       assert.equal(problem.code, "not-found");
+    }
+
+    const nestedCancel = resolveIdentityProxyTarget("POST", [
+      "workflows",
+      "11111111-1111-4111-8111-111111111111",
+      "executions",
+      "33333333-3333-4333-8333-333333333333",
+      "cancel",
+    ]);
+    assert.equal("status" in nestedCancel, true);
+    if ("status" in nestedCancel) {
+      assert.equal(nestedCancel.status, 404);
     }
 
     const publicIngress = resolveIdentityProxyTarget("POST", [
