@@ -414,6 +414,21 @@ func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, work
 			return existing, nil
 		}
 	}
+	if in.MaxOpen > 0 {
+		open := 0
+		for _, candidate := range m.executions {
+			if candidate.workspaceID != scope.WorkspaceID() {
+				continue
+			}
+			if isTerminalExecution(candidate.record.Status) {
+				continue
+			}
+			open++
+		}
+		if open >= in.MaxOpen {
+			return Execution{}, ErrConcurrency
+		}
+	}
 	now := time.Now().UTC()
 	exec := Execution{
 		ID:                newID(),

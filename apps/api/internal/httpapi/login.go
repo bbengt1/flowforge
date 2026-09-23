@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
@@ -36,9 +37,14 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.allowLogin(r, identifier) {
+	ok, retry, err := s.allowLogin(r, identifier)
+	if err != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !ok {
 		s.auditLoginRejected(r, "rate-limited")
-		s.writeLoginRateLimited(w, r)
+		writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	cred, err := s.store.LookupLocalLogin(r.Context(), identifier)
@@ -167,26 +173,16 @@ func loginBodyForbidden(key string) bool {
 	}
 }
 
-func (s *Server) allowLogin(r *http.Request, identifier string) bool {
+func (s *Server) allowLogin(r *http.Request, identifier string) (bool, time.Duration, error) {
 	if s.loginLimiter == nil {
-		return false
+		return false, localauth.DefaultRateWindow, nil
 	}
 	now := s.clockNow()
-	if !s.loginLimiter.Allow(localauth.IPKey(s.requestClientIP(r)), s.loginLimits.PerIP, now) {
-		return false
+	ok, retry, err := s.loginLimiter.Decide(r.Context(), localauth.IPKey(s.requestClientIP(r)), s.loginLimits.PerIP, now)
+	if err != nil || !ok {
+		return ok, retry, err
 	}
-	if !s.loginLimiter.Allow(localauth.IdentifierKey(identifier), s.loginLimits.Identifier, now) {
-		return false
-	}
-	return true
-}
-
-func (s *Server) writeLoginRateLimited(w http.ResponseWriter, r *http.Request) {
-	retry := localauth.DefaultRateWindow
-	if s.loginLimiter != nil {
-		retry = s.loginLimiter.RetryAfter(s.clockNow())
-	}
-	writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
+	return s.loginLimiter.Decide(r.Context(), localauth.IdentifierKey(identifier), s.loginLimits.Identifier, now)
 }
 
 func (s *Server) auditLoginRejected(r *http.Request, reason string) {

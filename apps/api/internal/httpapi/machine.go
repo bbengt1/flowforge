@@ -24,19 +24,29 @@ func (s *Server) postMachineToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.allowMachineIP(r) {
-		s.auditLoginRejected(r, "rate-limited")
-		s.writeMachineRateLimited(w, r)
+	ok, retry, err := s.allowMachineIP(r)
+	if err != nil {
+		writeRateStoreUnavailable(w, r)
 		return
 	}
-	clientID, err := machine.NormalizeClientID(clientID)
+	if !ok {
+		s.auditLoginRejected(r, "rate-limited")
+		writeRateLimited(w, r, retry, "Machine token rate limit exceeded. Retry after the configured window.")
+		return
+	}
+	clientID, err = machine.NormalizeClientID(clientID)
 	if err != nil {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "client_id is required.")
 		return
 	}
-	if !s.allowMachineClient(clientID) {
+	allowedClient, retryClient, clientErr := s.allowMachineClient(r, clientID)
+	if clientErr != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !allowedClient {
 		s.auditLoginRejected(r, "rate-limited")
-		s.writeMachineRateLimited(w, r)
+		writeRateLimited(w, r, retryClient, "Machine token rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	principal, err := s.machines.GetByClientID(r.Context(), clientID)
@@ -308,26 +318,18 @@ func (s *Server) resolveMachineWorkspace(r *http.Request, tenantID, tenantSlug, 
 	return tenant.ID, ws.ID, ws.WorkbenchKey, nil
 }
 
-func (s *Server) allowMachineIP(r *http.Request) bool {
+func (s *Server) allowMachineIP(r *http.Request) (bool, time.Duration, error) {
 	if s.machineLimiter == nil {
-		return false
+		return false, time.Minute, nil
 	}
-	return s.machineLimiter.Allow("machine-ip:"+s.requestClientIP(r), machineRateIP, s.clockNow())
+	return s.machineLimiter.Decide(r.Context(), "machine-ip:"+s.requestClientIP(r), machineRateIP, s.clockNow())
 }
 
-func (s *Server) allowMachineClient(clientID string) bool {
+func (s *Server) allowMachineClient(r *http.Request, clientID string) (bool, time.Duration, error) {
 	if s.machineLimiter == nil {
-		return false
+		return false, time.Minute, nil
 	}
-	return s.machineLimiter.Allow("machine-client:"+clientID, machineRateClient, s.clockNow())
-}
-
-func (s *Server) writeMachineRateLimited(w http.ResponseWriter, r *http.Request) {
-	retry := time.Minute
-	if s.machineLimiter != nil {
-		retry = s.machineLimiter.RetryAfter(s.clockNow())
-	}
-	writeRateLimited(w, r, retry, "Machine token rate limit exceeded. Retry after the configured window.")
+	return s.machineLimiter.Decide(r.Context(), "machine-client:"+clientID, machineRateClient, s.clockNow())
 }
 
 func (s *Server) logMachine(msg string, r *http.Request, err error) {

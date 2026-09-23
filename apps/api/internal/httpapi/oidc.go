@@ -30,9 +30,14 @@ func (s *Server) postOIDCStart(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "OIDC is not configured.")
 		return
 	}
-	if !s.allowOIDC(r) {
+	ok, retry, err := s.allowOIDC(r)
+	if err != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !ok {
 		s.auditLoginRejected(r, "rate-limited")
-		s.writeLoginRateLimited(w, r)
+		writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	if !decodeOIDCStart(w, r) {
@@ -61,9 +66,14 @@ func (s *Server) postOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "OIDC is not configured.")
 		return
 	}
-	if !s.allowOIDC(r) {
+	allowed, retry, rateErr := s.allowOIDC(r)
+	if rateErr != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !allowed {
 		s.auditLoginRejected(r, "rate-limited")
-		s.writeLoginRateLimited(w, r)
+		writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	in, ok := decodeOIDCCallback(w, r)
@@ -108,11 +118,11 @@ func (s *Server) postOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	s.mintStandaloneSession(w, r, user, "oidc")
 }
 
-func (s *Server) allowOIDC(r *http.Request) bool {
+func (s *Server) allowOIDC(r *http.Request) (bool, time.Duration, error) {
 	if s.loginLimiter == nil {
-		return false
+		return false, time.Minute, nil
 	}
-	return s.loginLimiter.Allow("oidc:"+s.requestClientIP(r), oidcRatePerIP, s.clockNow())
+	return s.loginLimiter.Decide(r.Context(), "oidc:"+s.requestClientIP(r), oidcRatePerIP, s.clockNow())
 }
 
 func (s *Server) writeOIDCError(w http.ResponseWriter, r *http.Request, err error) {

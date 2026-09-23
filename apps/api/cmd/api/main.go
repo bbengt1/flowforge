@@ -117,6 +117,7 @@ func main() {
 		PlatformAdmins:       cfg.PlatformAdmins,
 		EmbedLimits:          cfg.EmbedLimits,
 		LoginLimits:          cfg.LoginLimits,
+		Quota:                cfg.Quota,
 		EmbedNBFLeeway:       cfg.EmbedNBFLeeway,
 		MachineConsumers:     cfg.MachineConsumers,
 		OIDC:                 cfg.OIDC,

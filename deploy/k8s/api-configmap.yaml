@@ -32,6 +32,19 @@ data:
   # SCIM_DEFAULT_ROLE: "viewer"
   # Durable lockout. Unset uses 5. Integer 1-50. 0 is a boot-fail.
   # LOCKOUT_MAX_FAILURES: "5"
+  # Per-workspace token buckets (PostgreSQL). Login, embed, and machine
+  # token keep LOGIN_RATE_LIMIT_* / EMBED_* budgets and are not these
+  # buckets. Unset uses the defaults. Negative is unlimited. Above one
+  # replica the process refuses an in-memory rate store.
+  # QUOTA_MUTATE_PER_MINUTE: "120"
+  # QUOTA_MUTATE_BURST: "120"
+  # QUOTA_READ_PER_MINUTE: "300"
+  # QUOTA_READ_BURST: "300"
+  # QUOTA_DOWNLOAD_PER_MINUTE: "60"
+  # QUOTA_DOWNLOAD_BURST: "60"
+  # QUOTA_EXECUTE_PER_MINUTE: "30"
+  # QUOTA_EXECUTE_BURST: "30"
+  # QUOTA_EXECUTE_CONCURRENCY: "20"
   # Ingress terminates TLS. Trust the cluster pod/service CIDRs, then require HTTPS.
   REQUIRE_TLS: "true"
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"

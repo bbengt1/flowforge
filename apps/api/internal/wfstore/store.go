@@ -47,6 +47,8 @@ var (
 	ErrFolderDepth                = errors.New("folder depth exceeds maximum")
 	ErrFolderCycle                = errors.New("folder re-parent would create a cycle")
 	ErrFolderNotEmpty             = errors.New("folder is not empty")
+	// ErrConcurrency is the per-workspace cap on non-terminal executions.
+	ErrConcurrency = errors.New("execution concurrency limit exceeded")
 )
 
 // Validation states persisted with a draft.
@@ -447,6 +449,11 @@ type StartInput struct {
 	RequestedBy    string
 	PolicySnapshot map[string]any
 	HostContext    map[string]any
+	// MaxOpen caps non-terminal executions in the workspace. Zero and
+	// negative skip the cap (unit tests). A positive cap is checked in
+	// the start transaction so replicas cannot overshoot. Idempotent
+	// replay does not take a new slot.
+	MaxOpen int
 }
 
 // ClaimInput claims the next queued job in the workspace.

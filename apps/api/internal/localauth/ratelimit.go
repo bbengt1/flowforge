@@ -21,8 +21,11 @@ const (
 	EnvRateLimitWindow     = "LOGIN_RATE_LIMIT_WINDOW"
 )
 
-// Limits are per-process local-login rate limits. Zero fields become
-// defaults. A negative limit is unlimited (ops/test escape hatch).
+// Limits are the POST /login budgets. Zero fields become defaults. A
+// negative limit is unlimited (ops/test escape hatch). The HTTP server
+// keeps an in-memory window for one process and a PostgreSQL window
+// when a database is configured. The env names do not change. This
+// budget is not the workspace QUOTA_* bucket.
 type Limits struct {
 	Window     time.Duration
 	PerIP      int

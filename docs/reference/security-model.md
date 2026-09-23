@@ -20,6 +20,12 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 - Authentication establishes a subject. Authorization then evaluates the action,
   workspace, resource, workflow version, target, and current policy. A valid
   session alone never authorizes a run, credential use, approval, or export.
+- Workspace quotas are a shared token bucket (`QUOTA_*`) on mutating and
+  expensive routes, plus a cap on open executions. Local login, embed
+  mint/exchange, machine token, and webhook ingress keep separate budgets.
+  `FLOWFORGE_REPLICAS` above 1 refuses an in-memory rate store. A store
+  error fails closed (`503`). Responses and logs do not include limiter
+  keys, identifiers, or client addresses from those counters.
 - Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
   `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
   authentication and must not upsert principals. Prefer the cookie session

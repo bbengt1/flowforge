@@ -323,6 +323,26 @@ func TestLoadEmbedRateLimitsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadWorkspaceQuotaFromEnv(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("QUOTA_MUTATE_PER_MINUTE", "11")
+	t.Setenv("QUOTA_EXECUTE_CONCURRENCY", "4")
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Quota.MutatePerMinute != 11 || cfg.Quota.MutateBurst != 11 || cfg.Quota.ExecuteConcurrency != 4 {
+		t.Fatalf("quota %+v", cfg.Quota)
+	}
+	if cfg.Quota.ReadPerMinute != 300 || cfg.LoginLimits.PerIP != 60 {
+		t.Fatalf("login budget must stay separate from quota %+v %+v", cfg.Quota, cfg.LoginLimits)
+	}
+}
+
 func TestLoadLoginRateLimitsFromEnv(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

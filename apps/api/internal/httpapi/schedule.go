@@ -446,7 +446,7 @@ func (s *Server) dispatchScheduleExecution(ctx context.Context, scope isolation.
 			return wfstore.Execution{}, false, gateErr
 		}
 	}
-	exec, err := s.workflows.StartExecution(ctx, scope, workflowID, start)
+	exec, err := s.workflows.StartExecution(ctx, scope, workflowID, s.capStart(start))
 	if err != nil {
 		return wfstore.Execution{}, false, err
 	}

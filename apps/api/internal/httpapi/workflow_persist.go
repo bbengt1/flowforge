@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -587,7 +588,7 @@ func (s *Server) startWorkflowExecution(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, start)
+	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, s.capStart(start))
 	if err != nil {
 		s.emitSecurityError(r, scope, err)
 		writeWorkflowStoreError(w, r, err)
@@ -831,6 +832,8 @@ func writeWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		WriteProblem(w, r, http.StatusConflict, CodeConflict, "Conflict", "Published versions are immutable.")
 	case errors.Is(err, wfstore.ErrDraftNotRunnable):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Drafts cannot be executed. Select a published workflow version.")
+	case errors.Is(err, wfstore.ErrConcurrency):
+		writeRateLimited(w, r, time.Second, "Workspace execution concurrency limit exceeded. Retry after an open execution finishes.")
 	case errors.Is(err, wfstore.ErrIdempotencyKeyInvalid):
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "Idempotency key must be 1-128 characters matching [A-Za-z0-9._~:-].")
 	case errors.Is(err, wfstore.ErrIdempotencyConflict):

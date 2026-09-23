@@ -28,6 +28,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/quota"
 	"github.com/bbengt1/flowforge/apps/api/internal/schedule"
 	"github.com/bbengt1/flowforge/apps/api/internal/scim"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -78,6 +79,8 @@ type Server struct {
 	loginLimiter     *embed.Limiter
 	machineLimiter   *embed.Limiter
 	loginLimits      localauth.Limits
+	quota            quota.Taker
+	quotaLimits      quota.Limits
 	machines         machine.Store
 	machineConsumers machine.Consumers
 	oidc             *oidc.Client
@@ -129,6 +132,11 @@ type Deps struct {
 	// LoginLimits rate-limits POST /login before bcrypt. Separate from
 	// embed exchange so those IP budgets do not share a counter.
 	LoginLimits localauth.Limits
+	// Quota is the per-workspace token bucket. Zero uses documented
+	// defaults. HTTP unit tests set Unlimited. QuotaStore overrides the
+	// store; nil selects PostgreSQL when DB is a pool and memory otherwise.
+	Quota      quota.Limits
+	QuotaStore quota.Taker
 	// Machines is the service-principal store. Nil selects Postgres when
 	// DB is a pool and an in-memory store otherwise.
 	Machines machine.Store
@@ -223,6 +231,9 @@ func withHTTPTestIdentity(d Deps) Deps {
 	}
 	if len(d.JobBindingKey) == 0 && len(d.Security.JobBindingKey) == 0 {
 		d.JobBindingKey = wfstore.NewJobBindingKey()
+	}
+	if d.Quota.IsZero() && d.QuotaStore == nil {
+		d.Quota = quota.Unlimited()
 	}
 	if len(d.ScriptSigningKey) == 0 {
 		d.ScriptSigningKey = scripts.NewSigningKey()
@@ -451,6 +462,7 @@ func newServer(d Deps) *API {
 		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
 		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
 		loginLimits:      localauth.NormalizeLimits(d.LoginLimits),
+		quotaLimits:      quota.Normalize(d.Quota),
 		embedAuditor:     d.EmbedAuditor,
 		embedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
 		tlsMaterials:     d.TLSMaterials,
@@ -482,6 +494,19 @@ func newServer(d Deps) *API {
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
+	s.quota = d.QuotaStore
+	if pool, ok := d.DB.(*postgres.Pool); ok {
+		shared := quota.NewPostgres(pool)
+		if s.quota == nil {
+			s.quota = shared
+		}
+		s.embedLimiter.UseShared(shared)
+		s.loginLimiter.UseShared(shared)
+		s.machineLimiter.UseShared(shared)
+	}
+	if s.quota == nil {
+		s.quota = quota.NewMemory()
+	}
 	if p, ok := d.DB.(*postgres.Pool); ok {
 		s.mfa = mfa.NewPostgres(p)
 		s.oidc = oidc.NewClient(d.OIDC, oidc.NewPostgres(p))
@@ -771,6 +796,18 @@ func newServer(d Deps) *API {
 		{"alert", s.alerts},
 		{"script", scriptStore},
 	}, d.ArtifactBackend)
+	if quotaUnshared(s.quota) {
+		unshared = append(unshared, "rate")
+	}
+	if !s.loginLimiter.Shared() {
+		unshared = append(unshared, "login-rate")
+	}
+	if !s.embedLimiter.Shared() {
+		unshared = append(unshared, "embed-rate")
+	}
+	if !s.machineLimiter.Shared() {
+		unshared = append(unshared, "machine-rate")
+	}
 	return &API{
 		Handler:    withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router)))))),
 		srv:        s,
