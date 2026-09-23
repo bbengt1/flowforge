@@ -563,10 +563,34 @@ func TestLoadPublicBaseURL(t *testing.T) {
 
 func TestLoadRejectsInvalidCredentialKEK(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("APP_ENV", "development")
 	t.Setenv("CREDENTIAL_KEK", "not-a-32-byte-key")
 	t.Setenv("CREDENTIAL_KEK_FILE", "")
+	t.Setenv("KMS_PROVIDER", "")
 	if _, err := loadTestConfig(t); err == nil {
 		t.Fatal("expected invalid CREDENTIAL_KEK error")
+	}
+}
+
+func TestLoadProductionRejectsPlaintextKEK(t *testing.T) {
+	kek := strings.Repeat("ab", 32)
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("CREDENTIAL_KEK", kek)
+	t.Setenv("CREDENTIAL_KEK_FILE", "")
+	t.Setenv("KMS_PROVIDER", "")
+	t.Setenv("CREDENTIAL_KEK_WRAPPED", "")
+	_, err := loadTestConfig(t)
+	if err == nil {
+		t.Fatal("production plaintext KEK must fail closed")
+	}
+	if strings.Contains(err.Error(), kek) {
+		t.Fatal("config error echoed KEK")
+	}
+	if !strings.Contains(err.Error(), "KMS_PROVIDER") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

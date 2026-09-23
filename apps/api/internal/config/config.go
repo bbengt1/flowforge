@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -57,8 +58,10 @@ type Config struct {
 	CORSAllowedOrigins     []string
 	SessionIdleTimeout     time.Duration
 	SessionAbsoluteTimeout time.Duration
-	// VaultKeys is the local envelope KEK loaded from CREDENTIAL_KEK /
-	// CREDENTIAL_KEK_FILE. Empty keys fail closed on vault write/unlock.
+	// VaultKeys is the data-encryption KEK. Non-production may load a
+	// plaintext CREDENTIAL_KEK. A production-locked process unwraps a
+	// KMS blob and refuses a plaintext KEK. Empty keys fail closed on
+	// vault write/unlock. The bytes must not be logged.
 	VaultKeys vault.Keys
 	// JobBindingKey is the 32-byte HMAC for worker job tickets
 	// (JOB_BINDING_SECRET). Missing or malformed is a boot-fail.
@@ -161,10 +164,6 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS: %w", err)
 	}
-	keys, err := vault.LoadKeys()
-	if err != nil {
-		return Config{}, err
-	}
 	jobKey, err := wfstore.LoadJobBindingKey()
 	if err != nil {
 		return Config{}, err
@@ -194,7 +193,6 @@ func Load() (Config, error) {
 		CORSAllowedOrigins:        origins,
 		SessionIdleTimeout:        durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		SessionAbsoluteTimeout:    durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
-		VaultKeys:                 keys,
 		JobBindingKey:             jobKey,
 		ScriptSigningKey:          scriptKey,
 		ArtifactStoreDir:          strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
@@ -251,6 +249,11 @@ func Load() (Config, error) {
 	}
 	cfg.PublicBaseURL = publicURL
 	requireHTTPS := authz.ProductionLocked(appEnv, cfg.RequireTLS)
+	keys, err := vault.ResolveKeys(context.Background(), requireHTTPS)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.VaultKeys = keys
 	if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
 		return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)
 	}

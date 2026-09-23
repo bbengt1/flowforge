@@ -23,12 +23,19 @@ const (
 	kekSize = 32
 )
 
-// Keys is the local envelope-encryption material for the MVP vault.
-// Production should wrap this KEK with a KMS; the process still loads
-// only the unwrapped 32-byte key from the environment.
+// Keys is the in-process envelope-encryption material. KEK and Previous
+// are 32-byte data-encryption keys. Production loads them by unwrapping
+// a KMS blob (see ResolveKeys). They must not be logged or returned.
 type Keys struct {
-	KEK []byte
-	ID  string
+	KEK        []byte
+	ID         string
+	Previous   []byte
+	PreviousID string
+}
+
+// String omits key bytes so a log of the value cannot print the KEK.
+func (k Keys) String() string {
+	return fmt.Sprintf("vault.Keys{id=%s,previous=%s}", k.ID, k.PreviousID)
 }
 
 // LoadKeys reads the KEK from the process environment. An empty source
@@ -62,9 +69,13 @@ func LoadKeys() (Keys, error) {
 	return Keys{KEK: kek, ID: id}, nil
 }
 
-// Ready reports whether encrypt/decrypt operations can run.
+// Ready reports whether encrypt operations can run.
 func (k Keys) Ready() bool {
 	return len(k.KEK) == kekSize && strings.TrimSpace(k.ID) != ""
+}
+
+func (k Keys) previousReady() bool {
+	return len(k.Previous) == kekSize && strings.TrimSpace(k.PreviousID) != ""
 }
 
 func parseKEK(raw string) ([]byte, error) {

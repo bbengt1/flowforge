@@ -58,6 +58,13 @@ SESSION_ABSOLUTE_TIMEOUT=12h
 # CREDENTIAL_KEK=Zmxvd2ZvcmdlLWxvY2FsLWRldi1rZWstMzJieXRlcyE=
 # CREDENTIAL_KEK_FILE=
 # CREDENTIAL_KEK_ID=local:compose
+# Production-locked processes refuse CREDENTIAL_KEK. Use KMS wrap instead
+# (docs/operations/kek-rotation.md). Do not put a plaintext key in
+# CREDENTIAL_KEK_WRAPPED.
+# KMS_PROVIDER=aws
+# KMS_AWS_REGION=us-east-1
+# KMS_AWS_KEY_ID=alias/flowforge
+# CREDENTIAL_KEK_WRAPPED=
 # HMAC keys for worker job tickets (E5.2) and script artifact signatures
 # (E9.1). 32-byte secret as base64 or 64 hex. Missing or malformed is a
 # boot-fail — the API never mints a per-process random key. Compose

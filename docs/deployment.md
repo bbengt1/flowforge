@@ -64,9 +64,11 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `CORS_ALLOWED_ORIGINS` | empty | Exact browser origins allowed to make credentialed API calls. Empty fails closed. Wildcard is rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Browser session absolute lifetime. |
-| `CREDENTIAL_KEK` | empty (compose: documented local-only default) | 32-byte AES-256 credential envelope KEK (base64 or hex). Generate with `openssl rand -base64 32`. Required to create/rotate vault secrets and to seed demo credentials. Compose may default a local-only value (`CREDENTIAL_KEK_ID=local:compose`). Never copy that default to k8s. |
-| `CREDENTIAL_KEK_FILE` | empty | Optional KEK file path (same encoding, or raw 32 bytes). |
-| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Key reference stored with ciphertext (not the key). |
+| `CREDENTIAL_KEK` | empty (compose: documented local-only default) | 32-byte AES-256 data-encryption KEK (base64 or hex). **Non-production only.** A production-locked process refuses a plaintext KEK and requires `CREDENTIAL_KEK_WRAPPED` plus `KMS_PROVIDER`. Compose may default a local-only value (`CREDENTIAL_KEK_ID=local:compose`). Never copy that default to k8s. |
+| `CREDENTIAL_KEK_FILE` | empty | Optional plaintext KEK file. Same production refusal as `CREDENTIAL_KEK`. |
+| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` or `kms:<provider>:<16 hex>` | Key reference stored with ciphertext (not the key). Data-KEK rotation must set a new id. |
+| `CREDENTIAL_KEK_WRAPPED` | empty | KMS ciphertext of the data KEK (`ff1:<provider>:…`). The only at-rest KEK form in production. Never a plaintext key. |
+| `KMS_PROVIDER` | empty | `aws`, `gcp`, `azure`, or `vault`. Required in production when any KEK is configured. Partial `KMS_*` config is a boot-fail. See [KEK rotation](operations/kek-rotation.md). |
 | `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. | 
 | `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted artifact payloads. Required with the access key and secret. Production-locked processes **boot-fail** without this set. | 
 | `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Region for signing and for `CreateBucket` outside `us-east-1`. | 
@@ -171,7 +173,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Compose-documented `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` (local-only) | Unique durable secrets on the Secret. **Boot-fail** if missing or malformed. Do not copy the compose defaults. |
 | Compose `worker` (`LOCAL_WORKER` unset, `APP_ENV=development`) | **Do not run `/usr/local/bin/worker` or set `LOCAL_WORKER`.** Run `/usr/local/bin/runner` (`deploy/k8s/runner-deployment.yaml`). The compose worker **boot-fails** if `APP_ENV` is production-locked or `REQUIRE_TLS=true`. The runner **boot-fails** on the local/dev path. |
 | Compose web `API_INTERNAL_URL=http://api:8080` and `NEXT_PUBLIC_API_URL=http://localhost:8080` | `deploy/k8s/web-deployment.yaml` sets `API_INTERNAL_URL=http://flowforge-api:8080`. Rebuild the web image with the public https `NEXT_PUBLIC_API_URL`. Do not copy localhost. |
-| `CREDENTIAL_KEK` optional to boot; compose may set a local-only default | Required to create/rotate vault secrets and to decrypt artifacts after restore. Generate a unique KEK. Do not copy `local:compose`. |
+| `CREDENTIAL_KEK` optional to boot; compose may set a local-only plaintext default | Plaintext `CREDENTIAL_KEK` is a **boot-fail**. Set `KMS_PROVIDER` and `CREDENTIAL_KEK_WRAPPED` (see [KEK rotation](operations/kek-rotation.md)). Do not copy `local:compose`. |
 | Compose MinIO (`ARTIFACT_S3_*`, `ARTIFACT_S3_CREATE_BUCKET=true`, local root password) | S3-compatible bucket required. **Boot-fail** without bucket + access key + secret. `ARTIFACT_S3_CREATE_BUCKET` is a boot-fail. Do not copy the MinIO password. Object-store egress is not opened by the default NetworkPolicy. |
 | First-run local Login `admin` / `admin` when `local_logins` is empty (`must_change_password`) | **Rotate immediately.** Production Login still works, but chrome must stay on change-password until cleared. Leaving the one-time secret is fail-closed, not a permanent operator account. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |

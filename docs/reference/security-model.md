@@ -313,7 +313,11 @@ produce an auditable, version-pinned execution.
   redaction. Alert payloads carry correlation/resource identifiers only.
 - Enforce dependency/image provenance, vulnerability scanning, patching SLAs,
   secret rotation, backup encryption, restore testing, and least-privilege
-  service identities before production use.
+  service identities before production use. The vault data-encryption KEK
+  is KMS-wrapped in a production-locked process (`aws`, `gcp`, `azure`, or
+  `vault`). Plaintext `CREDENTIAL_KEK` is a boot-fail there. Rotation keeps
+  a previous KEK until online DEK rewrap finishes. Operator steps:
+  [KEK rotation](../operations/kek-rotation.md).
 - Security tests cover cross-workspace reads/writes and subscriptions; assertion
   validation and replay; CSRF/CORS; webhook signature, replay, rate, and body
   limits; output/artifact authorization and redaction; stale worker fencing;
