@@ -115,9 +115,9 @@ def cleanup() -> None:
         )
     finally:
         if not os.environ.get("BACKUP_KEEP_WORKDIR"):
-            for p in workdir.glob("*"):
-                p.unlink(missing_ok=True)
-            workdir.rmdir()
+            import shutil
+
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 started = time.monotonic()
@@ -130,6 +130,64 @@ try:
     )
     if not enc.is_file() or enc.stat().st_size == 0:
         raise SystemExit("encrypted dump missing after run-encrypted-backup.sh")
+    manifest = (
+        enc.with_name(enc.name[: -len(".sql.enc")] + ".manifest.enc")
+        if enc.name.endswith(".sql.enc")
+        else enc.with_name(enc.name + ".manifest.enc")
+    )
+    if not manifest.is_file() or manifest.read_bytes()[:4] != b"FFB1":
+        raise SystemExit("integrity manifest missing after run-encrypted-backup.sh")
+    subprocess.run(
+        [
+            "python3",
+            str(root / "scripts/backup/manifest.py"),
+            "verify",
+            "--manifest",
+            str(manifest),
+            "--dir",
+            str(workdir),
+        ],
+        env=env,
+        check=True,
+    )
+    tamper_dir = workdir / "tamper"
+    tamper_dir.mkdir()
+    dumped = bytearray(enc.read_bytes())
+    dumped[-1] ^= 0x01
+    (tamper_dir / enc.name).write_bytes(bytes(dumped))
+    (tamper_dir / manifest.name).write_bytes(manifest.read_bytes())
+    tampered = subprocess.run(
+        [
+            "python3",
+            str(root / "scripts/backup/manifest.py"),
+            "verify",
+            "--manifest",
+            str(tamper_dir / manifest.name),
+            "--dir",
+            str(tamper_dir),
+        ],
+        env=env,
+    )
+    if tampered.returncode == 0:
+        raise SystemExit("tampered backup was accepted")
+    (tamper_dir / enc.name).write_bytes(enc.read_bytes())
+    man_bytes = bytearray(manifest.read_bytes())
+    man_bytes[-1] ^= 0x01
+    (tamper_dir / manifest.name).write_bytes(bytes(man_bytes))
+    tampered = subprocess.run(
+        [
+            "python3",
+            str(root / "scripts/backup/manifest.py"),
+            "verify",
+            "--manifest",
+            str(tamper_dir / manifest.name),
+            "--dir",
+            str(tamper_dir),
+        ],
+        env=env,
+    )
+    if tampered.returncode == 0:
+        raise SystemExit("tampered manifest was accepted")
 
     psql("postgres", f'CREATE DATABASE "{restore_db}"')
     dec = subprocess.Popen(
@@ -185,6 +243,10 @@ try:
         "encrypted": True,
         "aead": True,
         "format": "FFB1",
+        "integrityManifest": True,
+        "tamperRejected": True,
+        "logicalRpoHours": rpo_hours,
+        "pitrRpoSeconds": int(os.environ.get("BACKUP_WAL_RPO_SECONDS", "300")),
         "path": "scripts/backup/run-encrypted-backup.sh",
         "cronSchedule": "0 2 * * *",
         "isolatedDatabaseDropped": True,

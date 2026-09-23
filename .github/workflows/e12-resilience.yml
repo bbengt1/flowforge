@@ -50,11 +50,20 @@ jobs:
           check-latest: true
           cache-dependency-path: apps/api/go.sum
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client python3-cryptography
+      - name: Install PostgreSQL client and server
+        # postgresql-16's default cluster would bind 5432 and collide with
+        # the service container. Install the server binaries only.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common postgresql-client python3-cryptography
+          sudo sed -i 's/^#create_main_cluster = true/create_main_cluster = false/' /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-16
 
       - name: AEAD selftest
         run: python3 scripts/backup/aead.py selftest
+
+      - name: Integrity manifest selftest
+        run: python3 scripts/backup/manifest.py selftest
 
       - name: Run E12.2 resilience suite
         env:
@@ -72,3 +81,4 @@ jobs:
             docs/reference/e12-resilience-evidence/capacity-last-run.json
             docs/reference/e12-resilience-evidence/restore-schema-last-run.json
             docs/reference/e12-resilience-evidence/rpo-rto-last-run.json
+            docs/reference/e12-resilience-evidence/manifest-pitr-last-run.json

@@ -1,23 +1,22 @@
-# Daily encrypted Postgres backup (G.1.4 / findings A3, C3).
-# Runs scripts/backup/run-encrypted-backup.sh (baked into the backup image).
-# Each dump is paired with an FFB1 integrity manifest (G.2.7). Ciphertext
-# lands in BACKUP_S3_BUCKET under flowforge-db/ — not the
-# ARTIFACT_S3_* tenant/workspace/ref object layout.
-# WAL/PITR is flowforge-wal-archive plus flowforge-pitr-base, not this job.
+# Daily physical base backup for PITR (G.2.7 / finding C3).
+# Sibling of flowforge-db-backup. Seals pg_basebackup base.tar and pg_wal.tar
+# as FFB1 and writes an integrity manifest. WAL segments are shipped by
+# flowforge-wal-archive, not this job. Drafts never run.
 #
 # Replace ghcr.io/bbengt1/flowforge-backup:foundation with a digest-pinned
 # image before production. CI rejects :latest.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: flowforge-db-backup
+  name: flowforge-pitr-base
   labels:
     app.kubernetes.io/name: flowforge
     app.kubernetes.io/component: backup
     app.kubernetes.io/part-of: flowforge
 spec:
-  # RPO target: 24h (see docs/operations/retention-backup.md).
-  schedule: "0 2 * * *"
+  # Base-backup cadence. PITR RPO is the WAL receiver interval (300s),
+  # not this schedule. See docs/operations/retention-backup.md.
+  schedule: "30 2 * * *"
   timeZone: UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
@@ -44,11 +43,11 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           containers:
-            - name: backup
+            - name: pitr-base
               # Replace with a digest-pinned image before production.
               image: ghcr.io/bbengt1/flowforge-backup:foundation
               imagePullPolicy: IfNotPresent
-              command: ["/usr/local/bin/run-encrypted-backup"]
+              command: ["/usr/local/bin/pitr-basebackup"]
               env:
                 - name: BACKUP_OUTDIR
                   value: /backups
@@ -56,6 +55,8 @@ spec:
                   value: "1"
                 - name: BACKUP_S3_PREFIX
                   value: flowforge-db
+                - name: BACKUP_PITR_CHECKPOINT
+                  value: fast
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:

@@ -119,7 +119,8 @@ an application smoke test in production).
 | --- | --- | --- | --- |
 | Encrypted compose dump + hardened API boot | `scripts/backup/restore-rehearsal.sh` | Decrypt → throwaway Postgres → `schema_migrations` → API `/health` + `/readiness` | `supply-chain.yml` job `restore-rehearsal` |
 | Schema-level isolated restore (no compose API) | `scripts/backup/restore-schema-rehearsal.sh` | Encrypted `pg_dump` of `TEST_DATABASE_URL`, restore into a throwaway database, version match, `execution_jobs` present | E12.2 `e12-resilience.yml` |
-| RPO/RTO (CronJob DSN path) | `scripts/backup/rpo-rto-rehearsal.sh` | Same `run-encrypted-backup.sh` entrypoint as `flowforge-db-backup`; records RPO hours + RTO seconds; fails if RTO budget exceeded | E12.2 `e12-resilience.yml` |
+| RPO/RTO (CronJob DSN path) | `scripts/backup/rpo-rto-rehearsal.sh` | Same `run-encrypted-backup.sh` entrypoint as `flowforge-db-backup`; verifies the FFB1 integrity manifest; tamper fails closed; records logical RPO (24h), PITR RPO (300s), and RTO | E12.2 `e12-resilience.yml` |
+| Integrity manifest + WAL/PITR | `scripts/backup/manifest-pitr-rehearsal.sh` | Sealed WAL, physical base backup, replay of a row written after the base backup. Refuses non-local Postgres | E12.2 `e12-resilience.yml` |
 | Encrypted dump only (compose) | `scripts/backup/encrypt-pg-dump.sh` | FFB1 AES-256-GCM + PBKDF2 ciphertext on disk | used by the compose rehearsal |
 | Encrypted dump (DSN / k8s) | `scripts/backup/run-encrypted-backup.sh` | Same AEAD format; optional `BACKUP_S3_BUCKET` upload under `flowforge-db/` | CronJob + RPO/RTO rehearsal |
 

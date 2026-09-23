@@ -91,6 +91,16 @@ if [[ ! -s "$ENC" ]]; then
   exit 1
 fi
 
+MANIFEST="${ENC%.sql.enc}.manifest.enc"
+python3 "$ROOT/scripts/backup/manifest.py" seal \
+  --out "$MANIFEST" \
+  --chain logical \
+  --seq 1 \
+  --object "logical-dump:${ENC}"
+python3 "$ROOT/scripts/backup/manifest.py" verify \
+  --manifest "$MANIFEST" \
+  --dir "$WORKDIR"
+
 echo "starting isolated postgres"
 docker run -d --name "$ISOLATED" \
   -e POSTGRES_USER="$POSTGRES_USER" \

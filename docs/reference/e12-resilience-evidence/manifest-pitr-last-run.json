@@ -1,0 +1,16 @@
+{
+  "id": "G.2.7-manifest-pitr",
+  "format": "FFB1",
+  "aead": "AES-256-GCM",
+  "integrityManifest": true,
+  "tamperRejected": true,
+  "logicalRpoHours": 24,
+  "pitrRpoSeconds": 300,
+  "rtoBudgetSeconds": 1800,
+  "rtoObservedSeconds": 16,
+  "walSealed": true,
+  "pitrBaseSealed": true,
+  "pitrReplay": true,
+  "markerMatched": true,
+  "plaintextSecretsInManifest": false
+}

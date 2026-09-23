@@ -372,6 +372,9 @@ jobs:
       - name: AEAD selftest
         run: python3 scripts/backup/aead.py selftest
 
+      - name: Integrity manifest selftest
+        run: python3 scripts/backup/manifest.py selftest
+
       - name: Start Postgres and hardened API
         run: docker compose up --build -d --wait --wait-timeout 300 postgres api
 
