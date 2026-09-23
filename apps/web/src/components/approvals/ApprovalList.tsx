@@ -143,32 +143,32 @@ export function ApprovalList() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--ff-muted)]">
           This role cannot view approvals (<code>approval.view</code> missing).
         </p>
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="block text-sm">
-          <span className="text-zinc-600">Filter</span>
+          <span className="text-[var(--ff-muted)]">Filter</span>
           <input
             type="search"
             value={query.q}
             onChange={(event) =>
               setQuery((current) => ({ ...current, q: event.target.value }))
             }
-            className="mt-1 w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 w-64 rounded-lg border border-[var(--ff-border)] bg-[var(--ff-canvas)] px-3 py-1.5 text-sm text-[var(--ff-text)]"
             placeholder="Operation, target, digest"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Status</span>
+          <span className="text-[var(--ff-muted)]">Status</span>
           <select
             value={query.status}
             onChange={(event) =>
               setQuery((current) => ({ ...current, status: event.target.value }))
             }
-            className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 rounded-lg border border-[var(--ff-border)] bg-[var(--ff-canvas)] px-3 py-1.5 text-sm text-[var(--ff-text)]"
           >
             <option value="">All</option>
             {(catalog?.statuses.length ? catalog.statuses : APPROVAL_STATUSES).map(
@@ -194,19 +194,19 @@ export function ApprovalList() {
 
       {problem ? <ProblemBanner problem={problem} /> : null}
 
-      <p className="text-sm text-zinc-600">
+      <p className="text-sm text-[var(--ff-muted)]">
         {pendingApprovals(items).length} pending in the last list · status
         uses documented <code className="font-mono text-xs">?status=</code>
         {lastRequestId ? (
           <span className="font-mono text-xs"> · {lastRequestId}</span>
         ) : null}
       </p>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-[var(--ff-muted)]">
         {APPROVAL_BINDING_HELP} {APPROVAL_SOD_HELP} {APPROVAL_WAIT_DURABLE_HELP}
       </p>
 
       {visible.length === 0 ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--ff-muted)]">
           No approvals match. Refresh after a policy evaluation requires one.
         </p>
       ) : (
@@ -214,7 +214,7 @@ export function ApprovalList() {
           {visible.map((item) => (
             <li
               key={item.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              className="rounded-xl border border-[var(--ff-border)] bg-[var(--ff-surface)] p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -226,7 +226,7 @@ export function ApprovalList() {
                       {item.workflowName || item.binding.operation}
                     </Link>
                   </h2>
-                  <p className="mt-1 font-mono text-xs text-zinc-600">
+                  <p className="mt-1 font-mono text-xs text-[var(--ff-muted)]">
                     {item.binding.operation} · {item.binding.targetName || "no target"}
                   </p>
                 </div>
@@ -237,7 +237,7 @@ export function ApprovalList() {
                     : ""}
                 </p>
               </div>
-              <p className="mt-2 break-all font-mono text-xs text-zinc-500">
+              <p className="mt-2 break-all font-mono text-xs text-[var(--ff-muted)]">
                 expires {item.binding.expiresAt || "—"} · {item.id}
               </p>
               {item.status === "pending" ? (

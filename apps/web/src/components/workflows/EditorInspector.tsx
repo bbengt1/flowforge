@@ -410,20 +410,20 @@ function WorkflowInspect({
       <h2 id="workflow-inspect-heading" className="text-base font-semibold">
         Workflow
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-[var(--ff-muted)]">
         Triggers are workflow-level. They are not canvas nodes.
       </p>
       <dl className="mt-3 space-y-2 text-sm">
         <div>
-          <dt className="text-zinc-500">Name</dt>
+          <dt className="text-[var(--ff-muted)]">Name</dt>
           <dd className="font-medium">{graph?.name || meta.name || "—"}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Description</dt>
+          <dt className="text-[var(--ff-muted)]">Description</dt>
           <dd>{graph?.description || meta.description || "—"}</dd>
         </div>
       </dl>
-      <ul className="mt-3 space-y-1 font-mono text-xs text-zinc-600">
+      <ul className="mt-3 space-y-1 font-mono text-xs text-[var(--ff-muted)]">
         {triggers.map((trigger) => (
           <li key={trigger.id}>
             {trigger.id} · {trigger.type}

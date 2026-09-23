@@ -142,13 +142,13 @@ export function EmbedExchangeGate({
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
       <header className="space-y-2">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+        <p className="text-sm font-medium tracking-wide text-[var(--ff-muted)] uppercase">
           E11.2 · {EMBED_SDK} · {EMBED_TENANCY_ROUTE_MAP_SOURCE}
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
           Exchange a host assertion
         </h1>
-        <p className="text-sm leading-6 text-zinc-600">
+        <p className="text-sm leading-6 text-[var(--ff-muted)]">
           {EMBED_EXCHANGE_HELP} Mount is {EMBED_MOUNT_PREFIX}. Audience is{" "}
           <code>{EMBED_AUDIENCE}</code>. {EMBED_VERIFIED_HELP}{" "}
           {EMBED_HOST_ALLOWLIST_HELP} {EMBED_HOST_ISSUER_HELP}
@@ -167,14 +167,26 @@ export function EmbedExchangeGate({
 
       <HostDisplayCard display={hostDisplay} />
 
-      <section className="rounded-2xl border border-zinc-200 bg-white px-5 py-5">
+      <section
+        className="rounded-2xl border px-5 py-5"
+        style={{
+          background: "var(--ff-surface)",
+          borderColor: "var(--ff-border)",
+          color: "var(--ff-text)",
+        }}
+      >
         <h2 className="text-lg font-semibold tracking-tight">
           Assertion exchange
         </h2>
-        <label className="mt-4 block text-sm font-medium text-zinc-800">
+        <label className="mt-4 block text-sm font-medium">
           Compact JWS assertion
           <textarea
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
+            className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
+            style={{
+              background: "var(--ff-canvas)",
+              borderColor: "var(--ff-border)",
+              color: "var(--ff-text)",
+            }}
             rows={4}
             spellCheck={false}
             autoComplete="off"
@@ -239,7 +251,7 @@ function HostDisplayCard({ display }: { display: EmbedHostDisplay }) {
     !display.displayName;
   if (empty) {
     return (
-      <p className="text-sm text-zinc-600">{EMBED_HOST_DISPLAY_HELP}</p>
+      <p className="text-sm text-[var(--ff-muted)]">{EMBED_HOST_DISPLAY_HELP}</p>
     );
   }
   return (

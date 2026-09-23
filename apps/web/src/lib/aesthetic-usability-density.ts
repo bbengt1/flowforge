@@ -112,8 +112,9 @@ export const TYPE_CAPTION_CLASS = "text-xs";
 export const TYPE_BODY_CLASS = "text-sm";
 export const TYPE_HEADING_CLASS = "text-3xl font-semibold tracking-tight";
 export const TYPE_EYEBROW_CLASS =
-  "text-sm font-medium tracking-wide text-teal-800 uppercase";
-export const TYPE_PAGE_HELP_CLASS = "max-w-3xl text-base leading-7 text-zinc-600";
+  "text-sm font-medium tracking-wide text-[var(--ff-muted)] uppercase";
+export const TYPE_PAGE_HELP_CLASS =
+  "max-w-3xl text-base leading-7 text-[var(--ff-muted)]";
 
 export const PAGE_SHELL_CLASS =
   "mx-auto flex min-h-full w-full max-w-6xl flex-col gap-8 px-6 py-12";

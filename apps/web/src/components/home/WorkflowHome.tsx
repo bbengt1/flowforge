@@ -3521,14 +3521,8 @@ function WorkflowHomeCards({
       </div>
       <ul
         ref={listRef}
-        role="listbox"
         tabIndex={0}
         aria-label={EXPLORER_PANE_LABEL}
-        aria-activedescendant={
-          paneSelection
-            ? `explorer-row-${explorerPaneRowKey(paneSelection)}`
-            : undefined
-        }
         data-x3="pane-list"
         className={FF_EXPLORER_LIST_CLASS}
         onKeyDown={(event) => {
@@ -3560,8 +3554,6 @@ function WorkflowHomeCards({
           <li
             key={`folder-${folder.id}`}
             id={`explorer-row-${explorerPaneRowKey(row)}`}
-            role="option"
-            aria-selected={selected}
             className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}${
               selected ? ` ${FF_EXPLORER_ROW_SELECTED_CLASS}` : ""
             }`}
@@ -3604,8 +3596,6 @@ function WorkflowHomeCards({
             <li
               key={item.id}
               id={`explorer-row-${explorerPaneRowKey(row)}`}
-              role="option"
-              aria-selected={selected}
               className={`${OVERVIEW_CARD_SURFACE_CLASS} ${FF_EXPLORER_ROW_CLASS}${
                 selected ? ` ${FF_EXPLORER_ROW_SELECTED_CLASS}` : ""
               }`}

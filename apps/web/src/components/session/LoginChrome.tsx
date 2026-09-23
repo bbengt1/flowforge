@@ -104,7 +104,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
         >
           <p
             className="text-xs font-medium tracking-wide uppercase"
-            style={{ color: "var(--ff-accent)" }}
+            style={{ color: "var(--ff-muted)" }}
           >
             FlowForge
           </p>

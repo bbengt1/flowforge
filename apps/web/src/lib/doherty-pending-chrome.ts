@@ -255,15 +255,15 @@ export function dohertyStatusRole(
 export function dohertyStatusClassName(phase: DohertyPhase): string {
   switch (phase) {
     case "error":
-      return "text-xs text-rose-900";
+      return "text-xs text-[var(--ff-danger)]";
     case "indeterminate":
-      return "text-xs font-medium text-amber-950";
+      return "text-xs font-medium text-[var(--ff-danger)]";
     case "pending":
-      return "text-xs text-zinc-600";
+      return "text-xs text-[var(--ff-muted)]";
     case "success":
-      return "text-xs text-teal-900";
+      return "text-xs text-[var(--ff-text)]";
     default:
-      return "text-xs text-zinc-600";
+      return "text-xs text-[var(--ff-muted)]";
   }
 }
 
