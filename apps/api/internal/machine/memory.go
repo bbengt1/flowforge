@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 // Memory is an in-process Store used by HTTP unit tests.
@@ -89,14 +90,26 @@ func (m *Memory) GetByUserID(_ context.Context, userID string) (Principal, error
 	return m.byID[id].clone(), nil
 }
 
-func (m *Memory) List(context.Context) ([]Principal, error) {
+func (m *Memory) List(ctx context.Context) ([]Principal, error) {
+	items, _, err := m.ListPage(ctx, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListPage(_ context.Context, q page.Query) ([]Principal, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]Principal, 0, len(m.byID))
-	for _, p := range m.byID {
-		out = append(out, p.clone())
+	for _, item := range m.byID {
+		out = append(out, item.clone())
 	}
-	return out, nil
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Select(page.ColMachine, q, true, out, func(item Principal) page.Key {
+		return page.Key{K: page.TimeKey(item.CreatedAt), ID: item.ID}
+	}, func(item Principal) bool {
+		return page.Hit(q.Q, item.DisplayName, item.ClientID)
+	})
 }
 
 func (m *Memory) Rotate(_ context.Context, id string, rot Rotation) (Principal, error) {

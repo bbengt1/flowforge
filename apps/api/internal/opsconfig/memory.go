@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -96,12 +97,17 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	return rec, draft, nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope, kind string) ([]Resource, error) {
+func (m *Memory) List(ctx context.Context, scope isolation.Scope, kind string) ([]Resource, error) {
+	items, _, err := m.ListPage(ctx, scope, kind, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListPage(_ context.Context, scope isolation.Scope, kind string, q page.Query) ([]Resource, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	if kind != "" && !ValidKind(kind) {
-		return nil, fmt.Errorf("%w: unknown kind", ErrInvalid)
+		return nil, "", fmt.Errorf("%w: unknown kind", ErrInvalid)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -115,16 +121,23 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, kind string) ([]
 		}
 		out = append(out, cloneResource(row.record))
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
-			return out[i].Name < out[j].Name
+	if !q.Bound {
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+				return out[i].Name < out[j].Name
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		})
+		if out == nil {
+			out = []Resource{}
 		}
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
-	})
-	if out == nil {
-		out = []Resource{}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColOps, q, true, out, func(rec Resource) page.Key {
+		return page.Key{K: page.TimeKey(rec.UpdatedAt), ID: rec.ID}
+	}, func(rec Resource) bool {
+		return page.Hit(q.Q, rec.Name, rec.Slug)
+	})
 }
 
 func (m *Memory) Get(_ context.Context, scope isolation.Scope, kind, id string) (Resource, error) {
@@ -232,10 +245,15 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, kind, id stri
 	return cloneResource(row.record), cloneVersion(ver), nil
 }
 
-func (m *Memory) ListVersions(_ context.Context, scope isolation.Scope, kind, id string) ([]Version, error) {
+func (m *Memory) ListVersions(ctx context.Context, scope isolation.Scope, kind, id string) ([]Version, error) {
+	items, _, err := m.ListVersionsPage(ctx, scope, kind, id, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListVersionsPage(_ context.Context, scope isolation.Scope, kind, id string, q page.Query) ([]Version, string, error) {
 	row, err := m.lookup(scope, kind, id)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -243,7 +261,14 @@ func (m *Memory) ListVersions(_ context.Context, scope isolation.Scope, kind, id
 	for i := len(row.versions) - 1; i >= 0; i-- {
 		out = append(out, cloneVersion(row.versions[i]))
 	}
-	return out, nil
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Select(page.ColOpsVersion, q, true, out, func(ver Version) page.Key {
+		return page.Key{K: page.IntKey(ver.VersionNumber), ID: ver.ID}
+	}, func(ver Version) bool {
+		return page.Hit(q.Q, ver.PublishNote)
+	})
 }
 
 func (m *Memory) GetVersion(_ context.Context, scope isolation.Scope, kind, id, versionID string) (Version, error) {

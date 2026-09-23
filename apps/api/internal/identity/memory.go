@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 // Memory is an in-process Store used by HTTP unit tests.
@@ -404,7 +405,12 @@ func (m *Memory) DeleteWorkspace(_ context.Context, id string) (Workspace, error
 	return ws, nil
 }
 
-func (m *Memory) ListWorkspacesForUser(_ context.Context, userID string) ([]Membership, error) {
+func (m *Memory) ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error) {
+	items, _, err := m.ListWorkspacesForUserPage(ctx, userID, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListWorkspacesForUserPage(_ context.Context, userID string, q page.Query) ([]Membership, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []Membership
@@ -425,7 +431,14 @@ func (m *Memory) ListWorkspacesForUser(_ context.Context, userID string) ([]Memb
 			Permissions: authz.ExpandWorkspaceRoles(roles),
 		})
 	}
-	return out, nil
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Select(page.ColWorkspace, q, false, out, func(m Membership) page.Key {
+		return page.Key{K: page.TimeKey(m.Workspace.CreatedAt), ID: m.Workspace.ID}
+	}, func(m Membership) bool {
+		return page.Hit(q.Q, m.Workspace.Name, m.Workspace.WorkbenchKey)
+	})
 }
 
 func (m *Memory) ListRoles(_ context.Context) ([]Role, error) {
@@ -457,11 +470,16 @@ func (m *Memory) EffectiveAccess(_ context.Context, workspaceID, userID string) 
 	return roles, authz.ExpandWorkspaceRoles(roles), nil
 }
 
-func (m *Memory) ListMembers(_ context.Context, workspaceID string) ([]Member, error) {
+func (m *Memory) ListMembers(ctx context.Context, workspaceID string) ([]Member, error) {
+	items, _, err := m.ListMembersPage(ctx, workspaceID, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListMembersPage(_ context.Context, workspaceID string, q page.Query) ([]Member, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.workspaces[workspaceID]; !ok {
-		return nil, ErrNotFound
+		return nil, "", ErrNotFound
 	}
 	var out []Member
 	for key, roles := range m.bindings {
@@ -475,7 +493,14 @@ func (m *Memory) ListMembers(_ context.Context, workspaceID string) ([]Member, e
 			Permissions: authz.ExpandWorkspaceRoles(roles),
 		})
 	}
-	return out, nil
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Select(page.ColMember, q, false, out, func(m Member) page.Key {
+		return page.Key{K: page.TimeKey(m.User.CreatedAt), ID: m.User.ID}
+	}, func(m Member) bool {
+		return page.Hit(q.Q, m.User.DisplayName)
+	})
 }
 
 func (m *Memory) SetMemberRoles(_ context.Context, workspaceID, userID string, roleKeys []string) error {

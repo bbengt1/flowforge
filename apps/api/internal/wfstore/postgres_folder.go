@@ -6,6 +6,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
@@ -63,38 +64,75 @@ func (p *Postgres) CreateFolder(ctx context.Context, scope isolation.Scope, in C
 }
 
 func (p *Postgres) ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error) {
+	items, _, err := p.ListFoldersPage(ctx, scope, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListFoldersPage(ctx context.Context, scope isolation.Scope, q page.Query) ([]Folder, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, folderSelectSQL+` ORDER BY lower(name), id`)
+	args := []any{}
+	sql := folderSelectSQL
+	var parts []string
+	if pred := page.SearchPredicate(&args, q.Q, "name"); pred != "" {
+		parts = append(parts, pred)
+	}
+	order := ` ORDER BY lower(name), id`
+	if q.Bound {
+		keyset, err := page.AscTextPredicate(&args, page.ColFolder, "lower(name)", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY lower(name), id` + page.LimitSQL(&args, q)
+	}
+	if len(parts) > 0 {
+		sql += " WHERE " + strings.Join(parts, " AND ")
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Folder
 	for rows.Next() {
 		folder, err := scanFolder(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, folder)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColFolder, q, out, func(folder Folder) page.Key {
+			return page.Key{K: strings.ToLower(folder.Name), ID: folder.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Folder{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) GetFolder(ctx context.Context, scope isolation.Scope, folderID string) (Folder, error) {

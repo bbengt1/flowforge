@@ -12,6 +12,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -157,6 +158,9 @@ func TypeCatalog() Catalog {
 type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, now time.Time, in CreateInput) (Record, error)
 	List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Record, error)
+	// ListPage is the HTTP keyset page. A zero Query is a full read.
+	// Search matches cron, interval, timezone, trigger id, and status — never lastError.
+	ListPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Record, string, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Record, error)
 	Update(ctx context.Context, scope isolation.Scope, now time.Time, id string, in UpdateInput) (Record, error)
 	SetStatus(ctx context.Context, scope isolation.Scope, now time.Time, id, status string) (Record, error)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -88,9 +89,14 @@ func (m *Memory) Create(ctx context.Context, scope isolation.Scope, in CreateInp
 	return cloneMeta(out), nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope) ([]Metadata, error) {
+func (m *Memory) List(ctx context.Context, scope isolation.Scope) ([]Metadata, error) {
+	items, _, err := m.ListPage(ctx, scope, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListPage(_ context.Context, scope isolation.Scope, q page.Query) ([]Metadata, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -101,16 +107,23 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope) ([]Metadata, err
 			out = append(out, cloneMeta(row.meta))
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
-			return out[i].DisplayName < out[j].DisplayName
+	if !q.Bound {
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+				return out[i].DisplayName < out[j].DisplayName
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		})
+		if out == nil {
+			out = []Metadata{}
 		}
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
-	})
-	if out == nil {
-		out = []Metadata{}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColCredential, q, true, out, func(meta Metadata) page.Key {
+		return page.Key{K: page.TimeKey(meta.UpdatedAt), ID: meta.ID}
+	}, func(meta Metadata) bool {
+		return page.Hit(q.Q, meta.DisplayName)
+	})
 }
 
 func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Metadata, error) {
@@ -329,16 +342,28 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string, i
 	return nil
 }
 
-func (m *Memory) Events(_ context.Context, scope isolation.Scope, id string) ([]Event, error) {
+func (m *Memory) Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error) {
+	items, _, err := m.EventsPage(ctx, scope, id, page.Query{})
+	return items, err
+}
+
+func (m *Memory) EventsPage(_ context.Context, scope isolation.Scope, id string, q page.Query) ([]Event, string, error) {
 	if _, err := m.lookup(scope, id); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	src := m.evts[rowKey(scope, id)]
 	out := make([]Event, len(src))
 	copy(out, src)
-	return out, nil
+	if !q.Bound {
+		return out, "", nil
+	}
+	return page.Select(page.ColCredentialEvent, q, true, out, func(evt Event) page.Key {
+		return page.Key{K: page.TimeKey(evt.OccurredAt), ID: evt.ID}
+	}, func(evt Event) bool {
+		return page.Hit(q.Q, evt.EventType)
+	})
 }
 
 func (m *Memory) Unlock(_ context.Context, scope isolation.Scope, id string) ([]byte, error) {

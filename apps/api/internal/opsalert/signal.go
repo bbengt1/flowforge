@@ -10,6 +10,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 // Kind is a closed set of actionable security-failure signals.
@@ -77,12 +78,15 @@ type Alert struct {
 }
 
 // ListFilter selects workspace-scoped alerts.
+// Page, when Bound, replaces Limit with keyset pagination.
+// Search matches kind, action, code, and outcome — never details.
 type ListFilter struct {
 	Kind         string
 	Status       string
 	ResourceType string
 	ResourceID   string
 	Limit        int
+	Page         page.Query
 }
 
 // Store persists and acknowledges operational alerts.

@@ -122,15 +122,38 @@ func TestLoadMigrationsIncludesFoundation(t *testing.T) {
 	if !sawWorkflowFolders {
 		t.Fatal("expected 000023_workflow_folders.sql")
 	}
-	seen := map[int64]string{}
+	seen := make(map[int64]string, len(all))
 	for _, m := range all {
 		if prev, ok := seen[m.Version]; ok {
 			t.Fatalf("duplicate migration version %d (%s and %s)", m.Version, prev, m.Name)
 		}
 		seen[m.Version] = m.Name
 	}
+	if seen[29] != "oidc_pkce_mfa" {
+		t.Fatalf("migration 29 = %q, want oidc_pkce_mfa", seen[29])
+	}
+	if seen[30] != "job_trace_context" {
+		t.Fatalf("migration 30 = %q, want job_trace_context", seen[30])
+	}
 	if seen[31] != "scim_lockout" {
 		t.Fatalf("migration 31 = %q, want scim_lockout", seen[31])
+	}
+}
+
+func TestPendingMigrationsRejectsRecordedNameMismatch(t *testing.T) {
+	all := []migration{
+		{Version: 29, Name: "oidc_pkce_mfa"},
+		{Version: 30, Name: "job_trace_context"},
+	}
+	pending, err := pendingMigrations(all, map[int64]string{29: "oidc_pkce_mfa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Name != "job_trace_context" {
+		t.Fatalf("pending = %+v", pending)
+	}
+	if _, err := pendingMigrations(all, map[int64]string{29: "job_trace_context"}); err == nil {
+		t.Fatal("expected recorded name mismatch to fail closed")
 	}
 }
 

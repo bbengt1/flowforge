@@ -8,6 +8,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
@@ -145,15 +146,11 @@ func (p *Postgres) ListExecutions(ctx context.Context, scope isolation.Scope, fi
 			return nil, err
 		}
 	}
-	rows, err := tx.Query(ctx, `
-		SELECT `+executionColumns+`
-		FROM executions e
-		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
-		WHERE ($1 = '' OR e.workflow_id = $1::uuid)
-		  AND ($2 = '' OR e.status = $2)
-		ORDER BY e.started_at DESC NULLS LAST, e.created_at DESC
-		LIMIT $3
-	`, filter.WorkflowID, strings.TrimSpace(filter.Status), listLimit(filter.Limit))
+	q, args, err := listExecutionQuery(filter)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -169,10 +166,65 @@ func (p *Postgres) ListExecutions(ctx context.Context, scope isolation.Scope, fi
 	if err := rows.Err(); err != nil {
 		return nil, mapDBErr(err)
 	}
+	if filter.Page.Bound {
+		paged, next, err := page.Trim(page.ColExecution, filter.Page, out, executionPageKey)
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		out = paged
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)
 	}
 	return out, nil
+}
+
+func listExecutionQuery(filter ExecutionListFilter) (string, []any, error) {
+	if !filter.Page.Bound {
+		return `
+		SELECT ` + executionColumns + `
+		FROM executions e
+		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		WHERE ($1 = '' OR e.workflow_id = $1::uuid)
+		  AND ($2 = '' OR e.status = $2)
+		ORDER BY e.started_at DESC NULLS LAST, e.created_at DESC
+		LIMIT $3
+	`, []any{filter.WorkflowID, strings.TrimSpace(filter.Status), listLimit(filter.Limit)}, nil
+	}
+	if filter.Page.Limit < 1 || filter.Page.Limit > page.MaxLimit {
+		return "", nil, page.ErrInvalid
+	}
+	args := []any{filter.WorkflowID, strings.TrimSpace(filter.Status)}
+	parts := []string{
+		"($1 = '' OR e.workflow_id = $1::uuid)",
+		"($2 = '' OR e.status = $2)",
+	}
+	if pred := page.SearchPredicate(&args, filter.Page.Q, "w.name", "w.slug", "e.correlation_id", "e.status"); pred != "" {
+		parts = append(parts, pred)
+	}
+	keyset, err := page.DescStartedPredicate(&args, page.ColExecution, "e.started_at", "e.created_at", "e.id", filter.Page.Cursor)
+	if err != nil {
+		return "", nil, err
+	}
+	if keyset != "" {
+		parts = append(parts, keyset)
+	}
+	q := `
+		SELECT ` + executionColumns + `
+		FROM executions e
+		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		WHERE ` + strings.Join(parts, " AND ") + `
+		ORDER BY e.started_at DESC NULLS LAST, e.created_at DESC, e.id DESC` + page.LimitSQL(&args, filter.Page)
+	return q, args, nil
+}
+
+func executionPageKey(exec Execution) page.Key {
+	started := ""
+	if exec.StartedAt != nil {
+		started = page.TimeKey(*exec.StartedAt)
+	}
+	return page.Key{K: started, S: page.TimeKey(exec.CreatedAt), ID: exec.ID}
 }
 
 func (p *Postgres) ListSteps(ctx context.Context, scope isolation.Scope, executionID string) ([]ExecutionStep, error) {
@@ -285,15 +337,11 @@ func (p *Postgres) ListAuditEvents(ctx context.Context, scope isolation.Scope, f
 		return nil, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `
-		SELECT `+auditColumns+`
-		FROM audit_events
-		WHERE ($1 = '' OR resource_type = $1)
-		  AND ($2 = '' OR resource_id = $2::uuid)
-		  AND ($3 = '' OR action = $3)
-		ORDER BY occurred_at DESC
-		LIMIT $4
-	`, strings.TrimSpace(filter.ResourceType), strings.TrimSpace(filter.ResourceID), strings.TrimSpace(filter.Action), listLimit(filter.Limit))
+	q, args, err := listAuditQuery(filter)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -309,10 +357,59 @@ func (p *Postgres) ListAuditEvents(ctx context.Context, scope isolation.Scope, f
 	if err := rows.Err(); err != nil {
 		return nil, mapDBErr(err)
 	}
+	if filter.Page.Bound {
+		paged, next, err := page.Trim(page.ColAudit, filter.Page, out, func(ev AuditEvent) page.Key {
+			return page.Key{K: page.TimeKey(ev.OccurredAt), ID: ev.ID}
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		out = paged
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)
 	}
 	return out, nil
+}
+
+func listAuditQuery(filter AuditListFilter) (string, []any, error) {
+	if !filter.Page.Bound {
+		return `
+		SELECT ` + auditColumns + `
+		FROM audit_events
+		WHERE ($1 = '' OR resource_type = $1)
+		  AND ($2 = '' OR resource_id = $2::uuid)
+		  AND ($3 = '' OR action = $3)
+		ORDER BY occurred_at DESC
+		LIMIT $4
+	`, []any{strings.TrimSpace(filter.ResourceType), strings.TrimSpace(filter.ResourceID), strings.TrimSpace(filter.Action), listLimit(filter.Limit)}, nil
+	}
+	if filter.Page.Limit < 1 || filter.Page.Limit > page.MaxLimit {
+		return "", nil, page.ErrInvalid
+	}
+	args := []any{strings.TrimSpace(filter.ResourceType), strings.TrimSpace(filter.ResourceID), strings.TrimSpace(filter.Action)}
+	parts := []string{
+		"($1 = '' OR resource_type = $1)",
+		"($2 = '' OR resource_id = $2::uuid)",
+		"($3 = '' OR action = $3)",
+	}
+	if pred := page.SearchPredicate(&args, filter.Page.Q, "action", "resource_type"); pred != "" {
+		parts = append(parts, pred)
+	}
+	keyset, err := page.DescTimePredicate(&args, page.ColAudit, "occurred_at", "id", filter.Page.Cursor)
+	if err != nil {
+		return "", nil, err
+	}
+	if keyset != "" {
+		parts = append(parts, keyset)
+	}
+	q := `
+		SELECT ` + auditColumns + `
+		FROM audit_events
+		WHERE ` + strings.Join(parts, " AND ") + `
+		ORDER BY occurred_at DESC, id DESC` + page.LimitSQL(&args, filter.Page)
+	return q, args, nil
 }
 
 func (p *Postgres) WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error) {

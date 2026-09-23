@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
 // Store persists tenants, workspaces, users, and RBAC bindings.
@@ -43,6 +44,7 @@ type Store interface {
 	GetWorkspace(ctx context.Context, id string) (Workspace, error)
 	DeleteWorkspace(ctx context.Context, id string) (Workspace, error)
 	ListWorkspacesForUser(ctx context.Context, userID string) ([]Membership, error)
+	ListWorkspacesForUserPage(ctx context.Context, userID string, q page.Query) ([]Membership, string, error)
 	// ListActiveWorkspaces returns workspaces whose tenant is also active.
 	// Identity tables are unscoped so membership can be checked before
 	// app.workspace_id is set. Callers that then touch workspace-owned
@@ -54,6 +56,7 @@ type Store interface {
 
 	EffectiveAccess(ctx context.Context, workspaceID, userID string) (roles, perms []string, err error)
 	ListMembers(ctx context.Context, workspaceID string) ([]Member, error)
+	ListMembersPage(ctx context.Context, workspaceID string, q page.Query) ([]Member, string, error)
 	SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error
 	RemoveMember(ctx context.Context, workspaceID, userID string) error
 	ResolveUserRef(ctx context.Context, userID, issuer, subject, displayName string) (User, error)

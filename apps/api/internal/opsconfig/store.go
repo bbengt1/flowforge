@@ -8,6 +8,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	ssheng "github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -128,11 +129,13 @@ type BindInput struct {
 type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Resource, Draft, error)
 	List(ctx context.Context, scope isolation.Scope, kind string) ([]Resource, error)
+	ListPage(ctx context.Context, scope isolation.Scope, kind string, q page.Query) ([]Resource, string, error)
 	Get(ctx context.Context, scope isolation.Scope, kind, id string) (Resource, error)
 	GetDraft(ctx context.Context, scope isolation.Scope, kind, id string) (Draft, error)
 	SaveDraft(ctx context.Context, scope isolation.Scope, kind, id string, in SaveInput) (Resource, Draft, error)
 	Publish(ctx context.Context, scope isolation.Scope, kind, id string, in PublishInput) (Resource, Version, error)
 	ListVersions(ctx context.Context, scope isolation.Scope, kind, id string) ([]Version, error)
+	ListVersionsPage(ctx context.Context, scope isolation.Scope, kind, id string, q page.Query) ([]Version, string, error)
 	GetVersion(ctx context.Context, scope isolation.Scope, kind, id, versionID string) (Version, error)
 	Disable(ctx context.Context, scope isolation.Scope, kind, id string) (Resource, error)
 	Enable(ctx context.Context, scope isolation.Scope, kind, id string) (Resource, error)

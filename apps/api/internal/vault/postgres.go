@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5"
@@ -96,37 +97,74 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 }
 
 func (p *Postgres) List(ctx context.Context, scope isolation.Scope) ([]Metadata, error) {
+	items, _, err := p.ListPage(ctx, scope, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListPage(ctx context.Context, scope isolation.Scope, q page.Query) ([]Metadata, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT `+metaColumns+` FROM credentials ORDER BY updated_at DESC, display_name`)
+	args := []any{}
+	sql := `SELECT ` + metaColumns + ` FROM credentials`
+	var parts []string
+	if pred := page.SearchPredicate(&args, q.Q, "display_name"); pred != "" {
+		parts = append(parts, pred)
+	}
+	order := ` ORDER BY updated_at DESC, display_name`
+	if q.Bound {
+		keyset, err := page.DescTimePredicate(&args, page.ColCredential, "updated_at", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY updated_at DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	if len(parts) > 0 {
+		sql += " WHERE " + page.And(parts...)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Metadata
 	for rows.Next() {
 		meta, err := scanMeta(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, meta)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColCredential, q, out, func(meta Metadata) page.Key {
+			return page.Key{K: page.TimeKey(meta.UpdatedAt), ID: meta.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Metadata{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, id string) (Metadata, error) {
@@ -426,22 +464,44 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string,
 }
 
 func (p *Postgres) Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error) {
+	items, _, err := p.EventsPage(ctx, scope, id, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) EventsPage(ctx context.Context, scope isolation.Scope, id string, q page.Query) ([]Event, string, error) {
 	if _, err := p.Get(ctx, scope, id); err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `
+	args := []any{id}
+	sql := `
 		SELECT id::text, credential_id::text, event_type, COALESCE(actor_id::text, ''), details_redacted, occurred_at
 		FROM credential_events
-		WHERE credential_id = $1::uuid
-		ORDER BY occurred_at DESC
-	`, id)
+		WHERE credential_id = $1::uuid`
+	if pred := page.SearchPredicate(&args, q.Q, "event_type"); pred != "" {
+		sql += " AND " + pred
+	}
+	order := ` ORDER BY occurred_at DESC`
+	if q.Bound {
+		keyset, err := page.DescTimePredicate(&args, page.ColCredentialEvent, "occurred_at", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			sql += " AND " + keyset
+		}
+		order = ` ORDER BY occurred_at DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Event
@@ -449,7 +509,7 @@ func (p *Postgres) Events(ctx context.Context, scope isolation.Scope, id string)
 		var evt Event
 		var raw []byte
 		if err := rows.Scan(&evt.ID, &evt.CredentialID, &evt.EventType, &evt.ActorID, &raw, &evt.OccurredAt); err != nil {
-			return nil, mapDBErr(err)
+			return nil, "", mapDBErr(err)
 		}
 		if err := json.Unmarshal(raw, &evt.Details); err != nil || evt.Details == nil {
 			evt.Details = map[string]any{}
@@ -457,15 +517,24 @@ func (p *Postgres) Events(ctx context.Context, scope isolation.Scope, id string)
 		out = append(out, evt)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColCredentialEvent, q, out, func(evt Event) page.Key {
+			return page.Key{K: page.TimeKey(evt.OccurredAt), ID: evt.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Event{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) Unlock(ctx context.Context, scope isolation.Scope, id string) ([]byte, error) {

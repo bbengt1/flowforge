@@ -26,18 +26,27 @@ func (s *Server) listOperationalAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	var next string
+	q.Next = &next
 	items, err := s.alerts.List(r.Context(), scope, opsalert.ListFilter{
 		Kind:         strings.TrimSpace(r.URL.Query().Get("kind")),
 		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
 		ResourceType: strings.TrimSpace(r.URL.Query().Get("resourceType")),
 		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resourceId")),
-		Limit:        queryLimit(r),
+		Page:         q,
 	})
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeAlertError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[opsalert.Alert]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) getOperationalAlert(w http.ResponseWriter, r *http.Request) {

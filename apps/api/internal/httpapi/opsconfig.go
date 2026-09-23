@@ -99,12 +99,19 @@ func (s *Server) listOpsResources(kind string) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		items, err := s.ops.List(r.Context(), scope, kind)
+		q, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+		items, next, err := s.ops.ListPage(r.Context(), scope, kind, q)
+		if rejectPageErr(w, r, err) {
+			return
+		}
 		if err != nil {
 			writeOpsError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, listResponse[opsconfig.Resource]{Items: items})
+		writePage(w, items, q, next)
 	}
 }
 
@@ -246,12 +253,19 @@ func (s *Server) listOpsVersions(kind string) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		items, err := s.ops.ListVersions(r.Context(), scope, kind, strings.TrimSpace(r.PathValue("resourceId")))
+		q, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+		items, next, err := s.ops.ListVersionsPage(r.Context(), scope, kind, strings.TrimSpace(r.PathValue("resourceId")), q)
+		if rejectPageErr(w, r, err) {
+			return
+		}
 		if err != nil {
 			writeOpsError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, listResponse[opsconfig.Version]{Items: items})
+		writePage(w, items, q, next)
 	}
 }
 

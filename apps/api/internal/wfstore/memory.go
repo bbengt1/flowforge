@@ -12,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -145,6 +146,18 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter WorkflowL
 		}
 		out = append(out, wf)
 	}
+	if filter.Page.Bound {
+		items, next, err := page.Select(page.ColWorkflow, filter.Page, true, out, func(wf Workflow) page.Key {
+			return page.Key{K: page.TimeKey(wf.UpdatedAt), ID: wf.ID}
+		}, func(wf Workflow) bool {
+			return page.Hit(filter.Page.Q, wf.Name, wf.Slug)
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		return items, nil
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
 			return out[i].Slug < out[j].Slug
@@ -255,20 +268,32 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, workflowID st
 	return publicWorkflow(row), ver, nil
 }
 
-func (m *Memory) ListVersions(_ context.Context, scope isolation.Scope, workflowID string) ([]Version, error) {
+func (m *Memory) ListVersions(ctx context.Context, scope isolation.Scope, workflowID string) ([]Version, error) {
+	items, _, err := m.ListVersionsPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (m *Memory) ListVersionsPage(_ context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Version, string, error) {
 	if _, err := m.lookup(scope, workflowID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	src := m.versions[workflowID]
 	out := make([]Version, len(src))
 	copy(out, src)
-	sort.Slice(out, func(i, j int) bool { return out[i].VersionNumber > out[j].VersionNumber })
-	if out == nil {
-		out = []Version{}
+	if !q.Bound {
+		sort.Slice(out, func(i, j int) bool { return out[i].VersionNumber > out[j].VersionNumber })
+		if out == nil {
+			out = []Version{}
+		}
+		return out, "", nil
 	}
-	return out, nil
+	return page.Select(page.ColWorkflowVersion, q, true, out, func(ver Version) page.Key {
+		return page.Key{K: page.IntKey(ver.VersionNumber), ID: ver.ID}
+	}, func(ver Version) bool {
+		return page.Hit(q.Q, ver.PublishNote)
+	})
 }
 
 func (m *Memory) GetVersion(_ context.Context, scope isolation.Scope, workflowID, versionID string) (Version, error) {
@@ -613,6 +638,16 @@ func (m *Memory) ListExecutions(_ context.Context, scope isolation.Scope, filter
 		wf := m.workflows[exec.record.WorkflowID]
 		out = append(out, cloneExecution(exec.record, wf.record))
 	}
+	if filter.Page.Bound {
+		items, next, err := page.Select(page.ColExecution, filter.Page, true, out, executionPageKey, func(exec Execution) bool {
+			return page.Hit(filter.Page.Q, exec.WorkflowName, exec.WorkflowSlug, exec.CorrelationID, exec.Status)
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		return items, nil
+	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
@@ -680,6 +715,18 @@ func (m *Memory) ListAuditEvents(_ context.Context, scope isolation.Scope, filte
 			continue
 		}
 		out = append(out, row.record)
+	}
+	if filter.Page.Bound {
+		items, next, err := page.Select(page.ColAudit, filter.Page, true, out, func(ev AuditEvent) page.Key {
+			return page.Key{K: page.TimeKey(ev.OccurredAt), ID: ev.ID}
+		}, func(ev AuditEvent) bool {
+			return page.Hit(filter.Page.Q, ev.Action, ev.ResourceType)
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		return items, nil
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].OccurredAt.After(out[j].OccurredAt)

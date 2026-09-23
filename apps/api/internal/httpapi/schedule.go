@@ -95,12 +95,19 @@ func (s *Server) listSchedules(w http.ResponseWriter, r *http.Request) {
 	if !ok || !s.requireSchedules(w, r) {
 		return
 	}
-	items, err := s.schedules.List(r.Context(), scope, strings.TrimSpace(r.URL.Query().Get("workflowId")))
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.schedules.ListPage(r.Context(), scope, strings.TrimSpace(r.URL.Query().Get("workflowId")), q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[schedule.Record]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -89,12 +90,17 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter ListF
 		return nil, ErrNotFound
 	}
 	status := strings.TrimSpace(filter.Status)
+	if filter.Page.Bound && (filter.Page.Limit < 1 || filter.Page.Limit > page.MaxLimit) {
+		return nil, page.ErrInvalid
+	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `
+	var rows pgx.Rows
+	if !filter.Page.Bound {
+		rows, err = tx.Query(ctx, `
 		SELECT `+alertColumns+`
 		FROM operational_alerts
 		WHERE ($1 = '' OR kind = $1)
@@ -104,7 +110,45 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter ListF
 		ORDER BY occurred_at DESC
 		LIMIT $5
 	`, strings.TrimSpace(filter.Kind), strings.TrimSpace(filter.ResourceType),
-		sanitizeID(filter.ResourceID), status, listLimit(filter.Limit))
+			sanitizeID(filter.ResourceID), status, listLimit(filter.Limit))
+	} else {
+		args := []any{}
+		var parts []string
+		if kind := strings.TrimSpace(filter.Kind); kind != "" {
+			parts = append(parts, "kind = $"+page.Place(&args, kind))
+		}
+		if resourceType := strings.TrimSpace(filter.ResourceType); resourceType != "" {
+			parts = append(parts, "resource_type = $"+page.Place(&args, resourceType))
+		}
+		if id := sanitizeID(filter.ResourceID); id != "" {
+			parts = append(parts, "resource_id = $"+page.Place(&args, id)+"::uuid")
+		}
+		switch status {
+		case "":
+		case "open":
+			parts = append(parts, "acknowledged_at IS NULL")
+		case "acked":
+			parts = append(parts, "acknowledged_at IS NOT NULL")
+		default:
+			parts = append(parts, "FALSE")
+		}
+		if pred := page.SearchPredicate(&args, filter.Page.Q, "kind", "action", "code", "outcome"); pred != "" {
+			parts = append(parts, pred)
+		}
+		keyset, keyErr := page.DescTimePredicate(&args, page.ColAlert, "occurred_at", "id", filter.Page.Cursor)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		sql := `SELECT ` + alertColumns + ` FROM operational_alerts`
+		if len(parts) > 0 {
+			sql += " WHERE " + page.And(parts...)
+		}
+		sql += ` ORDER BY occurred_at DESC, id DESC` + page.LimitSQL(&args, filter.Page)
+		rows, err = tx.Query(ctx, sql, args...)
+	}
 	if err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -119,6 +163,16 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter ListF
 	}
 	if err := rows.Err(); err != nil {
 		return nil, mapDBErr(err)
+	}
+	if filter.Page.Bound {
+		paged, next, err := page.Trim(page.ColAlert, filter.Page, out, func(alert Alert) page.Key {
+			return page.Key{K: page.TimeKey(alert.OccurredAt), ID: alert.ID}
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.Remember(filter.Page, next)
+		out = paged
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)

@@ -149,7 +149,14 @@ func (s *Server) listMachinePrincipals(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMachineAdmin(w, r); !ok {
 		return
 	}
-	items, err := s.machines.List(r.Context())
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.machines.ListPage(r.Context(), q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeMachineError(w, r, err)
 		return
@@ -158,7 +165,7 @@ func (s *Server) listMachinePrincipals(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		views = append(views, item.View())
 	}
-	writeJSON(w, http.StatusOK, listResponse[machine.View]{Items: views})
+	writePage(w, views, q, next)
 }
 
 func (s *Server) getMachinePrincipal(w http.ResponseWriter, r *http.Request) {

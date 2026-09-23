@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -93,36 +94,82 @@ func (p *Postgres) GetByUserID(ctx context.Context, userID string) (Principal, e
 }
 
 func (p *Postgres) List(ctx context.Context) ([]Principal, error) {
-	rows, err := p.db.Query(ctx, `
-		SELECT id::text FROM machine_principals ORDER BY created_at, client_id
-	`)
+	items, _, err := p.ListPage(ctx, page.Query{})
+	return items, err
+}
+
+type machinePageRow struct {
+	ID        string
+	CreatedAt time.Time
+}
+
+func (p *Postgres) ListPage(ctx context.Context, q page.Query) ([]Principal, string, error) {
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
+	}
+	args := []any{}
+	sql := `SELECT id::text`
+	order := ` ORDER BY created_at, client_id`
+	var parts []string
+	if q.Bound {
+		sql = `SELECT id::text, created_at`
+		if pred := page.SearchPredicate(&args, q.Q, "display_name", "client_id"); pred != "" {
+			parts = append(parts, pred)
+		}
+		keyset, err := page.DescTimePredicate(&args, page.ColMachine, "created_at", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY created_at DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	sql += ` FROM machine_principals`
+	if len(parts) > 0 {
+		sql += " WHERE " + page.And(parts...)
+	}
+	rows, err := p.db.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
-	var ids []string
+	var ids []machinePageRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, mapDBErr(err)
+		var row machinePageRow
+		if q.Bound {
+			if err := rows.Scan(&row.ID, &row.CreatedAt); err != nil {
+				return nil, "", mapDBErr(err)
+			}
+		} else if err := rows.Scan(&row.ID); err != nil {
+			return nil, "", mapDBErr(err)
 		}
-		ids = append(ids, id)
+		ids = append(ids, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		ids, next, err = page.Trim(page.ColMachine, q, ids, func(row machinePageRow) page.Key {
+			return page.Key{K: page.TimeKey(row.CreatedAt), ID: row.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	out := make([]Principal, 0, len(ids))
-	for _, id := range ids {
-		item, err := p.Get(ctx, id)
+	for _, row := range ids {
+		item, err := p.Get(ctx, row.ID)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, item)
 	}
 	if out == nil {
 		out = []Principal{}
 	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) Rotate(ctx context.Context, id string, rot Rotation) (Principal, error) {

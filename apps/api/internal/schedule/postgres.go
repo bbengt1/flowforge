@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -62,47 +63,81 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, now time.T
 }
 
 func (p *Postgres) List(ctx context.Context, scope isolation.Scope, workflowID string) ([]Record, error) {
+	items, _, err := p.ListPage(ctx, scope, workflowID, page.Query{})
+	return items, err
+}
+
+func (p *Postgres) ListPage(ctx context.Context, scope isolation.Scope, workflowID string, q page.Query) ([]Record, string, error) {
 	if scope.Zero() {
-		return nil, ErrNoScope
+		return nil, "", ErrNoScope
+	}
+	wf := strings.TrimSpace(workflowID)
+	if wf != "" && !authz.ValidUUID(wf) {
+		return []Record{}, "", nil
+	}
+	if q.Bound && (q.Limit < 1 || q.Limit > page.MaxLimit) {
+		return nil, "", page.ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	q := `SELECT ` + recordColumns + ` FROM workflow_schedules`
 	args := []any{}
-	if strings.TrimSpace(workflowID) != "" {
-		if !authz.ValidUUID(workflowID) {
-			return []Record{}, nil
-		}
-		q += ` WHERE workflow_id = $1`
-		args = append(args, workflowID)
+	var parts []string
+	if wf != "" {
+		parts = append(parts, "workflow_id = $"+page.Place(&args, wf))
 	}
-	q += ` ORDER BY created_at DESC`
-	rows, err := tx.Query(ctx, q, args...)
+	order := ` ORDER BY created_at DESC`
+	if q.Bound {
+		if pred := page.SearchPredicate(&args, q.Q, "cron", "interval", "timezone", "trigger_id", "status"); pred != "" {
+			parts = append(parts, pred)
+		}
+		keyset, err := page.DescTimePredicate(&args, page.ColSchedule, "created_at", "id", q.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		if keyset != "" {
+			parts = append(parts, keyset)
+		}
+		order = ` ORDER BY created_at DESC, id DESC` + page.LimitSQL(&args, q)
+	}
+	sql := `SELECT ` + recordColumns + ` FROM workflow_schedules`
+	if len(parts) > 0 {
+		sql += " WHERE " + page.And(parts...)
+	}
+	rows, err := tx.Query(ctx, sql+order, args...)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, "", mapDBErr(err)
 	}
 	defer rows.Close()
 	var out []Record
 	for rows.Next() {
 		rec, err := scanRecord(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", mapDBErr(err)
+	}
+	next := ""
+	if q.Bound {
+		out, next, err = page.Trim(page.ColSchedule, q, out, func(rec Record) page.Key {
+			return page.Key{K: page.TimeKey(rec.CreatedAt), ID: rec.ID}
+		})
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, "", mapDBErr(err)
 	}
 	if out == nil {
 		out = []Record{}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, mapDBErr(err)
-	}
-	return out, nil
+	return out, next, nil
 }
 
 func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, id string) (Record, error) {

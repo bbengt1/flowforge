@@ -98,13 +98,23 @@ func (s *Server) listApprovals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	pageQuery, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	var next string
+	pageQuery.Next = &next
 	q := r.URL.Query()
 	items, err := s.approvals.List(r.Context(), scope, approval.Filter{
 		Status:            strings.TrimSpace(q.Get("status")),
 		WorkflowID:        strings.TrimSpace(q.Get("workflowId")),
 		WorkflowVersionID: strings.TrimSpace(q.Get("workflowVersionId")),
 		ExecutionID:       strings.TrimSpace(q.Get("executionId")),
+		Page:              pageQuery,
 	})
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeApprovalError(w, r, err)
 		return
@@ -115,7 +125,7 @@ func (s *Server) listApprovals(w http.ResponseWriter, r *http.Request) {
 		rec = s.refreshRecord(r.Context(), scope, rec, now)
 		out = append(out, rec)
 	}
-	writeJSON(w, http.StatusOK, listResponse[approval.Record]{Items: out})
+	writePage(w, out, pageQuery, next)
 }
 
 func (s *Server) createApprovals(w http.ResponseWriter, r *http.Request) {

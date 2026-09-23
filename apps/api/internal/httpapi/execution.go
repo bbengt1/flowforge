@@ -2,13 +2,13 @@ package httpapi
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
@@ -24,13 +24,19 @@ func (s *Server) listWorkspaceExecutions(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	filter := executionFilterFromQuery(r)
+	filter, ok := bindExecutionPage(w, r)
+	if !ok {
+		return
+	}
 	items, err := s.workflows.ListExecutions(r.Context(), scope, filter)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.Execution]{Items: items})
+	writePage(w, items, filter.Page, pageNext(filter.Page))
 }
 
 func (s *Server) listWorkflowExecutions(w http.ResponseWriter, r *http.Request) {
@@ -41,14 +47,20 @@ func (s *Server) listWorkflowExecutions(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	filter := executionFilterFromQuery(r)
+	filter, ok := bindExecutionPage(w, r)
+	if !ok {
+		return
+	}
 	filter.WorkflowID = strings.TrimSpace(r.PathValue("workflowId"))
 	items, err := s.workflows.ListExecutions(r.Context(), scope, filter)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.Execution]{Items: items})
+	writePage(w, items, filter.Page, pageNext(filter.Page))
 }
 
 func (s *Server) getWorkspaceExecution(w http.ResponseWriter, r *http.Request) {
@@ -113,16 +125,25 @@ func (s *Server) listExecutionAuditEvents(w http.ResponseWriter, r *http.Request
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	var next string
+	q.Next = &next
 	items, err := s.workflows.ListAuditEvents(r.Context(), scope, wfstore.AuditListFilter{
 		ResourceType: "execution",
 		ResourceID:   executionID,
-		Limit:        queryLimit(r),
+		Page:         q,
 	})
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.AuditEvent]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) listProductAuditEvents(w http.ResponseWriter, r *http.Request) {
@@ -130,17 +151,26 @@ func (s *Server) listProductAuditEvents(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	var next string
+	q.Next = &next
 	items, err := s.workflows.ListAuditEvents(r.Context(), scope, wfstore.AuditListFilter{
 		ResourceType: strings.TrimSpace(r.URL.Query().Get("resourceType")),
 		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resourceId")),
 		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
-		Limit:        queryLimit(r),
+		Page:         q,
 	})
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeWorkflowStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, listResponse[wfstore.AuditEvent]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) writeExecutionDetail(w http.ResponseWriter, r *http.Request, scope isolation.Scope, exec wfstore.Execution, status int) {
@@ -228,20 +258,26 @@ func executionFilterFromQuery(r *http.Request) wfstore.ExecutionListFilter {
 	return wfstore.ExecutionListFilter{
 		WorkflowID: strings.TrimSpace(r.URL.Query().Get("workflowId")),
 		Status:     strings.TrimSpace(r.URL.Query().Get("status")),
-		Limit:      queryLimit(r),
 	}
 }
 
-func queryLimit(r *http.Request) int {
-	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
-	if raw == "" {
-		return 0
+func bindExecutionPage(w http.ResponseWriter, r *http.Request) (wfstore.ExecutionListFilter, bool) {
+	q, ok := parsePage(w, r)
+	if !ok {
+		return wfstore.ExecutionListFilter{}, false
 	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0
+	filter := executionFilterFromQuery(r)
+	var next string
+	q.Next = &next
+	filter.Page = q
+	return filter, true
+}
+
+func pageNext(q page.Query) string {
+	if q.Next == nil {
+		return ""
 	}
-	return n
+	return *q.Next
 }
 
 func firstNonEmpty(values ...string) string {

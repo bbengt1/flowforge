@@ -346,15 +346,19 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.store.ListWorkspacesForUser(r.Context(), user.ID)
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.store.ListWorkspacesForUserPage(r.Context(), user.ID, q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeIdentityError(w, r, err)
 		return
 	}
-	if items == nil {
-		items = []identity.Membership{}
-	}
-	writeJSON(w, http.StatusOK, listResponse[identity.Membership]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) getCurrentWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -384,15 +388,19 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.store.ListMembers(r.Context(), ws.ID)
+	q, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	items, next, err := s.store.ListMembersPage(r.Context(), ws.ID, q)
+	if rejectPageErr(w, r, err) {
+		return
+	}
 	if err != nil {
 		writeIdentityError(w, r, err)
 		return
 	}
-	if items == nil {
-		items = []identity.Member{}
-	}
-	writeJSON(w, http.StatusOK, listResponse[identity.Member]{Items: items})
+	writePage(w, items, q, next)
 }
 
 func (s *Server) putMember(w http.ResponseWriter, r *http.Request) {
