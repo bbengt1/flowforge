@@ -9,7 +9,8 @@
 # (Node 25.9.0 on Alpine 3.23; see docs/deployment.md#refreshing-dockerfile-base-digests).
 
 FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS base
-RUN corepack enable && corepack prepare pnpm@10.33.3 --activate
+# Node 25 no longer ships corepack. Pin the same pnpm the lockfile expects.
+RUN npm install -g pnpm@10.33.3
 WORKDIR /app
 
 FROM base AS deps
@@ -41,8 +42,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Workspace standalone output lives under apps/web/.
 # The standalone server only runs `node`. node:25-alpine bundles npm's
 # tar 7.5.11 (CVE-2026-59873, fixed in 7.5.19). That copy is not in
-# pnpm-lock.yaml. Drop npm and corepack so the runtime image does not
-# ship it. Build stages above still use corepack/pnpm.
+# pnpm-lock.yaml. Drop npm (and corepack, which Node 25 does not ship)
+# so the runtime image does not ship it. Build stages above still use
+# npm only to install pnpm.
 # The pinned index (Alpine 3.23) ships libssl3 3.5.6-r0 (CVE-2026-14456,
 # fixed in 3.5.8-r0). Upgrade those two packages so the HIGH image gate
 # can pass. The build fails if Alpine v3.23 no longer publishes that version.
