@@ -314,7 +314,7 @@ func isolatedDatabaseURL(t *testing.T, dsn string) string {
 	if err != nil {
 		t.Fatalf("maintenance connection: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	name := "ff_mig_" + strings.ToLower(strconv.FormatInt(time.Now().UnixNano(), 36))
 	if _, err := conn.Exec(ctx, "CREATE DATABASE "+name); err != nil {
@@ -328,7 +328,7 @@ func isolatedDatabaseURL(t *testing.T, dsn string) string {
 			t.Errorf("drop database connect: %v", err)
 			return
 		}
-		defer c.Close(cctx)
+		defer func() { _ = c.Close(cctx) }()
 		if _, err := c.Exec(cctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
 			t.Errorf("drop database %s: %v", name, err)
 		}
