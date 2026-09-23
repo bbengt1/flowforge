@@ -191,6 +191,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
 | `WORKER_ID` | `production-runner` when unset | Claim/heartbeat/complete id. `deploy/k8s` sets the pod name so replicas are distinct fence holders. |
 | `WORKER_DRAIN_TIMEOUT` | `30s` | After SIGTERM, finish the in-flight claim and do not start another. Zero or invalid uses 30s. |
+| `FLOWFORGE_REPLICAS` | `1` when unset | API pod count. `deploy/k8s` sets `2` (at least Deployment replicas and HPA minReplicas). Above 1, boot-fails if a session or store is in-memory or pod-local. Postgres and S3 stay. Invalid values boot-fail. |
 | `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |
 | `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from the in-process login rate limit. |

@@ -16,6 +16,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
+	"github.com/bbengt1/flowforge/apps/api/internal/ha"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
@@ -88,6 +89,12 @@ func main() {
 	}
 	log.Info("artifact store", "backend", backend)
 
+	replicas, err := ha.ParseCount(os.Getenv(ha.EnvReplicas))
+	if err != nil {
+		log.Error("replica count", "error", err)
+		os.Exit(1)
+	}
+
 	tlsMaterials, err := loadTLSMaterials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		log.Error("tls material store", "error", err)
@@ -116,6 +123,8 @@ func main() {
 		MFAKey:               cfg.MFAKey,
 		SCIM:                 cfg.SCIM,
 		LockoutMaxFailures:   cfg.LockoutMaxFailures,
+		Replicas:             replicas,
+		ArtifactBackend:      backend,
 		Security: httpapi.Security{
 			TrustedProxies:       cfg.TrustedProxies,
 			RequireTLS:           cfg.RequireTLS,
@@ -129,6 +138,10 @@ func main() {
 			JobBindingKey: cfg.JobBindingKey,
 		},
 	})
+	if err := httpapi.ReplicaBootError(handler); err != nil {
+		log.Error("multi-replica stores", "error", err)
+		os.Exit(1)
+	}
 	if cfg.SchedulerEnabled {
 		api, ok := handler.(*httpapi.API)
 		if !ok {

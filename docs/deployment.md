@@ -120,6 +120,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `DATABASE_URL` | built from `POSTGRES_*` | Preferred DSN. Compose URL-encodes the password into this. |
 | `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
 | `SHUTDOWN_TIMEOUT` | `10s` (`25s` on `deploy/k8s`) | Graceful HTTP shutdown after the scheduler resigns. Kubernetes `preStop` is 15s and `terminationGracePeriodSeconds` is 45, so 25s fits the remaining grace. |
+| `FLOWFORGE_REPLICAS` | `1` when unset | API only. Integer 1–1000. `deploy/k8s` sets `2`, at least the Deployment replicas and the HPA minReplicas. Above 1, boot-fails when a session or store is in-memory or a pod-local artifact filesystem. Shared Postgres and S3 stay. Do not set Service `sessionAffinity`. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
 | `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA published on `GET /api/v1/health` and `/readiness`. Compose and CI pass it as a Docker **build arg** into Go ldflags (`apps/api/Dockerfile`). `smoke.yml` sets `BUILD_SHA=${{ github.sha }}`. Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe/missing → `unknown`. Never a secret. Health stays 200. |
 | `BUILD_VERSION` | `dev` (ldflags) | Non-secret tag/version on the same probes. Same injection path as `BUILD_SHA`. Unsafe/missing → `dev`. |
@@ -560,6 +561,8 @@ echoed). The in-process loop does not log in as the principal.
 | Runner drain | `WORKER_DRAIN_TIMEOUT=30s`, `terminationGracePeriodSeconds: 40`, `WORKER_ID` = pod name |
 
 `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are keys on the shared `flowforge-api` Secret mounted by every API and runner replica. The process boot-fails if either is missing or malformed. It does not mint a per-pod key. A ticket or script signature from one replica verifies on the others. Fencing tokens stay in PostgreSQL; a different worker id or a stale token fails closed.
+
+`FLOWFORGE_REPLICAS` (API container, `2`) must be at least Deployment `replicas` and HPA `minReplicas`. Unset means one process. Above one, boot refuses in-memory or pod-local session and store backends (session, JTI, lockout, vault, workflow, artifact `memory` / `filesystem`). Shared Postgres and S3 continue. Do not set Service `sessionAffinity`. In-process rate limits are a separate limit and are not a session store.
 
 A single-node cluster can still schedule both pods (anti-affinity is preferred). `kubectl apply` of a Deployment resets the live replica count to 2; the HPA owns the count between applies. Size Postgres `max_connections` for `(6 + 4) × 8` application connections plus backup and admin headroom. Details: [deploy/k8s/README.md](../deploy/k8s/README.md).
 

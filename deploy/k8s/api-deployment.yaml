@@ -64,6 +64,12 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          env:
+            # Must be >= spec.replicas and the HPA minReplicas. Above 1
+            # the process boot-fails if a session or store is in-memory
+            # or pod-local. Do not set Service sessionAffinity.
+            - name: FLOWFORGE_REPLICAS
+              value: "2"
           envFrom:
             - configMapRef:
                 name: flowforge-api

@@ -16,6 +16,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
+	"github.com/bbengt1/flowforge/apps/api/internal/ha"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
@@ -160,6 +161,14 @@ type Deps struct {
 	// TLSMaterials writes first-run cert/key PEMs to TLS_CERT_FILE /
 	// TLS_KEY_FILE. Nil fails closed on create/upload; skip does not.
 	TLSMaterials tlsmaterial.Store
+	// Replicas is FLOWFORGE_REPLICAS. Zero and one allow in-memory
+	// stores (unit tests and a single process). Above one refuses
+	// process-local session and store backends. There is no sticky
+	// session fallback.
+	Replicas int
+	// ArtifactBackend is the artifact.LoadStore kind (s3, filesystem,
+	// or memory). Empty is unshared when Replicas is above one.
+	ArtifactBackend string
 }
 
 // New returns a handler for /api/v1 foundation routes.
@@ -743,9 +752,29 @@ func newServer(d Deps) *API {
 		mux.ServeHTTP(w, r)
 	})
 
+	unshared := unsharedBackends([]namedBackend{
+		{"session", sessions},
+		{"workflow", workflows},
+		{"jti", s.embedJTI},
+		{"lockout", s.lockouts},
+		{"vault", vaultStore},
+		{"identity", s.store},
+		{"isolation", s.scoped},
+		{"machine", s.machines},
+		{"mfa", s.mfa},
+		{"scim", s.scimDir},
+		{"bootstrap", s.bootstrap},
+		{"webhook", s.hooks},
+		{"schedule", s.schedules},
+		{"ops", s.ops},
+		{"approval", s.approvals},
+		{"alert", s.alerts},
+		{"script", scriptStore},
+	}, d.ArtifactBackend)
 	return &API{
-		Handler: withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router)))))),
-		srv:     s,
+		Handler:    withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router)))))),
+		srv:        s,
+		replicaErr: ha.RefuseUnshared(d.Replicas, unshared),
 	}
 }
 
