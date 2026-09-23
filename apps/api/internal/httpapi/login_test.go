@@ -392,9 +392,9 @@ func TestLocalLoginRateLimitIdentifierIndependentOfIP(t *testing.T) {
 }
 
 func TestLocalLoginLimiterNilFailsClosed(t *testing.T) {
-	s := &Server{loginLimits: localauth.DefaultLimits()}
+	s := &Server{LoginLimits: localauth.DefaultLimits()}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
-	ok, _, err := s.allowLogin(req, "admin-1")
+	ok, _, err := s.AllowLogin(req, "admin-1")
 	if err != nil || ok {
 		t.Fatal("nil login limiter must fail closed")
 	}

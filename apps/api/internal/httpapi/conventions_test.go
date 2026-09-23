@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
-	"gopkg.in/yaml.v3"
 )
 
 func TestInvalidRequestProblemDetails(t *testing.T) {
