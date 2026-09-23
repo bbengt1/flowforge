@@ -32,6 +32,8 @@ need "$api_df" '/api/v1/health'
 
 web_df="$ROOT/apps/web/Dockerfile"
 need "$web_df" '^USER 65532:65532'
+need "$web_df" '^FROM node:25-alpine@sha256:[0-9a-f]{64} AS base$'
+need "$web_df" '^FROM node:25-alpine@sha256:[0-9a-f]{64} AS runner$'
 need "$web_df" 'COPY package.json pnpm-lock.yaml pnpm-workspace.yaml'
 need "$web_df" 'pnpm install --frozen-lockfile'
 
