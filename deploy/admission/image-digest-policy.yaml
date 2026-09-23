@@ -1,0 +1,42 @@
+# In-tree digest pin for FlowForge images (G.2.9 / #454).
+# ValidatingAdmissionPolicy is GA in Kubernetes 1.30. failurePolicy Fail
+# and validationActions Deny. Apply with deploy/admission, which has no
+# namespace. This does not check cosign signatures. Signature and SLSA
+# provenance enforcement is deploy/kyverno (Kyverno must be installed).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: flowforge-require-image-digest
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+        !c.image.startsWith('ghcr.io/bbengt1/flowforge-') ||
+        c.image.matches('@sha256:[0-9a-f]{64}$')) &&
+        (!has(object.spec.initContainers) ||
+        object.spec.initContainers.all(c,
+        !c.image.startsWith('ghcr.io/bbengt1/flowforge-') ||
+        c.image.matches('@sha256:[0-9a-f]{64}$'))) &&
+        (!has(object.spec.ephemeralContainers) ||
+        object.spec.ephemeralContainers.all(c,
+        !c.image.startsWith('ghcr.io/bbengt1/flowforge-') ||
+        c.image.matches('@sha256:[0-9a-f]{64}$')))
+      message: >-
+        FlowForge images must be digest-pinned
+        (ghcr.io/bbengt1/flowforge-…@sha256:<64 hex>).
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: flowforge-require-image-digest
+spec:
+  policyName: flowforge-require-image-digest
+  validationActions:
+    - Deny

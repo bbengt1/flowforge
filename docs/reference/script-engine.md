@@ -1,6 +1,6 @@
 # Script engine
 
-**Runtime:** `cmd/runner` creates one isolated Kubernetes Job per `script.python` / `script.go` step from [`deploy/kubernetes/script-runner-deployment.yaml`](../../deploy/kubernetes/script-runner-deployment.yaml). The image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from [`apps/api/Dockerfile.script-runner`](../../apps/api/Dockerfile.script-runner). Each Job is pinned to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. `go test` uses `HarnessRuntime` or a fake Job client and does not start pods. Compose `cmd/worker` still fails script nodes closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md) and [build/push](../deployment.md#script-runner-image).
+**Runtime:** `cmd/runner` creates one isolated Kubernetes Job per `script.python` / `script.go` step from [`deploy/kubernetes/script-runner-deployment.yaml`](../../deploy/kubernetes/script-runner-deployment.yaml). The template image is `ghcr.io/bbengt1/flowforge-script-runner:foundation` (identity check only), built from [`apps/api/Dockerfile.script-runner`](../../apps/api/Dockerfile.script-runner). Each Job is pinned to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>` before create. Admission sees that digest. `go test` uses `HarnessRuntime` or a fake Job client and does not start pods. Compose `cmd/worker` still fails script nodes closed. See [Implemented vs Specified](../architecture/implemented-vs-specified.md) and [build/push](../deployment.md#script-runner-image).
 
 ## Purpose
 

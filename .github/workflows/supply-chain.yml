@@ -3,13 +3,17 @@
 # E12.1 provenance domain: this workflow's govulncheck, image-scan, and
 # web-image-scan jobs stay required; the named suite re-runs approved-bases /
 # deploy-defaults / govulncheck fixtures (see .github/workflows/e12-security.yml).
-# G.2.10 / #455: web Trivy fs + image, SPDX SBOM, provenance. Keep #455 open.
+# G.2.10 / #455: web Trivy fs + image, SPDX SBOM. Keep #455 open.
+# G.2.9 / #454: keyless cosign + SLSA provenance on push to main
+# (publish-images). Pull requests scan only. The unsigned JSON provenance
+# helper is retired and must not be called.
 name: supply-chain
 
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,6 +34,8 @@ jobs:
         run: bash scripts/check-approved-bases.sh
       - name: Check deployment hardening defaults
         run: bash scripts/check-deploy-defaults.sh
+      - name: Check image signing and admission
+        run: bash scripts/check-image-signing.sh
       - name: Check govulncheck gate fixtures
         run: |
           python3 scripts/govulncheck-gate.py scripts/testdata/govulncheck-clean.json
@@ -213,7 +219,7 @@ jobs:
   image-scan:
     name: API image SBOM and vulnerability scan
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -225,6 +231,9 @@ jobs:
       # (same as the API image). Tag and push steps: docs/deployment.md.
       - name: Build script-runner image
         run: docker build -f apps/api/Dockerfile.script-runner -t flowforge-script-runner:ci apps/api
+
+      - name: Build backup image
+        run: docker build -f scripts/backup/Dockerfile -t flowforge-backup:ci .
 
       # Install the scanner binary. Do not use aquasecurity/trivy-action
       # version tags here — GitHub could not resolve @0.28.0 or @0.36.0.
@@ -247,13 +256,29 @@ jobs:
           --ignore-unfixed
           apps/api
 
-      - name: Image scan (fixed CRITICAL)
+      - name: Image scan (fixed HIGH and CRITICAL)
         run: >
           trivy image
-          --severity CRITICAL
+          --severity HIGH,CRITICAL
           --exit-code 1
           --ignore-unfixed
           flowforge-api:ci
+
+      - name: Script-runner image scan (fixed HIGH and CRITICAL)
+        run: >
+          trivy image
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          flowforge-script-runner:ci
+
+      - name: Backup image scan (fixed HIGH and CRITICAL)
+        run: >
+          trivy image
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --ignore-unfixed
+          flowforge-backup:ci
 
       - name: SPDX SBOM
         run: >
@@ -262,18 +287,11 @@ jobs:
           --output api-sbom.spdx.json
           flowforge-api:ci
 
-      - name: Provenance statement
-        run: bash scripts/write-provenance.sh flowforge-api:ci api-provenance.json
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-
-      - name: Upload SBOM and provenance
+      - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: api-supply-chain
-          path: |
-            api-sbom.spdx.json
-            api-provenance.json
+          path: api-sbom.spdx.json
 
   # G.2.10 / #455: same Trivy gates as image-scan, for the Next.js app.
   # Build context is the repo root (compose / G.0.7). apps/web alone cannot
@@ -315,10 +333,10 @@ jobs:
           --skip-dirs apps/api
           .
 
-      - name: Image scan (fixed CRITICAL)
+      - name: Image scan (fixed HIGH and CRITICAL)
         run: >
           trivy image
-          --severity CRITICAL
+          --severity HIGH,CRITICAL
           --exit-code 1
           --ignore-unfixed
           flowforge-web:ci
@@ -330,18 +348,11 @@ jobs:
           --output web-sbom.spdx.json
           flowforge-web:ci
 
-      - name: Provenance statement
-        run: bash scripts/write-provenance.sh flowforge-web:ci web-provenance.json apps/web/Dockerfile
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-
-      - name: Upload SBOM and provenance
+      - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: web-supply-chain
-          path: |
-            web-sbom.spdx.json
-            web-provenance.json
+          path: web-sbom.spdx.json
 
   # E12.2 sibling: full encrypted compose dump + isolated API boot.
   # The named resilience suite runs a schema-level isolated restore
@@ -391,3 +402,107 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v --remove-orphans
+
+  # G.2.9 / #454. Pull requests build and scan only. Push to main, and
+  # workflow_dispatch on main, publish a digest, sign it keyless with this
+  # workflow's OIDC identity, and attach SLSA provenance. A missing digest
+  # or a failed sign/attest fails the job. BuildKit provenance is off so
+  # an unsigned statement cannot be mistaken for the GitHub attestation.
+  # Cosign stays on v2: Kyverno verifyImages on GHCR does not reliably
+  # read cosign v3 attestation bundles.
+  publish-images:
+    name: Sign and attest ${{ matrix.name }}
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [policy, image-scan, web-image-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: apps/api
+            file: apps/api/Dockerfile
+            image: flowforge-api
+            build_args: BUILD_SHA=${{ github.sha }}
+          - name: web
+            context: .
+            file: apps/web/Dockerfile
+            image: flowforge-web
+            build_args: NEXT_PUBLIC_API_URL=${{ vars.WEB_NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
+          - name: script-runner
+            context: apps/api
+            file: apps/api/Dockerfile.script-runner
+            image: flowforge-script-runner
+            build_args: ""
+          - name: backup
+            context: .
+            file: scripts/backup/Dockerfile
+            image: flowforge-backup
+            build_args: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          build-args: ${{ matrix.build_args }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: v2.5.3
+
+      - name: Sign image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          case "$DIGEST" in
+            sha256:*) ;;
+            *)
+              echo "refusing to sign: image digest missing" >&2
+              exit 1
+              ;;
+          esac
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+          {
+            echo "### ${IMAGE}@${DIGEST}"
+            echo
+            echo "Replace the unset pin in deploy/k8s with this digest."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

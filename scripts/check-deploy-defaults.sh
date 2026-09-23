@@ -8,7 +8,7 @@ fail=0
 need() {
   local file="$1"
   local pattern="$2"
-  if ! grep -Eq "$pattern" "$file"; then
+  if ! grep -Eq -- "$pattern" "$file"; then
     echo "missing /$pattern/ in ${file#"$ROOT/"}" >&2
     fail=1
   fi
@@ -17,7 +17,7 @@ need() {
 forbid() {
   local file="$1"
   local pattern="$2"
-  if grep -Eq "$pattern" "$file"; then
+  if grep -Eq -- "$pattern" "$file"; then
     echo "forbidden /$pattern/ in ${file#"$ROOT/"}" >&2
     fail=1
   fi
@@ -71,6 +71,8 @@ forbid "$deploy" 'replicas: 1'
 forbid "$deploy" 'name: JOB_BINDING_SECRET'
 forbid "$deploy" 'name: SCRIPT_SIGNING_KEY'
 forbid "$deploy" 'image:.*:latest([[:space:]]|$)'
+need "$deploy" 'image: ghcr.io/bbengt1/flowforge-api:foundation@sha256:[0-9a-f]{64}'
+forbid "$deploy" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 
 web="$ROOT/deploy/k8s/web-deployment.yaml"
 need "$web" 'runAsUser: 65532'
@@ -83,6 +85,8 @@ need "$web" '[[:space:]]+- ALL'
 need "$web" 'seccompProfile:'
 need "$web" 'limits:'
 need "$web" 'ghcr.io/bbengt1/flowforge-web:foundation'
+need "$web" 'image: ghcr.io/bbengt1/flowforge-web:foundation@sha256:[0-9a-f]{64}'
+forbid "$web" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 need "$web" 'command: \["node", "apps/web/server.js"\]'
 need "$web" 'API_INTERNAL_URL'
 need "$web" 'http://flowforge-api:8080'
@@ -150,6 +154,8 @@ forbid "$prod_runner" 'value: production-runner'
 forbid "$prod_runner" 'name: JOB_BINDING_SECRET'
 forbid "$prod_runner" 'name: SCRIPT_SIGNING_KEY'
 forbid "$prod_runner" 'image:.*:latest([[:space:]]|$)'
+need "$prod_runner" 'image: ghcr.io/bbengt1/flowforge-api:foundation@sha256:[0-9a-f]{64}'
+forbid "$prod_runner" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 need "$ROOT/deploy/k8s/runner-networkpolicy.yaml" 'port: 5432'
 
 need "$ROOT/deploy/k8s/default-deny-networkpolicy.yaml" 'policyTypes:'
@@ -182,6 +188,8 @@ need "$backup_cj" '^kind: CronJob$'
 need "$backup_cj" 'name: flowforge-db-backup'
 need "$backup_cj" 'schedule: "0 2 \* \* \*"'
 need "$backup_cj" 'ghcr.io/bbengt1/flowforge-backup:foundation'
+need "$backup_cj" 'image: ghcr.io/bbengt1/flowforge-backup:foundation@sha256:[0-9a-f]{64}'
+forbid "$backup_cj" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 need "$backup_cj" 'command: \["/usr/local/bin/run-encrypted-backup"\]'
 need "$backup_cj" 'BACKUP_REQUIRE_S3'
 need "$backup_cj" 'runAsUser: 65532'
@@ -209,12 +217,18 @@ need "$ROOT/deploy/k8s/kustomization.yaml" 'backup-networkpolicy.yaml'
 need "$ROOT/deploy/k8s/kustomization.yaml" 'backup-secret.example.yaml'
 need "$ROOT/deploy/k8s/kustomization.yaml" 'pitr-base-cronjob.yaml'
 need "$ROOT/deploy/k8s/kustomization.yaml" 'wal-archive-deployment.yaml'
+need "$ROOT/deploy/admission/kustomization.yaml" 'image-digest-policy.yaml'
+need "$ROOT/deploy/admission/image-digest-policy.yaml" 'failurePolicy: Fail'
+need "$ROOT/deploy/admission/image-digest-policy.yaml" '- Deny'
+forbid "$ROOT/deploy/k8s/kustomization.yaml" 'image-digest-policy.yaml'
 
 pitr_cj="$ROOT/deploy/k8s/pitr-base-cronjob.yaml"
 need "$pitr_cj" '^kind: CronJob$'
 need "$pitr_cj" 'name: flowforge-pitr-base'
 need "$pitr_cj" 'schedule: "30 2 \* \* \*"'
 need "$pitr_cj" 'ghcr.io/bbengt1/flowforge-backup:foundation'
+need "$pitr_cj" 'image: ghcr.io/bbengt1/flowforge-backup:foundation@sha256:[0-9a-f]{64}'
+forbid "$pitr_cj" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 need "$pitr_cj" 'command: \["/usr/local/bin/pitr-basebackup"\]'
 need "$pitr_cj" 'BACKUP_REQUIRE_S3'
 need "$pitr_cj" 'runAsUser: 65532'
@@ -236,6 +250,8 @@ need "$wal_dep" 'name: flowforge-wal-archive'
 need "$wal_dep" 'replicas: 1'
 need "$wal_dep" 'type: Recreate'
 need "$wal_dep" 'ghcr.io/bbengt1/flowforge-backup:foundation'
+need "$wal_dep" 'image: ghcr.io/bbengt1/flowforge-backup:foundation@sha256:[0-9a-f]{64}'
+forbid "$wal_dep" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
 need "$wal_dep" 'command: \["/usr/local/bin/receive-wal"\]'
 need "$wal_dep" 'BACKUP_WAL_RPO_SECONDS'
 need "$wal_dep" 'value: "300"'

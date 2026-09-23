@@ -48,9 +48,9 @@ spec:
       containers:
         - name: web
           # Built from apps/web/Dockerfile (context = repo root).
-          # Replace with a digest-pinned image before production.
-          # CI rejects :latest (see scripts/check-deploy-defaults.sh).
-          image: ghcr.io/bbengt1/flowforge-web:foundation
+          # Unset digest pin. Not a published image. Replace the all-zero
+          # digest with the publish-images digest before apply.
+          image: ghcr.io/bbengt1/flowforge-web:foundation@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           command: ["node", "apps/web/server.js"]
           # Endpoints drop when the pod is terminating. Sleep so

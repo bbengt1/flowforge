@@ -1,0 +1,41 @@
+# Air-gapped alternative. Not listed in kustomization.yaml.
+# Do not apply this next to flowforge-verify-images.yaml (both would have
+# to pass). For a cluster that cannot reach Fulcio or Rekor, replace the
+# keyless policy with this file after substituting the cosign public key.
+# Keep validationFailureAction Enforce. The private key stays in the
+# secret store. Never commit it and never print it.
+# Generate the pair outside the repo: cosign generate-key-pair
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: flowforge-verify-images-key
+  annotations:
+    policies.kyverno.io/title: Verify FlowForge images with a cosign public key
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  failurePolicy: Fail
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-signature-and-digest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/bbengt1/flowforge-api*"
+            - "ghcr.io/bbengt1/flowforge-web*"
+            - "ghcr.io/bbengt1/flowforge-script-runner*"
+            - "ghcr.io/bbengt1/flowforge-backup*"
+          required: true
+          mutateDigest: false
+          verifyDigest: true
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publicKeys: |-
+                      REPLACE_WITH_COSIGN_PUBLIC_KEY

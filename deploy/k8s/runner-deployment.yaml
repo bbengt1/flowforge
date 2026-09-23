@@ -54,9 +54,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          # Same image as the API. Replace with a digest-pinned image before production.
-          # CI rejects :latest (see scripts/check-deploy-defaults.sh).
-          image: ghcr.io/bbengt1/flowforge-api:foundation
+          # Same image as the API. Unset digest pin. Not a published image.
+          # Replace the all-zero digest with the publish-images digest.
+          image: ghcr.io/bbengt1/flowforge-api:foundation@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/runner"]
           env:

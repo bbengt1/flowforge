@@ -14,7 +14,7 @@ envsubst '${CONTROL_PLANE_API_CIDR}' \
   | kubectl apply -n flowforge -f -
 ```
 
-The template image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from `apps/api/Dockerfile.script-runner`. The runner rewrites each Job to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. Replace the template tag with that digest before a production rollout. Do not mount `docker.sock`, a service-account token, or hostPath. Build and push: [deployment.md](../../docs/deployment.md#script-runner-image).
+The template image is `ghcr.io/bbengt1/flowforge-script-runner:foundation`, built from `apps/api/Dockerfile.script-runner`. That tag is an identity check. The runner rewrites each Job to `ghcr.io/bbengt1/flowforge-script-runner@<runtime profile imageDigest>`. Use the digest `publish-images` signed. Do not change the template tag and do not mount `docker.sock`, a service-account token, or hostPath. Verify: [deployment.md](../../docs/deployment.md#script-runner-image).
 
 CI does **not** start these pods. `go test` uses `scripts.HarnessRuntime`, which enforces the same UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / package-install gates without runc. Go binaries in CI are a documented controlled-builder stub (HMAC of the published source digest) that still runs those gates.
 

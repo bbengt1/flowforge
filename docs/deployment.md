@@ -45,14 +45,14 @@ API image (`#10` / G.0.9):
 
 Web image and Next.js headers (`#11`):
 
-- `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, copies the workspace `pnpm-lock.yaml` and runs `pnpm install --frozen-lockfile`, writable paths limited to `/tmp` and `/app/apps/web/.next/cache`. The runner stage removes npm and corepack. The process is `node apps/web/server.js`, and the base image's bundled npm `tar` 7.5.11 is CVE-2026-59873 (fixed in 7.5.19), which is not an app lockfile dependency.
-- `deploy/k8s/web-deployment.yaml` runs that image (`ghcr.io/bbengt1/flowforge-web:foundation`; **digest-pin** before production; CI rejects `:latest`) as `node apps/web/server.js`. `emptyDir` covers `/tmp` and `/app/apps/web/.next/cache`. `API_INTERNAL_URL` is `http://flowforge-api:8080`. Rebuild with `NEXT_PUBLIC_API_URL` set to the public https API origin (the Deployment repeats that origin for server-rendered links; do not use localhost). There is no process-local health route — `/api/control-plane/health` proxies the Go API — so kubelet probes `GET /` on port 3000. Ingress host `app.example.com` targets `flowforge-web:3000`. The web NetworkPolicy allows ingress from `ingress-nginx` and egress only to the API Service pods (port 8080) and cluster DNS. Compose `/usr/local/bin/worker` stays out of `deploy/k8s`; production claims use `/usr/local/bin/runner`.
+- `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, copies the workspace `pnpm-lock.yaml` and runs `pnpm install --frozen-lockfile`, writable paths limited to `/tmp` and `/app/apps/web/.next/cache`. The runner stage removes npm and corepack, and installs `libcrypto3` / `libssl3` `3.5.8-r0` (CVE-2026-14456; the pinned index still has `3.5.7-r0`). The process is `node apps/web/server.js`, and the base image's bundled npm `tar` 7.5.11 is CVE-2026-59873 (fixed in 7.5.19), which is not an app lockfile dependency.
+- `deploy/k8s/web-deployment.yaml` runs that image as `node apps/web/server.js`. The manifest pins `ghcr.io/bbengt1/flowforge-web:foundation@sha256:…`. The committed digest is all zeros (not an image). Replace it with the `publish-images` digest. CI rejects a tag with no `@sha256:`. `emptyDir` covers `/tmp` and `/app/apps/web/.next/cache`. `API_INTERNAL_URL` is `http://flowforge-api:8080`. Rebuild with `NEXT_PUBLIC_API_URL` set to the public https API origin (the Deployment repeats that origin for server-rendered links; do not use localhost). There is no process-local health route — `/api/control-plane/health` proxies the Go API — so kubelet probes `GET /` on port 3000. Ingress host `app.example.com` targets `flowforge-web:3000`. The web NetworkPolicy allows ingress from `ingress-nginx` and egress only to the API Service pods (port 8080) and cluster DNS. Compose `/usr/local/bin/worker` stays out of `deploy/k8s`; production claims use `/usr/local/bin/runner`.
 - Next.js secure headers via `apps/web/next.config.ts` and `apps/web/src/proxy.ts`. CSP uses a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`) so App Router inline bootstrap/RSC scripts hydrate. HSTS is emitted only when the request is HTTPS, `X-Forwarded-Proto: https`, or `WEB_HSTS=1`. CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` is the standalone default; `/embed/v1` relaxes `frame-ancestors` only when the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS` ∪ `WEB_PORTAL_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`) lists exact host origins. That same list is published on `GET /embed/catalog` `frameAncestors` and drives postMessage. Empty fails closed. Do not set `WEB_HSTS=1` for `http://localhost:3000`.
 - Local Compose still uses a tag for `postgres:16-alpine`. Production must replace that tag (and any unpinned registry references) with a digest. API, web, and backup Dockerfiles already pin their bases by digest.
 
 Backup image (G.1.4):
 
-- `scripts/backup/Dockerfile`: `USER 65532:65532`, digest-pinned `alpine:3.20`, `postgresql16-client`, `python3` + `py3-cryptography` (AEAD helper and integrity manifest), `aws-cli`, entrypoints `/usr/local/bin/run-encrypted-backup`, `receive-wal`, `archive-wal`, `pitr-basebackup`, and `pitr-restore`. Build from the repository root. `deploy/k8s/backup-cronjob.yaml`, `wal-archive-deployment.yaml`, and `pitr-base-cronjob.yaml` run `ghcr.io/bbengt1/flowforge-backup:foundation` (**digest-pin** before production; CI rejects `:latest`).
+- `scripts/backup/Dockerfile`: `USER 65532:65532`, digest-pinned `alpine:3.20`, `postgresql16-client`, `python3` + `py3-cryptography` (AEAD helper and integrity manifest), `aws-cli`, entrypoints `/usr/local/bin/run-encrypted-backup`, `receive-wal`, `archive-wal`, `pitr-basebackup`, and `pitr-restore`. Build from the repository root. `deploy/k8s/backup-cronjob.yaml`, `wal-archive-deployment.yaml`, and `pitr-base-cronjob.yaml` pin `ghcr.io/bbengt1/flowforge-backup:foundation@sha256:…`. The committed digest is all zeros (not an image). Replace it with the `publish-images` digest. CI rejects a tag with no `@sha256:`.
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):
 
@@ -435,9 +435,11 @@ Do not run this binary from compose.
 runner clones `deploy/kubernetes/script-runner-deployment.yaml` (a
 `batch/v1` Job template, not a Deployment) and creates one Job in the
 FlowForge namespace. The container image reference in that template is
-`ghcr.io/bbengt1/flowforge-script-runner:foundation`. On create, the
+`ghcr.io/bbengt1/flowforge-script-runner:foundation` (an identity check;
+do not replace it with a digest). On create, the
 runner rewrites it to `ghcr.io/bbengt1/flowforge-script-runner@<imageDigest>`
-using the published runtime profile. Any other repository is rejected.
+using the published runtime profile. That digest must be one `publish-images`
+signed. Any other repository is rejected.
 Draft workflow bindings fail `draft-not-runnable` before a Job is built.
 Missing API configuration fails the step `runner-not-implemented` and
 does not fall back to the in-process harness. `go test` uses
@@ -449,16 +451,16 @@ Build and push locally from this repo:
 docker build -f apps/api/Dockerfile.script-runner \
   -t ghcr.io/bbengt1/flowforge-script-runner:foundation \
   apps/api
-docker push ghcr.io/bbengt1/flowforge-script-runner:foundation
 ```
 
-Record the pushed manifest-list digest as the runtime profile
-`imageDigest` (`sha256:<64 hex>`). Replace the template tag with
-`@sha256:…` before a production rollout, the same way the API image is
-pinned. CI (`.github/workflows/supply-chain.yml`, job `image-scan`)
-builds the same Dockerfile as `flowforge-script-runner:ci` on every
-pull request and does not push. A registry push stays an operator step
-until GHCR credentials are configured.
+The image CI publishes, signs, and attests is the `publish-images` job on
+`main` (`.github/workflows/supply-chain.yml`). Record that job's digest as
+the runtime profile `imageDigest` (`sha256:<64 hex>`). Do not change the
+template tag: the process accepts only
+`ghcr.io/bbengt1/flowforge-script-runner:foundation` and then rewrites the
+Job to `repository@imageDigest`. Pull requests build
+`flowforge-script-runner:ci` and do not push. Verification commands:
+[supply-chain policy](../deploy/supply-chain/policy.md).
 
 `deploy/k8s` runs the runner as ServiceAccount `flowforge-runner-scripts`
 with a projected token (`SCRIPT_RUNNER_TOKEN_FILE`) and
