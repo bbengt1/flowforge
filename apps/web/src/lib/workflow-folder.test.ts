@@ -396,6 +396,8 @@ describe("F.3 create / rename / delete folders", () => {
     assert.match(brief, /F\.3/);
     assert.match(brief, /409/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /F\.3/);
+    assert.match(frontend, /409/);
   });
 
   it("validates name rules and sibling uniqueness", () => {
@@ -964,6 +966,7 @@ describe("#320 cold-load ?folder= deep link", () => {
       /dropPreviousFolder\s*\?\s*\{\s*kind:\s*"unfiled"/,
     );
     const frontend = repoSource("docs/reference/frontend-ui.md");
+    assert.match(frontend, /\?folder=/);
   });
 });
 

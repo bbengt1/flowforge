@@ -96,7 +96,7 @@ G.3.3 rendered gate.
  Change-password). Source-text aria greps are retired where this
  job covers the same intent.
 
-G.3.8 RTL behavior (Relates to #495 / Part of #412).
+G.3.8 RTL behavior.
 
 24. **`dir="rtl"`** — the `ff-dir` cookie sets `<html dir>`. Unknown
     values fail closed to `ltr`. Playwright checks Field label

@@ -44,13 +44,6 @@ function source(relative: string): string {
   return readFileSync(join(here, "..", "..", relative), "utf8");
 }
 
-function frontendUi(): string {
-  return readFileSync(
-    join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
-    "utf8",
-  );
-}
-
 function incompleteBody() {
   return emptyBootstrapStatus();
 }

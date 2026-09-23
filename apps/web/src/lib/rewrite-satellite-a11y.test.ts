@@ -240,6 +240,8 @@ describe("R7.4 rewrite satellite a11y", () => {
     assert.match(guide, /focus return|restores focus/);
 
     const surfaces = repoSource(REWRITE_SATELLITE_A11Y_DOCS.rewriteUiSurfaces);
+    assert.match(surfaces, /R7\.4/);
+    assert.match(surfaces, /touch-inspector-first/);
 
     const charter = repoSource(REWRITE_SATELLITE_A11Y_DOCS.charter);
     assert.match(charter, /no screen-reader graph rewrite|Still no screen-reader graph rewrite/);
