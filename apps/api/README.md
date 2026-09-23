@@ -124,7 +124,7 @@ Every response sets `X-Request-ID`. A caller value is accepted only when it is 1
 
 Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, `code`, and `request_id`. Documented codes: `invalid-request` (400), `invalid-workflow` (400, with `errors` path/line/column/code/message), `unauthenticated` (401), `forbidden` (403), `not-found` (404), `conflict` (409), `method-not-allowed` (405), `request-too-large` (413), `internal-error` (500), `dependency-unavailable` (503). Request bodies are capped at 1 MiB. Logs never include `Authorization`, cookies, query strings, or bodies.
 
-The process boots even if PostgreSQL is down. Health stays 200; readiness tracks the database. On connect, the API applies forward-only migrations recorded in `schema_migrations`.
+The process boots even if PostgreSQL is down. Health stays 200; readiness tracks the database. On connect, the API applies forward-only migrations recorded in `schema_migrations` and verifies each applied file's SHA-256. Checksum drift refuses boot (readiness stays 503, no retry). Operator steps: [schema migrations](../../docs/operations/schema-migrations.md).
 
 ## Environment
 

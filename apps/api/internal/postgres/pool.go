@@ -60,6 +60,8 @@ func NewPool(databaseURL string, log *slog.Logger, migrateTimeout time.Duration)
 }
 
 // Start connects, applies forward-only migrations, and retries until ctx ends.
+// Checksum drift is not retried: the pool stays unpublished and readiness
+// stays down until the process is restarted with matching migration files.
 func (p *Pool) Start(ctx context.Context) {
 	if p.url == "" {
 		p.mu.Lock()
@@ -81,6 +83,10 @@ func (p *Pool) Start(ctx context.Context) {
 			return
 		}
 		if ctx.Err() != nil {
+			return
+		}
+		if errors.Is(err, ErrMigrationDrift) {
+			p.log.Error("refusing boot", "error", err)
 			return
 		}
 		p.log.Warn("postgres not ready; retrying", "error", err, "backoff", backoff.String())

@@ -15,6 +15,7 @@ weaken E12.1 / E12.2 harnesses.
 | [API / OpenAPI](../reference/openapi.md) | Platform admins, integrators | How the published spec is obtained, `/api/v1` versioning, auth/session at high level |
 | [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (#191 / R7.3 #278 — labeled Example context stays local-only; trusted-dev is never rewrite login), production env inventory, local-vs-prod pitfalls, deploy manifests |
 | [Incident and recovery](incident-recovery.md) | On-call / ops | Health vs readiness, worker-loss/fencing, restore rehearsal, escalation signals |
+| [Schema migrations](schema-migrations.md) | On-call / ops | Apply and verify forward-only migrations, checksum drift, refused boot, upgrade and rollback |
 | [SLOs and alerts](slo-alerts.md) | On-call / ops | Control-plane SLOs, business metrics, example Prometheus alert rules |
 | [Retention and backup](retention-backup.md) | Ops / compliance | Encrypted backups, restore cadence, retention purge, legal hold |
 | [KEK rotation](kek-rotation.md) | Ops / security | KMS-wrapped data KEK, online re-encryption, dual-KEK window |

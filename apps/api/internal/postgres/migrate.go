@@ -2,6 +2,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -17,9 +20,25 @@ const createSchemaMigrations = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version     bigint PRIMARY KEY,
     name        text NOT NULL,
-    applied_at  timestamptz NOT NULL DEFAULT now()
+    applied_at  timestamptz NOT NULL DEFAULT now(),
+    checksum    text
 );
 `
+
+// ensureSchemaMigrationsChecksum adds the checksum column on databases
+// created before G.3.5. CREATE TABLE IF NOT EXISTS does not alter an
+// existing table.
+const ensureSchemaMigrationsChecksum = `
+ALTER TABLE schema_migrations
+    ADD COLUMN IF NOT EXISTS checksum text;
+`
+
+// ErrMigrationDrift means an applied migration file does not match the
+// checksum recorded in schema_migrations (or the file is missing / renamed).
+// Boot must stop. Retrying will not succeed until the file is restored.
+var ErrMigrationDrift = errors.New("migration checksum drift")
+
+const migrationRunbook = "docs/operations/schema-migrations.md#refused-boot"
 
 // migrationLockKey is a session-level advisory lock that serializes
 // forward-only schema application across API replicas and cmd/migrate.
@@ -27,13 +46,65 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 const migrationLockKey int64 = 881726401
 
 type migration struct {
-	Version int64
-	Name    string
-	SQL     string
+	Version  int64
+	Name     string
+	SQL      string
+	Checksum string
 }
+
+type appliedMigration struct {
+	Name     string
+	Checksum string
+}
+
+type driftReason string
+
+const (
+	driftChecksum driftReason = "checksum"
+	driftMissing  driftReason = "missing"
+	driftName     driftReason = "name"
+)
+
+// migrationDriftError is the operator-facing boot refusal. It names the
+// migration and the next action. It does not include SQL or secrets.
+type migrationDriftError struct {
+	Version  int64
+	Name     string
+	File     string
+	Recorded string
+	Actual   string
+	Reason   driftReason
+}
+
+func (e *migrationDriftError) Error() string {
+	if e == nil {
+		return "refusing boot: migration checksum drift. See " + migrationRunbook
+	}
+	switch e.Reason {
+	case driftMissing:
+		return fmt.Sprintf(
+			"refusing boot: applied migration version %d (%s) has no file in this binary. Restore %s from the release that applied it and restart. See %s",
+			e.Version, e.Name, e.File, migrationRunbook,
+		)
+	case driftName:
+		return fmt.Sprintf(
+			"refusing boot: schema_migrations version %d is recorded as %q but the migration file in this binary is %q (%s). Restore the applied migration file and restart. See %s",
+			e.Version, e.Name, e.Actual, e.File, migrationRunbook,
+		)
+	default:
+		return fmt.Sprintf(
+			"refusing boot: migration checksum drift for version %d (%s, file %s): recorded sha256 %s does not match the migration file in this binary (sha256 %s). Restore that file from the release that applied it (do not edit applied SQL or schema_migrations) and restart. See %s",
+			e.Version, e.Name, e.File, e.Recorded, e.Actual, migrationRunbook,
+		)
+	}
+}
+
+func (e *migrationDriftError) Unwrap() error { return ErrMigrationDrift }
 
 // Migrate applies pending forward-only SQL files and records them in
 // schema_migrations. Re-running is a no-op for already-applied versions.
+// Each applied file's SHA-256 is stored and checked against the bytes on
+// disk before any new migration runs. Drift refuses boot (ErrMigrationDrift).
 // Discovery and application run under pg_advisory_lock on one connection.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
@@ -54,6 +125,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, createSchemaMigrations); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
+	if _, err := conn.Exec(ctx, ensureSchemaMigrationsChecksum); err != nil {
+		return fmt.Errorf("ensure schema_migrations checksum: %w", err)
+	}
 
 	all, err := loadMigrations()
 	if err != nil {
@@ -64,8 +138,14 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
+	if err := verifyAppliedChecksums(all, applied); err != nil {
+		return err
+	}
+	if err := stampMissingChecksums(ctx, conn, all, applied); err != nil {
+		return err
+	}
 
-	pending, err := pendingMigrations(all, applied)
+	pending, err := pendingMigrations(all, appliedNames(applied))
 	if err != nil {
 		return err
 	}
@@ -104,7 +184,12 @@ func loadMigrations() ([]migration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", entry.Name(), err)
 		}
-		out = append(out, migration{Version: version, Name: name, SQL: string(body)})
+		out = append(out, migration{
+			Version:  version,
+			Name:     name,
+			SQL:      string(body),
+			Checksum: checksumBytes(body),
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Version != out[j].Version {
@@ -132,10 +217,84 @@ func pendingMigrations(all []migration, applied map[int64]string) ([]migration, 
 			continue
 		}
 		if name != m.Name {
-			return nil, fmt.Errorf("schema_migrations version %d is %q but migration file is %q", m.Version, name, m.Name)
+			return nil, &migrationDriftError{
+				Version: m.Version,
+				Name:    name,
+				File:    migrationFilename(m.Version, m.Name),
+				Actual:  m.Name,
+				Reason:  driftName,
+			}
 		}
 	}
 	return pending, nil
+}
+
+func checksumBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func migrationFilename(version int64, name string) string {
+	return fmt.Sprintf("%06d_%s.sql", version, name)
+}
+
+// verifyAppliedChecksums compares recorded checksums to the files on disk.
+// An empty checksum is the pre-G.3.5 row and is not drift; the caller stamps
+// it from the current file. A mismatch, a missing file, or a renamed file
+// refuses boot.
+func verifyAppliedChecksums(all []migration, applied map[int64]appliedMigration) error {
+	byVersion := make(map[int64]migration, len(all))
+	for _, m := range all {
+		byVersion[m.Version] = m
+	}
+	versions := make([]int64, 0, len(applied))
+	for version := range applied {
+		versions = append(versions, version)
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i] < versions[j] })
+	for _, version := range versions {
+		row := applied[version]
+		file, ok := byVersion[version]
+		if !ok {
+			return &migrationDriftError{
+				Version: version,
+				Name:    row.Name,
+				File:    migrationFilename(version, row.Name),
+				Reason:  driftMissing,
+			}
+		}
+		if row.Name != file.Name {
+			return &migrationDriftError{
+				Version: version,
+				Name:    row.Name,
+				File:    migrationFilename(version, file.Name),
+				Actual:  file.Name,
+				Reason:  driftName,
+			}
+		}
+		if row.Checksum == "" {
+			continue
+		}
+		if row.Checksum != file.Checksum {
+			return &migrationDriftError{
+				Version:  version,
+				Name:     file.Name,
+				File:     migrationFilename(version, file.Name),
+				Recorded: row.Checksum,
+				Actual:   file.Checksum,
+				Reason:   driftChecksum,
+			}
+		}
+	}
+	return nil
+}
+
+func appliedNames(applied map[int64]appliedMigration) map[int64]string {
+	names := make(map[int64]string, len(applied))
+	for version, row := range applied {
+		names[version] = row.Name
+	}
+	return names
 }
 
 func parseMigrationName(filename string) (int64, string, error) {
@@ -151,23 +310,67 @@ func parseMigrationName(filename string) (int64, string, error) {
 	return version, rest, nil
 }
 
-func appliedVersions(ctx context.Context, conn *pgxpool.Conn) (map[int64]string, error) {
-	rows, err := conn.Query(ctx, `SELECT version, name FROM schema_migrations`)
+func appliedVersions(ctx context.Context, conn *pgxpool.Conn) (map[int64]appliedMigration, error) {
+	rows, err := conn.Query(ctx, `SELECT version, name, checksum FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("list schema_migrations: %w", err)
 	}
 	defer rows.Close()
 
-	applied := make(map[int64]string)
+	applied := make(map[int64]appliedMigration)
 	for rows.Next() {
 		var version int64
 		var name string
-		if err := rows.Scan(&version, &name); err != nil {
+		var checksum *string
+		if err := rows.Scan(&version, &name, &checksum); err != nil {
 			return nil, fmt.Errorf("scan schema_migrations: %w", err)
 		}
-		applied[version] = name
+		row := appliedMigration{Name: name}
+		if checksum != nil {
+			row.Checksum = *checksum
+		}
+		applied[version] = row
 	}
 	return applied, rows.Err()
+}
+
+// stampMissingChecksums records the on-disk SHA-256 for rows applied before
+// checksums existed. It never overwrites a recorded checksum.
+func stampMissingChecksums(ctx context.Context, conn *pgxpool.Conn, all []migration, applied map[int64]appliedMigration) error {
+	var pending []migration
+	for _, m := range all {
+		row, ok := applied[m.Version]
+		if !ok || row.Checksum != "" || row.Name != m.Name {
+			continue
+		}
+		pending = append(pending, m)
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin migration checksum stamp: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	for _, m := range pending {
+		tag, err := tx.Exec(ctx,
+			`UPDATE schema_migrations
+			 SET checksum = $2
+			 WHERE version = $1 AND (checksum IS NULL OR checksum = '')`,
+			m.Version, m.Checksum,
+		)
+		if err != nil {
+			return fmt.Errorf("record checksum for migration %d (%s): %w", m.Version, m.Name, err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("record checksum for migration %d (%s): expected to stamp 1 row", m.Version, m.Name)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit migration checksums: %w", err)
+	}
+	return nil
 }
 
 func applyMigration(ctx context.Context, conn *pgxpool.Conn, m migration) error {
@@ -182,9 +385,12 @@ func applyMigration(ctx context.Context, conn *pgxpool.Conn, m migration) error 
 			return fmt.Errorf("apply migration %d (%s): %w", m.Version, m.Name, err)
 		}
 	}
+	if m.Checksum == "" {
+		return fmt.Errorf("migration %d (%s) has no checksum", m.Version, m.Name)
+	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`,
-		m.Version, m.Name,
+		`INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`,
+		m.Version, m.Name, m.Checksum,
 	); err != nil {
 		return fmt.Errorf("record migration %d: %w", m.Version, err)
 	}
