@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { textMentionsHostname } from "./url-safety.ts";
 import {
   CANCEL_APPLIED_MESSAGE,
   CANCEL_FORBIDDEN_MESSAGE,
@@ -820,6 +821,6 @@ describe("execution artifacts and bounded logs", () => {
     assert.match(text, /plan\.json/);
     assert.match(text, /\[redacted\]/);
     assert.match(text, /legal hold/i);
-    assert.equal(text.includes("example.com"), false);
+    assert.equal(textMentionsHostname(text, "example.com"), false);
   });
 });

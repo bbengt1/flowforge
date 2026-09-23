@@ -102,6 +102,9 @@ describe("manual-start contract adapter", () => {
     assert.equal(manualStartHref(WORKFLOW_ID), `/workflows?start=${WORKFLOW_ID}`);
     assert.equal(manualStartHref("draft"), "/workflows?start=1");
     assert.equal(editorManualStartHref(WORKFLOW_ID), `/workflows/${WORKFLOW_ID}`);
+    assert.equal(editorManualStartHref(` ${WORKFLOW_ID} `), `/workflows/${WORKFLOW_ID}`);
+    assert.equal(editorManualStartHref("javascript:alert(1)"), "/workflows");
+    assert.equal(editorManualStartHref("not-a-uuid"), "/workflows");
     assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /e10-#111/);
     assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /catalog-fallback|unavailable/);
     assert.match(MANUAL_START_CONTRACT_FALLBACK_HELP, /Do not invent POST \/executions/);

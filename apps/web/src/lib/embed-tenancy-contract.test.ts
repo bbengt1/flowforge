@@ -285,6 +285,21 @@ describe("embed-tenancy-contract", () => {
       rewriteEmbedNavigationHref("https://evil.example/workflows", "https://app.example"),
       null,
     );
+    for (const href of [
+      "javascript:alert(1)",
+      "JavaScript:alert(1)",
+      " java\nscript:alert(1)",
+      "data:text/html,hi",
+      "vbscript:msgbox(1)",
+      "mailto:ada@example.com",
+      "tel:15551212",
+    ]) {
+      assert.equal(
+        rewriteEmbedNavigationHref(href, "https://app.example"),
+        null,
+        href,
+      );
+    }
   });
 
   it("caps UI by session.embed capabilities and skips public embed hops", () => {

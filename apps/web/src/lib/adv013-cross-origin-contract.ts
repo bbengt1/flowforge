@@ -31,6 +31,7 @@ import {
   portalHostDisplay,
   portalUrlContainsAssertion,
 } from "./portal-adapter-contract.ts";
+import { sourceListHasExactHttpOrigin } from "./url-safety.ts";
 
 export const ADV013_STORY = 144;
 export const ADV013_EPIC = 130;
@@ -142,7 +143,7 @@ export function adv013HostileAncestorBlocked(
   const allow = embedHostAllowlist(env);
   return (
     !isAllowedEmbedMessageOrigin(evil, allow, { selfOrigin: evil }) &&
-    !adv013FrameAncestors(env).includes(evil)
+    !sourceListHasExactHttpOrigin(adv013FrameAncestors(env), evil)
   );
 }
 

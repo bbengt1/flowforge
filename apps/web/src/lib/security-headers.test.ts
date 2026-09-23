@@ -10,6 +10,7 @@ import {
   shouldSendHsts,
   staticSecurityHeaders,
 } from "./security-headers.ts";
+import { listHasExactValue } from "./url-safety.ts";
 
 describe("getApiConnectOrigins", () => {
   it("defaults to the same local API origin as config.ts", () => {
@@ -34,9 +35,9 @@ describe("getApiConnectOrigins", () => {
       WEB_CSP_CONNECT_SRC: "https://extra.example.test wss://extra.example.test",
     });
     assert.ok(origins.includes("'self'"));
-    assert.ok(origins.includes("https://api.example.test"));
-    assert.ok(origins.includes("https://extra.example.test"));
-    assert.ok(origins.includes("wss://extra.example.test"));
+    assert.equal(listHasExactValue(origins, "https://api.example.test"), true);
+    assert.equal(listHasExactValue(origins, "https://extra.example.test"), true);
+    assert.equal(listHasExactValue(origins, "wss://extra.example.test"), true);
   });
 });
 
