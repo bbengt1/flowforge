@@ -3,7 +3,7 @@
 # non-root identity (web image aligns to the same UID).
 #
 # Base pins are the multi-arch index digests for golang:1.26-alpine and
-# alpine:3.20. Refresh: docs/deployment.md#refreshing-dockerfile-base-digests.
+# alpine:3.24. Refresh: docs/deployment.md#refreshing-dockerfile-base-digests.
 
 FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 WORKDIR /src
@@ -38,7 +38,7 @@ RUN go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
     -o /out/kek-rotate ./cmd/kek-rotate
 
-FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
  && apk add --no-cache ca-certificates tzdata \
  && mkdir -p /tmp && chown 65532:65532 /tmp && chmod 1777 /tmp
