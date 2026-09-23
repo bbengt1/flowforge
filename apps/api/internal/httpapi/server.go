@@ -816,6 +816,7 @@ func newServer(d Deps) *API {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+	// Unlimited. Workspace quotas and auth-door limits do not apply.
 	writeJSON(w, http.StatusOK, probeIdentity("ok"))
 }
 

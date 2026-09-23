@@ -2,17 +2,34 @@ package quota
 
 import "strings"
 
+// IsProbe reports Kubernetes liveness and readiness. Those paths stay
+// unlimited: a full workspace bucket or a down rate store must not 429
+// or 503 them.
+func IsProbe(path string) bool {
+	path = strings.TrimSpace(path)
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	path = strings.TrimRight(path, "/")
+	switch path {
+	case "/api/v1/health", "/api/v1/readiness":
+		return true
+	default:
+		return false
+	}
+}
+
 // ClassForRoute maps an HTTP method and path (or mux pattern) onto a
 // workspace bucket. Empty means the route is not on the workspace quota.
-// Login, embed mint/exchange, machine token, OIDC, portal mint, webhook
-// ingress, SCIM, and bootstrap stay off this bucket.
+// Liveness, readiness, login, embed mint/exchange, machine token, OIDC,
+// portal mint, webhook ingress, SCIM, and bootstrap stay off this bucket.
 func ClassForRoute(method, path string) string {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = strings.TrimSpace(path)
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
 	}
-	if path == "" || exemptQuota(path) {
+	if path == "" || IsProbe(path) || exemptQuota(path) {
 		return ""
 	}
 	if isDownload(method, path) {
@@ -34,7 +51,7 @@ func ClassForRoute(method, path string) string {
 
 func exemptQuota(path string) bool {
 	switch path {
-	case "/api/v1/health", "/api/v1/readiness", "/api/v1/metrics",
+	case "/api/v1/metrics",
 		"/api/v1/openapi.yaml", "/api/v1/openapi.json", "/api/v1/swagger",
 		"/api/v1/login", "/api/v1/machine/token",
 		"/api/v1/permission-matrix", "/api/v1/roles", "/api/v1/permissions":

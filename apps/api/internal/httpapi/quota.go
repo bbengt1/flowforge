@@ -21,6 +21,10 @@ func quotaUnshared(store quota.Taker) bool {
 // Auth doors are not charged. A store error is 503. A deny is 429.
 // One request is charged once even when authorization runs twice.
 func (s *Server) chargeQuota(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
+	// HA probes never consult the limiter. A down store must not 503 them.
+	if probeRequest(r) {
+		return true
+	}
 	class := quotaClass(r)
 	if class == "" {
 		return true
@@ -53,6 +57,21 @@ func (s *Server) chargeQuota(w http.ResponseWriter, r *http.Request, workspaceID
 		meta.quotaCharged = true
 	}
 	return true
+}
+
+func probeRequest(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	if quota.IsProbe(r.URL.Path) {
+		return true
+	}
+	pattern := RouteFromContext(r.Context())
+	_, path, ok := strings.Cut(pattern, " ")
+	if !ok {
+		path = pattern
+	}
+	return quota.IsProbe(path)
 }
 
 func quotaClass(r *http.Request) string {

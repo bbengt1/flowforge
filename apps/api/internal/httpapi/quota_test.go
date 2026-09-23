@@ -90,6 +90,30 @@ func TestWorkspaceQuotaAllowDenyAndIsolation(t *testing.T) {
 	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
 }
 
+func TestHealthProbesStayUnlimited(t *testing.T) {
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
+		DB:         ReadyChecker(func(context.Context) error { return nil }),
+		Store:      identity.NewMemory(),
+		Scoped:     isolation.NewMemory(),
+		Sessions:   session.NewMemory(),
+		Workflows:  wfstore.NewMemory(),
+		Quota:      quota.Limits{MutatePerMinute: 1, MutateBurst: 1, ReadPerMinute: 1, ReadBurst: 1},
+		QuotaStore: downQuota{},
+	}))
+	for i := 0; i < 8; i++ {
+		for _, path := range []string{"/api/v1/health", "/api/v1/readiness"} {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status = %d body=%s", path, rec.Code, rec.Body.String())
+			}
+			if rec.Header().Get("Retry-After") != "" || strings.Contains(rec.Body.String(), "rate-limited") || strings.Contains(rec.Body.String(), "Rate limit store") {
+				t.Fatalf("%s was rate limited: %s", path, rec.Body.String())
+			}
+		}
+	}
+}
+
 func TestWorkspaceQuotaStoreFailureFailsClosed(t *testing.T) {
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
 		Store:      identity.NewMemory(),

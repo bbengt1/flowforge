@@ -81,7 +81,8 @@ paths:
       description: |
         Returns process liveness plus non-secret `version` / `sha`.
         Does not check dependencies. Missing build identity is
-        `dev` / `unknown` and does not fail the probe.
+        `dev` / `unknown` and does not fail the probe. Not subject to
+        workspace quotas or auth-door rate limits.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -111,7 +112,8 @@ paths:
       description: |
         Returns ready when PostgreSQL is reachable, plus the same
         non-secret `version` / `sha` as `/health`. Otherwise a
-        problem details response (no version metadata).
+        problem details response (no version metadata). Not subject to
+        workspace quotas or auth-door rate limits.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:

@@ -23,9 +23,11 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 - Workspace quotas are a shared token bucket (`QUOTA_*`) on mutating and
   expensive routes, plus a cap on open executions. Local login, embed
   mint/exchange, machine token, and webhook ingress keep separate budgets.
-  `FLOWFORGE_REPLICAS` above 1 refuses an in-memory rate store. A store
-  error fails closed (`503`). Responses and logs do not include limiter
-  keys, identifiers, or client addresses from those counters.
+  `GET /api/v1/health` and `GET /api/v1/readiness` stay unlimited so HA
+  probes are never `429`. `FLOWFORGE_REPLICAS` above 1 refuses an
+  in-memory rate store. A store error fails closed (`503`). Responses
+  and logs do not include limiter keys, identifiers, or client addresses
+  from those counters.
 - Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
   `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
   authentication and must not upsert principals. Prefer the cookie session

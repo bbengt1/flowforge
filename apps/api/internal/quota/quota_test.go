@@ -120,6 +120,11 @@ func TestClassForRouteKeepsAuthDoorsSeparate(t *testing.T) {
 	if ClassForRoute("GET", "/api/v1/session") != "" {
 		t.Fatal("session poll is not a list")
 	}
+	for _, path := range []string{"/api/v1/health", "/api/v1/health/", "/api/v1/readiness", "/api/v1/readiness?verbose=1"} {
+		if !IsProbe(path) || ClassForRoute("GET", path) != "" {
+			t.Fatalf("probe %s must stay unlimited", path)
+		}
+	}
 }
 
 type errBegin struct{}
