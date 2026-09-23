@@ -134,7 +134,7 @@ func RenderProxyAllowlist(routes []Route) ([]byte, error) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%s: %q", name, g.params[name]))
+			fmt.Fprintf(&b, "%s: %q", name, g.params[name])
 		}
 		b.WriteString("},\n")
 		b.WriteString("  },\n")
