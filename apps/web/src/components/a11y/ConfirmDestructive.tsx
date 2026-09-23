@@ -118,7 +118,7 @@ export function ConfirmDestructive({
           </ul>
         )}
         {children}
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div data-confirm-destructive="actions" className="mt-5 flex flex-wrap gap-2">
           <button type="button" onClick={onClose} className={cancelClassName}>
             Cancel
           </button>

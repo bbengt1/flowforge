@@ -226,8 +226,8 @@ export function CommandPalette() {
                   onClick={() => run(command.id)}
                   className={
                     index === highlight
-                      ? "ff-nav-item ff-nav-item-active flex w-full flex-col px-2 py-2 text-left"
-                      : "ff-nav-item flex w-full flex-col px-2 py-2 text-left"
+                      ? "ff-nav-item ff-nav-item-active flex w-full flex-col px-2 py-2 text-start"
+                      : "ff-nav-item flex w-full flex-col px-2 py-2 text-start"
                   }
                 >
                   <span className="text-sm font-medium">

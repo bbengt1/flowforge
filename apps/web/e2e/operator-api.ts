@@ -16,6 +16,9 @@ const APPROVAL_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
 
 export const OPERATOR_WORKFLOW_ID = WORKFLOW_ID;
+export const OPERATOR_FOLDER_NAME = "Runbooks";
+
+const FOLDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const PERMISSIONS = [
   "workflow.view",
@@ -71,6 +74,15 @@ const workflow = {
   name: "Deploy",
   status: "draft",
   draftRevision: 1,
+};
+
+const folder = {
+  id: FOLDER_ID,
+  workspaceId: WORKSPACE_ID,
+  parentId: null,
+  name: OPERATOR_FOLDER_NAME,
+  createdAt: "2026-09-01T12:00:00.000Z",
+  updatedAt: "2026-09-01T12:00:00.000Z",
 };
 
 const draftSummary = {
@@ -193,11 +205,13 @@ function apiPath(url: string): string {
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
 
-function bodyFor(path: string): {
+function bodyFor(requestUrl: string): {
   status: number;
   contentType: string;
   body: unknown;
 } {
+  const path = apiPath(requestUrl);
+  const folderId = new URL(requestUrl).searchParams.get("folderId")?.trim() ?? "";
   if (path === "/session") {
     return ok(session);
   }
@@ -211,6 +225,9 @@ function bodyFor(path: string): {
     return ok(currentWorkspace);
   }
   if (path === "/workflows" || path === "/workflows/") {
+    if (folderId && folderId !== "unfiled") {
+      return ok({ items: [] });
+    }
     return ok({ items: [workflow] });
   }
   if (path === "/workflows/catalog") {
@@ -247,7 +264,7 @@ function bodyFor(path: string): {
     return ok({ items: [approval] });
   }
   if (path === "/workflow-folders") {
-    return ok({ items: [] });
+    return ok({ items: [folder] });
   }
   if (path === "/embed/catalog" || path === "/portal/catalog") {
     return ok({ frameAncestors: [], issuers: [] });
@@ -266,7 +283,7 @@ async function fulfill(route: Route): Promise<void> {
     });
     return;
   }
-  const payload = bodyFor(apiPath(route.request().url()));
+  const payload = bodyFor(route.request().url());
   await route.fulfill({
     status: payload.status,
     contentType: payload.contentType,

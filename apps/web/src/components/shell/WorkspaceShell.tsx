@@ -216,10 +216,10 @@ export function WorkspaceShell({
           className={
             editorRoute
               ? navOpen
-                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex lg:w-14 lg:items-center lg:gap-3 lg:p-2`
+                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 start-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex lg:w-14 lg:items-center lg:gap-3 lg:p-2`
                 : `${FF_SHELL_ASIDE_CLASS} hidden w-14 shrink-0 flex-col items-center gap-3 p-2 lg:flex`
               : navOpen
-                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 left-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex`
+                ? `${FF_SHELL_ASIDE_CLASS} fixed inset-y-0 start-0 z-20 flex w-64 flex-col gap-4 p-4 lg:static lg:flex`
                 : `${FF_SHELL_ASIDE_CLASS} hidden w-64 shrink-0 flex-col gap-4 p-4 lg:flex`
           }
         >
