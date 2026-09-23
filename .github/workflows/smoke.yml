@@ -26,7 +26,7 @@ jobs:
       BUILD_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Compose requires POSTGRES_PASSWORD (docker-compose.yml / env-template.txt).
       # Generate a disposable value, mask it, then export — never echo it.
