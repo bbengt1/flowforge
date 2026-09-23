@@ -89,8 +89,10 @@ export async function expectAnchoredToInlineStart(
   if (!box || !viewport) {
     return;
   }
+  // Skip link uses a 12px inline-start inset. A physical `left` pin
+  // leaves a gap near the full viewport width.
   const gapFromInlineStart = viewport.width - (box.x + box.width);
-  expect(gapFromInlineStart).toBeLessThan(8);
+  expect(gapFromInlineStart).toBeLessThan(24);
   expect(box.x).toBeGreaterThan(viewport.width / 2);
 }
 
