@@ -1,18 +1,17 @@
-# Rewrite UI surfaces (Chloe)
+# Rewrite UI surfaces
 
 Docs-only input for FlowForge’s **independent rewrite** toward
 n8n-class UX and feature **parity**. This is **not** a clone brief.
 It does **not** invent rewrite epic or story numbers, and it does
 **not** close issues.
 
-**Owner:** Chloe (UI surfaces, operator migration, keep/replace/retire).
-**Folded into:** charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes)
-(PR #222). That subsection is the rewrite authority for this slice;
-this page is the expanded surface map. Gracie/Arie still own
+**Folded into:** charter [§11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-ui-surfaces-and-operator-migration-notes)
+. That subsection is the rewrite authority for this slice;
+this page is the expanded surface map. / still own
 sequencing and epic cut. Do not open issues from this page.
 
 **Current product IA (landed):** [frontend-ui.md](frontend-ui.md)
-after epic #195 (UX.1–UX.12). Operator walkthrough:
+after epic (UX.1–UX.12). Operator walkthrough:
 [operator-admin.md](../guides/operator-admin.md).
 
 ## Independence and non-clone rules
@@ -25,10 +24,10 @@ triggers, settings. FlowForge must remain its own product.
 Do **not**:
 
 - Copy n8n source, CSS, icons, trademarks, colors, or layout
-  measurements.
+ measurements.
 - Pixel-match n8n screens or reuse n8n chrome names as product
-  branding (no “NDV” in the UI; that term is used below only as a
-  parity *reference* for a focused node inspector).
+ branding (no “NDV” in the UI; that term is used below only as a
+ parity *reference* for a focused node inspector).
 - Persist a second workflow format beside YAML.
 - Put triggers on the canvas.
 - Let drafts execute.
@@ -41,15 +40,15 @@ Do:
 - Keep vault selectors as **display name + UUID**.
 - Keep fail-closed catalog, nav, and secret handling.
 
-## What landed on `main` after epic #195
+## What landed on `main` after epic
 
-Epic #195 (closed) reshaped **chrome**, not contracts. UX.1–UX.11
-shipped the canvas-first editor; UX.12 (#219) updated the IA
-diagram and authoring walkthrough. R7.1 (#276 — **keep #276 open**)
+Epic (closed) reshaped **chrome**, not contracts. UX.1–UX.11
+shipped the canvas-first editor; UX.12 updated the IA
+diagram and authoring walkthrough. R7.1
 mounts the landed R2–R6 rewrite chrome on `/embed/v1` after
 `session.embed`. ADV-021/024, `session.embed`, grant-gated
 membership/isolation, and **drafts never run** are unchanged.
-R7.4 (#279 — **Keep #279 open.**) extends UX.10 / E12.3 a11y
+R7.4 extends UX.10 / E12.3 a11y
 (Esc, focus return, no nested `<main>`, icon+text) to those
 satellites. Still no screen-reader graph rewrite.
 
@@ -86,7 +85,7 @@ flowchart TB
 
 Authoring path today: **home → editor top bar → palette → inspector
 → YAML mode → runs drawer.** The same editor page mounts under
-`/embed/v1/workflows/{id}`. R7.1 (#276 / Part of #233 — **keep #276 open**)
+`/embed/v1/workflows/{id}`. R7.1
 mounts the same R2–R6 rewrite chrome on that tree after `GET /session`
 `session.embed` (ADV-021). Commands + Search join embed chrome once the
 bind is present. No second embed tree.
@@ -98,16 +97,16 @@ needs” means FlowForge should feel as capable for an operator who
 already knows a canvas-first automation tool — implemented as
 original FlowForge chrome.
 
-| Surface | On `main` after #195 | n8n-class parity still needs (behavior) |
+| Surface | On `main` after | n8n-class parity still needs (behavior) |
 | --- | --- | --- |
-| **Home** | `/workflows` is the product home (UX.8). `/` with `workflow.view` lands here; otherwise Settings. Default chrome is an Explorer shell (X.1 / #380 — **keep #380 open**; **keep #379 open**): left folder tree + right content pane + ancestry breadcrumb. Grant-gated right-click menus (X.2 / #381 — **keep #381 open**; **keep #379 open**) call existing F/O verbs only. Dense rows use single-click select and double-click / Enter open (X.3 / #382 — **keep #382 open**; **keep #379 open**). Empty folder / empty Unfiled teaching sits on Explorer chrome (X.4 / #383 — **keep #383 open**; **keep #379 open**); Unfiled stays virtual. Overview cards are demoted from primary. Left rail: Unfiled + folder tree from `GET /workflow-folders`; list is `GET /workflows?folderId=` with `?folder=` deep links (F.2 / #309 — **keep #309 open**). Editors create / rename / delete folders from grant-gated right-click on that rail (F.3 / #310 — **keep #310 open**; X.2 / #381 — **keep #381 open**; X.8 / #399 — **keep #399 open**) — not as visible tree buttons; viewers do not. New folder creates then inline-renames in the tree (X.7 / #396 — **keep #396 open**; **keep #379 open**). Folder tree chrome matches Windows Explorer nav (X.8 / #399 — **keep #399 open**; **keep #379 open**): compact rows, yellow folders, thin white chevrons, gray selected fill + thin light border. Editors drag a workflow onto a folder or Unfiled, or use row-menu **Move…** (F.4 / #311 — **keep #311 open**); both call `PATCH /api/v1/workflows/{id}/folder` `{folderId}` (`null` = Unfiled). Move does not change YAML, draft revision, or activation. Viewers cannot drop or see Move. Workspace / tenant+workbench change drops previous-workspace folder state. Prefix-in-name is no longer the primary organizer. Overview card list is the primary browse surface (O.1 / #325 — **keep #325 open**): header + Create CTA, search/sort/filter row, cards (name, last updated/created, published badge, kebab). Cards show folder path pills from `GET /workflow-folders` ancestry (O.2 / #326 — **keep #326 open**). Unfiled has no path pills. Compact Finder rail uses disclosure + folder icons and stays a non-recursive `?folderId=` filter — not Miller columns. Stats / Personal / link-count skipped. Client-side filters (tags, owner, trigger, environment, status, **activation**, last run, last modified). Scan ends are activation and last run (UXL.5 / #292 — **keep #292 open**; waiting / `indeterminate` when already joined). First-class activation column/status (R6.2 / #271 — **keep #271 open**; D2 compose of enable + version pin; drafts never look live; opens `#activation`). Create / import YAML / duplicate / templates all `POST` a **draft**. Empty home (UXL.6 / #293 — **keep #293 open**) teaches Create, Import YAML, or a reviewed template — each creates a draft; copy says drafts do not run; no Developer fixtures; optional New folder (F.5 / #312 — **keep #312 open**). Empty folder: create here / move / delete when there are no workflows and no child folders. Unfiled-empty points at the tree or empty-home verbs. Unfiled is always in the rail and is not a persisted folder. Empty home / empty folder / Unfiled-empty carry F.5 / O.3 teaching onto Explorer chrome (X.4 / #383 — **keep #383 open**; **keep #379 open**). Overview card chrome (O.3 / #327 — **keep #327 open**) remains the teaching contract. Start published (`?start=1`), webhook/schedule drawers (`?webhooks=`, `?schedules=`) still work and are not the activation path. Health / OpenAPI live under Settings. Labeled rail; single `<main>`; no nested main. Default search is **across folders** by name/slug (F.6 / #313 — **keep #313 open**); optional **in this folder**; `?folder=` cold-load (#320 — **keep #320 open**). `/embed/v1/workflows` shows the same rail + list + empty states + move after `session.embed` (F.7 / #314 — **keep #314 open**) and the same Overview cards + compact Finder rail (O.4 / #328 — **keep #328 open**). Missing `session.embed` is still an ADV-021 alert. Host query is display-only. Viewers are select-only — no create / rename / delete / move without `workflow.edit`. Tree is the API, not `localStorage`. No second tree. | Server-backed search/filter. Archive (status exists; **no archive API**). Template **API** (today templates are client YAML that still POST a draft). Pinned / high-frequency workflows that survive refresh without inventing a second home. |
-| **Canvas** | `/workflows/{id}` takes the viewport. Pan, zoom, select, drag nodes, compatible port connect, library drag-drop (defaults). Undo/redo for graph edits (move/add/remove/connect) before save — **Undo (Ctrl+Z)** / **Redo (Ctrl+Shift+Z)** (R2.3 / #236 — **keep #236 open**). Multi-select, fit-to-view, and snap-to-grid on the current engine (R2.4 / #237 — **keep #237 open**): Shift+click / Shift+drag, Ctrl+A, Fit (F), Snap (G). Delete removes the selection. Optional non-authoritative `metadata.ui.layout` round-trips with draft save/load (R2.5 / #238 — **keep #238 open**): apply `summary.ui.layout` or YAML on load; write `{version: 1, nodes: {<id>: {x, y}}}` on Save. Missing/invalid → auto-layout. Extra keys stripped; missing keys auto-place. Same on embed. Invalid YAML never draws a guessed graph. Node state is icon + text. Keyboard: focus canvas, zoom/reset/undo/redo/fit/snap/select-all; selecting nodes announces enough to use the inspector. Empty canvas (UXL.6 / #293 — **keep #293 open**): **+** / Add action is the add path; does not send operators to `/actions` to place a node; does not place triggers on the canvas. | Minimap, alignment. Authoritative layout or a second canvas file. Touch remains a `max-width: 767px` inspector-first **breakpoint**, not a mobile app (`touch-inspector-first` gap). |
-| **Node library** | Left drawer, **remembered-open satellite** (R2.1 / #234 — **keep #234 open**). Opening `/workflows/{id}` (and embed) shows the enabled catalog or a persistent **Library** rail — not hide-by-default only. First paint is **categories** (control flow, data, Kubernetes, SSH, scripts, HTTP/notifications) as enabled by the live catalog (UXL.7 / #294 — **keep #294 open**). Search still reaches any enabled type. Recommended-from-upstream-port uses catalog port types / `allowedWith` only; missing catalog fails closed. **Library** or canvas **+** opens the drawer; Hide remembers closed. **Add action** opens the wizard (type → authorized target/credential → configure → map ports → review) with the same category-first step 1. `/actions` is the catalog **reference**, not a third app. Triggers excluded (`rules.triggersAreWorkflowLevel`). Disabled / next / provider types stay hidden. Catalog 403 / empty list fail closed. No invented `INTEGRATION_ACTIONS_ENABLED` toggle. | Keep `/actions` as reference. Do not add a connector marketplace or disabled next/provider types. Catalog fallback removal (R3.4 / #249) is contract hygiene, not a law. |
-| **Inspector (NDV-like)** | Right rail, **remembered-open satellite** (R2.2 / #235 — **keep #235 open**). Selecting a **node** focuses a conversation shell: type-specific parameters / `with` for cataloged core / Kubernetes / SSH / script / HTTP (R3.1 / #246 — **keep #246 open**; not a bare JSON blob) / typed field-path mapping between ports (`allowedWith` / catalog port types; R3.2 / #247 — **keep #247 open**) / pins / credential **display name** (pick or add; secret entry stays in the masked wizard) / **validation and policy** for the selected node (validate/normalize problems + catalog bounds + `POST /policy/evaluate` when a published version is in play; R3.3 / #248 — **keep #248 open**; failures jump to a field or YAML path). Hide remembers closed; an **Inspector** satellite stays on the canvas — not hide-by-default only. **Workflow:** tabs Triggers / Versions / Pins (UX.9). **Edge:** port compatibility and field-path mapping; incompatible mappings blocked or explained. **Validation:** live region; errors link to a node or YAML path. **Last run** (UX.11, densified R4.3 / #256 — **keep #256 open**): redacted input / output / error / logs at operate density for the selected node when a run is in context (overlay selection or latest published run). Failures jump to the node. Rail never shows `SecretField` / plaintext / rotate. No branded “NDV” label. | Catalog fallback removal (R3.4 / #249). Read-only when `workflow.edit` is missing. Do **not** ship a branded NDV modal, expression editor, or secret surface in the rail. |
-| **Executions overlay** | **Runs** remembered-open satellite (R4.2 / #255 — **keep #255 open**), scoped to the open workflow (limit 50). Closed is still a **Runs** rail — not hide-by-default only — and does not bury the canvas. Status chips filter `GET /workflows/{id}/executions`. Arrow keys move; Enter / Space overlays step status on **this** canvas and highlights matching steps. Skip-to-failed / skip-to-indeterminate stay on the graph. Inspector shows redacted last-run I/O at operate density (R4.3 / #256 — **keep #256 open**; overlay or latest). Cancel / retry / emergency stop sit on the overlay and inbox rows (R4.4 / #257 — **keep #257 open**) using existing E5/E8/E9 routes; Retry is gated by `result.retry.allowed`. Waiting rows decide the bound approval from inbox and overlay (`POST /approvals/{id}/decide`, R4.5 / #258 — **keep #258 open**); requester cannot self-approve; no invented resume. Loud `indeterminate` (icon + text + explanation — never silent success). **Open execution** → `/executions/{id}`. No second replay graph. No `/replay`. Still no draft execute. `/executions` workspace inbox has operate density (R4.1 / #254 — **keep #254 open**): status + workflow filters on existing `GET /executions` params, useful columns, open-to-detail. Gracie: one operate path — inbox does **not** mount a replay graph. Compare stays client-side and is not shown in the overlay. | Compare two redacted runs without inventing a compare route (keep the existing client diff on the inbox). Keep the inbox for workspace-wide ops. Live updates only if the existing execution APIs already support them — do not invent a websocket product. |
-| **Credentials** | Dedicated `/credentials`, `/new`, `/{id}`. Workbench find (R5.1 / #264 — **keep #264 open**): display-name search + type/status/tag filters, useful columns, open existing `/{id}` without hunting. Empty vault (UXL.6 / #293 — **keep #293 open**) adds via the masked wizard; selectors stay display-name + UUID; no sample secrets. Detail operate (R5.2 / #265 — **keep #265 open**): test / rotate / usage / deletion-impact auto-load on existing vault routes; disable/enable stay clear; rotate returns display-name + UUID only. Selected-node NDV add (R5.3 / #266 — **keep #266 open**): guided masked wizard without abandoning the graph (modal or `/credentials/new` return-to-editor). After add, the NDV picker selects the new credential by display name; YAML stores UUID only. Wizard stays guided add; NDV stays edit/pick. Metadata only (display name, type, status, tags, last test, rotated). Gracie R5 security line: no KEK in the browser; display-name + UUID only; secrets never in YAML / search / analytics; unexpected plaintext is a contract bug (strip + stop). Create/rotate/test: masked fields, submit once, clear. UI never reads `CREDENTIAL_KEK`. | Keep rotate/disable/test on vault routes. Do not show plaintext, kubeconfig, or private keys in selectors. |
-| **Triggers** | Workflow-level `spec.triggers` — **not** canvas nodes (D3). Manual start: published version + typed input + idempotency key. One-gesture **Test run** (R6.3 / #272 — **keep #272 open**; D5) mints a published test version from the last saved draft then starts it — never the unsaved/draft buffer, never a silent test of the open editor YAML. Editor Triggers tab leads with “this published version is active” (R6.1 / #270 — **keep #270 open**; Gracie + jonny R6 confirmation: D2 compose of enable + version pin, no new resource; drafts never look live). Home list/cards show the same compose as a first-class column (R6.2 / #271 — **keep #271 open**) without teaching three drawers. Webhook/schedule admin from home drawers **and** the same Triggers tab. Secrets shown **once**, then discarded. Restore-as-new-draft on Versions. | Do **not** place `manual` / `webhook` / `schedule` on the canvas to “match” other tools. Home `?webhooks=` / `?schedules=` / `?start=1` must keep working. |
-| **Settings** | `/settings` always visible. Session / identity panel, health + readiness, OpenAPI links (ADV-020: `platform.administer` or the link 403s), Developer samples (`#developer`). R7.2 (#277 / Part of #233 — **keep #277 open**) may link carefully to grant-gated members / isolation check (ADV-024) plus Audit. R7.3 (#278 / Part of #233 — **keep #278 open**) does **not** promote labeled Example context or trusted-dev header fallback into production Settings copy. Not a swagger or metrics app. | Operator-facing session + workspace context without mixing demo/seed chrome into production copy. Developer fixtures stay disclosed. Health/OpenAPI stay here (not back on `/`). Do not add headroom, queue-lag, or fencing dashboards. |
+| **Home** | `/workflows` is the product home (UX.8). `/` with `workflow.view` lands here; otherwise Settings. Default chrome is an Explorer shell (X.1): left folder tree + right content pane + ancestry breadcrumb. Grant-gated right-click menus (X.2) call existing F/O verbs only. Dense rows use single-click select and double-click / Enter open (X.3). Empty folder / empty Unfiled teaching sits on Explorer chrome (X.4); Unfiled stays virtual. Overview cards are demoted from primary. Left rail: Unfiled + folder tree from `GET /workflow-folders`; list is `GET /workflows?folderId=` with `?folder=` deep links (F.2). Editors create / rename / delete folders from grant-gated right-click on that rail (F.3 X.2 X.8) — not as visible tree buttons; viewers do not. New folder creates then inline-renames in the tree (X.7). Folder tree chrome matches Windows Explorer nav (X.8): compact rows, yellow folders, thin white chevrons, gray selected fill + thin light border. Editors drag a workflow onto a folder or Unfiled, or use row-menu **Move…** (F.4); both call `PATCH /api/v1/workflows/{id}/folder` `{folderId}` (`null` = Unfiled). Move does not change YAML, draft revision, or activation. Viewers cannot drop or see Move. Workspace / tenant+workbench change drops previous-workspace folder state. Prefix-in-name is no longer the primary organizer. Overview card list is the primary browse surface (O.1): header + Create CTA, search/sort/filter row, cards (name, last updated/created, published badge, kebab). Cards show folder path pills from `GET /workflow-folders` ancestry (O.2). Unfiled has no path pills. Compact Finder rail uses disclosure + folder icons and stays a non-recursive `?folderId=` filter — not Miller columns. Stats / Personal / link-count skipped. Client-side filters (tags, owner, trigger, environment, status, **activation**, last run, last modified). Scan ends are activation and last run (UXL.5 waiting / `indeterminate` when already joined). First-class activation column/status (R6.2 D2 compose of enable + version pin; drafts never look live; opens `#activation`). Create / import YAML / duplicate / templates all `POST` a **draft**. Empty home (UXL.6) teaches Create, Import YAML, or a reviewed template — each creates a draft; copy says drafts do not run; no Developer fixtures; optional New folder (F.5). Empty folder: create here / move / delete when there are no workflows and no child folders. Unfiled-empty points at the tree or empty-home verbs. Unfiled is always in the rail and is not a persisted folder. Empty home / empty folder / Unfiled-empty carry F.5 / O.3 teaching onto Explorer chrome (X.4). Overview card chrome (O.3) remains the teaching contract. Start published (`?start=1`), webhook/schedule drawers (`?webhooks=`, `?schedules=`) still work and are not the activation path. Health / OpenAPI live under Settings. Labeled rail; single `<main>`; no nested main. Default search is **across folders** by name/slug (F.6); optional **in this folder**; `?folder=` cold-load. `/embed/v1/workflows` shows the same rail + list + empty states + move after `session.embed` (F.7) and the same Overview cards + compact Finder rail (O.4). Missing `session.embed` is still an ADV-021 alert. Host query is display-only. Viewers are select-only — no create / rename / delete / move without `workflow.edit`. Tree is the API, not `localStorage`. No second tree. | Server-backed search/filter. Archive (status exists; **no archive API**). Template **API** (today templates are client YAML that still POST a draft). Pinned / high-frequency workflows that survive refresh without inventing a second home. |
+| **Canvas** | `/workflows/{id}` takes the viewport. Pan, zoom, select, drag nodes, compatible port connect, library drag-drop (defaults). Undo/redo for graph edits (move/add/remove/connect) before save — **Undo (Ctrl+Z)** / **Redo (Ctrl+Shift+Z)** (R2.3). Multi-select, fit-to-view, and snap-to-grid on the current engine (R2.4): Shift+click / Shift+drag, Ctrl+A, Fit (F), Snap (G). Delete removes the selection. Optional non-authoritative `metadata.ui.layout` round-trips with draft save/load (R2.5): apply `summary.ui.layout` or YAML on load; write `{version: 1, nodes: {<id>: {x, y}}}` on Save. Missing/invalid → auto-layout. Extra keys stripped; missing keys auto-place. Same on embed. Invalid YAML never draws a guessed graph. Node state is icon + text. Keyboard: focus canvas, zoom/reset/undo/redo/fit/snap/select-all; selecting nodes announces enough to use the inspector. Empty canvas (UXL.6): **+** / Add action is the add path; does not send operators to `/actions` to place a node; does not place triggers on the canvas. | Minimap, alignment. Authoritative layout or a second canvas file. Touch remains a `max-width: 767px` inspector-first **breakpoint**, not a mobile app (`touch-inspector-first` gap). |
+| **Node library** | Left drawer, **remembered-open satellite** (R2.1). Opening `/workflows/{id}` (and embed) shows the enabled catalog or a persistent **Library** rail — not hide-by-default only. First paint is **categories** (control flow, data, Kubernetes, SSH, scripts, HTTP/notifications) as enabled by the live catalog (UXL.7). Search still reaches any enabled type. Recommended-from-upstream-port uses catalog port types / `allowedWith` only; missing catalog fails closed. **Library** or canvas **+** opens the drawer; Hide remembers closed. **Add action** opens the wizard (type → authorized target/credential → configure → map ports → review) with the same category-first step 1. `/actions` is the catalog **reference**, not a third app. Triggers excluded (`rules.triggersAreWorkflowLevel`). Disabled / next / provider types stay hidden. Catalog 403 / empty list fail closed. No invented `INTEGRATION_ACTIONS_ENABLED` toggle. | Keep `/actions` as reference. Do not add a connector marketplace or disabled next/provider types. Catalog fallback removal (R3.4) is contract hygiene, not a law. |
+| **Inspector (NDV-like)** | Right rail, **remembered-open satellite** (R2.2). Selecting a **node** focuses a conversation shell: type-specific parameters / `with` for cataloged core / Kubernetes / SSH / script / HTTP (R3.1 not a bare JSON blob) / typed field-path mapping between ports (`allowedWith` / catalog port types; R3.2) / pins / credential **display name** (pick or add; secret entry stays in the masked wizard) / **validation and policy** for the selected node (validate/normalize problems + catalog bounds + `POST /policy/evaluate` when a published version is in play; R3.3 failures jump to a field or YAML path). Hide remembers closed; an **Inspector** satellite stays on the canvas — not hide-by-default only. **Workflow:** tabs Triggers / Versions / Pins (UX.9). **Edge:** port compatibility and field-path mapping; incompatible mappings blocked or explained. **Validation:** live region; errors link to a node or YAML path. **Last run** (UX.11, densified R4.3): redacted input / output / error / logs at operate density for the selected node when a run is in context (overlay selection or latest published run). Failures jump to the node. Rail never shows `SecretField` / plaintext / rotate. No branded “NDV” label. | Catalog fallback removal (R3.4). Read-only when `workflow.edit` is missing. Do **not** ship a branded NDV modal, expression editor, or secret surface in the rail. |
+| **Executions overlay** | **Runs** remembered-open satellite (R4.2), scoped to the open workflow (limit 50). Closed is still a **Runs** rail — not hide-by-default only — and does not bury the canvas. Status chips filter `GET /workflows/{id}/executions`. Arrow keys move; Enter / Space overlays step status on **this** canvas and highlights matching steps. Skip-to-failed / skip-to-indeterminate stay on the graph. Inspector shows redacted last-run I/O at operate density (R4.3 overlay or latest). Cancel / retry / emergency stop sit on the overlay and inbox rows (R4.4) using existing E5/E8/E9 routes; Retry is gated by `result.retry.allowed`. Waiting rows decide the bound approval from inbox and overlay (`POST /approvals/{id}/decide`, R4.5); requester cannot self-approve; no invented resume. Loud `indeterminate` (icon + text + explanation — never silent success). **Open execution** → `/executions/{id}`. No second replay graph. No `/replay`. Still no draft execute. `/executions` workspace inbox has operate density (R4.1): status + workflow filters on existing `GET /executions` params, useful columns, open-to-detail.: one operate path — inbox does **not** mount a replay graph. Compare stays client-side and is not shown in the overlay. | Compare two redacted runs without inventing a compare route (keep the existing client diff on the inbox). Keep the inbox for workspace-wide ops. Live updates only if the existing execution APIs already support them — do not invent a websocket product. |
+| **Credentials** | Dedicated `/credentials`, `/new`, `/{id}`. Workbench find (R5.1): display-name search + type/status/tag filters, useful columns, open existing `/{id}` without hunting. Empty vault (UXL.6) adds via the masked wizard; selectors stay display-name + UUID; no sample secrets. Detail operate (R5.2): test / rotate / usage / deletion-impact auto-load on existing vault routes; disable/enable stay clear; rotate returns display-name + UUID only. Selected-node NDV add (R5.3): guided masked wizard without abandoning the graph (modal or `/credentials/new` return-to-editor). After add, the NDV picker selects the new credential by display name; YAML stores UUID only. Wizard stays guided add; NDV stays edit/pick. Metadata only (display name, type, status, tags, last test, rotated). R5 security line: no KEK in the browser; display-name + UUID only; secrets never in YAML / search / analytics; unexpected plaintext is a contract bug (strip + stop). Create/rotate/test: masked fields, submit once, clear. UI never reads `CREDENTIAL_KEK`. | Keep rotate/disable/test on vault routes. Do not show plaintext, kubeconfig, or private keys in selectors. |
+| **Triggers** | Workflow-level `spec.triggers` — **not** canvas nodes (D3). Manual start: published version + typed input + idempotency key. One-gesture **Test run** (R6.3 D5) mints a published test version from the last saved draft then starts it — never the unsaved/draft buffer, never a silent test of the open editor YAML. Editor Triggers tab leads with “this published version is active” (R6.1 + R6 confirmation: D2 compose of enable + version pin, no new resource; drafts never look live). Home list/cards show the same compose as a first-class column (R6.2) without teaching three drawers. Webhook/schedule admin from home drawers **and** the same Triggers tab. Secrets shown **once**, then discarded. Restore-as-new-draft on Versions. | Do **not** place `manual` / `webhook` / `schedule` on the canvas to “match” other tools. Home `?webhooks=` / `?schedules=` / `?start=1` must keep working. |
+| **Settings** | `/settings` always visible. Session / identity panel, health + readiness, OpenAPI links (ADV-020: `platform.administer` or the link 403s), Developer samples (`#developer`). R7.2 may link carefully to grant-gated members / isolation check (ADV-024) plus Audit. R7.3 does **not** promote labeled Example context or trusted-dev header fallback into production Settings copy. Not a swagger or metrics app. | Operator-facing session + workspace context without mixing demo/seed chrome into production copy. Developer fixtures stay disclosed. Health/OpenAPI stay here (not back on `/`). Do not add headroom, queue-lag, or fencing dashboards. |
 
 ### Satellite surfaces (in scope to preserve, out of scope to n8n-clone)
 
@@ -123,14 +122,14 @@ re-home them into a cloned IA.
 | Executions inbox | `/executions`, `/{id}` | Workspace ops + full replay. Keep as deep-link, not a second studio. |
 | Approvals | `/approvals`, `/{id}` | Resume is `POST /approvals/{id}/decide`. No self-approval. No invented resume route. |
 | Alerts / Audit | `/alerts`, `/audit` | Secret-free identifiers. Audit is append-only browse. |
-| Membership / Isolation | `/membership`, `/isolation` | R7.2 (#277 — **keep #277 open**): off product chrome; Settings may link carefully. ADV-024 grant only. Isolation success is a **denial**. R7.3 (#278 — **keep #278 open**): labeled **Example context** stays local-only (`https://idp.example` / `admin-1` / `local` / `default`). Trusted-dev header fallback is never rewrite login. |
-| Embed / Portal | `/embed/v1/…`, `/portal/workflows` | R7.1 (#276 — **keep #276 open**): same product pages + rewrite chrome after `session.embed`. Portal RBAC is not FlowForge authorization. |
+| Membership / Isolation | `/membership`, `/isolation` | R7.2: off product chrome; Settings may link carefully. ADV-024 grant only. Isolation success is a **denial**. R7.3: labeled **Example context** stays local-only (`https://idp.example` / `admin-1` / `local` / `default`). Trusted-dev header fallback is never rewrite login. |
+| Embed / Portal | `/embed/v1/…`, `/portal/workflows` | R7.1: same product pages + rewrite chrome after `session.embed`. Portal RBAC is not FlowForge authorization. |
 
 ## Operator migration notes
 
 How operators move from **today’s** canvas-first chrome (already on
 `main`) into the rewritten UX. This is not a migration from the
-pre-#195 stacked operator page — that reshape already landed.
+pre- stacked operator page — that reshape already landed.
 
 ### What stays familiar
 
@@ -148,19 +147,19 @@ Operators should not re-learn the product model.
 | Workspace inbox | `/executions` is still where operators hunt across workflows. |
 | Skip link | `#main-content`. Do not nest a second `<main>`. |
 
-### What already changed in #195 (do not regress)
+### What already changed in the canvas-first shell (do not regress)
 
 Operators who last used the stacked E3/E6 page already moved once:
 
 1. YAML is a **mode**, not a permanent stack under the graph.
 2. The library is a **drawer**, not a permanent 18rem column.
-   R2.1 remembered-open + satellite replaces hide-by-default.
+ R2.1 remembered-open + satellite replaces hide-by-default.
 3. Starter / invalid fixtures are **Developer samples** or Settings
-   → Developer — not primary chrome. Normalize is not a Save peer.
+ → Developer — not primary chrome. Normalize is not a Save peer.
 4. Left nav **collapses** on the editor so the canvas can take the
-   viewport.
+ viewport.
 5. Workflow trigger / version / pin stacks moved into inspector
-   **tabs**.
+ **tabs**.
 6. Health and OpenAPI left `/` for Settings.
 
 A rewrite that puts YAML, fixtures, or foundation probes back into
@@ -168,24 +167,24 @@ primary authoring chrome is a regression, not parity.
 
 ### What the rewrite may still change (warn operators)
 
-These are the likely “this screen moved” notes for Gracie’s vision.
+These are the likely “this screen moved” notes for vision.
 Do not treat them as shipped.
 
 - **Home density.** List/Cards stay; folder/tag UX may stop being a
-  name-prefix trick. Export / duplicate stay; archive only appears
-  when an API exists.
+ name-prefix trick. Export / duplicate stay; archive only appears
+ when an API exists.
 - **Empty canvas.** **+** / Add action remain the add path. A
-  rewrite must not require operators to open `/actions` to place a
-  node.
+ rewrite must not require operators to open `/actions` to place a
+ node.
 - **Inspector depth.** Last-run I/O stays in the rail (or an
-  original focused panel). Operators should not expect a second
-  replay graph or a `/replay` URL.
+ original focused panel). Operators should not expect a second
+ replay graph or a `/replay` URL.
 - **Runs.** Overlay-on-this-canvas stays the editor path. “Open
-  execution” still leaves for `/executions/{id}` when they need
-  artifacts, compare, or skip-to-error on the inbox detail.
+ execution” still leaves for `/executions/{id}` when they need
+ artifacts, compare, or skip-to-error on the inbox detail.
 - **Settings vs Membership.** Session/health stay on Settings.
-  Membership / Isolation stay grant-gated. Isolation success is
-  still a **denial**, not a foreign row.
+ Membership / Isolation stay grant-gated. Isolation success is
+ still a **denial**, not a foreign row.
 
 ### What must not break
 
@@ -201,7 +200,7 @@ Do not treat them as shipped.
 
 ### Seed and Example context
 
-R7.3 (#278 / Part of #233 — **keep #278 open**) keeps this path
+R7.3 keeps this path
 aligned with rewrite IA after R2–R6 and R7.1–R7.2.
 
 Local compose still seeds tenant `local` / workbench `default` and
@@ -219,16 +218,16 @@ Do not:
 
 - Promote Example context into production Settings copy.
 - Copy `TRUSTED_DEV_IDENTITY_HEADERS`, sample `PLATFORM_ADMINS`,
-  `SEED_LOCAL_DEFAULTS`, or the compose local KEK into production
-  chrome or docs as if they were product features.
+ `SEED_LOCAL_DEFAULTS`, or the compose local KEK into production
+ chrome or docs as if they were product features.
 - Treat header fallback identity as a rewrite login. Cookie session
-  remains the path; header fallback stays labeled local-only.
+ remains the path; header fallback stays labeled local-only.
 
 ### Embed and Portal constraints (must not regress)
 
 Same product routes under `/embed/v1`. R7.1 mounts R2–R6 rewrite chrome
-(including Commands + Search) after `session.embed`. Gracie + jonny R7
-hard line is baked on #276 and inherited on #277–#279 — do not weaken
+(including Commands + Search) after `session.embed`. The R7
+hard line is baked in and inherited by the later slices — do not weaken
 ADV-021 / ADV-024 / host-query display-only / one embed tree / issuer
 and frame-ancestor fail-closed. Host contract
 stays in [embed-sdk.md](embed-sdk.md) and
@@ -253,7 +252,7 @@ cookie, or host-query authorization fails the embed gate.
 ## Keep / replace / retire (UI only)
 
 UI-perspective only. YAML, drafts, vault, ADV/RBAC/embed contracts
-are **keep** even when chrome is replaced. Jonny’s APIs are out of
+are **keep** even when chrome is replaced. APIs are out of
 scope here.
 
 ### Keep
@@ -272,16 +271,16 @@ scope here.
 | `/actions` as catalog reference | Not a third app. |
 | Example context + local seed path | Local compose onboarding. Production-locked env must not seed. |
 | Icon+text status (`indeterminate` loud) | Never color alone. |
-| Skip link `#main-content`, single `<main>` | UX.10 contract, extended to rewrite satellites (R7.4 / #279 — **Keep #279 open.**). Not a screen-reader graph rewrite. |
+| Skip link `#main-content`, single `<main>` | UX.10 contract, extended to rewrite satellites (R7.4). Not a screen-reader graph rewrite. |
 | Home query drawers and editor deep links | Bookmark and embed mounts stay stable. |
 
 ### Replace (chrome only)
 
 | Today | Replace with (rewrite chrome) | Do not replace with |
 | --- | --- | --- |
-| Auto-layout-only canvas | Optional D1 `metadata.ui.layout` hints on draft save/load (R2.5 / #238 — **keep #238 open**). Undo/redo is R2.3 / #236. Multi-select / fit / snap is R2.4 / #237. Tools still save YAML. | A persisted canvas file or n8n-like binary graph. |
+| Auto-layout-only canvas | Optional D1 `metadata.ui.layout` hints on draft save/load (R2.5). Undo/redo is R2.3. Multi-select / fit / snap is R2.4. Tools still save YAML. | A persisted canvas file or n8n-like binary graph. |
 | Hidden-on-first-paint library (pre-R2.1) | Remembered-open drawer + persistent satellite on the **same** enabled catalog | A marketplace or always-on cloned 18rem sidebar. |
-| Inspector rail + last-run panel (pre-R2.2) | Remembered-open conversation shell + persistent satellite (type-specific parameters / `with` / pins / credential display-name + redacted I/O at operate density + validation/policy; R3.1 / #246 — **keep #246 open**; R3.3 / #248 — **keep #248 open**; R4.3 / #256 — **keep #256 open**) | A branded NDV, expression editor, or SecretField rail. |
+| Inspector rail + last-run panel (pre-R2.2) | Remembered-open conversation shell + persistent satellite (type-specific parameters / `with` / pins / credential display-name + redacted I/O at operate density + validation/policy; R3.1 R3.3 R4.3) | A branded NDV, expression editor, or SecretField rail. |
 | Prefix-encoded folders on home | First-class nested folders when the API exists ([folder IA](../architecture/flowforge-workflow-folders.md); tags out of that epic) | Client-only fake trees that hide the slug. |
 | Settings as foundation dump | Operator session + health + disclosed Developer samples | Swagger/metrics/headroom screens for non-admins. |
 | Client-only home filters | Server-backed search when the list API grows | Secret-indexing search. |
@@ -293,7 +292,7 @@ vault metadata, execution overlay helpers) stay.
 
 | Retire from primary chrome | Keep instead |
 | --- | --- |
-| Pre-#195 stacked operator page (YAML + palette + inspector + fixtures always on) | Canvas-first satellites. Already landed; do not bring the stack back. |
+| Earlier stacked operator page (YAML + palette + inspector + fixtures always on) | Canvas-first satellites. Already landed; do not bring the stack back. |
 | Starter / invalid YAML as primary editor buttons | Settings → Developer / YAML “Developer samples”. |
 | Normalize as a Save peer | YAML mode or Commands. |
 | Foundation landing on `/` (health/OpenAPI as home) | `/workflows` home; Settings for probes. |
@@ -311,7 +310,7 @@ round-trip.
 ## How this feeds the rewrite charter
 
 The concise fold-in lives in
-[charter §11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-chloe--ui-surfaces--operator-migration-notes).
+[charter §11.1](../architecture/flowforge-rewrite-n8n-class-parity.md#111-ui-surfaces-and-operator-migration-notes).
 This page keeps the expanded tables:
 
 1. The surface map (today vs parity).
@@ -334,5 +333,5 @@ permission to open production UI PRs or to close #195-era stories.
 | [deployment.md](../deployment.md) | Seed, Example context, local-vs-prod pitfalls. |
 | [flowforge-rewrite-n8n-class-parity.md](../architecture/flowforge-rewrite-n8n-class-parity.md) | Rewrite charter. **§11.1** is the fold-in authority for this page. |
 | [flowforge-ux-laws.md](../architecture/flowforge-ux-laws.md) | Post-R1–R7 chrome polish (Laws of UX). Docs-only; does not reopen this IA. |
-| [master-implementation-plan.md](../master-implementation-plan.md) | MVP epic backlog (E1–E12). Rewrite vision is the charter; Arie/Gracie open epics later. |
-| [e12-accessibility-review.md](e12-accessibility-review.md) | Landed a11y + tracked gaps (`touch-inspector-first`). R7.4 / #279 — **Keep #279 open.** extends UX.10 to rewrite satellites. |
+| [master-implementation-plan.md](../master-implementation-plan.md) | MVP epic backlog (E1–E12). Rewrite vision is the charter. Epics can be opened later. |
+| [e12-accessibility-review.md](e12-accessibility-review.md) | Landed a11y + tracked gaps (`touch-inspector-first`). R7.4 extends UX.10 to rewrite satellites. |

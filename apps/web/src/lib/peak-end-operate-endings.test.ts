@@ -76,8 +76,6 @@ describe("UXL.4 peak-end operate endings", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#291/);
-    assert.match(frontend, /keep #291 open/i);
     assert.match(frontend, /peak-end operate endings/i);
   });
 
@@ -264,8 +262,6 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.match(listbox, /data-peak-end|PeakEndEnding/);
     assert.match(overlay, /PeakEndEnding/);
     assert.match(overlay, /selectedPeakEnd|data-peak-end-surface="overlay"/);
-    assert.match(frontend, /#301/);
-    assert.match(frontend, /keep #301 open/i);
     assert.match(frontend, /focused\/selected only|focused\/selected operate ending/i);
     assert.match(PEAK_END_OPERATE_HELP, /quiet success badges/);
     assert.equal(listbox.includes("/replay"), false);

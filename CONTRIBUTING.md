@@ -5,19 +5,27 @@ Apache License 2.0. Contributions are under that license (see [LICENSE](LICENSE)
 This is a **security-hardened prototype**, not an enterprise-ready platform. Read these before changing behavior or docs:
 
 - [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) — what actually runs on `main`
-- [Enterprise architecture gap analysis](docs/internal/claude-code-gap-analysis.md) — G / G.0 SoT (findings A–I)
+- [Internal notes](docs/internal/README.md) — gap analysis and the issue-creation backlog. Not product docs. Product pages must not link here.
 
 Do not document Kubernetes, SSH, script, or HTTP provider execution as live. Compose’s local worker evaluates six core nodes only and fails closed on provider nodes.
+
+Product docs (`docs/` except `docs/internal/`) must not contain GitHub issue numbers, contributor names, or links into `docs/internal/`. Check:
+
+```bash
+python3 scripts/check-public-docs.py
+```
+
+CI runs the same check (`.github/workflows/docs-public.yml`).
 
 ## Local stack
 
 See the root [README](README.md): copy `env-template.txt` to `.env`, then `docker compose up --build`. UI is `http://localhost:3000`; API is `:8080`.
 
-| Area | Path | Role (docs) | GitHub owner |
+| Area | Path | Role | GitHub owner |
 | --- | --- | --- | --- |
-| Go control plane | `apps/api` | jonny / API | [@bbengt1](https://github.com/bbengt1) |
-| Next.js UI | `apps/web` | UI (Chloe) | [@bbengt1](https://github.com/bbengt1) |
-| Docs | `docs/` | — | [@bbengt1](https://github.com/bbengt1) |
+| Go control plane | `apps/api` | API | [@bbengt1](https://github.com/bbengt1) |
+| Next.js UI | `apps/web` | UI | [@bbengt1](https://github.com/bbengt1) |
+| Docs | `docs/` | Product docs. Planning notes are under `docs/internal/` and are not product docs. | [@bbengt1](https://github.com/bbengt1) |
 | Deploy | `deploy/` | — | [@bbengt1](https://github.com/bbengt1) |
 
 Review requests follow [`.github/CODEOWNERS`](.github/CODEOWNERS). There are no other GitHub team handles.

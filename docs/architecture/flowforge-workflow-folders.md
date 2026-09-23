@@ -2,11 +2,9 @@
 
 Status: **F.1 API + F.2–F.7 chrome landed**; **X.7 create-then-inline-rename**; **X.8 Explorer nav chrome** (this page remains the IA). Folder membership is not in YAML.
 
-**Product ask (Brent):** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
+**Product ask:** `/workflows` should support a **folder hierarchy** so operators can organize flows visually in a UI-friendly tree — not by encoding paths into names.
 
-**Owners:** Chloe (home / embed chrome), jonny (folder resource + additive list/move APIs), Terry (verification after stories land). Product hard lines: Gracie. Epic cut: Arie. This page is issue-ready for Arie; it is not permission to implement from the brief.
-
-**Baseline:** `/workflows` is the product home (UX.8). Today, “folders” are a **client-side** name/slug prefix (`ops/…`, `ops: …`, or slug `ops--name`). Charter [§11.2](flowforge-rewrite-n8n-class-parity.md#112-jonny--control-plane--execution--credential-parity-gaps) left a first-class folder resource **out of scope until Brent promotes a D**. This brief **is that promotion**. Landed chrome: [frontend UI](../reference/frontend-ui.md), [rewrite UI surfaces](../reference/rewrite-ui-surfaces.md).
+**Baseline:** `/workflows` is the product home (UX.8). Today, “folders” are a **client-side** name/slug prefix (`ops/…`, `ops: …`, or slug `ops--name`). Charter [§11.2](flowforge-rewrite-n8n-class-parity.md#112-control-plane-execution-and-credential-parity-gaps) left a first-class folder resource **out of scope as the promoted folder model**. This brief **is that promotion**. Landed chrome: [frontend UI](../reference/frontend-ui.md), [rewrite UI surfaces](../reference/rewrite-ui-surfaces.md).
 
 ---
 
@@ -141,11 +139,11 @@ All mutating gestures require `workflow.edit` (or stricter). Viewers (`workflow.
 - Name: trimmed display string, 1–64 graphemes, no `/` or control chars. Unique among **siblings** in the workspace (case-insensitive). Not a path.
 - Parent = selected folder, or none (top-level) when Unfiled / nothing is selected. Creating under Unfiled creates a **top-level** folder (Unfiled is not a parent).
 - Depth check server-side. Pending → success/error (UXL.3). CSRF + cookies as existing writes.
-- **New folder** POSTs via the existing F.3 API with a unique default name, selects the new row, and enters **inline rename** in the tree (X.7 / #396 — keep #396 open; keep #379 open). No modal / `window.prompt`.
+- **New folder** POSTs via the existing F.3 API with a unique default name, selects the new row, and enters **inline rename** in the tree (X.7). No modal / `window.prompt`.
 
 ### Rename folder
 
-- Inline in the tree/pane row (F2, Rename menu, or the post-create field). Same name rules. Enter commits the existing name PATCH. Escape / empty blur keeps the server name. Does not rename workflows or slugs. Does not rewrite YAML. Keep #396 open.
+- Inline in the tree/pane row (F2, Rename menu, or the post-create field). Same name rules. Enter commits the existing name PATCH. Escape / empty blur keeps the server name. Does not rename workflows or slugs. Does not rewrite YAML.
 
 ### Delete folder
 
@@ -188,7 +186,7 @@ Re-parent a folder under another folder or to top-level. Server rejects cycles, 
 
 | Mode | Default | Behavior |
 | --- | --- | --- |
-| **Across folders** | **Yes (F.6)** | Query matches workflow **name/slug** (existing client index is acceptable until jonny adds `q`; do not invent secret search). Results show a **folder path** column/crumb. Selecting a result opens the editor; a secondary control reveals the containing folder. |
+| **Across folders** | **Yes (F.6)** | Query matches workflow **name/slug** (existing client index is acceptable until adds `q`; do not invent secret search). Results show a **folder path** column/crumb. Selecting a result opens the editor; a secondary control reveals the containing folder. |
 | **Within selected folder** | Explicit constrain | A control (“in this folder”) limits to the selection. Unfiled + constrain = only unfiled matches. Does **not** include descendants unless we later add that as a Should. |
 | **Folder names** | Should | Filter the rail as the operator types; do not hide Unfiled. |
 | **Commands / global search** | Inherit | Ctrl+Shift+K still creates/opens workflows. Do not add a Commands detour that files via `/actions`. Unexpected secret fields stay stripped. |
@@ -197,7 +195,7 @@ Prefix-in-name filters (`ops/…`) remain until F.2; after F.2 they are compat-o
 
 ---
 
-## 5. Contract sketch for jonny
+## 5. Folder contract
 
 Additive to existing `/api/v1/workflows` APIs. New folder collection; **nullable `folderId` on the workflow summary**. Do not put folders in `flowforge/v1`. Do not replace list/create/draft/publish.
 
@@ -287,15 +285,14 @@ Editor `/embed/v1/workflows/{id}` does not grow a filing rail. File from home; o
 
 ---
 
-## 7. Proposed stories (issue-ready for Arie)
+## 7. Story slices
 
-Do not implement from this page. Arie opens the epic. Ordered. Chloe is blocked on F.1 for every UI slice that reads or writes folders.
+Do not implement from this page. opens the epic. Ordered. is blocked on F.1 for every UI slice that reads or writes folders.
 
-### F.1 — Folder API (jonny)
+### F.1 — Folder API
 
-**Owner:** jonny.
 **Effort:** L.
-**Blocked by:** nothing (Brent promotion).
+**Blocked by:** nothing (promotion).
 **Blocks:** F.2–F.7.
 
 Acceptance:
@@ -307,9 +304,8 @@ Acceptance:
 - Authz: view vs edit as §5. Host-supplied `workspaceId` → `400`. Cross-workspace folder id → `404`.
 - Audit rows for create/rename/delete/move are secret-free. Drafts still never run.
 
-### F.2 — Home folder rail + select (Chloe)
+### F.2 — Home folder rail + select
 
-**Owner:** Chloe.
 **Effort:** M.
 **Blocked by:** F.1.
 
@@ -323,20 +319,18 @@ Acceptance:
 
 ### F.3 — Create / rename / delete folders
 
-**Owner:** Chloe (API already in F.1).
 **Effort:** M.
 **Blocked by:** F.1; ships after or with F.2.
 
 Acceptance:
 
-- New folder / rename / delete via grant-gated right-click on the rail (X.2 / #381 — keep #381 open; X.8 / #399 — keep #399 open). No visible New / Rename / Delete buttons on the tree. Name rules and sibling uniqueness errors are visible.
+- New folder / rename / delete via grant-gated right-click on the rail (X.2 X.8). No visible New / Rename / Delete buttons on the tree. Name rules and sibling uniqueness errors are visible.
 - Delete disabled or `409` when the folder has children or workflows. Empty delete returns to parent/Unfiled.
 - Viewers: no those verbs. Pending → success/error. CSRF on writes.
 - No `/actions` detour. No YAML / slug rewrite.
 
 ### F.4 — Move workflows (drag + menu)
 
-**Owner:** Chloe.
 **Effort:** M.
 **Blocked by:** F.1, F.2.
 
@@ -349,7 +343,6 @@ Acceptance:
 
 ### F.5 — Empty states + Unfiled
 
-**Owner:** Chloe.
 **Effort:** S.
 **Blocked by:** F.2 (F.3 for Delete on empty folder).
 
@@ -361,7 +354,6 @@ Acceptance:
 
 ### F.6 — Search / filter across folders
 
-**Owner:** Chloe; jonny only if `GET /workflows?q=` is required (prefer client name/slug filter on the unfiltered list first).
 **Effort:** M.
 **Blocked by:** F.2.
 
@@ -370,11 +362,10 @@ Acceptance:
 - Default search is **across folders**; results show folder path. Optional “in this folder.”
 - Rail can filter folder names; Unfiled stays visible.
 - No secret search. No marketplace. Commands do not file via `/actions`.
-- If jonny adds `q`, it is additive and workspace-scoped.
+- If adds `q`, it is additive and workspace-scoped.
 
 ### F.7 — Embed parity
 
-**Owner:** Chloe.
 **Effort:** S.
 **Blocked by:** F.2–F.6 as each lands; can track embed in each story — this slice is the explicit parity gate.
 
@@ -387,7 +378,6 @@ Acceptance:
 
 ### O.4 — Embed Overview parity
 
-**Owner:** Chloe.
 **Effort:** S.
 **Blocked by:** O.1–O.3; F.7.
 
@@ -397,13 +387,10 @@ Acceptance:
 - Missing `session.embed` is still an ADV-021 alert (fail-closed). Host `?tenant=` / `?workbench=` stay display-only.
 - Viewers are select-only — no create / rename / delete / move without `workflow.edit`.
 - CHIPS / Portal iframe: tree comes from `GET /workflow-folders`, not `localStorage`.
-- Existing APIs only. No jonny change. Skip Personal / link-count / stats.
-
-Keep #328 open.
+- Existing APIs only. No change. Skip Personal / link-count / stats.
 
 ### X.5 — Explorer embed parity
 
-**Owner:** Chloe.
 **Effort:** S.
 **Blocked by:** X.1–X.4 as each lands; F.7 / O.4 bind stays.
 
@@ -414,28 +401,24 @@ Acceptance:
 - Missing `session.embed` is still an ADV-021 alert (fail-closed). Host `?tenant=` / `?workbench=` stay display-only.
 - Wizard / Login / Change-password never mount on embed.
 - CHIPS / Portal iframe: tree comes from `GET /workflow-folders`, not `localStorage`.
-- Existing F.1–F.7 APIs only. No jonny change. V.1 tokens only.
+- Existing F.1–F.7 APIs only. No change. V.1 tokens only.
 
-Keep #384 open. Keep #379 open until this lands (Arie locks the epic after merge).
+ until this lands (locks the epic after merge).
 
 ### X.6 — Remove visible product-commentary copy
 
-**Owner:** Chloe.
 **Effort:** S.
 **Blocked by:** X.1–X.5 (chrome already landed).
 
 Acceptance:
 
-- `/workflows` no longer shows the long X.*/O.*/V.* / “keep #N open” commentary dump.
+- `/workflows` no longer shows the long X.*/O.*/V.* / sprint notes commentary dump.
 - Short operator help stays. Empty folder / Unfiled teaching and drafts-do-not-run copy stay. Do not gut teaching into silence.
 - `/embed/v1/workflows` after `session.embed` matches (shared `WorkflowHome`). Cold ADV-021 held.
 - Explorer chrome (tree + pane + breadcrumb, grant-gated menus, dense select/open) stays. V.1 tokens stay. No new APIs.
 
-Keep #393 open.
-
 ### X.7 — New folder: create then inline rename
 
-**Owner:** Chloe.
 **Effort:** S–M.
 **Blocked by:** X.2 / F.3 (menus + existing create/rename verbs).
 
@@ -445,53 +428,48 @@ Acceptance:
 - Escape / empty blur keeps the server default name — do not strand a nameless row.
 - F2 (or Rename) still inline-renames an existing folder when grants allow. Workflows stay without Rename (no F/O client).
 - Right-click verb set unchanged. Viewers stay select/open only. Unfiled stays virtual. Refuse-if-nonempty delete held.
-- Interaction only — do not invent a new visual density/icon look until Brent’s reference screenshot lands.
+- Interaction only — do not invent a new visual density/icon look until reference screenshot lands.
 - Same `WorkflowHome` on embed after `session.embed`. Cold ADV-021 held. No new APIs.
-
-Keep #396 open. Keep #379 open. Keep #393 open.
 
 ### X.8 — Explorer folder chrome (Windows Explorer nav visual)
 
-**Owner:** Chloe.
 **Effort:** M.
-**Blocked by:** X.7 (inline rename locked) + Gracie take/skip on Brent’s Win11 dark Explorer screenshot.
+**Blocked by:** X.7 (inline rename locked) + take/skip on Win11 dark Explorer screenshot.
 
 Acceptance:
 
 - Left folder **nav tree** matches the locked TAKE: compact row density; yellow folder icons; thin white ▸/▾ chevrons (no chevron on leaves); selection is medium-gray fill + thin light border on the whole row; dark near-black pane + white labels; indent ≈ one icon width per depth; quiet thin scrollbar. No visible New folder / Rename folder / Delete folder buttons on the rail — those verbs stay grant-gated right-click only. Do not invent toolbar chrome.
 - SKIP: This PC / Disk / Network glyphs, status bar, New/Cut toolbar — not FlowForge IA.
 - Tokens-first: map yellow folder + selection into V.1 (`tokens.css` / `visual-tokens.ts`). Do not invent a second theme.
-- No regression on #396 inline rename, X.2 grant-gated menus, Unfiled virtual, X.3 select/open, X.4 empty teaching, X.5 embed parity. Same `WorkflowHome`.
+- No regression on inline rename, X.2 grant-gated menus, Unfiled virtual, X.3 select/open, X.4 empty teaching, X.5 embed parity. Same `WorkflowHome`.
 - Hard lines stay: drafts never run, ADV-021, wizard/Login/Change-password never on embed. No new APIs. No modal New folder.
-
-Keep #399 open. Keep #379 open. Keep #396 open.
 
 ---
 
-### Story table (Arie)
+### Story table
 
 | ID | Slice | Owner | Blocked by | Effort |
 | --- | --- | --- | --- | --- |
-| F.1 | Folder API (`workflow_folders` + `folderId` + list/move) | jonny | — | L |
-| F.2 | Home folder rail + select | Chloe | F.1 | M |
-| F.3 | Create / rename / delete folders | Chloe | F.1, F.2 | M |
-| F.4 | Move workflows (drag + menu) | Chloe | F.1, F.2 | M |
-| F.5 | Empty states + Unfiled | Chloe | F.2 | S |
-| F.6 | Search / filter across folders | Chloe (jonny if `q`) | F.2 | M |
-| F.7 | Embed parity | Chloe | F.2–F.6 | S |
-| O.4 | Embed Overview parity | Chloe | O.1–O.3, F.7 | S |
-| X.5 | Explorer embed parity | Chloe | X.1–X.4, F.7 | S |
-| X.6 | Remove visible product-commentary copy | Chloe | X.1–X.5 | S |
-| X.7 | New folder: create then inline rename | Chloe | X.2, F.3 | S–M |
-| X.8 | Explorer folder chrome (Win11 nav visual) | Chloe | X.7 | M |
+| F.1 | Folder API (`workflow_folders` + `folderId` + list/move) | | — | L |
+| F.2 | Home folder rail + select | | F.1 | M |
+| F.3 | Create / rename / delete folders | | F.1, F.2 | M |
+| F.4 | Move workflows (drag + menu) | | F.1, F.2 | M |
+| F.5 | Empty states + Unfiled | | F.2 | S |
+| F.6 | Search / filter across folders | (if a query parameter is required) | F.2 | M |
+| F.7 | Embed parity | | F.2–F.6 | S |
+| O.4 | Embed Overview parity | | O.1–O.3, F.7 | S |
+| X.5 | Explorer embed parity | | X.1–X.4, F.7 | S |
+| X.6 | Remove visible product-commentary copy | | X.1–X.5 | S |
+| X.7 | New folder: create then inline rename | | X.2, F.3 | S–M |
+| X.8 | Explorer folder chrome (Win11 nav visual) | | X.7 | M |
 
 ---
 
-## 8. Terry verify checklist
+## 8. Verification checklist
 
 Check after the matching stories land. Secret-free evidence. Do not treat this page as permission to close R1–R7 or to ship without F.1.
 
-| Gate | Terry checks |
+| Gate | checks |
 | --- | --- |
 | **YAML / drafts** | Moving or filing a workflow does not change `definitionYaml`, digest, or draft revision. Invalid YAML still does not paint a graph. Filed drafts still never run. |
 | **Vault / ADV-021** | Folder names and search never show secrets or KEK. `/embed/v1/workflows` without `session.embed` is an **alert**, not a guessed tree. Host `?tenant=` / `?workbench=` do not change which folders load. |
@@ -512,12 +490,12 @@ Check after the matching stories land. Secret-free evidence. Do not treat this p
 
 | Doc | Role vs this page |
 | --- | --- |
-| [n8n-class parity charter](flowforge-rewrite-n8n-class-parity.md) | Rewrite authority. §11.2 folder row was “out of scope until Brent promotes a D” — this brief is that D. |
+| [n8n-class parity charter](flowforge-rewrite-n8n-class-parity.md) | Rewrite authority. §11.2 folder row was “out of scope as the promoted folder model” — this brief is that D. |
 | [Rewrite UI surfaces](../reference/rewrite-ui-surfaces.md) | Home still needs first-class folders; this page is the IA. |
 | [Frontend UI](../reference/frontend-ui.md) | Normative landed home (prefix filters today). Update when F.2+ land — not in this PR. |
 | [Operator / admin UI](../guides/operator-admin.md) | Today’s walkthrough (prefix folder filter). Update when stories land. |
-| [Backend API map](../reference/backend-api-map.md) / [OpenAPI](../reference/openapi.md) | jonny updates with F.1. |
-| [Database specification](../reference/database.md) | jonny adds `workflow_folders` + `workflows.folder_id` with F.1. |
+| [Backend API map](../reference/backend-api-map.md) / [OpenAPI](../reference/openapi.md) | updates with F.1. |
+| [Database specification](../reference/database.md) | adds `workflow_folders` + `workflows.folder_id` with F.1. |
 | [Embed SDK](../reference/embed-sdk.md) / [Portal adapter](../reference/portal-adapter.md) | ADV-021, CHIPS, display-only host query stay. |
 | [Security model](../reference/security-model.md) | Trust boundaries. Folders cannot move them. |
 | [FlowForge UX Laws](flowforge-ux-laws.md) | Polish brief explicitly deferred the folder API; this epic is that extension. |

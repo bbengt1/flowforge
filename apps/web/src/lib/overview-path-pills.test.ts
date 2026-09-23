@@ -95,8 +95,6 @@ describe("O.2 Path pills + compact Finder rail", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#326/);
-    assert.match(frontend, /keep #326 open/i);
     assert.match(frontend, /path pills/i);
     assert.match(frontend, /Finder rail/i);
   });

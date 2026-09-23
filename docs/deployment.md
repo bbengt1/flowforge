@@ -2,8 +2,8 @@
 
 Release/ops landing: [operations](operations/index.md) (API/OpenAPI,
 incident/recovery, retention/backup, threat-model review). This page is
-the deploy + configuration inventory. **Operator UI guide — Chloe / E12.3.**
-**Accessibility review — Chloe / E12.3.**
+the deploy + configuration inventory. **Operator UI guide — E12.3.**
+**Accessibility review — E12.3.**
 
 ## Local startup
 
@@ -16,9 +16,9 @@ Migrations are forward-only and recorded in `schema_migrations` (version, name, 
 
 Compose hardening (UID/GID **65532** except postgres and MinIO):
 
-- **api** (`#10` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
+- **api** (`` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
 - **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
-- **web** (`#11`): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
+- **web** (``): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 - **minio** (local/dev artifact store): `no-new-privileges` only, same reason as postgres. Volume `minio_data` keeps ciphertext across API restarts. Do not add this service to `deploy/k8s`. Production sets `ARTIFACT_S3_*` and opens allowlisted object-store egress.
 
@@ -26,24 +26,24 @@ Compose hardening (UID/GID **65532** except postgres and MinIO):
 
 Production images must be digest-pinned, built from approved provenance, vulnerability-scanned, and run non-root with read-only filesystems, dropped capabilities, `no_new_privs`, resource limits, TLS at the ingress/proxy boundary, and default-deny network policy.
 
-Foundation files (API / supply-chain / backup from `#10`):
+Foundation files (API / supply-chain / backup from ``):
 
 | Area | Location |
 | --- | --- |
-| Kubernetes (API, web, runner Deployments/Services; encrypted backup CronJob; default-deny + API/web/runner/backup/Postgres NetworkPolicy; TLS Ingress for `api.example.com` and `app.example.com`) | [`deploy/k8s/`](../deploy/k8s/) |
-| Workspace runner SA / Role / RoleBinding templates (E7.1 cluster targets) | [`deploy/kubernetes/`](../deploy/kubernetes/) |
-| TLS/proxy (Ingress + local Caddy terminator; API `REQUIRE_TLS` / `TRUSTED_PROXY_CIDRS` / `TLS_*`) | [`deploy/tls/`](../deploy/tls/), [`apps/api/README.md`](../apps/api/README.md) |
+| Kubernetes (API, web, runner Deployments/Services; encrypted backup CronJob; default-deny + API/web/runner/backup/Postgres NetworkPolicy; TLS Ingress for `api.example.com` and `app.example.com`) | [`deploy/k8s/`](../deploy/k8s) |
+| Workspace runner SA / Role / RoleBinding templates (E7.1 cluster targets) | [`deploy/kubernetes/`](../deploy/kubernetes) |
+| TLS/proxy (Ingress + local Caddy terminator; API `REQUIRE_TLS` / `TRUSTED_PROXY_CIDRS` / `TLS_*`) | [`deploy/tls/`](../deploy/tls), [`apps/api/README.md`](../apps/api/README.md) |
 | Supply-chain policy (approved bases, vuln gates, provenance) | [`deploy/supply-chain/policy.md`](../deploy/supply-chain/policy.md) |
 | CI gates | [`.github/workflows/supply-chain.yml`](../.github/workflows/supply-chain.yml) |
-| Encrypted backup CronJob + restore / RPO-RTO rehearsal | [`scripts/backup/`](../scripts/backup/), [`deploy/k8s/backup-cronjob.yaml`](../deploy/k8s/backup-cronjob.yaml) |
+| Encrypted backup CronJob + restore / RPO-RTO rehearsal | [`scripts/backup/`](../scripts/backup), [`deploy/k8s/backup-cronjob.yaml`](../deploy/k8s/backup-cronjob.yaml) |
 
 The Kubernetes files are a foundation only: configure the database egress policy, TLS ingress host/secret (or cert-manager), backup encryption key wrapping, KMS references, and environment-specific registry credentials before deployment. TLS terminates at the ingress/proxy boundary, not inside the Next.js container.
 
-API image (`#10` / G.0.9):
+API image (`` / G.0.9):
 
 - `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes, `HEALTHCHECK` on `GET /api/v1/health`. Compose `worker` disables that probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
 
-Web image and Next.js headers (`#11`):
+Web image and Next.js headers (``):
 
 - `apps/web/Dockerfile`: `USER 65532:65532` (same UID as `apps/api`), digest-pinned `node:22-alpine`, copies the workspace `pnpm-lock.yaml` and runs `pnpm install --frozen-lockfile`, writable paths limited to `/tmp` and `/app/apps/web/.next/cache`. The runner stage removes npm and corepack, and installs `libcrypto3` / `libssl3` `3.5.8-r0` (CVE-2026-14456; the pinned index still has `3.5.7-r0`). The process is `node apps/web/server.js`, and the base image's bundled npm `tar` 7.5.11 is CVE-2026-59873 (fixed in 7.5.19), which is not an app lockfile dependency.
 - `deploy/k8s/web-deployment.yaml` runs that image as `node apps/web/server.js`. The manifest pins `ghcr.io/bbengt1/flowforge-web:foundation@sha256:…`. The committed digest is all zeros (not an image). Replace it with the `publish-images` digest. CI rejects a tag with no `@sha256:`. `emptyDir` covers `/tmp` and `/app/apps/web/.next/cache`. `API_INTERNAL_URL` is `http://flowforge-api:8080`. Rebuild with `NEXT_PUBLIC_API_URL` set to the public https API origin (the Deployment repeats that origin for server-rendered links; do not use localhost). There is no process-local health route — `/api/control-plane/health` proxies the Go API — so kubelet probes `GET /` on port 3000. Ingress host `app.example.com` targets `flowforge-web:3000`. The web NetworkPolicy allows ingress from `ingress-nginx` and egress only to the API Service pods (port 8080) and cluster DNS. Compose `/usr/local/bin/worker` stays out of `deploy/k8s`; production claims use `/usr/local/bin/runner`.
@@ -69,16 +69,16 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` or `kms:<provider>:<16 hex>` | Key reference stored with ciphertext (not the key). Data-KEK rotation must set a new id. |
 | `CREDENTIAL_KEK_WRAPPED` | empty | KMS ciphertext of the data KEK (`ff1:<provider>:…`). The only at-rest KEK form in production. Never a plaintext key. |
 | `KMS_PROVIDER` | empty | `aws`, `gcp`, `azure`, or `vault`. Required in production when any KEK is configured. Partial `KMS_*` config is a boot-fail. See [KEK rotation](operations/kek-rotation.md). |
-| `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. | 
-| `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted artifact payloads. Required with the access key and secret. Production-locked processes **boot-fail** without this set. | 
-| `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Region for signing and for `CreateBucket` outside `us-east-1`. | 
-| `ARTIFACT_S3_ACCESS_KEY_ID` / `ARTIFACT_S3_SECRET_ACCESS_KEY` | empty (compose: MinIO root user/password) | Static credentials. Never logged. Compose defaults are local-only — do not copy them to k8s. | 
-| `ARTIFACT_S3_SESSION_TOKEN` | empty | Optional temporary-credential token. Never logged. | 
-| `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style URLs (MinIO). Set `false` for virtual-hosted AWS. | 
-| `ARTIFACT_S3_SSE` | empty | Optional server-side encryption: `AES256` or `aws:kms`. Payloads are already envelope-encrypted with `CREDENTIAL_KEK` before upload. | 
-| `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required when `ARTIFACT_S3_SSE=aws:kms`. Never logged. | 
-| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Object keys are `{tenant}/{workspace}/{ref}` (lowercase UUIDs only). No caller prefix, filename, or credential in the key or object metadata. | 
-| `ARTIFACT_S3_CREATE_BUCKET` | false (compose: `true`) | Create the bucket at boot when it is missing. **Boot-fail** in a production-locked process. | 
+| `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. |
+| `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted artifact payloads. Required with the access key and secret. Production-locked processes **boot-fail** without this set. |
+| `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Region for signing and for `CreateBucket` outside `us-east-1`. |
+| `ARTIFACT_S3_ACCESS_KEY_ID` / `ARTIFACT_S3_SECRET_ACCESS_KEY` | empty (compose: MinIO root user/password) | Static credentials. Never logged. Compose defaults are local-only — do not copy them to k8s. |
+| `ARTIFACT_S3_SESSION_TOKEN` | empty | Optional temporary-credential token. Never logged. |
+| `ARTIFACT_S3_USE_PATH_STYLE` | true when an endpoint is set | Path-style URLs (MinIO). Set `false` for virtual-hosted AWS. |
+| `ARTIFACT_S3_SSE` | empty | Optional server-side encryption: `AES256` or `aws:kms`. Payloads are already envelope-encrypted with `CREDENTIAL_KEK` before upload. |
+| `ARTIFACT_S3_SSE_KMS_KEY_ID` | empty | Required when `ARTIFACT_S3_SSE=aws:kms`. Never logged. |
+| `ARTIFACT_S3_PREFIX` | rejected | Setting this variable is a boot-fail. Object keys are `{tenant}/{workspace}/{ref}` (lowercase UUIDs only). No caller prefix, filename, or credential in the key or object metadata. |
+| `ARTIFACT_S3_CREATE_BUCKET` | false (compose: `true`) | Create the bucket at boot when it is missing. **Boot-fail** in a production-locked process. |
 | `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when every `ARTIFACT_S3_*` intent variable is unset. Empty then uses in-process memory. Both are refused when the process is production-locked. A production-locked process does not fall back to this directory. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Short-lived download grant lifetime (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
@@ -176,7 +176,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Sample `PLATFORM_ADMINS=https://idp.example\|admin-1` | Explicit real `issuer\|subject` pairs on the Secret/ConfigMap. Empty is fail-closed (`403` on tenant/workspace bootstrap, metrics, OpenAPI, key rotate, impersonate). Not in the foundation ConfigMap — you must add it. |
 | Compose-mounted `deploy/local/embed-signing.pem` / template PEM | Unique PKCS#8 `EMBED_SIGNING_KEY` on the Secret. **Boot-fail** if missing. Do not copy the local key. |
 | `EMBED_ISSUER` may be `http://` in dev | Absolute `https://` only (ADV-018). `http://` is a boot-fail. |
-| `REQUIRE_TLS` unset / false; HTTP on :8080 | `REQUIRE_TLS=true` + `TRUSTED_PROXY_CIDRS` for cluster ranges. TLS terminates at Ingress (`deploy/k8s/ingress.yaml`, `deploy/tls/`). |
+| `REQUIRE_TLS` unset / false; HTTP on:8080 | `REQUIRE_TLS=true` + `TRUSTED_PROXY_CIDRS` for cluster ranges. TLS terminates at Ingress (`deploy/k8s/ingress.yaml`, `deploy/tls/`). |
 | Compose `TLS_CERT_FILE` / `TLS_KEY_FILE` under `/tmp/flowforge-tls` (tmpfs; lost on recreate) | Durable mounted paths (or ingress-only TLS). Empty still fail-closed (`503`). Do not copy the localhost `/tmp` defaults. |
 | `POSTGRES_SSLMODE=disable` in compose DSN | `POSTGRES_SSLMODE=require` (ConfigMap). |
 | `CORS_ALLOWED_ORIGINS=http://localhost:3000` | Exact https UI origins. Empty + foreign `Origin` fails closed. |
@@ -230,7 +230,6 @@ when refreshing pins.
 
 ## Local default tenant seed
 
-Relates to #191. Relates to #278 / Part of #233. **Keep #278 open.**
 Fresh `docker compose up` seeds one tenant, one workbench,
 and placeholder vault credentials so the UI can be exercised without a
 manual `POST /tenants` / `POST /workspaces` bootstrap.
@@ -288,7 +287,7 @@ and does not invent a rewrite login.
 On `/membership` (Settings → Workspace members when ADV-024 is
 granted), click the labeled **Example context** to fill issuer
 `https://idp.example`, subject `admin-1`, tenant slug `local`, and
-workbench key `default`. That button is local-only compose localseed —
+workbench key `default`. That button is local-only compose localseed
 do not promote it into production Settings copy.
 
 Trusted-dev identity headers and `POST /session` remain a labeled
@@ -368,7 +367,7 @@ localhost `/tmp` defaults into the ConfigMap.
 
 ## Local compose worker
 
-Relates to #223. Fresh `docker compose up` starts a **local/dev**
+ Fresh `docker compose up` starts a **local/dev**
 `worker` service that claims `POST /api/v1/jobs/claim` so **Start
 published** can leave `queued`. It uses the same lease, HMAC
 `jobToken` (`JOB_BINDING_SECRET`), and fencing token checks as any
@@ -400,7 +399,7 @@ ids are not sent (400).
 | `APP_ENV=development\|dev\|local\|test` and `REQUIRE_TLS` false (compose default) | Worker runs. |
 | `LOCAL_WORKER=0` / `false` / `off` | Process exits 0 (`restart: on-failure` stays down). |
 | `docker compose up --scale worker=0` | Do not start the service. |
-| Host `go run ./cmd/worker` with `API_URL=http://127.0.0.1:8080` and `APP_ENV=development` | Same claim loop against a host API. |
+| Host `go run./cmd/worker` with `API_URL=http://127.0.0.1:8080` and `APP_ENV=development` | Same claim loop against a host API. |
 | `LOCAL_WORKER=1` with empty/`production`/unknown `APP_ENV` or `REQUIRE_TLS=true` | **Boot-fail.** |
 | Production-locked `APP_ENV` without the flag | Process **refuses to start** (exit 1). |
 
@@ -518,7 +517,7 @@ production-locked and exits if the flag is set. Do not set it on the
 
 When an execution stays `queued` and no job has a `workerId` for more
 than **15s**, `GET /api/v1/executions/{id}` includes additive
-`statusReason: "no-worker"`. Status stays `queued`. Chloe can show
+`statusReason: "no-worker"`. Status stays `queued`. can show
 “no worker is claiming jobs”. Production without a worker surfaces
 the same hint.
 
@@ -654,7 +653,7 @@ Operator runbooks (do not duplicate here):
 
 Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup CronJob as recovery evidence. Documented targets: **logical RPO 24h** (daily `pg_dump`), **PITR RPO 5 minutes** when `flowforge-wal-archive` is sealing WAL, **RTO ≤ 30m** for CI-sized dumps (`scripts/backup/rpo-rto-rehearsal.sh`, `scripts/backup/manifest-pitr-rehearsal.sh`).
 
-Hooks from `#10` / G.1.4 (AES-256-GCM AEAD + PBKDF2 via `BACKUP_ENCRYPTION_KEY` / `scripts/backup/aead.py`; wrap that key with KMS before production):
+Hooks from `` / G.1.4 (AES-256-GCM AEAD + PBKDF2 via `BACKUP_ENCRYPTION_KEY` / `scripts/backup/aead.py`; wrap that key with KMS before production):
 
 ```bash
 export POSTGRES_PASSWORD=...

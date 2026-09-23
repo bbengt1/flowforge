@@ -5,10 +5,10 @@ workflow surface **without sharing the FlowForge database or executor**.
 Portal entry RBAC stays on the Portal host. FlowForge authorization stays
 on FlowForge.
 
-Relates to #123 / Part of #120. **Keep #123 open** — Chloe still owns host
+still owns host
 wiring / UI adaptation. This document is the contract and field map.
 
-Adapter: `apps/web/src/lib/portal-adapter-contract.ts` (Chloe).
+Adapter: `apps/web/src/lib/portal-adapter-contract.ts`.
 API catalog: `GET /api/v1/portal/adapter`.
 Builds on [embed SDK](embed-sdk.md) (E11.1 mint/exchange + E11.2 validation).
 
@@ -33,7 +33,7 @@ After exchange, FlowForge membership ∩ minted capabilities is the grant.
 The embed session is bound to the assertion’s `(tenant_id, workbench_key)`
 and cannot call `POST /tenants` or `POST /workspaces` (`403`).
 
-## Host wiring map (Chloe)
+## Host wiring map
 
 Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 
@@ -42,7 +42,7 @@ Portal owns steps 1–2. FlowForge owns 3 and 5. The embed shell owns 4.
 | 1. Entry | Portal | Portal navigation + Portal RBAC decide whether the user may enter the add-in (`/portal/workflows` or the host’s equivalent). Do not share FlowForge cookies, DB, or the executor. |
 | 2. Map roles | Portal backend | Map Portal roles → FlowForge capabilities from `GET /api/v1/portal/adapter` `capabilityMap`. Unknown roles fail closed. |
 | 3. Mint | Portal backend | After Portal RBAC, `POST /api/v1/portal/adapter/assertions` `{portalRoles,subject?,ttlSeconds?}` with identity headers + `X-FlowForge-Tenant-ID` + `X-FlowForge-Workbench-Key`. Receives compact JWS **once**. Same as `POST /api/v1/embed/assertions` after mapping. `aud` is `flowforge`. `iss` is the portal issuer (always the authenticated caller). A `subject` other than the caller requires `embed.impersonate` (`PLATFORM_ADMINS`). |
-| 4. Mount | Portal frontend / Chloe | Load `/embed/v1/…` (same standalone hrefs). Frame and postMessage only when the Portal origin is on the **shared host allowlist** (`WEB_PORTAL_FRAME_ANCESTORS` ∪ `WEB_EMBED_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`). Read `GET /portal/adapter` `frameAncestors` (same list as `GET /embed/catalog`). Host query `tenant` / `workbench` is display-only. |
+| 4. Mount | Portal frontend / | Load `/embed/v1/…` (same standalone hrefs). Frame and postMessage only when the Portal origin is on the **shared host allowlist** (`WEB_PORTAL_FRAME_ANCESTORS` ∪ `WEB_EMBED_FRAME_ANCESTORS` ∪ `PORTAL_FRAME_ANCESTORS`). Read `GET /portal/adapter` `frameAncestors` (same list as `GET /embed/catalog`). Host query `tenant` / `workbench` is display-only. |
 | 5. Exchange | Embed shell | `POST /api/v1/embed/exchange` `{assertion,sdk:"embed.v1"}` body only. Mint writes `ctx=portal` and `host=iss`; exchange selects `PORTAL_*` from that signed claim. Optional `X-FlowForge-Host-Issuer` set to the configured `PORTAL_ISSUER` (never peeked from the assertion) and `X-FlowForge-Host-Context: portal` must agree when sent. Signature and claims are verified before any workspace lookup. Issues CHIPS `ff_session` / `ff_csrf` (`SameSite=None; Secure; Partitioned`) bound to `(tenant_id, workbench_key)`. Replay is `409`. The bound session cannot create tenants or sibling workbenches. Keep `credentials: "include"`. Do not request Storage Access / unpartitioned cookies. |
 | 6. Authorize | FlowForge | Later calls: cookie session + `X-CSRF-Token` + exchanged tenant/workbench headers. Disagreeing host tenant/workbench is `403`. If the partitioned cookie is not sent: `401` / CSRF `403`. HTTPS + Partitioned support required. Manual two-host iframe check is ADV-013. |
 
@@ -117,7 +117,7 @@ the catalog matches Next CSP. `NEXT_PUBLIC_EMBED_FRAME_ANCESTORS` is not a
 source. Contract: `embedHostAllowlist`, `parseCatalogFrameAncestors`,
 `isAllowedEmbedMessageOrigin`, `deliverPortalAssertion(..., allowlist)`.
 
-## Negative tests (epic #120)
+## Negative tests (epic)
 
 These fail closed on the FlowForge adapter:
 
@@ -128,21 +128,21 @@ These fail closed on the FlowForge adapter:
 - Replayed assertion (`409` on `POST /embed/exchange`)
 - Cross-tenant / cross-workbench headers after exchange (`403`)
 - Credential plaintext and raw runner-log secrets absent from Portal-session
-  reads, problem details, and logs
+ reads, problem details, and logs
 - Portal entry (mint for a non-member) does not grant FlowForge membership
 - Portal `admin` / elevated capabilities do not include `platform.administer`
-  or `embed.impersonate`
+ or `embed.impersonate`
 - Mint for another subject without `embed.impersonate` / `PLATFORM_ADMINS` is `403`
 - Client-supplied issuer that differs from the caller is `403`
 - Embed session `POST /tenants` or `POST /workspaces` is `403` (no sibling
-  workbench / membership bootstrap)
+ workbench / membership bootstrap)
 - Cross-site iframe session without CHIPS (`SameSite=None` without
-  `Partitioned`, or dropping `Secure`) is not used. Cookie not sent is
-  `401`/`403`. A full two-host iframe check is ADV-013 (below).
+ `Partitioned`, or dropping `Secure`) is not used. Cookie not sent is
+ `401`/`403`. A full two-host iframe check is ADV-013 (below).
 
 ## ADV-013 — cross-origin Portal adapter evidence
 
-Relates to #144 / Part of #130. **Keep #144 open** until the two-origin
+ until the two-origin
 evidence is reviewed. This is proof + harness, not a new auth path.
 
 The in-repo demo at `/portal/workflows` is **same-origin** as FlowForge.
@@ -207,17 +207,17 @@ JWS). It exercises:
 2. Frame `/embed/v1` with allowlisted ancestors (CSP + catalog)
 3. Body-only `POST /embed/exchange` through the embed origin
 4. CHIPS `Set-Cookie` (`SameSite=None; Secure; Partitioned`) +
-   `credentials: include` session read
+ `credentials: include` session read
 5. postMessage only when the Portal sender is on the shared list
-   (`deliverCrossOriginPortalAssertion`)
+ (`deliverCrossOriginPortalAssertion`)
 6. Negatives: hostile ancestor absent from CSP; assertion in the URL
-   rejected (`x-flowforge-embed-rejected`); empty allowlist fail-closed
+ rejected (`x-flowforge-embed-rejected`); empty allowlist fail-closed
 
 TLS material is generated under `deploy/adv013/tls/` (gitignored). The
 Node terminator in `deploy/adv013/portal-host/server.mjs` fronts the
 three origins. Optional Caddy: `deploy/adv013/Caddyfile`.
 
-### Chloe map (host wiring gaps)
+### Host wiring gaps
 
 The product adapter is unchanged. A real Portal host still owns steps
 1–2 and the iframe parent.
@@ -240,4 +240,4 @@ Contract exports: `apps/web/src/lib/adv013-cross-origin-contract.ts`,
 - A full external Portal product
 - Sharing FlowForge PostgreSQL, queues, or workers with Portal
 - Replacing Portal’s own RBAC
-- Rewriting `apps/web` product pages (Chloe wires the host using this map)
+- Rewriting `apps/web` product pages (The canvas wires the host using this map)

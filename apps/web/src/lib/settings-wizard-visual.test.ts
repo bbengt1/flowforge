@@ -91,8 +91,6 @@ describe("V.6 Settings + first-run wizard", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#362/);
-    assert.match(frontend, /keep #362 open/i);
     assert.match(frontend, /Settings \+ first-run wizard/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V6_BRIEF),

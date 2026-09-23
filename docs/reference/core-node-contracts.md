@@ -1,6 +1,6 @@
 # Core neutral node contracts (E3.3)
 
-Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog` is the live contract. This page lists the **schema deltas** from E3.1 so Chloe can place and configure these nodes without guessing.
+Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog` is the live contract. This page lists the **schema deltas** from E3.1 so can place and configure these nodes without guessing.
 
 `apps/web` was not rewritten in this story. Existing palette code that reads `type`, `phase`, `inputs`, `outputs`, and `requiredWith` keeps working. New fields are additive.
 

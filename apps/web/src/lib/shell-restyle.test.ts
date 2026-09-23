@@ -87,10 +87,7 @@ describe("V.2 Shell restyle", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#358/);
-    assert.match(frontend, /keep #358 open/i);
     assert.match(frontend, /shell restyle/i);
-    assert.match(frontend, /keep #357 open/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V2_BRIEF),
       "utf8",

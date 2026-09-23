@@ -1,7 +1,5 @@
 # E12.3 threat-model review (production gate)
 
-Relates to #184 / Part of #181. **Keep #184 open.**
-
 This is a **review of controls that already exist** on `main`. It does
 not add features, weaken E12.1 / E12.2, or invent new trust boundaries.
 The normative model remains the [security model](security-model.md).
@@ -9,14 +7,14 @@ Verification remains the [E12.1 suite](e12-security-verification.md).
 Restore / worker-loss / headroom remain
 [E12.2](e12-resilience-capacity.md).
 
-**Accessibility review — Chloe / E12.3** (not this document).
-**Operator UI guide — Chloe / E12.3** (not this document).
+**Accessibility review — E12.3** (not this document).
+**Operator UI guide — E12.3** (not this document).
 
 ## Scope
 
 Reviewers sign off that the following are documented, tested, and not
 regressed before production enablement. Affected features stay disabled
-until they can meet the security model (epic #181 acceptance).
+until they can meet the security model (epic acceptance).
 
 | Area | What exists | Do not invent |
 | --- | --- | --- |
@@ -45,37 +43,37 @@ and has an E12.1 (or E12.2 fencing) proof:
 Existing production-locked behavior (do not relax for go-live):
 
 - Durable Ed25519 PKCS#8 `EMBED_SIGNING_KEY` — boot-fail in production
-  without it (ADV-006 / ADV-022). No committed seed. Overlap keys require
-  finite `overlapUntil` ≤ 4h (ADV-014).
+ without it (ADV-006 / ADV-022). No committed seed. Overlap keys require
+ finite `overlapUntil` ≤ 4h (ADV-014).
 - Issuers are a required allowlist; empty is `403`. Production issuers
-  must be absolute `https://` (ADV-018; boot-fail + request `403`).
+ must be absolute `https://` (ADV-018; boot-fail + request `403`).
 - Exchange verifies before workspace lookup (ADV-008). Replay is `409`.
-  Used `jti` retained 24h past `exp`.
+ Used `jti` retained 24h past `exp`.
 - `nbf` leeway default 30s, hard max 60s; `exp` is exact (ADV-017).
-- Signed `host=iss` + `ctx=embed|portal` select the path allowlist —
-  not a client header (ADV-023).
+- Signed `host=iss` + `ctx=embed|portal` select the path allowlist
+ not a client header (ADV-023).
 - Embed cookies are CHIPS (`SameSite=None; Secure; Partitioned`).
-  `Secure` is never dropped (ADV-007).
+ `Secure` is never dropped (ADV-007).
 - Workspace delete revokes bound embed sessions (ADV-019).
 - Chrome after exchange comes from `GET /session` `session.embed`
-  (ADV-021), not host query.
+ (ADV-021), not host query.
 - Catalog hides membership/isolation unless granted (ADV-024).
 - Rate limits on mint/exchange (ADV-012). Audit is secret-free.
 - Embed sessions cannot bootstrap tenants/workspaces. Portal `admin`
-  never includes `platform.administer`.
+ never includes `platform.administer`.
 
 ## Credentials and secrets
 
 - Accepted only over TLS; encrypted before persist (`CREDENTIAL_KEK` /
-  file). Plaintext never returned in API, YAML, logs, artifacts, or audit.
+ file). Plaintext never returned in API, YAML, logs, artifacts, or audit.
 - Worker use is a scoped handle; disablement/rotation take effect before
-  the next step (E12.1 domain 5).
+ the next step (E12.1 domain 5).
 - Artifacts: short-lived download grants; legal hold; purge removes
-  metadata and object bytes ([retention and backup](../operations/retention-backup.md)).
+ metadata and object bytes ([retention and backup](../operations/retention-backup.md)).
 - `JOB_BINDING_SECRET` / `SCRIPT_SIGNING_KEY` are required at boot
-  (missing or malformed is fail-closed; no per-process random default).
+ (missing or malformed is fail-closed; no per-process random default).
 - Metrics and OpenAPI require `platform.administer` (ADV-020). Health
-  and readiness stay unauthenticated for probes.
+ and readiness stay unauthenticated for probes.
 
 ## SSRF
 
@@ -90,12 +88,12 @@ IPv6 IMDS remains denied even when private destinations are allowed
 ## Tenancy
 
 - Workspace is the isolation boundary. Every workspace-owned query,
-  cache key, queue payload, and audit row carries the **server-derived**
-  `workspace_id`.
+ cache key, queue payload, and audit row carries the **server-derived**
+ `workspace_id`.
 - FORCE RLS + `flowforge_app` `NOSUPERUSER` / `NOBYPASSRLS`. Unset or
-  stale pool scope matches no rows.
+ stale pool scope matches no rows.
 - Host-supplied `id` / `workspace_id` on writes is `400`. Cross-workspace
-  UUIDs are `404` (not a leak).
+ UUIDs are `404` (not a leak).
 - Proof: E12.1 domain 3 (API + `TestPostgresRLSUnsetStaleAndCrossWorkspace`).
 
 ## Production-gate checklist
@@ -112,15 +110,13 @@ pass/fail by hand-editing JSON.
 | 5 | Production config does not copy local pitfalls | [deployment](../deployment.md#production-vs-local-pitfalls): no `TRUSTED_DEV_IDENTITY_HEADERS` / `SEED_LOCAL_DEFAULTS`, digest-pinned images, TLS at ingress, `PLATFORM_ADMINS` set, durable KEK / embed key / job + script signing keys, https issuers |
 | 6 | ADV hardenings on `main` still in force | ADV-002 (fail-closed identity), 004–014, 017–024 as listed above and in the security model. Do not revert for launch. |
 | 7 | Threat-model areas above reviewed against the security model | This page + security-model trust table |
-| 8 | Operator/admin **UI** guides published | **Chloe / E12.3** — stub: [operations/index.md](../operations/index.md#chloe-e123-placeholders) |
-| 9 | Accessibility review complete | **Chloe / E12.3** — not claimed here |
+| 8 | Operator/admin **UI** guides published | **E12.3** — [operations index](../operations/index.md#where-the-guides-live) |
+| 9 | Accessibility review complete | **E12.3** — not claimed here |
 
 Until 1–7 pass, production enablement is blocked by the security model
-(feature stays disabled). 8–9 are Chloe's slice of #184; keep the issue
-open until she lands.
+(feature stays disabled). Items 8–9 are the operator-guide and accessibility half of the same gate.
 
-## Ownership
+## Scope split
 
-- **jonny:** this review, API/OpenAPI, deploy/ops runbooks.
-- **Chloe:** operator/admin UI guides + accessibility review. No UI
-  screenshots or a11y claims in this PR.
+- This review, API/OpenAPI, and deploy/ops runbooks.
+- Operator/admin UI guides and the accessibility review. This page does not include UI screenshots or accessibility claims.

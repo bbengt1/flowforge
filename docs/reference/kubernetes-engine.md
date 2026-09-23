@@ -48,10 +48,10 @@ FlowForge separates platform/workspace authorization from Kubernetes authorizati
 - FlowForge permissions: `workflow.execute`, `kubernetes.read`, `kubernetes.apply`, and `clusterTarget.use`.
 - Target policy narrows namespaces, kinds, verbs, and actions requiring approval. Evaluation keys (aliases in parentheses) fail closed when present: `allowedNamespaces` (`namespaces`), `allowedKinds` (`kinds`), `allowedVerbs` (`verbs`), `deny`, `requireApproval`, `approverRole`, `expiresIn`, `operations`.
 - Cluster targets bind only a workspace-scoped `kubernetes` credential (`secret.kubeconfig`). Cross-workspace credential refs are `404`; host-supplied `id` / `workspaceId` is `400`.
-- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP. Operators apply [`deploy/kubernetes/`](../../deploy/kubernetes/) templates; targets may record `serviceAccount.{name,namespace,roleTemplate}` for E7.2 workers.
+- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP. Operators apply [`deploy/kubernetes/`](../../deploy/kubernetes) templates; targets may record `serviceAccount.{name,namespace,roleTemplate}` for E7.2 workers.
 - The API and UI never receive kubeconfigs or plaintext credentials. Workers receive only ephemeral scoped material and redact secrets from all outputs.
 
-Kubernetes service accounts should receive only the minimum permissions required, preferably through namespace-scoped roles and bindings. [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) and [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/) support this model.
+Kubernetes service accounts should receive only the minimum permissions required, preferably through namespace-scoped roles and bindings. [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts) and [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices) support this model.
 
 ## Results, reliability, and audit
 

@@ -256,8 +256,6 @@ export function routeBoundariesHoldHardLines(): boolean {
 export function routeBoundaryDocsHeld(frontend: string): boolean {
   return (
     frontend.includes("G.0.4") &&
-    frontend.includes("#407") &&
-    frontend.includes("keep #402 open") &&
     frontend.includes("global-error.tsx") &&
     frontend.includes("error.tsx") &&
     frontend.includes("loading.tsx") &&

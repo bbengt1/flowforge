@@ -1,6 +1,6 @@
 # KEK rotation
 
-G.2.3 / #448. Operator runbook for the vault data-encryption key (KEK).
+G.2.3 . Operator runbook for the vault data-encryption key (KEK).
 
 The API encrypts each credential and artifact with a random data key
 (DEK). The DEK is wrapped with the KEK. Production does not store that
@@ -15,11 +15,11 @@ Supported providers: AWS KMS (`aws`), Cloud KMS (`gcp`), Azure Key Vault
 - KMS-wrapped KEK only.
 - Online re-encrypt and rotation.
 - The existing vault stays display-name + UUID. No KEK or plaintext in
-  chrome, logs, or room. This is not a second vault.
+ chrome, logs, or room. This is not a second vault.
 - Production fails closed when KMS is unreachable. It does not fall
-  back to `CREDENTIAL_KEK`.
+ back to `CREDENTIAL_KEK`.
 - Local and dev may use the documented envelope stub (`CREDENTIAL_KEK`
-  while `KMS_PROVIDER` is unset). Do not copy that stub to production.
+ while `KMS_PROVIDER` is unset). Do not copy that stub to production.
 
 ## Hard lines
 
@@ -29,10 +29,10 @@ Supported providers: AWS KMS (`aws`), Cloud KMS (`gcp`), Azure Key Vault
 - Drafts never run. Rotation does not execute workflows.
 - Re-encryption sets `app.workspace_id` per workspace. `FORCE RLS` stays on.
 - A production-locked process (`APP_ENV` empty or `production`, or
-  `REQUIRE_TLS=true`) refuses plaintext `CREDENTIAL_KEK` /
-  `CREDENTIAL_KEK_FILE`. Partial `KMS_*` configuration refuses to boot.
+ `REQUIRE_TLS=true`) refuses plaintext `CREDENTIAL_KEK` /
+ `CREDENTIAL_KEK_FILE`. Partial `KMS_*` configuration refuses to boot.
 - Compose (`APP_ENV=development`) may keep the documented local envelope
-  stub. Do not copy it here.
+ stub. Do not copy it here.
 
 ## What you store
 
@@ -55,7 +55,7 @@ Provider variables (set only the block you use):
 | `vault` | `KMS_VAULT_ADDR` (https), `KMS_VAULT_KEY_NAME`, `KMS_VAULT_TOKEN` or `KMS_VAULT_TOKEN_FILE`. Mount defaults to `transit`. |
 
 The image includes `/usr/local/bin/kek-rotate`. From a checkout:
-`go run ./cmd/kek-rotate` in `apps/api`.
+`go run./cmd/kek-rotate` in `apps/api`.
 
 ## First wrap
 
@@ -96,22 +96,22 @@ other loaded key. Secret ciphertext is not rewritten. Only the wrapped
 DEK and `key_reference` change.
 
 1. Confirm `KMS_PROVIDER` and `CREDENTIAL_KEK_WRAPPED` are set, and
-   `CREDENTIAL_KEK` is unset.
+ `CREDENTIAL_KEK` is unset.
 2. Run `kek-rotate rotate`. It prints four lines:
-   `CREDENTIAL_KEK_PREVIOUS_WRAPPED`, `CREDENTIAL_KEK_PREVIOUS_ID`,
-   `CREDENTIAL_KEK_WRAPPED`, `CREDENTIAL_KEK_ID`.
+ `CREDENTIAL_KEK_PREVIOUS_WRAPPED`, `CREDENTIAL_KEK_PREVIOUS_ID`,
+ `CREDENTIAL_KEK_WRAPPED`, `CREDENTIAL_KEK_ID`.
 3. Apply those four values. Restart every API and runner replica so
-   each process holds both keys. New writes use the new id.
+ each process holds both keys. New writes use the new id.
 4. Run `kek-rotate reencrypt` with `DATABASE_URL`, the same KMS
-   environment, and the process HMAC keys (`JOB_BINDING_SECRET`,
-   `SCRIPT_SIGNING_KEY`). It loads config the same way the API does.
-   It prints `workspaces`, `credentials`, and `artifacts` counts. It
-   does not print key material. A row that cannot be opened stops the
-   command. Leave the previous KEK in place until the command exits 0
-   and a second run reports zeros.
+ environment, and the process HMAC keys (`JOB_BINDING_SECRET`,
+ `SCRIPT_SIGNING_KEY`). It loads config the same way the API does.
+ It prints `workspaces`, `credentials`, and `artifacts` counts. It
+ does not print key material. A row that cannot be opened stops the
+ command. Leave the previous KEK in place until the command exits 0
+ and a second run reports zeros.
 5. Remove `CREDENTIAL_KEK_PREVIOUS_WRAPPED` and
-   `CREDENTIAL_KEK_PREVIOUS_ID`. Restart. Decrypt of leftover rows now
-   fails closed until you restore the previous key and re-run step 4.
+ `CREDENTIAL_KEK_PREVIOUS_ID`. Restart. Decrypt of leftover rows now
+ fails closed until you restore the previous key and re-run step 4.
 
 Do not drop the previous key in the same restart that installs the new
 key. Readers still need it until step 4 finishes.
@@ -122,24 +122,24 @@ Use this when the cloud key changes and the 32-byte data KEK should
 stay. No database re-encryption.
 
 1. Give the process decrypt on the key that produced the current blob
-   and encrypt on the new key. For AWS, GCP, and Vault the blob carries
-   the key id. Point `KMS_*_KEY_ID` / `KMS_KEY_ID` at the new key.
+ and encrypt on the new key. For AWS, GCP, and Vault the blob carries
+ the key id. Point `KMS_*_KEY_ID` / `KMS_KEY_ID` at the new key.
 2. Run `kek-rotate rewrap`.
 3. Replace `CREDENTIAL_KEK_WRAPPED` with the printed value. Keep
-   `CREDENTIAL_KEK_ID`. Restart.
+ `CREDENTIAL_KEK_ID`. Restart.
 
 ## Fail closed
 
 Boot fails when:
 
 - `KMS_PROVIDER` is set and any required variable for that provider is
-  missing, or an endpoint is not https (loopback http is non-production
-  only)
+ missing, or an endpoint is not https (loopback http is non-production
+ only)
 - `CREDENTIAL_KEK_WRAPPED` is missing or does not unwrap to 32 bytes
 - plaintext `CREDENTIAL_KEK` is set on a production-locked process, or
-  is set together with `KMS_PROVIDER`
+ is set together with `KMS_PROVIDER`
 - the previous wrapped blob is set without `CREDENTIAL_KEK_PREVIOUS_ID`,
-  or the two ids are equal
+ or the two ids are equal
 
 The error names the variable. It does not include key bytes.
 

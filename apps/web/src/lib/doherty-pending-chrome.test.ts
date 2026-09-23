@@ -63,8 +63,6 @@ describe("UXL.3 Doherty-safe pending chrome", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#290/);
-    assert.match(frontend, /keep #290 open/i);
     assert.match(frontend, /pending immediately/);
   });
 

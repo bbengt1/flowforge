@@ -443,10 +443,7 @@ export function explorerHomeDismissesMenu(source: string): boolean {
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
   return (
-    docs.includes("#381") &&
-    /keep #381 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    docs.includes("X.2") &&
     EXPLORER_CONTEXT_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

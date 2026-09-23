@@ -70,8 +70,6 @@ describe("O.3 Empty / Unfiled states on Overview cards", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#327/);
-    assert.match(frontend, /keep #327 open/i);
     assert.match(frontend, /card chrome/i);
   });
 

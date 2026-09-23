@@ -275,10 +275,7 @@ export function explorerHomeNameDoesNotNavigateOnSingleClick(
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
   return (
-    docs.includes("#382") &&
-    /keep #382 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    docs.includes("X.3") &&
     EXPLORER_SELECT_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

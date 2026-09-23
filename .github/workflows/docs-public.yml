@@ -1,0 +1,26 @@
+# Product docs must not leak sprint bookkeeping or point at docs/internal/.
+# Checker: scripts/check-public-docs.py (also noted in CONTRIBUTING.md).
+name: docs-public
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-public-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-docs:
+    name: Public docs have no issue numbers, names, or internal links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check product docs
+        run: python3 scripts/check-public-docs.py

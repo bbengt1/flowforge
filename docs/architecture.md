@@ -1,6 +1,6 @@
 # Architecture
 
-**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress. Script steps create isolated Jobs from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, built in this repo) only when `CONTROL_PLANE_API_CIDR` (or a same-namespace Service) is set and the live script NetworkPolicy allows DNS plus that destination. Missing config refuses the Job. Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live. Gap SoT: [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
+**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress. Script steps create isolated Jobs from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, built in this repo) only when `CONTROL_PLANE_API_CIDR` (or a same-namespace Service) is set and the live script NetworkPolicy allows DNS plus that destination. Missing config refuses the Job. Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live.
 
 Hard lines stay: YAML is source of truth; drafts never run; vault chrome is display-name + UUID only; ADV-021 / ADV-024; fail-closed authorization.
 
@@ -67,7 +67,7 @@ Standalone identity is local Login (`POST /api/v1/login`) or OIDC Authorization 
 
 ## Successor rewrite (charter)
 
-The shipped product on `main` is E1–E12 plus epic #195 canvas-first chrome, with the runtime gaps in [Implemented vs Specified](architecture/implemented-vs-specified.md). Enterprise readiness work is epic [G](https://github.com/bbengt1/flowforge/issues/401). The UX program is a **FlowForge rewrite aimed at n8n-class UX and feature coverage**, not a clone: [flowforge-rewrite-n8n-class-parity.md](architecture/flowforge-rewrite-n8n-class-parity.md). YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay unless that charter records an explicit safer replacement.
+The shipped product on `main` is E1–E12 plus epic canvas-first chrome, with the runtime gaps in [Implemented vs Specified](architecture/implemented-vs-specified.md). Enterprise readiness work is epic G. The UX program is a **FlowForge rewrite aimed at n8n-class UX and feature coverage**, not a clone: [flowforge-rewrite-n8n-class-parity.md](architecture/flowforge-rewrite-n8n-class-parity.md). YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay unless that charter records an explicit safer replacement.
 
 Post-R1–R7 chrome polish (Laws of UX, selective; docs-only): [flowforge-ux-laws.md](architecture/flowforge-ux-laws.md).
 
@@ -75,4 +75,4 @@ Workflows home folder hierarchy (nested, server-backed, per workspace; F.1 API l
 
 First-run operator wizard (standalone only; B.1–B.8): [flowforge-first-run-bootstrap.md](architecture/flowforge-first-run-bootstrap.md).
 
-Visual + IA north star (docs-only until Brent yes; chrome rebuild after): [flowforge-visual-ia-north-star.md](architecture/flowforge-visual-ia-north-star.md).
+Visual + IA north star (docs-only until the visual direction is accepted; chrome rebuild after): [flowforge-visual-ia-north-star.md](architecture/flowforge-visual-ia-north-star.md).

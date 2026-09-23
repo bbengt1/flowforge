@@ -320,7 +320,6 @@ describe("R2.4 canvas multi-select + fit/snap", () => {
       join(here, "..", "..", "..", "..", "docs", "reference", "frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /keep #237 open/);
     assert.doesNotMatch(frontend, /Closes #237|Fixes #237|Close #237/);
   });
 });

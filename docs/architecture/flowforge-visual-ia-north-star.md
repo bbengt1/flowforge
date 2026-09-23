@@ -2,21 +2,21 @@
 
 Status: **docs-only architecture brief**. Does not change application code, contracts, or shipped behavior. Does **not** open GitHub issues.
 
-**Sign-off:** Brent yes / no on this page. Chrome rebuild waits for yes. This is not permission to implement from the brief.
+**Sign-off:** yes / no on this page. Chrome rebuild waits for yes. This is not permission to implement from the brief.
 
 **Owners**
 
 | Role | Who |
 | --- | --- |
-| Design (this north star) | **Gracie** |
-| Product yes / no | **Brent** |
-| Chrome after Brent yes | **Chloe** |
-| Epic cut after Brent yes | **Arie** |
-| Contracts | **jonny** for **V.0a** (local password login + session mint → `ff_session` / `ff_csrf`, standalone Lax). Later V.* chrome: jonny only if a real gap appears. |
-| Verification after stories land | **Terry** |
+| Design (this north star) | |
+| Product yes / no | |
+| Chrome after the visual direction is accepted | |
+| Epic cut after the visual direction is accepted | |
+| Contracts | Contract for **V.0a** (local password login + session mint → `ff_session` / `ff_csrf`, standalone Lax). Later V.* chrome only if a real gap appears. |
+| Verification after stories land | |
 | Hard lines | Unchanged — [§3](#3-hard-lines) |
 
-**Baseline on `main`:** E1–E12 + epic #195 + R1–R7 + UXL.1–UXL.8 + F.1–F.7 + O.1–O.4 + B.1–B.7. Interaction coverage and folder/Overview/bootstrap IA are already specified. The remaining gaps are **visual language + chrome density** and **standalone Login / entry** (day-to-day auth is still trusted-dev / Example-context — not product login). YAML, vault, ADV, and embed exchange stay.
+**Baseline on `main`:** E1–E12 + epic + R1–R7 + UXL.1–UXL.8 + F.1–F.7 + O.1–O.4 + B.1–B.7. Interaction coverage and folder/Overview/bootstrap IA are already specified. The remaining gaps are **visual language + chrome density** and **standalone Login / entry** (day-to-day auth is still trusted-dev / Example-context — not product login). YAML, vault, ADV, and embed exchange stay.
 
 **Authority this page does not replace**
 
@@ -31,16 +31,16 @@ Status: **docs-only architecture brief**. Does not change application code, cont
 
 ---
 
-## 1. Status / owners
+## 1. Status
 
-This brief is **Gracie’s design north star** for FlowForge chrome **plus** the Login / entry lean. It does **not** greenfield YAML, vault, or embed APIs. **V.0a is a real contract story** (jonny): **local login** (email/username + password) that mints the existing cookie session shape.
+This brief is ** design north star** for FlowForge chrome **plus** the Login / entry lean. It does **not** greenfield YAML, vault, or embed APIs. **V.0a is a real contract story**: **local login** (email/username + password) that mints the existing cookie session shape.
 
 | Gate | Rule |
 | --- | --- |
-| Until Brent yes | Docs only. No V-epic. No chrome PR. No Magic Patterns as a substitute for this brief. |
-| After Brent yes | Arie opens **V.0a** (jonny) then **V.0b** and V.1–V.n (Chloe). Optional **V.0c** (OIDC stub) is later — not a V.0 ship gate. V.0b+ stay chrome-only except V.0a. |
-| jonny | **V.0a required** (local email/username + password → session mint). **OIDC Auth Code + PKCE is a deferred stub**, not day-one. Do not invent a full IdP-admin surface from this page. |
-| Terry | Secret-free evidence after each landed V-slice. Hard lines in [§3](#3-hard-lines) stay green. |
+| Until yes | Docs only. No V-epic. No chrome PR. No Magic Patterns as a substitute for this brief. |
+| After yes | opens **V.0a** then **V.0b** and V.1–V.n. Optional **V.0c** (OIDC stub) is later — not a V.0 ship gate. V.0b+ stay chrome-only except V.0a. |
+| | **V.0a required** (local email/username + password → session mint). **OIDC Auth Code + PKCE is a deferred stub**, not day-one. Do not invent a full IdP-admin surface from this page. |
+| | Secret-free evidence after each landed V-slice. Hard lines in [§3](#3-hard-lines) stay green. |
 
 Do not implement from this page.
 
@@ -48,7 +48,7 @@ Do not implement from this page.
 
 ## 2. Problem statement
 
-Brent’s call: **FlowForge is nowhere near his visual vision.**
+ call: **FlowForge is nowhere near his visual vision.**
 
 That is not a contract problem. On `main` the product already has:
 
@@ -67,7 +67,7 @@ What still fails the vision:
 | Landed | Why it still looks wrong |
 | --- | --- |
 | Light operator shell (`#f6f5f1`, system UI, teal focus as an afterthought) | Reads as a stacked admin tool, not a dark workbench. |
-| Overview cards on a light page | O.1–O.4 IA is correct; **surface treatment** is not. Cards do not yet match Brent’s attached Overview-style home lean (dark lifted rows, search/sort/filter, Create CTA, path pills). |
+| Overview cards on a light page | O.1–O.4 IA is correct; **surface treatment** is not. Cards do not yet match attached Overview-style home lean (dark lifted rows, search/sort/filter, Create CTA, path pills). |
 | UXL.8 density pass | Spacing/type alignment — not a visual identity. Aesthetic-Usability must not stay “slightly tidier cream.” |
 | Config / Actions / Templates as peer nav | Correct capabilities; chrome still feels like several small apps. |
 | n8n-class *behavior* already shipped | The team must not “finish the look” by cloning n8n pixels. |
@@ -103,7 +103,7 @@ Prefer **already specified** over inventing work. F / O / B / UXL / R stories st
 
 **n8n is not a visual reference.** Cite it only as the existing behavior/coverage charter. Do not match its orange, card chrome, Overview tabs, or iconography.
 
-**Home visual lean (attached):** Brent’s Overview-style screenshot (dark cards, search / sort / filter, Create CTA, folder/path pills). Use it as **density and arrangement**, not as a product to clone. Stats strip, Personal badge, pin-as-product, and link-count stay **out** (O.1–O.4).
+**Home visual lean (attached):** Overview-style screenshot (dark cards, search / sort / filter, Create CTA, folder/path pills). Use it as **density and arrangement**, not as a product to clone. Stats strip, Personal badge, pin-as-product, and link-count stay **out** (O.1–O.4).
 
 Workflow / ops chrome **leads with Mobbin**. Public products stay as **backup** class references. Hard lines in [§3](#3-hard-lines) still win.
 
@@ -154,7 +154,7 @@ IA/visual *class* only — not pixel specs. Use when a Mobbin screen is SKIP’d
 
 | Reference | TAKE | SKIP |
 | --- | --- | --- |
-| **Brent Overview screenshot** (home lean) | Dark lifted **card rows**; header + **Create** as the primary verb; search + sort + filter on one row; **path pills** on the card; published/activation as a quiet badge; kebab for secondary verbs. | Stats / time-saved strip; Personal; pin count; orange CTA; tabbed “Workflows / Credentials / Executions / Variables / Data tables” as one Overview; n8n naming or orange. |
+| ** Overview screenshot** (home lean) | Dark lifted **card rows**; header + **Create** as the primary verb; search + sort + filter on one row; **path pills** on the card; published/activation as a quiet badge; kebab for secondary verbs. | Stats / time-saved strip; Personal; pin count; orange CTA; tabbed “Workflows / Credentials / Executions / Variables / Data tables” as one Overview; n8n naming or orange. |
 | **Linear** | Dark charcoal workbench; dense list scan; command palette as a power path; one accent on the active verb. | Issue-tracker IA as product home; cycle/project metaphors; turning `/workflows` into a task inbox. |
 | **Notion** | Calm dark surfaces; breadcrumb / path as orientation; modest radius; type hierarchy that stays readable at density. | Block-editor as the canvas; pages-as-database as the folder model; marketing whitespace. |
 | **Vercel Dashboard** | Project-card scan; search / sort; dark density; status as icon + label; Create is obvious without becoming a marketing hero. | Deploy-metrics as the home (no FlowForge stats until a metrics owner exists); team-plan chrome; marketplace tiles. |
@@ -213,7 +213,7 @@ Dark-first. One accent. Workbench density. Status is never color-only.
 | --- | --- | --- |
 | Canvas / page | Near-black charcoal (`#0B0D10`–`#12141A` candidate), not pure `#000` and not navy-blue “dashboard skin.” **Full dark** — no light content pane on a dark shell. | Light-first as the default. Cream `#f6f5f1` as the north-star canvas. Mixed light/dark product chrome. |
 | Surfaces | Cards and rails **lift** one step (border + 1–2% lighter fill). | Heavy drop shadows; glassmorphism; white modals on dark. |
-| **One FlowForge accent** | A single CTA / active-tab / focus / **selection ring**. Candidate: keep the current teal-family (`--focus-ring` `#0f766e`) as the **starting** accent so we do not invent a second brand in this PR. Gracie locks the hex after Brent yes. | **n8n orange / amber / coral.** **Neon rainbow** category chips. Accent-as-status. |
+| **One FlowForge accent** | A single CTA / active-tab / focus / **selection ring**. Candidate: keep the current teal-family (`--focus-ring` `#0f766e`) as the **starting** accent so we do not invent a second brand in this brief. The accent hex stays this teal until the visual direction is accepted. | **n8n orange / amber / coral.** **Neon rainbow** category chips. Accent-as-status. |
 | Text | High-contrast primary; muted secondary for meta. WCAG on dark cards. | Grey-on-grey meta that fails contrast. |
 | Danger / denial | Distinct from the accent. Isolation **success** stays a denial — never a friendly green “pass.” | Pretty-ing ADV-024. |
 
@@ -261,9 +261,9 @@ Same routes. Same verbs. New **look**. Standalone and `/embed/v1` share product 
 | Embed | **`POST /embed/exchange` only** → `GET /session` `session.embed` (ADV-021). Host query display-only. **Do not merge** Login and embed exchange. Missing bind is still an alert. |
 | Password | **V.0 door.** POST once; never echo password or hash. Lean into OpenAPI’s deferred local-password path: bootstrap `password` stays **rejected until V.0a lands**. |
 
-#### Contract lean (jonny — not chrome-only)
+#### Contract lean (not chrome-only)
 
-On `main`, standalone day-to-day auth is trusted-dev / Example-context / `POST /session` self-assert. The [security model](../reference/security-model.md) already prefers a cookie session from embed exchange **or a future OIDC login**. **V.0 locks local login** — enough for Brent yes/no. **OIDC Authorization Code + PKCE stays a deferred stub.** Deeper IdP config APIs live in a later auth story.
+On `main`, standalone day-to-day auth is trusted-dev / Example-context / `POST /session` self-assert. The [security model](../reference/security-model.md) already prefers a cookie session from embed exchange **or a future OIDC login**. **V.0 locks local login** — enough for yes/no. **OIDC Authorization Code + PKCE stays a deferred stub.** Deeper IdP config APIs live in a later auth story.
 
 | Lean | Rule |
 | --- | --- |
@@ -295,7 +295,7 @@ Trusted-dev `POST /session` + identity headers stay **local only** ([frontend UI
 
 ### Home / Overview (`/workflows`)
 
-- **Card list is primary browse** (O.1) — Brent Overview screenshot remains the home lean. A dense table with the **same status metadata** is an allowed alternate density, not a second home. Compact Finder rail is **filter-only**, non-recursive `?folderId=` (F.2 / O.1). Not Miller columns.
+- **Card list is primary browse** (O.1) — Overview screenshot remains the home lean. A dense table with the **same status metadata** is an allowed alternate density, not a second home. Compact Finder rail is **filter-only**, non-recursive `?folderId=` (F.2 / O.1). Not Miller columns.
 - Header: product title + **Create** (draft) as the one solid primary (Vapi / incident.io). Import YAML / template remain secondary, still POST a draft.
 - One row: search (default **across folders**) + sort + filter. Optional “in this folder.”
 - Cards (or table rows): name first; last updated / created; **path pills** from `GET /workflow-folders` ancestry (O.2); published / activation / last-run at the scan ends (UXL.5). Kebab. Unfiled has **no** path pills and is not a persisted folder. No live-toggle on a draft.
@@ -373,7 +373,7 @@ Invariants **keep**. Visual treatment **reshape**. **V.0a is a contract add** (s
 | Decision | Rule |
 | --- | --- |
 | **Tokens first** | Color, type, radius, space, and status land as named tokens (CSS variables). Components consume tokens — no one-off hex in feature chrome after V.1. |
-| **shadcn-friendly** | After Brent yes, Chloe may adopt shadcn primitives **mapped to FlowForge tokens**. shadcn is a component kit, not a second product look. Default shadcn zinc/orange skins are not the north star. |
+| **shadcn-friendly** | After yes, may adopt shadcn primitives **mapped to FlowForge tokens**. shadcn is a component kit, not a second product look. Default shadcn zinc/orange skins are not the north star. |
 | **No second app** | D6 stays locked: migrate `apps/web` in place. No `/studio`, no parallel package, no embed-only theme tree. |
 | **One tree** | Standalone and `/embed/v1` share the token file and the same `WorkflowHome` / editor / vault / inbox components. |
 | **a11y inherits** | UX.10 / R7.4: skip link, single `<main>`, Esc / focus return, icon+text, reduced motion. Visual rebuild must not regress them. |
@@ -390,7 +390,7 @@ Not this brief. Do not smuggle them into a V-slice “because the screenshot had
 | **Miller columns** | Finder rail stays compact disclosure + non-recursive filter (F.2 / O.1). |
 | **Tags-first IA** | Folders are the organizer. Vault `tags` stay vault metadata. |
 | **Stats / time-saved / runtime strip** | No metrics owner. O.1–O.4 already skipped. Home is not a dashboard. |
-| **Personal badge / pin-as-product / link-count** | No pin or “personal workspace” API. Skip until Brent promotes a D. |
+| **Personal badge / pin-as-product / link-count** | No pin or “personal workspace” API. Skip as the promoted folder model. |
 | **ACME / Let’s Encrypt** | B.5/B.7 stay create / upload / skip. Settings later. |
 | **Marketplace / disabled catalog / `workflow.call`** | Enabled catalog only. `/actions` stays reference. |
 | **Neon rainbow palettes / mixed light-dark chrome** | One accent; full-dark product surfaces. |
@@ -399,22 +399,21 @@ Not this brief. Do not smuggle them into a V-slice “because the screenshot had
 | **Day-one OIDC / full IdP admin** | V.0 is **local login**. OIDC = deferred stub (Auth Code + PKCE). IdP-admin APIs wait for a later signed lean. |
 | **n8n visual clone** | Hard line. |
 | **Screen-reader graph rewrite / mobile app** | Still aspirational in frontend-ui. |
-| **GitHub issues from this PR** | Arie opens V-epics **after** Brent yes. |
+| **GitHub issues from this PR** | opens V-epics **after** yes. |
 
 ---
 
-## 10. Proposed V.0–V.n (after Brent yes)
+## 10. Proposed V.0–V.n
 
-Issue-ready **shape** for Arie. **Do not implement from this page.** **V.0a is a real API/contract story** (jonny): **local password login + session mint**. **V.0b and V.1+ stay chrome-only** on existing routes and verbs (plus the new standalone Login screen). **OIDC is a deferred stub** — optional **V.0c**, not a V.0 ship gate.
+Issue-ready **shape** for. **Do not implement from this page.** **V.0a is a real API/contract story**: **local password login + session mint**. **V.0b and V.1+ stay chrome-only** on existing routes and verbs (plus the new standalone Login screen). **OIDC is a deferred stub** — optional **V.0c**, not a V.0 ship gate.
 
 Effort **S** or **M** unless noted.
 
 ### V.0a — Local login contract
 
-**Owner:** jonny.
 **Surfaces:** `/api/v1` local account + session mint (standalone). Not embed.
 **Effort:** L.
-**Blocked by:** Brent yes.
+**Blocked by:** yes.
 **Blocks:** V.0b.
 
 Acceptance:
@@ -429,7 +428,6 @@ Acceptance:
 
 ### V.0b — Login chrome + signed-out gate
 
-**Owner:** Chloe.
 **Surfaces:** standalone Login; signed-out gate. Never `/embed/v1`.
 **Effort:** M.
 **Blocked by:** V.0a (and V.1 tokens if they land first — tokens may ship in parallel).
@@ -445,10 +443,9 @@ Acceptance:
 
 ### V.0c — OIDC stub scaffold (optional / later)
 
-**Owner:** jonny (if opened).
 **Surfaces:** optional OIDC start/callback scaffold (standalone). Not embed.
 **Effort:** M.
-**Blocked by:** Brent yes. **Not a V.0 ship gate.** Does not block V.0b.
+**Blocked by:** yes. **Not a V.0 ship gate.** Does not block V.0b.
 
 Acceptance:
 
@@ -542,28 +539,28 @@ Acceptance:
 - Standalone and embed match (spacing, type, cards, satellites). No second tree.
 - Catalog 403 / missing `session.embed` still fail closed.
 
-### Story table (Arie — after yes)
+### Story table
 
 | ID | Slice | Owner | Blocked by | Effort |
 | --- | --- | --- | --- | --- |
-| V.0a | Local login contract (email/username + password → `ff_session` / `ff_csrf`) | **jonny** | Brent yes | L |
-| V.0b | Login chrome + signed-out gate (password fields OK) | Chloe | V.0a | M |
-| V.0c | OIDC stub scaffold (optional / later — not a V.0 ship gate) | jonny | Brent yes | M |
-| V.1 | Token foundation | Chloe | Brent yes | S |
-| V.2 | Shell restyle | Chloe | V.1 | S |
-| V.3 | Overview home visual rebuild | Chloe | V.1, F/O landed | M |
-| V.4 | Editor chrome | Chloe | V.1, V.2 | M |
-| V.5 | Vault + executions restyle | Chloe | V.1 | S |
-| V.6 | Settings + first-run wizard | Chloe | V.1, V.2 | S |
-| V.7 | Status + embed visual gate | Chloe | V.2–V.6 | S |
+| V.0a | Local login contract (email/username + password → `ff_session` / `ff_csrf`) | | yes | L |
+| V.0b | Login chrome + signed-out gate (password fields OK) | | V.0a | M |
+| V.0c | OIDC stub scaffold (optional / later — not a V.0 ship gate) | | yes | M |
+| V.1 | Token foundation | | yes | S |
+| V.2 | Shell restyle | | V.1 | S |
+| V.3 | Overview home visual rebuild | | V.1, F/O landed | M |
+| V.4 | Editor chrome | | V.1, V.2 | M |
+| V.5 | Vault + executions restyle | | V.1 | S |
+| V.6 | Settings + first-run wizard | | V.1, V.2 | S |
+| V.7 | Status + embed visual gate | | V.2–V.6 | S |
 
 ---
 
 ## 11. Acceptance
 
-**Brent yes** means: this visual + IA north star is the target; Arie may open **V.0a–V.7** (optional **V.0c** later); jonny implements V.0a (and V.0c if opened); Chloe implements V.0b and V.1+.
+** yes** means: this visual + IA north star is the target; may open **V.0a–V.7** (optional **V.0c** later); implements V.0a (and V.0c if opened); implements V.0b and V.1+.
 
-**Brent no** means: revise this page. Do not start V-slices.
+** no** means: revise this page. Do not start V-slices.
 
 ### Product acceptance (after V.0–V.7 land)
 
@@ -576,11 +573,11 @@ Acceptance:
 | Verbs | Save draft / Publish / Start published / Test run / Create still mean the same things. |
 | No second app | Same `apps/web` tree. Tokens + optional shadcn primitives. No `/studio`. |
 
-### Terry (after matching stories)
+### Verification
 
 Secret-free evidence. Do not treat this page as permission to close R / UXL / F / O / B issues.
 
-| Gate | Terry checks |
+| Gate | checks |
 | --- | --- |
 | **YAML / drafts** | Restyle does not change `definitionYaml`, digest, or draft revision. Invalid YAML does not paint a graph. Drafts never run. |
 | **Vault** | Display-name + UUID only. No KEK / secrets in cards, search, or pills. Unexpected plaintext still strip + stop. |
@@ -596,7 +593,7 @@ Secret-free evidence. Do not treat this page as permission to close R / UXL / F 
 
 ### Optional Magic Patterns (after sign-off)
 
-After **Brent yes**, Gracie / Chloe may prototype **Overview home** and **editor chrome** in Magic Patterns as a visual spike — tokens from V.1, IA from F/O/UXL, hard lines from [§3](#3-hard-lines).
+After ** yes**, / may prototype **Overview home** and **editor chrome** in Magic Patterns as a visual spike — tokens from V.1, IA from F/O/UXL, hard lines from [§3](#3-hard-lines).
 
 | Rule | Apply |
 | --- | --- |

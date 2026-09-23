@@ -1,14 +1,12 @@
 # API / OpenAPI publishing
 
-Relates to #184 / Part of #181. **Keep #184 open.**
-
 This is the operator guide for the published control-plane contract.
 Authoritative route behavior stays in the [backend API map](backend-api-map.md).
 Security and session rules stay in the [security model](security-model.md).
 
 The UI does not re-host the specification. Home/shell links that point at
 swagger/OpenAPI are **not** a product screen (ADV-020).
-**Operator UI guide — Chloe / E12.3.**
+**Operator UI guide — E12.3.**
 
 ## Where the specification lives
 
@@ -123,22 +121,22 @@ routes + Browser sessions + Embed SDK).
 Documented in the YAML `info.description` and enforced by the API:
 
 - Every response sets `X-Request-ID` (caller value accepted only when
-  16–128 ASCII letters, digits, or hyphens). The same id is
-  `request_id` on RFC 9457 problem documents and in structured logs.
+ 16–128 ASCII letters, digits, or hyphens). The same id is
+ `request_id` on RFC 9457 problem documents and in structured logs.
 - 4xx/5xx use `application/problem+json`. Problem details never echo
-  bodies, credentials, or secret material.
+ bodies, credentials, or secret material.
 - Request bodies are capped at 1 MiB (`request-too-large` / 413).
 - CORS is an exact origin allowlist (`CORS_ALLOWED_ORIGINS`). Empty +
-  foreign `Origin` fails closed. Wildcard is rejected at process start.
+ foreign `Origin` fails closed. Wildcard is rejected at process start.
 
 Route inventory and success/failure codes:
 [backend API map](backend-api-map.md). Handler list:
 [`apps/api/README.md`](../../apps/api/README.md).
 
-## Chloe map
+## Operator UI map
 
-| Surface | This PR | Chloe / E12.3 |
+| Surface | This PR | E12.3 |
 | --- | --- | --- |
 | Published YAML/JSON/swagger | Documented here | Do not add a metrics or swagger product screen |
-| Home/shell OpenAPI links | Already fail `401`/`403` for non-platform-admins | **Operator UI guide — Chloe / E12.3** (how a platform-admin uses the existing links) |
-| Accessibility of swagger HTML | Out of scope (landing page is links only) | **Accessibility review — Chloe / E12.3** |
+| Home/shell OpenAPI links | Already fail `401`/`403` for non-platform-admins | **Operator UI guide — E12.3** (how a platform-admin uses the existing links) |
+| Accessibility of swagger HTML | Out of scope (landing page is links only) | **Accessibility review — E12.3** |

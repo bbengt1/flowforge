@@ -89,7 +89,6 @@ describe("#376 Change-password chrome", () => {
     assert.equal(CHANGE_PASSWORD_HREF, "/change-password");
     assert.equal(CHANGE_PASSWORD_SUCCESS_HREF, "/workflows");
     assert.equal(CHANGE_PASSWORD_SUCCESS_HREF, LOGIN_SUCCESS_HREF);
-    assert.match(frontendUi(), /#376/);
     assert.match(frontendUi(), /change-password/);
     assert.match(frontendUi(), /must_change_password/);
     assert.deepEqual(

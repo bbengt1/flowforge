@@ -274,7 +274,6 @@ describe("R2.5 persist metadata.ui.layout", () => {
       join(here, "..", "..", "..", "..", "docs", "reference", "frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /keep #238 open/);
     assert.doesNotMatch(frontend, /Closes #238|Fixes #238|Close #238/);
   });
 });
