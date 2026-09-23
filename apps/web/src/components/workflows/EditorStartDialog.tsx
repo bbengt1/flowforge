@@ -21,7 +21,7 @@ export function EditorStartDialog({
       onClose={onClose}
       labelledBy="editor-start-heading"
       returnFocusTo={satelliteOverlayTriggerId("start-published")}
-      className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
+      className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-[color-mix(in_srgb,var(--ff-canvas)_40%,transparent)] p-4"
     >
       <div className="w-full max-w-2xl rounded-2xl bg-[var(--background)] p-4 shadow-lg">
         <div className="mb-3 flex items-center justify-between gap-3">
