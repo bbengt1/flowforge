@@ -31,6 +31,7 @@ import {
 } from "./embed-contract.ts";
 import type { CurrentWorkspace, Workspace } from "./identity-types.ts";
 import type { DevIdentity } from "./identity-headers.ts";
+import { parseHttpNavigationUrl } from "./url-safety.ts";
 
 export const EMBED_TENANCY_STORY = 122;
 export const EMBED_TENANCY_EPIC = 120;
@@ -449,20 +450,9 @@ export function rewriteEmbedNavigationHref(
   href: string,
   origin: string,
 ): string | null {
-  const trimmed = href.trim();
-  if (
-    !trimmed ||
-    trimmed.startsWith("#") ||
-    trimmed.startsWith("mailto:") ||
-    trimmed.startsWith("tel:") ||
-    trimmed.startsWith("javascript:")
-  ) {
-    return null;
-  }
-  let url: URL;
-  try {
-    url = new URL(trimmed, origin || "https://flowforge.local");
-  } catch {
+  const base = origin || "https://flowforge.local";
+  const url = parseHttpNavigationUrl(href, base);
+  if (!url) {
     return null;
   }
   if (origin && url.origin !== origin) {

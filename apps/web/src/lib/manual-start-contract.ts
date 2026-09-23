@@ -326,7 +326,11 @@ export function manualStartHref(workflowId: string): string {
 
 export function editorManualStartHref(workflowId: string): string {
   const id = workflowId.trim();
-  return isResourceId(id) ? `/workflows/${id}` : "/workflows";
+  if (!isResourceId(id)) {
+    return "/workflows";
+  }
+  // Select values are DOM text. A UUID path segment cannot be a script URL.
+  return `/workflows/${encodeURIComponent(id)}`;
 }
 
 export function generateManualStartIdempotencyKey(

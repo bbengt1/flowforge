@@ -113,6 +113,14 @@ describe("ADV-013 cross-origin checklist", () => {
 
     assert.equal(adv013HostileAncestorBlocked(), true);
     assert.equal(
+      adv013HostileAncestorBlocked(adv013HostEnv(), "https://portal.test"),
+      true,
+    );
+    assert.equal(
+      adv013HostileAncestorBlocked(adv013HostEnv(), ADV013_PORTAL_ORIGIN),
+      false,
+    );
+    assert.equal(
       isAllowedEmbedMessageOrigin(ADV013_EVIL_ORIGIN, [
         ADV013_PORTAL_ORIGIN,
       ]),
