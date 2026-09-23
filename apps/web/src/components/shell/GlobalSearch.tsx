@@ -158,7 +158,7 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
                   type="button"
                   role="option"
                   aria-selected="false"
-                  className="ff-nav-item flex w-full flex-col px-3 py-2 text-left"
+                  className="ff-nav-item flex w-full flex-col px-3 py-2 text-start"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openHit(hit)}
                 >

@@ -2891,7 +2891,7 @@ function FolderRail({
             <span
               data-x4="unfiled-virtual"
               title={EXPLORER_UNFILED_VIRTUAL_LABEL}
-              className={`${FF_EXPLORER_VIRTUAL_CHIP_CLASS} ml-auto`}
+              className={`${FF_EXPLORER_VIRTUAL_CHIP_CLASS} ms-auto`}
             >
               Virtual
             </span>

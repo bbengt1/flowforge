@@ -173,6 +173,9 @@ jobs:
   # G.3.3 / #480: Playwright + axe on primary surfaces. Serious and
   # critical violations fail the job. The browser is the gate; do not
   # reintroduce source-text aria greps for the same intent.
+  # G.3.8 / #495: the same job runs rtl-surfaces.spec.ts. dir=rtl
+  # layout and focus regressions fail the job. Do not replace that
+  # spec with a source-text RTL grep.
   web-a11y-e2e:
     name: Web Playwright axe (primary surfaces)
     runs-on: ubuntu-latest
@@ -502,7 +505,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v2.5.3
 

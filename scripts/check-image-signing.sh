@@ -91,7 +91,7 @@ need "$vap" '@sha256:'
 forbid "$vap" 'validationActions: \[Warn\]'
 
 # --- workflow: sign, attest, HIGH image gate --------------------------------
-need "$wf" 'sigstore/cosign-installer@v4'
+need "$wf" 'sigstore/cosign-installer@v4\.1\.2'
 need "$wf" 'cosign-release: v2.5.3'
 need "$wf" 'cosign sign --yes'
 need "$wf" 'actions/attest-build-provenance@v4'
