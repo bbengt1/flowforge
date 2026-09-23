@@ -280,6 +280,7 @@ need "$ROOT/scripts/backup/aead.py" 'AESGCM'
 need "$ROOT/scripts/backup/aead.py" '600_000'
 need "$ROOT/scripts/backup/manifest.py" 'flowforge.backup.manifest'
 need "$ROOT/scripts/backup/manifest.py" 'FFB1'
+need "$ROOT/.github/workflows/e12-resilience.yml" 'host replication all all scram-sha-256'
 
 runner="$ROOT/deploy/kubernetes/script-runner-deployment.yaml"
 need "$runner" '^kind: Job$'

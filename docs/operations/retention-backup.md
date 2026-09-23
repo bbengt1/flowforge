@@ -144,7 +144,12 @@ scale it. The slot retains WAL on the primary until the receiver
 confirms it; a stuck slot can fill the primary disk — alert on
 `restart_lsn` lag. The backup role needs `REPLICATION` and `EXECUTE`
 on `pg_switch_wal()` for this path. The logical dump CronJob still
-only needs `CONNECT` and `SELECT`.
+only needs `CONNECT` and `SELECT`. A receiver that is not local to
+the Postgres host also needs a `host replication` line in
+`pg_hba.conf`. The image trusts replication only from `127.0.0.1`,
+and the E12 workflow loads `host replication all all scram-sha-256`
+on the service container because published-port clients arrive as
+the bridge address.
 
 Postgres hosts that cannot run `pg_receivewal` can set
 `archive_command` from `deploy/postgres/wal-archive.conf`
