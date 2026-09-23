@@ -28,14 +28,20 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
+	docPath := filepath.Join(root, "openapi", "document.yaml")
+	compPath := filepath.Join(root, "openapi", "components.yaml")
 	specPath := filepath.Join(root, "openapi", "openapi.yaml")
 	allowPath := filepath.Join(root, "..", "web", "src", "lib", "identity-proxy-allowlist.gen.ts")
-	existing, err := os.ReadFile(specPath)
+	document, err := os.ReadFile(docPath)
+	if err != nil {
+		return err
+	}
+	components, err := os.ReadFile(compPath)
 	if err != nil {
 		return err
 	}
 	routes := httpapi.Routes(nil)
-	spec, err := httpapi.RenderOpenAPI(routes, existing)
+	spec, err := httpapi.RenderOpenAPI(routes, document, components)
 	if err != nil {
 		return err
 	}
@@ -44,15 +50,19 @@ func run(check bool) error {
 		return err
 	}
 	if check {
-		committed, err := os.ReadFile(allowPath)
+		committedSpec, err := os.ReadFile(specPath)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		committedAllow, err := os.ReadFile(allowPath)
 		if err != nil {
 			return err
 		}
 		var stale []string
-		if !bytes.Equal(spec, existing) {
+		if !bytes.Equal(spec, committedSpec) {
 			stale = append(stale, "apps/api/openapi/openapi.yaml")
 		}
-		if !bytes.Equal(allow, committed) {
+		if !bytes.Equal(allow, committedAllow) {
 			stale = append(stale, "apps/web/src/lib/identity-proxy-allowlist.gen.ts")
 		}
 		if len(stale) > 0 {
@@ -76,7 +86,7 @@ func apiRoot() (string, error) {
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "openapi", "openapi.yaml")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "openapi", "document.yaml")); err == nil {
 				return dir, nil
 			}
 		}

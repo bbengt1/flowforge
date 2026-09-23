@@ -14,6 +14,8 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 
 | Form | Location |
 | --- | --- |
+| Info and servers input (not a route list) | [`apps/api/openapi/document.yaml`](../../apps/api/openapi/document.yaml) |
+| Schema library input (not a route list) | [`apps/api/openapi/components.yaml`](../../apps/api/openapi/components.yaml) |
 | Generated artifact (embedded at build time) | [`apps/api/openapi/openapi.yaml`](../../apps/api/openapi/openapi.yaml) |
 | Go embed | [`apps/api/openapi/fs.go`](../../apps/api/openapi/fs.go) (`//go:embed openapi.yaml`) |
 | Runtime YAML | `GET /api/v1/openapi.yaml` |
@@ -24,14 +26,19 @@ OpenAPI **3.0.3**. `info.version` is the document version (currently
 `0.26.0` in the YAML). That is not the URL prefix.
 
 The mux route table (`apps/api/internal/httpapi/routes.go`) is the
-source of truth. `go run ./cmd/genroutes` (from `apps/api`) rewrites
+source of truth. `go run ./cmd/genroutes` (from `apps/api`) writes
 `openapi/openapi.yaml` and the browser identity-proxy allowlist
-`apps/web/src/lib/identity-proxy-allowlist.gen.ts`. CI
-(`go run ./cmd/genroutes -check`) fails when those committed files
-drift from the route table. Operation prose is kept when the method
-set for a path is unchanged; a new route gets a stub with no secret
-examples. `x-flowforge-routes` records `auth` (`public`, `embed`, or
-`authenticated`) and `proxy` (`browser` or `none`).
+`apps/web/src/lib/identity-proxy-allowlist.gen.ts`. Neither file is
+hand-edited. Inputs are `openapi/document.yaml` (info and servers
+only) and `openapi/components.yaml` (schemas, responses, parameters,
+and path item templates — not a route list). Every path is generated
+from the route table: ops collections are `$ref`s into
+`components.pathItems`, and other operations are stubs with no
+request or response examples. CI (`go run ./cmd/genroutes -check`)
+fails when the committed files differ from that render, including a
+hand edit of `openapi.yaml`. `x-flowforge-routes` records `auth`
+(`public`, `embed`, or `authenticated`) and `proxy` (`browser` or
+`none`). Examples stay free of secrets and DSNs.
 
 When a route changes, update the route table and regenerate in the
 same change as `docs/reference/backend-api-map.md`. Tests in

@@ -1,0 +1,4142 @@
+# Schemas, responses, parameters, and pathItems. Not a route list.
+components:
+  pathItems:
+    OpsCollection:
+      get:
+        summary: List operational configuration resources
+        description: Requires `opsconfig.view`. Returns heads only (no draft spec). Keyset page. `q` matches name and slug, not spec.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/PageLimit"
+          - $ref: "#/components/parameters/PageCursor"
+          - $ref: "#/components/parameters/PageSearch"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+        responses:
+          "200":
+            description: Resource summaries
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResourceList"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+      post:
+        summary: Create a draft resource
+        description: Requires `opsconfig.edit`. Host-supplied `id` / `workspaceId` is `400`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsCreateRequest"
+        responses:
+          "201":
+            description: Created draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDetail"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsItem:
+      get:
+        summary: Get resource head
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsDraft:
+      get:
+        summary: Get mutable draft
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDraft"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+      put:
+        summary: Conflict-safe draft save
+        description: Requires `opsconfig.edit` and current `revision`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsSaveDraftRequest"
+        responses:
+          "200":
+            description: Saved draft
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsDetail"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsPublish:
+      post:
+        summary: Publish an immutable revision
+        description: Requires `opsconfig.publish`. Duplicate digest is `409`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsPublishRequest"
+        responses:
+          "201":
+            description: Published version
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsPublishResponse"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
+    OpsVersions:
+      get:
+        summary: Version history
+        description: Keyset page. `q` matches the publish note, not the spec.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/PageLimit"
+          - $ref: "#/components/parameters/PageCursor"
+          - $ref: "#/components/parameters/PageSearch"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Versions newest first
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsVersionList"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsVersion:
+      get:
+        summary: Frozen published snapshot
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+          - $ref: "#/components/parameters/OpsVersionID"
+        responses:
+          "200":
+            description: Version
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsVersion"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsDisable:
+      post:
+        summary: Disable a resource
+        description: Select and pin fail closed until re-enabled. Requires `opsconfig.edit`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Disabled resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsEnable:
+      post:
+        summary: Re-enable a resource
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        responses:
+          "200":
+            description: Enabled resource
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsResource"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+    OpsSelect:
+      post:
+        summary: Server-authorized selection
+        description: Pins an exact published revision. Drafts are `400`. Cross-workspace IDs are `404`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/Issuer"
+          - $ref: "#/components/parameters/Subject"
+          - $ref: "#/components/parameters/CSRFToken"
+          - $ref: "#/components/parameters/TenantID"
+          - $ref: "#/components/parameters/TenantSlug"
+          - $ref: "#/components/parameters/WorkbenchKey"
+          - $ref: "#/components/parameters/HostWorkspaceID"
+          - $ref: "#/components/parameters/OpsResourceID"
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsSelectRequest"
+        responses:
+          "200":
+            description: Pin
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/OpsPin"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "409":
+            $ref: "#/components/responses/Conflict"
+  parameters:
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: |
+        Page size. Default 50 when omitted. Values outside 1–100 are 400.
+        The applied size is always returned as `limit`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque keyset token from a previous response `next`. Empty selects the first page.
+        A malformed token, or a token minted for a different collection, is 400.
+        The error body does not echo the token.
+      schema:
+        type: string
+        maxLength: 1024
+    PageSearch:
+      name: q
+      in: query
+      required: false
+      description: |
+        Case-insensitive substring search over the collection's safe fields
+        (names, slugs, statuses, and similar identifiers). Secret material,
+        ciphertext, YAML bodies, specs, and free-form details are not searched.
+        Longer than 200 runes, or containing ASCII controls, is 400.
+        The error body does not echo `q`.
+      schema:
+        type: string
+        maxLength: 200
+    RequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Correlation identifier. Accepted only when 16–128 ASCII letters, digits, or hyphens.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: ^[A-Za-z0-9-]{16,128}$
+    Issuer:
+      name: X-FlowForge-Issuer
+      in: header
+      required: false
+      description: |
+        Host identity issuer for non-browser callers. Browser clients should
+        use `ff_session` instead. Ignored when a session cookie is present
+        unless it conflicts (conflict fails closed). Does not authorize a workspace.
+      schema:
+        type: string
+    Subject:
+      name: X-FlowForge-Subject
+      in: header
+      required: false
+      description: Host identity subject. Unique with issuer. Does not authorize a workspace.
+      schema:
+        type: string
+    DisplayName:
+      name: X-FlowForge-Display-Name
+      in: header
+      required: false
+      description: Optional display name applied on user upsert.
+      schema:
+        type: string
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: |
+        Required on state-changing requests authenticated by `ff_session`.
+        Must match the `ff_csrf` cookie and the server-side session secret.
+      schema:
+        type: string
+    TenantID:
+      name: X-FlowForge-Tenant-ID
+      in: header
+      required: false
+      description: Tenant UUID used with workbench_key to resolve workspace identity.
+      schema:
+        type: string
+        format: uuid
+    TenantSlug:
+      name: X-FlowForge-Tenant-Slug
+      in: header
+      required: false
+      description: Tenant slug used with workbench_key when tenant id is omitted.
+      schema:
+        type: string
+    WorkbenchKey:
+      name: X-FlowForge-Workbench-Key
+      in: header
+      required: false
+      description: Host workbench key. Combined with tenant identity, this is the only accepted workspace lookup.
+      schema:
+        type: string
+    HostWorkspaceID:
+      name: X-FlowForge-Workspace-ID
+      in: header
+      required: false
+      description: Untrusted host-supplied workspace UUID. Rejected unless it matches the server-derived `(tenant, workbench_key)` workspace.
+      schema:
+        type: string
+        format: uuid
+    WorkflowID:
+      name: workflowId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FolderID:
+      name: folderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WorkflowFolderQuery:
+      name: folderId
+      in: query
+      required: false
+      description: Filter list to one folder UUID, or `unfiled` for `folderId == null`. Omit for the full workspace list.
+      schema:
+        type: string
+    VersionID:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialID:
+      name: credentialId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobID:
+      name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ApprovalID:
+      name: approvalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AlertID:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OpsResourceID:
+      name: resourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OpsVersionID:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  headers:
+    XRequestID:
+      description: Correlation identifier. Caller values are accepted only when 16–128 ASCII letters, digits, or hyphens.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: ^[A-Za-z0-9-]{16,128}$
+  schemas:
+    OpsCatalog:
+      type: object
+      required: [kinds]
+      properties:
+        kinds:
+          type: array
+          items:
+            type: object
+            required: [kind, collection, yamlFields, usePermission]
+            properties:
+              kind: {type: string}
+              collection: {type: string}
+              displayName: {type: string}
+              yamlFields:
+                type: array
+                items: {type: string}
+              usePermission: {type: string}
+              allowedCredentialTypes:
+                type: array
+                items: {type: string}
+              engine: {type: string}
+        kubernetesEngine:
+          $ref: "#/components/schemas/KubernetesEngineCatalog"
+        sshEngine:
+          $ref: "#/components/schemas/SSHEngineCatalog"
+        scriptEngine:
+          $ref: "#/components/schemas/ScriptEngineCatalog"
+        httpNotificationEngine:
+          $ref: "#/components/schemas/HTTPNotificationEngineCatalog"
+    HTTPNotificationEngineCatalog:
+      type: object
+      additionalProperties: true
+      required: [credentialType, publishRules, isolation, nodes, integrationGate]
+      properties:
+        credentialType: {type: string, enum: [token]}
+        publishRules: {type: object, additionalProperties: true}
+        isolation: {type: object, additionalProperties: true}
+        retry: {type: object, additionalProperties: true}
+        evaluationKeys:
+          type: array
+          items: {type: object, additionalProperties: true}
+        nodes:
+          type: array
+          items: {type: object, additionalProperties: true}
+        errors:
+          type: array
+          items: {type: object, additionalProperties: true}
+        permissions:
+          type: array
+          items: {type: string}
+        integrationGate:
+          type: object
+          additionalProperties: true
+    KubernetesEngineCatalog:
+      type: object
+      required: [credentialType, allowedKinds, allowedVerbs, evaluationKeys, serviceAccount, publishRules]
+      properties:
+        credentialType: {type: string, enum: [kubernetes]}
+        credentialSecretField: {type: string, enum: [kubeconfig]}
+        allowedKinds:
+          type: array
+          items: {type: string}
+        allowedVerbs:
+          type: array
+          items: {type: string}
+        evaluationKeys:
+          type: array
+          items:
+            type: object
+            required: [canonical, aliases]
+            properties:
+              canonical: {type: string}
+              aliases:
+                type: array
+                items: {type: string}
+              failClosedWhenPresent: {type: boolean}
+              requiredForPublish: {type: boolean}
+        serviceAccount:
+          type: object
+          properties:
+            defaultName: {type: string}
+            roleTemplate: {type: string}
+            roleTemplatePath: {type: string}
+            roleBindingTemplatePath: {type: string}
+            serviceAccountPath: {type: string}
+            clusterRoles: {type: boolean}
+            notes: {type: string}
+        publishRules:
+          type: object
+          properties:
+            clusterTargetRequired:
+              type: array
+              items: {type: string}
+            kubernetesPolicyRequired:
+              type: array
+              items: {type: string}
+            emptyAllowlistsRejected: {type: boolean}
+            credentialType: {type: string}
+            denyAllowsMissingAllowlist: {type: boolean}
+        clusterRoles: {type: boolean}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              verb: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+              allowedWith:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    kind: {type: string}
+                    required: {type: boolean}
+                    enum:
+                      type: array
+                      items: {type: string}
+                    description: {type: string}
+              fieldManager: {type: string}
+              force: {type: boolean}
+              serverDryRunAlways: {type: boolean}
+              waitReady: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        apply:
+          type: object
+          properties:
+            fieldManager: {type: string}
+            force: {type: boolean}
+            serverDryRunAlways: {type: boolean}
+            clientDryRunAddsLocalValidationOnly: {type: boolean}
+            waitReady: {type: string}
+        observation:
+          type: object
+          properties:
+            waitReady: {type: string}
+            states:
+              type: array
+              items: {type: string}
+            kinds:
+              type: array
+              items: {type: string}
+            verb: {type: string}
+            cancel: {type: string}
+            timeout: {type: string}
+            neverDeletesOrRollsBack: {type: boolean}
+    SSHEngineCatalog:
+      type: object
+      required: [credentialType, parameterTypes, render, retry, publishRules, isolation]
+      properties:
+        credentialType: {type: string, enum: [ssh_private_key]}
+        credentialSecretFields:
+          type: array
+          items: {type: string}
+        parameterTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              constraints:
+                type: array
+                items: {type: string}
+              description: {type: string}
+        render:
+          type: object
+          properties:
+            owner: {type: string}
+            placeholderSyntax: {type: string}
+            quoting: {type: string}
+            rawShellInterpolation: {type: boolean}
+            forbiddenTokens:
+              type: array
+              items: {type: string}
+            rejectValuesOutsideSchema: {type: boolean}
+        retry:
+          type: object
+          properties:
+            defaultMaxAttempts: {type: integer}
+            maxAttempts: {type: integer}
+            retrySafeFlag: {type: string}
+            semantics: {type: string}
+            note: {type: string}
+            blindRetry: {type: boolean}
+            leaseLossOutcome: {type: string}
+            unknownOutcome: {type: string}
+            requiresVerificationWhenRetrySafe: {type: boolean}
+            verification: {type: string}
+            whenRetryAllowed: {type: string}
+            states:
+              type: array
+              items: {type: string}
+            ui:
+              type: object
+              properties:
+                indeterminateBadge: {type: string}
+                retrySafeFlag: {type: string}
+                retryEnabledWhen: {type: string}
+                hideRetryWhen: {type: string}
+                neverAssumeAbsent: {type: boolean}
+            probe:
+              type: object
+              properties:
+                requiredWhenRetrySafe: {type: boolean}
+                field: {type: string}
+                template: {type: string}
+                expectExitCodeDefault: {type: integer}
+                onMatchDefault: {type: string}
+                onMismatchDefault: {type: string}
+                onError: {type: string}
+                outcomes:
+                  type: array
+                  items: {type: string}
+                note: {type: string}
+        publishRules:
+          type: object
+          properties:
+            sshTargetRequired:
+              type: array
+              items: {type: string}
+            commandProfileRequired:
+              type: array
+              items: {type: string}
+            emptyAllowlistsRejected: {type: boolean}
+            credentialType: {type: string}
+            fingerprintFormat: {type: string}
+            draftsNotSelectable: {type: boolean}
+            publishedRevisionsPinned: {type: boolean}
+        evaluationKeys:
+          type: array
+          items:
+            type: object
+            properties:
+              canonical: {type: string}
+              aliases:
+                type: array
+                items: {type: string}
+              failClosedWhenPresent: {type: boolean}
+              requiredForPublish: {type: boolean}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              verb: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        permissions:
+          type: array
+          items: {type: string}
+        isolation:
+          type: object
+          properties:
+            authMethods:
+              type: array
+              items: {type: string}
+            passwordAuth: {type: boolean}
+            agentForwarding: {type: boolean}
+            portForwarding: {type: boolean}
+            proxyCommand: {type: boolean}
+            hostKeyAutoAccept: {type: boolean}
+            interactiveShell: {type: boolean}
+            knownHostVerification: {type: string}
+            resolveThenAllowlist: {type: boolean}
+            connectVerifiedAddressOnly: {type: boolean}
+            ephemeralCredentialHandle: {type: boolean}
+            nonRootRemoteAccount: {type: boolean}
+            defaultUsername: {type: string}
+            privateKeyNeverExported: {type: boolean}
+    ScriptEngineCatalog:
+      type: object
+      required: [languages, publishRules, nodes, errors, permissions, isolation]
+      properties:
+        languages:
+          type: array
+          items: {type: string, enum: [python, go]}
+        publishRules:
+          type: object
+          properties:
+            requiredWith:
+              type: array
+              items: {type: string}
+            allowedLanguages:
+              type: array
+              items: {type: string}
+            sourceVisibleInYAML: {type: boolean}
+            secretsForbiddenInYAML: {type: boolean}
+            draftsCannotExecute: {type: boolean}
+            mutableArtifactsRejected: {type: boolean}
+            unscannedRejected: {type: boolean}
+            unsignedRejected: {type: boolean}
+            failedScanRejected: {type: boolean}
+            publishedRevisionsPinned: {type: boolean}
+            digestPinnedRuntime: {type: boolean}
+            maxSourceBytes: {type: integer}
+            maxTimeoutSeconds: {type: integer}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              language: {type: string}
+              title: {type: string}
+              description: {type: string}
+              permissions:
+                type: array
+                items: {type: string}
+              requiredWith:
+                type: array
+                items: {type: string}
+              allowedWith:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    kind: {type: string}
+                    required: {type: boolean}
+                    description: {type: string}
+              outputs:
+                type: array
+                items: {type: string}
+              sideEffects: {type: boolean}
+              retrySafe: {type: boolean}
+              idempotent: {type: boolean}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              status: {type: integer}
+              meaning: {type: string}
+        permissions:
+          type: array
+          items: {type: string}
+        isolation:
+          type: object
+          properties:
+            nonRoot: {type: boolean}
+            readOnlyRootFS: {type: boolean}
+            droppedCapabilities: {type: boolean}
+            noNewPrivs: {type: boolean}
+            noMetadataService: {type: boolean}
+            noHostDockerSocket: {type: boolean}
+            runtimePackageInstall: {type: boolean}
+            approvedImagesOnly: {type: boolean}
+            uid: {type: integer}
+            gid: {type: integer}
+            ephemeralWorkspace: {type: string}
+            dropCapabilityNames:
+              type: array
+              items: {type: string}
+            allowPrivilegeEscalation: {type: boolean}
+            noServiceAccountMount: {type: boolean}
+            defaultDenyEgress: {type: boolean}
+            dnsConstrained: {type: boolean}
+            metadataCIDRs:
+              type: array
+              items: {type: string}
+            runtimeProfile:
+              type: object
+              properties:
+                language: {type: string}
+                imageDigest: {type: string}
+                dependencyLockDigest: {type: string}
+                limits:
+                  type: array
+                  items: {type: string}
+                egress: {type: string}
+                mutableTagsRejected: {type: boolean}
+            ciHarness: {type: string}
+            kubernetesManifests:
+              type: array
+              items: {type: string}
+            note: {type: string}
+            hooks:
+              type: array
+              items: {type: string}
+        hooks:
+          type: object
+          additionalProperties: {type: string}
+        revocation:
+          type: object
+          properties:
+            permission: {type: string}
+            route: {type: string}
+            idempotent: {type: boolean}
+            blocksNewRuns: {type: boolean}
+            recheckOn:
+              type: array
+              items: {type: string}
+            failClosed: {type: boolean}
+            errorCode: {type: string}
+            auditAction: {type: string}
+            auditSecretFree: {type: boolean}
+            note: {type: string}
+        emergencyStop:
+          type: object
+          properties:
+            permission: {type: string}
+            route: {type: string}
+            policyGated: {type: boolean}
+            missingPolicyAllows: {type: boolean}
+            policyAllowField: {type: string}
+            uncertainOutcome: {type: string}
+            beforeDispatch: {type: string}
+            neverAssumeAbsent: {type: boolean}
+            states:
+              type: array
+              items: {type: string}
+            auditAction: {type: string}
+            auditSecretFree: {type: boolean}
+            denyWithoutPermission: {type: string}
+            note: {type: string}
+    ScriptRevokeRequest:
+      type: object
+      properties:
+        reason: {type: string, maxLength: 256}
+    ScriptEmergencyStopRequest:
+      type: object
+      properties:
+        stepId: {type: string, format: uuid}
+        uncertain: {type: boolean}
+    ScriptArtifact:
+      type: object
+      required: [id, language, entrypoint, digest, signature, scanStatus, status, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        language: {type: string, enum: [python, go]}
+        entrypoint: {type: string}
+        digest: {type: string}
+        signature: {type: string}
+        scanStatus: {type: string, enum: [pending, clean, failed, unsigned]}
+        status: {type: string, enum: [draft, published]}
+        runtimeProfileId: {type: string, format: uuid}
+        runtimeProfileVersionId: {type: string, format: uuid}
+        runtimeProfileDigest: {type: string}
+        sourceBytes: {type: integer}
+        metadata: {type: object, additionalProperties: true}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        revokedAt: {type: string, format: date-time}
+        revokedBy: {type: string}
+    ScriptVersionPin:
+      type: object
+      required: [workflowVersionId, nodeId, artifactId, digest, scanStatus]
+      properties:
+        workflowVersionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeType: {type: string}
+        artifactId: {type: string, format: uuid}
+        digest: {type: string}
+        scanStatus: {type: string}
+        signature: {type: string}
+        language: {type: string}
+        entrypoint: {type: string}
+    ScriptPinList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScriptVersionPin"
+    ScriptPublishRequest:
+      type: object
+      required: [language, source, entrypoint, runtimeProfileId]
+      properties:
+        language: {type: string, enum: [python, go]}
+        source: {type: string}
+        entrypoint: {type: string}
+        runtimeProfileId: {type: string, format: uuid}
+        runtimeProfileVersionId: {type: string, format: uuid}
+        inputSchema: {type: object, additionalProperties: true}
+        outputSchema: {type: object, additionalProperties: true}
+        timeoutSeconds: {type: integer}
+        memoryMiB: {type: integer}
+        cpuMillis: {type: integer}
+        processes: {type: integer}
+    OpsResource:
+      type: object
+      required: [id, kind, slug, name, status, draftRevision]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        slug: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [draft, published, disabled]}
+        draftRevision: {type: integer}
+        draftDigest: {type: string}
+        latestVersionNumber: {type: integer}
+        latestVersionId: {type: string}
+        latestVersionDigest: {type: string}
+        credentialId: {type: string}
+        policyId: {type: string}
+    OpsDraft:
+      type: object
+      required: [resourceId, kind, revision, spec, digest]
+      properties:
+        resourceId: {type: string, format: uuid}
+        kind: {type: string}
+        revision: {type: integer}
+        spec: {type: object, additionalProperties: true}
+        digest: {type: string}
+    OpsVersion:
+      type: object
+      required: [id, resourceId, kind, versionNumber, spec, digest]
+      properties:
+        id: {type: string, format: uuid}
+        resourceId: {type: string, format: uuid}
+        kind: {type: string}
+        versionNumber: {type: integer}
+        spec: {type: object, additionalProperties: true}
+        digest: {type: string}
+        publishNote: {type: string}
+    OpsPin:
+      type: object
+      required: [kind, resourceId, versionId, versionNumber, digest]
+      properties:
+        kind: {type: string}
+        resourceId: {type: string, format: uuid}
+        versionId: {type: string, format: uuid}
+        versionNumber: {type: integer}
+        digest: {type: string}
+        name: {type: string}
+        slug: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsDetail:
+      type: object
+      required: [resource, draft]
+      properties:
+        resource: {$ref: "#/components/schemas/OpsResource"}
+        draft: {$ref: "#/components/schemas/OpsDraft"}
+    OpsPublishResponse:
+      type: object
+      required: [resource, version]
+      properties:
+        resource: {$ref: "#/components/schemas/OpsResource"}
+        version: {$ref: "#/components/schemas/OpsVersion"}
+    OpsResourceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsResource"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    OpsVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsVersion"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    OpsPinList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OpsPin"}
+    PolicyEvaluateRequest:
+      type: object
+      required: [workflowId, workflowVersionId]
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+    PolicyEvaluateResponse:
+      type: object
+      required: [decision, dispatchAllowed, operations, requirements, denied, evaluatedAt]
+      properties:
+        decision: {type: string, enum: [allow, deny, approval-required]}
+        dispatchAllowed: {type: boolean}
+        operations:
+          type: array
+          items: {$ref: "#/components/schemas/PolicyOperationResult"}
+        requirements:
+          type: array
+          items: {$ref: "#/components/schemas/ApprovalRequirement"}
+        denied:
+          type: array
+          items: {$ref: "#/components/schemas/PolicyOperationResult"}
+        evaluatedAt: {type: string, format: date-time}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        approvals:
+          type: array
+          items: {$ref: "#/components/schemas/Approval"}
+    PolicyOperationResult:
+      type: object
+      required: [nodeId, operation, decision]
+      properties:
+        nodeId: {type: string}
+        operation: {type: string}
+        decision: {type: string, enum: [allow, deny, approval-required]}
+        reason: {type: string}
+        requirement: {$ref: "#/components/schemas/ApprovalRequirement"}
+    ApprovalRequirement:
+      type: object
+      required: [nodeId, operation, approverRole, expiresIn, expiresAt]
+      properties:
+        nodeId: {type: string}
+        nodeName: {type: string}
+        operation: {type: string}
+        targetKind: {type: string}
+        targetId: {type: string, format: uuid}
+        targetVersionId: {type: string, format: uuid}
+        targetDigest: {type: string}
+        policyResourceId: {type: string, format: uuid}
+        policyVersionId: {type: string, format: uuid}
+        policyDigest: {type: string}
+        policyRevision: {type: integer}
+        approverRole: {type: string}
+        expiresIn: {type: string}
+        expiresAt: {type: string, format: date-time}
+        reason: {type: string}
+    Approval:
+      type: object
+      required: [id, workflowId, workflowVersionId, workflowDigest, nodeId, operation, bindingFingerprint, approverRole, status, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeName: {type: string}
+        operation: {type: string}
+        targetKind: {type: string}
+        targetId: {type: string, format: uuid}
+        targetVersionId: {type: string, format: uuid}
+        targetDigest: {type: string}
+        policyResourceId: {type: string, format: uuid}
+        policyVersionId: {type: string, format: uuid}
+        policyDigest: {type: string}
+        policyRevision: {type: integer}
+        bindingFingerprint: {type: string}
+        approverRole: {type: string}
+        status: {type: string, enum: [pending, approved, rejected, expired, invalidated]}
+        expiresAt: {type: string, format: date-time}
+        requestedBy: {type: string, format: uuid}
+        decidedBy: {type: string, format: uuid}
+        decidedAt: {type: string, format: date-time}
+        decisionNote: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ApprovalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Approval"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    ApprovalCatalog:
+      type: object
+      required: [statuses, decisions, defaultExpiresIn]
+      properties:
+        statuses:
+          type: array
+          items: {type: string}
+        decisions:
+          type: array
+          items: {type: string}
+        defaultExpiresIn: {type: string}
+        waitResumeEnabled: {type: boolean}
+        resumeRoute: {type: string}
+        waitSurvivesWorkerLoss: {type: boolean}
+        selfApprovalDenied: {type: boolean}
+        freshAuthRequired: {type: boolean}
+        help: {type: string}
+    ApprovalCreateRequest:
+      type: object
+      required: [workflowId, workflowVersionId]
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+    ApprovalDecideRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approved, rejected, approve, reject]}
+        note: {type: string}
+    ApprovalEvent:
+      type: object
+      required: [id, approvalId, eventType, occurredAt]
+      properties:
+        id: {type: string, format: uuid}
+        approvalId: {type: string, format: uuid}
+        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated]}
+        actorId: {type: string, format: uuid}
+        details: {type: object, additionalProperties: true}
+        occurredAt: {type: string, format: date-time}
+    ApprovalEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ApprovalEvent"}
+    OpsCreateRequest:
+      type: object
+      required: [name, spec]
+      properties:
+        slug: {type: string}
+        name: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsSaveDraftRequest:
+      type: object
+      required: [revision, spec]
+      properties:
+        revision: {type: integer}
+        name: {type: string}
+        spec: {type: object, additionalProperties: true}
+    OpsPublishRequest:
+      type: object
+      properties:
+        revision: {type: integer}
+        note: {type: string}
+    OpsSelectRequest:
+      type: object
+      properties:
+        versionId: {type: string, format: uuid}
+    OpsSelectBatchRequest:
+      type: object
+      required: [refs]
+      properties:
+        refs:
+          type: array
+          items:
+            type: object
+            required: [kind, resourceId]
+            properties:
+              kind: {type: string}
+              resourceId: {type: string, format: uuid}
+              versionId: {type: string, format: uuid}
+    Health:
+      type: object
+      required: [status, version, sha]
+      description: |
+        Process liveness plus non-secret build identity. `version` and
+        `sha` come from image ldflags (`BUILD_VERSION` / `BUILD_SHA`
+        build args) or the same env names at runtime. Missing or
+        unsafe values are `dev` / `unknown`. Health never fails because
+        identity is absent. No secrets, DSNs, or keys.
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: Release or image tag. Default `dev`.
+        sha:
+          type: string
+          description: Git object name (7–40 hex) or `unknown`.
+    Readiness:
+      type: object
+      required: [status, version, sha]
+      description: |
+        PostgreSQL reachable, plus the same non-secret build identity
+        as `/health`. 503 problem responses do not include version/sha.
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        version:
+          type: string
+        sha:
+          type: string
+    BootstrapPersistenceConfirm:
+      type: object
+      additionalProperties: false
+      required: [confirm]
+      description: |
+        Operator confirmation that process DATABASE_URL persistence is
+        ready. Never a DSN, password, or connection string.
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Must be true. The server pings PostgreSQL; the client does not send credentials.
+    BootstrapFirstAdmin:
+      type: object
+      additionalProperties: false
+      required: [issuer, external_subject]
+      description: |
+        First admin identity. Prefer existing localseed /
+        PLATFORM_ADMINS upsert (issuer + external_subject). Optional
+        `password` is stored as a bcrypt hash for `POST /login`
+        (`external_subject` is the email or username). Never echoed.
+      properties:
+        issuer:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Identity issuer. Same vocabulary as localseed PLATFORM_ADMINS.
+        external_subject:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: External subject. Same vocabulary as localseed PLATFORM_ADMINS.
+        display_name:
+          type: string
+          maxLength: 200
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+          description: |
+            POST once for local login. Stored as a hash keyed by
+            `external_subject`. Never returned.
+    BootstrapPublicURL:
+      type: object
+      additionalProperties: false
+      required: [publicBaseUrl]
+      description: |
+        Public origin for this instance. HTTPS is preferred. HTTP is
+        allowed for local installs. Never echoed on GET /bootstrap.
+      properties:
+        publicBaseUrl:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 2048
+          description: |
+            Origin only (`https://host[:port]`). Trailing slash is
+            stripped. No userinfo, query, fragment, or path. HTTP is
+            documented for local (for example `http://localhost:3000`).
+    BootstrapTLS:
+      description: |
+        Wizard step 4 body. PEM fields POST once and are never
+        returned. Skip writes no PEM. ACME is not accepted.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action:
+              type: string
+              enum: [create-self-signed]
+        - type: object
+          additionalProperties: false
+          required: [action, certPem, keyPem]
+          properties:
+            action:
+              type: string
+              enum: [upload]
+            certPem:
+              type: string
+              minLength: 1
+              maxLength: 262144
+              description: Certificate PEM. POST once. Never returned.
+            keyPem:
+              type: string
+              minLength: 1
+              maxLength: 262144
+              description: Private key PEM. POST once. Never returned.
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action:
+              type: string
+              enum: [skip]
+    BootstrapStep:
+      type: object
+      additionalProperties: false
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+        mode:
+          type: string
+          description: TLS status-only mode. Never a key or PEM.
+          enum: [none, self_signed, uploaded, local_http, skipped]
+    BootstrapStatus:
+      type: object
+      additionalProperties: false
+      required: [complete, incomplete, skipped, standaloneOnly, steps]
+      properties:
+        complete:
+          type: boolean
+        incomplete:
+          type: boolean
+        skipped:
+          type: boolean
+          description: Trusted-dev / compose localseed skip (admin + URL).
+        standaloneOnly:
+          type: boolean
+          description: Always true. Wizard and this gate never apply to /embed/v1.
+        steps:
+          type: object
+          additionalProperties: false
+          required: [persistence, firstAdmin, publicUrl, tls]
+          properties:
+            persistence:
+              $ref: "#/components/schemas/BootstrapStep"
+            firstAdmin:
+              $ref: "#/components/schemas/BootstrapStep"
+            publicUrl:
+              $ref: "#/components/schemas/BootstrapStep"
+            tls:
+              $ref: "#/components/schemas/BootstrapStep"
+    Problem:
+      type: object
+      required: [type, title, status, detail, instance, code, request_id]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum:
+            - invalid-request
+            - unauthenticated
+            - forbidden
+            - not-found
+            - conflict
+            - method-not-allowed
+            - request-too-large
+            - rate-limited
+            - internal-error
+            - dependency-unavailable
+            - invalid-workflow
+            - retry-denied
+            - artifact-mutable
+            - artifact-unscanned
+            - artifact-unsigned
+            - artifact-scan-failed
+            - mfa-required
+        request_id:
+          type: string
+        errors:
+          type: array
+          description: Field-level workflow validation errors (invalid-workflow only).
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+    Tenant:
+      type: object
+      required: [id, slug, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Workspace:
+      type: object
+      required: [id, tenant_id, workbench_key, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        workbench_key:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    User:
+      type: object
+      required: [id, issuer, external_subject, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        issuer:
+          type: string
+        external_subject:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+    MachineTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [client_id]
+      description: |
+        Exactly one of `secret` or `assertion`. Both are POST once and
+        never returned.
+      properties:
+        client_id:
+          type: string
+          minLength: 2
+          maxLength: 64
+          description: Public identifier. Not a secret.
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion:
+          type: string
+          description: Compact Ed25519 assertion. aud=flowforge:machine. Max TTL 5 minutes.
+    MachinePrincipalCreate:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      description: |
+        `secret` or `assertion_public_key` is required and is not echoed.
+        Grants default to empty (authorize nothing).
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        client_id:
+          type: string
+          minLength: 2
+          maxLength: 64
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion_public_key:
+          type: string
+          description: Base64 raw 32-byte Ed25519 public key. Not a private key.
+        grants:
+          type: array
+          items:
+            type: string
+        tenant_id:
+          type: string
+          format: uuid
+        tenant_slug:
+          type: string
+        workbench_key:
+          type: string
+    MachinePrincipalRotate:
+      type: object
+      additionalProperties: false
+      description: Credential only. Grants are not changed. Secret is not echoed.
+      properties:
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 72
+          format: password
+        assertion_public_key:
+          type: string
+    MachinePrincipal:
+      type: object
+      required: [id, client_id, display_name, status, grants, created_at]
+      description: Operator view. No secret, hash, assertion, or public key.
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        grants:
+          type: array
+          items:
+            type: string
+        tenant_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        workbench_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        rotated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    MachinePrincipalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachinePrincipal"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      description: |
+        Standalone local sign-in. Send `identifier` or `email` or
+        `username` (they must agree if more than one is set) plus
+        `password`. Password POST once; never echoed.
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Email or username. Case-insensitive. Matches bootstrap `external_subject`.
+        email:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Alias for identifier.
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Alias for identifier.
+        password:
+          type: string
+          minLength: 1
+          maxLength: 72
+          format: password
+          description: POST once. Never returned.
+    OIDCStartRequest:
+      type: object
+      additionalProperties: false
+      description: Empty object. Extra fields are rejected.
+    OIDCStartResponse:
+      type: object
+      additionalProperties: false
+      required: [authorization_url, state, expires_at]
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+          description: IdP authorize URL. No client_secret and no code_verifier.
+        state:
+          type: string
+          description: Matches the ff_oidc_state cookie. Not a secret the chrome may persist beyond the redirect.
+        expires_at:
+          type: string
+          format: date-time
+    OIDCCallbackRequest:
+      type: object
+      additionalProperties: false
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Authorization code. POST once. Never echoed.
+        state:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Must match the ff_oidc_state cookie.
+    MFAStatus:
+      type: object
+      additionalProperties: false
+      required: [method, enrolled, satisfied, applicable, privileged_permissions]
+      properties:
+        method:
+          type: string
+          enum: [totp]
+        enrolled:
+          type: boolean
+        satisfied:
+          type: boolean
+          description: True when this session has stepped up, or when MFA does not apply to the door.
+        applicable:
+          type: boolean
+          description: True only for local-login and OIDC sessions.
+        privileged_permissions:
+          type: array
+          items:
+            type: string
+          description: platform.administer and credential.*
+        otpauth_uri:
+          type: string
+          description: Present only on the enroll response, once. Contains the TOTP secret. Do not store.
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 8
+          description: TOTP code. POST once. Never echoed.
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        New local-login password. POST once; never echoed. Must not
+        match the current secret or the one-time default `admin`.
+      properties:
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+          description: New password. POST once. Never returned.
+        new_password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+          description: Alias for password.
+    CreateSessionRequest:
+      type: object
+      properties:
+        issuer:
+          type: string
+        external_subject:
+          type: string
+        display_name:
+          type: string
+    Session:
+      type: object
+      required: [id, created_at, last_seen_at, idle_expires_at, absolute_expires_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+        absolute_expires_at:
+          type: string
+          format: date-time
+        must_change_password:
+          type: boolean
+          description: |
+            True after first-run one-time local login until
+            `POST /session/password` succeeds. Chloe gates Overview /
+            product chrome to the change-password screen. Omitted when
+            false. Never a password or hash.
+        embed:
+          $ref: "#/components/schemas/SessionEmbedBinding"
+    SessionEmbedBinding:
+      type: object
+      description: |
+        Present only on embed-exchanged sessions. Authoritative chrome
+        payload for the embed shell (ADV-021). Absence means standalone.
+        No secrets and no raw assertion.
+      required: [mode, sdk, tenantId, workbenchKey, workspaceId, capabilities]
+      properties:
+        mode:
+          type: string
+          enum: [embed]
+          description: Explicit embed-mode flag. Always `embed` when this object is present.
+        sdk:
+          type: string
+          enum: [embed.v1]
+        tenantId: {type: string, format: uuid}
+        tenantSlug: {type: string, description: Chrome-safe tenant display slug.}
+        tenantName: {type: string, description: Chrome-safe tenant display name.}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        workspaceName: {type: string, description: Chrome-safe workspace display name.}
+        capabilities:
+          type: array
+          items: {type: string}
+          description: Session-capped minted capabilities. Not the catalog set.
+    SessionResponse:
+      type: object
+      required: [session, principal, csrf_token]
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        principal:
+          $ref: "#/components/schemas/User"
+        csrf_token:
+          type: string
+          description: Same value as the `ff_csrf` cookie. Never log or persist in localStorage.
+    SessionAuditEvent:
+      type: object
+      required: [id, event_type, outcome, reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum:
+            - session.created
+            - session.refreshed
+            - session.revoked
+            - session.expired
+            - session.csrf_rejected
+            - session.origin_rejected
+            - session.privilege_denied
+            - session.auth_rejected
+        outcome:
+          type: string
+          enum: [allowed, denied]
+        reason:
+          type: string
+        request_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    SessionAuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionAuditEvent"
+    EmbedCatalog:
+      type: object
+      description: |
+        Versioned embed SDK/contract for Chloe and host backends.
+        `rules.membershipIsolationGranted` is true only when the peeked
+        session has `workspace.administer` or `platform.administer`.
+        Public catalogs omit membership/isolation routes and those
+        capabilities. `frameAncestors` is always present (ADV-011).
+        `issuers` is the configured embed host issuer list and is
+        always published.
+    PortalAdapterCatalog:
+      type: object
+      description: Versioned CP Ops Portal adapter contract and host wiring map.
+    MintPortalAssertionRequest:
+      type: object
+      description: Portal-backend mint. Provide portalRoles and/or capabilities.
+      properties:
+        subject:
+          type: string
+          description: End-user subject. Defaults to the minting caller. A different value requires embed.impersonate (PLATFORM_ADMINS); otherwise 403.
+        displayName:
+          type: string
+        issuer:
+          type: string
+          description: Assertion iss. Must match the authenticated caller and be on a non-empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST (empty fails closed). A mismatched issuer is 403.
+        tenantId:
+          type: string
+          format: uuid
+        workbenchKey:
+          type: string
+        workspaceId:
+          type: string
+          format: uuid
+          description: Optional binding. Must match server resolution. Never the lookup key.
+        portalRoles:
+          type: array
+          items: {type: string}
+          description: Portal roles (`portal.viewer` or `viewer`, …) mapped to FlowForge capabilities.
+        capabilities:
+          type: array
+          items: {type: string}
+          description: Extra FlowForge permission keys. Must be known catalog keys.
+        ttlSeconds:
+          type: integer
+          minimum: 15
+          maximum: 300
+
+    EmbedJWKS:
+      type: object
+      required: [keys, signingReady]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, crv, x, kid, use, alg]
+            properties:
+              kty: {type: string, enum: [OKP]}
+              crv: {type: string, enum: [Ed25519]}
+              x: {type: string, description: Public key (base64url). Never `d`.}
+              kid: {type: string}
+              use: {type: string, enum: [sig]}
+              alg: {type: string, enum: [EdDSA]}
+              status: {type: string, enum: [active, overlap]}
+              overlapUntil:
+                type: string
+                format: date-time
+                description: |
+                  Required on overlap verification keys (max 4h from now).
+                  Omitted on the active signing key — that key is not an
+                  overlap key and does not expire via overlapUntil.
+        signingReady:
+          type: boolean
+    MintEmbedAssertionRequest:
+      type: object
+      required: [capabilities]
+      properties:
+        subject:
+          type: string
+          description: End-user subject. Defaults to the minting caller. A different value requires embed.impersonate (PLATFORM_ADMINS); otherwise 403.
+        displayName:
+          type: string
+        issuer:
+          type: string
+          description: Assertion iss. Must match the authenticated caller (defaults to the caller). A mismatched issuer is 403.
+        tenantId:
+          type: string
+          format: uuid
+          description: Optional confirmation of the header-resolved tenant.
+        workbenchKey:
+          type: string
+          description: Optional confirmation of the header-resolved workbench.
+        workspaceId:
+          type: string
+          format: uuid
+          description: Optional binding. Must match server resolution. Never the lookup key.
+        capabilities:
+          type: array
+          items: {type: string}
+          minItems: 1
+        ttlSeconds:
+          type: integer
+          minimum: 15
+          maximum: 300
+    MintedEmbedAssertion:
+      type: object
+      required: [sdk, assertion, tokenId, audience, issuer, subject, tenantId, workbenchKey, capabilities, expiresAt, keyId, algorithm]
+      properties:
+        sdk: {type: string, example: embed.v1}
+        assertion:
+          type: string
+          description: Compact JWS. Returned once. Never log or put in a URL.
+        tokenId: {type: string, format: uuid}
+        audience: {type: string, example: flowforge}
+        issuer: {type: string}
+        subject: {type: string}
+        tenantId: {type: string, format: uuid}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        capabilities:
+          type: array
+          items: {type: string}
+        notBefore: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        keyId: {type: string}
+        algorithm: {type: string, example: EdDSA}
+        displayName: {type: string}
+    RotateEmbedKeyRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [register-overlap, retire]
+          default: register-overlap
+        kid:
+          type: string
+          description: Required for retire when publicJwk.kid is omitted.
+        publicJwk:
+          type: object
+          description: Public OKP/Ed25519 JWK only. Never include `d`.
+          properties:
+            kty: {type: string, enum: [OKP]}
+            crv: {type: string, enum: [Ed25519]}
+            x: {type: string}
+            kid: {type: string}
+            use: {type: string, enum: [sig]}
+            alg: {type: string, enum: [EdDSA]}
+        overlapUntil:
+          type: string
+          format: date-time
+          description: |
+            Required on register-overlap. RFC3339 expiry for the overlap
+            verification window (must be in the future and no longer than
+            4h). Missing, zero, past, or farther-future is 400. After this
+            instant, exchange and JWKS drop the kid even if it is still in
+            an in-memory ring (verify refreshes from the store). The active
+            signing key is not an overlap key and does not use this field.
+    ExchangeEmbedAssertionRequest:
+      type: object
+      required: [assertion]
+      properties:
+        assertion:
+          type: string
+          description: Compact JWS from POST /embed/assertions. Body only — never a URL.
+        sdk:
+          type: string
+          example: embed.v1
+        hostIssuer:
+          type: string
+          description: |
+            Optional configured host issuer (same as X-FlowForge-Host-Issuer).
+            Must equal assertion iss when sent. Must agree with the header
+            when both are present.
+        hostContext:
+          type: string
+          enum: [embed, portal]
+          description: |
+            Optional path declaration (same as X-FlowForge-Host-Context).
+            Must agree with signed ctx when both are present.
+    EmbedExchangeResponse:
+      type: object
+      required: [session, principal, csrf_token, assertion, workspace, tenant, capabilities]
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        principal:
+          $ref: "#/components/schemas/User"
+        csrf_token:
+          type: string
+        assertion:
+          $ref: "#/components/schemas/EmbedAssertionPublic"
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+        capabilities:
+          type: array
+          items: {type: string}
+    EmbedAssertionPublic:
+      type: object
+      description: Secret-free assertion metadata. Never includes the compact JWS or private keys.
+      required: [sdk, tokenId, issuer, audience, subject, tenantId, workbenchKey, capabilities]
+      properties:
+        sdk: {type: string}
+        tokenId: {type: string, format: uuid}
+        issuer: {type: string}
+        audience: {type: string}
+        subject: {type: string}
+        tenantId: {type: string, format: uuid}
+        workbenchKey: {type: string}
+        workspaceId: {type: string, format: uuid}
+        capabilities:
+          type: array
+          items: {type: string}
+        notBefore: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        keyId: {type: string}
+        algorithm: {type: string}
+        displayName: {type: string}
+    WorkflowFieldError:
+      type: object
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          example: spec.nodes[0].with.namespace
+        line:
+          type: integer
+        column:
+          type: integer
+        code:
+          type: string
+          example: invalid-uuid
+        message:
+          type: string
+    WorkflowPort:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [object, string, integer, boolean, any]
+        required:
+          type: boolean
+        classification:
+          type: string
+          enum: [public, internal, confidential, secret, inherit]
+          description: Port data classification. `inherit` copies the inbound label. `secret` is never a legal payload.
+        maxBytes:
+          type: integer
+        description:
+          type: string
+    WorkflowWithField:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        required:
+          type: boolean
+        enum:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+    WorkflowNodePolicy:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+        retrySafe:
+          type: boolean
+        sideEffects:
+          type: boolean
+        idempotent:
+          type: boolean
+        cancellation:
+          type: string
+        verification:
+          type: string
+        defaultMaxAttempts:
+          type: integer
+    WorkflowNodeBounds:
+      type: object
+      properties:
+        maxInputBytes:
+          type: integer
+        maxOutputBytes:
+          type: integer
+        maxWithBytes:
+          type: integer
+        maxAggregationItems:
+          type: integer
+        maxDurationSeconds:
+          type: integer
+    WorkflowRedactionPolicy:
+      type: object
+      properties:
+        auditFields:
+          type: array
+          items:
+            type: string
+        redactInputs:
+          type: boolean
+        redactOutputs:
+          type: boolean
+        strategy:
+          type: string
+    WorkflowCatalog:
+      type: object
+      required: [apiVersion, triggers, nodes]
+      properties:
+        apiVersion:
+          type: string
+          example: flowforge/v1
+        rules:
+          type: object
+          properties:
+            triggersAreWorkflowLevel:
+              type: boolean
+            graphNodesExcludeTriggers:
+              type: boolean
+            unsupportedPhasesRejected:
+              type: boolean
+        triggers:
+          type: array
+          items:
+            type: object
+            required: [type, phase]
+            properties:
+              type:
+                type: string
+              phase:
+                type: string
+                enum: [core, next, provider]
+              outputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+              title:
+                type: string
+              description:
+                type: string
+              allowedWith:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowWithField"
+              bounds:
+                $ref: "#/components/schemas/WorkflowNodeBounds"
+              redaction:
+                $ref: "#/components/schemas/WorkflowRedactionPolicy"
+              start:
+                type: object
+                description: E10.1 authenticated manual-start contract for the run dialog.
+                properties:
+                  route:
+                    type: string
+                  method:
+                    type: string
+                  permission:
+                    type: string
+                  csrf:
+                    type: boolean
+                  publishedVersionRequired:
+                    type: boolean
+                  versionField:
+                    type: string
+                  inputField:
+                    type: string
+                  schemaFields:
+                    type: array
+                    items:
+                      type: string
+                  idempotencyKeyField:
+                    type: string
+                  idempotencyHeader:
+                    type: string
+                  idempotencyKeyRequired:
+                    type: boolean
+                  idempotencyKeyPattern:
+                    type: string
+                  maxInputBytes:
+                    type: integer
+                  createdStatus:
+                    type: integer
+                  replayStatus:
+                    type: integer
+                  conflictStatus:
+                    type: integer
+                  policyDenyStatus:
+                    type: integer
+                  approvalRequiredStatus:
+                    type: integer
+                  draftStatus:
+                    type: integer
+                  help:
+                    type: string
+              ingress:
+                type: object
+                description: E10.2 public webhook ingress contract. No session or CSRF.
+                properties:
+                  route: {type: string}
+                  method: {type: string}
+                  public: {type: boolean}
+                  csrf: {type: boolean}
+                  session: {type: boolean}
+                  signatureHeader: {type: string}
+                  timestampHeader: {type: string}
+                  signatureVersion: {type: string}
+                  idempotencyHeader: {type: string}
+                  maxBodyBytes: {type: integer}
+                  maxInputBytes: {type: integer}
+                  clockSkewSeconds: {type: integer}
+                  replayRetentionSeconds: {type: integer}
+                  defaultRatePerMinute: {type: integer}
+                  defaultWorkspaceRatePerMinute: {type: integer}
+                  defaultMaxConcurrency: {type: integer}
+                  defaultWorkspaceMaxConcurrency: {type: integer}
+                  contentTypes:
+                    type: array
+                    items: {type: string}
+                  createdStatus: {type: integer}
+                  replayStatus: {type: integer}
+                  conflictStatus: {type: integer}
+                  unauthorizedStatus: {type: integer}
+                  rateLimitedStatus: {type: integer}
+                  tooLargeStatus: {type: integer}
+                  disabledStatus: {type: integer}
+                  help: {type: string}
+              admin:
+                type: object
+                description: E10.2 cookie-session CRUD/rotate contract. Never returns plaintext secrets.
+                properties:
+                  listRoute: {type: string}
+                  createRoute: {type: string}
+                  itemRoute: {type: string}
+                  rotateRoute: {type: string}
+                  disableRoute: {type: string}
+                  enableRoute: {type: string}
+                  deleteRoute: {type: string}
+                  permission: {type: string}
+                  viewPermission: {type: string}
+                  csrf: {type: boolean}
+                  secretNeverReturned: {type: boolean}
+                  help: {type: string}
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [type, phase]
+            properties:
+              type:
+                type: string
+              phase:
+                type: string
+                enum: [core, next, provider]
+              title:
+                type: string
+              description:
+                type: string
+              inputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+              outputs:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowPort"
+              requiredWith:
+                type: array
+                items:
+                  type: string
+              allowedWith:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowWithField"
+              policy:
+                $ref: "#/components/schemas/WorkflowNodePolicy"
+              bounds:
+                $ref: "#/components/schemas/WorkflowNodeBounds"
+              redaction:
+                $ref: "#/components/schemas/WorkflowRedactionPolicy"
+    WorkflowDefinitionEnvelope:
+      type: object
+      required: [definitionYaml]
+      properties:
+        definitionYaml:
+          type: string
+          description: Canonical flowforge/v1 YAML document. Additive optional metadata.ui.layout (D1) is stored and returned; the executor ignores it.
+    WorkflowUILayoutNode:
+      type: object
+      required: [x, y]
+      additionalProperties: false
+      properties:
+        x:
+          type: number
+          description: Finite canvas X. Non-finite values are treated as absent (auto-layout).
+        y:
+          type: number
+          description: Finite canvas Y. Non-finite values are treated as absent (auto-layout).
+    WorkflowUILayout:
+      type: object
+      required: [version]
+      additionalProperties: false
+      description: >
+        Optional non-authoritative canvas positions (D1 / issue #238). Node keys
+        are a subset of spec.nodes[].id. Extra keys are stripped. Missing keys
+        auto-place. Layout never carries edges, types, with, credentials, or
+        ports. Executor, POST /policy/evaluate, port typing, and dispatch ignore
+        it. Chloe UI (#238) reads this field; missing/invalid → auto-layout.
+      properties:
+        version:
+          type: integer
+          enum: [1]
+        nodes:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/WorkflowUILayoutNode"
+    WorkflowUI:
+      type: object
+      additionalProperties: false
+      properties:
+        layout:
+          $ref: "#/components/schemas/WorkflowUILayout"
+    WorkflowSummary:
+      type: object
+      required: [apiVersion, name, triggers, nodes, edges, outputs]
+      properties:
+        apiVersion:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ui:
+          $ref: "#/components/schemas/WorkflowUI"
+        triggers:
+          type: array
+          items:
+            type: object
+            required: [id, type]
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, type, name]
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+              name:
+                type: string
+        edges:
+          type: array
+          items:
+            type: object
+            required: [from, to]
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [name, from]
+            properties:
+              name:
+                type: string
+              from:
+                type: string
+    WorkflowValidateResult:
+      type: object
+      required: [valid, summary, warnings]
+      properties:
+        valid:
+          type: boolean
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+    WorkflowNormalizeResult:
+      type: object
+      required: [definitionYaml, digest, summary, warnings]
+      properties:
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+          description: sha256 digest of normalized YAML
+          example: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+    WorkflowRecord:
+      type: object
+      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, published, archived]
+        draftRevision:
+          type: integer
+          format: int64
+        draftDigest:
+          type: string
+        latestVersionNumber:
+          type: integer
+        latestVersionId:
+          type: string
+          format: uuid
+        latestVersionDigest:
+          type: string
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null means Unfiled. Not stored in YAML.
+    WorkflowList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRecord"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    WorkflowDraft:
+      type: object
+      required: [workflowId, revision, definitionYaml, digest, summary, warnings, validationState, updatedAt]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFieldError"
+        validationState:
+          type: string
+          enum: [valid, invalid]
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    WorkflowDetail:
+      type: object
+      required: [workflow, draft]
+      properties:
+        workflow:
+          $ref: "#/components/schemas/WorkflowRecord"
+        draft:
+          $ref: "#/components/schemas/WorkflowDraft"
+    WorkflowVersion:
+      type: object
+      required: [id, workflowId, versionNumber, definitionYaml, digest, summary, publishNote, publishedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflowId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        definitionYaml:
+          type: string
+        digest:
+          type: string
+        summary:
+          $ref: "#/components/schemas/WorkflowSummary"
+        publishNote:
+          type: string
+        publishedBy:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+    WorkflowVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVersion"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    CreateWorkflowRequest:
+      type: object
+      required: [definitionYaml]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        definitionYaml:
+          type: string
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional. Missing or null files the workflow as Unfiled.
+    WorkflowFolder:
+      type: object
+      required: [id, workspaceId, parentId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+          description: Server-derived. Never accepted from the client on writes.
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null is a top-level folder.
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkflowFolderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowFolder"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    CreateWorkflowFolderRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+    UpdateWorkflowFolderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null re-parents to top-level. Omit to leave unchanged.
+    MoveWorkflowFolderRequest:
+      type: object
+      properties:
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null or omitted moves the workflow to Unfiled.
+    SaveDraftRequest:
+      type: object
+      required: [revision, definitionYaml]
+      properties:
+        revision:
+          type: integer
+          format: int64
+        definitionYaml:
+          type: string
+    PublishWorkflowRequest:
+      type: object
+      properties:
+        revision:
+          type: integer
+          format: int64
+          description: Optional optimistic lock against the current draft revision
+        note:
+          type: string
+    PublishWorkflowResult:
+      type: object
+      required: [workflow, version]
+      properties:
+        workflow:
+          $ref: "#/components/schemas/WorkflowRecord"
+        version:
+          $ref: "#/components/schemas/WorkflowVersion"
+        pins:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpsPin"
+        scriptArtifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScriptVersionPin"
+    CompareRef:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [draft, version]
+        versionId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+    CompareWorkflowRequest:
+      type: object
+      required: [left, right]
+      properties:
+        left:
+          $ref: "#/components/schemas/CompareRef"
+        right:
+          $ref: "#/components/schemas/CompareRef"
+    CompareChange:
+      type: object
+      required: [path, op]
+      properties:
+        path:
+          type: string
+        op:
+          type: string
+          enum: [add, remove, replace]
+        left: {}
+        right: {}
+    CompareWorkflowResult:
+      type: object
+      required: [equal, digestMatch, left, right, leftDigest, rightDigest, changes]
+      properties:
+        equal:
+          type: boolean
+        digestMatch:
+          type: boolean
+        left:
+          $ref: "#/components/schemas/CompareRef"
+        right:
+          $ref: "#/components/schemas/CompareRef"
+        leftDigest:
+          type: string
+        rightDigest:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompareChange"
+    RestoreDraftRequest:
+      type: object
+      properties:
+        expectedRevision:
+          type: integer
+          format: int64
+    WorkflowExport:
+      type: object
+      required: [workflowId, versionId, versionNumber, digest, filename, definitionYaml]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        digest:
+          type: string
+        filename:
+          type: string
+        definitionYaml:
+          type: string
+    StartExecutionRequest:
+      type: object
+      required: [workflowVersionId]
+      properties:
+        workflowVersionId:
+          type: string
+          format: uuid
+          description: Published workflow version. Drafts and omitted values are 400.
+        idempotencyKey:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._~:-]{1,128}$'
+          description: Required for the E10.1 run dialog. Also accepted as Idempotency-Key.
+        input:
+          type: object
+          additionalProperties: true
+          description: Bounded typed start input (16 KiB). Validated against the published manual trigger schema when declared. Secrets are redacted before persist.
+        correlationId:
+          type: string
+        triggerId:
+          type: string
+          format: uuid
+    WorkflowExecution:
+      type: object
+      required: [id, workflowId, workflowVersionId, workflowDigest, status, createdAt, input, policySnapshot, replayed]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflowId:
+          type: string
+          format: uuid
+        workflowSlug:
+          type: string
+        workflowName:
+          type: string
+        workflowVersionId:
+          type: string
+          format: uuid
+        workflowDigest:
+          type: string
+        triggerId:
+          type: string
+        status:
+          type: string
+          enum: [queued, pinned, running, waiting, succeeded, failed, canceled, indeterminate]
+        idempotencyKey:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        policySnapshot:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
+        requestedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        retentionUntil:
+          type: string
+          format: date-time
+        replayed:
+          type: boolean
+        statusReason:
+          type: string
+          enum: [no-worker]
+          description: >
+            Additive operator hint when status is still queued and no job has
+            been claimed after 15s. Does not change status or fencing.
+            Chloe can show “no worker is claiming jobs”.
+        pins:
+          type: array
+          items: {$ref: "#/components/schemas/OpsPin"}
+        steps:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionStep"}
+        artifacts:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionArtifact"}
+          description: Artifact metadata only (E5.3). Never includes storage locators or credentials.
+        jobs:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionJob"}
+        auditEvents:
+          type: array
+          items: {$ref: "#/components/schemas/AuditEvent"}
+    WebhookTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, publicId, ingressPath, workflowId, workflowVersionId, type, status, secretCredentialId, contentType, fieldMapping]
+      properties:
+        id: {type: string, format: uuid}
+        publicId: {type: string, pattern: '^wh_[0-9a-f]{64}$'}
+        ingressPath: {type: string, example: /api/v1/hooks/wh_0123}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        type: {type: string, enum: [webhook]}
+        status: {type: string, enum: [enabled, disabled]}
+        secretCredentialId: {type: string, format: uuid, description: Vault webhook_secret reference. Never a plaintext secret.}
+        contentType: {type: string, example: application/json}
+        fieldMapping:
+          type: object
+          additionalProperties: {type: string}
+          description: Destination field → dotted source path. Empty mapping copies the root JSON object.
+        maxBodyBytes: {type: integer, minimum: 1, maximum: 262144}
+        clockSkewSeconds: {type: integer, minimum: 1, maximum: 3600}
+        replayRetentionSeconds: {type: integer, minimum: 1, maximum: 7200}
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 600}
+        workspaceRatePerMinute: {type: integer, minimum: 1, maximum: 3000}
+        maxConcurrency: {type: integer, minimum: 1, maximum: 20}
+        workspaceMaxConcurrency: {type: integer, minimum: 1, maximum: 100}
+        createdBy: {type: string}
+        updatedBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+      description: Safe webhook trigger metadata. The API never returns the HMAC secret.
+    WebhookTriggerWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [webhook]}
+        workflowVersionId: {type: string, format: uuid, description: Published version UUID. Drafts are 400.}
+        secretCredentialId: {type: string, format: uuid, description: Existing vault webhook_secret. Omit when creating via secret.}
+        contentType: {type: string, example: application/json}
+        fieldMapping:
+          type: object
+          additionalProperties: {type: string}
+        maxBodyBytes: {type: integer, minimum: 1, maximum: 262144}
+        clockSkewSeconds: {type: integer, minimum: 1, maximum: 3600}
+        replayRetentionSeconds: {type: integer, minimum: 1, maximum: 7200}
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 600}
+        workspaceRatePerMinute: {type: integer, minimum: 1, maximum: 3000}
+        maxConcurrency: {type: integer, minimum: 1, maximum: 20}
+        workspaceMaxConcurrency: {type: integer, minimum: 1, maximum: 100}
+        secret:
+          type: object
+          additionalProperties: {type: string}
+          description: Create only. `{secret:"..."}` stores a new webhook_secret. Rejected on PATCH; use rotate.
+        id: {type: string, description: Rejected if present}
+        workspace_id: {type: string, description: Rejected if present}
+        workspaceId: {type: string, description: Rejected if present}
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [id, workflowId, workflowVersionId, timezone, overlapPolicy, misfirePolicy, catchUp, status, nextFireAt]
+      properties:
+        id: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        triggerId: {type: string}
+        timezone: {type: string, description: IANA timezone. Required.}
+        cron: {type: string}
+        interval: {type: string}
+        overlapPolicy: {type: string, enum: [skip, reject, queue]}
+        misfirePolicy: {type: string, enum: [ignore, fire-once]}
+        catchUp: {type: integer, minimum: 0, maximum: 5}
+        status: {type: string, enum: [enabled, disabled]}
+        nextFireAt: {type: string, format: date-time}
+        lastFiredAt: {type: string, format: date-time}
+        lastExecutionId: {type: string, format: uuid}
+        lastError: {type: string}
+        createdBy: {type: string}
+        updatedBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ScheduleWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid, description: Published version UUID. Drafts are 400.}
+        triggerId: {type: string}
+        timezone: {type: string, description: IANA name. Required on create.}
+        cron: {type: string}
+        interval: {type: string}
+        overlapPolicy: {type: string, enum: [skip, reject, queue]}
+        misfirePolicy: {type: string, enum: [ignore, fire-once]}
+        catchUp: {type: integer, minimum: 0, maximum: 5}
+        id: {type: string, description: Rejected if present}
+        workspace_id: {type: string, description: Rejected if present}
+        workspaceId: {type: string, description: Rejected if present}
+    ScheduleCatalog:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items: {type: string}
+        overlapPolicies:
+          type: array
+          items: {type: string}
+        misfirePolicies:
+          type: array
+          items: {type: string}
+        defaultOverlapPolicy: {type: string}
+        defaultMisfirePolicy: {type: string}
+        defaultCatchUp: {type: integer}
+        maxCatchUp: {type: integer}
+        timezoneRequired: {type: boolean}
+        safeDefaults: {type: string}
+        failClosedUnpublished: {type: boolean}
+        failClosedDisabled: {type: boolean}
+        idempotencyKeyPattern: {type: string}
+        dispatchRoute: {type: string}
+        permission: {type: string}
+        viewPermission: {type: string}
+        dispatchPermission: {type: string}
+        csrf: {type: boolean}
+        help: {type: string}
+    ExecutionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/WorkflowExecution"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    ExecutionStep:
+      type: object
+      required: [id, executionId, nodeId, nodeType, attempt, status, input, output, error]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        nodeId: {type: string}
+        nodeType: {type: string}
+        attempt: {type: integer}
+        status:
+          type: string
+          enum: [queued, running, waiting, succeeded, failed, canceled, indeterminate]
+        leaseId: {type: string}
+        fencingToken: {type: integer}
+        idempotencyKey: {type: string}
+        policySnapshot: {type: object, additionalProperties: true}
+        targetSnapshot: {type: object, additionalProperties: true}
+        input: {type: object, additionalProperties: true}
+        output: {type: object, additionalProperties: true, description: "Redacted, size-bounded step output (E5.3)."}
+        error: {type: object, additionalProperties: true}
+        outputTruncated: {type: boolean, description: "True when output or error maps were truncated for the response."}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExecutionStepList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionStep"}
+    ExecutionJob:
+      type: object
+      required: [id, executionId, executionStepId, status, availableAt, attempt]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        executionStepId: {type: string, format: uuid}
+        status:
+          type: string
+          enum: [queued, claimed, running, waiting, succeeded, failed, canceled, indeterminate]
+        availableAt: {type: string, format: date-time}
+        leaseExpiresAt: {type: string, format: date-time}
+        heartbeatAt: {type: string, format: date-time}
+        workerId: {type: string}
+        fencingToken: {type: integer}
+        attempt: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExecutionJobList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionJob"}
+    JobBinding:
+      type: object
+      required: [workspaceId, executionId, jobId, stepId, workflowId, workflowVersionId, workflowDigest, policyDigest, fencingToken, expiresAt, leaseExpiresAt]
+      properties:
+        workspaceId: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        jobId: {type: string, format: uuid}
+        stepId: {type: string, format: uuid}
+        workflowId: {type: string, format: uuid}
+        workflowVersionId: {type: string, format: uuid}
+        workflowDigest: {type: string}
+        policyDigest: {type: string}
+        correlationId: {type: string}
+        fencingToken: {type: integer}
+        expiresAt: {type: string, format: date-time}
+        leaseExpiresAt: {type: string, format: date-time}
+    ClaimJobRequest:
+      type: object
+      required: [workerId]
+      properties:
+        workerId: {type: string, minLength: 1, maxLength: 200}
+        leaseSeconds: {type: integer, minimum: 1, maximum: 300}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    ClaimJobResponse:
+      type: object
+      required: [claimed, jobToken, binding, job, step, execution]
+      properties:
+        claimed: {type: boolean}
+        jobToken: {type: string}
+        binding: {$ref: "#/components/schemas/JobBinding"}
+        job: {$ref: "#/components/schemas/ExecutionJob"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+        recovered: {type: integer}
+    JobActionRequest:
+      type: object
+      required: [jobToken, workerId]
+      properties:
+        jobToken: {type: string}
+        workerId: {type: string}
+        fencingToken: {type: integer}
+        leaseSeconds: {type: integer, minimum: 1, maximum: 300}
+        output: {type: object, additionalProperties: true}
+        error: {type: object, additionalProperties: true}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    DispatchJobResponse:
+      type: object
+      required: [job, step, execution]
+      properties:
+        job: {$ref: "#/components/schemas/ExecutionJob"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+    RecoverJobsResponse:
+      type: object
+      required: [recovered]
+      properties:
+        recovered: {type: integer}
+    ExecutionArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, executionId, kind, filename, contentType, digest, sizeBytes, contentClassification, redacted, expiresAt, createdAt, updatedAt, legalHold]
+      properties:
+        id: {type: string, format: uuid}
+        executionId: {type: string, format: uuid}
+        executionStepId: {type: string, format: uuid}
+        kind: {type: string, enum: [log, output, file]}
+        filename: {type: string}
+        contentType: {type: string}
+        digest: {type: string, description: "sha256:<hex> of the scanned payload"}
+        sizeBytes: {type: integer, format: int64}
+        contentClassification: {type: string, enum: [public, internal, confidential]}
+        redacted: {type: boolean}
+        expiresAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        legalHold: {type: boolean}
+        legalHoldReason: {type: string}
+        legalHoldBy: {type: string, format: uuid}
+        legalHoldAt: {type: string, format: date-time}
+      description: |
+        Artifact metadata. The API never returns `storageRef`, envelope
+        ciphertext, DEK material, bucket names, or durable public URLs.
+    ExecutionArtifactList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExecutionArtifact"}
+    UploadArtifactRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [log, output, file]}
+        filename: {type: string}
+        contentType: {type: string, enum: [text/plain, application/json, application/octet-stream]}
+        contentClassification: {type: string, enum: [public, internal, confidential]}
+        content: {type: string, description: "UTF-8 artifact body. Scanned before persist."}
+        contentBase64: {type: string, description: "Optional base64 body when content is binary."}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+        storageRef: {type: string, description: "Rejected if present"}
+        url: {type: string, description: "Rejected if present"}
+        bucket: {type: string, description: "Rejected if present"}
+        key: {type: string, description: "Rejected if present"}
+    ArtifactDownload:
+      type: object
+      additionalProperties: false
+      required: [id, artifactId, expiresAt, href, method]
+      properties:
+        id: {type: string, format: uuid}
+        artifactId: {type: string, format: uuid}
+        expiresAt: {type: string, format: date-time}
+        href: {type: string, description: "Same-origin path `/api/v1/artifact-downloads/{id}`."}
+        method: {type: string, enum: [GET]}
+    ArtifactDownloadEnvelope:
+      type: object
+      required: [download]
+      properties:
+        download: {$ref: "#/components/schemas/ArtifactDownload"}
+    StepLogs:
+      type: object
+      required: [lines, offset, nextOffset, truncated, maxBytes]
+      properties:
+        lines: {type: array, items: {type: string}}
+        offset: {type: integer}
+        nextOffset: {type: integer}
+        truncated: {type: boolean}
+        maxBytes: {type: integer}
+    LegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [hold]
+      properties:
+        hold: {type: boolean}
+        reason: {type: string, description: "Required when placing a hold."}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetentionPurgeResult:
+      type: object
+      required: [purged, held, executions, audits]
+      properties:
+        purged: {type: integer, description: "Artifact metadata+payload rows deleted"}
+        held: {type: integer, description: "Expired artifacts skipped because of legal hold"}
+        executions: {type: integer, description: "Expired executions purged"}
+        audits: {type: integer, description: "Expired audit rows purged"}
+    EmptyDispatchRequest:
+      type: object
+      properties:
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetryRequest:
+      type: object
+      properties:
+        stepId: {type: string, format: uuid}
+        id: {type: string, description: "Rejected if present"}
+        workspaceId: {type: string, description: "Rejected if present"}
+    RetryResponse:
+      type: object
+      required: [execution, step, job]
+      properties:
+        execution: {$ref: "#/components/schemas/WorkflowExecution"}
+        step: {$ref: "#/components/schemas/ExecutionStep"}
+        job: {$ref: "#/components/schemas/ExecutionJob"}
+    AuditEvent:
+      type: object
+      required: [id, action, resourceType, outcome, occurredAt, details, hostContext]
+      properties:
+        id: {type: string, format: uuid}
+        actorId: {type: string}
+        hostContext: {type: object, additionalProperties: true}
+        action: {type: string}
+        resourceType: {type: string}
+        resourceId: {type: string}
+        outcome: {type: string}
+        correlationId: {type: string}
+        details: {type: object, additionalProperties: true}
+        occurredAt: {type: string, format: date-time}
+        retentionUntil: {type: string, format: date-time}
+    AuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AuditEvent"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    OperationalAlert:
+      type: object
+      required: [id, kind, severity, outcome, code, occurredAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [authorization, replay, policy, redaction]}
+        severity: {type: string, enum: [warning, critical]}
+        action: {type: string}
+        resourceType: {type: string}
+        resourceId: {type: string, format: uuid}
+        correlationId: {type: string}
+        requestId: {type: string}
+        actorId: {type: string, format: uuid}
+        outcome: {type: string}
+        code: {type: string}
+        acknowledgedAt: {type: string, format: date-time}
+        acknowledgedBy: {type: string, format: uuid}
+        occurredAt: {type: string, format: date-time}
+    OperationalAlertList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OperationalAlert"}
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    CurrentWorkspace:
+      type: object
+      required: [workspace, tenant, principal, roles, permissions]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+        principal:
+          $ref: "#/components/schemas/User"
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    Member:
+      type: object
+      required: [user, roles, permissions]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    MemberList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    MembershipList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [workspace, tenant, roles, permissions]
+            properties:
+              workspace:
+                $ref: "#/components/schemas/Workspace"
+              tenant:
+                $ref: "#/components/schemas/Tenant"
+              roles:
+                type: array
+                items:
+                  type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    PermissionMatrix:
+      type: object
+      required: [permissions, roles]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [key, family]
+            properties:
+              key:
+                type: string
+              family:
+                type: string
+                enum: [view, edit, publish, execute, credential, approval, administration]
+        roles:
+          type: array
+          items:
+            type: object
+            required: [key, description, permissions]
+            properties:
+              key:
+                type: string
+              description:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    RoleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [key]
+            properties:
+              key:
+                type: string
+              description:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    CredentialType:
+      type: string
+      enum: [kubernetes, ssh_private_key, token, webhook_secret, provider]
+    Credential:
+      type: object
+      description: Safe credential metadata. Never includes secret, ciphertext, or DEK fields.
+      required: [id, type, displayName, status, tags, metadata, fingerprint, lastTestStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/CredentialType"
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        fingerprint:
+          type: string
+        encryptionVersion:
+          type: integer
+        keyReference:
+          type: string
+        lastTestStatus:
+          type: string
+          enum: [untested, passed, failed]
+        lastTestedAt:
+          type: string
+          format: date-time
+        lastTestReason:
+          type: string
+        lastUsedAt:
+          type: string
+          format: date-time
+        lastUsedBy:
+          type: string
+        useCount:
+          type: integer
+        rotatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        disabledAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        permittedActions:
+          type: array
+          items:
+            type: string
+    CredentialList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Credential"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    CreateCredentialRequest:
+      type: object
+      required: [type, displayName, secret]
+      properties:
+        type:
+          $ref: "#/components/schemas/CredentialType"
+        displayName:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        secret:
+          type: object
+          additionalProperties:
+            type: string
+          description: Plaintext accepted only on create/rotate; never returned.
+    UpdateCredentialRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    CredentialCatalog:
+      type: object
+      required: [types]
+      properties:
+        types:
+          type: array
+          items:
+            type: object
+            required: [type, displayName, secretFields]
+            properties:
+              type:
+                $ref: "#/components/schemas/CredentialType"
+              displayName:
+                type: string
+              secretFields:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CredentialField"
+              metadataFields:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CredentialField"
+    CredentialField:
+      type: object
+      required: [name, input]
+      properties:
+        name:
+          type: string
+        input:
+          type: string
+        required:
+          type: boolean
+    CredentialTestResponse:
+      type: object
+      required: [result, credential]
+      properties:
+        result:
+          type: object
+          required: [status, reason, checkedAt]
+          properties:
+            status:
+              type: string
+              enum: [passed, failed]
+            reason:
+              type: string
+            checkedAt:
+              type: string
+              format: date-time
+        credential:
+          $ref: "#/components/schemas/Credential"
+    CredentialRef:
+      type: object
+      required: [kind, workflowId]
+      properties:
+        kind:
+          type: string
+          enum: [draft, version, execution, trigger]
+        workflowId:
+          type: string
+        workflowSlug:
+          type: string
+        workflowName:
+          type: string
+        versionId:
+          type: string
+        versionNumber:
+          type: integer
+        executionId:
+          type: string
+        executionStatus:
+          type: string
+    CredentialUsage:
+      type: object
+      required: [credentialId, drafts, versions, executions, triggers]
+      properties:
+        credentialId:
+          type: string
+        lastUsedAt:
+          type: string
+          format: date-time
+        lastUsedBy:
+          type: string
+        useCount:
+          type: integer
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        executions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        triggers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+    CredentialDeletionImpact:
+      type: object
+      required: [credentialId, displayName, status, canDelete, drafts, versions, activeExecutions, triggers]
+      properties:
+        credentialId:
+          type: string
+        displayName:
+          type: string
+        status:
+          type: string
+        canDelete:
+          type: boolean
+        blockReason:
+          type: string
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        activeExecutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+        triggers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialRef"
+    CredentialEvent:
+      type: object
+      required: [id, credentialId, eventType, details, occurredAt]
+      properties:
+        id:
+          type: string
+        credentialId:
+          type: string
+        eventType:
+          type: string
+        actorId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        occurredAt:
+          type: string
+          format: date-time
+    CredentialEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialEvent"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    IsolationKind:
+      type: string
+      enum: [credential, artifact, job, cache, realtime, audit]
+    WorkspaceRecord:
+      type: object
+      required: [workspace_id, id, kind, name, created_at]
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/IsolationKind"
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    WorkspaceRecordList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceRecord"
+    WorkspaceRecordLink:
+      type: object
+      required: [workspace_id, id, parent_id, kind, created_at]
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/IsolationKind"
+        created_at:
+          type: string
+          format: date-time
+    CacheValue:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+    PermissionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [key]
+            properties:
+              key:
+                type: string
+  responses:
+    InvalidWorkflow:
+      description: Workflow YAML failed parse, normalization, or graph validation
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:invalid-workflow
+            title: Invalid Workflow
+            status: 400
+            detail: The workflow definition is not valid.
+            instance: /api/v1/workflows/validate
+            code: invalid-workflow
+            request_id: 0123456789abcdef0123456789abcdef
+            errors:
+              - path: spec.edges[0].from
+                line: 24
+                column: 11
+                code: cycle
+                message: Workflow graph contains a cycle.
+    InvalidRequest:
+      description: Malformed JSON, missing body, or unsupported Content-Type
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:invalid-request
+            title: Invalid Request
+            status: 400
+            detail: Request body is not valid JSON.
+            instance: /api/v1/example
+            code: invalid-request
+            request_id: 0123456789abcdef0123456789abcdef
+    Unauthenticated:
+      description: Missing or invalid credentials
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:unauthenticated
+            title: Unauthenticated
+            status: 401
+            detail: Authentication is required.
+            instance: /api/v1/example
+            code: unauthenticated
+            request_id: 0123456789abcdef0123456789abcdef
+    Forbidden:
+      description: Authenticated caller is not authorized
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:forbidden
+            title: Forbidden
+            status: 403
+            detail: You are not authorized to perform this action.
+            instance: /api/v1/example
+            code: forbidden
+            request_id: 0123456789abcdef0123456789abcdef
+    Conflict:
+      description: Unique identity collision or last-admin protection
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:conflict
+            title: Conflict
+            status: 409
+            detail: A unique identity already exists.
+            instance: /api/v1/workspaces
+            code: conflict
+            request_id: 0123456789abcdef0123456789abcdef
+    FolderNotEmpty:
+      description: Folder still has child folders or workflows. Never cascade-deletes workflows.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - type: object
+                required: [workflowCount, childFolderCount]
+                properties:
+                  workflowCount: {type: integer}
+                  childFolderCount: {type: integer}
+          example:
+            type: urn:flowforge:problem:conflict
+            title: Conflict
+            status: 409
+            detail: Move or delete contents first.
+            instance: /api/v1/workflow-folders/11111111-1111-4111-8111-111111111111
+            code: conflict
+            request_id: 0123456789abcdef0123456789abcdef
+            workflowCount: 2
+            childFolderCount: 1
+    NotFound:
+      description: The requested path does not exist
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:not-found
+            title: Not Found
+            status: 404
+            detail: The requested path does not exist.
+            instance: /api/v1/missing
+            code: not-found
+            request_id: 0123456789abcdef0123456789abcdef
+    MethodNotAllowed:
+      description: HTTP method is not allowed for this path
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+        Allow:
+          schema:
+            type: string
+            example: GET, HEAD
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:method-not-allowed
+            title: Method Not Allowed
+            status: 405
+            detail: The POST method is not allowed for this path.
+            instance: /api/v1/health
+            code: method-not-allowed
+            request_id: 0123456789abcdef0123456789abcdef
+    RequestTooLarge:
+      description: Request body exceeds 1048576 bytes
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:request-too-large
+            title: Request Too Large
+            status: 413
+            detail: The request body exceeds the 1048576 byte limit.
+            instance: /api/v1/health
+            code: request-too-large
+            request_id: 0123456789abcdef0123456789abcdef
+    RateLimited:
+      description: |
+        Rate or concurrency limit exceeded. `Retry-After` is seconds.
+        Workspace quotas cover mutating routes, expensive lists, artifact
+        downloads, and execution starts. Login, embed mint/exchange, and
+        machine token keep separate budgets. Webhook ingress keeps its own limit.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:rate-limited
+            title: Rate Limited
+            status: 429
+            detail: Webhook rate or concurrency limit was exceeded.
+            instance: /api/v1/hooks/wh_example
+            code: rate-limited
+            request_id: 0123456789abcdef0123456789abcdef
+    InternalError:
+      description: Unexpected server failure
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:internal-error
+            title: Internal Server Error
+            status: 500
+            detail: An unexpected error occurred.
+            instance: /api/v1/health
+            code: internal-error
+            request_id: 0123456789abcdef0123456789abcdef
+    DependencyUnavailable:
+      description: Required dependency is not configured or reachable
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:dependency-unavailable
+            title: Dependency Unavailable
+            status: 503
+            detail: Credential encryption key is not configured.
+            instance: /api/v1/credentials
+            code: dependency-unavailable
+            request_id: 0123456789abcdef0123456789abcdef

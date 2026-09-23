@@ -1,0 +1,76 @@
+# OpenAPI info and servers. Not a route list.
+openapi: 3.0.3
+info:
+  title: FlowForge Control Plane API
+  version: 0.26.0
+  description: |
+    Versioned control-plane API. Conventions:
+
+    - Correlation: every response sets `X-Request-ID`. A caller value is
+      accepted only when it is 16–128 ASCII letters, digits, or hyphens;
+      otherwise the API generates one. The same id is returned in problem
+      documents as `request_id` and in structured request logs.
+    - Errors: 4xx/5xx responses use RFC 9457 `application/problem+json`
+      (`type`, `title`, `status`, `detail`, `instance`) plus `code` and
+      `request_id`. Problem details never echo request bodies, credentials,
+      or other secret material.
+      - Invalid requests use `invalid-request` (400) or `request-too-large` (413).
+      Invalid workflow YAML uses `invalid-workflow` (400) with an `errors`
+      array (path, line, column, code, message). Authenticated-but-failed
+      flows use `unauthenticated` (401) and `forbidden` (403). Unique
+      identity collisions, draft revision mismatches, and duplicate
+      published digests use `conflict` (409). Workspace quotas use
+      `rate-limited` (429) with `Retry-After` on mutating routes,
+      expensive lists, artifact downloads, and execution start. Open
+      executions are also capped per workspace. `POST /login`, embed
+      mint/exchange, and `POST /machine/token` keep separate budgets
+      and are not that bucket. A rate-store failure is
+      `dependency-unavailable` (503).
+    - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
+      standalone `POST /login` (local email/username + password) or
+      `POST /embed/exchange`. Trusted-dev `POST /session` stays non-prod
+      fail-closed. State-changing cookie requests require `X-CSRF-Token`.
+      Production does not accept self-asserted `X-FlowForge-Issuer` /
+      `X-FlowForge-Subject` as authentication. That path exists only when
+      `TRUSTED_DEV_IDENTITY_HEADERS` is explicitly enabled in a non-production
+      `APP_ENV`. A session cookie wins; conflicting identity headers fail
+      closed. OIDC Authorization Code + PKCE is `POST /oidc/start` and
+      `POST /oidc/callback` (enterprise IdP). It mints the same
+      `ff_session` / `ff_csrf` pair as local login. `client_secret` and
+      the PKCE verifier stay on the server. MFA step-up (`GET`/`POST`
+      `/session/mfa`) gates `platform.administer` and `credential.*` on
+      local-login and OIDC sessions (`403` `mfa-required`). Trusted-dev,
+      machine, and embed sessions are not that gate. There is no
+      IdP-admin API.
+      `POST /tenants` and `POST /workspaces` require
+      `platform.administer` (`PLATFORM_ADMINS`) on a non-embed session.
+      Embed-origin sessions are `403` and cannot bootstrap tenants or
+      sibling workbenches.
+    - Workspace identity is server-derived from `(tenant_id|tenant_slug,
+      workbench_key)`. A host-supplied workspace UUID is never the lookup key
+      and is rejected when it is the only identity or does not match resolution.
+    - Workspace-owned queries set transaction-local `app.workspace_id` only
+      after membership authorization. Cross-workspace reads, writes,
+      credential use, artifact access, and realtime subscribe fail closed.
+    - CORS is an exact origin allowlist (`CORS_ALLOWED_ORIGINS`). Empty
+      allowlist plus a foreign `Origin` fails closed. Wildcard credentialed
+      CORS is rejected at process start.
+    - Request bodies are capped at 1048576 bytes.
+    - OpenAPI is published at `/api/v1/openapi.yaml`, `/api/v1/openapi.json`,
+      and `/api/v1/swagger`. Those routes and `/metrics` require an
+      authenticated principal with `platform.administer` (`PLATFORM_ADMINS`)
+      or a machine principal granted `ops.metrics.read`. Scrapers mint
+      `ff_session` at `POST /machine/token` (`client_id` + secret or
+      signed assertion) and send `Authorization: Bearer <ff_session>` or
+      the `ff_session` cookie. That door is not `POST /login`, trusted-dev
+      `POST /session`, or `POST /embed/exchange`. `GET /health` and
+      `GET /readiness` stay unauthenticated for Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
+      (incomplete installs may call it without a session; complete requires
+      normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
+      `POST /bootstrap/admins` is wizard step 2 (B.3).
+      `POST /bootstrap/public-url` is wizard step 3 (B.4).
+      `POST /bootstrap/tls` is wizard step 4 (B.5 / B.7) and marks
+      bootstrap complete (`create-self-signed`, `upload`, or `skip`).
+      It must not be used to gate `/embed/v1`.
+servers:
+  - url: /api/v1

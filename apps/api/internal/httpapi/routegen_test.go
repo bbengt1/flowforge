@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -130,25 +131,51 @@ func TestRouteTableIsRegisteredAndClassified(t *testing.T) {
 
 func TestGeneratedArtifactsMatchRouteTable(t *testing.T) {
 	routes := Routes(nil)
+	docPath := filepath.Join("..", "..", "openapi", "document.yaml")
+	compPath := filepath.Join("..", "..", "openapi", "components.yaml")
 	specPath := filepath.Join("..", "..", "openapi", "openapi.yaml")
 	allowPath := filepath.Join("..", "..", "..", "web", "src", "lib", "identity-proxy-allowlist.gen.ts")
-	existing, err := os.ReadFile(specPath)
+	document, err := os.ReadFile(docPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := RenderOpenAPI(routes, existing)
+	components, err := os.ReadFile(compPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := RenderOpenAPI(routes, document, components)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := os.ReadFile(specPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(spec) != string(existing) {
 		t.Fatal("openapi.yaml is stale vs the route table; run: go run ./cmd/genroutes")
 	}
-	again, err := RenderOpenAPI(routes, spec)
+	again, err := RenderOpenAPI(routes, document, components)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(again) != string(spec) {
 		t.Fatal("openapi render is not a fixed point")
+	}
+	mutated := bytes.Replace(existing, []byte("Generated from the route table"), []byte("Hand edited operation"), 1)
+	if bytes.Equal(mutated, existing) {
+		t.Fatal("expected a generated description to mutate")
+	}
+	if bytes.Contains(again, []byte("Hand edited operation")) || bytes.Equal(again, mutated) {
+		t.Fatal("generator reproduced a hand edit of openapi.yaml")
+	}
+	if _, err := RenderOpenAPI(routes, append(append([]byte{}, document...), []byte("\npaths: {}\n")...), components); err == nil {
+		t.Fatal("document.yaml with a paths key was accepted")
+	}
+	if _, err := RenderOpenAPI(routes, document, []byte("components: {}\npaths: {}\n")); err == nil {
+		t.Fatal("components.yaml with a paths key was accepted")
+	}
+	if strings.Contains(string(spec), "Returns process liveness") || strings.Contains(string(spec), "password: \"") {
+		t.Fatal("published spec copied hand-written path prose or a password example")
 	}
 	allow, err := RenderProxyAllowlist(routes)
 	if err != nil {
@@ -187,7 +214,14 @@ func TestGeneratedArtifactsMatchRouteTable(t *testing.T) {
 		if paths[rt.OpenAPIPath()] == nil {
 			t.Fatalf("spec missing %s", rt.OpenAPIPath())
 		}
+		if rt.SpecRef != "" {
+			item, _ := paths[rt.OpenAPIPath()].(map[string]any)
+			if item["$ref"] != rt.SpecRef || len(item) != 1 {
+				t.Fatalf("ops path %s = %#v, want $ref %s", rt.OpenAPIPath(), item, rt.SpecRef)
+			}
+		}
 	}
+	assertPathStubsHaveNoExamples(t, paths)
 	for path := range paths {
 		found := false
 		for _, rt := range routes {
@@ -202,6 +236,63 @@ func TestGeneratedArtifactsMatchRouteTable(t *testing.T) {
 	}
 	assertNoSecretMaterial(t, string(spec))
 	assertNoSecretMaterial(t, string(allow))
+	assertNoSecretMaterial(t, string(components))
+	assertNoDSNExamples(t, string(spec))
+	assertNoDSNExamples(t, string(components))
+}
+
+func assertPathStubsHaveNoExamples(t *testing.T, paths map[string]any) {
+	t.Helper()
+	for path, raw := range paths {
+		item, _ := raw.(map[string]any)
+		if ref, ok := item["$ref"].(string); ok {
+			if len(item) != 1 || !strings.HasPrefix(ref, "#/components/pathItems/") {
+				t.Fatalf("%s $ref path is not a pathItems reference", path)
+			}
+			continue
+		}
+		if keyNamed(item, "example") || keyNamed(item, "examples") {
+			t.Fatalf("%s generated path contains an example", path)
+		}
+	}
+}
+
+func keyNamed(v any, name string) bool {
+	switch n := v.(type) {
+	case map[string]any:
+		for k, child := range n {
+			if k == name || keyNamed(child, name) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range n {
+			if keyNamed(child, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func assertNoDSNExamples(t *testing.T, doc string) {
+	t.Helper()
+	forbidden := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp|nats)://`),
+		regexp.MustCompile(`://[^/\s:]+:[^/\s@]+@`),
+	}
+	for _, re := range forbidden {
+		if loc := re.FindStringIndex(doc); loc != nil {
+			snippet := doc[loc[0]:min(loc[1], loc[0]+80)]
+			t.Fatalf("DSN example in generated artifact: %q", snippet)
+		}
+	}
+	passwordExample := regexp.MustCompile(`(?m)password:\s*"([^"]*)"`)
+	for _, m := range passwordExample.FindAllStringSubmatch(doc, -1) {
+		if strings.Trim(m[1], "*") != "" {
+			t.Fatalf("password example in generated artifact: %q", m[0])
+		}
+	}
 }
 
 func assertNoSecretMaterial(t *testing.T, doc string) {
