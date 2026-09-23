@@ -43,9 +43,15 @@ pod without Ingress TLS.
 | fail | — | Restart / page the API deployment. |
 
 The process boots even if PostgreSQL is down. On connect it applies
-forward-only migrations recorded in `schema_migrations`. Re-running
-migrate is a no-op for applied versions. Concurrent migrate runners
-serialize on advisory lock `881726401` (E12.2).
+forward-only migrations recorded in `schema_migrations` and checks each
+applied file's SHA-256 before serving traffic. Re-running migrate is a
+no-op for applied versions whose checksums match. A mismatched, renamed,
+or missing applied file refuses boot: the log names the version and
+filename, the application pool stays closed, and readiness stays `503`.
+That failure is not retried. Recover by restoring the file from the
+release that applied it and restarting — see
+[schema migrations](schema-migrations.md#refused-boot). Concurrent
+migrate runners serialize on advisory lock `881726401` (E12.2).
 
 `version` / `sha` on a 200 health or readiness body identify the
 running binary (image ldflags or `BUILD_VERSION` / `BUILD_SHA`). They

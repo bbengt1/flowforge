@@ -126,7 +126,7 @@ Execution input/output data is schema-limited and redacted before persistence. L
 
 ## Migration and validation plan
 
-Migrations are forward-only, transaction-safe where PostgreSQL permits, and include indexes/constraints before application code relies on them. Initial migration sequence:
+Migrations are forward-only, transaction-safe where PostgreSQL permits, and include indexes/constraints before application code relies on them. `schema_migrations.checksum` is the lowercase hex SHA-256 of the applied file. Boot verifies every recorded checksum against the embedded files and refuses to publish the application pool on drift. NULL checksums from releases before that column are stamped once from the booting binary; a recorded checksum is never rewritten. Upgrade, rollback (expand/contract; no down migrations), and refused-boot recovery: [schema migrations](../operations/schema-migrations.md). Initial migration sequence:
 
 1. tenant/workspace/identity/RBAC and RLS helpers;
 2. workflows, drafts, immutable versions, triggers, and templates;
