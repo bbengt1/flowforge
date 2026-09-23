@@ -7,7 +7,14 @@ metadata:
     app.kubernetes.io/component: web
     app.kubernetes.io/part-of: flowforge
 spec:
-  replicas: 1
+  # HA floor. The HorizontalPodAutoscaler owns the live count between
+  # applies (minReplicas 2). Do not lower this below 2.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: flowforge
@@ -19,6 +26,17 @@ spec:
         app.kubernetes.io/component: web
         app.kubernetes.io/part-of: flowforge
     spec:
+      terminationGracePeriodSeconds: 45
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: flowforge
+                    app.kubernetes.io/component: web
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -35,6 +53,13 @@ spec:
           image: ghcr.io/bbengt1/flowforge-web:foundation
           imagePullPolicy: IfNotPresent
           command: ["node", "apps/web/server.js"]
+          # Endpoints drop when the pod is terminating. Sleep so
+          # in-flight requests finish before SIGTERM. 15s stays inside
+          # terminationGracePeriodSeconds.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "15"]
           ports:
             - name: http
               containerPort: 3000

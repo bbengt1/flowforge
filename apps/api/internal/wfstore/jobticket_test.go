@@ -84,6 +84,66 @@ func TestJobTicketRejectsAlteredExpiredAndCrossWorkspace(t *testing.T) {
 	}
 }
 
+func TestReplicaSharedSecretVerifiesTicketAndFence(t *testing.T) {
+	raw := []byte("flowforge-test-job-binding-32b!!")
+	if len(raw) != 32 {
+		t.Fatalf("fixture length %d", len(raw))
+	}
+	t.Setenv(EnvJobBindingSecret, base64.StdEncoding.EncodeToString(raw))
+	replicaA, err := LoadJobBindingKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	replicaB, err := LoadJobBindingKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(replicaA) != string(replicaB) || string(replicaA) != string(raw) {
+		t.Fatal("replicas must load the same durable secret, not a per-process key")
+	}
+
+	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	binding := JobBinding{
+		WorkspaceID:       "11111111-1111-4111-8111-111111111111",
+		ExecutionID:       "22222222-2222-4222-8222-222222222222",
+		JobID:             "33333333-3333-4333-8333-333333333333",
+		StepID:            "44444444-4444-4444-8444-444444444444",
+		WorkflowID:        "55555555-5555-4555-8555-555555555555",
+		WorkflowVersionID: "66666666-6666-4666-8666-666666666666",
+		WorkflowDigest:    "sha256:" + strings.Repeat("ab", 32),
+		PolicyDigest:      "sha256:" + strings.Repeat("cd", 32),
+		FencingToken:      4,
+		ExpiresAt:         now.Add(time.Hour),
+		LeaseExpiresAt:    now.Add(30 * time.Second),
+		CorrelationID:     "corr-ha",
+	}
+	token, err := SignJobTicket(replicaA, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseJobTicket(replicaB, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AuthorizeJobBinding(got, binding.WorkspaceID, binding.WorkflowVersionID, binding.WorkflowDigest, now); err != nil {
+		t.Fatalf("replica B authorize: %v", err)
+	}
+	if _, err := ParseJobTicket(NewJobBindingKey(), token); err != ErrJobBinding {
+		t.Fatalf("other key: %v", err)
+	}
+
+	job := ExecutionJob{FencingToken: 4, WorkerID: "flowforge-runner-a"}
+	if err := matchFence(job, JobActionInput{FencingToken: 4, WorkerID: "flowforge-runner-a"}); err != nil {
+		t.Fatalf("owner fence: %v", err)
+	}
+	if err := matchFence(job, JobActionInput{FencingToken: 4, WorkerID: "flowforge-runner-b"}); err != ErrFenceConflict {
+		t.Fatalf("other replica fence: %v", err)
+	}
+	if err := matchFence(job, JobActionInput{FencingToken: 3, WorkerID: "flowforge-runner-a"}); err != ErrFenceConflict {
+		t.Fatalf("stale fence: %v", err)
+	}
+}
+
 func TestLoadJobBindingKeyFailsClosed(t *testing.T) {
 	t.Setenv(EnvJobBindingSecret, "")
 	if _, err := LoadJobBindingKey(); !errors.Is(err, ErrJobBindingSecret) {

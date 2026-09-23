@@ -293,6 +293,63 @@ func TestSchedulerHookErrorDoesNotLogSecrets(t *testing.T) {
 	}
 }
 
+func TestResignReleasesLockAfterCancel(t *testing.T) {
+	var released atomic.Bool
+	var sawDead atomic.Bool
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	var once sync.Once
+	done := make(chan error, 1)
+	go func() {
+		done <- New(Config{
+			Interval: time.Hour,
+			Elector: electorFunc(func(ctx context.Context) (Session, bool, error) {
+				if ctx.Err() != nil {
+					return nil, false, ctx.Err()
+				}
+				once.Do(func() { close(started) })
+				return releaseProbe{released: &released, sawDead: &sawDead}, true, nil
+			}),
+			Hooks: Hooks{
+				Dispatch: func(context.Context) error { return nil },
+			},
+			Log: slog.New(slog.DiscardHandler),
+		}).Run(ctx)
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not take leadership")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not resign")
+	}
+	if !released.Load() || sawDead.Load() {
+		t.Fatalf("released=%v cancelledContext=%v", released.Load(), sawDead.Load())
+	}
+}
+
+type releaseProbe struct {
+	released *atomic.Bool
+	sawDead  *atomic.Bool
+}
+
+func (p releaseProbe) Lost(context.Context) bool { return false }
+
+func (p releaseProbe) Release(ctx context.Context) {
+	if ctx.Err() != nil {
+		p.sawDead.Store(true)
+		return
+	}
+	p.released.Store(true)
+}
+
 func countHooks(n *atomic.Int32) Hooks {
 	fn := func(context.Context) error {
 		n.Add(1)

@@ -68,9 +68,14 @@ func main() {
 		pool.SetAfterReady(bootstrapLogin)
 	}
 	bg, stopBG := context.WithCancel(context.Background())
+	// Scheduler leadership uses its own context so SIGTERM can unlock
+	// the advisory lock before HTTP drain, without closing the pool
+	// those in-flight requests still need.
+	schedCtx, stopSched := context.WithCancel(context.Background())
 	go pool.Start(bg)
 	var schedWG sync.WaitGroup
 	defer func() {
+		stopSched()
 		stopBG()
 		schedWG.Wait()
 		pool.Close()
@@ -158,7 +163,7 @@ func main() {
 		schedWG.Add(1)
 		go func() {
 			defer schedWG.Done()
-			if err := loop.Run(bg); err != nil && !errors.Is(err, context.Canceled) {
+			if err := loop.Run(schedCtx); err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("scheduler stopped", "error", err)
 			}
 		}()
@@ -201,14 +206,24 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	// Resign before HTTP drain so another replica can take advisory
+	// lock 881726402 while this pod finishes in-flight requests.
+	// os.Exit skips defers, so the listen-error path resigns here too.
+	resignLeader := func() {
+		stopSched()
+		schedWG.Wait()
+	}
+
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("listen", "error", err)
+			resignLeader()
 			os.Exit(1)
 		}
 	case sig := <-sigCh:
 		log.Info("shutting down", "signal", sig.String())
+		resignLeader()
 	}
 
 	timeout := cfg.ShutdownWait

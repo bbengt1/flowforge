@@ -165,6 +165,10 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # WORKER_ID=compose-local
 # WORKER_POLL_INTERVAL=1s
 # WORKER_LEASE=30s
+# Production runner only. After SIGTERM, finish the in-flight claim
+# and do not start another. deploy/k8s sets 30s and uses the pod name
+# as WORKER_ID. Compose keeps the literal above.
+# WORKER_DRAIN_TIMEOUT=30s
 # WORKER_ISSUER=
 # WORKER_SUBJECT=
 # Durable account lockout (Postgres auth_lockouts). Unset uses 5.

@@ -110,7 +110,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		}
 		s.cfg.Log.Info("scheduler leading", "interval", s.interval().String())
 		s.lead(ctx, session)
-		session.Release(ctx)
+		s.resign(session)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -193,6 +193,22 @@ func (s *Scheduler) call(ctx context.Context, session Session, name string, fn f
 		s.cfg.Log.Error("scheduler hook failed", "hook", name, "error", safeError(err))
 	}
 	return true
+}
+
+// resign drops the advisory lock on a context that is not the
+// cancelled Run context. SIGTERM must unlock before the process
+// exits. Unlock on a cancelled context fails, and the lock would
+// sit until Postgres notices the session is gone.
+func (s *Scheduler) resign(session Session) {
+	if session == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	session.Release(ctx)
+	if s.cfg.Log != nil {
+		s.cfg.Log.Info("scheduler leadership released")
+	}
 }
 
 func (s *Scheduler) noteLost() {

@@ -119,7 +119,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `HTTP_ADDR` / `PORT` | `:8080` | Listen address. `PORT` becomes `:PORT` when `HTTP_ADDR` is unset. |
 | `DATABASE_URL` | built from `POSTGRES_*` | Preferred DSN. Compose URL-encodes the password into this. |
 | `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
-| `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
+| `SHUTDOWN_TIMEOUT` | `10s` (`25s` on `deploy/k8s`) | Graceful HTTP shutdown after the scheduler resigns. Kubernetes `preStop` is 15s and `terminationGracePeriodSeconds` is 45, so 25s fits the remaining grace. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
 | `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA published on `GET /api/v1/health` and `/readiness`. Compose and CI pass it as a Docker **build arg** into Go ldflags (`apps/api/Dockerfile`). `smoke.yml` sets `BUILD_SHA=${{ github.sha }}`. Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe/missing → `unknown`. Never a secret. Health stays 200. |
 | `BUILD_VERSION` | `dev` (ldflags) | Non-secret tag/version on the same probes. Same injection path as `BUILD_SHA`. Unsafe/missing → `dev`. |
@@ -133,7 +133,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `RUNNER_USER_ID` | empty | Existing user UUID the runner claims as. Does not upsert. |
 | `RUNNER_ISSUER` / `RUNNER_SUBJECT` | first `PLATFORM_ADMINS` pair | Lookup of an existing principal (`FindUser`, no upsert) when `RUNNER_USER_ID` is empty. Must have `workflow.execute`. |
 | `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. The production runner does not use it. |
-| `WORKER_ID` | `compose-local` (runner default `production-runner`) | Worker id sent on claim/heartbeat/complete. |
+| `WORKER_ID` | `compose-local` (runner default `production-runner`) | Worker id sent on claim/heartbeat/complete. `deploy/k8s` sets this to the pod name so replicas are distinct fence holders. Do not pin every replica to one literal. |
+| `WORKER_DRAIN_TIMEOUT` | `30s` | Production runner only. After SIGTERM, finish the in-flight claim for this long and do not start another. `deploy/k8s` sets `30s` inside `terminationGracePeriodSeconds: 40`. A claim that outlives the budget is left for lease recovery. A stale HMAC token still cannot complete. |
 | `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the **compose** worker presents. Must have `workflow.execute`. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
@@ -398,7 +399,7 @@ ids are not sent (400).
 ## Production runner
 
 `/usr/local/bin/runner` (`apps/api/cmd/runner`) is the production-locked
-worker. `deploy/k8s/runner-deployment.yaml` runs it at `replicas: 1`
+worker. `deploy/k8s/runner-deployment.yaml` runs it at `replicas: 2`
 from the same API image. It refuses `APP_ENV=development|dev|local|test`
 when `REQUIRE_TLS` is false, so compose keeps `cmd/worker`.
 
@@ -523,6 +524,8 @@ Replicas campaign with Postgres `pg_try_advisory_lock` **881726402** (not the mi
 
 Losing that session stops the replica immediately: the in-flight hook is cancelled, and dispatch, recovery, and purge do not start again until it holds the lock. A schedule fire uses one idempotency key, so a raced start replays the existing execution.
 
+SIGTERM resigns before HTTP drain. The API cancels the scheduler context, unlocks `881726402` on a live context (a cancelled context must not skip `pg_advisory_unlock`), and then drains HTTP for `SHUTDOWN_TIMEOUT`. `deploy/k8s` sleeps 15s in `preStop` and allows 45s of termination grace, with `SHUTDOWN_TIMEOUT=25s`. See [Multi-replica HA](#multi-replica-ha).
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SCHEDULER_ENABLED` | on when unset | `1`/`true`/`yes`/`on` runs the loop. `0`/`false`/`no`/`off` opts out. Any other value is a **boot-fail**. |
@@ -542,6 +545,23 @@ When `MACHINE_REQUIRE` includes `scheduler`, each tick checks
 principal (needs `workflow.execute`) skips the hook. Create and rotate
 that principal with `POST /api/v1/machine/principals` (secret is not
 echoed). The in-process loop does not log in as the principal.
+
+## Multi-replica HA
+
+`deploy/k8s` runs the API, web, and runner at `replicas: 2`. Each has:
+
+| Control | Setting |
+| --- | --- |
+| PodDisruptionBudget | `maxUnavailable: 1` |
+| HorizontalPodAutoscaler | minimum 2 (API max 6, web max 4, runner max 4), CPU 70%, scale-down waits 300s |
+| Anti-affinity | preferred, `topologyKey: kubernetes.io/hostname` |
+| Rolling update | `maxUnavailable: 0`, `maxSurge: 1` |
+| API / web drain | `preStop` `sleep 15`, `terminationGracePeriodSeconds: 45` |
+| Runner drain | `WORKER_DRAIN_TIMEOUT=30s`, `terminationGracePeriodSeconds: 40`, `WORKER_ID` = pod name |
+
+`JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are keys on the shared `flowforge-api` Secret mounted by every API and runner replica. The process boot-fails if either is missing or malformed. It does not mint a per-pod key. A ticket or script signature from one replica verifies on the others. Fencing tokens stay in PostgreSQL; a different worker id or a stale token fails closed.
+
+A single-node cluster can still schedule both pods (anti-affinity is preferred). `kubectl apply` of a Deployment resets the live replica count to 2; the HPA owns the count between applies. Size Postgres `max_connections` for `(6 + 4) × 8` application connections plus backup and admin headroom. Details: [deploy/k8s/README.md](../deploy/k8s/README.md).
 
 ## Metrics and OpenAPI scrape (ADV-020)
 

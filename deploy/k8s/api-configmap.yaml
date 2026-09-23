@@ -60,6 +60,10 @@ data:
   # Encrypted backups are flowforge-db-backup (G.1.4), not this loop.
   SCHEDULER_ENABLED: "true"
   SCHEDULER_INTERVAL: "30s"
+  # HTTP drain after SIGTERM. The process resigns scheduler leadership
+  # first. preStop sleeps 15s; terminationGracePeriodSeconds is 45.
+  # 15 + 25 stays inside that grace period.
+  SHUTDOWN_TIMEOUT: "25s"
   # Durable artifact payloads (G.1.5 / B3). Production-locked boot
   # requires ARTIFACT_S3_BUCKET plus access key and secret on the Secret.
   # Keys are {tenant}/{workspace}/{ref} UUIDs. ARTIFACT_S3_PREFIX is
