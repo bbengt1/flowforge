@@ -1,9 +1,17 @@
 package embed
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+type failWindow struct{}
+
+func (failWindow) Allow(context.Context, string, int, time.Duration, time.Time) (bool, time.Duration, error) {
+	return false, 0, errors.New("db down")
+}
 
 func TestLimiterAllowsUnderCapAndDeniesBurst(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -33,6 +41,24 @@ func TestLimiterPrincipalIndependentOfIP(t *testing.T) {
 	}
 	if !lim.Allow(b, 1, now) {
 		t.Fatal("subject B must be independent")
+	}
+}
+
+func TestSharedBackendFailClosed(t *testing.T) {
+	lim := NewLimiter(Limits{Window: time.Minute, ExchangeIP: 10})
+	if lim.Shared() {
+		t.Fatal("in-process limiter is not shared")
+	}
+	lim.UseShared(failWindow{})
+	if !lim.Shared() {
+		t.Fatal("attached backend must be shared")
+	}
+	ok, _, err := lim.Decide(context.Background(), IPKey("203.0.113.4"), 10, time.Now())
+	if err == nil || ok {
+		t.Fatal("store failure must fail closed")
+	}
+	if lim.Allow(IPKey("203.0.113.4"), 10, time.Now()) {
+		t.Fatal("Allow must deny when the store fails")
 	}
 }
 

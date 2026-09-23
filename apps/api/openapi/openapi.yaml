@@ -18,7 +18,13 @@ info:
       array (path, line, column, code, message). Authenticated-but-failed
       flows use `unauthenticated` (401) and `forbidden` (403). Unique
       identity collisions, draft revision mismatches, and duplicate
-      published digests use `conflict` (409).
+      published digests use `conflict` (409). Workspace quotas use
+      `rate-limited` (429) with `Retry-After` on mutating routes,
+      expensive lists, artifact downloads, and execution start. Open
+      executions are also capped per workspace. `POST /login`, embed
+      mint/exchange, and `POST /machine/token` keep separate budgets
+      and are not that bucket. A rate-store failure is
+      `dependency-unavailable` (503).
     - Browser clients authenticate with `ff_session` / `ff_csrf` cookies from
       standalone `POST /login` (local email/username + password) or
       `POST /embed/exchange`. Trusted-dev `POST /session` stays non-prod
@@ -75,7 +81,8 @@ paths:
       description: |
         Returns process liveness plus non-secret `version` / `sha`.
         Does not check dependencies. Missing build identity is
-        `dev` / `unknown` and does not fail the probe.
+        `dev` / `unknown` and does not fail the probe. Not subject to
+        workspace quotas or auth-door rate limits.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -105,7 +112,8 @@ paths:
       description: |
         Returns ready when PostgreSQL is reachable, plus the same
         non-secret `version` / `sha` as `/health`. Otherwise a
-        problem details response (no version metadata).
+        problem details response (no version metadata). Not subject to
+        workspace quotas or auth-door rate limits.
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -1996,6 +2004,10 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workflows/normalize:
     post:
       operationId: normalizeWorkflowDefinition
@@ -2042,6 +2054,10 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workflow-folders:
     get:
       operationId: listWorkflowFolders
@@ -2739,7 +2755,8 @@ paths:
         redacted before persist. E4.3 evaluates current target/action
         policy first (deny `403`, approval-required `409`). Start audit
         is secret-free and includes actor, version/digest, correlation,
-        and outcome.
+        and outcome. The workspace execution token bucket and the open
+        execution cap both apply (`429` `rate-limited`, `Retry-After`).
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Issuer"
@@ -2787,6 +2804,10 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workflows/{workflowId}/executions/{executionId}:
     get:
       operationId: getWorkflowExecution
@@ -10935,7 +10956,11 @@ components:
             code: request-too-large
             request_id: 0123456789abcdef0123456789abcdef
     RateLimited:
-      description: Webhook rate or concurrency limit exceeded
+      description: |
+        Rate or concurrency limit exceeded. `Retry-After` is seconds.
+        Workspace quotas cover mutating routes, expensive lists, artifact
+        downloads, and execution starts. Login, embed mint/exchange, and
+        machine token keep separate budgets. Webhook ingress keeps its own limit.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/XRequestID"

@@ -153,9 +153,14 @@ func (s *Server) mintEmbedAssertion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.allowEmbedMint(r, user.Issuer, user.ExternalSubject) {
+	ok, retry, err := s.allowEmbedMint(r, user.Issuer, user.ExternalSubject)
+	if err != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !ok {
 		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
-		s.writeEmbedRateLimited(w, r, "Embed mint rate limit exceeded. Retry after the configured window.")
+		writeRateLimited(w, r, retry, "Embed mint rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	ws, tenant, _, perms, ok := s.requireAccess(w, r, user, "")
@@ -262,9 +267,14 @@ func (s *Server) exchangeEmbedAssertion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	peek, _ := peekEmbedClaims(req.Assertion)
-	if !s.allowEmbedExchange(r, peek.Issuer, peek.Subject) {
+	allowed, retry, rateErr := s.allowEmbedExchange(r, peek.Issuer, peek.Subject)
+	if rateErr != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !allowed {
 		s.auditEmbed(r, embed.EventRejected, session.OutcomeDenied, embed.ReasonRateLimited, peek.TokenID, s.embedMaterial().KeyID, peek.Issuer, peek.Subject)
-		s.writeEmbedRateLimited(w, r, "Embed exchange rate limit exceeded. Retry after the configured window.")
+		writeRateLimited(w, r, retry, "Embed exchange rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	// ADV-008: verify signature, audience, issuer allowlist, nbf/exp,
@@ -533,40 +543,31 @@ func (s *Server) auditEmbedTenancy(r *http.Request, eventType, outcome, reason, 
 	)
 }
 
-func (s *Server) allowEmbedExchange(r *http.Request, issuer, subject string) bool {
+func (s *Server) allowEmbedExchange(r *http.Request, issuer, subject string) (bool, time.Duration, error) {
 	if s.embedLimiter == nil {
-		return false
+		return false, embed.DefaultRateWindow, nil
 	}
 	now := s.clockNow()
 	limits := s.embedLimiter.Limits()
-	if !s.embedLimiter.Allow(embed.IPKey(s.requestClientIP(r)), limits.ExchangeIP, now) {
-		return false
+	ok, retry, err := s.embedLimiter.Decide(r.Context(), embed.IPKey(s.requestClientIP(r)), limits.ExchangeIP, now)
+	if err != nil || !ok {
+		return ok, retry, err
 	}
 	if key := embed.PrincipalKey(issuer, subject); key != "" {
-		if !s.embedLimiter.Allow(key, limits.ExchangePrincipal, now) {
-			return false
-		}
+		return s.embedLimiter.Decide(r.Context(), key, limits.ExchangePrincipal, now)
 	}
-	return true
+	return true, 0, nil
 }
 
-func (s *Server) allowEmbedMint(r *http.Request, issuer, subject string) bool {
+func (s *Server) allowEmbedMint(r *http.Request, issuer, subject string) (bool, time.Duration, error) {
 	if s.embedLimiter == nil {
-		return false
+		return false, embed.DefaultRateWindow, nil
 	}
 	key := embed.PrincipalKey(issuer, subject)
 	if key == "" {
 		key = embed.IPKey(s.requestClientIP(r))
 	}
-	return s.embedLimiter.Allow("mint:"+key, s.embedLimiter.Limits().MintPrincipal, s.clockNow())
-}
-
-func (s *Server) writeEmbedRateLimited(w http.ResponseWriter, r *http.Request, detail string) {
-	retry := embed.DefaultRateWindow
-	if s.embedLimiter != nil {
-		retry = s.embedLimiter.RetryAfter(s.clockNow())
-	}
-	writeRateLimited(w, r, retry, detail)
+	return s.embedLimiter.Decide(r.Context(), "mint:"+key, s.embedLimiter.Limits().MintPrincipal, s.clockNow())
 }
 
 func (s *Server) requestClientIP(r *http.Request) string {

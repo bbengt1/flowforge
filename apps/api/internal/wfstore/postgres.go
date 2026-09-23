@@ -628,6 +628,9 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 	if err != nil {
 		return Execution{}, ErrInvalid
 	}
+	if err := enforceOpenCap(ctx, tx, scope.WorkspaceID(), in.MaxOpen); err != nil {
+		return Execution{}, err
+	}
 
 	exec, err := scanExecution(tx.QueryRow(ctx, `
 		INSERT INTO executions (
@@ -690,6 +693,33 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 		return Execution{}, mapDBErr(err)
 	}
 	return exec, nil
+}
+
+// executionCapLockNamespace keeps this advisory lock off the migration
+// lock (881726401) and the scheduler lease (881726402).
+const executionCapLockNamespace int64 = 881726403
+
+// enforceOpenCap serializes starts for one workspace and counts
+// non-terminal executions. Pinned rows are terminal stubs and do not
+// consume a slot. maxOpen <= 0 skips the cap.
+func enforceOpenCap(ctx context.Context, tx pgx.Tx, workspaceID string, maxOpen int) error {
+	if maxOpen <= 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, $2))`, workspaceID, executionCapLockNamespace); err != nil {
+		return mapDBErr(err)
+	}
+	var open int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM executions
+		WHERE status IN ('queued', 'running', 'waiting')
+	`).Scan(&open); err != nil {
+		return mapDBErr(err)
+	}
+	if open >= maxOpen {
+		return ErrConcurrency
+	}
+	return nil
 }
 
 func (p *Postgres) FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error) {

@@ -22,6 +22,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/oidc"
 	"github.com/bbengt1/flowforge/apps/api/internal/portal"
+	"github.com/bbengt1/flowforge/apps/api/internal/quota"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scim"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -113,6 +114,9 @@ type Config struct {
 	// LoginLimits rate-limits POST /login before bcrypt. Separate from
 	// embed exchange so those IP budgets do not share a counter.
 	LoginLimits localauth.Limits
+	// Quota is the per-workspace token bucket. It does not include
+	// login, embed, or machine-token budgets.
+	Quota quota.Limits
 	// EmbedNBFLeeway is clock-skew for embed assertion nbf only (ADV-017).
 	// Default 30s, hard max 60s. exp is not given this leeway.
 	EmbedNBFLeeway time.Duration
@@ -214,6 +218,7 @@ func Load() (Config, error) {
 		PlatformAdmins: authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin)),
 		EmbedLimits:    embed.LoadLimits(),
 		LoginLimits:    localauth.LoadLimits(),
+		Quota:          quota.Load(),
 		EmbedNBFLeeway: embed.LoadNBFLeeway(),
 	}
 	if cfg.HTTPAddr == "" {

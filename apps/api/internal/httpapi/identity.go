@@ -201,6 +201,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 			WriteForbidden(w, r)
 			return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 		}
+		if !s.chargeQuota(w, r, ws.ID) {
+			return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+		}
 		return ws, tenant, roles, perms, true
 	}
 	if !authz.Allows(perms, action) {
@@ -215,6 +218,9 @@ func (s *Server) requireAccess(w http.ResponseWriter, r *http.Request, user iden
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}
 	if !s.allowMFAGrant(w, r, action) {
+		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
+	}
+	if !s.chargeQuota(w, r, ws.ID) {
 		return identity.Workspace{}, identity.Tenant{}, nil, nil, false
 	}
 	return ws, tenant, roles, perms, true

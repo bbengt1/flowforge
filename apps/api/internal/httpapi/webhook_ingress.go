@@ -210,7 +210,7 @@ func (s *Server) dispatchWebhookExecution(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, start)
+	exec, err := s.workflows.StartExecution(r.Context(), scope, workflowID, s.capStart(start))
 	if err != nil {
 		s.emitSecurityError(r, scope, err)
 		s.writeWebhookIngressAudit(r, scope, trig, "denied", map[string]any{"reason": "start-failed"})

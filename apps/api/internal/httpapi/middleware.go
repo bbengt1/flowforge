@@ -98,7 +98,8 @@ const (
 )
 
 type requestMeta struct {
-	route string
+	route        string
+	quotaCharged bool
 }
 
 // RequestIDHeader is the correlation header accepted and returned on every response.

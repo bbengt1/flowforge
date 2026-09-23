@@ -23,9 +23,14 @@ func (s *Server) mintPortalAssertion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.allowEmbedMint(r, user.Issuer, user.ExternalSubject) {
+	ok, retry, err := s.allowEmbedMint(r, user.Issuer, user.ExternalSubject)
+	if err != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !ok {
 		s.auditEmbed(r, embed.EventPortalRejected, session.OutcomeDenied, embed.ReasonRateLimited, "", s.embedMaterial().KeyID, user.Issuer, user.ExternalSubject)
-		s.writeEmbedRateLimited(w, r, "Embed mint rate limit exceeded. Retry after the configured window.")
+		writeRateLimited(w, r, retry, "Embed mint rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	ws, tenant, _, perms, ok := s.requireAccess(w, r, user, "")

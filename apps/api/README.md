@@ -6,8 +6,8 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok","version":"…","sha":"…"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). Missing/unsafe identity is `dev` / `unknown` and never fails the probe. |
-| `GET` | `/api/v1/readiness` | `200 {"status":"ready","version":"…","sha":"…"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). |
+| `GET` | `/api/v1/health` | Liveness. Always `200 {"status":"ok","version":"…","sha":"…"}`. Does not check PostgreSQL. Unauthenticated (kubelet probes). Missing/unsafe identity is `dev` / `unknown` and never fails the probe. Not counted by workspace quotas or auth-door limits. |
+| `GET` | `/api/v1/readiness` | `200 {"status":"ready","version":"…","sha":"…"}` when PostgreSQL is reachable; otherwise `503` RFC 9457 (`dependency-unavailable`). Unauthenticated (kubelet probes). Not counted by workspace quotas or auth-door limits. |
 | `GET` | `/api/v1/bootstrap` | First-run wizard gate. Status flags only. Unauthenticated when incomplete; session required when complete. Never gates `/embed/v1`. |
 | `POST` | `/api/v1/bootstrap/persistence` | Wizard step 1. Body `{confirm:true}` only (no DSN). `200` status with `steps.persistence.ready=true`. Does not mark complete. Incomplete installs may call without a session. Already complete → `409`. PostgreSQL down → `503`. |
 | `POST` | `/api/v1/bootstrap/admins` | Wizard step 2. Body `{issuer, external_subject, display_name?, password?}`. `201` status with `steps.firstAdmin.ready=true`. Does not mark complete. Persistence must be ready (`409`). Already complete → `409`. Optional password is stored as a hash for `POST /login` and is never echoed. |
@@ -191,10 +191,19 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
 | `WORKER_ID` | `production-runner` when unset | Claim/heartbeat/complete id. `deploy/k8s` sets the pod name so replicas are distinct fence holders. |
 | `WORKER_DRAIN_TIMEOUT` | `30s` | After SIGTERM, finish the in-flight claim and do not start another. Zero or invalid uses 30s. |
-| `FLOWFORGE_REPLICAS` | `1` when unset | API pod count. `deploy/k8s` sets `2` (at least Deployment replicas and HPA minReplicas). Above 1, boot-fails if a session or store is in-memory or pod-local. Postgres and S3 stay. Invalid values boot-fail. |
+| `FLOWFORGE_REPLICAS` | `1` when unset | API pod count. `deploy/k8s` sets `2` (at least Deployment replicas and HPA minReplicas). Above 1, boot-fails if a session, store, or rate limiter is in-memory or pod-local. Postgres and S3 stay. Invalid values boot-fail. |
 | `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |
-| `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from the in-process login rate limit. |
+| `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from `LOGIN_RATE_LIMIT_*`. |
+| `QUOTA_MUTATE_PER_MINUTE` | `120` | Per-workspace mutation refill (validate, normalize, publish, ops writes, other mutations). Negative is unlimited. |
+| `QUOTA_MUTATE_BURST` | per-minute rate | Mutation token-bucket capacity. |
+| `QUOTA_READ_PER_MINUTE` | `300` | Per-workspace refill for lists and other expensive reads. |
+| `QUOTA_READ_BURST` | per-minute rate | Read token-bucket capacity. |
+| `QUOTA_DOWNLOAD_PER_MINUTE` | `60` | Per-workspace artifact download refill. |
+| `QUOTA_DOWNLOAD_BURST` | per-minute rate | Download token-bucket capacity. |
+| `QUOTA_EXECUTE_PER_MINUTE` | `30` | Per-workspace execution-start refill. |
+| `QUOTA_EXECUTE_BURST` | per-minute rate | Execution-start token-bucket capacity. |
+| `QUOTA_EXECUTE_CONCURRENCY` | `20` | Open executions per workspace, shared by manual start, webhooks, and schedules. `GET /api/v1/health` and `GET /api/v1/readiness` stay unlimited. |
 | `SCIM_BEARER_TOKEN` | empty | Dedicated `/scim/v2` bearer (32–256 chars, no spaces). Never logged or returned. Empty with the other `SCIM_*` unset fails SCIM closed (`503`). Not an `ff_session`. |
 | `SCIM_ISSUER` | `OIDC_ISSUER` when the bearer is set and this is omitted | Issuer on provisioned users. Must match `OIDC_ISSUER` when both are set. Production requires `https`. Map IdP `externalId` to the OIDC `sub`. |
 | `SCIM_DEFAULT_ROLE` | `viewer` | Workspace role added for a new SCIM Group member. Non-workspace roles (including `platform-admin`) are a boot-fail. |

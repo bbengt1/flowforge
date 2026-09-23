@@ -173,8 +173,16 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # WORKER_SUBJECT=
 # Durable account lockout (Postgres auth_lockouts). Unset uses 5.
 # Integer 1-50. 0, negative, and non-integers are a boot-fail.
-# Separate from the in-process LOGIN_RATE_LIMIT_* window.
+# Separate from LOGIN_RATE_LIMIT_*. With PostgreSQL that window is
+# shared across API replicas. QUOTA_* is the per-workspace token bucket
+# (validate/normalize/publish, lists, downloads, execution start) and
+# does not include login, embed, or machine token.
 # LOCKOUT_MAX_FAILURES=5
+# QUOTA_MUTATE_PER_MINUTE=120
+# QUOTA_READ_PER_MINUTE=300
+# QUOTA_DOWNLOAD_PER_MINUTE=60
+# QUOTA_EXECUTE_PER_MINUTE=30
+# QUOTA_EXECUTE_CONCURRENCY=20
 # SCIM 2.0 (/scim/v2). Leave unset to fail closed (503).
 # Bearer is 32-256 chars, no spaces. Never log it. Not an ff_session.
 # SCIM_ISSUER must match OIDC_ISSUER when both are set. Omit SCIM_ISSUER

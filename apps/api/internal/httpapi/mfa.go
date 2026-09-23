@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
@@ -87,9 +88,14 @@ func (s *Server) postSessionMFAVerify(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "MFA is not configured.")
 		return
 	}
-	if !s.allowMFAVerify(r, user.ID) {
+	allowed, retry, rateErr := s.allowMFAVerify(r, user.ID)
+	if rateErr != nil {
+		writeRateStoreUnavailable(w, r)
+		return
+	}
+	if !allowed {
 		s.auditLoginRejected(r, "rate-limited")
-		s.writeLoginRateLimited(w, r)
+		writeRateLimited(w, r, retry, "Login rate limit exceeded. Retry after the configured window.")
 		return
 	}
 	factor, err := s.mfa.Get(r.Context(), user.ID)
@@ -207,11 +213,11 @@ func (s *Server) mfaKeyReady() bool {
 	return len(s.mfaKey) == 32
 }
 
-func (s *Server) allowMFAVerify(r *http.Request, userID string) bool {
+func (s *Server) allowMFAVerify(r *http.Request, userID string) (bool, time.Duration, error) {
 	if s.loginLimiter == nil {
-		return false
+		return false, time.Minute, nil
 	}
-	return s.loginLimiter.Allow("mfa:"+userID, mfaVerifyLimit, s.clockNow())
+	return s.loginLimiter.Decide(r.Context(), "mfa:"+userID, mfaVerifyLimit, s.clockNow())
 }
 
 func (s *Server) writeMFAStoreError(w http.ResponseWriter, r *http.Request, err error) {

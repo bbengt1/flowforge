@@ -1,12 +1,21 @@
 package embed
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// WindowCounter is a shared fixed-window backend. The API attaches a
+// PostgreSQL counter when a database is configured so replica count does
+// not multiply the budget. Store errors fail closed. A nil backend keeps
+// the in-process window (one process and unit tests).
+type WindowCounter interface {
+	Allow(ctx context.Context, key string, limit int, window time.Duration, now time.Time) (allowed bool, retryAfter time.Duration, err error)
+}
 
 // Documented defaults (ADV-012). Sized so a Portal host remounting
 // many iframes from one egress IP stays under the cap; a single
@@ -92,13 +101,16 @@ func durationEnv(name string, fallback time.Duration) time.Duration {
 	return d
 }
 
-// Limiter is an in-process fixed-window counter keyed by IP and/or
-// issuer|subject. Multi-instance deployments enforce per process; set
-// conservative defaults and raise via env if a shared ingress IP is busy.
+// Limiter is a fixed-window counter keyed by IP and/or issuer|subject.
+// Without a WindowCounter the window is in-process and resets on restart.
+// UseShared attaches a durable counter. FLOWFORGE_REPLICAS above 1 must
+// boot with that counter; the budgets stay separate from workspace quotas.
 type Limiter struct {
 	mu      sync.Mutex
 	windows map[string]*limitWindow
 	limits  Limits
+	backend WindowCounter
+	shared  bool
 }
 
 type limitWindow struct {
@@ -123,35 +135,83 @@ func (l *Limiter) Limits() Limits {
 	return l.limits
 }
 
+// UseShared attaches a durable window. A nil counter is ignored. Shared
+// reports true only after a successful attach.
+func (l *Limiter) UseShared(c WindowCounter) {
+	if l == nil || c == nil {
+		return
+	}
+	l.backend = c
+	l.shared = true
+}
+
+// Shared reports whether a durable window is attached.
+func (l *Limiter) Shared() bool {
+	return l != nil && l.shared
+}
+
 // Allow reports whether key may proceed under limit for the current
 // window. limit <= 0 is unlimited. A nil limiter denies (fail closed).
+// A shared-store error also denies.
 func (l *Limiter) Allow(key string, limit int, now time.Time) bool {
+	ok, _, _ := l.Decide(context.Background(), key, limit, now)
+	return ok
+}
+
+// Decide applies the fixed window. A shared-store error is returned so
+// the HTTP layer can fail closed with 503. retryAfter is the remaining
+// window on deny.
+func (l *Limiter) Decide(ctx context.Context, key string, limit int, now time.Time) (bool, time.Duration, error) {
 	if l == nil {
-		return false
+		return false, DefaultRateWindow, nil
 	}
 	if limit <= 0 {
-		return true
+		return true, 0, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
 		key = "unknown"
 	}
 	now = now.UTC()
+	window := l.limits.Window
+	if window <= 0 {
+		window = DefaultRateWindow
+	}
+	if l.backend != nil {
+		ok, retry, err := l.backend.Allow(ctx, key, limit, window, now)
+		if err != nil {
+			return false, window, err
+		}
+		if !ok {
+			if retry <= 0 {
+				retry = window
+			}
+			return false, retry, nil
+		}
+		return true, 0, nil
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.windows) > 4096 {
 		l.pruneLocked(now)
 	}
 	w := l.windows[key]
-	if w == nil || now.Sub(w.start) >= l.limits.Window {
+	if w == nil || now.Sub(w.start) >= window {
 		w = &limitWindow{start: now, count: 0}
 		l.windows[key] = w
 	}
 	if w.count >= limit {
-		return false
+		retry := window - now.Sub(w.start)
+		if retry < time.Second {
+			retry = time.Second
+		}
+		return false, retry, nil
 	}
 	w.count++
-	return true
+	return true, 0, nil
 }
 
 // RetryAfter is the remaining window for Retry-After. Zero if unlimited

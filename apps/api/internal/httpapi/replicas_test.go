@@ -17,8 +17,19 @@ func TestReplicasRefuseMemorySession(t *testing.T) {
 	if err == nil {
 		t.Fatal("replicas>1 with a memory session must fail closed")
 	}
-	if !strings.Contains(err.Error(), "session") {
+	open := strings.Index(err.Error(), "(")
+	close := strings.Index(err.Error(), ")")
+	if open < 0 || close <= open {
 		t.Fatalf("error = %v", err)
+	}
+	has := map[string]bool{}
+	for _, name := range strings.Split(err.Error()[open+1:close], ", ") {
+		has[name] = true
+	}
+	for _, want := range []string{"session", "rate", "login-rate", "embed-rate", "machine-rate"} {
+		if !has[want] {
+			t.Fatalf("missing %s in %v", want, err)
+		}
 	}
 	if strings.Contains(err.Error(), "JOB_BINDING_SECRET") || strings.Contains(err.Error(), "SCRIPT_SIGNING_KEY") {
 		t.Fatalf("error must not name HMAC secrets: %v", err)
