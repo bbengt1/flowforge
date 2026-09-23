@@ -247,6 +247,17 @@ def main() -> int:
     restore_evidence = json.loads(restore_path.read_text()) if restore_path.exists() else None
     rpo_path = run_dir / "rpo-rto-last-run.json"
     rpo_evidence = json.loads(rpo_path.read_text()) if rpo_path.exists() else None
+    manifest_path = run_dir / "manifest-pitr-last-run.json"
+    manifest_evidence = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
+    manifest_ran = any(row["id"] == "manifest-pitr" and row["status"] == "pass" for row in script_results)
+    if manifest_ran and (
+        not manifest_evidence
+        or not manifest_evidence.get("integrityManifest")
+        or not manifest_evidence.get("tamperRejected")
+        or not manifest_evidence.get("markerMatched")
+    ):
+        failed = True
+        print("FAIL manifest/PITR evidence missing fail-closed proof", file=sys.stderr)
 
     domains_out: list[dict[str, Any]] = []
     for domain in catalog["domains"]:
@@ -305,6 +316,7 @@ def main() -> int:
         "capacity": capacity,
         "restoreSchema": restore_evidence,
         "rpoRto": rpo_evidence,
+        "manifestPitr": manifest_evidence,
         "domains": domains_out,
         "restoreSibling": catalog["restoreSibling"],
         "securitySibling": catalog["securitySibling"],
@@ -335,6 +347,10 @@ def main() -> int:
             rpo_out = evidence_dir / "rpo-rto-last-run.json"
             rpo_out.write_text(json.dumps(rpo_evidence, indent=2) + "\n")
             print(f"wrote {rpo_out}", flush=True)
+        if manifest_evidence is not None:
+            man_out = evidence_dir / "manifest-pitr-last-run.json"
+            man_out.write_text(json.dumps(manifest_evidence, indent=2) + "\n")
+            print(f"wrote {man_out}", flush=True)
 
     if failed:
         print("\nE12.2 operational resilience suite FAILED", file=sys.stderr)

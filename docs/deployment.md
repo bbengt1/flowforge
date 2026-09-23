@@ -52,7 +52,7 @@ Web image and Next.js headers (`#11`):
 
 Backup image (G.1.4):
 
-- `scripts/backup/Dockerfile`: `USER 65532:65532`, digest-pinned `alpine:3.20`, `postgresql16-client`, `python3` + `py3-cryptography` (AEAD helper), `aws-cli`, entrypoint `/usr/local/bin/run-encrypted-backup`. Build from the repository root. `deploy/k8s/backup-cronjob.yaml` runs `ghcr.io/bbengt1/flowforge-backup:foundation` (**digest-pin** before production; CI rejects `:latest`).
+- `scripts/backup/Dockerfile`: `USER 65532:65532`, digest-pinned `alpine:3.20`, `postgresql16-client`, `python3` + `py3-cryptography` (AEAD helper and integrity manifest), `aws-cli`, entrypoints `/usr/local/bin/run-encrypted-backup`, `receive-wal`, `archive-wal`, `pitr-basebackup`, and `pitr-restore`. Build from the repository root. `deploy/k8s/backup-cronjob.yaml`, `wal-archive-deployment.yaml`, and `pitr-base-cronjob.yaml` run `ghcr.io/bbengt1/flowforge-backup:foundation` (**digest-pin** before production; CI rejects `:latest`).
 
 API TLS/proxy environment (local defaults are HTTP; production ConfigMap requires TLS):
 
@@ -536,7 +536,9 @@ Compose sets both (default on, `30s`). `deploy/k8s` ConfigMap does the same so m
 
 Encrypted `pg_dump` is **not** this loop. `deploy/k8s` ships
 `flowforge-db-backup` (`scripts/backup/run-encrypted-backup.sh`, daily
-UTC, RPO 24h). Compose still uses `scripts/backup/encrypt-pg-dump.sh`.
+UTC, logical RPO 24h) plus `flowforge-wal-archive` and
+`flowforge-pitr-base` (PITR RPO 300s when the receiver is sealing).
+Compose still uses `scripts/backup/encrypt-pg-dump.sh`.
 RPO/RTO and restore cadence: [retention and backup](operations/retention-backup.md).
 The HTTP endpoints stay for an operator session (`workflow.execute` or
 `workspace.administer`, plus CSRF).
@@ -639,7 +641,7 @@ Operator runbooks (do not duplicate here):
 - [Retention and backup](operations/retention-backup.md) — encryption, CronJob, RPO/RTO, restore cadence, `POST /retention/purge`, legal hold.
 - [E12.3 threat-model review](reference/e12-threat-model-review.md) — production-gate sign-off.
 
-Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup CronJob as recovery evidence. Documented targets: **RPO 24h** (daily CronJob), **RTO ≤ 30m** for CI-sized dumps (`scripts/backup/rpo-rto-rehearsal.sh`).
+Backups must be encrypted and restoration rehearsed before production enablement. Restore into an isolated environment, run migrations, then verify health/readiness and an application smoke test. Do not treat a successful backup CronJob as recovery evidence. Documented targets: **logical RPO 24h** (daily `pg_dump`), **PITR RPO 5 minutes** when `flowforge-wal-archive` is sealing WAL, **RTO ≤ 30m** for CI-sized dumps (`scripts/backup/rpo-rto-rehearsal.sh`, `scripts/backup/manifest-pitr-rehearsal.sh`).
 
 Hooks from `#10` / G.1.4 (AES-256-GCM AEAD + PBKDF2 via `BACKUP_ENCRYPTION_KEY` / `scripts/backup/aead.py`; wrap that key with KMS before production):
 
@@ -654,11 +656,12 @@ bash scripts/backup/restore-rehearsal.sh
 export DATABASE_URL='postgres://…'
 bash scripts/backup/run-encrypted-backup.sh
 bash scripts/backup/rpo-rto-rehearsal.sh
+bash scripts/backup/manifest-pitr-rehearsal.sh
 ```
 
 `restore-rehearsal.sh` writes an encrypted dump, restores it into a throwaway Postgres container, checks `schema_migrations`, then boots the hardened API image against the restored database and asserts `/api/v1/health` and `/api/v1/readiness`. The isolated API is production-locked (no `APP_ENV`), so the script mounts the same local-only PKCS#8 PEM as compose (`deploy/local/embed-signing.pem`; override via `EMBED_SIGNING_KEY` / `EMBED_SIGNING_KEY_FILE`) and points at the compose MinIO bucket that the source API already created. It does not set `ARTIFACT_S3_CREATE_BUCKET`. CI runs the same script. Production still boot-fails without a unique Secret key and without bucket credentials.
 
-Kubernetes: `deploy/k8s/backup-cronjob.yaml` (`flowforge-db-backup`) runs `/usr/local/bin/run-encrypted-backup` from `ghcr.io/bbengt1/flowforge-backup` (`scripts/backup/Dockerfile`). Apply `backup-secret.example.yaml` and open allowlisted object-store egress.
+Kubernetes: `deploy/k8s/backup-cronjob.yaml` (`flowforge-db-backup`) runs `/usr/local/bin/run-encrypted-backup` from `ghcr.io/bbengt1/flowforge-backup` (`scripts/backup/Dockerfile`). `wal-archive-deployment.yaml` runs `/usr/local/bin/receive-wal` (one replica). `pitr-base-cronjob.yaml` runs `/usr/local/bin/pitr-basebackup`. Apply `backup-secret.example.yaml` and open allowlisted object-store egress. The backup role needs `REPLICATION` for the WAL and base-backup paths.
 
 E12.2 adds a fail-closed resilience suite (worker-loss, queue lag, migrate serialization, bounded load, ≥2× headroom) plus schema-level isolated restore and RPO/RTO rehearsal that do not need compose:
 

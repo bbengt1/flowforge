@@ -1,7 +1,8 @@
 # Retention and backup operations
 
 Relates to #184 / Part of #181. **Keep #184 open.** G.1.4 / #435
-ships the Kubernetes CronJob and RPO/RTO rehearsal.
+ships the Kubernetes CronJob and RPO/RTO rehearsal. G.2.7 / #452 adds
+the FFB1 integrity manifest and WAL/PITR archive on that baseline.
 
 How backups are encrypted, how restore is rehearsed, and how retention
 purge / legal hold work. Schema and invariants stay in the
@@ -55,13 +56,19 @@ A draft execution cannot attach a run artifact.
 
 | Target | Value | How it is met |
 | --- | --- | --- |
-| **RPO** | **24 hours** | `deploy/k8s/backup-cronjob.yaml` schedule `0 2 * * *` (UTC). Maximum acceptable Postgres data loss is one successful CronJob interval. Tighten the schedule only with a matching load test. |
-| **RTO** | **≤ 30 minutes** (CI-sized) | Wall-clock for encrypted DSN dump → decrypt → isolated restore → `schema_migrations` + `execution_jobs` check. Gate: `scripts/backup/rpo-rto-rehearsal.sh` (`BACKUP_RTO_BUDGET_SECONDS`, default `1800`). Production-sized dumps need a measured budget in the same runbook before go-live. |
+| **Logical RPO** | **24 hours** | `deploy/k8s/backup-cronjob.yaml` schedule `0 2 * * *` (UTC). This is the G.1.4 `pg_dump` floor when WAL archiving is down. Tighten the schedule only with a matching load test. |
+| **PITR RPO** | **5 minutes** (300s) | `flowforge-wal-archive` calls `pg_switch_wal` every `BACKUP_WAL_RPO_SECONDS` (default `300`) and seals the completed segment. Operators who use `archive_command` instead set `archive_timeout = 300` (`deploy/postgres/wal-archive.conf`). Data loss is bounded by the last sealed segment, not the daily dump. |
+| **RTO** | **≤ 30 minutes** (CI-sized) | Wall-clock for encrypted DSN dump → manifest verify → decrypt → isolated restore, and for PITR base + WAL replay of a row written after the base backup. Gate: `scripts/backup/rpo-rto-rehearsal.sh` and `scripts/backup/manifest-pitr-rehearsal.sh` (`BACKUP_RTO_BUDGET_SECONDS`, default `1800`). Production-sized dumps need a measured budget in the same runbook before go-live. |
 
 A successful CronJob is **not** recovery evidence. RTO proof is the
 rehearsal (CI + pre-prod), not the backup Job status.
 
-Point-in-time recovery (WAL archiving) is out of scope for G.1.4.
+PITR does not replace the logical dump. Recovery to an arbitrary time
+needs the latest sealed base backup (`flowforge-pitr-base`, `30 2 * * *`
+UTC) plus every sealed WAL segment after that backup's start LSN. If the
+WAL receiver is down, the logical dump's 24h RPO is the floor. A receiver
+that cannot seal or upload exits non-zero (fail closed) and does not
+report success.
 
 ## Backup encryption
 
@@ -74,10 +81,25 @@ sealed — vault rows in Postgres are already envelope-encrypted with
 `CREDENTIAL_KEK`, and the backup blob itself carries no plaintext
 secrets. Tampered ciphertext fails authentication on open.
 
+Every sealed dump is paired with an **integrity manifest**
+(`scripts/backup/manifest.py`), also FFB1. The plaintext inventory is
+basename, role, byte length, and SHA-256 of ciphertext. It does not
+contain the passphrase, DSN, KEK, or object-store credentials. Verify
+opens the manifest (AEAD) and recomputes each checksum. A tampered
+manifest, a swapped object, or a missing listed object fails closed
+before restore. WAL segments use the same manifest, chained with
+`seq` / `prevSha256`. `chain-tip.manifest.enc` is a copy of the latest
+WAL manifest so a restarted receiver can continue the chain. A tip that
+does not decrypt, or that disagrees with local chain state, fails closed.
+
 | Path | Script | When |
 | --- | --- | --- |
-| Compose (local) | `scripts/backup/encrypt-pg-dump.sh` | `docker compose exec` into the postgres service |
-| DSN / Kubernetes | `scripts/backup/run-encrypted-backup.sh` | CronJob image `flowforge-backup`; CI RPO/RTO rehearsal |
+| Compose (local) | `scripts/backup/encrypt-pg-dump.sh` | `docker compose exec` into the postgres service. Writes a sibling manifest. |
+| DSN / Kubernetes | `scripts/backup/run-encrypted-backup.sh` | CronJob image `flowforge-backup`; CI RPO/RTO rehearsal. Writes and verifies the manifest before upload. |
+| WAL segment | `scripts/backup/archive-wal.sh` | `archive_command` on a Postgres host that has the binary. Seals `%f` before upload. |
+| WAL receiver | `scripts/backup/receive-wal.sh` | `flowforge-wal-archive` Deployment (`pg_receivewal`). |
+| PITR base | `scripts/backup/pitr-basebackup.sh` | `flowforge-pitr-base` CronJob. |
+| PITR restore | `scripts/backup/pitr-restore.sh` | Verify manifests, then extract. `--replay` promotes a local Postgres. |
 
 ```bash
 # Compose
@@ -111,7 +133,28 @@ the `flowforge-db-backup` CronJob in `deploy/k8s` (image
 object-store egress on `flowforge-backup` (and Postgres ingress already
 allows the `backup` component). Ciphertext lands in `BACKUP_S3_BUCKET`
 under `flowforge-db/` — **not** the `ARTIFACT_S3_*`
-`{tenant}/{workspace}/{ref}` layout.
+`{tenant}/{workspace}/{ref}` layout. Logical dumps use that prefix
+directly. WAL objects use `flowforge-db/wal/`. PITR base tarballs use
+`flowforge-db/pitr/`. All three are FFB1. Plaintext WAL and plaintext
+base tarballs are not uploaded.
+
+`flowforge-wal-archive` is one replica (`strategy: Recreate`) because
+the replication slot `flowforge_wal` has a single consumer. Do not
+scale it. The slot retains WAL on the primary until the receiver
+confirms it; a stuck slot can fill the primary disk — alert on
+`restart_lsn` lag. The backup role needs `REPLICATION` and `EXECUTE`
+on `pg_switch_wal()` for this path. The logical dump CronJob still
+only needs `CONNECT` and `SELECT`. A receiver that is not local to
+the Postgres host also needs a `host replication` line in
+`pg_hba.conf`. The image trusts replication only from `127.0.0.1`,
+and the E12 workflow loads `host replication all all scram-sha-256`
+on the service container because published-port clients arrive as
+the bridge address.
+
+Postgres hosts that cannot run `pg_receivewal` can set
+`archive_command` from `deploy/postgres/wal-archive.conf`
+(`archive_timeout = 300`). That file is an example. It is not a
+Kustomize resource, and it must not contain `BACKUP_ENCRYPTION_KEY`.
 
 A successful dump is not recovery evidence and is not supply-chain
 provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).
@@ -122,7 +165,8 @@ provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).
 | --- | --- | --- |
 | Every PR and `main` push | `supply-chain.yml` `restore-rehearsal` → `scripts/backup/restore-rehearsal.sh` | Encrypted compose dump, isolated Postgres, hardened API `/health` + `/readiness` |
 | Every PR and `main` push | E12.2 `e12-resilience.yml` → `scripts/backup/restore-schema-rehearsal.sh` | Isolated schema restore + `execution_jobs` present |
-| Every PR and `main` push | E12.2 → `scripts/backup/rpo-rto-rehearsal.sh` | DSN path used by the CronJob; records RPO hours + RTO seconds; fails if RTO budget exceeded |
+| Every PR and `main` push | E12.2 → `scripts/backup/rpo-rto-rehearsal.sh` | DSN path used by the CronJob; verifies the integrity manifest; tamper fails closed; records logical RPO hours, PITR RPO seconds, and RTO |
+| Every PR and `main` push | E12.2 → `scripts/backup/manifest-pitr-rehearsal.sh` | Manifest tamper, sealed WAL, PITR replay of a row written after the base backup |
 | Before production enablement | All rehearsals in an environment that matches production pinning / TLS / secrets | Required by the [security model](../reference/security-model.md) operational controls and E12 epic acceptance |
 | After schema migrations land | Re-run the rehearsals; commit updated E12.2 last-run JSON when the resilience suite changes | Do not hand-edit pass/fail flags |
 
@@ -139,6 +183,10 @@ TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=dis
 # RPO/RTO (same DSN path as the CronJob)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
   bash scripts/backup/rpo-rto-rehearsal.sh
+
+# Integrity manifest + WAL/PITR (local Postgres only; needs postgresql-16 server tools)
+TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
+  bash scripts/backup/manifest-pitr-rehearsal.sh
 ```
 
 The compose rehearsal boots an isolated API **production-locked** (no
@@ -153,6 +201,7 @@ Last-run pointers:
 
 - [e12-resilience-evidence/restore-schema-last-run.json](../reference/e12-resilience-evidence/restore-schema-last-run.json)
 - [e12-resilience-evidence/rpo-rto-last-run.json](../reference/e12-resilience-evidence/rpo-rto-last-run.json)
+- [e12-resilience-evidence/manifest-pitr-last-run.json](../reference/e12-resilience-evidence/manifest-pitr-last-run.json)
 - [e12-resilience-evidence/last-run.json](../reference/e12-resilience-evidence/last-run.json)
 - CI artifact `e12-resilience-suite`; sibling job name
   `restore-rehearsal` on `supply-chain.yml`
@@ -172,7 +221,10 @@ Incident steps after a real restore:
 4. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
    missing or malformed). They are not in the dump; generate unique
    values and do not copy compose defaults.
-5. Restore + RPO/RTO rehearsals are green on `main`.
+5. Restore, RPO/RTO, and manifest/PITR rehearsals are green on `main`.
+   The WAL receiver is one replica; the backup role can replicate and
+   call `pg_switch_wal()`. PITR RPO is 300s only while that receiver
+   is sealing segments.
 6. Retention purge is exercised in a non-prod workspace (`POST /retention/purge`)
    and legal hold is verified to skip deletion.
 7. Audit rows older than 365 days leave only via

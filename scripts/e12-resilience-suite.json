@@ -54,6 +54,11 @@
           "id": "rpo-rto",
           "title": "DSN encrypted backup path + RPO/RTO wall-clock gate (G.1.4)",
           "argv": ["bash", "scripts/backup/rpo-rto-rehearsal.sh"]
+        },
+        {
+          "id": "manifest-pitr",
+          "title": "FFB1 integrity manifest, tamper fail-closed, and WAL/PITR replay (G.2.7)",
+          "argv": ["bash", "scripts/backup/manifest-pitr-rehearsal.sh"]
         }
       ]
     },

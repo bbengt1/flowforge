@@ -119,6 +119,37 @@ try:
         raise SystemExit("encrypted dump is empty")
     if enc.read_bytes()[:4] != b"FFB1":
         raise SystemExit("backup blob is not FFB1 AEAD")
+    manifest = enc.with_name("flowforge.manifest.enc")
+    subprocess.run(
+        [
+            "python3",
+            str(root / "scripts/backup/manifest.py"),
+            "seal",
+            "--out",
+            str(manifest),
+            "--chain",
+            "logical",
+            "--seq",
+            "1",
+            "--object",
+            f"logical-dump:{enc}",
+        ],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "python3",
+            str(root / "scripts/backup/manifest.py"),
+            "verify",
+            "--manifest",
+            str(manifest),
+            "--dir",
+            str(workdir),
+        ],
+        env=env,
+        check=True,
+    )
 
     psql("postgres", f'CREATE DATABASE "{restore_db}"')
     dec = subprocess.Popen(
@@ -152,6 +183,7 @@ try:
         "encrypted": True,
         "aead": True,
         "format": "FFB1",
+        "integrityManifest": True,
         "isolatedDatabaseDropped": True,
     }
     out_dir = Path(os.environ.get("E12_RUN_DIR") or (root / ".e12-run"))

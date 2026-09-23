@@ -19,6 +19,8 @@ resources:
   - script-runner-rbac.yaml
   - backup-secret.example.yaml
   - backup-cronjob.yaml
+  - pitr-base-cronjob.yaml
+  - wal-archive-deployment.yaml
   - default-deny-networkpolicy.yaml
   - api-networkpolicy.yaml
   - web-networkpolicy.yaml

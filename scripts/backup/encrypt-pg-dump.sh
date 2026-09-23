@@ -32,4 +32,17 @@ if [[ ! -s "$outfile" ]]; then
   exit 1
 fi
 
+case "$outfile" in
+  *.sql.enc) manifest="${outfile%.sql.enc}.manifest.enc" ;;
+  *) manifest="${outfile}.manifest.enc" ;;
+esac
+python3 "$ROOT/scripts/backup/manifest.py" seal \
+  --out "$manifest" \
+  --chain logical \
+  --seq 1 \
+  --object "logical-dump:${outfile}"
+python3 "$ROOT/scripts/backup/manifest.py" verify \
+  --manifest "$manifest" \
+  --dir "$(dirname "$outfile")"
+
 echo "wrote encrypted dump $outfile format=FFB1"

@@ -21,15 +21,29 @@ RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
  && chown 65532:65532 /tmp /backups \
  && chmod 1777 /tmp
 
+COPY scripts/backup/common.sh /usr/local/bin/common.sh
 COPY scripts/backup/run-encrypted-backup.sh /usr/local/bin/run-encrypted-backup
+COPY scripts/backup/archive-wal.sh /usr/local/bin/archive-wal
+COPY scripts/backup/receive-wal.sh /usr/local/bin/receive-wal
+COPY scripts/backup/pitr-basebackup.sh /usr/local/bin/pitr-basebackup
+COPY scripts/backup/pitr-restore.sh /usr/local/bin/pitr-restore
 COPY scripts/backup/aead.py /usr/local/lib/flowforge/aead.py
-RUN chmod 0555 /usr/local/bin/run-encrypted-backup /usr/local/lib/flowforge/aead.py
+COPY scripts/backup/manifest.py /usr/local/lib/flowforge/manifest.py
+RUN chmod 0555 \
+      /usr/local/bin/common.sh \
+      /usr/local/bin/run-encrypted-backup \
+      /usr/local/bin/archive-wal \
+      /usr/local/bin/receive-wal \
+      /usr/local/bin/pitr-basebackup \
+      /usr/local/bin/pitr-restore \
+      /usr/local/lib/flowforge/aead.py \
+      /usr/local/lib/flowforge/manifest.py
 
 USER 65532:65532
 
 LABEL org.opencontainers.image.source="https://github.com/bbengt1/flowforge" \
       org.opencontainers.image.title="flowforge-backup" \
-      org.opencontainers.image.description="FlowForge encrypted Postgres backup CronJob"
+      org.opencontainers.image.description="FlowForge encrypted Postgres backup, integrity manifest, and WAL archive"
 
 # CronJob overrides command. Default is a no-op so accidental starts fail closed
 # without a DSN / key rather than dumping to stdout.
