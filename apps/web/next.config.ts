@@ -13,6 +13,12 @@ const security = staticSecurityHeaders({ includeCsp: false });
 const nextConfig: NextConfig = {
   ...(dockerBuild ? { output: "standalone" as const } : {}),
   poweredByHeader: false,
+  // TypeScript 7 ships a native tsc and no lib/typescript.js compiler API.
+  // Next 16.3.4 typechecks through that API unless this flag is set, which
+  // shells out to the TypeScript 7 CLI (E1467).
+  experimental: {
+    useTypeScriptCli: true,
+  },
   // Browser session cookies are Path=/api/v1. Rewrite so same-origin
   // fetches to /api/v1/* hit the existing control-plane forwarder.
   async rewrites() {
