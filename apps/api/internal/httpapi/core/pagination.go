@@ -1,0 +1,50 @@
+package core
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/page"
+)
+
+// PageResponse is the collection envelope for Chloe.
+// items is never null. limit is the applied page size.
+// cursor is the opaque token that produced this page (empty on the first page).
+// next is the opaque token for the following page (empty when this page is the last).
+type PageResponse[T any] struct {
+	Items  []T    `json:"items"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+	Next   string `json:"next"`
+}
+
+func ParsePage(w http.ResponseWriter, r *http.Request) (page.Query, bool) {
+	q, err := page.Parse(r.URL.Query())
+	if err != nil {
+		RejectPageErr(w, r, err)
+		return page.Query{}, false
+	}
+	return q, true
+}
+
+// RejectPageErr writes a static 400 when err is a pagination failure.
+// The problem body does not echo q or the cursor.
+func RejectPageErr(w http.ResponseWriter, r *http.Request, err error) bool {
+	if err == nil || !errors.Is(err, page.ErrInvalid) {
+		return false
+	}
+	WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "limit, cursor, or q is not valid.")
+	return true
+}
+
+func WritePage[T any](w http.ResponseWriter, items []T, q page.Query, next string) {
+	if items == nil {
+		items = []T{}
+	}
+	WriteJSON(w, http.StatusOK, PageResponse[T]{
+		Items:  items,
+		Limit:  q.Limit,
+		Cursor: q.Cursor,
+		Next:   next,
+	})
+}

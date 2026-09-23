@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,9 +12,9 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
-	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/ha"
+	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
@@ -38,62 +36,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
-	"github.com/bbengt1/flowforge/apps/api/openapi"
-	"gopkg.in/yaml.v3"
 )
-
-// Server is the versioned control-plane HTTP API.
-type Server struct {
-	db               postgres.Checker
-	store            identity.Store
-	bootstrap        bootstrap.Store
-	scoped           isolation.Store
-	cache            *isolation.Cache
-	sessions         session.Store
-	workflows        wfstore.Store
-	vault            vault.Store
-	hooks            webhook.Store
-	schedules        schedule.Store
-	ops              opsconfig.Store
-	approvals        approval.Store
-	alerts           opsalert.Store
-	keys             vault.Keys
-	jobKey           []byte
-	scriptKey        []byte
-	scripts          *scripts.Pipeline
-	objects          artifact.Objects
-	downloadTTL      time.Duration
-	artifactMaxBytes int
-	log              *slog.Logger
-	registry         *observability.Registry
-	sec              Security
-	clock            func() time.Time
-	embedKeys        embed.Material
-	embedRing        *embed.Ring
-	embedJTI         embed.JTIConsumer
-	embedMintIssuers []string
-	portalIssuers    []string
-	portalFrames     []string
-	platformAdmins   []authz.PrincipalRef
-	embedLimiter     *embed.Limiter
-	loginLimiter     *embed.Limiter
-	machineLimiter   *embed.Limiter
-	loginLimits      localauth.Limits
-	quota            quota.Taker
-	quotaLimits      quota.Limits
-	machines         machine.Store
-	machineConsumers machine.Consumers
-	oidc             *oidc.Client
-	mfa              mfa.Store
-	mfaKey           []byte
-	scimSettings     scim.Settings
-	scimDir          scim.Store
-	lockouts         lockout.Store
-	lockoutMax       int
-	embedAuditor     embed.Auditor
-	embedNBFLeeway   time.Duration
-	tlsMaterials     tlsmaterial.Store
-}
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
@@ -430,137 +373,137 @@ func newServer(d Deps) *API {
 		downloadTTL = wfstore.DefaultDownloadTTL
 	}
 	s := &Server{
-		db:               d.DB,
-		store:            d.Store,
-		bootstrap:        d.Bootstrap,
-		scoped:           d.Scoped,
-		cache:            cache,
-		sessions:         sessions,
-		workflows:        workflows,
-		vault:            vaultStore,
-		hooks:            hookStore,
-		schedules:        scheduleStore,
-		ops:              opsStore,
-		approvals:        approvalStore,
-		alerts:           alertStore,
-		keys:             keys,
-		jobKey:           jobKey,
-		scriptKey:        scriptKey,
-		scripts:          &scripts.Pipeline{Store: scriptStore, Key: scriptKey},
-		objects:          objects,
-		downloadTTL:      downloadTTL,
-		artifactMaxBytes: d.ArtifactMaxBytes,
-		log:              log,
-		registry:         registry,
-		sec:              d.Security,
-		clock:            clock,
-		embedKeys:        d.EmbedKeys,
-		embedRing:        d.EmbedRing,
-		embedJTI:         d.EmbedJTI,
-		embedMintIssuers: append([]string(nil), d.EmbedIssuers...),
-		portalIssuers:    append([]string(nil), d.PortalIssuers...),
-		portalFrames:     append([]string(nil), d.PortalFrameAncestors...),
-		embedLimiter:     embed.NewLimiter(d.EmbedLimits),
-		loginLimits:      localauth.NormalizeLimits(d.LoginLimits),
-		quotaLimits:      quota.Normalize(d.Quota),
-		embedAuditor:     d.EmbedAuditor,
-		embedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
-		tlsMaterials:     d.TLSMaterials,
+		DB:               d.DB,
+		Store:            d.Store,
+		Bootstrap:        d.Bootstrap,
+		Scoped:           d.Scoped,
+		Cache:            cache,
+		Sessions:         sessions,
+		Workflows:        workflows,
+		Vault:            vaultStore,
+		Hooks:            hookStore,
+		Schedules:        scheduleStore,
+		Ops:              opsStore,
+		Approvals:        approvalStore,
+		Alerts:           alertStore,
+		Keys:             keys,
+		JobKey:           jobKey,
+		ScriptKey:        scriptKey,
+		Scripts:          &scripts.Pipeline{Store: scriptStore, Key: scriptKey},
+		Objects:          objects,
+		DownloadTTL:      downloadTTL,
+		ArtifactMaxBytes: d.ArtifactMaxBytes,
+		Log:              log,
+		Registry:         registry,
+		Sec:              d.Security,
+		Clock:            clock,
+		EmbedKeys:        d.EmbedKeys,
+		EmbedRing:        d.EmbedRing,
+		EmbedJTI:         d.EmbedJTI,
+		EmbedMintIssuers: append([]string(nil), d.EmbedIssuers...),
+		PortalIssuers:    append([]string(nil), d.PortalIssuers...),
+		PortalFrames:     append([]string(nil), d.PortalFrameAncestors...),
+		EmbedLimiter:     embed.NewLimiter(d.EmbedLimits),
+		LoginLimits:      localauth.NormalizeLimits(d.LoginLimits),
+		QuotaLimits:      quota.Normalize(d.Quota),
+		EmbedAuditor:     d.EmbedAuditor,
+		EmbedNBFLeeway:   embed.NormalizeNBFLeeway(d.EmbedNBFLeeway),
+		TLSMaterials:     d.TLSMaterials,
 	}
 	// Dedicated limiter: do not share embed's IP/principal counters.
-	s.loginLimiter = embed.NewLimiter(embed.Limits{
-		Window:            s.loginLimits.Window,
+	s.LoginLimiter = embed.NewLimiter(embed.Limits{
+		Window:            s.LoginLimits.Window,
 		ExchangeIP:        -1,
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
 	if d.PlatformAdmins != nil {
-		s.platformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
+		s.PlatformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
 	} else {
-		s.platformAdmins = authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
+		s.PlatformAdmins = authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
 	}
-	s.machines = d.Machines
-	if s.machines == nil {
+	s.Machines = d.Machines
+	if s.Machines == nil {
 		if p, ok := d.DB.(*postgres.Pool); ok {
-			s.machines = machine.NewPostgres(p)
+			s.Machines = machine.NewPostgres(p)
 		} else {
-			s.machines = machine.NewMemory()
+			s.Machines = machine.NewMemory()
 		}
 	}
-	s.machineConsumers = d.MachineConsumers
-	s.machineLimiter = embed.NewLimiter(embed.Limits{
+	s.MachineConsumers = d.MachineConsumers
+	s.MachineLimiter = embed.NewLimiter(embed.Limits{
 		Window:            time.Minute,
 		ExchangeIP:        -1,
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
-	s.quota = d.QuotaStore
+	s.Quota = d.QuotaStore
 	if pool, ok := d.DB.(*postgres.Pool); ok {
 		shared := quota.NewPostgres(pool)
-		if s.quota == nil {
-			s.quota = shared
+		if s.Quota == nil {
+			s.Quota = shared
 		}
-		s.embedLimiter.UseShared(shared)
-		s.loginLimiter.UseShared(shared)
-		s.machineLimiter.UseShared(shared)
+		s.EmbedLimiter.UseShared(shared)
+		s.LoginLimiter.UseShared(shared)
+		s.MachineLimiter.UseShared(shared)
 	}
-	if s.quota == nil {
-		s.quota = quota.NewMemory()
+	if s.Quota == nil {
+		s.Quota = quota.NewMemory()
 	}
 	if p, ok := d.DB.(*postgres.Pool); ok {
-		s.mfa = mfa.NewPostgres(p)
-		s.oidc = oidc.NewClient(d.OIDC, oidc.NewPostgres(p))
+		s.MFA = mfa.NewPostgres(p)
+		s.OIDC = oidc.NewClient(d.OIDC, oidc.NewPostgres(p))
 	} else {
-		s.mfa = mfa.NewMemory()
-		s.oidc = oidc.NewClient(d.OIDC, oidc.NewMemory())
+		s.MFA = mfa.NewMemory()
+		s.OIDC = oidc.NewClient(d.OIDC, oidc.NewMemory())
 	}
 	if len(d.MFAKey) == 32 {
-		s.mfaKey = append([]byte(nil), d.MFAKey...)
+		s.MFAKey = append([]byte(nil), d.MFAKey...)
 	}
-	s.scimSettings = d.SCIM
-	s.scimDir = d.SCIMDir
-	if s.scimDir == nil {
+	s.SCIMSettings = d.SCIM
+	s.SCIMDir = d.SCIMDir
+	if s.SCIMDir == nil {
 		if p, ok := d.DB.(*postgres.Pool); ok {
-			s.scimDir = scim.NewPostgres(p)
+			s.SCIMDir = scim.NewPostgres(p)
 		} else {
-			s.scimDir = scim.NewMemory()
+			s.SCIMDir = scim.NewMemory()
 		}
 	}
-	s.lockouts = d.Lockouts
-	if s.lockouts == nil {
+	s.Lockouts = d.Lockouts
+	if s.Lockouts == nil {
 		if p, ok := d.DB.(*postgres.Pool); ok {
-			s.lockouts = lockout.NewPostgres(p)
+			s.Lockouts = lockout.NewPostgres(p)
 		} else {
-			s.lockouts = lockout.NewMemory()
+			s.Lockouts = lockout.NewMemory()
 		}
 	}
-	s.lockoutMax = d.LockoutMaxFailures
-	if s.lockoutMax == 0 {
-		s.lockoutMax = lockout.DefaultMaxFailures
+	s.LockoutMax = d.LockoutMaxFailures
+	if s.LockoutMax == 0 {
+		s.LockoutMax = lockout.DefaultMaxFailures
 	}
-	if s.lockoutMax < lockout.MinMaxFailures || s.lockoutMax > lockout.MaxMaxFailures {
-		s.lockoutMax = 0
+	if s.LockoutMax < lockout.MinMaxFailures || s.LockoutMax > lockout.MaxMaxFailures {
+		s.LockoutMax = 0
 	}
-	if !s.embedKeys.Ready() {
+	if !s.EmbedKeys.Ready() {
 		if loaded, err := embed.LoadMaterial(); err == nil {
-			s.embedKeys = loaded
+			s.EmbedKeys = loaded
 		}
 		// Production LoadMaterial fails closed when the key is missing.
 		// Do not mint a boot-only ephemeral key here (ADV-006).
 	}
-	if s.embedRing == nil {
+	if s.EmbedRing == nil {
 		var store embed.KeyStore
 		if p, ok := d.DB.(*postgres.Pool); ok {
 			store = embed.NewPostgresKeys(p)
 		}
-		s.embedRing = embed.NewRing(s.embedKeys, store)
-		_ = s.embedRing.Refresh(context.Background(), time.Now().UTC())
+		s.EmbedRing = embed.NewRing(s.EmbedKeys, store)
+		_ = s.EmbedRing.Refresh(context.Background(), time.Now().UTC())
 	}
-	if s.embedJTI == nil {
+	if s.EmbedJTI == nil {
 		if p, ok := d.DB.(*postgres.Pool); ok {
-			s.embedJTI = embed.NewPostgresJTI(p)
+			s.EmbedJTI = embed.NewPostgresJTI(p)
 		} else {
-			s.embedJTI = embed.NewMemoryJTI()
+			s.EmbedJTI = embed.NewMemoryJTI()
 		}
 	}
 
@@ -573,157 +516,56 @@ func newServer(d Deps) *API {
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rec, allow := muxMethodNotAllowed(mux, r); rec != "" {
-			setRoute(r, routePattern(mux, r))
+			core.SetRoute(r, routePattern(mux, r))
 			w.Header().Set("Allow", allow)
 			WriteProblem(w, r, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "Method Not Allowed", rec)
 			return
 		}
 		if !hasExactRoute(mux, r) {
-			setRoute(r, "unmatched")
+			core.SetRoute(r, "unmatched")
 			WriteProblem(w, r, http.StatusNotFound, CodeNotFound, "Not Found", "The requested path does not exist.")
 			return
 		}
-		setRoute(r, routePattern(mux, r))
+		core.SetRoute(r, routePattern(mux, r))
 		mux.ServeHTTP(w, r)
 	})
 
 	unshared := unsharedBackends([]namedBackend{
 		{"session", sessions},
 		{"workflow", workflows},
-		{"jti", s.embedJTI},
-		{"lockout", s.lockouts},
+		{"jti", s.EmbedJTI},
+		{"lockout", s.Lockouts},
 		{"vault", vaultStore},
-		{"identity", s.store},
-		{"isolation", s.scoped},
-		{"machine", s.machines},
-		{"mfa", s.mfa},
-		{"scim", s.scimDir},
-		{"bootstrap", s.bootstrap},
-		{"webhook", s.hooks},
-		{"schedule", s.schedules},
-		{"ops", s.ops},
-		{"approval", s.approvals},
-		{"alert", s.alerts},
+		{"identity", s.Store},
+		{"isolation", s.Scoped},
+		{"machine", s.Machines},
+		{"mfa", s.MFA},
+		{"scim", s.SCIMDir},
+		{"bootstrap", s.Bootstrap},
+		{"webhook", s.Hooks},
+		{"schedule", s.Schedules},
+		{"ops", s.Ops},
+		{"approval", s.Approvals},
+		{"alert", s.Alerts},
 		{"script", scriptStore},
 	}, d.ArtifactBackend)
-	if quotaUnshared(s.quota) {
+	if core.QuotaUnshared(s.Quota) {
 		unshared = append(unshared, "rate")
 	}
-	if !s.loginLimiter.Shared() {
+	if !s.LoginLimiter.Shared() {
 		unshared = append(unshared, "login-rate")
 	}
-	if !s.embedLimiter.Shared() {
+	if !s.EmbedLimiter.Shared() {
 		unshared = append(unshared, "embed-rate")
 	}
-	if !s.machineLimiter.Shared() {
+	if !s.MachineLimiter.Shared() {
 		unshared = append(unshared, "machine-rate")
 	}
 	return &API{
-		Handler:    withRequestID(withSecureHeaders(s.sec, withObserve(log, registry, withRecover(log, withBodyLimit(s.withOriginPolicy(router)))))),
+		Handler:    core.WithRequestID(core.WithSecureHeaders(s.Sec, core.WithObserve(log, registry, core.WithRecover(log, core.WithBodyLimit(s.WithOriginPolicy(router)))))),
 		srv:        s,
 		replicaErr: ha.RefuseUnshared(d.Replicas, unshared),
 	}
-}
-
-func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	// Unlimited. Workspace quotas and auth-door limits do not apply.
-	writeJSON(w, http.StatusOK, probeIdentity("ok"))
-}
-
-func (s *Server) readiness(w http.ResponseWriter, r *http.Request) {
-	if s.db == nil {
-		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "PostgreSQL is not reachable")
-		return
-	}
-	if err := s.db.Ping(r.Context()); err != nil {
-		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "PostgreSQL is not reachable")
-		return
-	}
-	writeJSON(w, http.StatusOK, probeIdentity("ready"))
-}
-
-// probeIdentity is the secret-free liveness/readiness body. version/sha
-// come from ldflags or BUILD_* env; unsafe values become "dev"/"unknown"
-// and never change the probe status.
-func probeIdentity(status string) map[string]string {
-	info := buildinfo.Resolve()
-	return map[string]string{
-		"status":  status,
-		"version": info.Version,
-		"sha":     info.SHA,
-	}
-}
-
-func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePlatformOpsRead(w, r) {
-		return
-	}
-	var buf bytes.Buffer
-	if err := s.registry.WritePrometheus(&buf); err != nil {
-		WriteProblem(w, r, http.StatusInternalServerError, CodeInternalError, "Internal Server Error", "Metrics could not be published.")
-		return
-	}
-	if err := observability.WriteOTelPrometheus(&buf); err != nil && s.log != nil {
-		s.log.Error("opentelemetry metrics", "error", err)
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(buf.Bytes())
-}
-
-func (s *Server) openapiYAML(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePlatformOpsRead(w, r) {
-		return
-	}
-	w.Header().Set("Content-Type", "application/yaml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(mustOpenAPIYAML())
-}
-
-func (s *Server) openapiJSON(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePlatformOpsRead(w, r) {
-		return
-	}
-	var doc any
-	if err := yaml.Unmarshal(mustOpenAPIYAML(), &doc); err != nil {
-		WriteProblem(w, r, http.StatusInternalServerError, CodeInternalError, "Internal Server Error", "OpenAPI document could not be published.")
-		return
-	}
-	writeJSON(w, http.StatusOK, doc)
-}
-
-func (s *Server) swagger(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePlatformOpsRead(w, r) {
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(swaggerHTML))
-}
-
-const swaggerHTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>FlowForge API</title>
-</head>
-<body>
-  <h1>FlowForge Control Plane API</h1>
-  <p>Published specification:</p>
-  <ul>
-    <li><a href="/api/v1/openapi.yaml">OpenAPI YAML</a></li>
-    <li><a href="/api/v1/openapi.json">OpenAPI JSON</a></li>
-  </ul>
-</body>
-</html>
-`
-
-func mustOpenAPIYAML() []byte {
-	data, err := fs.ReadFile(openapi.FS, "openapi.yaml")
-	if err != nil {
-		return []byte("openapi: 3.0.3\ninfo:\n  title: FlowForge Control Plane API\n  version: 0.0.0\n")
-	}
-	return data
 }
 
 func hasExactRoute(mux *http.ServeMux, r *http.Request) bool {

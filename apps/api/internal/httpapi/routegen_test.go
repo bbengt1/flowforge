@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"gopkg.in/yaml.v3"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 )
 
 func TestRouteTableIsRegisteredAndClassified(t *testing.T) {
