@@ -764,7 +764,7 @@ function WorkflowHomeSession() {
     const across = folderHomeListMode(searchText, searchInThisFolder) === "across-search";
     const folderId = selectedFolderListFolderId(listSelection);
     let list = await listWorkflows(identity, {
-      folderId,
+      folderId: selectedFolderListFolderId(listSelection),
       q: across ? undefined : searchText || undefined,
       limit: COLLECTION_PAGE_DEFAULT_LIMIT,
     });

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { credentialListPath } from "./credential-contract.ts";
 import { historyKeyAction } from "./execution-replay.ts";
 import type { CredentialRecord } from "./credential-types.ts";
 import {
@@ -121,7 +120,10 @@ describe("R5.1 credential vault find", () => {
     });
     assert.deepEqual(CREDENTIAL_VAULT_QUERY_KEYS, ["q", "type", "tag", "status"]);
     assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("secret"));
-    assert.equal(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("q"), false);
+    assert.equal(
+      (CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS as readonly string[]).includes("q"),
+      false,
+    );
     assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("cursor"));
     assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("type"));
     assert.equal(parseCredentialVaultQuery("type=not-a-type").type, "");
