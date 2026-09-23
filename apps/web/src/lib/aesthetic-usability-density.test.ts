@@ -81,8 +81,6 @@ describe("UXL.8 Aesthetic-Usability density pass", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#295/);
-    assert.match(frontend, /keep #295 open/i);
     assert.match(frontend, /Aesthetic-Usability/);
   });
 

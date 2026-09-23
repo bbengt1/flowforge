@@ -124,7 +124,6 @@ describe("R7.3 local seed + ops docs", () => {
     });
 
     const operatorAdmin = repoSource(LOCAL_SEED_OPS_DOCS.operatorAdmin);
-    assert.match(operatorAdmin, /Keep #278 open/);
     assert.match(operatorAdmin, /Example context/);
     assert.match(operatorAdmin, /https:\/\/idp\.example/);
     assert.match(operatorAdmin, /admin-1/);
@@ -133,7 +132,6 @@ describe("R7.3 local seed + ops docs", () => {
     assert.match(operatorAdmin, /Settings may link carefully/);
 
     const frontendUi = repoSource(LOCAL_SEED_OPS_DOCS.frontendUi);
-    assert.match(frontendUi, /Keep #278 open|#278/);
     assert.match(frontendUi, /Example context/);
     assert.match(frontendUi, /never rewrite login/);
     assert.match(frontendUi, /https:\/\/idp\.example/);

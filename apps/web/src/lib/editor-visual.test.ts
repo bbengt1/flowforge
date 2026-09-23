@@ -76,8 +76,6 @@ describe("V.4 Editor chrome", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#360/);
-    assert.match(frontend, /keep #360 open/i);
     assert.match(frontend, /dark canvas/i);
   });
 

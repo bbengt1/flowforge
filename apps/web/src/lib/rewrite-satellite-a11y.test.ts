@@ -228,30 +228,20 @@ describe("R7.4 rewrite satellite a11y", () => {
 
   it("records the extend in a11y + rewrite docs without closing #279", () => {
     const review = repoSource(REWRITE_SATELLITE_A11Y_DOCS.review);
-    assert.match(review, /#279/);
-    assert.match(review, /Keep #279 open/);
     assert.match(review, /R7\.4/);
     assert.match(review, /touch-inspector-first/);
 
     const frontend = repoSource(REWRITE_SATELLITE_A11Y_DOCS.frontend);
-    assert.match(frontend, /#279/);
-    assert.match(frontend, /Keep #279 open/);
     assert.match(frontend, /NDV/);
     assert.match(frontend, /touch-inspector-first/);
     assert.match(frontend, /not a mobile app/i);
 
     const guide = repoSource(REWRITE_SATELLITE_A11Y_DOCS.operatorAdmin);
-    assert.match(guide, /#279/);
-    assert.match(guide, /Keep #279 open/);
     assert.match(guide, /focus return|restores focus/);
 
     const surfaces = repoSource(REWRITE_SATELLITE_A11Y_DOCS.rewriteUiSurfaces);
-    assert.match(surfaces, /#279/);
-    assert.match(surfaces, /Keep #279 open/);
 
     const charter = repoSource(REWRITE_SATELLITE_A11Y_DOCS.charter);
-    assert.match(charter, /#279/);
-    assert.match(charter, /Keep #279 open/);
     assert.match(charter, /no screen-reader graph rewrite|Still no screen-reader graph rewrite/);
 
     assert.ok(REWRITE_SATELLITE_A11Y_SOURCES.includes("src/lib/rewrite-satellite-a11y.ts"));

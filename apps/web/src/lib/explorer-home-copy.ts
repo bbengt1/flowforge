@@ -145,8 +145,7 @@ export function explorerHomeCopyInheritsPriorStories(): boolean {
 
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
   return (
-    docs.includes("#393") &&
-    /keep #393 open/i.test(docs) &&
+    docs.includes("X.6") &&
     EXPLORER_HOME_COPY_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

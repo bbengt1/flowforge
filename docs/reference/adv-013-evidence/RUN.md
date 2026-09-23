@@ -20,10 +20,10 @@ Hosts file: `127.0.0.1 portal.test embed.test evil.test`
 - Catalog publishes Portal origin as `frameAncestors`: **true**
 - Assertion in URL rejected (`x-flowforge-embed-rejected: 1`): **true**
 - Mint via adapter (`POST https://portal.test:8443/portal/assertions`): **true**
-  - `tokenId`: `066d588f-4286-4a92-aee3-241cb69792d6`
-  - `iss`: `https://portal.cp-ops.example`
-  - `sub`: `portal-user-1`
-  - `aud`: `flowforge`
+ - `tokenId`: `066d588f-4286-4a92-aee3-241cb69792d6`
+ - `iss`: `https://portal.cp-ops.example`
+ - `sub`: `portal-user-1`
+ - `aud`: `flowforge`
 - Body-only `POST /embed/exchange` Set-Cookie is `SameSite=None; Partitioned; Secure` (CHIPS): **true**
 - Session with CHIPS cookies (`credentials: include` equivalent): **true**
 - Empty allowlist fail-closed (real `isEmptyAllowlistFailClosed` module): **true**

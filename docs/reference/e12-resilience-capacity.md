@@ -1,8 +1,8 @@
 # E12.2 operational resilience and capacity
 
-Relates to #183 / Part of #181. **Keep #183 open.** This document is the
+ This document is the
 control map, how each rehearsal is run, and the ≥2× headroom claims.
-**Chloe: no product UI** — headroom and queue lag stay harness + docs.
+**no product UI** — headroom and queue lag stay harness + docs.
 
 Harness: `scripts/e12-resilience-suite.sh` (catalog
 `scripts/e12-resilience-suite.json`). CI job:
@@ -70,7 +70,7 @@ updated JSON when the load shape or pool limit changes.
 - Manifest / PITR: [e12-resilience-evidence/manifest-pitr-last-run.json](e12-resilience-evidence/manifest-pitr-last-run.json)
 - CI artifact name: `e12-resilience-suite`
 
-## Chloe map
+## Operator UI map
 
 Prefer docs + harness. Do **not** add operator chrome for connection
 headroom, queue lag, or storage growth on this story.
@@ -81,16 +81,13 @@ headroom, queue lag, or storage growth on this story.
 | Restore / worker-loss | **No UI** | Existing execution `indeterminate` + retry contract is enough. E12.1 already covers stale-session / approval chrome. |
 | Migration lock | **No UI** | API boot / `cmd/migrate` only. |
 
-Keep #183 open after this PR.
+## Scope split
 
-## Ownership
-
-- **jonny:** harness, restore/worker/load evidence, CI gate, this map.
-- **Chloe:** no UI on this story unless a later ops surface is explicitly
-  requested. Do not close #183 on a UI PR alone.
+- Harness, restore/worker/load evidence, the CI gate, and this map.
+- No operator UI on this story unless a later ops surface is explicitly requested.
 
 Operator restore/incident narrative (E12.3, no harness change):
 [incident and recovery](../operations/incident-recovery.md),
 [retention and backup](../operations/retention-backup.md).
-Chloe UI guide ([operator-admin.md](../guides/operator-admin.md)) links
-here and does not add lag/headroom chrome. Keep #184 open.
+The operator guide ([operator-admin.md](../guides/operator-admin.md)) links
+here and does not add lag/headroom chrome.

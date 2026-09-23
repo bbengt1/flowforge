@@ -4,9 +4,7 @@ Status: **docs-only design brief**. Does not change application code, contracts,
 
 **Catalog:** [Laws of UX](https://lawsofux.com/) (Jon Yablonski). Adopt **selectively** for chrome polish after rewrite epics R1–R7. Not a redesign of the security or product model.
 
-**Owners:** Chloe (UI stories), Terry (verification after stories land). Product hard lines: Gracie. Epic cut: Arie. jonny only if a story discovers a real contract gap (expect none).
-
-**Baseline:** landed [frontend UI](../reference/frontend-ui.md) after epic #195 and R2–R7; expanded surface map in [rewrite UI surfaces](../reference/rewrite-ui-surfaces.md); charter authority in [n8n-class parity](flowforge-rewrite-n8n-class-parity.md) §11.1.
+**Baseline:** landed [frontend UI](../reference/frontend-ui.md) after epic and R2–R7; expanded surface map in [rewrite UI surfaces](../reference/rewrite-ui-surfaces.md); charter authority in [n8n-class parity](flowforge-rewrite-n8n-class-parity.md) §11.1.
 
 ---
 
@@ -122,7 +120,7 @@ Where a law would tempt us to weaken a hard line, the hard line wins.
 | **Jakob’s Law** vs FlowForge mental model | Matching n8n’s “run the unsaved graph” / canvas triggers / branded NDV would clone and break D3 / D5 / drafts-never-run. | Workflow-*tool* familiarity (canvas, palette, inspector, runs). FlowForge verbs stay Save draft / Publish / Start published / Test run. |
 | **Postel’s Law** (liberal accept) vs fail-closed | Guessing graphs, host-query authz, or extra catalog types is a contract bug. | Conservative send (normalize, strip, UUID refs). Reject the rest. |
 | **Von Restorff / Selective Attention** vs ADV-024 | Highlighting membership/isolation as “special product chrome” pulls grant-gated admin back into the workbench. | Stay off product chrome (R7.2). Settings may link carefully. Isolation success remains a denial. |
-| **Peak-End / Flow** vs one replay path | A second in-editor replay graph would feel “complete” and violate Gracie’s one operate path. | Overlay-on-this-canvas + **Open execution**. No `/replay`. |
+| **Peak-End / Flow** vs one replay path | A second in-editor replay graph would feel “complete” and violate one operate path. | Overlay-on-this-canvas + **Open execution**. No `/replay`. |
 | **Goal-Gradient / Hick** vs drafts never run | A single “Run” that starts the open buffer is the n8n-shaped shortcut we explicitly rejected (D5). | One-gesture Test run = mint published test version, then start. Unsaved stays blocked. |
 | **Occam** vs Tesler | Deleting Publish because “one less verb” hides irreducible policy / digest / audit complexity. | Fewer *redundant* verbs. Keep Publish. |
 | **Choice Overload** vs fail-closed catalog | Showing disabled next/provider types “so operators can browse” is a marketplace leak. | Enabled catalog only. `/actions` stays reference. |
@@ -132,16 +130,16 @@ Where a law would tempt us to weaken a hard line, the hard line wins.
 **Non-goals for this brief**
 
 - Screen-reader graph rewrite, mobile app, minimap/alignment as Musts (still aspirational in frontend-ui).
-- Server-backed home search, folder API, template API, archive API (jonny extensions; not UX-Laws polish).
+- Server-backed home search, folder API, template API, archive API (extensions; not UX-Laws polish).
 - Catalog fallback removal (R3.4) — contract hygiene, not a law.
 - Visual-identity / marketing refresh.
-- Creating GitHub issues from this page (Arie opens the epic).
+- Creating GitHub issues from this page (opens the epic).
 
 ---
 
 ## 5. Proposed story slices
 
-Issue-ready for Arie. Chloe-led. Ordered. Effort **S** or **M**. jonny API: **none expected** — flag only if a story discovers a real gap.
+Ordered story slices. UI-led. Ordered. Effort **S** or **M**. API: **none expected** — flag only if a story discovers a real gap.
 
 Do not implement from this page. Each story is chrome-only on existing routes and verbs.
 
@@ -150,7 +148,7 @@ Do not implement from this page. Each story is chrome-only on existing routes an
 **Laws:** Hick, Fitts, Serial Position, Occam, Cognitive Load, Proximity (Should).
 **Surfaces:** Editor top bar (standalone + `/embed/v1`).
 **Effort:** S.
-**jonny:** none.
+ **API:** none.
 
 Acceptance:
 
@@ -165,7 +163,7 @@ Acceptance:
 **Laws:** Mental Model, Working Memory, Cognitive Load.
 **Surfaces:** Editor top bar, Triggers tab, home activation column.
 **Effort:** S.
-**jonny:** none (D2 compose stays enable + version pin).
+ **API:** none (D2 compose stays enable + version pin).
 
 Acceptance:
 
@@ -179,7 +177,7 @@ Acceptance:
 **Laws:** Doherty Threshold.
 **Surfaces:** Editor, NDV, Runs, vault, embed `/embed/v1`.
 **Effort:** S.
-**jonny:** none. Do not add a websocket. Existing requests only.
+ **API:** none. Do not add a websocket. Existing requests only.
 
 Acceptance:
 
@@ -193,7 +191,7 @@ Acceptance:
 **Laws:** Peak-End Rule (Selective Attention / Von Restorff already covered — do not regress).
 **Surfaces:** Runs overlay, `/executions` inbox, NDV last-run, activation after Test run / Start published.
 **Effort:** S.
-**jonny:** none. No `/replay`. No server compare.
+ **API:** none. No `/replay`. No server compare.
 
 Acceptance:
 
@@ -207,7 +205,7 @@ Acceptance:
 **Laws:** Serial Position, Cognitive Load, Occam.
 **Surfaces:** Home `/workflows` list + cards.
 **Effort:** S.
-**jonny:** none. No folder/search/archive API.
+ **API:** none. No folder/search/archive API.
 
 Acceptance:
 
@@ -221,7 +219,7 @@ Acceptance:
 **Laws:** Mental Model, Paradox of the Active User (Should), Cognitive Load.
 **Surfaces:** Home `/workflows`, empty canvas, vault `/credentials`.
 **Effort:** S.
-**jonny:** none. Templates remain client YAML that POST a draft.
+ **API:** none. Templates remain client YAML that POST a draft.
 
 Acceptance:
 
@@ -235,7 +233,7 @@ Acceptance:
 **Laws:** Hick, Choice Overload (Should), Chunking (Should).
 **Surfaces:** Editor palette / Library satellite, Add action wizard step 1.
 **Effort:** M.
-**jonny:** none. Same `GET /workflows/catalog` (and engine catalogs). No marketplace.
+ **API:** none. Same `GET /workflows/catalog` (and engine catalogs). No marketplace.
 
 Acceptance:
 
@@ -249,7 +247,7 @@ Acceptance:
 **Laws:** Aesthetic-Usability Effect (Should).
 **Surfaces:** Editor, NDV, Runs, activation, embed, vault, home — after UXL.1–UXL.6.
 **Effort:** S.
-**jonny:** none.
+ **API:** none.
 
 Acceptance:
 
@@ -259,11 +257,11 @@ Acceptance:
 
 ---
 
-## 6. Verification (Terry)
+## 6. Verification
 
 Check after the matching stories land. Secret-free evidence. Do not treat this page as permission to close R1–R7 issues.
 
-| Must law | Terry checks |
+| Must law | checks |
 | --- | --- |
 | **Cognitive Load** | UXL.1 + UXL.2: an operator can state draft vs published-active vs test-run without opening YAML or three drawers. Top bar reads as three groups. |
 | **Hick’s Law** | UXL.1 + UXL.7: satellites vs authoring vs run are visually grouped; palette is category-first; enabled catalog only; no extra peer buttons. |
@@ -290,4 +288,4 @@ Check after the matching stories land. Secret-free evidence. Do not treat this p
 | [Embed SDK](../reference/embed-sdk.md) / [Portal adapter](../reference/portal-adapter.md) | Host contracts. ADV-021 / display-only query stay. |
 | [Security model](../reference/security-model.md) | Trust boundaries. UX polish cannot move them. |
 | [Laws of UX](https://lawsofux.com/) | External catalog. Product chrome says FlowForge, not the catalog’s branding. |
-| [Workflows home folder hierarchy](flowforge-workflow-folders.md) | Brent-promoted folder API + home tree. This polish brief still does not implement it. |
+| [Workflows home folder hierarchy](flowforge-workflow-folders.md) | -promoted folder API + home tree. This polish brief still does not implement it. |

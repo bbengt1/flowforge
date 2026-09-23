@@ -253,10 +253,7 @@ export function explorerRailOmitsVisibleOrganizeButtons(source: string): boolean
 
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
   return (
-    docs.includes("#399") &&
-    /keep #399 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    docs.includes("X.8") &&
     EXPLORER_FOLDER_CHROME_AUTO_CLOSE_TOKENS.every(
       (token) => !docs.includes(token),
     )

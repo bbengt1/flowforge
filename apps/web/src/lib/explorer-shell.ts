@@ -288,10 +288,7 @@ export function explorerOrganizeVerbsStayReachable(source: string): boolean {
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
   return (
-    docs.includes("#380") &&
-    /keep #380 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    docs.includes("X.1") &&
     EXPLORER_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

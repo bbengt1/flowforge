@@ -85,8 +85,6 @@ describe("UXL.2 draft / published / test-run working memory", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#289/);
-    assert.match(frontend, /keep #289 open/i);
     assert.match(frontend, /Editing a draft/);
     assert.match(frontend, /publish a test version, then start it/);
   });

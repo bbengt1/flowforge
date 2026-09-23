@@ -1,8 +1,6 @@
 # First-run operator wizard — bootstrap gate (B.1 / B.2 / B.3 / B.4 / B.5 / B.6 / B.7 / B.8)
 
-Status: **B.1–B.8 landed** (this page is the contract map). Parent epic [#333](https://github.com/bbengt1/flowforge/issues/333). B.1: [#334](https://github.com/bbengt1/flowforge/issues/334). B.2: [#335](https://github.com/bbengt1/flowforge/issues/335). B.3: [#336](https://github.com/bbengt1/flowforge/issues/336). B.4: [#337](https://github.com/bbengt1/flowforge/issues/337). B.5: [#338](https://github.com/bbengt1/flowforge/issues/338). B.6: [#339](https://github.com/bbengt1/flowforge/issues/339) — **keep #339 open**. B.7: [#347](https://github.com/bbengt1/flowforge/issues/347) — **keep #347 open**. B.8: [#390](https://github.com/bbengt1/flowforge/issues/390) — **keep #390 open**.
-
-**Owners:** jonny (gate + B.2–B.5 / B.7 APIs), Chloe (B.6 wizard chrome + Settings handoff; B.7 Skip chrome; B.8 non-prod defaults + TLS→https toast). Product hard lines: Gracie.
+Status: **B.1–B.8 landed** (this page is the contract map).
 
 **Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). When `local_logins` is empty, first boot seeds a one-time `admin` / `admin` credential (`must_change_password`) — rotate via `POST /session/password`. That identity is **not** `PLATFORM_ADMINS`. Settings already hold session/health/OpenAPI.
 
@@ -25,7 +23,7 @@ Status: **B.1–B.8 landed** (this page is the contract map). Parent epic [#333]
 
 Server `instance_bootstrap` singleton (`complete` / `incomplete`).
 
-| Situation | `GET /api/v1/bootstrap` | Chloe (standalone) |
+| Situation | `GET /api/v1/bootstrap` | (standalone) |
 | --- | --- | --- |
 | Fresh install, no admin | `200` `{complete:false, incomplete:true, …}` **without** a session | Show wizard |
 | Trusted-dev / compose localseed already created admin + public URL | `200` `{complete:true, incomplete:false, skipped:true}` **with** session or trusted-dev headers; unauthenticated is `401` | Product home (no re-teach) |
@@ -67,7 +65,7 @@ OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web pr
 | Incomplete (wizard in progress, no admin yet) | Unauthenticated. No bootstrap token. Matches `GET /health` / `GET /embed/catalog` (status-only, no secrets). | `503` if the store is down |
 | Complete | Normal product auth: `ff_session` cookie, or trusted-dev identity headers when that flag is on. Same principal helper as `GET /session`. | `401` unauthenticated |
 
-No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401` as “go to login / product home,” never as “show wizard.”
+No anonymous scrape token. No KEK in a header. After complete, treats `401` as “go to login / product home,” never as “show wizard.”
 
 ### Response (status only)
 
@@ -90,7 +88,7 @@ No anonymous scrape token. No KEK in a header. After complete, Chloe treats `401
 
 **Never present:** `publicBaseUrl` / `public_base_url`, passwords, hashes, KEK, PEMs, private keys, cookies, CSRF secrets.
 
-### Chloe B.6 chrome (landed)
+### B.6 wizard chrome (landed)
 
 Adapter: `apps/web/src/lib/first-run-bootstrap.ts`. Gate: `BootstrapGate` on the standalone `WorkspaceShell` only. Wizard: `FirstRunWizard`. Settings handoff: `BootstrapSettings` (`/settings#bootstrap`).
 
@@ -102,15 +100,15 @@ Adapter: `apps/web/src/lib/first-run-bootstrap.ts`. Gate: `BootstrapGate` on the
 6. After `complete`, never remount the wizard. Link Settings for URL / TLS / users / persistence (`/membership` for users).
 7. Do not store secrets, KEK, or this payload’s absence in `localStorage`.
 
-### Chloe B.7 Skip chrome (landed)
+### B.7 Skip chrome (landed)
 
-TLS step offers **Create self-signed** / **Upload PEM** / **Skip for now**. Skip is a first-class exit, not a silent default (create-self-signed stays selected until the operator chooses Skip). Loud copy: the instance stays on **HTTP until TLS is enabled in Settings**. Skip POSTs `{action:"skip"}` only — no PEM in the body, never `localStorage`. On success (`complete`) the wizard leaves for product home and never remounts. Settings `#bootstrap` / `#tls` surface `steps.tls.mode=skipped` and the path to enable create/upload later. Fail-closed order is unchanged: Skip is only offered when the TLS step is current (`publicUrl` ready). Never on `/embed/v1`.
+TLS step offers **Create self-signedUpload PEMSkip for now**. Skip is a first-class exit, not a silent default (create-self-signed stays selected until the operator chooses Skip). Loud copy: the instance stays on **HTTP until TLS is enabled in Settings**. Skip POSTs `{action:"skip"}` only — no PEM in the body, never `localStorage`. On success (`complete`) the wizard leaves for product home and never remounts. Settings `#bootstrap` / `#tls` surface `steps.tls.mode=skipped` and the path to enable create/upload later. Fail-closed order is unchanged: Skip is only offered when the TLS step is current (`publicUrl` ready). Never on `/embed/v1`.
 
-### Chloe B.8 non-prod defaults + TLS→https toast (landed)
+### B.8 non-prod defaults and TLS-to-https toast (landed)
 
 Incomplete **non-prod / path-2** chrome may pre-fill first-admin issuer `http://localhost`, subject `admin-1`, and public URL `http://localhost`. Fields stay editable. Persistence is unchanged. Production builds stay blank (fail-closed). Complete installs and localseed skip still do not remount the wizard.
 
-The #376 one-time Login password stays orthogonal. Wizard chrome still does not collect, pre-fill, POST, or echo a password (B.3 `admin` is shorter than the stored-password minimum and is the Login seed only).
+The one-time Login password stays orthogonal. Wizard chrome still does not collect, pre-fill, POST, or echo a password (B.3 `admin` is shorter than the stored-password minimum and is the Login seed only).
 
 When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” The toast stays mounted until it can be read; Sign in / workflows navigation is deferred. Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
 
@@ -118,7 +116,7 @@ When the operator chooses **Create** or **Upload** (not Skip) and the remembered
 
 ## 3. B.2–B.5 / B.7 landed API
 
-B.2–B.5 and B.7 are implemented. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed. **Chloe B.6 / B.7:** wizard chrome + Settings handoff + Skip-for-now consume these routes.
+B.2–B.5 and B.7 are implemented. All success bodies are **status-only** (`BootstrapStatus` or the same flags). Secrets POST once and are never echoed. **B.6 / B.7:** wizard chrome + Settings handoff + Skip-for-now consume these routes.
 
 Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`). Incomplete installs: same unauthenticated-or-bootstrap-session rule as B.1 `GET /bootstrap` for B.2–B.5 / B.7. Embed sessions are `403` (wizard is standalone). Unauthenticated incomplete POSTs have no session, so CSRF does not apply until `ff_session` is present.
 

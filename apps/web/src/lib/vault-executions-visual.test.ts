@@ -81,8 +81,6 @@ describe("V.5 Vault + executions restyle", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#361/);
-    assert.match(frontend, /keep #361 open/i);
     assert.match(frontend, /dark find\/detail/i);
     assert.match(frontend, /dark inbox/i);
   });

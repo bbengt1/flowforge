@@ -77,8 +77,6 @@ describe("V.1 Token foundation", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#357/);
-    assert.match(frontend, /keep #357 open/i);
     assert.match(frontend, /token foundation/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V1_BRIEF),

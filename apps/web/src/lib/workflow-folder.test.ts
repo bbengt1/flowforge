@@ -214,8 +214,6 @@ describe("F.2 home folder rail + select", () => {
     assert.match(brief, /F\.2/);
     assert.match(brief, /Unfiled/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#309/);
-    assert.match(frontend, /keep #309 open/i);
     assert.match(frontend, /GET \/workflow-folders/);
     assert.match(frontend, /\?folder=/);
   });
@@ -398,8 +396,6 @@ describe("F.3 create / rename / delete folders", () => {
     assert.match(brief, /F\.3/);
     assert.match(brief, /409/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#310/);
-    assert.match(frontend, /keep #310 open/i);
   });
 
   it("validates name rules and sibling uniqueness", () => {
@@ -572,8 +568,6 @@ describe("F.4 move workflows (drag + menu)", () => {
     assert.match(brief, /F\.4/);
     assert.match(brief, /Move…/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#311/);
-    assert.match(frontend, /keep #311 open/i);
     assert.match(frontend, /PATCH \/api\/v1\/workflows\/\{id\}\/folder/);
   });
 
@@ -714,8 +708,6 @@ describe("F.5 empty states + Unfiled", () => {
     assert.match(brief, /F\.5/);
     assert.match(brief, /Unfiled/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#312/);
-    assert.match(frontend, /keep #312 open/i);
     assert.match(frontend, /create here/);
     assert.match(frontend, /Unfiled-empty/);
   });
@@ -972,8 +964,6 @@ describe("#320 cold-load ?folder= deep link", () => {
       /dropPreviousFolder\s*\?\s*\{\s*kind:\s*"unfiled"/,
     );
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#320/);
-    assert.match(frontend, /keep #320 open/i);
   });
 });
 
@@ -1013,8 +1003,6 @@ describe("F.6 search / filter across folders", () => {
     assert.match(brief, /F\.6/);
     assert.match(brief, /Across folders/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#313/);
-    assert.match(frontend, /keep #313 open/i);
     assert.match(frontend, /across folders/i);
     assert.match(frontend, /not a tree walk of children/i);
     assert.match(frontend, /separate mode/i);
@@ -1366,8 +1354,6 @@ describe("F.7 embed folder parity", () => {
     assert.match(brief, /F\.7/);
     assert.match(brief, /No second tree/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#314/);
-    assert.match(frontend, /keep #314 open/i);
     assert.match(frontend, /\/embed\/v1\/workflows/);
     for (const path of F7_HOME_FOLDER_SOURCES) {
       assert.equal(source(path).length > 0, true);

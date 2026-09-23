@@ -77,8 +77,6 @@ describe("V.3 Overview home visual rebuild", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#359/);
-    assert.match(frontend, /keep #359 open/i);
     assert.match(frontend, /dark card/i);
   });
 

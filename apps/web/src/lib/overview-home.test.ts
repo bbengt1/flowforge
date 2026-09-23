@@ -80,8 +80,6 @@ describe("O.1 Overview header + card list", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#325/);
-    assert.match(frontend, /keep #325 open/i);
     assert.match(frontend, /card list/i);
   });
 

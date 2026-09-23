@@ -84,8 +84,6 @@ describe("V.0b Login chrome + signed-out gate", () => {
     assert.equal(LOCAL_LOGIN.b1GateUnchanged, true);
     assert.equal(localLoginHoldsHardLines(), true);
     assert.match(V0B_HELP, /Keep #355 open/);
-    assert.match(frontendUi(), /#355/);
-    assert.match(frontendUi(), /keep #355 open/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V0B_BRIEF),
       "utf8",

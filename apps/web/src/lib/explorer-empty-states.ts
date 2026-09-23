@@ -315,10 +315,7 @@ export function explorerEmptyShowsDeveloperFixtures(source: string): boolean {
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
   return (
-    docs.includes("#383") &&
-    /keep #383 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    docs.includes("X.4") &&
     EXPLORER_EMPTY_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

@@ -102,8 +102,6 @@ describe("O.4 Embed Overview parity", () => {
     assert.equal(OVERVIEW_EMBED.d6MigrateInPlace, true);
     assert.equal(OVERVIEW_EMBED.sameWorkflowHomeNoSecondTree, true);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#328/);
-    assert.match(frontend, /keep #328 open/i);
     assert.match(frontend, /Overview cards/i);
     assert.match(frontend, /Finder rail/i);
     const brief = repoSource(O4_BRIEF);

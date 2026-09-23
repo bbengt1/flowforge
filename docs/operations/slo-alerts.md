@@ -1,6 +1,6 @@
 # SLOs and alert rules
 
-G.2.4 / #449. This page is the operator contract for control-plane
+G.2.4 . This page is the operator contract for control-plane
 service level objectives. It does not add a product dashboard. Scrapers
 keep using `GET /api/v1/metrics` with `platform.administer` or a machine
 principal granted `ops.metrics.read` ([deployment](../deployment.md#metrics-and-openapi-scrape-adv-020)).

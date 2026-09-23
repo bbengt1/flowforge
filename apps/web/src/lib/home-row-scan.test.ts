@@ -155,8 +155,6 @@ describe("UXL.5 home row scan order", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#292/);
-    assert.match(frontend, /keep #292 open/i);
     assert.match(frontend, /scan ends/i);
   });
 

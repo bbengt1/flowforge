@@ -69,8 +69,6 @@ describe("UXL.6 empty states that teach the model", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#293/);
-    assert.match(frontend, /keep #293 open/i);
     assert.match(frontend, /drafts do not run/i);
   });
 
