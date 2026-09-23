@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
+import { emergencyStopImpact } from "@/lib/confirm-destructive";
 import {
   cancelExecution,
   retryExecution,
@@ -22,6 +24,7 @@ import type { ExecutionDetail, ExecutionStatus } from "@/lib/execution-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { emergencyStopExecution } from "@/lib/script-ops-client";
 import {
+  SCRIPT_EMERGENCY_STOP_CONFIRM_HELP,
   SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE,
   emergencyStopShouldMarkUncertain,
 } from "@/lib/script-ops-contract";
@@ -63,7 +66,7 @@ export function ExecutionOperateActions({
   const [cancelPending, setCancelPending] = useState(false);
   const [retryPending, setRetryPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
-  const [stopConfirm, setStopConfirm] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const resolvedStatus = detail?.status ?? status;
@@ -128,11 +131,6 @@ export function ExecutionOperateActions({
     if (!affordances.stop || busy) {
       return;
     }
-    if (!stopConfirm) {
-      setStopConfirm(true);
-      setMessage(null);
-      return;
-    }
     setStopPending(true);
     setMessage(null);
     const result = await emergencyStopExecution(identity, executionId, {
@@ -140,7 +138,7 @@ export function ExecutionOperateActions({
       status: resolvedStatus,
     });
     setStopPending(false);
-    setStopConfirm(false);
+    setStopOpen(false);
     if (!result.ok) {
       setMessage(
         result.forbidden
@@ -187,14 +185,10 @@ export function ExecutionOperateActions({
             type="button"
             data-execution-operate-action="stop"
             disabled={busy}
-            onClick={() => void onStop()}
+            onClick={() => setStopOpen(true)}
             className={`${FF_LOUD_DANGER_CLASS} ${pad}`}
           >
-            {stopPending
-              ? "Stopping…"
-              : stopConfirm
-                ? EXECUTION_OPERATE_STOP_CONFIRM_LABEL
-                : EXECUTION_OPERATE_STOP_LABEL}
+            {stopPending ? "Stopping…" : EXECUTION_OPERATE_STOP_LABEL}
           </button>
         ) : null}
         {affordances.retry ? (
@@ -229,6 +223,24 @@ export function ExecutionOperateActions({
       ) : compact ? null : (
         <p className="sr-only">{EXECUTION_OPERATE_HELP}</p>
       )}
+      <ConfirmDestructive
+        open={stopOpen}
+        title="Emergency stop this execution?"
+        description={SCRIPT_EMERGENCY_STOP_CONFIRM_HELP}
+        reversibility="irreversible"
+        confirmLabel={EXECUTION_OPERATE_STOP_CONFIRM_LABEL}
+        pending={stopPending}
+        pendingLabel="Stopping…"
+        impact={emergencyStopImpact({
+          executionId,
+          status: resolvedStatus,
+        })}
+        onClose={() => setStopOpen(false)}
+        onConfirm={() => {
+          setStopOpen(false);
+          void onStop();
+        }}
+      />
     </div>
   );
 }

@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
+import { Field } from "@/components/a11y/Field";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
+import { scriptRevokeImpact } from "@/lib/confirm-destructive";
 import { revokeScriptArtifact } from "@/lib/script-ops-client";
 import {
   SCRIPT_EMERGENCY_STOP_HELP,
@@ -214,49 +217,47 @@ function ScriptRevokeAction({
 
   return (
     <div className="mt-2 font-sans">
-      {open ? (
-        <div className="rounded-lg border border-rose-300 bg-white p-3">
-          <p className="text-sm font-medium text-rose-950">Revoke this artifact?</p>
-          <p className="mt-1 text-xs text-rose-900">{SCRIPT_REVOKE_CONFIRM_HELP}</p>
-          <label className="mt-2 block text-xs text-zinc-700">
-            Optional secret-free reason
-            <input
-              type="text"
-              value={reason}
-              maxLength={256}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1 font-sans text-sm"
-            />
-          </label>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void onConfirm()}
-              disabled={pending}
-              className="rounded-lg border border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900 disabled:opacity-60"
-            >
-              {pending ? "Revoking…" : "Confirm revoke"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={pending}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
-            >
-              Cancel
-            </button>
-          </div>
-          {problem ? <ProblemBanner problem={problem} className="mt-2" /> : null}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-lg border border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900"
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={open || pending}
+        className="rounded-lg border border-rose-800 bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900 disabled:opacity-60"
+      >
+        Revoke artifact
+      </button>
+      <ConfirmDestructive
+        open={open}
+        title="Revoke this artifact?"
+        description={`${SCRIPT_REVOKE_CONFIRM_HELP} ${SCRIPT_REVOKED_STATUS_HELP}`}
+        reversibility="irreversible"
+        confirmLabel="Confirm revoke"
+        pending={pending}
+        pendingLabel="Revoking…"
+        impact={scriptRevokeImpact({
+          id: artifact.id,
+          digest: artifact.digest,
+          language: artifact.language,
+          status: artifact.status,
+        })}
+        onConfirm={() => void onConfirm()}
+        onClose={() => setOpen(false)}
+      >
+        <Field
+          id="script-revoke-reason"
+          label="Optional secret-free reason"
+          className="mt-4 block text-sm"
         >
-          Revoke artifact
-        </button>
-      )}
+          <input
+            type="text"
+            value={reason}
+            maxLength={256}
+            autoComplete="off"
+            onChange={(event) => setReason(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1 font-sans text-sm"
+          />
+        </Field>
+        {problem ? <ProblemBanner problem={problem} className="mt-2" /> : null}
+      </ConfirmDestructive>
       {message ? (
         <p role="status" className="mt-2 text-xs font-medium text-rose-950">
           {message}

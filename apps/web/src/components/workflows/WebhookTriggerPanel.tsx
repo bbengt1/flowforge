@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ConfirmDestructive,
+  DestructiveUndoBar,
+  useDestructiveUndo,
+} from "@/components/a11y/ConfirmDestructive";
 import { Field, FieldError } from "@/components/a11y/Field";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
@@ -56,6 +61,10 @@ import {
 import { fetchWorkflowCatalog, listWorkflowVersions } from "@/lib/workflow-client";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
 import { notifyEditorActivationChanged } from "@/lib/editor-activation";
+import {
+  WEBHOOK_DELETE_DESCRIPTION,
+  webhookDeleteImpact,
+} from "@/lib/confirm-destructive";
 import { pushNotification } from "@/lib/workspace-notifications";
 
 type WebhookTriggerPanelProps = {
@@ -87,6 +96,7 @@ export function WebhookTriggerPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rotateSecrets, setRotateSecrets] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [message, setMessage] = useState("");
   const [secretLeak, setSecretLeak] = useState(false);
@@ -322,6 +332,10 @@ export function WebhookTriggerPanel({
     noteOutcome(result.message);
   }
 
+  const webhookUndo = useDestructiveUndo((triggerId) => {
+    void onDelete(triggerId);
+  });
+
   function startEdit(record: WebhookTriggerRecord) {
     setEditingId(record.id);
     setDraft(seedDraftFromRecord(record));
@@ -333,6 +347,7 @@ export function WebhookTriggerPanel({
     : !canManage
       ? WEBHOOK_FORBIDDEN_MESSAGE
       : webhookTriggerAuthFailureMessage(problem);
+  const deleting = items.find((item) => item.id === deleteId) ?? null;
 
   return (
     <section
@@ -340,6 +355,15 @@ export function WebhookTriggerPanel({
       aria-labelledby="webhook-triggers-heading"
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
+      <DestructiveUndoBar
+        ticket={webhookUndo.ticket}
+        title="Webhook will be deleted"
+        detail={
+          items.find((item) => item.id === webhookUndo.ticket?.id)?.publicId
+        }
+        onUndo={webhookUndo.undo}
+        onCommit={webhookUndo.commit}
+      />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
@@ -499,7 +523,7 @@ export function WebhookTriggerPanel({
                       <button
                         type="button"
                         disabled={pending !== null}
-                        onClick={() => void onDelete(item.id)}
+                        onClick={() => setDeleteId(item.id)}
                         className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm text-rose-900 hover:bg-rose-50 disabled:opacity-60"
                       >
                         {pending === `delete:${item.id}` ? "Deleting…" : "Delete"}
@@ -812,6 +836,31 @@ export function WebhookTriggerPanel({
       ) : (
         <p className="mt-4 text-sm text-zinc-600">{WEBHOOK_FORBIDDEN_MESSAGE}</p>
       )}
+      {deleting ? (
+        <ConfirmDestructive
+          open
+          title="Delete this webhook?"
+          description={WEBHOOK_DELETE_DESCRIPTION}
+          reversibility="undoable"
+          confirmLabel="Delete webhook"
+          pending={pending === `delete:${deleting.id}`}
+          pendingLabel="Deleting…"
+          canConfirm={pending === null}
+          impact={webhookDeleteImpact({
+            id: deleting.id,
+            publicId: deleting.publicId,
+            ingressPath: deleting.ingressPath,
+            status: deleting.status,
+            secretCredentialId: deleting.secretCredentialId,
+          })}
+          onClose={() => setDeleteId(null)}
+          onConfirm={() => {
+            const triggerId = deleting.id;
+            setDeleteId(null);
+            webhookUndo.arm(triggerId);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
