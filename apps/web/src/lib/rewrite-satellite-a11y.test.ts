@@ -164,21 +164,25 @@ describe("R7.4 rewrite satellite a11y", () => {
   });
 
   it("wires Esc + focus return on NDV, palette, start, and home drawers", () => {
+    const dialog = webSource("src/components/a11y/Dialog.tsx");
+    assert.match(dialog, /restoreSatelliteOverlayFocus/);
+    assert.match(dialog, /Escape/);
+    assert.match(dialog, /setAttribute\("inert"/);
+
     const wizard = webSource("src/components/workflows/ActionWizard.tsx");
-    assert.match(wizard, /satelliteOverlayAfterEscape/);
-    assert.match(wizard, /restoreSatelliteOverlayFocus/);
-    assert.match(wizard, /Escape/);
+    assert.match(wizard, /from "@\/components\/a11y\/Dialog"/);
+    assert.match(wizard, /satelliteOverlayTriggerId\("action-wizard"\)/);
+    assert.equal(wizard.includes('role="dialog"'), false);
 
     const credential = webSource(
       "src/components/credentials/CredentialWizardDialog.tsx",
     );
-    assert.match(credential, /satelliteOverlayAfterEscape/);
-    assert.match(credential, /restoreSatelliteOverlayFocus/);
+    assert.match(credential, /from "@\/components\/a11y\/Dialog"/);
     assert.match(credential, /satelliteOverlayTriggerId\("ndv-credential"\)/);
 
     const start = webSource("src/components/workflows/EditorStartDialog.tsx");
-    assert.match(start, /satelliteOverlayAfterEscape/);
-    assert.match(start, /restoreSatelliteOverlayFocus/);
+    assert.match(start, /from "@\/components\/a11y\/Dialog"/);
+    assert.match(start, /satelliteOverlayTriggerId\("start-published"\)/);
 
     const topBar = webSource("src/components/workflows/EditorTopBar.tsx");
     assert.match(topBar, /editor-topbar-add-action|satelliteOverlayTriggerId\("action-wizard"\)/);

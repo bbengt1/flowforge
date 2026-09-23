@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Field } from "@/components/a11y/Field";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import {
   MFA_NOT_APPLICABLE,
@@ -229,7 +230,7 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
           </ul>
         </div>
       ) : null}
-      {error ? (
+      {error && !canVerify ? (
         <p
           role="alert"
           className="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
@@ -250,8 +251,24 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
             void submitCode();
           }}
         >
-          <label className="grid gap-1 text-sm">
-            <span className="font-medium">Authenticator code</span>
+          <Field
+            id="mfa-code"
+            label="Authenticator code"
+            className="grid gap-1 text-sm"
+            error={
+              error ? (
+                <>
+                  <span aria-hidden="true">!</span>
+                  <span>{error}</span>
+                </>
+              ) : undefined
+            }
+            errorClassName="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
+            errorStyle={{
+              background: "var(--ff-danger-surface)",
+              color: "var(--ff-danger)",
+            }}
+          >
             <input
               name="code"
               inputMode="numeric"
@@ -267,7 +284,7 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
                 color: "var(--ff-text)",
               }}
             />
-          </label>
+          </Field>
           <button
             type="submit"
             disabled={pending || !mfaCodeIsSubmittable(code)}

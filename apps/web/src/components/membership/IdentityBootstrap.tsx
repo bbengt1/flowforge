@@ -1,3 +1,4 @@
+import { Field as SharedField } from "@/components/a11y/Field";
 import {
   hasCallerIdentity,
   hasWorkspaceLookup,
@@ -161,15 +162,20 @@ export function IdentityBootstrap({
           in E2.1. Do not put secrets here. This fallback will be removed.
           It is never rewrite login.
         </p>
-        <label className="mt-3 flex items-start gap-2 text-sm">
+        <SharedField
+          id="identity-header-fallback"
+          label="Enable header identity fallback for this tab"
+          controlPlacement="before-label"
+          className="mt-3 flex items-start gap-2 text-sm"
+          labelClassName=""
+        >
           <input
             type="checkbox"
             checked={headerFallback}
             onChange={(event) => onHeaderFallbackChange(event.target.checked)}
             className="mt-1"
           />
-          <span>Enable header identity fallback for this tab</span>
-        </label>
+        </SharedField>
         {headerFallback ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Field
@@ -221,10 +227,15 @@ function Field({
   autoComplete?: string;
 }) {
   return (
-    <label htmlFor={id} className="block text-sm">
-      <span className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>{label}</span>
+    <SharedField
+      id={id}
+      label={label}
+      hint={hint}
+      className="block text-sm"
+      labelClassName={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}
+      hintClassName={`mt-1 block text-xs ${FF_SETTINGS_MUTED_CLASS}`}
+    >
       <input
-        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -232,7 +243,6 @@ function Field({
         spellCheck={false}
         className={`mt-1 font-mono text-sm ${FF_SETTINGS_CONTROL_CLASS}`}
       />
-      {hint ? <span className={`mt-1 block text-xs ${FF_SETTINGS_MUTED_CLASS}`}>{hint}</span> : null}
-    </label>
+    </SharedField>
   );
 }

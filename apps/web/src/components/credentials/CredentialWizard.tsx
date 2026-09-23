@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Field } from "@/components/a11y/Field";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SecretField } from "@/components/credentials/SecretField";
@@ -242,17 +243,20 @@ export function CredentialWizard({
         <div className="mt-6 space-y-4">
           {step === "identity" ? (
             <>
-              <label className="block text-sm">
-                <span className="font-medium">Display name</span>
+              <Field id="credential-display-name" label="Display name">
                 <input
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
                   autoComplete="off"
                   className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                 />
-              </label>
-              <label className="block text-sm">
-                <span className="font-medium">Tags</span>
+              </Field>
+              <Field
+                id="credential-tags"
+                label="Tags"
+                hint="Comma-separated lowercase letters, digits, or hyphen. Used for search — never secret values."
+                hintClassName={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}
+              >
                 <input
                   value={tagsInput}
                   onChange={(event) => setTagsInput(event.target.value)}
@@ -260,11 +264,7 @@ export function CredentialWizard({
                   autoComplete="off"
                   className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                 />
-                <span className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
-                  Comma-separated lowercase letters, digits, or hyphen. Used
-                  for search — never secret values.
-                </span>
-              </label>
+              </Field>
             </>
           ) : null}
 
@@ -272,7 +272,21 @@ export function CredentialWizard({
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Credential type</legend>
               {visibleTypes.map((item) => (
-                <label key={item.type} className="flex items-start gap-2 text-sm">
+                <Field
+                  key={item.type}
+                  id={`credential-type-${item.type}`}
+                  controlPlacement="before-label"
+                  className="flex items-start gap-2 text-sm"
+                  labelClassName=""
+                  label={
+                    <>
+                      <span className="font-medium">{item.displayName}</span>
+                      <span className={`block text-xs ${FF_VAULT_MUTED_CLASS}`}>
+                        {item.type}
+                      </span>
+                    </>
+                  }
+                >
                   <input
                     type="radio"
                     name="credential-type"
@@ -283,13 +297,7 @@ export function CredentialWizard({
                       setMetadata({});
                     }}
                   />
-                  <span>
-                    <span className="font-medium">{item.displayName}</span>
-                    <span className={`block text-xs ${FF_VAULT_MUTED_CLASS}`}>
-                      {item.type}
-                    </span>
-                  </span>
-                </label>
+                </Field>
               ))}
             </fieldset>
           ) : null}
@@ -315,8 +323,7 @@ export function CredentialWizard({
                 </p>
               ) : (
                 metadataFields.map((field) => (
-                  <label key={field.name} className="block text-sm">
-                    <span className="font-medium">{field.name}</span>
+                  <Field key={field.name} id={`credential-meta-${field.name}`} label={field.name}>
                     <input
                       value={metadata[field.name] ?? ""}
                       onChange={(event) =>
@@ -328,11 +335,15 @@ export function CredentialWizard({
                       autoComplete="off"
                       className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
                     />
-                  </label>
+                  </Field>
                 ))
               )}
-              <label className="block text-sm">
-                <span className="font-medium">Expires at (optional)</span>
+              <Field
+                id="credential-expires-at"
+                label="Expires at (optional)"
+                hint="RFC3339 only. Leave blank for no expiry."
+                hintClassName={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}
+              >
                 <input
                   value={expiresAt}
                   onChange={(event) => setExpiresAt(event.target.value)}
@@ -340,10 +351,7 @@ export function CredentialWizard({
                   autoComplete="off"
                   className={`mt-1 font-mono ${FF_VAULT_CONTROL_CLASS}`}
                 />
-                <span className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
-                  RFC3339 only. Leave blank for no expiry.
-                </span>
-              </label>
+              </Field>
             </div>
           ) : null}
 

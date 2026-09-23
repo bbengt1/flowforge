@@ -54,7 +54,12 @@ describe("E12.3 accessibility contract", () => {
     assert.equal(E12_A11Y_DOCS.guide, "docs/guides/operator-admin.md");
     assert.equal(E12_A11Y_DOCS.review, "docs/reference/e12-accessibility-review.md");
     assert.ok(E12_A11Y_FIXES.includes("skip-link"));
-    assert.ok(E12_A11Y_GAPS.includes("dialog-focus-trap"));
+    assert.ok(E12_A11Y_FIXES.includes("dialog-focus-trap"));
+    assert.ok(E12_A11Y_FIXES.includes("field-describedby-invalid"));
+    assert.equal(
+      (E12_A11Y_GAPS as readonly string[]).includes("dialog-focus-trap"),
+      false,
+    );
   });
 
   it("uses a skip target that does not invent a nested main landmark", () => {

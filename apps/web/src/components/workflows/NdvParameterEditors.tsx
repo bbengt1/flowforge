@@ -1,5 +1,6 @@
 "use client";
 
+import { Field } from "@/components/a11y/Field";
 import {
   ndvParameterPatchValue,
   ndvSafeDisplayObjectLines,
@@ -79,8 +80,12 @@ function NdvParameterField({
   const label = editor.required ? editor.label + " *" : editor.label;
   if (editor.control === "boolean") {
     return (
-      <label
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
         className="flex items-center gap-2 text-sm text-zinc-700"
+        labelClassName=""
+        controlPlacement="before-label"
         data-ndv-field={editor.name}
       >
         <input
@@ -89,19 +94,23 @@ function NdvParameterField({
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(event.target.checked)}
         />
-        {label}
-      </label>
+      </Field>
     );
   }
   if (editor.control === "retry-policy") {
     const policy = ndvParameterPatchValue(editor, value) as { maxAttempts: number };
     return (
-      <label
-        className="block text-sm"
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
+        labelClassName="text-zinc-600"
         data-ndv-parameter-control="retry-policy"
         data-ndv-field={editor.name}
+        hint={
+          editor.description ||
+          "maxAttempts only. Default 0. This is not a JSON blob and not a blind retry toggle."
+        }
       >
-        <span className="text-zinc-600">{label}</span>
         <input
           type="number"
           min={0}
@@ -113,11 +122,7 @@ function NdvParameterField({
           }
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          {editor.description ||
-            "maxAttempts only. Default 0. This is not a JSON blob and not a blind retry toggle."}
-        </span>
-      </label>
+      </Field>
     );
   }
   if (editor.control === "resource-identity") {
@@ -132,8 +137,11 @@ function NdvParameterField({
         data-ndv-field={editor.name}
       >
         <legend className="text-sm text-zinc-600">{label}</legend>
-        <label className="block text-sm">
-          <span className="text-zinc-600">kind</span>
+        <Field
+          id={`ndv-param-${editor.name}-kind`}
+          label="kind"
+          labelClassName="text-zinc-600"
+        >
           <input
             value={identity.kind}
             disabled={disabled || editor.readOnly}
@@ -142,9 +150,12 @@ function NdvParameterField({
             }
             className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
           />
-        </label>
-        <label className="block text-sm">
-          <span className="text-zinc-600">name</span>
+        </Field>
+        <Field
+          id={`ndv-param-${editor.name}-name`}
+          label="name"
+          labelClassName="text-zinc-600"
+        >
           <input
             value={identity.name}
             disabled={disabled || editor.readOnly}
@@ -153,7 +164,7 @@ function NdvParameterField({
             }
             className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
           />
-        </label>
+        </Field>
         {editor.description ? (
           <p className="text-xs text-zinc-500">{editor.description}</p>
         ) : null}
@@ -163,8 +174,13 @@ function NdvParameterField({
   if (editor.control === "enum") {
     const text = ndvSafeDisplayScalar(value) || ndvSafeDisplayScalar(editor.defaultValue);
     return (
-      <label className="block text-sm" data-ndv-field={editor.name}>
-        <span className="text-zinc-600">{label}</span>
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
+        labelClassName="text-zinc-600"
+        data-ndv-field={editor.name}
+        hint={editor.description}
+      >
         <select
           value={text}
           disabled={disabled || editor.readOnly}
@@ -177,20 +193,22 @@ function NdvParameterField({
             </option>
           ))}
         </select>
-        {editor.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{editor.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   if (editor.control === "object-lines") {
     return (
-      <label
-        className="block text-sm"
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
+        labelClassName="text-zinc-600"
         data-ndv-parameter-control="object-lines"
         data-ndv-field={editor.name}
+        hint={
+          editor.description ||
+          "Typed key=value lines. Not a JSON blob, secret field, or expression."
+        }
       >
-        <span className="text-zinc-600">{label}</span>
         <textarea
           value={ndvSafeDisplayObjectLines(value)}
           disabled={disabled || editor.readOnly}
@@ -200,17 +218,18 @@ function NdvParameterField({
           rows={4}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          {editor.description ||
-            "Typed key=value lines. Not a JSON blob, secret field, or expression."}
-        </span>
-      </label>
+      </Field>
     );
   }
   if (editor.control === "textarea") {
     return (
-      <label className="block text-sm" data-ndv-field={editor.name}>
-        <span className="text-zinc-600">{label}</span>
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
+        labelClassName="text-zinc-600"
+        data-ndv-field={editor.name}
+        hint={editor.description}
+      >
         <textarea
           value={ndvSafeDisplayScalar(value)}
           disabled={disabled || editor.readOnly}
@@ -218,16 +237,18 @@ function NdvParameterField({
           rows={editor.name === "manifests" || editor.name === "source" ? 8 : 4}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
         />
-        {editor.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{editor.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   if (editor.control === "number") {
     return (
-      <label className="block text-sm" data-ndv-field={editor.name}>
-        <span className="text-zinc-600">{label}</span>
+      <Field
+        id={`ndv-param-${editor.name}`}
+        label={label}
+        labelClassName="text-zinc-600"
+        data-ndv-field={editor.name}
+        hint={editor.description}
+      >
         <input
           type="number"
           value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
@@ -235,15 +256,17 @@ function NdvParameterField({
           onChange={(event) => onChange(Number(event.target.value))}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
-        {editor.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{editor.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   return (
-    <label className="block text-sm" data-ndv-field={editor.name}>
-      <span className="text-zinc-600">{label}</span>
+    <Field
+      id={`ndv-param-${editor.name}`}
+      label={label}
+      labelClassName="text-zinc-600"
+      data-ndv-field={editor.name}
+      hint={editor.description}
+    >
       <input
         value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
         readOnly={editor.readOnly}
@@ -251,9 +274,6 @@ function NdvParameterField({
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
       />
-      {editor.description ? (
-        <span className="mt-1 block text-xs text-zinc-500">{editor.description}</span>
-      ) : null}
-    </label>
+    </Field>
   );
 }

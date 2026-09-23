@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog } from "@/components/a11y/Dialog";
 import type { CredentialTestResult } from "@/lib/credential-types";
 import {
   FF_VAULT_GHOST_CLASS,
@@ -30,10 +31,9 @@ export function CredentialTestDialog({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="credential-test-heading"
+    <Dialog
+      onClose={onClose}
+      labelledBy="credential-test-heading"
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
     >
       <div className={`w-full max-w-lg ${FF_VAULT_PANEL_CLASS}`}>
@@ -87,6 +87,6 @@ export function CredentialTestDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

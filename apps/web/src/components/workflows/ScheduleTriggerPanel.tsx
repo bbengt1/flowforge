@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Field, FieldError } from "@/components/a11y/Field";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
@@ -561,8 +562,13 @@ export function ScheduleTriggerPanel({
               Load timezone and expression from YAML
             </button>
           ) : null}
-          <label className="block text-sm">
-            <span className="text-zinc-600">Published workflow version</span>
+          <Field
+            id="schedule-version"
+            label="Published workflow version"
+            labelClassName="text-zinc-600"
+            invalid={localErrors.length > 0}
+            errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+          >
             <select
               value={draft.workflowVersionId}
               onChange={(event) =>
@@ -581,24 +587,37 @@ export function ScheduleTriggerPanel({
                 </option>
               ))}
             </select>
-          </label>
-          <label className="block text-sm">
-            <span className="text-zinc-600">IANA timezone</span>
+          </Field>
+          <Field
+            id="schedule-timezone"
+            label="IANA timezone"
+            labelClassName="text-zinc-600"
+            invalid={localErrors.length > 0}
+            errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+          >
             <input
               list="schedule-timezones"
               value={draft.timezone}
               onChange={(event) => patchDraft({ timezone: event.target.value })}
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
             />
-            <datalist id="schedule-timezones">
-              {COMMON_IANA_TIMEZONES.map((zone) => (
-                <option key={zone} value={zone} />
-              ))}
-            </datalist>
-          </label>
+          </Field>
+          <datalist id="schedule-timezones">
+            {COMMON_IANA_TIMEZONES.map((zone) => (
+              <option key={zone} value={zone} />
+            ))}
+          </datalist>
           <fieldset className="grid gap-2">
             <legend className="text-sm text-zinc-600">Expression</legend>
-            <label className="flex items-center gap-2 text-sm">
+            <Field
+              id="schedule-expression-cron"
+              label="Cron (5-field)"
+              className="flex items-center gap-2 text-sm"
+              labelClassName=""
+              controlPlacement="before-label"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <input
                 type="radio"
                 name="schedule-expression-kind"
@@ -607,9 +626,16 @@ export function ScheduleTriggerPanel({
                   patchDraft({ expressionKind: "cron" as ScheduleExpressionKind })
                 }
               />
-              Cron (5-field)
-            </label>
-            <label className="flex items-center gap-2 text-sm">
+            </Field>
+            <Field
+              id="schedule-expression-interval"
+              label="Interval (ISO-8601)"
+              className="flex items-center gap-2 text-sm"
+              labelClassName=""
+              controlPlacement="before-label"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <input
                 type="radio"
                 name="schedule-expression-kind"
@@ -620,33 +646,47 @@ export function ScheduleTriggerPanel({
                   })
                 }
               />
-              Interval (ISO-8601)
-            </label>
+            </Field>
           </fieldset>
           {draft.expressionKind === "cron" ? (
-            <label className="block text-sm">
-              <span className="text-zinc-600">Cron</span>
+            <Field
+              id="schedule-cron"
+              label="Cron"
+              labelClassName="text-zinc-600"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <input
                 value={draft.cron}
                 onChange={(event) => patchDraft({ cron: event.target.value })}
                 className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
                 placeholder="0 0 * * *"
               />
-            </label>
+            </Field>
           ) : (
-            <label className="block text-sm">
-              <span className="text-zinc-600">Interval</span>
+            <Field
+              id="schedule-interval"
+              label="Interval"
+              labelClassName="text-zinc-600"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <input
                 value={draft.interval}
                 onChange={(event) => patchDraft({ interval: event.target.value })}
                 className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
                 placeholder="PT15M"
               />
-            </label>
+            </Field>
           )}
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block text-sm">
-              <span className="text-zinc-600">Overlap policy</span>
+            <Field
+              id="schedule-overlap"
+              label="Overlap policy"
+              labelClassName="text-zinc-600"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <select
                 value={draft.overlapPolicy}
                 onChange={(event) =>
@@ -663,9 +703,14 @@ export function ScheduleTriggerPanel({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-zinc-600">Misfire policy</span>
+            </Field>
+            <Field
+              id="schedule-misfire"
+              label="Misfire policy"
+              labelClassName="text-zinc-600"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <select
                 value={draft.misfirePolicy}
                 onChange={(event) =>
@@ -682,9 +727,14 @@ export function ScheduleTriggerPanel({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-zinc-600">Catch-up (0–{SCHEDULE_MAX_CATCH_UP})</span>
+            </Field>
+            <Field
+              id="schedule-catch-up"
+              label={`Catch-up (0–${SCHEDULE_MAX_CATCH_UP})`}
+              labelClassName="text-zinc-600"
+              invalid={localErrors.length > 0}
+              errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
+            >
               <select
                 value={draft.catchUp}
                 onChange={(event) => patchDraft({ catchUp: event.target.value })}
@@ -697,15 +747,15 @@ export function ScheduleTriggerPanel({
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
           </div>
           <p className="text-xs text-zinc-500">{SCHEDULE_CSRF_HELP}</p>
           {localErrors.length > 0 ? (
-            <ul className="text-sm text-rose-900">
+            <FieldError id="schedule-form-error" className="text-sm text-rose-900">
               {localErrors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
-            </ul>
+            </FieldError>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <button

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Field } from "@/components/a11y/Field";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -1889,8 +1890,11 @@ function WorkflowHomeSession() {
               the folder rail.
             </p>
           ) : (
-            <label className="block text-sm">
-              <span className={FF_OVERVIEW_MUTED_CLASS}>Workflow</span>
+            <Field
+              id="home-move-into-workflow"
+              label="Workflow"
+              labelClassName={FF_OVERVIEW_MUTED_CLASS}
+            >
               <select
                 data-home-folder-empty-move-target=""
                 value={moveIntoWorkflowId}
@@ -1903,7 +1907,7 @@ function WorkflowHomeSession() {
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
           )}
           <div className="flex flex-wrap gap-2">
             <button
@@ -1939,8 +1943,11 @@ function WorkflowHomeSession() {
             to a folder in this workspace. This does not change YAML, draft
             revision, or activation.
           </p>
-          <label className="block text-sm">
-            <span className={FF_OVERVIEW_MUTED_CLASS}>Destination</span>
+          <Field
+            id="home-workflow-move-destination"
+            label="Destination"
+            labelClassName={FF_OVERVIEW_MUTED_CLASS}
+          >
             <select
               data-home-workflow-move-target=""
               value={folderQueryValue(moveTarget)}
@@ -1958,7 +1965,7 @@ function WorkflowHomeSession() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
@@ -2062,18 +2069,27 @@ function WorkflowHomeSession() {
                 setFilters((current) => ({ ...current, query: value }))
               }
             />
-            <label className={`flex items-center gap-2 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+            <Field
+              id="home-folder-search-scope"
+              label={FOLDER_SEARCH_IN_FOLDER_LABEL}
+              controlPlacement="before-label"
+              className={`flex items-center gap-2 text-sm ${FF_OVERVIEW_MUTED_CLASS}`}
+              labelClassName=""
+            >
               <input
                 type="checkbox"
                 checked={searchInThisFolder}
                 data-home-folder-search-scope="in-folder"
                 onChange={(event) => setSearchInThisFolder(event.target.checked)}
               />
-              {FOLDER_SEARCH_IN_FOLDER_LABEL}
-            </label>
+            </Field>
           </div>
-          <label className="block min-w-[10rem] text-sm">
-            <span className={FF_OVERVIEW_MUTED_CLASS}>{OVERVIEW_SORT_LABEL}</span>
+          <Field
+            id="home-overview-sort"
+            label={OVERVIEW_SORT_LABEL}
+            className="block min-w-[10rem] text-sm"
+            labelClassName={FF_OVERVIEW_MUTED_CLASS}
+          >
             <select
               data-o1="sort"
               value={sort}
@@ -2088,7 +2104,7 @@ function WorkflowHomeSession() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           <button
             type="button"
             data-o1="filter"
@@ -2139,8 +2155,11 @@ function WorkflowHomeSession() {
             options={options.statuses}
             onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
           />
-          <label className="block text-sm">
-            <span className={FF_OVERVIEW_MUTED_CLASS}>Activation</span>
+          <Field
+            id="home-filter-activation"
+            label="Activation"
+            labelClassName={FF_OVERVIEW_MUTED_CLASS}
+          >
             <select
               value={filters.activation}
               onChange={(event) =>
@@ -2157,9 +2176,12 @@ function WorkflowHomeSession() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="block text-sm">
-            <span className={FF_OVERVIEW_MUTED_CLASS}>Last run</span>
+          </Field>
+          <Field
+            id="home-filter-last-run"
+            label="Last run"
+            labelClassName={FF_OVERVIEW_MUTED_CLASS}
+          >
             <select
               value={filters.lastRun}
               onChange={(event) =>
@@ -2179,9 +2201,12 @@ function WorkflowHomeSession() {
               <option value="failed">Failed</option>
               <option value="24h">Last 24 hours</option>
             </select>
-          </label>
-          <label className="block text-sm">
-            <span className={FF_OVERVIEW_MUTED_CLASS}>Last modified</span>
+          </Field>
+          <Field
+            id="home-filter-last-modified"
+            label="Last modified"
+            labelClassName={FF_OVERVIEW_MUTED_CLASS}
+          >
             <select
               value={filters.lastModified}
               onChange={(event) =>
@@ -2197,7 +2222,7 @@ function WorkflowHomeSession() {
               <option value="7d">Last 7 days</option>
               <option value="30d">Last 30 days</option>
             </select>
-          </label>
+          </Field>
           </div>
         ) : null}
 
@@ -2214,8 +2239,12 @@ function WorkflowHomeSession() {
               onChange={setCreateSlug}
             />
             <div className="flex items-end">
-              <label className={FF_OVERVIEW_GHOST_CLASS}>
-                Import YAML
+              <Field
+                id="home-import-yaml"
+                label="Import YAML"
+                className={FF_OVERVIEW_GHOST_CLASS}
+                labelClassName=""
+              >
                 <input
                   ref={importRef}
                   type="file"
@@ -2229,7 +2258,7 @@ function WorkflowHomeSession() {
                     event.target.value = "";
                   }}
                 />
-              </label>
+              </Field>
             </div>
           </div>
         ) : null}
@@ -2726,8 +2755,12 @@ function FolderRail({
           {nameError}
         </p>
       ) : null}
-      <label className="mt-3 block px-2 text-sm">
-        <span className={FF_OVERVIEW_MUTED_CLASS}>{FOLDER_RAIL_FILTER_LABEL}</span>
+      <Field
+        id="home-folder-rail-filter"
+        label={FOLDER_RAIL_FILTER_LABEL}
+        className="mt-3 block px-2 text-sm"
+        labelClassName={FF_OVERVIEW_MUTED_CLASS}
+      >
         <input
           value={railFilter}
           onChange={(event) => onRailFilter(event.target.value)}
@@ -2735,7 +2768,7 @@ function FolderRail({
           className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
           autoComplete="off"
         />
-      </label>
+      </Field>
       <ul className={FF_EXPLORER_NAV_LIST_CLASS}>
         <li>
           <button
@@ -3090,15 +3123,18 @@ function FilterInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm">
-      <span className={FF_OVERVIEW_MUTED_CLASS}>{label}</span>
+    <Field
+      id={`home-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      label={label}
+      labelClassName={FF_OVERVIEW_MUTED_CLASS}
+    >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
         autoComplete="off"
       />
-    </label>
+    </Field>
   );
 }
 
@@ -3114,8 +3150,11 @@ function FilterSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm">
-      <span className={FF_OVERVIEW_MUTED_CLASS}>{label}</span>
+    <Field
+      id={`home-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      label={label}
+      labelClassName={FF_OVERVIEW_MUTED_CLASS}
+    >
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -3128,7 +3167,7 @@ function FilterSelect({
           </option>
         ))}
       </select>
-    </label>
+    </Field>
   );
 }
 

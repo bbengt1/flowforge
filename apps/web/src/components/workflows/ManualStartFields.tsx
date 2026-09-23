@@ -1,5 +1,6 @@
 "use client";
 
+import { Field } from "@/components/a11y/Field";
 import {
   MANUAL_START_INPUT_HELP,
   type ManualStartInputSchema,
@@ -22,11 +23,12 @@ export function ManualStartFields({
 }: ManualStartFieldsProps) {
   if (schema.fields.length === 0) {
     return (
-      <label className="block text-sm">
-        <span className="text-zinc-600">
-          Trigger input
-          {schema.source === "contract-fallback" ? " (optional JSON)" : ""}
-        </span>
+      <Field
+        id="manual-start-json"
+        label={`Trigger input${schema.source === "contract-fallback" ? " (optional JSON)" : ""}`}
+        labelClassName="text-zinc-600"
+        hint={MANUAL_START_INPUT_HELP}
+      >
         <textarea
           value={jsonText}
           onChange={(event) => onJsonText(event.target.value)}
@@ -36,10 +38,7 @@ export function ManualStartFields({
           placeholder='{"dryRun":true}'
           className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          {MANUAL_START_INPUT_HELP}
-        </span>
-      </label>
+      </Field>
     );
   }
 
@@ -47,11 +46,14 @@ export function ManualStartFields({
     <fieldset className="grid gap-3">
       <legend className="text-sm text-zinc-600">Typed start input</legend>
       {schema.fields.map((field) => (
-        <label key={field.name} className="block text-sm">
-          <span className="text-zinc-600">
-            {field.name}
-            {field.required ? " (required)" : ""}
-          </span>
+        <Field
+          key={field.name}
+          id={`manual-start-${field.name}`}
+          label={`${field.name}${field.required ? " (required)" : ""}`}
+          labelClassName="text-zinc-600"
+          hint={field.description}
+          required={field.required}
+        >
           {field.type === "boolean" ? (
             <select
               value={fieldValues[field.name] ?? ""}
@@ -95,12 +97,7 @@ export function ManualStartFields({
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
             />
           )}
-          {field.description ? (
-            <span className="mt-1 block text-xs text-zinc-500">
-              {field.description}
-            </span>
-          ) : null}
-        </label>
+        </Field>
       ))}
     </fieldset>
   );

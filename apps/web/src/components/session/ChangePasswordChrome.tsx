@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Field } from "@/components/a11y/Field";
 import {
   CHANGE_PASSWORD_SUCCESS_HREF,
   changePasswordClientError,
@@ -96,8 +97,13 @@ export function ChangePasswordChrome({ onSuccess }: ChangePasswordChromeProps) {
               void submit();
             }}
           >
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">New password</span>
+            <Field
+              id="change-password-new"
+              label="New password"
+              className="grid gap-1 text-sm"
+              invalid={Boolean(error)}
+              errorId={error ? "change-password-error" : undefined}
+            >
               <input
                 name="password"
                 type="password"
@@ -114,9 +120,27 @@ export function ChangePasswordChrome({ onSuccess }: ChangePasswordChromeProps) {
                   color: "var(--ff-text)",
                 }}
               />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Confirm password</span>
+            </Field>
+            <Field
+              id="change-password-confirm"
+              label="Confirm password"
+              className="grid gap-1 text-sm"
+              invalid={Boolean(error)}
+              errorId={error ? "change-password-error" : undefined}
+              error={
+                error ? (
+                  <>
+                    <span aria-hidden="true">!</span>
+                    <span>{error}</span>
+                  </>
+                ) : undefined
+              }
+              errorClassName="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
+              errorStyle={{
+                background: "var(--ff-danger-surface)",
+                color: "var(--ff-danger)",
+              }}
+            >
               <input
                 name="confirm"
                 type="password"
@@ -133,20 +157,7 @@ export function ChangePasswordChrome({ onSuccess }: ChangePasswordChromeProps) {
                   color: "var(--ff-text)",
                 }}
               />
-            </label>
-            {error ? (
-              <p
-                role="alert"
-                className="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
-                style={{
-                  background: "var(--ff-danger-surface)",
-                  color: "var(--ff-danger)",
-                }}
-              >
-                <span aria-hidden="true">!</span>
-                <span>{error}</span>
-              </p>
-            ) : null}
+            </Field>
             <button
               type="submit"
               disabled={pending || !changePasswordFormIsSubmittable(form)}

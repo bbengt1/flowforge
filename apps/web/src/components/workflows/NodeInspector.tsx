@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Field, FieldError } from "@/components/a11y/Field";
 import { NdvParameterEditors } from "@/components/workflows/NdvParameterEditors";
 import {
   ndvLooksLikeExpression,
@@ -199,8 +200,12 @@ function SelectedNodeIdentity({
     <div className="mt-4 space-y-3">
       <p className="font-mono text-xs text-zinc-500">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
-      <label className="block text-sm" data-ndv-field="name">
-        <span className="text-zinc-600">Name</span>
+      <Field
+        id={`ndv-name-${node.id}`}
+        label="Name"
+        labelClassName="text-zinc-600"
+        data-ndv-field="name"
+      >
         <input
           value={name}
           disabled={!canEdit || pending}
@@ -212,7 +217,7 @@ function SelectedNodeIdentity({
           }}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
-      </label>
+      </Field>
     </div>
   );
 }
@@ -305,24 +310,30 @@ function NodeConfigForm({
     >
       <p className="font-mono text-xs text-zinc-500">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
-      <label className="block text-sm" data-ndv-field="name">
-        <span className="text-zinc-600">Name</span>
+      <Field
+        id={`ndv-config-name-${node.id}`}
+        label="Name"
+        labelClassName="text-zinc-600"
+        data-ndv-field="name"
+        invalid={errors.length > 0}
+        errorId={errors.length > 0 ? "ndv-node-errors" : undefined}
+      >
         <input
           value={name}
           disabled={!canEdit || pending}
           onChange={(event) => setName(event.target.value)}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
         />
-      </label>
+      </Field>
       <fieldset disabled={!canEdit || pending} className="space-y-3">
         <ConfigFields config={config} onChange={setConfig} />
       </fieldset>
       {errors.length > 0 ? (
-        <ul className="space-y-1 text-sm text-amber-900">
+        <FieldError id="ndv-node-errors" className="space-y-1 text-sm text-amber-900">
           {errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
-        </ul>
+        </FieldError>
       ) : null}
       <button
         type="submit"
@@ -446,8 +457,12 @@ function ConfigFields({
             options={["object", "array", "string", "integer", "boolean"]}
             onChange={(schemaType) => onChange({ ...config, schemaType })}
           />
-          <label
+          <Field
+            id="ndv-additional-properties"
+            label="additionalProperties"
+            controlPlacement="before-label"
             className="flex items-center gap-2 text-sm text-zinc-700"
+            labelClassName=""
             data-ndv-field="additionalProperties"
           >
             <input
@@ -457,8 +472,7 @@ function ConfigFields({
                 onChange({ ...config, additionalProperties: event.target.checked })
               }
             />
-            additionalProperties
-          </label>
+          </Field>
         </>
       );
     case "flow.stop":
@@ -673,15 +687,19 @@ function TextField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm" data-ndv-field={label}>
-      <span className="text-zinc-600">{label}</span>
+    <Field
+      id={`ndv-text-${label}`}
+      label={label}
+      labelClassName="text-zinc-600"
+      hint={hint}
+      data-ndv-field={label}
+    >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm"
       />
-      {hint ? <span className="mt-1 block text-xs text-zinc-500">{hint}</span> : null}
-    </label>
+    </Field>
   );
 }
 
@@ -697,8 +715,12 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm" data-ndv-field={label === "schema.type" ? "schemaType" : label}>
-      <span className="text-zinc-600">{label}</span>
+    <Field
+      id={`ndv-select-${label}`}
+      label={label}
+      labelClassName="text-zinc-600"
+      data-ndv-field={label === "schema.type" ? "schemaType" : label}
+    >
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -710,7 +732,7 @@ function SelectField({
           </option>
         ))}
       </select>
-    </label>
+    </Field>
   );
 }
 

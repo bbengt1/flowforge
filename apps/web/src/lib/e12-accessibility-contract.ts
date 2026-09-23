@@ -64,10 +64,11 @@ export const E12_A11Y_FIXES = [
   "editor-selection-announce",
   "rewrite-satellite-escape-focus",
   "rewrite-satellite-icon-text",
+  "dialog-focus-trap",
+  "field-describedby-invalid",
 ] as const;
 
 export const E12_A11Y_GAPS = [
-  "dialog-focus-trap",
   "canvas-sr-graph",
   "axe-ci",
   "touch-inspector-first",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Dialog } from "@/components/a11y/Dialog";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { MfaChrome } from "@/components/session/MfaChrome";
 import {
@@ -45,10 +46,9 @@ export function MfaStepUpHost() {
         </p>
       ) : null}
       {notice ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mfa-step-up-heading"
+        <Dialog
+          onClose={() => setNotice(null)}
+          labelledBy="mfa-step-up-heading"
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
         >
           <div
@@ -99,7 +99,7 @@ export function MfaStepUpHost() {
               Close
             </button>
           </div>
-        </div>
+        </Dialog>
       ) : null}
     </>
   );
