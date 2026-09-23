@@ -62,7 +62,7 @@ export const X3_EPIC = 379;
 export const X3_KEEP_STORY_OPEN = true;
 export const X3_KEEP_EPIC_OPEN = true;
 export const X3_ID = "X.3-explorer-select-open" as const;
-export const X3_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X3_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_SELECT_HELP =
   "Single-click selects a row. Double-click or Enter opens a workflow in the editor or navigates into a folder.";
@@ -274,11 +274,15 @@ export function explorerHomeNameDoesNotNavigateOnSingleClick(
 }
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
+  // Published docs cite X.3. Internal briefs may still cite the issues.
+  const cites =
+    (/X\.3/.test(docs) && /single-click|double-click/i.test(docs)) ||
+    (docs.includes("#382") &&
+      /keep #382 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#382") &&
-    /keep #382 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_SELECT_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

@@ -29,14 +29,13 @@ Verification contract: `verification.template` is a reviewed `{name}` probe usin
 ## Initial implementation layout
 
 E8.1 (control-plane) lives on the E4.2 ops-config store. Isolated execution is E8.2.
-
 ```text
 internal/ssh/
-  model.go target.go schema.go render.go policy.go catalog.go
-  errors.go handle.go resolve.go client.go execute.go redaction.go audit.go
-  retry.go verify.go
+ model.go target.go schema.go render.go policy.go catalog.go
+ errors.go handle.go resolve.go client.go execute.go redaction.go audit.go
+ retry.go verify.go
 internal/workflow/ssh_contract.go
-internal/opsconfig/          # ssh_target + command_profile kinds, pins
+internal/opsconfig/ # ssh_target + command_profile kinds, pins
 internal/httpapi/opsconfig.go
 GET /api/v1/ssh/catalog
 ```

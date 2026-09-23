@@ -5,7 +5,7 @@
  *
  * Chloe UI only. Visual restyle of Settings and the standalone
  * first-run wizard onto the V.1 token tree and V.2 shell
- * (docs/architecture/flowforge-visual-ia-north-star.md § settings /
+ * (docs/internal/flowforge-visual-ia-north-star.md § settings /
  * wizard / V.6). B.6 / B.7 chrome already exists — this slice does
  * not change B.2–B.5 order, Skip semantics, or gate rules.
  *
@@ -61,7 +61,7 @@ export const V6_STORY = 362;
 export const V6_EPIC = 353;
 export const V6_KEEP_STORY_OPEN = true;
 export const V6_ID = "V.6-settings-first-run-wizard" as const;
-export const V6_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V6_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V6_TOKEN_FILE = "src/app/tokens.css";
 
 export const V6_HELP =

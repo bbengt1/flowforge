@@ -32,7 +32,7 @@ export const UXL8_EPIC = 287;
 export const UXL8_KEEP_STORY_OPEN = true;
 export const UXL8_ID = "UXL.8-aesthetic-usability-density" as const;
 
-export const UXL8_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL8_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const AESTHETIC_USABILITY_HELP =
   "Spacing, type, and satellite alignment are consistent across standalone and /embed/v1. Error, warning, indeterminate, and ADV-024 denial contrast stay loud. Status is icon + text. No cloned n8n colors, icons, or measurements. No new surfaces. Isolation success is a denial — never a pass. No KEK / secret chrome.";

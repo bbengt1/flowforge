@@ -27,7 +27,7 @@ export const X6_EPIC = 379;
 export const X6_KEEP_STORY_OPEN = true;
 export const X6_KEEP_EPIC_OPEN = true;
 export const X6_ID = "X.6-explorer-home-copy" as const;
-export const X6_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X6_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const WORKFLOWS_HOME_PAGE_HELP =
   "Browse folders and workflows in this workspace. Explorer home is the folder tree, selected-folder content pane, and breadcrumb. Unfiled is virtual. Right-click a folder, workflow, or empty pane for create, rename, delete, move, or import when your role allows it. Single-click selects a row; double-click or Enter opens a workflow or folder. Empty folders teach create or move; Unfiled cannot be renamed or deleted. Activation and last run stay on each row. Drafts do not run — publish, then start a published version.";
@@ -144,9 +144,12 @@ export function explorerHomeCopyInheritsPriorStories(): boolean {
 }
 
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
+  // Published docs cite X.6. Internal briefs may still cite the issue.
+  const cites =
+    /X\.6/.test(docs) ||
+    (docs.includes("#393") && /keep #393 open/i.test(docs));
   return (
-    docs.includes("#393") &&
-    /keep #393 open/i.test(docs) &&
+    cites &&
     EXPLORER_HOME_COPY_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

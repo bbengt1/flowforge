@@ -451,7 +451,7 @@ Absent entirely:
 
 - **Distributed tracing.** No OpenTelemetry, no spans, no trace context propagation.
   The Go module has three direct dependencies (`pgx`, `x/crypto`, `yaml.v3`) — no
-  telemetry library at all. `docs/master-implementation-plan.md` E1.2 requires *"every
+  telemetry library at all. `docs/internal/master-implementation-plan.md` E1.2 requires *"every
   API-to-worker flow can be traced by correlation ID"*; there is an `X-Request-ID`
   header but no trace store, no sampling, and no span propagation to workers.
 - **Business metrics.** No queue depth, queue lag, lease expiry rate, execution

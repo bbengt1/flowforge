@@ -201,7 +201,7 @@ describe("F.2 home folder rail + select", () => {
     assert.equal(F2_EPIC, 307);
     assert.equal(F2_KEEP_STORY_OPEN, true);
     assert.equal(F2_ID, "F.2-home-folder-rail-select");
-    assert.equal(F2_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F2_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F2_HOME_FOLDER.keep309Open, true);
     assert.equal(F2_HOME_FOLDER.selectOnly, true);
     assert.equal(F2_HOME_FOLDER.unfiledIsVirtual, true);
@@ -210,12 +210,10 @@ describe("F.2 home folder rail + select", () => {
     assert.equal(F2_HOME_FOLDER.noCascadeDelete, true);
     assert.equal(F2_HOME_FOLDER.isolationSuccessIsDenial, true);
     assert.equal(F2_HOME_FOLDER.noNewApi, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.2/);
     assert.match(brief, /Unfiled/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#309/);
-    assert.match(frontend, /keep #309 open/i);
     assert.match(frontend, /GET \/workflow-folders/);
     assert.match(frontend, /\?folder=/);
   });
@@ -385,7 +383,7 @@ describe("F.3 create / rename / delete folders", () => {
     assert.equal(F3_EPIC, 307);
     assert.equal(F3_KEEP_STORY_OPEN, true);
     assert.equal(F3_ID, "F.3-create-rename-delete-folders");
-    assert.equal(F3_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F3_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F3_HOME_FOLDER.keep310Open, true);
     assert.equal(F3_HOME_FOLDER.foldersNotInYaml, true);
     assert.equal(F3_HOME_FOLDER.draftsNeverRun, true);
@@ -394,12 +392,10 @@ describe("F.3 create / rename / delete folders", () => {
     assert.equal(F3_HOME_FOLDER.noActionsDetour, true);
     assert.equal(F3_HOME_FOLDER.noNewApi, true);
     assert.equal(F2_HOME_FOLDER.keep310Open, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.3/);
     assert.match(brief, /409/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#310/);
-    assert.match(frontend, /keep #310 open/i);
   });
 
   it("validates name rules and sibling uniqueness", () => {
@@ -557,7 +553,7 @@ describe("F.4 move workflows (drag + menu)", () => {
     assert.equal(F4_EPIC, 307);
     assert.equal(F4_KEEP_STORY_OPEN, true);
     assert.equal(F4_ID, "F.4-move-workflows-drag-menu");
-    assert.equal(F4_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F4_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F4_HOME_FOLDER.keep311Open, true);
     assert.equal(F4_HOME_FOLDER.foldersNotInYaml, true);
     assert.equal(F4_HOME_FOLDER.draftsNeverRun, true);
@@ -568,12 +564,10 @@ describe("F.4 move workflows (drag + menu)", () => {
     assert.equal(F4_HOME_FOLDER.unfiledTargetSendsNullFolderId, true);
     assert.equal(F4_HOME_FOLDER.noFolderReparentDrag, true);
     assert.equal(F4_HOME_FOLDER.noNewApi, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.4/);
     assert.match(brief, /Move…/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#311/);
-    assert.match(frontend, /keep #311 open/i);
     assert.match(frontend, /PATCH \/api\/v1\/workflows\/\{id\}\/folder/);
   });
 
@@ -691,7 +685,7 @@ describe("F.5 empty states + Unfiled", () => {
     assert.equal(F5_EPIC, 307);
     assert.equal(F5_KEEP_STORY_OPEN, true);
     assert.equal(F5_ID, "F.5-empty-states-unfiled");
-    assert.equal(F5_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F5_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F5_HOME_FOLDER.keep312Open, true);
     assert.equal(F5_HOME_FOLDER.emptyHomeKeepsUxl6Verbs, true);
     assert.equal(F5_HOME_FOLDER.emptyHomeOptionalNewFolder, true);
@@ -710,12 +704,10 @@ describe("F.5 empty states + Unfiled", () => {
     assert.equal(F5_HOME_FOLDER.noCascadeDelete, true);
     assert.equal(F5_HOME_FOLDER.noKekInBrowser, true);
     assert.equal(F5_HOME_FOLDER.notAnN8nClone, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.5/);
     assert.match(brief, /Unfiled/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#312/);
-    assert.match(frontend, /keep #312 open/i);
     assert.match(frontend, /create here/);
     assert.match(frontend, /Unfiled-empty/);
   });
@@ -972,8 +964,6 @@ describe("#320 cold-load ?folder= deep link", () => {
       /dropPreviousFolder\s*\?\s*\{\s*kind:\s*"unfiled"/,
     );
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#320/);
-    assert.match(frontend, /keep #320 open/i);
   });
 });
 
@@ -983,7 +973,7 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_EPIC, 307);
     assert.equal(F6_KEEP_STORY_OPEN, true);
     assert.equal(F6_ID, "F.6-search-filter-across-folders");
-    assert.equal(F6_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F6_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F6_HOME_FOLDER.keep313Open, true);
     assert.equal(F6_HOME_FOLDER.defaultSearchAcrossFolders, true);
     assert.equal(F6_HOME_FOLDER.resultsShowFolderPath, true);
@@ -1009,12 +999,10 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_HOME_FOLDER.preserveScopedRecordsWhenWorkspaceListFails, true);
     assert.equal(F6_HOME_FOLDER.keepIntendedFolderWhenFolderListFails, true);
     assert.equal(F6_HOME_FOLDER.folderReadyFalseOnFolderListFailure, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.6/);
     assert.match(brief, /Across folders/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#313/);
-    assert.match(frontend, /keep #313 open/i);
     assert.match(frontend, /across folders/i);
     assert.match(frontend, /not a tree walk of children/i);
     assert.match(frontend, /separate mode/i);
@@ -1343,7 +1331,7 @@ describe("F.7 embed folder parity", () => {
     assert.equal(F7_EPIC, 307);
     assert.equal(F7_KEEP_STORY_OPEN, true);
     assert.equal(F7_ID, "F.7-embed-folder-parity");
-    assert.equal(F7_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(F7_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(F7_HOME_FOLDER.keep314Open, true);
     assert.equal(F7_HOME_FOLDER.sameWorkflowHomeNoSecondTree, true);
     assert.equal(F7_HOME_FOLDER.railListEmptyMoveAfterSessionEmbed, true);
@@ -1362,12 +1350,10 @@ describe("F.7 embed folder parity", () => {
     assert.equal(F7_HOME_FOLDER.adv021FailClosedWithoutSessionEmbed, true);
     assert.equal(F7_HOME_FOLDER.isolationSuccessIsDenial, true);
     assert.equal(F7_HOME_FOLDER.noKekInBrowser, true);
-    const brief = repoSource("docs/architecture/flowforge-workflow-folders.md");
+    const brief = repoSource("docs/internal/flowforge-workflow-folders.md");
     assert.match(brief, /F\.7/);
     assert.match(brief, /No second tree/);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#314/);
-    assert.match(frontend, /keep #314 open/i);
     assert.match(frontend, /\/embed\/v1\/workflows/);
     for (const path of F7_HOME_FOLDER_SOURCES) {
       assert.equal(source(path).length > 0, true);

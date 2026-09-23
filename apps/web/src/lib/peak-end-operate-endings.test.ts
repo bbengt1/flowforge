@@ -63,7 +63,7 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.equal(UXL4_EPIC, 287);
     assert.equal(UXL4_KEEP_STORY_OPEN, true);
     assert.equal(UXL4_ID, "UXL.4-peak-end-endings");
-    assert.equal(UXL4_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL4_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.match(PEAK_END_OPERATE_HELP, /Runs overlay/);
     assert.match(PEAK_END_OPERATE_HELP, /not only a toast/);
     assert.match(PEAK_END_OPERATE_HELP, /indeterminate/);
@@ -76,8 +76,6 @@ describe("UXL.4 peak-end operate endings", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#291/);
-    assert.match(frontend, /keep #291 open/i);
     assert.match(frontend, /peak-end operate endings/i);
   });
 
@@ -264,8 +262,6 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.match(listbox, /data-peak-end|PeakEndEnding/);
     assert.match(overlay, /PeakEndEnding/);
     assert.match(overlay, /selectedPeakEnd|data-peak-end-surface="overlay"/);
-    assert.match(frontend, /#301/);
-    assert.match(frontend, /keep #301 open/i);
     assert.match(frontend, /focused\/selected only|focused\/selected operate ending/i);
     assert.match(PEAK_END_OPERATE_HELP, /quiet success badges/);
     assert.equal(listbox.includes("/replay"), false);

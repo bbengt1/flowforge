@@ -66,7 +66,7 @@ export const X7_EPIC = 379;
 export const X7_KEEP_STORY_OPEN = true;
 export const X7_KEEP_EPIC_OPEN = true;
 export const X7_ID = "X.7-explorer-inline-rename" as const;
-export const X7_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X7_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_INLINE_RENAME_HELP =
   "New folder creates a folder, then names it in the tree. F2 or Rename edits the name in place. Enter saves. Escape keeps the current name.";
@@ -301,11 +301,15 @@ export function explorerHomeRenameDoesNotRefreshAfterCommit(
 }
 
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
+  // Published docs cite X.7. Internal briefs may still cite the issues.
+  const cites =
+    /X\.7/.test(docs) ||
+    (docs.includes("#396") &&
+      /keep #396 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#396") &&
-    /keep #396 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_INLINE_RENAME_AUTO_CLOSE_TOKENS.every(
       (token) => !docs.includes(token),
     )

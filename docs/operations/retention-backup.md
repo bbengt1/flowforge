@@ -1,7 +1,5 @@
-# Retention and backup operations
-
-Relates to #184 / Part of #181. **Keep #184 open.** G.1.4 / #435
-ships the Kubernetes CronJob and RPO/RTO rehearsal. G.2.7 / #452 adds
+# Retention and backup operations. G.1.4 /
+ships the Kubernetes CronJob and RPO/RTO rehearsal. G.2.7 / adds
 the FFB1 integrity manifest and WAL/PITR archive on that baseline.
 
 How backups are encrypted, how restore is rehearsed, and how retention
@@ -11,7 +9,7 @@ requirements stay in the [security model](../reference/security-model.md)
 (Secret, artifact, and output handling). Capacity proof stays in
 [E12.2](../reference/e12-resilience-capacity.md).
 
-**Operator UI guide — Chloe / E12.3** for legal-hold badges and purge
+**Operator UI guide — E12.3** for legal-hold badges and purge
 confirmation screens. This page is API + scripts only.
 
 ## What is retained
@@ -100,18 +98,17 @@ does not decrypt, or that disagrees with local chain state, fails closed.
 | WAL receiver | `scripts/backup/receive-wal.sh` | `flowforge-wal-archive` Deployment (`pg_receivewal`). |
 | PITR base | `scripts/backup/pitr-basebackup.sh` | `flowforge-pitr-base` CronJob. |
 | PITR restore | `scripts/backup/pitr-restore.sh` | Verify manifests, then extract. `--replay` promotes a local Postgres. |
-
 ```bash
 # Compose
 export POSTGRES_PASSWORD=...
-export BACKUP_ENCRYPTION_KEY=...   # passphrase; wrap with KMS before production
+export BACKUP_ENCRYPTION_KEY=... # passphrase; wrap with KMS before production
 bash scripts/backup/encrypt-pg-dump.sh
 # default outfile: flowforge-YYYYmmddTHHMMSSZ.sql.enc
 
 # DSN (same cipher; used by the CronJob)
 export DATABASE_URL='postgres://…'
 export BACKUP_ENCRYPTION_KEY=...
-export BACKUP_S3_BUCKET=...        # required when BACKUP_REQUIRE_S3=1
+export BACKUP_S3_BUCKET=... # required when BACKUP_REQUIRE_S3=1
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 bash scripts/backup/run-encrypted-backup.sh
@@ -144,7 +141,7 @@ the replication slot `flowforge_wal` has a single consumer. Do not
 scale it. The slot retains WAL on the primary until the receiver
 confirms it; a stuck slot can fill the primary disk — alert on
 `restart_lsn` lag. The backup role needs `REPLICATION` and `EXECUTE`
-on `pg_switch_wal()` for this path. The logical dump CronJob still
+on `pg_switch_wal` for this path. The logical dump CronJob still
 only needs `CONNECT` and `SELECT`. A receiver that is not local to
 the Postgres host also needs a `host replication` line in
 `pg_hba.conf`. The image trusts replication only from `127.0.0.1`,
@@ -170,7 +167,6 @@ provenance ([supply-chain policy](../../deploy/supply-chain/policy.md)).
 | Every PR and `main` push | E12.2 → `scripts/backup/manifest-pitr-rehearsal.sh` | Manifest tamper, sealed WAL, PITR replay of a row written after the base backup |
 | Before production enablement | All rehearsals in an environment that matches production pinning / TLS / secrets | Required by the [security model](../reference/security-model.md) operational controls and E12 epic acceptance |
 | After schema migrations land | Re-run the rehearsals; commit updated E12.2 last-run JSON when the resilience suite changes | Do not hand-edit pass/fail flags |
-
 ```bash
 # Compose + hardened API (needs postgres + api up and /readiness 200)
 export POSTGRES_PASSWORD=...
@@ -179,15 +175,15 @@ bash scripts/backup/restore-rehearsal.sh
 
 # Schema-only (needs pg_dump/psql + migrated TEST_DATABASE_URL)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
-  bash scripts/backup/restore-schema-rehearsal.sh
+ bash scripts/backup/restore-schema-rehearsal.sh
 
 # RPO/RTO (same DSN path as the CronJob)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
-  bash scripts/backup/rpo-rto-rehearsal.sh
+ bash scripts/backup/rpo-rto-rehearsal.sh
 
 # Integrity manifest + WAL/PITR (local Postgres only; needs postgresql-16 server tools)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
-  bash scripts/backup/manifest-pitr-rehearsal.sh
+ bash scripts/backup/manifest-pitr-rehearsal.sh
 ```
 
 The compose rehearsal boots an isolated API **production-locked** (no
@@ -205,7 +201,7 @@ Last-run pointers:
 - [e12-resilience-evidence/manifest-pitr-last-run.json](../reference/e12-resilience-evidence/manifest-pitr-last-run.json)
 - [e12-resilience-evidence/last-run.json](../reference/e12-resilience-evidence/last-run.json)
 - CI artifact `e12-resilience-suite`; sibling job name
-  `restore-rehearsal` on `supply-chain.yml`
+ `restore-rehearsal` on `supply-chain.yml`
 
 Incident steps after a real restore:
 [incident and recovery](incident-recovery.md#restore-rehearsal).
@@ -213,29 +209,28 @@ Incident steps after a real restore:
 ## Operator checklist (existing controls only)
 
 1. `BACKUP_ENCRYPTION_KEY` is set and KMS-wrapped in production
-   (`flowforge-backup` Secret).
+ (`flowforge-backup` Secret).
 2. `flowforge-db-backup` CronJob is applied; image is digest-pinned;
-   object-store egress is allowlisted.
+ object-store egress is allowlisted.
 3. The data KEK is recoverable: production uses `CREDENTIAL_KEK_WRAPPED`
-   with `KMS_PROVIDER` ([KEK rotation](kek-rotation.md)). A lost KEK or
-   a lost KMS key leaves credentials and artifacts undecryptable.
+ with `KMS_PROVIDER` ([KEK rotation](kek-rotation.md)). A lost KEK or
+ a lost KMS key leaves credentials and artifacts undecryptable.
 4. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
-   missing or malformed). They are not in the dump; generate unique
-   values and do not copy compose defaults.
+ missing or malformed). They are not in the dump; generate unique
+ values and do not copy compose defaults.
 5. Restore, RPO/RTO, and manifest/PITR rehearsals are green on `main`.
-   The WAL receiver is one replica; the backup role can replicate and
-   call `pg_switch_wal()`. PITR RPO is 300s only while that receiver
-   is sealing segments.
+ The WAL receiver is one replica; the backup role can replicate and
+ call `pg_switch_wal`. PITR RPO is 300s only while that receiver
+ is sealing segments.
 6. Retention purge is exercised in a non-prod workspace (`POST /retention/purge`)
-   and legal hold is verified to skip deletion.
+ and legal hold is verified to skip deletion.
 7. Audit rows older than 365 days leave only via
-   `app.purge_expired_audit_events`.
+ `app.purge_expired_audit_events`.
 
-## Chloe map
-
-| Surface | This PR | Chloe / E12.3 |
+## UI map
+| Surface | This PR | E12.3 |
 | --- | --- | --- |
 | Backup scripts, CronJob, RPO/RTO, cadence | This page | **No UI** |
-| `POST /retention/purge`, legal hold API | Linked from the backend map | **Operator UI guide — Chloe / E12.3** |
-| Legal-hold badge / denied download copy | Out of scope (optional E12.1 Chloe row) | **Operator UI guide — Chloe / E12.3** |
-| Accessibility of hold/purge dialogs | Out of scope | **Accessibility review — Chloe / E12.3** |
+| `POST /retention/purge`, legal hold API | Linked from the backend map | **Operator UI guide — E12.3** |
+| Legal-hold badge / denied download copy | Out of scope (optional E12.1 row) | **Operator UI guide — E12.3** |
+| Accessibility of hold/purge dialogs | Out of scope | **Accessibility review — E12.3** |

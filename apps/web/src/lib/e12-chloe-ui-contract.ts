@@ -77,8 +77,8 @@ export const E12_CHLOE_RULES = {
 
 export const E12_CHLOE_HARNESS = {
   evidenceDir: "docs/reference/e12-security-evidence",
-  notes: "docs/reference/e12-security-evidence/chloe-ui.md",
-  lastRun: "docs/reference/e12-security-evidence/chloe-ui-last-run.json",
+  notes: "docs/reference/e12-security-evidence/embed-ui-evidence.md",
+  lastRun: "docs/reference/e12-security-evidence/embed-ui-last-run.json",
   map: "docs/reference/e12-security-verification.md",
   tests: "apps/web/src/lib/e12-chloe-ui-contract.test.ts",
 } as const;

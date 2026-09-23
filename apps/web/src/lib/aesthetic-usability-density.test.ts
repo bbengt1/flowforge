@@ -69,7 +69,7 @@ describe("UXL.8 Aesthetic-Usability density pass", () => {
     assert.equal(UXL8_EPIC, 287);
     assert.equal(UXL8_KEEP_STORY_OPEN, true);
     assert.equal(UXL8_ID, "UXL.8-aesthetic-usability-density");
-    assert.equal(UXL8_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL8_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.match(AESTHETIC_USABILITY_HELP, /standalone and \/embed\/v1/);
     assert.match(AESTHETIC_USABILITY_HELP, /indeterminate/);
     assert.match(AESTHETIC_USABILITY_HELP, /ADV-024/);
@@ -81,8 +81,6 @@ describe("UXL.8 Aesthetic-Usability density pass", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#295/);
-    assert.match(frontend, /keep #295 open/i);
     assert.match(frontend, /Aesthetic-Usability/);
   });
 

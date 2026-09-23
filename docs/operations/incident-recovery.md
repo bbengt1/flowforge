@@ -1,11 +1,9 @@
 # Incident and recovery runbook
 
-Relates to #184 / Part of #181. **Keep #184 open.**
-
 Control-plane runbook for health signals, worker-loss, restore, and
 escalation. It documents existing APIs, scripts, and E12 evidence. It
 does not add dashboards or operator chrome.
-**Operator UI guide — Chloe / E12.3** (alerts / execution
+**Operator UI guide — E12.3** (alerts / execution
 `indeterminate` screens).
 
 Companion pages: [deployment](../deployment.md),
@@ -86,15 +84,15 @@ includes additive `statusReason: "no-worker"`.
 On lease expiry or a disconnected worker:
 
 1. The API leader scheduler calls lease recovery on its interval
-   (`SCHEDULER_INTERVAL`, default 30s). `POST /api/v1/jobs/recover`
-   (also runs on the next claim) does the same sweep: expired
-   `claimed` / `running` jobs become `indeterminate`.
+ (`SCHEDULER_INTERVAL`, default 30s). `POST /api/v1/jobs/recover`
+ (also runs on the next claim) does the same sweep: expired
+ `claimed` / `running` jobs become `indeterminate`.
 2. A stale `jobToken` cannot complete or overwrite a later claim.
 3. After the first heartbeat, `POST /jobs/{id}/release` is also
-   `indeterminate` (not a silent requeue).
+ `indeterminate` (not a silent requeue).
 4. Do **not** infer that a provider side effect did not occur. Require
-   verification or an explicitly authorized recovery action
-   ([security model — Incident-safe behavior](../reference/security-model.md#incident-safe-behavior)).
+ verification or an explicitly authorized recovery action
+ ([security model — Incident-safe behavior](../reference/security-model.md#incident-safe-behavior)).
 
 Retry of `indeterminate` provider steps is denied unless the node is
 explicitly retry-safe (`409` `retry-denied`). Cancel of terminal /
@@ -159,30 +157,29 @@ tickets or alert payloads.
 
 - Readiness stays 503 after Postgres and migrate should be up.
 - Liveness fails or the API crash-loops (check embed signing key,
-  `TRUSTED_DEV_IDENTITY_HEADERS` accidentally set, bad
-  `EMBED_OVERLAP_KEYS`, non-https issuer allowlist — those are
-  boot-fails in production).
+ `TRUSTED_DEV_IDENTITY_HEADERS` accidentally set, bad
+ `EMBED_OVERLAP_KEYS`, non-https issuer allowlist — those are
+ boot-fails in production).
 - Burst of `authorization` / `replay` / `policy` / `redaction` alerts
-  with the same `correlationId` or `resourceId`.
+ with the same `correlationId` or `resourceId`.
 - Queue lag or connection peaks approaching the E12.2 ≥2× headroom
-  claims ([capacity-last-run.json](../reference/e12-resilience-evidence/capacity-last-run.json)).
+ claims ([capacity-last-run.json](../reference/e12-resilience-evidence/capacity-last-run.json)).
 - Restore rehearsal or `supply-chain.yml` `restore-rehearsal` fails on
-  `main`.
+ `main`.
 - E12.1 security suite or E12.2 resilience suite red on `main`.
 
 **Do not**
 
 - Enable `TRUSTED_DEV_IDENTITY_HEADERS` to “unblock” production identity.
-  Trusted-dev headers are never rewrite login.
+ Trusted-dev headers are never rewrite login.
 - Point scrapers at OpenAPI/metrics without a platform-admin session.
 - Retry `indeterminate` provider steps without verification.
 - Treat compose `/health` 200 as “ready to dump.”
 
-## Chloe map
-
-| Surface | This PR | Chloe / E12.3 |
+## UI map
+| Surface | This PR | E12.3 |
 | --- | --- | --- |
 | Health/readiness, recover, restore scripts | This runbook | No new chrome |
-| `/alerts` queue and ack | API contract already in the backend map | **Operator UI guide — Chloe / E12.3** |
-| Execution `indeterminate` badge | Existing E5/E12.1 contract | **Operator UI guide — Chloe / E12.3** |
-| Accessibility of alert/execution screens | Out of scope | **Accessibility review — Chloe / E12.3** |
+| `/alerts` queue and ack | API contract already in the backend map | **Operator UI guide — E12.3** |
+| Execution `indeterminate` badge | Existing E5/E12.1 contract | **Operator UI guide — E12.3** |
+| Accessibility of alert/execution screens | Out of scope | **Accessibility review — E12.3** |

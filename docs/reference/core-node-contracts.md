@@ -1,6 +1,6 @@
 # Core neutral node contracts (E3.3)
 
-Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog` is the live contract. This page lists the **schema deltas** from E3.1 so Chloe can place and configure these nodes without guessing.
+Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog` is the live contract. This page lists the **schema deltas** from E3.1 so the UI can place and configure these nodes without guessing.
 
 `apps/web` was not rewritten in this story. Existing palette code that reads `type`, `phase`, `inputs`, `outputs`, and `requiredWith` keeps working. New fields are additive.
 
@@ -34,15 +34,14 @@ Every port may now include:
 `inherit` means the outbound port copies the inbound classification. `data.set` / `flow.stop` / `flow.fail` results are `public` (literals and operator-safe summaries only).
 
 Catalog root also has:
-
 ```json
 {
-  "apiVersion": "flowforge/v1",
-  "rules": {
-    "triggersAreWorkflowLevel": true,
-    "graphNodesExcludeTriggers": true,
-    "unsupportedPhasesRejected": true
-  }
+ "apiVersion": "flowforge/v1",
+ "rules": {
+ "triggersAreWorkflowLevel": true,
+ "graphNodesExcludeTriggers": true,
+ "unsupportedPhasesRejected": true
+ }
 }
 ```
 
@@ -137,40 +136,39 @@ E3.1 fixtures `mapping: {a: b}` remain valid.
 Existing codes still apply: `unknown-field`, `invalid-with`, `secret-forbidden`, `template-forbidden`, `unsupported-node`, `required-input`, `incompatible-ports`.
 
 ## Authoring examples
-
 ```yaml
 - id: constants
-  type: data.set
-  name: Constants
-  with:
-    value:
-      env: staging
-    schema:
-      type: object
-      properties:
-        env: {type: string, classification: public}
-      additionalProperties: false
+ type: data.set
+ name: Constants
+ with:
+ value:
+ env: staging
+ schema:
+ type: object
+ properties:
+ env: {type: string, classification: public}
+ additionalProperties: false
 
 - id: gate
-  type: flow.condition
-  name: Gate
-  with:
-    op: eq
-    compare: staging
-    path: env
+ type: flow.condition
+ name: Gate
+ with:
+ op: eq
+ compare: staging
+ path: env
 
 - id: pause
-  type: flow.delay
-  name: Pause
-  with:
-    duration: PT5M
+ type: flow.delay
+ name: Pause
+ with:
+ duration: PT5M
 
 - id: failed
-  type: flow.fail
-  name: Failed
-  with:
-    code: env-mismatch
-    message: environment is not staging
+ type: flow.fail
+ name: Failed
+ with:
+ code: env-mismatch
+ message: environment is not staging
 ```
 
 ## Out of scope (do not imply in the UI)

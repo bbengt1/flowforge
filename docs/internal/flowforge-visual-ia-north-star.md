@@ -1,3 +1,5 @@
+> **Internal.** Planning, gap, or backlog notes — not operator documentation. Published docs under `docs/` (everything except this directory) must not link here.
+
 # FlowForge visual + IA north star
 
 Status: **docs-only architecture brief**. Does not change application code, contracts, or shipped behavior. Does **not** open GitHub issues.
@@ -25,7 +27,7 @@ Status: **docs-only architecture brief**. Does not change application code, cont
 | [n8n-class parity charter](flowforge-rewrite-n8n-class-parity.md) | Rewrite authority (D1–D6, R1–R7). n8n is **behavior / feature coverage only**. |
 | [FlowForge UX Laws](flowforge-ux-laws.md) | Post-R1–R7 polish (Must / Should). This page is the **visual identity** successor, not a second law catalog. |
 | [Workflows home folder hierarchy](flowforge-workflow-folders.md) | Nested folders, Unfiled, refuse-if-nonempty, move = `PATCH folderId` only, selected list non-recursive. |
-| [First-run bootstrap](flowforge-first-run-bootstrap.md) | Standalone wizard only. Never `/embed/v1`. |
+| [First-run bootstrap](../architecture/flowforge-first-run-bootstrap.md) | Standalone wizard only. Never `/embed/v1`. |
 | [Frontend UI](../reference/frontend-ui.md) | Normative landed chrome. V-slices retarget visuals; they do not replace this contract. |
 | [Rewrite UI surfaces](../reference/rewrite-ui-surfaces.md) | Today-vs-parity tables. Do not invent a second IA here. |
 
@@ -614,7 +616,7 @@ After **Brent yes**, Gracie / Chloe may prototype **Overview home** and **editor
 | [n8n-class parity charter](flowforge-rewrite-n8n-class-parity.md) | Behavior/coverage authority. This page is **visual + IA identity**, not a new R-epic. |
 | [FlowForge UX Laws](flowforge-ux-laws.md) | Interaction polish. V-slices succeed UXL.8’s *identity* gap. |
 | [Workflows home folder hierarchy](flowforge-workflow-folders.md) | Folder IA. Visual rebuild must not change F semantics. |
-| [First-run bootstrap](flowforge-first-run-bootstrap.md) | Wizard contract. V.6 restyles only. |
+| [First-run bootstrap](../architecture/flowforge-first-run-bootstrap.md) | Wizard contract. V.6 restyles only. |
 | [Frontend UI](../reference/frontend-ui.md) | Landed chrome. Update when V-slices land — not in this PR. |
 | [Rewrite UI surfaces](../reference/rewrite-ui-surfaces.md) | Surface map. Do not invent a second IA. |
 | [Architecture](../architecture.md) | Boundaries. Visual rebuild cannot move them. |

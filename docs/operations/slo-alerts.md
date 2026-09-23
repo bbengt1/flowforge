@@ -1,6 +1,6 @@
 # SLOs and alert rules
 
-G.2.4 / #449. This page is the operator contract for control-plane
+G.2.4 /. This page is the operator contract for control-plane
 service level objectives. It does not add a product dashboard. Scrapers
 keep using `GET /api/v1/metrics` with `platform.administer` or a machine
 principal granted `ops.metrics.read` ([deployment](../deployment.md#metrics-and-openapi-scrape-adv-020)).
@@ -79,73 +79,72 @@ Apply with the cluster's Prometheus operator, or translate to the
 Alertmanager rules the platform already runs. Do not commit a secret
 or a scrape token into this file. The rules read the same series a
 machine principal scrapes.
-
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: flowforge-slo
+ name: flowforge-slo
 spec:
-  groups:
-    - name: flowforge.slo
-      rules:
-        - alert: FlowForgeAPIAvailabilityBurn
-          expr: |
-            (
-              sum(rate(flowforge_http_requests_total{status=~"5.."}[5m]))
-              /
-              clamp_min(sum(rate(flowforge_http_requests_total[5m])), 1e-9)
-            ) > 0.001
-          for: 10m
-          labels:
-            severity: page
-          annotations:
-            summary: FlowForge API 5xx ratio is above 0.1%
-            description: 30-day availability objective is 99.9% non-5xx. Correlate with traceparent and X-Request-ID. Do not attach headers or bodies.
+ groups:
+ - name: flowforge.slo
+ rules:
+ - alert: FlowForgeAPIAvailabilityBurn
+ expr: |
+ (
+ sum(rate(flowforge_http_requests_total{status=~"5.."}[5m]))
+ /
+ clamp_min(sum(rate(flowforge_http_requests_total[5m])), 1e-9)
+ ) > 0.001
+ for: 10m
+ labels:
+ severity: page
+ annotations:
+ summary: FlowForge API 5xx ratio is above 0.1%
+ description: 30-day availability objective is 99.9% non-5xx. Correlate with traceparent and X-Request-ID. Do not attach headers or bodies.
 
-        - alert: FlowForgeAPILatency
-          expr: |
-            histogram_quantile(0.99,
-              sum by (le) (rate(flowforge_http_request_duration_seconds_bucket[5m]))
-            ) > 1
-          for: 15m
-          labels:
-            severity: page
-          annotations:
-            summary: FlowForge API p99 latency is above 1s
+ - alert: FlowForgeAPILatency
+ expr: |
+ histogram_quantile(0.99,
+ sum by (le) (rate(flowforge_http_request_duration_seconds_bucket[5m]))
+ ) > 1
+ for: 15m
+ labels:
+ severity: page
+ annotations:
+ summary: FlowForge API p99 latency is above 1s
 
-        - alert: FlowForgeQueueLag
-          expr: |
-            histogram_quantile(0.99,
-              sum by (le) (rate(flowforge_queue_lag_seconds_bucket[5m]))
-            ) > 30
-          for: 10m
-          labels:
-            severity: page
-          annotations:
-            summary: FlowForge claim lag p99 is above the 30s queue SLO
-            description: See incident-recovery worker-loss. A stuck queue is not fixed by replaying drafts.
+ - alert: FlowForgeQueueLag
+ expr: |
+ histogram_quantile(0.99,
+ sum by (le) (rate(flowforge_queue_lag_seconds_bucket[5m]))
+ ) > 30
+ for: 10m
+ labels:
+ severity: page
+ annotations:
+ summary: FlowForge claim lag p99 is above the 30s queue SLO
+ description: See incident-recovery worker-loss. A stuck queue is not fixed by replaying drafts.
 
-        - alert: FlowForgeLeaseExpirations
-          expr: increase(flowforge_lease_expirations_total[15m]) > 0
-          for: 5m
-          labels:
-            severity: page
-          annotations:
-            summary: FlowForge marked leased jobs indeterminate
-            description: A worker missed its lease. Do not assume the provider side effect did not happen.
+ - alert: FlowForgeLeaseExpirations
+ expr: increase(flowforge_lease_expirations_total[15m]) > 0
+ for: 5m
+ labels:
+ severity: page
+ annotations:
+ summary: FlowForge marked leased jobs indeterminate
+ description: A worker missed its lease. Do not assume the provider side effect did not happen.
 
-        - alert: FlowForgeVaultDecryptErrors
-          expr: |
-            (
-              sum(rate(flowforge_vault_operations_total{op="decrypt",result="error"}[15m]))
-              /
-              clamp_min(sum(rate(flowforge_vault_operations_total{op="decrypt"}[15m])), 1e-9)
-            ) > 0.01
-          for: 15m
-          labels:
-            severity: page
-          annotations:
-            summary: FlowForge vault decrypt error ratio is above 1%
-            description: Labels are op and result only. Do not log plaintext or the credential id in the alert body.
+ - alert: FlowForgeVaultDecryptErrors
+ expr: |
+ (
+ sum(rate(flowforge_vault_operations_total{op="decrypt",result="error"}[15m]))
+ /
+ clamp_min(sum(rate(flowforge_vault_operations_total{op="decrypt"}[15m])), 1e-9)
+ ) > 0.01
+ for: 15m
+ labels:
+ severity: page
+ annotations:
+ summary: FlowForge vault decrypt error ratio is above 1%
+ description: Labels are op and result only. Do not log plaintext or the credential id in the alert body.
 ```

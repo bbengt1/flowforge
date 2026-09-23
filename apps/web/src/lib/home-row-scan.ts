@@ -50,7 +50,7 @@ export const UXL5_EPIC = 287;
 export const UXL5_KEEP_STORY_OPEN = true;
 export const UXL5_ID = "UXL.5-home-row-scan" as const;
 
-export const UXL5_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL5_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const HOME_ROW_SCAN_LEAD = HOME_ACTIVATION_COLUMN_ID;
 export const HOME_ROW_SCAN_TRAIL = "lastRun" as const;

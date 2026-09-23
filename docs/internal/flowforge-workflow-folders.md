@@ -1,3 +1,5 @@
+> **Internal.** Planning, gap, or backlog notes — not operator documentation. Published docs under `docs/` (everything except this directory) must not link here.
+
 # Workflows home: folder hierarchy
 
 Status: **F.1 API + F.2–F.7 chrome landed**; **X.7 create-then-inline-rename**; **X.8 Explorer nav chrome** (this page remains the IA). Folder membership is not in YAML.

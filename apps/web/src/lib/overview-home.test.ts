@@ -72,7 +72,7 @@ describe("O.1 Overview header + card list", () => {
     assert.equal(O1_EPIC, 324);
     assert.equal(O1_KEEP_STORY_OPEN, true);
     assert.equal(O1_ID, "O.1-overview-header-card-list");
-    assert.equal(O1_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(O1_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(OVERVIEW_HOME.keep325Open, true);
     assert.equal(OVERVIEW_HOME.noJonnyChange, true);
     assert.equal(OVERVIEW_HOME.d6MigrateInPlace, true);
@@ -80,8 +80,6 @@ describe("O.1 Overview header + card list", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#325/);
-    assert.match(frontend, /keep #325 open/i);
     assert.match(frontend, /card list/i);
   });
 

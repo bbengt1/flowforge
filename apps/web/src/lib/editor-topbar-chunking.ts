@@ -38,7 +38,7 @@ export const UXL1_EPIC = 287;
 export const UXL1_KEEP_STORY_OPEN = true;
 export const UXL1_ID = "UXL.1-topbar-chunking" as const;
 
-export const UXL1_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL1_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export type EditorTopBarChunkId =
   | "identity"

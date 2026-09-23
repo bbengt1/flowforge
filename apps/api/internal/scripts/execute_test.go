@@ -492,7 +492,7 @@ func findRepoRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for i := 0; i < 8; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "docs/master-implementation-plan.md")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "docs/index.md")); err == nil {
 			return dir
 		}
 		dir = filepath.Dir(dir)

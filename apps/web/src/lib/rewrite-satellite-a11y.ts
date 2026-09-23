@@ -76,7 +76,7 @@ export const REWRITE_SATELLITE_A11Y_DOCS = {
   frontend: "docs/reference/frontend-ui.md",
   operatorAdmin: "docs/guides/operator-admin.md",
   rewriteUiSurfaces: "docs/reference/rewrite-ui-surfaces.md",
-  charter: "docs/architecture/flowforge-rewrite-n8n-class-parity.md",
+  charter: "docs/internal/flowforge-rewrite-n8n-class-parity.md",
 } as const;
 
 export const REWRITE_SATELLITE_SURFACES = [

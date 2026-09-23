@@ -62,7 +62,7 @@ describe("O.3 Empty / Unfiled states on Overview cards", () => {
     assert.equal(O3_EPIC, 324);
     assert.equal(O3_KEEP_STORY_OPEN, true);
     assert.equal(O3_ID, "O.3-empty-unfiled-states-overview-cards");
-    assert.equal(O3_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(O3_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(OVERVIEW_EMPTY.keep327Open, true);
     assert.equal(OVERVIEW_EMPTY.noJonnyChange, true);
     assert.equal(OVERVIEW_EMPTY.d6MigrateInPlace, true);
@@ -70,8 +70,6 @@ describe("O.3 Empty / Unfiled states on Overview cards", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#327/);
-    assert.match(frontend, /keep #327 open/i);
     assert.match(frontend, /card chrome/i);
   });
 

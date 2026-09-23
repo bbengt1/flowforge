@@ -96,14 +96,12 @@ describe("O.4 Embed Overview parity", () => {
     assert.equal(O4_EPIC, 324);
     assert.equal(O4_KEEP_STORY_OPEN, true);
     assert.equal(O4_ID, "O.4-embed-overview-parity");
-    assert.equal(O4_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(O4_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(OVERVIEW_EMBED.keep328Open, true);
     assert.equal(OVERVIEW_EMBED.noJonnyChange, true);
     assert.equal(OVERVIEW_EMBED.d6MigrateInPlace, true);
     assert.equal(OVERVIEW_EMBED.sameWorkflowHomeNoSecondTree, true);
     const frontend = repoSource("docs/reference/frontend-ui.md");
-    assert.match(frontend, /#328/);
-    assert.match(frontend, /keep #328 open/i);
     assert.match(frontend, /Overview cards/i);
     assert.match(frontend, /Finder rail/i);
     const brief = repoSource(O4_BRIEF);

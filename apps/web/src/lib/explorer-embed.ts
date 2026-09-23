@@ -85,7 +85,7 @@ export const X5_EPIC = 379;
 export const X5_KEEP_STORY_OPEN = true;
 export const X5_KEEP_EPIC_OPEN = true;
 export const X5_ID = "X.5-explorer-embed-parity" as const;
-export const X5_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X5_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_EMBED_HELP =
   "Embed Explorer is the same WorkflowHome tree, content pane, breadcrumb, grant-gated menus, dense select/open, and empty/Unfiled teaching after session.embed. Viewers select/open only. Missing session.embed is an ADV-021 alert. Host query is display-only. Wizard, Login, and Change-password never mount on embed. The tree comes from the API, not localStorage. No second tree.";
@@ -314,11 +314,15 @@ export function embedExplorerNeverMountsStandaloneDoors(input: {
 }
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
+  // Published docs cite X.5. Internal briefs may still cite the issues.
+  const cites =
+    (/X\.5/.test(docs) && /Explorer/i.test(docs)) ||
+    (docs.includes("#384") &&
+      /keep #384 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#384") &&
-    /keep #384 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_EMBED_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

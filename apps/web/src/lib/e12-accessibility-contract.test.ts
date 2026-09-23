@@ -258,7 +258,6 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
       "utf8",
     );
     assert.match(frontend, /inspector-first/);
-    assert.match(frontend, /#205/);
     assert.match(frontend, /not a mobile app/i);
     assert.match(frontend, /767px|max-width: 767px/);
   });

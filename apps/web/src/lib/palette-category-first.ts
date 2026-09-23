@@ -47,7 +47,7 @@ export const UXL7_EPIC = 287;
 export const UXL7_KEEP_STORY_OPEN = true;
 export const UXL7_ID = "UXL.7-palette-category-first" as const;
 
-export const UXL7_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL7_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const PALETTE_CATEGORY_IDS = [
   "control",

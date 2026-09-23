@@ -36,6 +36,8 @@ jobs:
         run: bash scripts/check-deploy-defaults.sh
       - name: Check image signing and admission
         run: bash scripts/check-image-signing.sh
+      - name: Check published docs do not leak internal notes
+        run: python3 scripts/check-public-docs.py
       - name: Check govulncheck gate fixtures
         run: |
           python3 scripts/govulncheck-gate.py scripts/testdata/govulncheck-clean.json

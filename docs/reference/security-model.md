@@ -18,248 +18,248 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
 ## Identity, sessions, and authorization
 
 - Authentication establishes a subject. Authorization then evaluates the action,
-  workspace, resource, workflow version, target, and current policy. A valid
-  session alone never authorizes a run, credential use, approval, or export.
+ workspace, resource, workflow version, target, and current policy. A valid
+ session alone never authorizes a run, credential use, approval, or export.
 - Workspace quotas are a shared token bucket (`QUOTA_*`) on mutating and
-  expensive routes, plus a cap on open executions. Local login, embed
-  mint/exchange, machine token, and webhook ingress keep separate budgets.
-  `GET /api/v1/health` and `GET /api/v1/readiness` stay unlimited so HA
-  probes are never `429`. `FLOWFORGE_REPLICAS` above 1 refuses an
-  in-memory rate store. A store error fails closed (`503`). Responses
-  and logs do not include limiter keys, identifiers, or client addresses
-  from those counters.
+ expensive routes, plus a cap on open executions. Local login, embed
+ mint/exchange, machine token, and webhook ingress keep separate budgets.
+ `GET /api/v1/health` and `GET /api/v1/readiness` stay unlimited so HA
+ probes are never `429`. `FLOWFORGE_REPLICAS` above 1 refuses an
+ in-memory rate store. A store error fails closed (`503`). Responses
+ and logs do not include limiter keys, identifiers, or client addresses
+ from those counters.
 - Production identity is fail-closed. Client-supplied `X-FlowForge-Issuer` /
-  `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
-  authentication and must not upsert principals. Prefer the cookie session
-  issued by standalone `POST /login` (local email/username + password),
-  OIDC Authorization Code + PKCE (`POST /oidc/start` then
-  `POST /oidc/callback`), or `POST /embed/exchange`. OIDC is opt-in:
-  all `OIDC_*` unset fails those routes closed (`503`); a partial set
-  refuses process start. `client_secret` and the PKCE verifier stay on
-  the server. There is no IdP-admin API. TOTP MFA gates
-  `platform.administer` and `credential.*` on local-login and OIDC
-  sessions (`403` `mfa-required`) until enroll and verify. Machine,
-  trusted-dev, and embed sessions are not that gate. SCIM 2.0 is a
-  separate door at `/scim/v2`, authenticated only by
-  `SCIM_BEARER_TOKEN` (constant-time compare). It is not an
-  `ff_session`, not `POST /machine/token`, and not
-  `POST /embed/exchange`. All `SCIM_*` unset fails those routes
-  closed (`503`). A partial set refuses process start. The bearer is
-  never stored, logged, or returned. Provisioning writes the existing
-  `users` row: issuer is `SCIM_ISSUER`, or `OIDC_ISSUER` when the SCIM
-  issuer is omitted, and both set must match. Set `externalId` to the
-  OIDC `sub` (otherwise `userName` becomes `external_subject`).
-  Passwords and secret-like fields are `400` and are not echoed.
-  `active: false` and `DELETE` disable the user, revoke sessions, and
-  drop workspace memberships except the last admin. `DELETE` also hides
-  the user from SCIM (`404`). Groups are existing workspaces; adding a
-  member grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing
-  other roles. Group create, replace, and delete are rejected. A query
-  `access_token` is `401` and is not echoed. Self-asserted header identity is enabled only by the
-  explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
-  `APP_ENV=development|dev|local|test`. Empty or missing config denies
-  header identity. The process refuses to start if the flag is set in
-  production (`APP_ENV` empty/production) or when `REQUIRE_TLS=true`, so
-  it cannot stay on accidentally. Never rewrite product login onto
-  trusted-dev `POST /session`. See [deployment](../deployment.md).
+ `X-FlowForge-Subject` (and a matching `POST /session` body) are **not**
+ authentication and must not upsert principals. Prefer the cookie session
+ issued by standalone `POST /login` (local email/username + password),
+ OIDC Authorization Code + PKCE (`POST /oidc/start` then
+ `POST /oidc/callback`), or `POST /embed/exchange`. OIDC is opt-in:
+ all `OIDC_*` unset fails those routes closed (`503`); a partial set
+ refuses process start. `client_secret` and the PKCE verifier stay on
+ the server. There is no IdP-admin API. TOTP MFA gates
+ `platform.administer` and `credential.*` on local-login and OIDC
+ sessions (`403` `mfa-required`) until enroll and verify. Machine,
+ trusted-dev, and embed sessions are not that gate. SCIM 2.0 is a
+ separate door at `/scim/v2`, authenticated only by
+ `SCIM_BEARER_TOKEN` (constant-time compare). It is not an
+ `ff_session`, not `POST /machine/token`, and not
+ `POST /embed/exchange`. All `SCIM_*` unset fails those routes
+ closed (`503`). A partial set refuses process start. The bearer is
+ never stored, logged, or returned. Provisioning writes the existing
+ `users` row: issuer is `SCIM_ISSUER`, or `OIDC_ISSUER` when the SCIM
+ issuer is omitted, and both set must match. Set `externalId` to the
+ OIDC `sub` (otherwise `userName` becomes `external_subject`).
+ Passwords and secret-like fields are `400` and are not echoed.
+ `active: false` and `DELETE` disable the user, revoke sessions, and
+ drop workspace memberships except the last admin. `DELETE` also hides
+ the user from SCIM (`404`). Groups are existing workspaces; adding a
+ member grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing
+ other roles. Group create, replace, and delete are rejected. A query
+ `access_token` is `401` and is not echoed. Self-asserted header identity is enabled only by the
+ explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
+ `APP_ENV=development|dev|local|test`. Empty or missing config denies
+ header identity. The process refuses to start if the flag is set in
+ production (`APP_ENV` empty/production) or when `REQUIRE_TLS=true`, so
+ it cannot stay on accidentally. Never rewrite product login onto
+ trusted-dev `POST /session`. See [deployment](../deployment.md).
 - Tenant and workspace bootstrap (`POST /tenants`, `POST /workspaces`)
-  requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`)
-  on a **non-embed** session (or trusted-dev header identity).
-  Unauthenticated callers are `401`; any other caller is `403`. Empty
-  `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
+ requires `platform.administer` via `PLATFORM_ADMINS` (`issuer|subject`)
+ on a **non-embed** session (or trusted-dev header identity).
+ Unauthenticated callers are `401`; any other caller is `403`. Empty
+ `PLATFORM_ADMINS` is fail-closed. Workspace `admin` is not enough.
 - Metrics and OpenAPI/swagger (`GET /api/v1/metrics`, `/openapi.yaml`,
-  `/openapi.json`, `/swagger`) require an authenticated principal with
-  `platform.administer` (`PLATFORM_ADMINS`) or a machine principal
-  granted `ops.metrics.read` (or an explicit machine grant of
-  `platform.administer`). Unauthenticated is `401`. A human workspace
-  `admin` is `403`. `ops.metrics.read` is platform-scoped and is not
-  assigned to any workspace role. There is no anonymous scrape token.
-  Scrapers send `Authorization: Bearer` with the opaque `ff_session`
-  token minted by `POST /api/v1/machine/token`, or the `ff_session`
-  cookie. Trusted-dev identity headers work only when that flag is on.
-  When `MACHINE_REQUIRE` includes `metrics`, a missing, revoked, or
-  ungranted `MACHINE_METRICS_CLIENT_ID` fails closed (`503`) before the
-  scrape is served, including for a human platform-admin. Metric labels
-  are closed enums (method/route/status, or vault/queue `op` /
-  `result` / `outcome`). They do not carry secret material, request
-  ids, or credential ids. W3C `traceparent` is a correlation id on the
-  response and on `execution_jobs`, not a credential; secret-like
-  `tracestate` is dropped. Health and
-  readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
-  unauthenticated so Kubernetes probes keep working.
+ `/openapi.json`, `/swagger`) require an authenticated principal with
+ `platform.administer` (`PLATFORM_ADMINS`) or a machine principal
+ granted `ops.metrics.read` (or an explicit machine grant of
+ `platform.administer`). Unauthenticated is `401`. A human workspace
+ `admin` is `403`. `ops.metrics.read` is platform-scoped and is not
+ assigned to any workspace role. There is no anonymous scrape token.
+ Scrapers send `Authorization: Bearer` with the opaque `ff_session`
+ token minted by `POST /api/v1/machine/token`, or the `ff_session`
+ cookie. Trusted-dev identity headers work only when that flag is on.
+ When `MACHINE_REQUIRE` includes `metrics`, a missing, revoked, or
+ ungranted `MACHINE_METRICS_CLIENT_ID` fails closed (`503`) before the
+ scrape is served, including for a human platform-admin. Metric labels
+ are closed enums (method/route/status, or vault/queue `op` /
+ `result` / `outcome`). They do not carry secret material, request
+ ids, or credential ids. W3C `traceparent` is a correlation id on the
+ response and on `execution_jobs`, not a credential; secret-like
+ `tracestate` is dropped. Health and
+ readiness (`GET /api/v1/health`, `GET /api/v1/readiness`) stay
+ unauthenticated so Kubernetes probes keep working.
 - Machine principals (`issuer=flowforge:machine`) are the non-human
-  door for scrapers, the scheduler consumer, and automation.
-  `POST /api/v1/machine/token` takes `client_id` plus one factor
-  (secret or a short-lived Ed25519 assertion with
-  `aud=flowforge:machine`) and mints the **same** standalone
-  `ff_session` / `ff_csrf` pair humans use. It is not `POST /login`,
-  not trusted-dev `POST /session`, and not `POST /embed/exchange`.
-  Create, rotate, and revoke require `platform.administer` and CSRF.
-  The secret and assertion public key are POST-once and never echoed
-  (display name, UUID, `client_id`, status, and grants only). Grants
-  are deny-by-default; an empty list authorizes nothing.
-  `embed.impersonate` is not grantable. Rotate replaces the credential
-  only. Revoke disables the user and revokes live sessions.
-  `PLATFORM_ADMINS` is not the machine identity. OIDC and MFA do not
-  merge into this door.
-  First-run `GET /api/v1/bootstrap` returns status flags only (no
-  secrets, never the stored public URL). Incomplete installs may call
-  it without a session; after bootstrap is complete, normal session
-  auth is required. Wizard step 1 `POST /api/v1/bootstrap/persistence`,
-  step 2 `POST /api/v1/bootstrap/admins`, step 3
-  `POST /api/v1/bootstrap/public-url`, and step 4
-  `POST /api/v1/bootstrap/tls` use the same incomplete-install
-  openness; after complete they are `409` (Settings-only). Persistence
-  confirm is `{confirm:true}` only — never a DSN or password. First
-  admin is `{issuer, external_subject, display_name?, password?}`.
-  Optional `password` is POSTed once, stored only as a bcrypt hash on
-  `local_logins` (identifier = `external_subject`), and is **never
-  echoed**. When `local_logins` is empty (fresh / path-2 first boot),
-  the API seeds a **one-time** operator identifier `admin` with
-  password `admin` and `must_change_password=true`. This is not a
-  permanent default and never overwrites an existing credential.
-  `POST /login` verifies that hash and mints the same
-  standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`)
-  plus session claim `must_change_password` when the flag is set.
-  `GET /session` exposes the same flag so chrome can gate Overview
-  until `POST /session/password` (CSRF) replaces the hash. After
-  change, `admin`/`admin` is the same `401` as unknown. Production
-  still allows Login, but the same gate stays up until the one-time
-  is rotated — do not leave `admin`/`admin` usable. Unknown identifier
-  and wrong password are the same `401` without
-  saying which field failed. `POST /login` is rate-limited by IP
-  (default 60/min) and identifier (default 30/min) **before** lookup
-  or bcrypt and returns `429` `rate-limited` with `Retry-After` on
-  burst. Durable account lockout is separate from that in-process
-  window. `auth_lockouts` stores the failed-password count and
-  `locked_at` in Postgres so the lock survives process restart.
-  `LOCKOUT_MAX_FAILURES` defaults to 5 and must be an integer from 1
-  to 50 (unset uses 5; `0`, negative, or non-integer is a boot-fail).
-  After the threshold, Local Login and an otherwise valid OIDC
-  callback return the same `401` `Invalid credentials.` and do not
-  mint a session. A successful password, or an unlocked OIDC
-  callback, clears the counter. Unknown identifiers do not create a
-  row. Disabled users do not increment it. Lockout store errors are
-  `503` and do not mint. Platform admins read
-  `GET /api/v1/users/{userID}/lockout` and clear with
-  `POST /api/v1/users/{userID}/unlock` (CSRF,
-  `platform.administer`; embed sessions are `403`). Unlock does not
-  re-enable a disabled user. The JSON is `user_id`, `locked`,
-  `failed_count`, and optional `locked_at` — no hash or password.
-  Store failures other than unknown identifier are `503`.
-  Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
-  the value is stored server-side and never echoed. TLS is
-  `{action:"create-self-signed"}`, `{action:"upload", certPem,
-  keyPem}`, or `{action:"skip"}` — PEM POST once on upload, written
-  to `TLS_CERT_FILE` / `TLS_KEY_FILE`, never returned; skip writes
-  no files; then `MarkComplete`. ACME is out of scope.
-  CSRF is required when `ff_session` is present; unauthenticated
-  incomplete POSTs have no session, so CSRF does not apply. These
-  endpoints must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
-  After `POST /embed/exchange`, the session is bound to the assertion’s
-  `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
-  sessions cannot create tenants, workspaces, or sibling workbenches —
-  including when the principal is a platform-admin or the assertion
-  carried Portal `admin` capabilities. Response is `403` with a problem
-  detail that embed sessions cannot create tenants or workspaces.
-  Portal-minted `admin` / elevated capabilities never include
-  `platform.administer` and never bootstrap FlowForge membership.
+ door for scrapers, the scheduler consumer, and automation.
+ `POST /api/v1/machine/token` takes `client_id` plus one factor
+ (secret or a short-lived Ed25519 assertion with
+ `aud=flowforge:machine`) and mints the **same** standalone
+ `ff_session` / `ff_csrf` pair humans use. It is not `POST /login`,
+ not trusted-dev `POST /session`, and not `POST /embed/exchange`.
+ Create, rotate, and revoke require `platform.administer` and CSRF.
+ The secret and assertion public key are POST-once and never echoed
+ (display name, UUID, `client_id`, status, and grants only). Grants
+ are deny-by-default; an empty list authorizes nothing.
+ `embed.impersonate` is not grantable. Rotate replaces the credential
+ only. Revoke disables the user and revokes live sessions.
+ `PLATFORM_ADMINS` is not the machine identity. OIDC and MFA do not
+ merge into this door.
+ First-run `GET /api/v1/bootstrap` returns status flags only (no
+ secrets, never the stored public URL). Incomplete installs may call
+ it without a session; after bootstrap is complete, normal session
+ auth is required. Wizard step 1 `POST /api/v1/bootstrap/persistence`,
+ step 2 `POST /api/v1/bootstrap/admins`, step 3
+ `POST /api/v1/bootstrap/public-url`, and step 4
+ `POST /api/v1/bootstrap/tls` use the same incomplete-install
+ openness; after complete they are `409` (Settings-only). Persistence
+ confirm is `{confirm:true}` only — never a DSN or password. First
+ admin is `{issuer, external_subject, display_name?, password?}`.
+ Optional `password` is POSTed once, stored only as a bcrypt hash on
+ `local_logins` (identifier = `external_subject`), and is **never
+ echoed**. When `local_logins` is empty (fresh / path-2 first boot),
+ the API seeds a **one-time** operator identifier `admin` with
+ password `admin` and `must_change_password=true`. This is not a
+ permanent default and never overwrites an existing credential.
+ `POST /login` verifies that hash and mints the same
+ standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`)
+ plus session claim `must_change_password` when the flag is set.
+ `GET /session` exposes the same flag so chrome can gate Overview
+ until `POST /session/password` (CSRF) replaces the hash. After
+ change, `admin`/`admin` is the same `401` as unknown. Production
+ still allows Login, but the same gate stays up until the one-time
+ is rotated — do not leave `admin`/`admin` usable. Unknown identifier
+ and wrong password are the same `401` without
+ saying which field failed. `POST /login` is rate-limited by IP
+ (default 60/min) and identifier (default 30/min) **before** lookup
+ or bcrypt and returns `429` `rate-limited` with `Retry-After` on
+ burst. Durable account lockout is separate from that in-process
+ window. `auth_lockouts` stores the failed-password count and
+ `locked_at` in Postgres so the lock survives process restart.
+ `LOCKOUT_MAX_FAILURES` defaults to 5 and must be an integer from 1
+ to 50 (unset uses 5; `0`, negative, or non-integer is a boot-fail).
+ After the threshold, Local Login and an otherwise valid OIDC
+ callback return the same `401` `Invalid credentials.` and do not
+ mint a session. A successful password, or an unlocked OIDC
+ callback, clears the counter. Unknown identifiers do not create a
+ row. Disabled users do not increment it. Lockout store errors are
+ `503` and do not mint. Platform admins read
+ `GET /api/v1/users/{userID}/lockout` and clear with
+ `POST /api/v1/users/{userID}/unlock` (CSRF,
+ `platform.administer`; embed sessions are `403`). Unlock does not
+ re-enable a disabled user. The JSON is `user_id`, `locked`,
+ `failed_count`, and optional `locked_at` — no hash or password.
+ Store failures other than unknown identifier are `503`.
+ Public URL is `{publicBaseUrl}` (HTTPS preferred; HTTP for local);
+ the value is stored server-side and never echoed. TLS is
+ `{action:"create-self-signed"}`, `{action:"upload", certPem,
+ keyPem}`, or `{action:"skip"}` — PEM POST once on upload, written
+ to `TLS_CERT_FILE` / `TLS_KEY_FILE`, never returned; skip writes
+ no files; then `MarkComplete`. ACME is out of scope.
+ CSRF is required when `ff_session` is present; unauthenticated
+ incomplete POSTs have no session, so CSRF does not apply. These
+ endpoints must not gate `/embed/v1`. See [first-run bootstrap](../architecture/flowforge-first-run-bootstrap.md).
+ After `POST /embed/exchange`, the session is bound to the assertion’s
+ `(tenant_id, workbench_key)` (and mapped workspace). Embed-origin
+ sessions cannot create tenants, workspaces, or sibling workbenches —
+ including when the principal is a platform-admin or the assertion
+ carried Portal `admin` capabilities. Response is `403` with a problem
+ detail that embed sessions cannot create tenants or workspaces.
+ Portal-minted `admin` / elevated capabilities never include
+ `platform.administer` and never bootstrap FlowForge membership.
 - Authorization is deny-by-default. Every workspace-owned query, cache key,
-  queue payload, realtime subscription, artifact URL, and audit event carries the
-  server-derived workspace ID. Database RLS is a backstop, not the only check.
+ queue payload, realtime subscription, artifact URL, and audit event carries the
+ server-derived workspace ID. Database RLS is a backstop, not the only check.
 - Browser sessions use `Secure`, `HttpOnly`, and appropriately scoped `SameSite`
-  cookies. Top-level / non-embed sessions keep the safer default:
-  `ff_session` is `HttpOnly` + `SameSite=Lax`; `ff_csrf` is readable +
-  `SameSite=Strict`; both `Path=/api/v1` and `Secure` on HTTPS. Embed
-  sessions issued by `POST /embed/exchange` (and later refresh of that
-  bound session) use **CHIPS** so they work in a cross-site iframe
-  without weakening first-party cookies: `SameSite=None; Secure;
-  Partitioned` on both `ff_session` and `ff_csrf`. `Secure` is never
-  dropped. `SameSite=None` is never used without `Partitioned`. Do not
-  fall back to unpartitioned `SameSite=None` or to `Lax`/`None` without
-  `Secure`. Browsers must be a secure context (HTTPS) and support
-  partitioned cookies; if the cookie is not stored or not sent, later
-  calls fail closed (`401` unauthenticated, or `403` CSRF on mutations).
-  State-changing browser requests require CSRF protection
-  (`X-CSRF-Token` paired with `ff_csrf` and the server-side hash).
-  Bearer tokens are never accepted from a URL or persisted in browser
-  local storage. Idle and absolute expiry fail closed. Deleting a
-  workspace (`DELETE /workspace`, soft-disable `status=disabled`, or a
-  hard `DELETE` of the workspace row) revokes every embed session bound
-  to that workspace_id or `(tenant_id, workbench_key)`, including CHIPS
-  cookies from `POST /embed/exchange`. Later requests with those
-  cookies are `401`. Unbound standalone sessions and sessions bound to
-  other workspaces are not revoked. Revoke runs before disable; if
-  revoke cannot complete, the workspace is not deleted (fail closed).
-  PostgreSQL applies the same revoke in the disable/delete transaction
-  via trigger so a raw SQL path cannot leave a live embed session.
+ cookies. Top-level / non-embed sessions keep the safer default:
+ `ff_session` is `HttpOnly` + `SameSite=Lax`; `ff_csrf` is readable +
+ `SameSite=Strict`; both `Path=/api/v1` and `Secure` on HTTPS. Embed
+ sessions issued by `POST /embed/exchange` (and later refresh of that
+ bound session) use **CHIPS** so they work in a cross-site iframe
+ without weakening first-party cookies: `SameSite=None; Secure;
+ Partitioned` on both `ff_session` and `ff_csrf`. `Secure` is never
+ dropped. `SameSite=None` is never used without `Partitioned`. Do not
+ fall back to unpartitioned `SameSite=None` or to `Lax`/`None` without
+ `Secure`. Browsers must be a secure context (HTTPS) and support
+ partitioned cookies; if the cookie is not stored or not sent, later
+ calls fail closed (`401` unauthenticated, or `403` CSRF on mutations).
+ State-changing browser requests require CSRF protection
+ (`X-CSRF-Token` paired with `ff_csrf` and the server-side hash).
+ Bearer tokens are never accepted from a URL or persisted in browser
+ local storage. Idle and absolute expiry fail closed. Deleting a
+ workspace (`DELETE /workspace`, soft-disable `status=disabled`, or a
+ hard `DELETE` of the workspace row) revokes every embed session bound
+ to that workspace_id or `(tenant_id, workbench_key)`, including CHIPS
+ cookies from `POST /embed/exchange`. Later requests with those
+ cookies are `401`. Unbound standalone sessions and sessions bound to
+ other workspaces are not revoked. Revoke runs before disable; if
+ revoke cannot complete, the workspace is not deleted (fail closed).
+ PostgreSQL applies the same revoke in the disable/delete transaction
+ via trigger so a raw SQL path cannot leave a live embed session.
 - Embed assertions are asymmetric-key signed, short-lived, single-use, and
-  audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`).
-  Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /
-  `EMBED_ISSUER_ALLOWLIST` merged with `PORTAL_ISSUER` /
-  `PORTAL_ISSUER_ALLOWLIST`), audience, `nbf`/`exp`, `jti`,
-  capabilities, and workspace binding. `nbf` clock-skew is a short
-  documented leeway (default 30s, `EMBED_NBF_LEEWAY`, hard max 60s);
-  `exp` is exact. An empty allowlist fails closed
-  at request time (`403` on mint and exchange) — the process does not
-  refuse to start, consistent with empty `PLATFORM_ADMINS`. Production
-  (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every
-  configured issuer to be an absolute `https://` URI: a non-https
-  allowlist entry is a boot-fail, and mint/exchange still reject a
-  non-https `iss` with `403` (ADV-018). Local/dev/test may use `http://`
-  issuers. Token IDs
-  are consumed atomically in one
-  `INSERT … ON CONFLICT DO NOTHING RETURNING` and retained 24h past
-  JWT `exp` (replay is conflict). The active signing key is durable
-  (`EMBED_SIGNING_KEY` / file). Production (empty/`production` `APP_ENV` or
-  `REQUIRE_TLS`) **refuses to start** without it — no boot-only ephemeral
-  key. An ephemeral process key is gated to explicit non-production
-  `APP_ENV` only and is minted with `crypto/rand` (no committed seed).
-  Key rotation accepts only active and explicitly
-  overlapping verification keys. Every overlap key requires a short
-  finite `overlapUntil` (max 4h). Missing, zero, or far-future expiry
-  is refused — it is not treated as forever. The active signing key is
-  not an overlap key and does not use `overlapUntil`. Unknown, missing-expiry,
-  expired, or far-future `kid` fails closed. Exchange and JWKS refresh the
-  overlap set from the durable store so stale in-memory rings cannot keep
-  accepting retired keys or miss overlap registered on another instance.
-  The rotate API may register only the previous active public key, requires
-  `overlapUntil` (max 4h), and requires `platform.administer`
-  (`PLATFORM_ADMINS`); `workspace.administer` is not enough. Bad
-  `EMBED_OVERLAP_KEYS` is a boot-fail. Mint binds `sub` and `iss` to the authenticated caller. A
-  different subject requires `embed.impersonate` (same `PLATFORM_ADMINS`
-  allowlist; empty is fail-closed). A different issuer is always `403`.
-  Workspace `admin` cannot impersonate. `embed.impersonate` is
-  platform-scoped and is never mintable. After exchange, the
-  browser session is bound to `(tenant_id, workbench_key)`; that pair travels
-  through API authorization, configuration lookups, jobs/workers, caches,
-  realtime, history, and audit. The bound session cannot call tenant or
-  workspace create (fail closed). A host-supplied tenant is never authorization.
-  The UI treats host-provided identity as display context until
-  `POST /embed/exchange` verifies it. Exchange also binds assertion
-  `iss` to the signed minting host (`host=iss`, `ctx=embed|portal`).
-  The path allowlist is selected from that signed `ctx`, not from an
-  unauthenticated request header. An embed-minted assertion cannot
-  satisfy a Portal path allowlist, and a client header that disagrees
-  with the signed claims is `403`. The CP Ops Portal adapter mints those
-  same assertions after Portal RBAC; Portal entry is never FlowForge
-  authorization, and FlowForge does not share its database or executor.
-  After exchange, embed chrome and deep
-  links use the FlowForge-verified `(tenant_id, workbench_key)` /
-  `GET /session` `session.embed` only (ADV-021). Assertion leftovers,
-  catalog guesses, and host query are not chrome authority. Assertions
-  are never accepted from a URL.
-  Embed authorization decisions (mint, exchange, rotate, capability
-  and tenancy bind, impersonation) emit secret-free audit events;
-  assertion plaintext, signing keys, and session secrets are never
-  logged. `POST /embed/exchange` is rate-limited by IP and
-  issuer/subject (defaults 120/min and 30/min, configurable) and
-  returns `429` on burst so forged assertions cannot exhaust verify
-  or `jti` store capacity. See [embed SDK](embed-sdk.md).
+ audience-bound to FlowForge (`aud=flowforge`, Ed25519 / EdDSA, `jti`).
+ Exchange validates issuer against a required allowlist (`EMBED_ISSUER` /
+ `EMBED_ISSUER_ALLOWLIST` merged with `PORTAL_ISSUER` /
+ `PORTAL_ISSUER_ALLOWLIST`), audience, `nbf`/`exp`, `jti`,
+ capabilities, and workspace binding. `nbf` clock-skew is a short
+ documented leeway (default 30s, `EMBED_NBF_LEEWAY`, hard max 60s);
+ `exp` is exact. An empty allowlist fails closed
+ at request time (`403` on mint and exchange) — the process does not
+ refuse to start, consistent with empty `PLATFORM_ADMINS`. Production
+ (empty/`production` `APP_ENV` or `REQUIRE_TLS`) requires every
+ configured issuer to be an absolute `https://` URI: a non-https
+ allowlist entry is a boot-fail, and mint/exchange still reject a
+ non-https `iss` with `403` (ADV-018). Local/dev/test may use `http://`
+ issuers. Token IDs
+ are consumed atomically in one
+ `INSERT … ON CONFLICT DO NOTHING RETURNING` and retained 24h past
+ JWT `exp` (replay is conflict). The active signing key is durable
+ (`EMBED_SIGNING_KEY` / file). Production (empty/`production` `APP_ENV` or
+ `REQUIRE_TLS`) **refuses to start** without it — no boot-only ephemeral
+ key. An ephemeral process key is gated to explicit non-production
+ `APP_ENV` only and is minted with `crypto/rand` (no committed seed).
+ Key rotation accepts only active and explicitly
+ overlapping verification keys. Every overlap key requires a short
+ finite `overlapUntil` (max 4h). Missing, zero, or far-future expiry
+ is refused — it is not treated as forever. The active signing key is
+ not an overlap key and does not use `overlapUntil`. Unknown, missing-expiry,
+ expired, or far-future `kid` fails closed. Exchange and JWKS refresh the
+ overlap set from the durable store so stale in-memory rings cannot keep
+ accepting retired keys or miss overlap registered on another instance.
+ The rotate API may register only the previous active public key, requires
+ `overlapUntil` (max 4h), and requires `platform.administer`
+ (`PLATFORM_ADMINS`); `workspace.administer` is not enough. Bad
+ `EMBED_OVERLAP_KEYS` is a boot-fail. Mint binds `sub` and `iss` to the authenticated caller. A
+ different subject requires `embed.impersonate` (same `PLATFORM_ADMINS`
+ allowlist; empty is fail-closed). A different issuer is always `403`.
+ Workspace `admin` cannot impersonate. `embed.impersonate` is
+ platform-scoped and is never mintable. After exchange, the
+ browser session is bound to `(tenant_id, workbench_key)`; that pair travels
+ through API authorization, configuration lookups, jobs/workers, caches,
+ realtime, history, and audit. The bound session cannot call tenant or
+ workspace create (fail closed). A host-supplied tenant is never authorization.
+ The UI treats host-provided identity as display context until
+ `POST /embed/exchange` verifies it. Exchange also binds assertion
+ `iss` to the signed minting host (`host=iss`, `ctx=embed|portal`).
+ The path allowlist is selected from that signed `ctx`, not from an
+ unauthenticated request header. An embed-minted assertion cannot
+ satisfy a Portal path allowlist, and a client header that disagrees
+ with the signed claims is `403`. The CP Ops Portal adapter mints those
+ same assertions after Portal RBAC; Portal entry is never FlowForge
+ authorization, and FlowForge does not share its database or executor.
+ After exchange, embed chrome and deep
+ links use the FlowForge-verified `(tenant_id, workbench_key)` /
+ `GET /session` `session.embed` only (ADV-021). Assertion leftovers,
+ catalog guesses, and host query are not chrome authority. Assertions
+ are never accepted from a URL.
+ Embed authorization decisions (mint, exchange, rotate, capability
+ and tenancy bind, impersonation) emit secret-free audit events;
+ assertion plaintext, signing keys, and session secrets are never
+ logged. `POST /embed/exchange` is rate-limited by IP and
+ issuer/subject (defaults 120/min and 30/min, configurable) and
+ returns `429` on burst so forged assertions cannot exhaust verify
+ or `jti` store capacity. See [embed SDK](embed-sdk.md).
 - Privileged actions and approval decisions require fresh authorization at the
-  server. Approval records bind the exact execution step, workflow version,
-  target/policy snapshot, requested operation, and expiry; a decision cannot be
-  reused after any of those change.
+ server. Approval records bind the exact execution step, workflow version,
+ target/policy snapshot, requested operation, and expiry; a decision cannot be
+ reused after any of those change.
 
 ## Trigger safety
 
@@ -267,82 +267,82 @@ Manual, webhook, and schedule triggers are distinct entry points and must all
 produce an auditable, version-pinned execution.
 
 - Webhook triggers have an opaque generated ID and an independently rotatable
-  secret. Verify a versioned signature over the exact raw body and timestamp
-  before parsing it. Reject absent, invalid, expired, or replayed signatures;
-  cap clock skew and retain replay identifiers for at least that skew window.
+ secret. Verify a versioned signature over the exact raw body and timestamp
+ before parsing it. Reject absent, invalid, expired, or replayed signatures;
+ cap clock skew and retain replay identifiers for at least that skew window.
 - Apply per-trigger and per-workspace rate/concurrency limits before enqueueing.
-  Enforce a documented maximum request body and reject unsupported content types.
-  Parse payloads with resource limits and map only allowlisted fields into typed
-  trigger input; never interpret payload text as YAML, shell, template, or code.
+ Enforce a documented maximum request body and reject unsupported content types.
+ Parse payloads with resource limits and map only allowlisted fields into typed
+ trigger input; never interpret payload text as YAML, shell, template, or code.
 - Schedules are server-owned, timezone-explicit, and bounded. Misfire policy,
-  maximum catch-up runs, and overlap behavior are explicit; the safe default is
-  no catch-up and one active execution per schedule unless the workflow is
-  verified idempotent.
+ maximum catch-up runs, and overlap behavior are explicit; the safe default is
+ no catch-up and one active execution per schedule unless the workflow is
+ verified idempotent.
 - The execution idempotency key is scoped to workspace and immutable workflow
-  version, has a bounded retention period, and stores a fingerprint of the
-  authenticated caller/trigger and normalized request. The same key with a
-  different fingerprint fails rather than joining unrelated work.
+ version, has a bounded retention period, and stores a fingerprint of the
+ authenticated caller/trigger and normalized request. The same key with a
+ different fingerprint fails rather than joining unrelated work.
 
 ## Secret, artifact, and output handling
 
 - Credentials are accepted only over TLS, encrypted before persistence, and
-  retrieved through a scoped, short-lived worker handle. Rotation, disablement,
-  and expiry take effect before each execution step. Never expose plaintext in
-  YAML, API responses, browser state, job payloads, artifacts, metrics, traces,
-  or audit records.
+ retrieved through a scoped, short-lived worker handle. Rotation, disablement,
+ and expiry take effect before each execution step. Never expose plaintext in
+ YAML, API responses, browser state, job payloads, artifacts, metrics, traces,
+ or audit records.
 - Redaction occurs before persistence and before display, export, notification,
-  or cross-node transfer. It is defense in depth: output ports have an explicit
-  schema, content type, and size limit, and unbounded stdout/stderr or provider
-  responses are stored only as access-controlled, encrypted artifacts after
-  redaction.
+ or cross-node transfer. It is defense in depth: output ports have an explicit
+ schema, content type, and size limit, and unbounded stdout/stderr or provider
+ responses are stored only as access-controlled, encrypted artifacts after
+ redaction.
 - Artifact access is workspace-authorized on every request. Use short-lived,
-  single-resource download grants; do not return bucket credentials or durable
-  public URLs. Retention deletion must remove both metadata and object data, with
-  auditable legal-hold exceptions. E5.3 implements this on the Go API
-  (`POST /artifacts/{id}/downloads` + `GET /artifact-downloads/{grantId}`,
-  `POST /retention/purge`, `POST /artifacts/{id}/legal-hold`).
+ single-resource download grants; do not return bucket credentials or durable
+ public URLs. Retention deletion must remove both metadata and object data, with
+ auditable legal-hold exceptions. E5.3 implements this on the Go API
+ (`POST /artifacts/{id}/downloads` + `GET /artifact-downloads/{grantId}`,
+ `POST /retention/purge`, `POST /artifacts/{id}/legal-hold`).
 - Script and connector artifacts require a verified signature, digest pin, scan
-  status, approved runtime profile, and provenance before dispatch. Revocation
-  blocks new runs; an already-running execution is handled according to an
-  explicit emergency-stop policy.
+ status, approved runtime profile, and provenance before dispatch. Revocation
+ blocks new runs; an already-running execution is handled according to an
+ explicit emergency-stop policy.
 
 ## Operational controls and verification
 
 - TLS is required at every network boundary. Production configuration must set
-  secure headers, an explicit CSP appropriate to the embed mode, clickjacking
-  protection, and restrictive CORS origins (`CORS_ALLOWED_ORIGINS` exact
-  allowlist; foreign origins fail closed); wildcard credentialed CORS is
-  prohibited.
+ secure headers, an explicit CSP appropriate to the embed mode, clickjacking
+ protection, and restrictive CORS origins (`CORS_ALLOWED_ORIGINS` exact
+ allowlist; foreign origins fail closed); wildcard credentialed CORS is
+ prohibited.
 - Log correlation IDs, actor/resource identifiers, decisions, and outcomes, but
-  never authorization headers, cookie values, credential material, webhook
-  bodies, or unredacted provider output. Protect audit records from normal
-  application mutation (`flowforge_app` cannot UPDATE or DELETE `audit_events`)
-  and emit operational alerts on failed authorization, replay, policy, and
-  redaction. Alert payloads carry correlation/resource identifiers only.
+ never authorization headers, cookie values, credential material, webhook
+ bodies, or unredacted provider output. Protect audit records from normal
+ application mutation (`flowforge_app` cannot UPDATE or DELETE `audit_events`)
+ and emit operational alerts on failed authorization, replay, policy, and
+ redaction. Alert payloads carry correlation/resource identifiers only.
 - Enforce dependency/image provenance, vulnerability scanning, patching SLAs,
-  secret rotation, backup encryption, restore testing, and least-privilege
-  service identities before production use. The vault data-encryption KEK
-  is KMS-wrapped in a production-locked process (`aws`, `gcp`, `azure`, or
-  `vault`). Plaintext `CREDENTIAL_KEK` is a boot-fail there. Rotation keeps
-  a previous KEK until online DEK rewrap finishes. Operator steps:
-  [KEK rotation](../operations/kek-rotation.md).
+ secret rotation, backup encryption, restore testing, and least-privilege
+ service identities before production use. The vault data-encryption KEK
+ is KMS-wrapped in a production-locked process (`aws`, `gcp`, `azure`, or
+ `vault`). Plaintext `CREDENTIAL_KEK` is a boot-fail there. Rotation keeps
+ a previous KEK until online DEK rewrap finishes. Operator steps:
+ [KEK rotation](../operations/kek-rotation.md).
 - Security tests cover cross-workspace reads/writes and subscriptions; assertion
-  validation and replay; CSRF/CORS; webhook signature, replay, rate, and body
-  limits; output/artifact authorization and redaction; stale worker fencing;
-  approval expiry; provider credential revocation; and outbound HTTP SSRF
-  (loopback/private/metadata denial after resolve, DNS rebinding, and
-  redirect-to-private).   The named E12.1 suite
-  (`scripts/e12-security-suite.sh`, CI `.github/workflows/e12-security.yml`)
-  is the verification gate; see [e12-security-verification.md](e12-security-verification.md).
-  Operational restore, worker-loss, queue lag, migration serialization, and
-  ≥2× capacity headroom are the E12.2 suite
-  (`scripts/e12-resilience-suite.sh`, CI `.github/workflows/e12-resilience.yml`);
-  see [e12-resilience-capacity.md](e12-resilience-capacity.md). E12.2 does
-  not weaken this security suite. The E12.3 production-gate
-  **threat-model review** (existing controls only — trust boundaries,
-  embed, credentials, SSRF, tenancy) is
-  [e12-threat-model-review.md](e12-threat-model-review.md). Accessibility
-  review is **Chloe / E12.3**.
+ validation and replay; CSRF/CORS; webhook signature, replay, rate, and body
+ limits; output/artifact authorization and redaction; stale worker fencing;
+ approval expiry; provider credential revocation; and outbound HTTP SSRF
+ (loopback/private/metadata denial after resolve, DNS rebinding, and
+ redirect-to-private). The named E12.1 suite
+ (`scripts/e12-security-suite.sh`, CI `.github/workflows/e12-security.yml`)
+ is the verification gate; see [e12-security-verification.md](e12-security-verification.md).
+ Operational restore, worker-loss, queue lag, migration serialization, and
+ ≥2× capacity headroom are the E12.2 suite
+ (`scripts/e12-resilience-suite.sh`, CI `.github/workflows/e12-resilience.yml`);
+ see [e12-resilience-capacity.md](e12-resilience-capacity.md). E12.2 does
+ not weaken this security suite. The E12.3 production-gate
+ **threat-model review** (existing controls only — trust boundaries,
+ embed, credentials, SSRF, tenancy) is
+ [e12-threat-model-review.md](e12-threat-model-review.md). Accessibility
+ review is **E12.3**.
 
 ## Incident-safe behavior
 

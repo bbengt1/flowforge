@@ -82,7 +82,7 @@ describe("X.2 Explorer context menus", () => {
     assert.equal(X2_KEEP_STORY_OPEN, true);
     assert.equal(X2_KEEP_EPIC_OPEN, true);
     assert.equal(X2_ID, "X.2-explorer-context-menus");
-    assert.equal(X2_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X2_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_CONTEXT_MENU.keep381Open, true);
     assert.equal(EXPLORER_CONTEXT_MENU.keep379Open, true);
     assert.equal(EXPLORER_CONTEXT_MENU.noAutoCloseEpic, true);

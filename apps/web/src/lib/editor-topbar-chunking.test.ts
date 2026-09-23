@@ -51,7 +51,7 @@ describe("UXL.1 top-bar verb chunking", () => {
     assert.equal(UXL1_EPIC, 287);
     assert.equal(UXL1_KEEP_STORY_OPEN, true);
     assert.equal(UXL1_ID, "UXL.1-topbar-chunking");
-    assert.equal(UXL1_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL1_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.match(EDITOR_TOPBAR_CHUNKING_HELP, /three groups/);
     assert.equal(EDITOR_TOPBAR_CHUNKING.uxl2ThroughUxl8OutOfScope, true);
     assert.equal(EDITOR_TOPBAR_CHUNKING.jonnyNoneExpected, true);
@@ -60,8 +60,6 @@ describe("UXL.1 top-bar verb chunking", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#288/);
-    assert.match(frontend, /keep #288 open/i);
     assert.match(frontend, /three groups/);
   });
 

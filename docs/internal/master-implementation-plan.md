@@ -1,10 +1,12 @@
+> **Internal.** Planning, gap, or backlog notes — not operator documentation. Published docs under `docs/` (everything except this directory) must not link here.
+
 # FlowForge master implementation plan
 
 ## Purpose and planning rules
 
-This is the issue-creation backlog for the documented MVP. It turns the product and security references into small, independently testable stories. Product scope comes from the [architecture](architecture.md), while the reference documents remain normative for the detailed contracts.
+This is the issue-creation backlog for the documented MVP. It turns the product and security references into small, independently testable stories. Product scope comes from the [architecture](../architecture.md), while the reference documents remain normative for the detailed contracts.
 
-**Runtime honesty:** E1–E12 describe the specified MVP. What actually runs today is the [Implemented vs Specified](architecture/implemented-vs-specified.md) matrix. The adversarial review that opened the next program is [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) — durable in-repo SoT for GitHub epic [G](https://github.com/bbengt1/flowforge/issues/401) and phase [G.0](https://github.com/bbengt1/flowforge/issues/402). Hard lines are unchanged: YAML SoT, drafts never run, vault display-name+UUID only, ADV-021/024.
+**Runtime honesty:** E1–E12 describe the specified MVP. What actually runs today is the [Implemented vs Specified](../architecture/implemented-vs-specified.md) matrix. The adversarial review that opened the next program is [docs/internal/claude-code-gap-analysis.md](claude-code-gap-analysis.md) — durable in-repo SoT for GitHub epic [G](https://github.com/bbengt1/flowforge/issues/401) and phase [G.0](https://github.com/bbengt1/flowforge/issues/402). Hard lines are unchanged: YAML SoT, drafts never run, vault display-name+UUID only, ADV-021/024.
 
 ### Non-negotiable MVP rules
 
@@ -34,7 +36,7 @@ Create one GitHub epic per row below. Create the listed stories in sequence with
 | E10 | Triggers and approvals | Safe manual, webhook, schedule, and approval workflow starts | E5, E6 |
 | E11 | Embedding and Portal adapter | Signed, tenant/workbench-local embedded FlowForge surface | E2, E6 |
 | E12 | Production readiness | Proven security, recovery, capacity, and operator readiness | E1–E11 |
-| G | Enterprise architecture gap remediation | Truth, fail-closed ops, then a production worker / scheduler / identity — [gap analysis](internal/claude-code-gap-analysis.md) | E12 (honest baseline) |
+| G | Enterprise architecture gap remediation | Truth, fail-closed ops, then a production worker / scheduler / identity — [gap analysis](claude-code-gap-analysis.md) | E12 (honest baseline) |
 
 ## Issue-ready stories
 
@@ -140,11 +142,11 @@ Create one GitHub epic per row below. Create the listed stories in sequence with
 
 1. **Run the security verification suite.** Cover identity/session/embed replay and key rotation, webhook safety, cross-workspace isolation, approval expiry, credential and artifact revocation, artifact/output authorization/redaction/legal holds, stale-worker fencing, provider failure behavior, SSRF/redirect/DNS-rebinding denial, and dependency/image provenance gates.
 2. **Prove operational resilience and capacity.** Run backup/restore, worker-loss/recovery, queue lag, migration serialization, and load tests; document at least 2× observed peak headroom for database connections/writes, queue lag, and storage growth.
-3. **Prepare release and operations documentation.** Publish API/OpenAPI, deployment, configuration, incident/recovery, retention, backup, and operator/admin guides; perform an accessibility and threat-model review before production approval. Control-plane slice: [operations](operations/index.md), [openapi](reference/openapi.md), [threat-model review](reference/e12-threat-model-review.md). Chloe: [operator/admin UI guide](guides/operator-admin.md) and [accessibility review](reference/e12-accessibility-review.md). Keep #184 open.
+3. **Prepare release and operations documentation.** Publish API/OpenAPI, deployment, configuration, incident/recovery, retention, backup, and operator/admin guides; perform an accessibility and threat-model review before production approval. Control-plane slice: [operations](../operations/index.md), [openapi](../reference/openapi.md), [threat-model review](../reference/e12-threat-model-review.md). Chloe: [operator/admin UI guide](../guides/operator-admin.md) and [accessibility review](../reference/e12-accessibility-review.md). Keep #184 open.
 
 ### G — Enterprise architecture gap remediation
 
-Tracked on GitHub as epic [#401](https://github.com/bbengt1/flowforge/issues/401) and phase [#402](https://github.com/bbengt1/flowforge/issues/402). **Do not invent issue-body edits here** — the durable SoT is [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md). Runtime claims: [Implemented vs Specified](architecture/implemented-vs-specified.md).
+Tracked on GitHub as epic [#401](https://github.com/bbengt1/flowforge/issues/401) and phase [#402](https://github.com/bbengt1/flowforge/issues/402). **Do not invent issue-body edits here** — the durable SoT is [docs/internal/claude-code-gap-analysis.md](claude-code-gap-analysis.md). Runtime claims: [Implemented vs Specified](../architecture/implemented-vs-specified.md).
 
 | Phase | Goal | In-repo pointer |
 | --- | --- | --- |

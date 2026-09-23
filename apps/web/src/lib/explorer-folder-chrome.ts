@@ -61,7 +61,7 @@ export const X8_EPIC = 379;
 export const X8_KEEP_STORY_OPEN = true;
 export const X8_KEEP_EPIC_OPEN = true;
 export const X8_ID = "X.8-explorer-folder-chrome" as const;
-export const X8_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X8_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_FOLDER_CHROME_HELP =
   "Folder tree uses compact Windows Explorer rows: yellow folders, thin white chevrons, gray selected fill with a thin light border, and one-icon indent per depth. New folder, Rename, and Delete stay on the right-click menu — not as visible rail buttons. Unfiled stays virtual. New folder still names in place.";
@@ -252,11 +252,15 @@ export function explorerRailOmitsVisibleOrganizeButtons(source: string): boolean
 }
 
 export function explorerDocsKeepStoryOpen(docs: string): boolean {
+  // Published docs cite X.8. Internal briefs may still cite the issues.
+  const cites =
+    /X\.8/.test(docs) ||
+    (docs.includes("#399") &&
+      /keep #399 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#399") &&
-    /keep #399 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_FOLDER_CHROME_AUTO_CLOSE_TOKENS.every(
       (token) => !docs.includes(token),
     )

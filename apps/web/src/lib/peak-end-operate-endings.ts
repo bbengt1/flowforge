@@ -72,7 +72,7 @@ export const UXL4_FOLLOWUP_STORY = 301;
 export const UXL4_KEEP_FOLLOWUP_OPEN = true;
 export const UXL4_ID = "UXL.4-peak-end-endings" as const;
 
-export const UXL4_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL4_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const PEAK_END_RUN_STORAGE_KEY = "flowforge.editor.peak-end-run.v1";
 

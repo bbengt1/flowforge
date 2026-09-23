@@ -4,7 +4,7 @@
  * Relates to #357 / Part of #353. Keep #357 open.
  *
  * Chloe UI only. Named tokens for the signed visual north star
- * (docs/architecture/flowforge-visual-ia-north-star.md § tokens / V.1).
+ * (docs/internal/flowforge-visual-ia-north-star.md § tokens / V.1).
  * Standalone and `/embed/v1` share this one tree. No second theme.
  * Light theme is not required. Do not adopt default shadcn zinc/orange.
  *
@@ -24,7 +24,7 @@ export const V1_STORY = 357;
 export const V1_EPIC = 353;
 export const V1_KEEP_STORY_OPEN = true;
 export const V1_ID = "V.1-token-foundation" as const;
-export const V1_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V1_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V1_TOKEN_FILE = "src/app/tokens.css";
 
 export const V1_HELP =

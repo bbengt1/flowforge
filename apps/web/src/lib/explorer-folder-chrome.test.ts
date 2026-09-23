@@ -65,7 +65,7 @@ describe("X.8 Explorer folder chrome", () => {
     assert.equal(X8_KEEP_STORY_OPEN, true);
     assert.equal(X8_KEEP_EPIC_OPEN, true);
     assert.equal(X8_ID, "X.8-explorer-folder-chrome");
-    assert.equal(X8_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X8_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_FOLDER_CHROME.keep399Open, true);
     assert.equal(EXPLORER_FOLDER_CHROME.keep396Open, true);
     assert.equal(EXPLORER_FOLDER_CHROME.keep393Open, true);

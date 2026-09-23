@@ -45,7 +45,7 @@ export const UXL2_EPIC = 287;
 export const UXL2_KEEP_STORY_OPEN = true;
 export const UXL2_ID = "UXL.2-working-memory" as const;
 
-export const UXL2_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL2_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const EDITOR_WORKING_MEMORY_DRAFT = "Editing a draft";
 export const EDITOR_WORKING_MEMORY_NOT_ACTIVE = "not active";

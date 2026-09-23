@@ -60,7 +60,7 @@ describe("X.4 Explorer empty / Unfiled teaching", () => {
     assert.equal(X4_KEEP_STORY_OPEN, true);
     assert.equal(X4_KEEP_EPIC_OPEN, true);
     assert.equal(X4_ID, "X.4-explorer-empty-unfiled-teaching");
-    assert.equal(X4_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X4_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_EMPTY.keep383Open, true);
     assert.equal(EXPLORER_EMPTY.keep379Open, true);
     assert.equal(EXPLORER_EMPTY.noAutoCloseEpic, true);

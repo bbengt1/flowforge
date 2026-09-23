@@ -78,7 +78,7 @@ describe("V.6 Settings + first-run wizard", () => {
     assert.equal(V6_EPIC, 353);
     assert.equal(V6_KEEP_STORY_OPEN, true);
     assert.equal(V6_ID, "V.6-settings-first-run-wizard");
-    assert.equal(V6_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V6_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V6_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(SETTINGS_WIZARD_VISUAL.keep362Open, true);
     assert.equal(SETTINGS_WIZARD_VISUAL.uiOnly, true);
@@ -91,8 +91,6 @@ describe("V.6 Settings + first-run wizard", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#362/);
-    assert.match(frontend, /keep #362 open/i);
     assert.match(frontend, /Settings \+ first-run wizard/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V6_BRIEF),

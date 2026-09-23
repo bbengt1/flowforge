@@ -20,10 +20,10 @@ Hosts file: `127.0.0.1 portal.test embed.test evil.test`
 - Catalog publishes Portal origin as `frameAncestors`: **true**
 - Assertion in URL rejected (`x-flowforge-embed-rejected: 1`): **true**
 - Mint via adapter (`POST https://portal.test:8443/portal/assertions`): **true**
-  - `tokenId`: `066d588f-4286-4a92-aee3-241cb69792d6`
-  - `iss`: `https://portal.cp-ops.example`
-  - `sub`: `portal-user-1`
-  - `aud`: `flowforge`
+ - `tokenId`: `066d588f-4286-4a92-aee3-241cb69792d6`
+ - `iss`: `https://portal.cp-ops.example`
+ - `sub`: `portal-user-1`
+ - `aud`: `flowforge`
 - Body-only `POST /embed/exchange` Set-Cookie is `SameSite=None; Partitioned; Secure` (CHIPS): **true**
 - Session with CHIPS cookies (`credentials: include` equivalent): **true**
 - Empty allowlist fail-closed (real `isEmptyAllowlistFailClosed` module): **true**
@@ -43,12 +43,11 @@ Captured with isolated Chrome (`--user-data-dir` unique per shot; default profil
 - [hostile-ancestor.png](./hostile-ancestor.png) — `https://evil.test:8445/hostile.html` frames embed; CSP blocks (broken-image iframe).
 
 ## Re-run
-
 ```bash
 # /etc/hosts: 127.0.0.1 portal.test embed.test evil.test
 POSTGRES_PASSWORD=adv013local \
-  DATABASE_URL='postgres://flowforge:adv013local@127.0.0.1:5432/flowforge?sslmode=disable' \
-  bash scripts/adv013-cross-origin.sh
+ DATABASE_URL='postgres://flowforge:adv013local@127.0.0.1:5432/flowforge?sslmode=disable' \
+ bash scripts/adv013-cross-origin.sh
 ```
 
 See [portal-adapter.md](../portal-adapter.md#adv-013-cross-origin-harness).

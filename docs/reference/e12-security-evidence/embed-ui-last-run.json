@@ -1,6 +1,6 @@
 {
   "id": "E12.1-chloe-ui",
-  "title": "Chloe UI/embed verification evidence",
+  "title": "UI/embed verification evidence",
   "relatesTo": 182,
   "partOf": 181,
   "keepIssueOpen": true,
@@ -51,6 +51,6 @@
     "isolation",
     "webhook"
   ],
-  "notes": "docs/reference/e12-security-evidence/chloe-ui.md",
+  "notes": "docs/reference/e12-security-evidence/embed-ui-evidence.md",
   "ok": true
 }

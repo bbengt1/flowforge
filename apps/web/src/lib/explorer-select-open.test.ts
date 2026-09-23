@@ -70,7 +70,7 @@ describe("X.3 Explorer select/open", () => {
     assert.equal(X3_KEEP_STORY_OPEN, true);
     assert.equal(X3_KEEP_EPIC_OPEN, true);
     assert.equal(X3_ID, "X.3-explorer-select-open");
-    assert.equal(X3_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X3_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_SELECT_OPEN.keep382Open, true);
     assert.equal(EXPLORER_SELECT_OPEN.keep379Open, true);
     assert.equal(EXPLORER_SELECT_OPEN.noAutoCloseEpic, true);

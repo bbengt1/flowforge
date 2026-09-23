@@ -65,7 +65,7 @@ describe("V.1 Token foundation", () => {
     assert.equal(V1_EPIC, 353);
     assert.equal(V1_KEEP_STORY_OPEN, true);
     assert.equal(V1_ID, "V.1-token-foundation");
-    assert.equal(V1_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V1_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V1_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(VISUAL_TOKENS.keep357Open, true);
     assert.equal(VISUAL_TOKENS.foundationOnly, true);
@@ -77,8 +77,6 @@ describe("V.1 Token foundation", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#357/);
-    assert.match(frontend, /keep #357 open/i);
     assert.match(frontend, /token foundation/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V1_BRIEF),

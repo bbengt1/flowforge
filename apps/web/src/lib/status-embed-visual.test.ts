@@ -61,7 +61,7 @@ describe("V.7 Status + embed visual gate", () => {
     assert.equal(V7_EPIC, 353);
     assert.equal(V7_KEEP_STORY_OPEN, true);
     assert.equal(V7_ID, "V.7-status-embed-visual-gate");
-    assert.equal(V7_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V7_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V7_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(STATUS_EMBED_VISUAL.keep363Open, true);
     assert.equal(STATUS_EMBED_VISUAL.uiOnly, true);
@@ -75,8 +75,6 @@ describe("V.7 Status + embed visual gate", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#363/);
-    assert.match(frontend, /keep #363 open/i);
     assert.match(frontend, /Status \+ embed visual gate/i);
   });
 

@@ -80,7 +80,7 @@ describe("X.1 Explorer shell", () => {
     assert.equal(X1_KEEP_STORY_OPEN, true);
     assert.equal(X1_KEEP_EPIC_OPEN, true);
     assert.equal(X1_ID, "X.1-explorer-shell");
-    assert.equal(X1_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X1_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_SHELL.keep380Open, true);
     assert.equal(EXPLORER_SHELL.keep379Open, true);
     assert.equal(EXPLORER_SHELL.noAutoCloseEpic, true);

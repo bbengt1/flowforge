@@ -144,7 +144,7 @@ describe("UXL.5 home row scan order", () => {
     assert.equal(UXL5_EPIC, 287);
     assert.equal(UXL5_KEEP_STORY_OPEN, true);
     assert.equal(UXL5_ID, "UXL.5-home-row-scan");
-    assert.equal(UXL5_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL5_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.match(HOME_ROW_SCAN_HELP, /activation/);
     assert.match(HOME_ROW_SCAN_HELP, /last run/);
     assert.match(HOME_ROW_SCAN_HELP, /not a fourth drawer/);
@@ -155,8 +155,6 @@ describe("UXL.5 home row scan order", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#292/);
-    assert.match(frontend, /keep #292 open/i);
     assert.match(frontend, /scan ends/i);
   });
 

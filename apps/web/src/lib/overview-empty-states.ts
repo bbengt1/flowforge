@@ -44,7 +44,7 @@ export const O3_STORY = 327;
 export const O3_EPIC = 324;
 export const O3_KEEP_STORY_OPEN = true;
 export const O3_ID = "O.3-empty-unfiled-states-overview-cards" as const;
-export const O3_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const O3_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const OVERVIEW_EMPTY_HELP =
   "Empty home, empty folder, and Unfiled-empty use Overview card chrome. Create, Import YAML, a reviewed template, or New folder still create a draft. Drafts do not run — publish, then start a published version.";

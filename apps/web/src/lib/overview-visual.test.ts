@@ -66,7 +66,7 @@ describe("V.3 Overview home visual rebuild", () => {
     assert.equal(V3_EPIC, 353);
     assert.equal(V3_KEEP_STORY_OPEN, true);
     assert.equal(V3_ID, "V.3-overview-home-visual-rebuild");
-    assert.equal(V3_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V3_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V3_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(OVERVIEW_VISUAL.keep359Open, true);
     assert.equal(OVERVIEW_VISUAL.uiOnly, true);
@@ -77,8 +77,6 @@ describe("V.3 Overview home visual rebuild", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#359/);
-    assert.match(frontend, /keep #359 open/i);
     assert.match(frontend, /dark card/i);
   });
 

@@ -1,10 +1,7 @@
 # Release and operations
 
-Relates to #184 / Part of #181. **Keep #184 open.**
-Relates to #278 / Part of #233. **Keep #278 open.**
-
-Control-plane / ops slice (**jonny**, #188) plus operator/admin **UI**
-and accessibility landings (**Chloe**, this PR). These pages publish
+Control-plane / ops slice plus operator/admin **UI**
+and accessibility landings. These pages publish
 what already exists on `main`. They do not add product features or
 weaken E12.1 / E12.2 harnesses.
 
@@ -13,7 +10,7 @@ weaken E12.1 / E12.2 harnesses.
 | Guide | Audience | Contents |
 | --- | --- | --- |
 | [API / OpenAPI](../reference/openapi.md) | Platform admins, integrators | How the published spec is obtained, `/api/v1` versioning, auth/session at high level |
-| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (#191 / R7.3 #278 — labeled Example context stays local-only; trusted-dev is never rewrite login), production env inventory, local-vs-prod pitfalls, deploy manifests |
+| [Deployment and configuration](../deployment.md) | Control-plane operators | Local startup, local default tenant seed (R7.3 — labeled Example context stays local-only; trusted-dev is never rewrite login), production env inventory, local-vs-prod pitfalls, deploy manifests |
 | [Incident and recovery](incident-recovery.md) | On-call / ops | Health vs readiness, worker-loss/fencing, restore rehearsal, escalation signals |
 | [Schema migrations](schema-migrations.md) | On-call / ops | Apply and verify forward-only migrations, checksum drift, refused boot, upgrade and rollback |
 | [SLOs and alerts](slo-alerts.md) | On-call / ops | Control-plane SLOs, business metrics, example Prometheus alert rules |
@@ -38,10 +35,8 @@ map**. It is not the operator/admin guide.
 
 | Slice | Owner | Landing |
 | --- | --- | --- |
-| API / OpenAPI publishing and accuracy | **jonny** | [openapi.md](../reference/openapi.md), `apps/api/openapi/openapi.yaml` |
-| Deploy, configuration, incident/recovery, retention, backup | **jonny** | this tree + [deployment.md](../deployment.md) |
-| Threat-model review (document existing controls) | **jonny** | [e12-threat-model-review.md](../reference/e12-threat-model-review.md) |
-| Operator / admin **UI** guides | **Chloe / E12.3** | [operator-admin.md](../guides/operator-admin.md) |
-| Accessibility review | **Chloe / E12.3** | [e12-accessibility-review.md](../reference/e12-accessibility-review.md) |
-
-Keep #184 open until both halves are accepted on `main`.
+| API / OpenAPI publishing and accuracy | | [openapi.md](../reference/openapi.md), `apps/api/openapi/openapi.yaml` |
+| Deploy, configuration, incident/recovery, retention, backup | | this tree + [deployment.md](../deployment.md) |
+| Threat-model review (document existing controls) | | [e12-threat-model-review.md](../reference/e12-threat-model-review.md) |
+| Operator / admin **UI** guides | **E12.3** | [operator-admin.md](../guides/operator-admin.md) |
+| Accessibility review | **E12.3** | [e12-accessibility-review.md](../reference/e12-accessibility-review.md) |until both halves are accepted on `main`.

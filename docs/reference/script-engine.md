@@ -29,22 +29,21 @@ Retries are zero by default. A node may be retry-safe only when it declares `ret
 ## Initial implementation layout
 
 E9.1 packages, scans, signs, and pins. E9.2 runs isolated short-lived runners (`VerifyForDispatch` then `Execute`). E9.3 validates typed I/O, injects scoped handles, redacts outputs, and treats lease loss as indeterminate until a declared verification hook. E9.4 revokes artifacts (`POST /scripts/{id}/revoke`) and emergency-stops running scripts (`POST /executions/{id}/emergency-stop`). `VerifyForDispatch` rechecks signature, scan, and `revoked_at` at start, claim, heartbeat-before-dispatch, and Execute. Uncertain stop stays `indeterminate`.
-
 ```text
 apps/api/internal/scripts/
-  model.go source.go validator.go package.go signer.go scan.go
-  policy.go runtime.go redaction.go catalog.go pipeline.go
-  isolation.go egress.go execute.go harness.go builder.go
-  io.go handle.go env.go retry.go
-  revoke.go stop.go
-  store.go memory.go postgres.go
+ model.go source.go validator.go package.go signer.go scan.go
+ policy.go runtime.go redaction.go catalog.go pipeline.go
+ isolation.go egress.go execute.go harness.go builder.go
+ io.go handle.go env.go retry.go
+ revoke.go stop.go
+ store.go memory.go postgres.go
 apps/api/internal/workflow/script_contract.go
 apps/api/internal/httpapi/script.go
 apps/api/migrations/000013_script_artifacts.sql
 apps/api/migrations/000014_script_revocation.sql
 deploy/kubernetes/
-  script-runner-deployment.yaml
-  script-runner-networkpolicy.yaml
+ script-runner-deployment.yaml
+ script-runner-networkpolicy.yaml
 ```
 
 Runtime profiles stay ops-config `kind=runtime_profile` (E4.2): digest-pinned `imageDigest` + `dependencyLockDigest`, required `limits.{cpuMillis,memoryMib,timeoutSeconds,processes}`, optional `egress.destinations` (default-deny; DNS is constrained). Python runs under `python3` in the script-runner image. Go is compiled inside that image (`GOPROXY=off`, stdlib only) after the in-process signature check; CI's `StubBuilder` still does not invoke `go build`. Full containers are not started in `go test` — `HarnessRuntime` asserts UID / read-only root / dropped caps / `no_new_privs` / metadata / egress / limits / package-install, and `KubernetesJobRuntime` tests record the Job manifest. Production pods use `deploy/kubernetes/script-runner-*.yaml` (non-root 65532, no SA token, no docker.sock). The script NetworkPolicy is default-deny plus kube-system DNS and the control-plane API from `CONTROL_PLANE_API_CIDR` (or a Service in the runner namespace). The production runner refuses the Job when that config or the live policy is missing. `SCRIPT_RUNNER_SKIP_NETWORK_POLICY` is local/dev only and is a boot failure when production-locked.

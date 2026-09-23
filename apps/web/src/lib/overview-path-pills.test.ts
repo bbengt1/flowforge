@@ -87,7 +87,7 @@ describe("O.2 Path pills + compact Finder rail", () => {
     assert.equal(O2_EPIC, 324);
     assert.equal(O2_KEEP_STORY_OPEN, true);
     assert.equal(O2_ID, "O.2-path-pills-compact-finder-rail");
-    assert.equal(O2_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(O2_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(OVERVIEW_PATH_PILLS.keep326Open, true);
     assert.equal(OVERVIEW_PATH_PILLS.noJonnyChange, true);
     assert.equal(OVERVIEW_PATH_PILLS.d6MigrateInPlace, true);
@@ -95,8 +95,6 @@ describe("O.2 Path pills + compact Finder rail", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#326/);
-    assert.match(frontend, /keep #326 open/i);
     assert.match(frontend, /path pills/i);
     assert.match(frontend, /Finder rail/i);
   });

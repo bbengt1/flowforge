@@ -1,3 +1,5 @@
+> **Internal.** Planning, gap, or backlog notes — not operator documentation. Published docs under `docs/` (everything except this directory) must not link here.
+
 # FlowForge UX Laws (post-R1–R7 polish)
 
 Status: **docs-only design brief**. Does not change application code, contracts, or shipped behavior. Does **not** open GitHub issues.

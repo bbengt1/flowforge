@@ -61,7 +61,7 @@ export const X2_EPIC = 379;
 export const X2_KEEP_STORY_OPEN = true;
 export const X2_KEEP_EPIC_OPEN = true;
 export const X2_ID = "X.2-explorer-context-menus" as const;
-export const X2_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X2_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_OPEN_LABEL = "Open";
 export const EXPLORER_EXPAND_LABEL = "Expand";
@@ -442,11 +442,15 @@ export function explorerHomeDismissesMenu(source: string): boolean {
 }
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
+  // Published docs cite X.2. Internal briefs may still cite the issues.
+  const cites =
+    (/X\.2/.test(docs) && /right-click|context menu/i.test(docs)) ||
+    (docs.includes("#381") &&
+      /keep #381 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#381") &&
-    /keep #381 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_CONTEXT_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

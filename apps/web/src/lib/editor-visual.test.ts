@@ -65,7 +65,7 @@ describe("V.4 Editor chrome", () => {
     assert.equal(V4_EPIC, 353);
     assert.equal(V4_KEEP_STORY_OPEN, true);
     assert.equal(V4_ID, "V.4-editor-chrome");
-    assert.equal(V4_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V4_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V4_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(EDITOR_VISUAL.keep360Open, true);
     assert.equal(EDITOR_VISUAL.uiOnly, true);
@@ -76,8 +76,6 @@ describe("V.4 Editor chrome", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#360/);
-    assert.match(frontend, /keep #360 open/i);
     assert.match(frontend, /dark canvas/i);
   });
 

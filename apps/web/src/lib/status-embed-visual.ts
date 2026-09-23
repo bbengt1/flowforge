@@ -77,7 +77,7 @@ export const V7_STORY = 363;
 export const V7_EPIC = 353;
 export const V7_KEEP_STORY_OPEN = true;
 export const V7_ID = "V.7-status-embed-visual-gate" as const;
-export const V7_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V7_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V7_TOKEN_FILE = "src/app/tokens.css";
 
 export const V7_HELP =

@@ -21,7 +21,7 @@ export const O1_STORY = 325;
 export const O1_EPIC = 324;
 export const O1_KEEP_STORY_OPEN = true;
 export const O1_ID = "O.1-overview-header-card-list" as const;
-export const O1_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const O1_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const OVERVIEW_HEADING = "Overview";
 export const OVERVIEW_HELP =

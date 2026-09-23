@@ -4,7 +4,7 @@
  * Relates to #361 / Part of #353. Keep #361 open.
  *
  * Chloe UI only. Dark find/detail and inbox density on the V.1
- * token tree (docs/architecture/flowforge-visual-ia-north-star.md
+ * token tree (docs/internal/flowforge-visual-ia-north-star.md
  * § vault / executions / V.5). Standalone and `/embed/v1` share
  * the same CredentialVault / CredentialDetail / ExecutionHistory
  * / ExecutionDetail. No second theme. No n8n orange.
@@ -76,7 +76,7 @@ export const V5_STORY = 361;
 export const V5_EPIC = 353;
 export const V5_KEEP_STORY_OPEN = true;
 export const V5_ID = "V.5-vault-executions-restyle" as const;
-export const V5_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V5_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V5_TOKEN_FILE = "src/app/tokens.css";
 
 export const V5_HELP =

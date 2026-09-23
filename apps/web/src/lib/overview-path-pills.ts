@@ -35,7 +35,7 @@ export const O2_STORY = 326;
 export const O2_EPIC = 324;
 export const O2_KEEP_STORY_OPEN = true;
 export const O2_ID = "O.2-path-pills-compact-finder-rail" as const;
-export const O2_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const O2_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const OVERVIEW_PATH_PILLS_HELP =
   "Folder path pills are joined from GET /workflow-folders ancestry. Unfiled has no path pills and is not a persisted folder.";

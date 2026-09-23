@@ -7,68 +7,66 @@ YAML is the canonical, portable workflow definition. The API stores the validate
 The first document version is `flowforge/v1`. Unsupported versions fail validation; additive optional fields remain compatible within v1.
 
 ## Example
-
 ```yaml
 apiVersion: flowforge/v1
 kind: Workflow
 metadata:
-  name: restart-api-rollout
-  labels:
-    team: platform
+ name: restart-api-rollout
+ labels:
+ team: platform
 spec:
-  description: Restart an approved deployment and wait for it to become ready.
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: restart
-      type: kubernetes.apply
-      name: Restart API
-      with:
-        clusterTargetId: 11111111-1111-4111-8111-111111111111
-        namespace: cp-ops-nprd
-        dryRun: server
-        fieldManager: flowforge
-        wait: ready
-        timeoutSeconds: 300
-        manifests: |
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: api
-          spec:
-            template:
-              metadata:
-                annotations:
-                  kubectl.kubernetes.io/restartedAt: "2026-09-04T12:00:00Z"
-  edges: []
-  outputs:
-    - name: rollout
-      from: restart.result
+ description: Restart an approved deployment and wait for it to become ready.
+ triggers:
+ - id: manual
+ type: manual
+ nodes:
+ - id: restart
+ type: kubernetes.apply
+ name: Restart API
+ with:
+ clusterTargetId: 11111111-1111-4111-8111-111111111111
+ namespace: cp-ops-nprd
+ dryRun: server
+ fieldManager: flowforge
+ wait: ready
+ timeoutSeconds: 300
+ manifests: |
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+ name: api
+ spec:
+ template:
+ metadata:
+ annotations:
+ kubectl.kubernetes.io/restartedAt: "2026-09-04T12:00:00Z"
+ edges: []
+ outputs:
+ - name: rollout
+ from: restart.result
 ```
 
 ## Required shape
-
 ```text
-apiVersion: flowforge/v1                 # required
-kind: Workflow                            # required
+apiVersion: flowforge/v1 # required
+kind: Workflow # required
 metadata:
-  name: DNS-label                         # required, workflow-local identifier
-  labels: string-to-string map            # optional
-  ui:                                     # optional; ignored by executor
-    layout:                               # optional; non-authoritative canvas hints (D1)
-      version: 1
-      nodes:
-        <node-id>: { x: number, y: number }  # keys are a subset of spec.nodes[].id
+ name: DNS-label # required, workflow-local identifier
+ labels: string-to-string map # optional
+ ui: # optional; ignored by executor
+ layout: # optional; non-authoritative canvas hints (D1)
+ version: 1
+ nodes:
+ <node-id>: { x: number, y: number } # keys are a subset of spec.nodes[].id
 spec:
-  description: string                     # optional
-  triggers: Trigger[]                     # one or more; each selects a published version at execution time
-  nodes: Node[]                           # one or more, unique IDs
-  edges: Edge[]                           # optional; graph must be acyclic in MVP
-  outputs: Output[]                       # optional
+ description: string # optional
+ triggers: Trigger[] # one or more; each selects a published version at execution time
+ nodes: Node[] # one or more, unique IDs
+ edges: Edge[] # optional; graph must be acyclic in MVP
+ outputs: Output[] # optional
 ```
 
-`metadata.ui.layout` is additive optional on `flowforge/v1` (D1 / issue #238). The API stores and returns it on validate, normalize, draft save/load, and published versions. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Node keys must match `spec.nodes[].id`; extra keys are stripped (never invent a node). Missing keys auto-place that node. Non-finite coordinates or a non-object layout are treated as absent (auto-layout). Layout never carries edges, types, `with`, credentials, or ports. Unknown keys under `metadata.ui` / `layout` besides `layout` / `version`+`nodes` still fail closed. Older documents without the field keep working. Chloe applies `summary.ui.layout` or the YAML field on canvas load and writes it back on draft save (R2.5 / #238 — keep #238 open). Embed and standalone share this API.
+`metadata.ui.layout` is additive optional on `flowforge/v1` (D1 / issue). The API stores and returns it on validate, normalize, draft save/load, and published versions. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Node keys must match `spec.nodes[].id`; extra keys are stripped (never invent a node). Missing keys auto-place that node. Non-finite coordinates or a non-object layout are treated as absent (auto-layout). Layout never carries edges, types, `with`, credentials, or ports. Unknown keys under `metadata.ui` / `layout` besides `layout` / `version`+`nodes` still fail closed. Older documents without the field keep working. applies `summary.ui.layout` or the YAML field on canvas load and writes it back on draft save (R2.5). Embed and standalone share this API.
 
 Each node requires `id`, `type`, and `name`; `with` contains type-specific configuration. An edge has `from` and `to` values in `nodeId.port` form. Node IDs use lower-case letters, numbers, and hyphens, begin with a letter, and remain stable when a node is renamed. Trigger, node, edge, and output IDs/references must be unique and resolvable. Resource references such as `clusterTargetId`, `sshTargetId`, `commandProfileId`, and `runtimeProfileId` are non-secret UUIDs and must resolve inside the workflow workspace; display names and hostnames are never used as authorization references.
 
@@ -86,42 +84,41 @@ behavior. Neither trigger configuration nor inputs can override workspace,
 workflow version, target policy, credentials, approval, or node configuration.
 
 ## SSH and script node examples
-
 ```yaml
 apiVersion: flowforge/v1
 kind: Workflow
 metadata:
-  name: rotate-cache
+ name: rotate-cache
 spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: clear-cache
-      type: ssh.run
-      name: Clear cache
-      with:
-        sshTargetId: 22222222-2222-4222-8222-222222222222
-        commandProfileId: 33333333-3333-4333-8333-333333333333
-        parameters:
-          service: api
-        timeoutSeconds: 60
-        retryPolicy:
-          maxAttempts: 1
-    - id: summarize
-      type: script.python
-      name: Summarize result
-      with:
-        source: |
-          import json
-          print(json.dumps({"status": "complete"}))
-        entrypoint: main.py
-        runtimeProfileId: 66666666-6666-4666-8666-666666666666
-        timeoutSeconds: 30
-        memoryMiB: 128
-  edges:
-    - from: clear-cache.result
-      to: summarize.input
+ triggers:
+ - id: manual
+ type: manual
+ nodes:
+ - id: clear-cache
+ type: ssh.run
+ name: Clear cache
+ with:
+ sshTargetId: 22222222-2222-4222-8222-222222222222
+ commandProfileId: 33333333-3333-4333-8333-333333333333
+ parameters:
+ service: api
+ timeoutSeconds: 60
+ retryPolicy:
+ maxAttempts: 1
+ - id: summarize
+ type: script.python
+ name: Summarize result
+ with:
+ source: |
+ import json
+ print(json.dumps({"status": "complete"}))
+ entrypoint: main.py
+ runtimeProfileId: 66666666-6666-4666-8666-666666666666
+ timeoutSeconds: 30
+ memoryMiB: 128
+ edges:
+ - from: clear-cache.result
+ to: summarize.input
 ```
 
 `ssh.run` requires `sshTargetId`, `commandProfileId`, and bounded parameters; it cannot contain a raw command or credential. `script.python` and `script.go` require source, entrypoint, resource limits, and `runtimeProfileId`; the referenced approved runtime/dependency profile is pinned when publishing. Publishing packages source into an immutable signed artifact and replaces no user-authored source; the resulting artifact digest is attached to the workflow version outside the user-editable YAML.
@@ -133,17 +130,15 @@ Every item in `spec.nodes` is a typed workflow object. Nodes expose named input 
 An action is a node; a workflow is one or more nodes. A YAML document with one `kubernetes.apply`, `ssh.run`, or script node is therefore a single-action workflow, not a distinct action resource. The same schema and lifecycle apply whether the graph has one node or many.
 
 All nodes share this envelope:
-
 ```yaml
 id: unique-node-id
 type: provider.action
 name: Human-readable label
-with: {}                  # node-specific, policy-validated configuration
-inputs: {}                # optional defaults or literal typed inputs
+with: {} # node-specific, policy-validated configuration
+inputs: {} # optional defaults or literal typed inputs
 ```
 
 An edge expresses object composition, not an implementation-specific callback:
-
 ```yaml
 from: source-node.result
 to: destination-node.input
@@ -180,58 +175,57 @@ See the [standard action catalog](action-catalog.md) for node-specific `with` co
 ### Composed example
 
 This larger workflow uses the result of each YAML object as the typed input to the next object:
-
 ```yaml
 apiVersion: flowforge/v1
 kind: Workflow
 metadata:
-  name: validate-restart-and-notify
+ name: validate-restart-and-notify
 spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: precheck
-      type: ssh.run
-      name: Check API host
-      with:
-        sshTargetId: 22222222-2222-4222-8222-222222222222
-        commandProfileId: 44444444-4444-4444-8444-444444444444
-        timeoutSeconds: 30
-    - id: restart
-      type: kubernetes.apply
-      name: Restart API deployment
-      with:
-        clusterTargetId: 11111111-1111-4111-8111-111111111111
-        namespace: cp-ops-nprd
-        dryRun: server
-        manifests: |
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: api
-    - id: summarize
-      type: script.python
-      name: Build change summary
-      with:
-        source: |
-          import json
-          print(json.dumps({"summary": "restart complete"}))
-        entrypoint: main.py
-        runtimeProfileId: 66666666-6666-4666-8666-666666666666
-        timeoutSeconds: 30
-    - id: notify
-      type: notification.webhook
-      name: Notify operations
-      with:
-        connectionId: 55555555-5555-4555-8555-555555555555
-  edges:
-    - from: precheck.result
-      to: restart.parameters
-    - from: restart.result
-      to: summarize.input
-    - from: summarize.result
-      to: notify.payload
+ triggers:
+ - id: manual
+ type: manual
+ nodes:
+ - id: precheck
+ type: ssh.run
+ name: Check API host
+ with:
+ sshTargetId: 22222222-2222-4222-8222-222222222222
+ commandProfileId: 44444444-4444-4444-8444-444444444444
+ timeoutSeconds: 30
+ - id: restart
+ type: kubernetes.apply
+ name: Restart API deployment
+ with:
+ clusterTargetId: 11111111-1111-4111-8111-111111111111
+ namespace: cp-ops-nprd
+ dryRun: server
+ manifests: |
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+ name: api
+ - id: summarize
+ type: script.python
+ name: Build change summary
+ with:
+ source: |
+ import json
+ print(json.dumps({"summary": "restart complete"}))
+ entrypoint: main.py
+ runtimeProfileId: 66666666-6666-4666-8666-666666666666
+ timeoutSeconds: 30
+ - id: notify
+ type: notification.webhook
+ name: Notify operations
+ with:
+ connectionId: 55555555-5555-4555-8555-555555555555
+ edges:
+ - from: precheck.result
+ to: restart.parameters
+ - from: restart.result
+ to: summarize.input
+ - from: summarize.result
+ to: notify.payload
 ```
 
 ## Larger workflows and reuse

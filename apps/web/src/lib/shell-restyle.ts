@@ -4,7 +4,7 @@
  * Relates to #358 / Part of #353. Keep #358 open.
  *
  * Chloe UI only. Dark product chrome on the V.1 token tree
- * (docs/architecture/flowforge-visual-ia-north-star.md § shell / V.2).
+ * (docs/internal/flowforge-visual-ia-north-star.md § shell / V.2).
  * Standalone and `/embed/v1` share this one look. No second theme.
  * No n8n orange. Overview / editor surface rebuilds stay in V.3 / V.4.
  *
@@ -48,7 +48,7 @@ export const V2_STORY = 358;
 export const V2_EPIC = 353;
 export const V2_KEEP_STORY_OPEN = true;
 export const V2_ID = "V.2-shell-restyle" as const;
-export const V2_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V2_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V2_TOKEN_FILE = "src/app/tokens.css";
 
 export const V2_HELP =

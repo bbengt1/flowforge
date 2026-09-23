@@ -254,10 +254,9 @@ export function routeBoundariesHoldHardLines(): boolean {
 }
 
 export function routeBoundaryDocsHeld(frontend: string): boolean {
+  // Published docs cite G.0.4 and the boundary files. Issue numbers stay out.
   return (
     frontend.includes("G.0.4") &&
-    frontend.includes("#407") &&
-    frontend.includes("keep #402 open") &&
     frontend.includes("global-error.tsx") &&
     frontend.includes("error.tsx") &&
     frontend.includes("loading.tsx") &&

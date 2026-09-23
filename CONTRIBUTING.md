@@ -6,6 +6,9 @@ This is a **security-hardened prototype**, not an enterprise-ready platform. Rea
 
 - [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) — what actually runs on `main`
 - [Enterprise architecture gap analysis](docs/internal/claude-code-gap-analysis.md) — G / G.0 SoT (findings A–I)
+- [Internal notes](docs/internal/README.md) — planning and backlog. Not product docs.
+
+Published Markdown under `docs/` (everything except `docs/internal/`) must not link into `docs/internal/`, and must not contain GitHub issue numbers or contributor names. `python3 scripts/check-public-docs.py` enforces that (supply-chain policy job).
 
 Do not document Kubernetes, SSH, script, or HTTP provider execution as live. Compose’s local worker evaluates six core nodes only and fails closed on provider nodes.
 

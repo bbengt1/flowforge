@@ -58,7 +58,7 @@ describe("UXL.6 empty states that teach the model", () => {
     assert.equal(UXL6_EPIC, 287);
     assert.equal(UXL6_KEEP_STORY_OPEN, true);
     assert.equal(UXL6_ID, "UXL.6-empty-states");
-    assert.equal(UXL6_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL6_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.equal(EMPTY_STATES_TEACH.uxl7ThroughUxl8OutOfScope, true);
     assert.equal(EMPTY_STATES_TEACH.marketplaceOutOfScope, true);
     assert.equal(EMPTY_STATES_TEACH.canvasTriggerNodesOutOfScope, true);
@@ -69,8 +69,6 @@ describe("UXL.6 empty states that teach the model", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#293/);
-    assert.match(frontend, /keep #293 open/i);
     assert.match(frontend, /drafts do not run/i);
   });
 

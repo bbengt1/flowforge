@@ -79,7 +79,7 @@ describe("X.7 Explorer inline rename", () => {
     assert.equal(X7_KEEP_STORY_OPEN, true);
     assert.equal(X7_KEEP_EPIC_OPEN, true);
     assert.equal(X7_ID, "X.7-explorer-inline-rename");
-    assert.equal(X7_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X7_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_INLINE_RENAME.keep396Open, true);
     assert.equal(EXPLORER_INLINE_RENAME.keep379Open, true);
     assert.equal(EXPLORER_INLINE_RENAME.keep393Open, true);

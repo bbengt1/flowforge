@@ -17,16 +17,15 @@ The Kubernetes engine applies approved namespace-scoped manifests, inspects reso
 Each node supplies `clusterTargetId`, `namespace`, `manifests` where applicable, `dryRun` (`client` or `server`), `wait` (`none` or `ready`), and bounded `timeoutSeconds`. `kubernetes.apply` always performs strict server-side dry-run before a persistent apply; `client` may add local validation but never replaces it. The field manager is fixed by the service (`flowforge`) and is not user-controlled.
 
 ## Execution flow
-
 ```mermaid
 flowchart LR
-  A[API: validate RBAC and policy] --> B[Pin workflow version and queue job]
-  B --> C[Worker: resolve scoped credential handle]
-  C --> D[Parse and validate manifests]
-  D --> E[Server-side dry-run]
-  E --> F[Server-side apply]
-  F --> G[Optional bounded rollout watch]
-  G --> H[Redacted result and audit event]
+ A[API: validate RBAC and policy] --> B[Pin workflow version and queue job]
+ B --> C[Worker: resolve scoped credential handle]
+ C --> D[Parse and validate manifests]
+ D --> E[Server-side dry-run]
+ E --> F[Server-side apply]
+ F --> G[Optional bounded rollout watch]
+ G --> H[Redacted result and audit event]
 ```
 
 The queued job includes workspace, workflow version, cluster target, policy revision, correlation ID, and normalized-manifest SHA-256 digest. Workers revalidate authorization-relevant policy before contacting the target cluster. A retry is not presumed safe until the worker observes the intended object/generation.
@@ -48,10 +47,10 @@ FlowForge separates platform/workspace authorization from Kubernetes authorizati
 - FlowForge permissions: `workflow.execute`, `kubernetes.read`, `kubernetes.apply`, and `clusterTarget.use`.
 - Target policy narrows namespaces, kinds, verbs, and actions requiring approval. Evaluation keys (aliases in parentheses) fail closed when present: `allowedNamespaces` (`namespaces`), `allowedKinds` (`kinds`), `allowedVerbs` (`verbs`), `deny`, `requireApproval`, `approverRole`, `expiresIn`, `operations`.
 - Cluster targets bind only a workspace-scoped `kubernetes` credential (`secret.kubeconfig`). Cross-workspace credential refs are `404`; host-supplied `id` / `workspaceId` is `400`.
-- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP. Operators apply [`deploy/kubernetes/`](../../deploy/kubernetes/) templates; targets may record `serviceAccount.{name,namespace,roleTemplate}` for E7.2 workers.
+- Each workspace/target uses an expiring credential handle and narrowly scoped Kubernetes service account, Role, and RoleBinding. ClusterRoles are not part of MVP. Operators apply [`deploy/kubernetes/`](../../deploy/kubernetes) templates; targets may record `serviceAccount.{name,namespace,roleTemplate}` for E7.2 workers.
 - The API and UI never receive kubeconfigs or plaintext credentials. Workers receive only ephemeral scoped material and redact secrets from all outputs.
 
-Kubernetes service accounts should receive only the minimum permissions required, preferably through namespace-scoped roles and bindings. [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) and [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/) support this model.
+Kubernetes service accounts should receive only the minimum permissions required, preferably through namespace-scoped roles and bindings. [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts) and [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices) support this model.
 
 ## Results, reliability, and audit
 
@@ -60,19 +59,18 @@ Apply returns resource identities, observed generation/state, and redacted diagn
 Audit events record the actor, host-embed context when present, target, policy revision, manifest digest, resource identities, dry-run/apply/watch outcome, and correlation ID. Inputs, outputs, logs, errors, and audit details are redacted.
 
 ## Initial implementation layout
-
 ```text
 apps/api/internal/kubernetes/
-  model.go catalog.go policy.go          # E7.1 control-plane
-  manifest.go validator.go client.go fake.go live.go
-  handle.go engine.go redact.go errors.go  # E7.2 read/apply
-  status.go audit.go                       # E7.3 rollout watch + audit snapshot
-apps/api/internal/opsconfig/            # E4.2 store: cluster_target + policy kinds
-apps/api/internal/httpapi/opsconfig.go  # /cluster-targets, /policies, /kubernetes/catalog
+ model.go catalog.go policy.go # E7.1 control-plane
+ manifest.go validator.go client.go fake.go live.go
+ handle.go engine.go redact.go errors.go # E7.2 read/apply
+ status.go audit.go # E7.3 rollout watch + audit snapshot
+apps/api/internal/opsconfig/ # E4.2 store: cluster_target + policy kinds
+apps/api/internal/httpapi/opsconfig.go # /cluster-targets, /policies, /kubernetes/catalog
 deploy/kubernetes/
-  workspace-serviceaccount.yaml
-  workspace-role-template.yaml
-  workspace-rolebinding-template.yaml
+ workspace-serviceaccount.yaml
+ workspace-role-template.yaml
+ workspace-rolebinding-template.yaml
 ```
 
 ## Required validation

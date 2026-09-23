@@ -78,14 +78,12 @@ describe("V.0b Login chrome + signed-out gate", () => {
     assert.equal(V0B_EPIC, 353);
     assert.equal(V0B_KEEP_STORY_OPEN, true);
     assert.equal(V0B_ID, "V.0b-login-chrome-signed-out-gate");
-    assert.equal(V0B_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V0B_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(LOCAL_LOGIN.keep355Open, true);
     assert.equal(LOCAL_LOGIN.jonnyNoneExpected, true);
     assert.equal(LOCAL_LOGIN.b1GateUnchanged, true);
     assert.equal(localLoginHoldsHardLines(), true);
     assert.match(V0B_HELP, /Keep #355 open/);
-    assert.match(frontendUi(), /#355/);
-    assert.match(frontendUi(), /keep #355 open/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V0B_BRIEF),
       "utf8",

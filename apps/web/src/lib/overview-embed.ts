@@ -56,7 +56,7 @@ export const O4_STORY = 328;
 export const O4_EPIC = 324;
 export const O4_KEEP_STORY_OPEN = true;
 export const O4_ID = "O.4-embed-overview-parity" as const;
-export const O4_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const O4_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const OVERVIEW_EMBED_HELP =
   "Embed Overview is the same WorkflowHome cards and compact Finder rail after session.embed. Missing session.embed is an ADV-021 alert. Host query is display-only. Viewers are select-only. The tree comes from the API, not localStorage. No second tree.";

@@ -47,7 +47,7 @@ describe("X.6 Explorer home copy", () => {
     assert.equal(X6_KEEP_STORY_OPEN, true);
     assert.equal(X6_KEEP_EPIC_OPEN, true);
     assert.equal(X6_ID, "X.6-explorer-home-copy");
-    assert.equal(X6_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X6_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_HOME_COPY.keep393Open, true);
     assert.equal(EXPLORER_HOME_COPY.keep379Open, true);
     assert.equal(EXPLORER_HOME_COPY.noAutoCloseEpic, true);
@@ -56,7 +56,7 @@ describe("X.6 Explorer home copy", () => {
     assert.equal(EXPLORER_HOME_COPY.d6MigrateInPlace, true);
     const frontend = repoSource("docs/reference/frontend-ui.md");
     assert.equal(explorerDocsKeepStoryOpen(frontend), true);
-    assert.match(frontend, /operator help|product-commentary|keep #393 open/i);
+    assert.match(frontend, /operator help|product-commentary/i);
     const brief = repoSource(X6_BRIEF);
     assert.equal(explorerDocsKeepStoryOpen(brief), true);
     assert.match(brief, /X\.6/);

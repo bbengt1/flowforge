@@ -1,8 +1,7 @@
 # E12.1 security verification suite
 
-Relates to #182 / Part of #181. **Keep #182 open** — Chloe UI evidence
-is linked below; do not close on this map alone. This document is the
-control map, how each control is tested, and the Chloe surface list.
+UI evidence is linked below. This document is the
+control map, how each control is tested, and the surface list.
 
 Harness: `scripts/e12-security-suite.sh` (catalog
 `scripts/e12-security-suite.json`). CI job: `.github/workflows/e12-security.yml`
@@ -14,14 +13,13 @@ and supply-chain scripts. It does not weaken ADV hardenings. A failed
 domain fails the PR/main job.
 
 ## How to run
-
 ```bash
 # Unit + contract + provenance fixtures (no Postgres)
 bash scripts/e12-security-suite.sh
 
 # Include durable Postgres paths (jti, RLS, session revoke, dispatch)
 TEST_DATABASE_URL='postgres://flowforge:…@127.0.0.1:5432/flowforge?sslmode=disable' \
-  bash scripts/e12-security-suite.sh
+ bash scripts/e12-security-suite.sh
 ```
 
 CI starts Postgres 16 and sets `TEST_DATABASE_URL` so skipped integration
@@ -49,28 +47,27 @@ lease loss. Memory stores cover the same negatives when the DSN is unset.
 ## Last-run pointer
 
 - Machine summary: [e12-security-evidence/last-run.json](e12-security-evidence/last-run.json)
-  (`ranAt`, `gitSha`, per-domain `go`/`web`/`scripts` counts).
+ (`ranAt`, `gitSha`, per-domain `go`/`web`/`scripts` counts).
 - CI artifact name: `e12-security-suite` (same JSON from the GitHub Actions job).
 - ADV-013 two-origin embed/Portal screenshots remain under
-  [adv-013-evidence](adv-013-evidence/README.md) (issue #144 stays open).
-- Chloe Hit-list pointer:
-  [e12-security-evidence/chloe-ui-last-run.json](e12-security-evidence/chloe-ui-last-run.json)
-  · notes [chloe-ui.md](e12-security-evidence/chloe-ui.md).
+ [adv-013-evidence](adv-013-evidence/README.md) (issue stays open).
+- Hit-list pointer:
+ [e12-security-evidence/embed-ui-last-run.json](e12-security-evidence/embed-ui-last-run.json)
+ · notes [embed-ui-evidence.md](e12-security-evidence/embed-ui-evidence.md).
 
 Re-run the harness and commit an updated `last-run.json` when a domain’s
 tests change. Do not hand-edit pass/fail flags.
 
-## Chloe map
-
-Prefer API/harness proof. Chloe adds UI evidence only where a browser
+## UI map
+Prefer API/harness proof. adds UI evidence only where a browser
 surface can disagree with the API (cookies, chrome, masked secrets).
 
-| Surface | Route / component | Why | Suite already proves | Chloe gap |
+| Surface | Route / component | Why | Suite already proves | gap |
 | --- | --- | --- | --- | --- |
-| Embed exchange + replay | `/embed/v1…` · `EmbedExchangeGate` | Body-only assertion, CHIPS cookies, replay `409`, host/ctx bind | Mint/exchange/replay/rotate/nbf/jti Go tests; web embed contracts | **Done.** Iframe `/embed/v1` body-only postMessage/form; replay same assertion → ProblemBanner `Conflict (409)`. Chrome from `GET /session` `session.embed` (ADV-021), not host query. Tests: [e12-chloe-ui-contract.test.ts](../../apps/web/src/lib/e12-chloe-ui-contract.test.ts). Evidence: [chloe-ui.md](e12-security-evidence/chloe-ui.md) · [embed-replay-409.svg](e12-security-evidence/embed-replay-409.svg). |
-| Session chrome | `EmbedChrome`, `SessionStatusChip`, `SessionExpiryBanner` | Idle/absolute expiry and workspace-delete revoke are `401` | `TestStaleSessionFailsClosed`, ADV-019 workspace-delete tests | **Done.** 401 latch reuses existing stale chrome (`Session stale` / `Stale session`); expired still uses existing countdown copy. No new chrome. Tests: same Chloe contract + [session.test.ts](../../apps/web/src/lib/session.test.ts). Evidence: [session-stale-401.svg](e12-security-evidence/session-stale-401.svg). |
-| Portal host | `/portal` · `PortalHost` + ADV-013 origins | Portal mint → embed iframe; hostile ancestor blocked | `httpapi` Portal tests; `adv013-cross-origin.sh` + [adv-013-evidence](adv-013-evidence/README.md) | **Optional** if #144 screenshots are current: Portal mount + `evil.test` blocked iframe. Do not re-prove HMAC/SSRF here. |
-| Approvals | `/approvals` · `ApprovalValidityBanner`, `ApprovalDecideControls` | Expired / rebound approval cannot decide | `TestApprovalExpiryRecheckedServerSide` | **Done.** Expired row shows `Approval expired` banner; Approve/Reject stay disabled. Tests: Chloe contract + [approval.test.ts](../../apps/web/src/lib/approval.test.ts). Evidence: [approval-expired.svg](e12-security-evidence/approval-expired.svg). |
+| Embed exchange + replay | `/embed/v1…` · `EmbedExchangeGate` | Body-only assertion, CHIPS cookies, replay `409`, host/ctx bind | Mint/exchange/replay/rotate/nbf/jti Go tests; web embed contracts | **Done.** Iframe `/embed/v1` body-only postMessage/form; replay same assertion → ProblemBanner `Conflict (409)`. Chrome from `GET /session` `session.embed` (ADV-021), not host query. Tests: [e12-chloe-ui-contract.test.ts](../../the embed UI contract tests). Evidence: [embed-ui-evidence.md](e12-security-evidence/embed-ui-evidence.md) · [embed-replay-409.svg](e12-security-evidence/embed-replay-409.svg). |
+| Session chrome | `EmbedChrome`, `SessionStatusChip`, `SessionExpiryBanner` | Idle/absolute expiry and workspace-delete revoke are `401` | `TestStaleSessionFailsClosed`, ADV-019 workspace-delete tests | **Done.** 401 latch reuses existing stale chrome (`Session stale` / `Stale session`); expired still uses existing countdown copy. No new chrome. Tests: same contract + [session.test.ts](../../apps/web/src/lib/session.test.ts). Evidence: [session-stale-401.svg](e12-security-evidence/session-stale-401.svg). |
+| Portal host | `/portal` · `PortalHost` + ADV-013 origins | Portal mint → embed iframe; hostile ancestor blocked | `httpapi` Portal tests; `adv013-cross-origin.sh` + [adv-013-evidence](adv-013-evidence/README.md) | **Optional** if screenshots are current: Portal mount + `evil.test` blocked iframe. Do not re-prove HMAC/SSRF here. |
+| Approvals | `/approvals` · `ApprovalValidityBanner`, `ApprovalDecideControls` | Expired / rebound approval cannot decide | `TestApprovalExpiryRecheckedServerSide` | **Done.** Expired row shows `Approval expired` banner; Approve/Reject stay disabled. Tests: contract + [approval.test.ts](../../apps/web/src/lib/approval.test.ts). Evidence: [approval-expired.svg](e12-security-evidence/approval-expired.svg). |
 | Credentials | `/credentials` vault | Disable/rotate; no plaintext | Vault Go tests; web credential contracts | **Optional:** confirm secret fields stay masked after rotate/disable. |
 | Script revoke | `ScriptPublishStatus` | Revoked digest cannot start | `TestScriptRevokeAndEmergencyStop` | **Optional:** revoke badge + start `409` copy. |
 | Artifacts / legal hold | `/executions/{id}` · `ExecutionArtifacts` | Authz download grant, hold blocks purge, redaction | `TestArtifactUploadDownloadRetentionAndHold` | **Optional:** legal-hold badge and denied foreign-workspace download. |
@@ -78,20 +75,19 @@ surface can disagree with the API (cookies, chrome, masked secrets).
 | Webhook admin | `WebhookTriggerPanel` | Opaque id, rotate, secret never in URL | Webhook ingress + CRUD Go tests | **Optional:** confirm secret not shown; rotate issues a new secret once. |
 | SSRF / fencing / provider / provenance | none | No product UI | Suite + `supply-chain.yml` | **None.** Do not add operator screens. |
 
-### Not Chloe
-
+### Outside the UI map
 Outbound HTTP SSRF (ADV-010), stale-worker fencing, Kubernetes/SSH/script
 provider failure, Trivy/SBOM/approved-bases. Those stay harness/CI-only.
 
 ## Ownership
 
-- **jonny:** harness, API/engine negatives, CI gate, this map.
-- **Chloe:** UI/embed rows marked **Done** (Hit list). Optional rows
-  remain open if she wants extra screenshots on #182. Keep the issue
-  open after this PR.
+- harness, API/engine negatives, CI gate, this map.
+- UI/embed rows marked **Done** (Hit list). Optional rows
+ remain open if she wants extra screenshots on. Keep the issue
+ open after this PR.
 
 E12.3 production-gate review (existing controls, no new suite):
 [e12-threat-model-review.md](e12-threat-model-review.md). Ops runbooks:
-[operations](../operations/index.md). Chloe UI/a11y:
+[operations](../operations/index.md). UI/a11y:
 [operator-admin.md](../guides/operator-admin.md),
-[e12-accessibility-review.md](e12-accessibility-review.md). Keep #184 open.
+[e12-accessibility-review.md](e12-accessibility-review.md).

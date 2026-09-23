@@ -133,7 +133,7 @@ describe("UXL.7 palette category-first", () => {
     assert.equal(UXL7_EPIC, 287);
     assert.equal(UXL7_KEEP_STORY_OPEN, true);
     assert.equal(UXL7_ID, "UXL.7-palette-category-first");
-    assert.equal(UXL7_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL7_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.equal(PALETTE_CATEGORY_FIRST.firstPaintIsCategories, true);
     assert.equal(PALETTE_CATEGORY_FIRST.jonnyNoneExpected, true);
     assert.equal(PALETTE_CATEGORY_FIRST.d6MigrateInPlace, true);
@@ -143,8 +143,6 @@ describe("UXL.7 palette category-first", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#294/);
-    assert.match(frontend, /keep #294 open/i);
     assert.match(frontend, /category-first/i);
   });
 

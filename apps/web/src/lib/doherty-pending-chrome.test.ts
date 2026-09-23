@@ -50,7 +50,7 @@ describe("UXL.3 Doherty-safe pending chrome", () => {
     assert.equal(UXL3_EPIC, 287);
     assert.equal(UXL3_KEEP_STORY_OPEN, true);
     assert.equal(UXL3_ID, "UXL.3-doherty-pending");
-    assert.equal(UXL3_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL3_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.equal(DOHERTY_PERCEIVED_MS, 400);
     assert.match(DOHERTY_PENDING_CHROME_HELP, /pending immediately/);
     assert.match(DOHERTY_PENDING_CHROME_HELP, /session.embed/);
@@ -63,8 +63,6 @@ describe("UXL.3 Doherty-safe pending chrome", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#290/);
-    assert.match(frontend, /keep #290 open/i);
     assert.match(frontend, /pending immediately/);
   });
 

@@ -95,38 +95,37 @@ cannot select an arbitrary endpoint, recipient, template, or schema at runtime.
 | `configuration.write` | Next | Update an approved idempotent runtime setting. | Explicit permission, validation, approval when policy requires, and audit. |
 
 ## Common YAML examples
-
 ```yaml
 - id: pause-before-change
-  type: flow.delay
-  name: Wait for change window
-  with:
-    duration: PT5M
+ type: flow.delay
+ name: Wait for change window
+ with:
+ duration: PT5M
 
 - id: call-status-api
-  type: http.request
-  name: Check service status
-  with:
-    connectionId: 77777777-7777-4777-8777-777777777777
-    method: GET
-    path: /v1/status
-    timeoutSeconds: 15
-    responseSchemaRef: 88888888-8888-4888-8888-888888888888
+ type: http.request
+ name: Check service status
+ with:
+ connectionId: 77777777-7777-4777-8777-777777777777
+ method: GET
+ path: /v1/status
+ timeoutSeconds: 15
+ responseSchemaRef: 88888888-8888-4888-8888-888888888888
 
 - id: request-approval
-  type: flow.approval
-  name: Approve production rollout
-  with:
-    approverRole: production-approver
-    expiresIn: PT30M
+ type: flow.approval
+ name: Approve production rollout
+ with:
+ approverRole: production-approver
+ expiresIn: PT30M
 
 - id: notify-operations
-  type: notification.email
-  name: Email operations
-  with:
-    connectionId: 99999999-9999-4999-8999-999999999999
-    recipientListId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
-    templateId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ type: notification.email
+ name: Email operations
+ with:
+ connectionId: 99999999-9999-4999-8999-999999999999
+ recipientListId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+ templateId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
 ```
 
 ## Shared execution rules

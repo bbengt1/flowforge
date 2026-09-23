@@ -52,7 +52,7 @@ export const X1_EPIC = 379;
 export const X1_KEEP_STORY_OPEN = true;
 export const X1_KEEP_EPIC_OPEN = true;
 export const X1_ID = "X.1-explorer-shell" as const;
-export const X1_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X1_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_HEADING = "Explorer";
 export const EXPLORER_HELP =
@@ -287,11 +287,15 @@ export function explorerOrganizeVerbsStayReachable(source: string): boolean {
 }
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
+  // Published docs cite X.1. Internal briefs may still cite the issues.
+  const cites =
+    (/X\.1/.test(docs) && /Explorer shell/i.test(docs)) ||
+    (docs.includes("#380") &&
+      /keep #380 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#380") &&
-    /keep #380 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }

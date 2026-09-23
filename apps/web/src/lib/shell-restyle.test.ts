@@ -72,7 +72,7 @@ describe("V.2 Shell restyle", () => {
     assert.equal(V2_EPIC, 353);
     assert.equal(V2_KEEP_STORY_OPEN, true);
     assert.equal(V2_ID, "V.2-shell-restyle");
-    assert.equal(V2_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V2_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V2_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(SHELL_RESTYLE.keep358Open, true);
     assert.equal(SHELL_RESTYLE.uiOnly, true);
@@ -87,10 +87,7 @@ describe("V.2 Shell restyle", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#358/);
-    assert.match(frontend, /keep #358 open/i);
     assert.match(frontend, /shell restyle/i);
-    assert.match(frontend, /keep #357 open/i);
     const northStar = readFileSync(
       join(here, "..", "..", "..", "..", V2_BRIEF),
       "utf8",

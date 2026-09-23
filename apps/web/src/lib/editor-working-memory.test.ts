@@ -74,7 +74,7 @@ describe("UXL.2 draft / published / test-run working memory", () => {
     assert.equal(UXL2_EPIC, 287);
     assert.equal(UXL2_KEEP_STORY_OPEN, true);
     assert.equal(UXL2_ID, "UXL.2-working-memory");
-    assert.equal(UXL2_BRIEF, "docs/architecture/flowforge-ux-laws.md");
+    assert.equal(UXL2_BRIEF, "docs/internal/flowforge-ux-laws.md");
     assert.match(EDITOR_WORKING_MEMORY_HELP, /editing a draft/);
     assert.match(EDITOR_WORKING_MEMORY_HELP, /not active/);
     assert.match(EDITOR_WORKING_MEMORY_HELP, /publish a test version/);
@@ -85,8 +85,6 @@ describe("UXL.2 draft / published / test-run working memory", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#289/);
-    assert.match(frontend, /keep #289 open/i);
     assert.match(frontend, /Editing a draft/);
     assert.match(frontend, /publish a test version, then start it/);
   });

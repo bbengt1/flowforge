@@ -49,7 +49,7 @@ export const UXL6_EPIC = 287;
 export const UXL6_KEEP_STORY_OPEN = true;
 export const UXL6_ID = "UXL.6-empty-states" as const;
 
-export const UXL6_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL6_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const HOME_EMPTY_HEADING = "No workflows yet";
 export const HOME_EMPTY_CREATE_LABEL = "Create";

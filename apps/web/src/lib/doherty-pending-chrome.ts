@@ -37,7 +37,7 @@ export const UXL3_EPIC = 287;
 export const UXL3_KEEP_STORY_OPEN = true;
 export const UXL3_ID = "UXL.3-doherty-pending" as const;
 
-export const UXL3_BRIEF = "docs/architecture/flowforge-ux-laws.md";
+export const UXL3_BRIEF = "docs/internal/flowforge-ux-laws.md";
 
 export const DOHERTY_PERCEIVED_MS = 400;
 

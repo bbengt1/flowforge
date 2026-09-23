@@ -4,7 +4,7 @@
  * Relates to #360 / Part of #353. Keep #360 open.
  *
  * Chloe UI only. Dark canvas + satellite chrome on the V.1 token
- * tree and V.2 shell (docs/architecture/flowforge-visual-ia-north-star.md
+ * tree and V.2 shell (docs/internal/flowforge-visual-ia-north-star.md
  * § editor / V.4). Standalone and `/embed/v1` share the same
  * EditorChrome / EditorTopBar / WorkflowCanvas. No second theme.
  * No n8n orange or branded NDV clone.
@@ -56,7 +56,7 @@ export const V4_STORY = 360;
 export const V4_EPIC = 353;
 export const V4_KEEP_STORY_OPEN = true;
 export const V4_ID = "V.4-editor-chrome" as const;
-export const V4_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V4_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V4_TOKEN_FILE = "src/app/tokens.css";
 
 export const V4_HELP =

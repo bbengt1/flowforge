@@ -4,7 +4,7 @@
  * Relates to #359 / Part of #353. Keep #359 open.
  *
  * Chloe UI only. Dark Overview cards on the V.1 token tree
- * (docs/architecture/flowforge-visual-ia-north-star.md § home / V.3).
+ * (docs/internal/flowforge-visual-ia-north-star.md § home / V.3).
  * Standalone and `/embed/v1` share the same `WorkflowHome`. No
  * second theme. No n8n orange or n8n Overview tabs.
  *
@@ -59,7 +59,7 @@ export const V3_STORY = 359;
 export const V3_EPIC = 353;
 export const V3_KEEP_STORY_OPEN = true;
 export const V3_ID = "V.3-overview-home-visual-rebuild" as const;
-export const V3_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V3_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 export const V3_TOKEN_FILE = "src/app/tokens.css";
 
 export const V3_HELP =

@@ -1,6 +1,6 @@
 # FlowForge
 
-Deployable application skeleton (E1.1). Product design, contracts, and the backlog live in [docs/](docs/index.md) — start with [architecture](docs/architecture.md), the [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) matrix, and the [master implementation plan](docs/master-implementation-plan.md). Gap-program SoT: [docs/internal/claude-code-gap-analysis.md](docs/internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
+Deployable application skeleton (E1.1). Product design, contracts, and the backlog live in [docs/](docs/index.md) — start with [architecture](docs/architecture.md), the [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) matrix, and the [master implementation plan](docs/internal/master-implementation-plan.md). Gap-program SoT: [docs/internal/claude-code-gap-analysis.md](docs/internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
 
 This README covers how to start the local stack. It does not define product scope. It **does** state what that stack actually executes.
 
@@ -47,8 +47,8 @@ Serves [http://localhost:3000](http://localhost:3000) and checks `http://localho
 | --- | --- |
 | `apps/web` | Next.js App Router UI (Compose `web` dockerfile; repo-root context) |
 | `apps/api` | Go control plane (PR #2). Compose `api` build context, `HTTP_ADDR=:8080` |
-| `docs/` | Normative architecture, implementation plan, and [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) |
-| `docs/internal/` | Internal SoT, including [claude-code-gap-analysis.md](docs/internal/claude-code-gap-analysis.md) (G / G.0) |
+| `docs/` | Operator and product docs: architecture, reference, operations, guides, and [Implemented vs Specified](docs/architecture/implemented-vs-specified.md) |
+| `docs/internal/` | Planning, gap analysis, and backlog — not product docs. Includes [claude-code-gap-analysis.md](docs/internal/claude-code-gap-analysis.md) and [master-implementation-plan.md](docs/internal/master-implementation-plan.md) |
 
 Compose builds `web` from the repository root (`dockerfile: apps/web/Dockerfile`, so `pnpm-lock.yaml` is in the context) and `api` from `./apps/api`. pnpm workspace root is ready for more packages later.
 

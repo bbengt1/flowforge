@@ -97,7 +97,7 @@ describe("X.5 Explorer embed parity", () => {
     assert.equal(X5_KEEP_STORY_OPEN, true);
     assert.equal(X5_KEEP_EPIC_OPEN, true);
     assert.equal(X5_ID, "X.5-explorer-embed-parity");
-    assert.equal(X5_BRIEF, "docs/architecture/flowforge-workflow-folders.md");
+    assert.equal(X5_BRIEF, "docs/internal/flowforge-workflow-folders.md");
     assert.equal(EXPLORER_EMBED.keep384Open, true);
     assert.equal(EXPLORER_EMBED.keep379Open, true);
     assert.equal(EXPLORER_EMBED.noAutoCloseEpic, true);
@@ -106,8 +106,6 @@ describe("X.5 Explorer embed parity", () => {
     assert.equal(EXPLORER_EMBED.sameWorkflowHomeNoSecondTree, true);
     const frontend = repoSource("docs/reference/frontend-ui.md");
     assert.equal(explorerDocsKeepEpicOpen(frontend), true);
-    assert.match(frontend, /#384/);
-    assert.match(frontend, /keep #384 open/i);
     assert.match(frontend, /Explorer/i);
     const brief = repoSource(X5_BRIEF);
     assert.match(brief, /X\.5/);

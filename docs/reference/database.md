@@ -7,15 +7,14 @@ PostgreSQL is FlowForge's active deployed database. It is the durable source of 
 All identifiers are UUIDs. All timestamps use `timestamptz` in UTC. Structured columns use bounded, schema-validated `jsonb`; opaque runtime output, secrets, and unrestricted JSON are not indexed. Rows use `created_at`, `updated_at`, and actor columns where applicable.
 
 ## Isolation model
-
 ```mermaid
 flowchart TB
-  T[Tenant] --> W[Workspace: tenant_id + workbench_key]
-  W --> C[Credentials and targets]
-  W --> F[Workflow and immutable versions]
-  W --> P[Policies and profiles]
-  F --> E[Executions and steps]
-  E --> A[Artifacts and audit events]
+ T[Tenant] --> W[Workspace: tenant_id + workbench_key]
+ W --> C[Credentials and targets]
+ W --> F[Workflow and immutable versions]
+ W --> P[Policies and profiles]
+ F --> E[Executions and steps]
+ E --> A[Artifacts and audit events]
 ```
 
 `workspaces` is the operational isolation boundary. It is unique on `(tenant_id, workbench_key)`. Every mutable configuration, credential, target, profile, policy, workflow, execution, artifact, and audit row carries `workspace_id`; no client-side filter is trusted as a tenancy boundary.
@@ -31,7 +30,7 @@ Identity tables (`tenants`, `workspaces`, `users`, `roles`, `permissions`, `work
 | `tenants` | `id`, `slug`, `name`, `status` | Organization/host isolation root. |
 | `workspaces` | `id`, `tenant_id`, `workbench_key`, `name`, `status` | Unique `(tenant_id, workbench_key)`. App delete is soft (`status=disabled`). ADV-019 triggers revoke embed-bound `browser_sessions` on disable and on hard `DELETE` (and clear embed tenancy columns on hard delete so `ON DELETE SET NULL` cannot violate the embed CHECK). |
 | `users` | `id`, `issuer`, `external_subject`, `display_name`, `status` | OIDC/host identity reference; unique `(issuer, external_subject)`; no provider token. |
-| `local_logins` | `user_id`, `identifier`, `password_hash`, `must_change_password` | V.0a (`000026_local_logins.sql`) + #376 (`000027_local_login_must_change.sql`). Standalone email/username + password. Identity substrate; **no FORCE RLS**. Unique `lower(identifier)`. Hash is bcrypt only — never selected into `User` JSON, `GET /session`, bootstrap status, logs, or `localStorage`. Identifier is the normalized B.3 `external_subject` **or** the first-run operator `admin`. `must_change_password` is set only by the empty-table one-time seed; `POST /session/password` clears it and replaces the hash. |
+| `local_logins` | `user_id`, `identifier`, `password_hash`, `must_change_password` | V.0a (`000026_local_logins.sql`) + (`000027_local_login_must_change.sql`). Standalone email/username + password. Identity substrate; **no FORCE RLS**. Unique `lower(identifier)`. Hash is bcrypt only — never selected into `User` JSON, `GET /session`, bootstrap status, logs, or `localStorage`. Identifier is the normalized B.3 `external_subject` **or** the first-run operator `admin`. `must_change_password` is set only by the empty-table one-time seed; `POST /session/password` clears it and replaces the hash. |
 | `scim_users` | `user_id`, `user_name`, `external_id`, `deprovisioned_at` | G.2.2 (`000031_scim_lockout.sql`). Directory mirror of a `users` row. Identity substrate; **no FORCE RLS**. The bearer token is not stored. Active `user_name` (case-insensitive) and non-empty `external_id` are unique. `external_id`, else `user_name`, is `users.external_subject` under `SCIM_ISSUER`. `deprovisioned_at` hides the user from SCIM (`GET` is `404`) without deleting the principal. |
 | `auth_lockouts` | `user_id`, `failed_count`, `locked_at`, `updated_at` | G.2.2 (`000031_scim_lockout.sql`). Durable failed-password counter. Identity substrate; **no FORCE RLS**. No password, hash, or token. Missing row means not locked. `POST /users/{id}/unlock` deletes the row. |
 | `roles` | `id`, `key`, `description` | Stable role vocabulary. |
@@ -134,4 +133,4 @@ Migrations are forward-only, transaction-safe where PostgreSQL permits, and incl
 4. E3.2 execution pin stubs (expanded by E5.1 `000009_executions.sql` with steps, jobs, and audit partitions);
 5. E4.3 `approvals` / `approval_events` (policy-bound requirements; E10.3 `000016_schedules_and_wait.sql` adds `workflow_schedules` and `waiting` execution/step/job status).
 
-Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test ./...`, `go run ./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.
+Validate with PostgreSQL-backed integration tests for RLS negative isolation (including unset/stale pooled-session context), cross-workspace composite-foreign-key rejection, immutable version enforcement, credential and artifact non-disclosure, idempotency uniqueness, `SKIP LOCKED` lease/fencing races, redaction, partition/retention behavior, and migration replay. Run `go test./...`, `go run./cmd/migrate`, and targeted PostgreSQL smoke tests before database work is complete.

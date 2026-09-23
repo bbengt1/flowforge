@@ -27,7 +27,7 @@ export const V0B_STORY = 355;
 export const V0B_EPIC = 353;
 export const V0B_KEEP_STORY_OPEN = true;
 export const V0B_ID = "V.0b-login-chrome-signed-out-gate" as const;
-export const V0B_BRIEF = "docs/architecture/flowforge-visual-ia-north-star.md";
+export const V0B_BRIEF = "docs/internal/flowforge-visual-ia-north-star.md";
 
 export const V0B_HELP =
   "Full-dark standalone Login (email/username + masked password + Sign in). Signed-out product routes show Login. Complete-install 401 shows Login, not the wizard. Incomplete still shows the wizard only. After success, Overview (/workflows). Embed never mounts Login. Password POSTs once and is cleared. Consume V.1 tokens. Keep #355 open.";

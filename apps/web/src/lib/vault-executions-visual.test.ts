@@ -69,7 +69,7 @@ describe("V.5 Vault + executions restyle", () => {
     assert.equal(V5_EPIC, 353);
     assert.equal(V5_KEEP_STORY_OPEN, true);
     assert.equal(V5_ID, "V.5-vault-executions-restyle");
-    assert.equal(V5_BRIEF, "docs/architecture/flowforge-visual-ia-north-star.md");
+    assert.equal(V5_BRIEF, "docs/internal/flowforge-visual-ia-north-star.md");
     assert.equal(V5_TOKEN_FILE, "src/app/tokens.css");
     assert.equal(VAULT_EXECUTIONS_VISUAL.keep361Open, true);
     assert.equal(VAULT_EXECUTIONS_VISUAL.uiOnly, true);
@@ -81,8 +81,6 @@ describe("V.5 Vault + executions restyle", () => {
       join(here, "..", "..", "..", "..", "docs/reference/frontend-ui.md"),
       "utf8",
     );
-    assert.match(frontend, /#361/);
-    assert.match(frontend, /keep #361 open/i);
     assert.match(frontend, /dark find\/detail/i);
     assert.match(frontend, /dark inbox/i);
   });

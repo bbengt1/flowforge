@@ -1,6 +1,8 @@
+> **Internal.** Planning, gap, or backlog notes — not operator documentation. Published docs under `docs/` (everything except this directory) must not link here.
+
 # FlowForge rewrite: n8n-class parity (not a clone)
 
-Status: **charter frozen (D1–D6 locked)**. This document does not change application code, contracts, or shipped behavior. It is the successor program after E1–E12 and epic #195. R1–R7 epics are #227–#233. Do **not** treat it as a replacement of the [master implementation plan](../master-implementation-plan.md) for shipped E1–E12 work.
+Status: **charter frozen (D1–D6 locked)**. This document does not change application code, contracts, or shipped behavior. It is the successor program after E1–E12 and epic #195. R1–R7 epics are #227–#233. Do **not** treat it as a replacement of the [master implementation plan](master-implementation-plan.md) for shipped E1–E12 work.
 
 **Parity reference only:** [n8n-io/n8n](https://github.com/n8n-io/n8n). Use n8n as a *behavior and feature-coverage* reference (home → canvas → palette → node detail → executions → credentials → activations). Do not copy n8n code, assets, branding, trademarks, colors, CSS, icons, or pixel-for-pixel layout.
 
@@ -41,7 +43,7 @@ Epic #195 (UX.1–UX.12) already moved `/workflows/{id}` to canvas-first chrome 
 - Executing drafts, unsaved buffers, or guessed invalid graphs.
 - Persisting a UI-only workflow format that can diverge from `flowforge/v1` YAML.
 - Putting trigger types on the canvas as graph nodes ([D3](#d3--trigger-placement) locked: workflow-level). Revisit only as an explicit Brent reversal with a YAML migration.
-- Enabling catalog entries marked **Next** / **Provider** (including `workflow.call`) or a connector marketplace as part of this rewrite. Those still need their own approved epic, contract, threat review, and release gate ([master plan](../master-implementation-plan.md)).
+- Enabling catalog entries marked **Next** / **Provider** (including `workflow.call`) or a connector marketplace as part of this rewrite. Those still need their own approved epic, contract, threat review, and release gate ([master plan](master-implementation-plan.md)).
 - Arbitrary shells, free-form Kubernetes proxying, package install, or shared tenant instances filtered only in the UI.
 - Rewriting the Go control plane, workers, or PostgreSQL model “for UX.” Contract gaps are additive and listed; they are not a greenfield API.
 - Creating GitHub issues from this PR.
@@ -67,7 +69,7 @@ Shipped on `main` at the time of this charter: **E1–E12** (platform through pr
 | Layer | Authority |
 | --- | --- |
 | Boundaries, embed, Portal | [Architecture](../architecture.md) |
-| MVP backlog (historical, still true for shipped gates) | [Master implementation plan](../master-implementation-plan.md) |
+| MVP backlog (historical, still true for shipped gates) | [Master implementation plan](master-implementation-plan.md) |
 | YAML + graph | [Workflow YAML schema](../reference/workflow-yaml-schema.md), [workflow model](../reference/workflow-model.md) |
 | UI chrome and IA | [Frontend UI](../reference/frontend-ui.md) |
 | Operator walkthrough | [Operator / admin UI](../guides/operator-admin.md) |
@@ -425,7 +427,7 @@ Depends-on is sequential for operator-visible coherence, not a hard merge lock. 
 
 **Out of this program (do not sneak into R2–R7):** marketplace connectors, `workflow.call`, OIDC login productization (unless Brent adds D9), mobile app, screen-reader graph rewrite, replacing PostgreSQL or the worker model.
 
-**Epic definition of ready (for Arie/Gracie):** copy the row, then add: operator outcome, in/out, parent (this doc §9), API/YAML/UI impact, authz/abuse, acceptance, tests, docs, rollback, telemetry. Use the [master plan](../master-implementation-plan.md) definition-of-ready checklist.
+**Epic definition of ready (for Arie/Gracie):** copy the row, then add: operator outcome, in/out, parent (this doc §9), API/YAML/UI impact, authz/abuse, acceptance, tests, docs, rollback, telemetry. Use the [master plan](master-implementation-plan.md) definition-of-ready checklist.
 
 ---
 
@@ -735,7 +737,7 @@ In-place `/api/v1` evolution, not a dump-and-reload. Existing drafts, versions, 
 - [FlowForge UX Laws](flowforge-ux-laws.md) — post-R1–R7 chrome polish (Laws of UX; docs-only; not a new R-epic)
 - [Frontend UI](../reference/frontend-ui.md) — current #195 baseline
 - [Operator / admin UI](../guides/operator-admin.md)
-- [Master implementation plan](../master-implementation-plan.md) — shipped E1–E12
+- [Master implementation plan](master-implementation-plan.md) — shipped E1–E12
 - [Workflow YAML schema](../reference/workflow-yaml-schema.md)
 - [Security model](../reference/security-model.md)
 - [Backend API map](../reference/backend-api-map.md)

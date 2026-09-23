@@ -1,24 +1,23 @@
 # Architecture
 
-**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress. Script steps create isolated Jobs from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, built in this repo) only when `CONTROL_PLANE_API_CIDR` (or a same-namespace Service) is set and the live script NetworkPolicy allows DNS plus that destination. Missing config refuses the Job. Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live. Gap SoT: [docs/internal/claude-code-gap-analysis.md](internal/claude-code-gap-analysis.md) (epic [G](https://github.com/bbengt1/flowforge/issues/401) / [G.0](https://github.com/bbengt1/flowforge/issues/402)).
+**Runtime honesty:** the diagram below is the control-plane / worker model. `apps/api/cmd/runner` claims jobs in-process and calls the kubernetes, ssh, script, and http engines when production-locked. Compose’s local worker (`cmd/worker`) still evaluates six core nodes only and refuses provider steps. `deploy/k8s` default-deny does not open provider egress. Script steps create isolated Jobs from `deploy/kubernetes/script-runner-deployment.yaml` (`ghcr.io/bbengt1/flowforge-script-runner`, built in this repo) only when `CONTROL_PLANE_API_CIDR` (or a same-namespace Service) is set and the live script NetworkPolicy allows DNS plus that destination. Missing config refuses the Job. Read [Implemented vs Specified](architecture/implemented-vs-specified.md) before treating a dial as live.
 
 Hard lines stay: YAML is source of truth; drafts never run; vault chrome is display-name + UUID only; ADV-021 / ADV-024; fail-closed authorization.
 
 ## Deployment shape
 
 Specified target — `deploy/k8s` runs the API, the web UI, and the production runner at `replicas: 2`, with a PodDisruptionBudget, HorizontalPodAutoscaler, preferred pod anti-affinity, and graceful drain (G.2.6). One API replica holds the scheduler lease. HMAC keys are the shared Secret, not a per-pod key. The compose worker is not in `deploy/k8s`. Provider network egress stays closed until an operator adds a CIDR:
-
 ```mermaid
 flowchart LR
-  U[Operator or host application] --> UI[Next.js UI / embed SDK]
-  UI --> API[Go control-plane API]
-  API --> DB[(PostgreSQL)]
-  API --> OBJ[(S3-compatible artifacts)]
-  API --> Q[Durable execution queue]
-  Q --> W[Isolated worker pods]
-  W --> K[Kubernetes API]
-  W --> S[Allowlisted SSH targets]
-  W --> A[Signed Python / Go artifacts]
+ U[Operator or host application] --> UI[Next.js UI / embed SDK]
+ UI --> API[Go control-plane API]
+ API --> DB[(PostgreSQL)]
+ API --> OBJ[(S3-compatible artifacts)]
+ API --> Q[Durable execution queue]
+ Q --> W[Isolated worker pods]
+ W --> K[Kubernetes API]
+ W --> S[Allowlisted SSH targets]
+ W --> A[Signed Python / Go artifacts]
 ```
 
 ## Boundaries
@@ -65,14 +64,8 @@ Each embedded instance is scoped by `(tenant_id, workbench_key)`. That identity 
 
 Standalone identity is local Login (`POST /api/v1/login`) or OIDC Authorization Code + PKCE (`POST /api/v1/oidc/start`, `POST /api/v1/oidc/callback`). Both mint `ff_session` / `ff_csrf`. Embed stays `POST /embed/exchange` (ADV-021). OIDC is opt-in and fail-closed when unset. TOTP MFA gates `platform.administer` and `credential.*` on local-login and OIDC sessions only. Machine, trusted-dev, and embed are not that gate. SCIM 2.0 (`/scim/v2`, dedicated bearer) provisions those same users and workspace roles. Failed passwords lock the account in Postgres (`auth_lockouts`) for Local Login and OIDC. First-run bootstrap (including TLS **Skip for now**) is standalone only. Explorer chrome on `/workflows` is landed organizer UI, not a provider runtime.
 
-## Successor rewrite (charter)
+## Successor direction
 
-The shipped product on `main` is E1–E12 plus epic #195 canvas-first chrome, with the runtime gaps in [Implemented vs Specified](architecture/implemented-vs-specified.md). Enterprise readiness work is epic [G](https://github.com/bbengt1/flowforge/issues/401). The UX program is a **FlowForge rewrite aimed at n8n-class UX and feature coverage**, not a clone: [flowforge-rewrite-n8n-class-parity.md](architecture/flowforge-rewrite-n8n-class-parity.md). YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay unless that charter records an explicit safer replacement.
+The shipped product on `main` is E1–E12 plus canvas-first chrome, with the runtime gaps in [Implemented vs Specified](architecture/implemented-vs-specified.md). The UX direction is **n8n-class interaction and feature coverage**, not an n8n clone. YAML, publish-then-run, vault credentials, and ADV/tenancy invariants stay.
 
-Post-R1–R7 chrome polish (Laws of UX, selective; docs-only): [flowforge-ux-laws.md](architecture/flowforge-ux-laws.md).
-
-Workflows home folder hierarchy (nested, server-backed, per workspace; F.1 API landed, chrome F.2+): [flowforge-workflow-folders.md](architecture/flowforge-workflow-folders.md).
-
-First-run operator wizard (standalone only; B.1–B.8): [flowforge-first-run-bootstrap.md](architecture/flowforge-first-run-bootstrap.md).
-
-Visual + IA north star (docs-only until Brent yes; chrome rebuild after): [flowforge-visual-ia-north-star.md](architecture/flowforge-visual-ia-north-star.md).
+Workflows home uses nested, server-backed folders per workspace. The first-run operator wizard is standalone only (never `/embed/v1`): [flowforge-first-run-bootstrap.md](architecture/flowforge-first-run-bootstrap.md).

@@ -72,7 +72,7 @@ export const X4_EPIC = 379;
 export const X4_KEEP_STORY_OPEN = true;
 export const X4_KEEP_EPIC_OPEN = true;
 export const X4_ID = "X.4-explorer-empty-unfiled-teaching" as const;
-export const X4_BRIEF = "docs/architecture/flowforge-workflow-folders.md";
+export const X4_BRIEF = "docs/internal/flowforge-workflow-folders.md";
 
 export const EXPLORER_EMPTY_HELP =
   "Empty folder and empty Unfiled teach different Explorer moves. A real folder can take a new draft or a moved workflow; delete stays refuse-if-nonempty. Unfiled is virtual — not a folder you can rename or delete. Drafts do not run — publish, then start a published version.";
@@ -314,11 +314,15 @@ export function explorerEmptyShowsDeveloperFixtures(source: string): boolean {
 }
 
 export function explorerDocsKeepEpicOpen(docs: string): boolean {
+  // Published docs cite X.4. Internal briefs may still cite the issues.
+  const cites =
+    (/X\.4/.test(docs) && /empty folder|Unfiled/i.test(docs)) ||
+    (docs.includes("#383") &&
+      /keep #383 open/i.test(docs) &&
+      docs.includes("#379") &&
+      /keep #379 open/i.test(docs));
   return (
-    docs.includes("#383") &&
-    /keep #383 open/i.test(docs) &&
-    docs.includes("#379") &&
-    /keep #379 open/i.test(docs) &&
+    cites &&
     EXPLORER_EMPTY_AUTO_CLOSE_TOKENS.every((token) => !docs.includes(token))
   );
 }
