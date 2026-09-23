@@ -182,29 +182,25 @@ func setOIDCStateCookie(s *core.Server, w http.ResponseWriter, r *http.Request, 
 	if maxAge < 1 {
 		maxAge = 1
 	}
-	https := s.Sec.RequestIsHTTPS(r)
-	http.SetCookie(w, &http.Cookie{
+	core.WriteCookie(w, http.Cookie{
 		Name:     oidc.StateCookie,
 		Value:    state,
 		Path:     session.CookiePath,
 		HttpOnly: true,
-		Secure:   https,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
-	})
+	}, core.RequestCookieSecure(s.Sec, r))
 }
 
 func clearOIDCStateCookie(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	https := s.Sec.RequestIsHTTPS(r)
-	http.SetCookie(w, &http.Cookie{
+	core.WriteCookie(w, http.Cookie{
 		Name:     oidc.StateCookie,
 		Value:    "",
 		Path:     session.CookiePath,
 		HttpOnly: true,
-		Secure:   https,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
-	})
+	}, core.RequestCookieSecure(s.Sec, r))
 }
 
 func oidcStateCookieMatches(r *http.Request, state string) bool {

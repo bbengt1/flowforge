@@ -131,6 +131,7 @@ func main() {
 			RequireTLS:           cfg.RequireTLS,
 			AllowedOrigins:       cfg.CORSAllowedOrigins,
 			TrustIdentityHeaders: cfg.TrustIdentityHeaders,
+			ProductionLocked:     authz.ProductionLocked(cfg.AppEnv, cfg.RequireTLS),
 			Session: httpapi.SessionPolicy{
 				IdleTimeout:     cfg.SessionIdleTimeout,
 				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,

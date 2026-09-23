@@ -50,6 +50,12 @@ func TestSessionCreateIssuesSecureCookies(t *testing.T) {
 	env := newSessionEnv(Security{})
 	rec, payload := createSession(t, env.h, "https://idp.example", "admin-1", "Admin", false)
 	assertSessionCookies(t, rec, false)
+	locked := newSessionEnv(Security{ProductionLocked: true})
+	lockedRec, _ := createSession(t, locked.h, "https://idp.example", "admin-1", "Admin", false)
+	assertSessionCookies(t, lockedRec, true)
+	requireTLS := newSessionEnv(Security{RequireTLS: true})
+	tlsRec, _ := createSession(t, requireTLS.h, "https://idp.example", "admin-3", "Admin", true)
+	assertSessionCookies(t, tlsRec, true)
 	if payload.CSRFToken == "" || payload.Principal.ID == "" {
 		t.Fatalf("missing csrf or principal: %+v", payload)
 	}

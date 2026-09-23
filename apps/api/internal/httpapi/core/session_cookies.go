@@ -10,14 +10,15 @@ import (
 // Embed (CHIPS) sessions use SameSite=None; Secure; Partitioned so
 // the pair works in a cross-site iframe. SameSite=None is never
 // emitted without Partitioned, and Secure is never dropped on the
-// embed path. First-party sessions stay Lax / Strict.
+// embed path. First-party sessions stay Lax / Strict. Their Secure
+// bit is the caller's decision: HTTPS, REQUIRE_TLS, or production-locked.
 type cookieFlags struct {
 	SameSite    http.SameSite
 	Secure      bool
 	Partitioned bool
 }
 
-func sessionCookieFlags(https, chips bool) cookieFlags {
+func sessionCookieFlags(secure, chips bool) cookieFlags {
 	if chips {
 		return cookieFlags{
 			SameSite:    http.SameSiteNoneMode,
@@ -27,12 +28,12 @@ func sessionCookieFlags(https, chips bool) cookieFlags {
 	}
 	return cookieFlags{
 		SameSite:    http.SameSiteLaxMode,
-		Secure:      https,
+		Secure:      secure,
 		Partitioned: false,
 	}
 }
 
-func csrfCookieFlags(https, chips bool) cookieFlags {
+func csrfCookieFlags(secure, chips bool) cookieFlags {
 	if chips {
 		return cookieFlags{
 			SameSite:    http.SameSiteNoneMode,
@@ -42,32 +43,72 @@ func csrfCookieFlags(https, chips bool) cookieFlags {
 	}
 	return cookieFlags{
 		SameSite:    http.SameSiteStrictMode,
-		Secure:      https,
+		Secure:      secure,
 		Partitioned: false,
 	}
 }
 
-func writeSessionCookiePair(w http.ResponseWriter, token, csrf string, maxAge int, https, chips bool) {
-	sessionFlags := sessionCookieFlags(https, chips)
-	csrfFlags := csrfCookieFlags(https, chips)
-	http.SetCookie(w, &http.Cookie{
+// RequestCookieSecure reports whether a first-party browser cookie must
+// be marked Secure. HTTPS requests, REQUIRE_TLS, and a production-locked
+// process are fail-closed. Explicit local/dev/test over cleartext HTTP
+// is not, so Login can bootstrap without TLS. CHIPS cookies ignore this
+// and stay Secure.
+func RequestCookieSecure(sec Security, r *http.Request) bool {
+	if r != nil && sec.RequestIsHTTPS(r) {
+		return true
+	}
+	return sec.RequireTLS || sec.ProductionLocked
+}
+
+// WriteCookie adds one Set-Cookie header.
+//
+// When secure is set, the cookie is passed to http.SetCookie with Secure
+// set to true. Non-production cleartext HTTP omits Secure and does not
+// call http.SetCookie. The serializer is Cookie.String, which SetCookie
+// uses, so the wire format matches. Local Login can still store the
+// cookie over HTTP. Embed (CHIPS) callers pass secure=true.
+func WriteCookie(w http.ResponseWriter, c http.Cookie, secure bool) {
+	if secure {
+		secured := c
+		secured.Secure = true
+		http.SetCookie(w, &secured)
+		return
+	}
+	plain := http.Cookie{
+		Name:        c.Name,
+		Value:       c.Value,
+		Path:        c.Path,
+		Domain:      c.Domain,
+		Expires:     c.Expires,
+		MaxAge:      c.MaxAge,
+		HttpOnly:    c.HttpOnly,
+		SameSite:    c.SameSite,
+		Partitioned: c.Partitioned,
+	}
+	if v := plain.String(); v != "" {
+		w.Header().Add("Set-Cookie", v)
+	}
+}
+
+func writeSessionCookiePair(w http.ResponseWriter, token, csrf string, maxAge int, secure, chips bool) {
+	sessionFlags := sessionCookieFlags(secure, chips)
+	csrfFlags := csrfCookieFlags(secure, chips)
+	WriteCookie(w, http.Cookie{
 		Name:        session.CookieName,
 		Value:       token,
 		Path:        session.CookiePath,
 		HttpOnly:    true,
-		Secure:      sessionFlags.Secure,
 		SameSite:    sessionFlags.SameSite,
 		Partitioned: sessionFlags.Partitioned,
 		MaxAge:      maxAge,
-	})
-	http.SetCookie(w, &http.Cookie{
+	}, sessionFlags.Secure)
+	WriteCookie(w, http.Cookie{
 		Name:        session.CSRFCookieName,
 		Value:       csrf,
 		Path:        session.CookiePath,
 		HttpOnly:    false,
-		Secure:      csrfFlags.Secure,
 		SameSite:    csrfFlags.SameSite,
 		Partitioned: csrfFlags.Partitioned,
 		MaxAge:      maxAge,
-	})
+	}, csrfFlags.Secure)
 }

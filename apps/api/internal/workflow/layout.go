@@ -249,14 +249,36 @@ func finiteNumber(v any) (float64, bool) {
 }
 
 func finiteInt(v any) (int, bool) {
-	f, ok := finiteNumber(v)
-	if !ok || math.Trunc(f) != f {
+	// YAML !!int values arrive as int64 from strconv.ParseInt(..., 64).
+	// Narrow to int only after an integer bound check against math.MaxInt
+	// and math.MinInt. A float comparison is not that check: math.MaxInt
+	// is not exact in float64.
+	var n int64
+	switch x := v.(type) {
+	case int:
+		n = int64(x)
+	case int64:
+		n = x
+	case uint64:
+		if x > math.MaxInt {
+			return 0, false
+		}
+		n = int64(x)
+	case float64:
+		if !isFinite(x) || math.Trunc(x) != x || x >= 0x1p63 || x < float64(math.MinInt64) {
+			return 0, false
+		}
+		n = int64(x)
+	default:
 		return 0, false
 	}
-	if f < math.MinInt || f > math.MaxInt {
+	if n > math.MaxInt {
 		return 0, false
 	}
-	return int(f), true
+	if n < math.MinInt {
+		return 0, false
+	}
+	return int(n), true
 }
 
 func isFinite(f float64) bool {
