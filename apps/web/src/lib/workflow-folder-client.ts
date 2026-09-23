@@ -6,6 +6,12 @@
  * Folder re-parent is not this client.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -25,6 +31,9 @@ export type ListWorkflowFoldersSuccess = {
   statusCode: number;
   requestId: string;
   items: WorkflowFolder[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type WorkflowFolderWriteSuccess = {
@@ -63,13 +72,27 @@ function failure(
 
 export async function listWorkflowFolders(
   identity: DevIdentity,
+  query: CollectionPageQuery = {},
 ): Promise<ListWorkflowFoldersSuccess | WorkflowFolderClientFailure> {
-  const result = await callIdentityProxy<WorkflowFolderList>(
-    WORKFLOW_FOLDERS_PATH,
-    identity,
-  );
+  const opened = openCollectionPath(WORKFLOW_FOLDERS_PATH, query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      errors: [],
+      conflict: false,
+      notEmpty: null,
+    };
+  }
+  const result = await callIdentityProxy<WorkflowFolderList>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    const failed = failure(result);
+    if (failed.statusCode === 400) {
+      failed.problem = scrubCollectionPageProblem(failed.problem);
+    }
+    return failed;
   }
   const items = Array.isArray(result.data.items)
     ? result.data.items.filter(isWorkflowFolder)
@@ -79,6 +102,7 @@ export async function listWorkflowFolders(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items,
+    ...readCollectionPageFields(result.data),
   };
 }
 

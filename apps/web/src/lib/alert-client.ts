@@ -9,6 +9,12 @@
  * GET /workspace/audit-events.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
@@ -49,6 +55,9 @@ export type AlertListSuccess = {
   statusCode: number;
   requestId: string;
   items: OperationalAlert[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -75,16 +84,34 @@ export type AuditListSuccess = {
   statusCode: number;
   requestId: string;
   items: WorkspaceAuditEvent[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
+
+function pageQuery(filter: CollectionPageQuery): CollectionPageQuery {
+  return { limit: filter.limit, cursor: filter.cursor, q: filter.q };
+}
 
 export async function listAlerts(
   identity: DevIdentity,
   filter: AlertListQuery = {},
 ): Promise<AlertListSuccess | AlertClientFailure> {
-  const result = await callIdentityProxy<unknown>(listAlertsPath(filter), identity);
+  const opened = openCollectionPath(listAlertsPath(filter), pageQuery(filter));
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const strippedKeys: string[] = [];
   stripAlertForbiddenFields(result.data, strippedKeys);
@@ -93,6 +120,7 @@ export async function listAlerts(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseAlertList(result.data),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -170,12 +198,23 @@ export async function listWorkspaceAuditEvents(
   identity: DevIdentity,
   filter: WorkspaceAuditQuery = {},
 ): Promise<AuditListSuccess | AlertClientFailure> {
-  const result = await callIdentityProxy<unknown>(
+  const opened = openCollectionPath(
     listWorkspaceAuditEventsPath(filter),
-    identity,
+    pageQuery(filter),
   );
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const strippedKeys: string[] = [];
   stripSecretFields(result.data, strippedKeys);
@@ -184,6 +223,7 @@ export async function listWorkspaceAuditEvents(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseWorkspaceAuditList(result.data),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -226,12 +266,15 @@ function detailResult(
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): AlertClientFailure {
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
+    problem: collectionPage
+      ? scrubCollectionPageProblem(result.problem)
+      : result.problem,
     forbidden: isAlertForbidden(result.problem),
     strippedKeys: [],
   };

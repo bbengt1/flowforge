@@ -4,8 +4,9 @@
  * Relates to #264 / Part of #231. Keep #264 open.
  *
  * Chloe UI only. Densify the existing `/credentials` list in place
- * (D6). Reuse E4.1 list/detail clients — `GET /credentials` (no query
- * params). Filter display name / tags / type / status in the browser.
+ * (D6). Reuse E4.1 list/detail clients. Display-name search sends
+ * `q` on `GET /credentials` (jonny #471 — display name only). Type,
+ * tag, and status stay in the browser. Cursor stays in memory.
  * Do not invent list query params, new credential types, KEK in the
  * browser, or `/config` merge. Isolation hook
  * `POST /workspace/credentials/{id}/use` is not the product vault.
@@ -17,6 +18,7 @@
  * stays with existing vault clients. ADV/RBAC/embed stay.
  */
 
+import { appendCollectionPageQuery } from "./collection-page.ts";
 import { EDITOR_CREDENTIAL } from "./editor-credential.ts";
 import { maybeEmbedDeepLink } from "./embed-tenancy-contract.ts";
 import { EMBED_ROUTES } from "./embed-contract.ts";
@@ -66,14 +68,15 @@ export const CREDENTIAL_VAULT_QUERY_KEYS = [
   "status",
 ] as const;
 
-/** UI-only workbench keys — never send these on GET /credentials. */
+/**
+ * Workbench filters that stay off GET /credentials. `q` is the
+ * display-name search and is sent. `cursor` is memory-only for Load more.
+ */
 export const CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS = [
-  "q",
   "type",
   "tag",
   "status",
   "cursor",
-  "limit",
   "secret",
   "kubeconfig",
   "privateKey",
@@ -86,7 +89,7 @@ export const CREDENTIAL_VAULT_KEYBOARD_HELP =
   "Arrow keys move the vault. Enter or Space opens the focused credential on existing /credentials/{id} detail. Display-name search stays on this page.";
 
 export const CREDENTIAL_VAULT_HELP =
-  "Find credentials by display name. Filter type, tag, or status in the browser. GET /credentials returns metadata only — no list query params. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop).";
+  "Find credentials by display name. GET /credentials q matches the display name only. Filter type, tag, or status in the browser. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop).";
 
 /** Contract only — never render in operator chrome (UXL.8). */
 export const CREDENTIAL_KEK_CONTRACT =
@@ -160,6 +163,7 @@ export const CREDENTIAL_VAULT = {
   noNewApiRoutes: true,
   noNewCredentialTypes: true,
   noInventedListQueryParams: true,
+  displayNameSearchUsesQ: true,
   clientSideDisplayNameFilter: true,
   isolationUseIsNotProductVault: true,
   csrfOnMutations: true,
@@ -286,9 +290,17 @@ export function credentialVaultHref(
 
 export function credentialVaultListPath(
   query: CredentialListQuery = {},
+  page: { limit?: number; cursor?: string } = {},
 ): string {
-  void query;
-  return credentialListPath();
+  const opened = appendCollectionPageQuery(credentialListPath(), {
+    q: query.q,
+    limit: page.limit,
+    cursor: page.cursor,
+  });
+  if (!opened.ok) {
+    return credentialListPath();
+  }
+  return opened.path;
 }
 
 export function credentialVaultOpenHref(
@@ -415,7 +427,13 @@ export function credentialVaultUsesExistingListParams(
   query: CredentialListQuery = {},
 ): boolean {
   const path = credentialVaultListPath(query);
-  return path === credentialListPath() && !path.includes("?");
+  const params = new URLSearchParams(path.split("?")[1] ?? "");
+  for (const key of params.keys()) {
+    if (key !== "q" && key !== "limit") {
+      return false;
+    }
+  }
+  return CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.every((key) => !params.has(key));
 }
 
 export function credentialVaultQueryNeverSentToList(

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { AlertSeverityBadge } from "@/components/alerts/AlertSeverityBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -11,6 +12,10 @@ import {
   canSeeAlertsNav,
   filterAlertList,
 } from "@/lib/alert";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { listAlerts } from "@/lib/alert-client";
 import { executionCorrelateHref } from "@/lib/alert-contract";
 import {
@@ -44,6 +49,7 @@ export function AlertList() {
   );
 
   const [items, setItems] = useState<OperationalAlert[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [query, setQuery] = useState({
     q: "",
     kind: "",
@@ -75,6 +81,7 @@ export function AlertList() {
         status: query.status.trim() || undefined,
         resourceType: query.resourceType.trim() || undefined,
         resourceId: query.resourceId.trim() || undefined,
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
       }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
     ]);
@@ -86,10 +93,35 @@ export function AlertList() {
     if (!list.ok) {
       setProblem(list.problem);
       setItems([]);
+      setPageNext("");
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
     setStrippedKeys(list.strippedKeys);
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const list = await listAlerts(identity, {
+      kind: query.kind.trim() || undefined,
+      status: query.status.trim() || undefined,
+      resourceType: query.resourceType.trim() || undefined,
+      resourceId: query.resourceId.trim() || undefined,
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(false);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
   }
 
   useEffect(() => {
@@ -318,6 +350,11 @@ export function AlertList() {
           })}
         </ul>
       )}
+      <CollectionLoadMore
+        next={pageNext}
+        pending={pending}
+        onLoadMore={() => void loadMore()}
+      />
     </div>
   );
 }

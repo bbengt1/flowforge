@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -17,6 +18,10 @@ import {
   isRequesterActor,
   pendingApprovals,
 } from "@/lib/approval";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { getApprovalCatalog, listApprovals } from "@/lib/approval-client";
 import {
   APPROVAL_STATUSES,
@@ -50,6 +55,7 @@ export function ApprovalList() {
   );
 
   const [items, setItems] = useState<ApprovalRequest[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [query, setQuery] = useState({ q: "", status: "pending" });
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
@@ -73,6 +79,7 @@ export function ApprovalList() {
     const [list, workspace, types] = await Promise.all([
       listApprovals(identity, {
         status: query.status.trim() || undefined,
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
       }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
       getApprovalCatalog(identity),
@@ -88,9 +95,31 @@ export function ApprovalList() {
     }
     if (!list.ok) {
       setProblem(list.problem);
+      setPageNext("");
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const list = await listApprovals(identity, {
+      status: query.status.trim() || undefined,
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(false);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
   }
 
   useEffect(() => {
@@ -230,6 +259,11 @@ export function ApprovalList() {
           ))}
         </ul>
       )}
+      <CollectionLoadMore
+        next={pageNext}
+        pending={pending}
+        onLoadMore={() => void loadMore()}
+      />
     </div>
   );
 }

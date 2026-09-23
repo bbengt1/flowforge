@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionDecideActions } from "@/components/executions/ExecutionDecideActions";
 import { ExecutionHistoryListbox } from "@/components/executions/ExecutionHistoryListbox";
@@ -29,6 +30,7 @@ import {
   parseExecutionInboxQuery,
 } from "@/lib/execution-inbox";
 import { compareRedactedExecutions } from "@/lib/execution-replay";
+import { appendCollectionItems } from "@/lib/collection-page";
 import { listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { executionDecideShouldLoadApprovals } from "@/lib/execution-decide";
@@ -93,6 +95,7 @@ export function ExecutionHistory() {
   );
 
   const [items, setItems] = useState<ExecutionRecord[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
@@ -164,11 +167,38 @@ export function ExecutionHistory() {
       setProblem(list.problem);
       if (list.forbidden) {
         setItems([]);
+        setPageNext("");
       }
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
     setStrippedKeys(list.strippedKeys);
+    void loadOperateDetails(list.items);
+    void loadDecideApprovals(list.items);
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const filter = {
+      status: query.status,
+      limit: query.limit || EXECUTION_INBOX_DEFAULT_LIMIT,
+      cursor: pageNext,
+    };
+    const list = query.workflowId?.trim()
+      ? await listWorkflowExecutions(identity, query.workflowId.trim(), filter)
+      : await listExecutions(identity, filter);
+    setPending(false);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
     void loadOperateDetails(list.items);
     void loadDecideApprovals(list.items);
   }
@@ -457,6 +487,15 @@ export function ExecutionHistory() {
               />
             </>
           )}
+        />
+      )}
+
+      {forbidden || denied ? null : (
+        <CollectionLoadMore
+          next={pageNext}
+          pending={pending}
+          onLoadMore={() => void loadMore()}
+          label="Load more runs"
         />
       )}
 

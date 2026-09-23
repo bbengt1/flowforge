@@ -13,10 +13,15 @@ import {
   type DragEvent,
   type ReactNode,
 } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { listApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { canSeeApprovalsNav } from "@/lib/approval";
@@ -403,6 +408,18 @@ function WorkflowHomeSession() {
   const [workspaceWorkflows, setWorkspaceWorkflows] = useState<
     WorkflowRecord[] | null
   >(null);
+  const [serverSearchItems, setServerSearchItems] = useState<
+    WorkflowRecord[] | null
+  >(null);
+  const [pageNext, setPageNext] = useState("");
+  const [folderNext, setFolderNext] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const visiblePageRef = useRef<{
+    folderId?: string;
+    q?: string;
+    limit: number;
+    target: "records" | "search";
+  }>({ limit: COLLECTION_PAGE_DEFAULT_LIMIT, target: "records" });
   const [drafts, setDrafts] = useState<Map<string, WorkflowDraft>>(new Map());
   const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
   const [lastRunKnownIds, setLastRunKnownIds] = useState<Set<string>>(new Set());
@@ -532,7 +549,7 @@ function WorkflowHomeSession() {
   );
 
   const displayRecords = acrossFolderSearch
-    ? workspaceWideWorkflowsOrScoped(workspaceWorkflows, records)
+    ? workspaceWideWorkflowsOrScoped(serverSearchItems, records)
     : records;
   const items = useMemo(
     () =>
@@ -573,7 +590,7 @@ function WorkflowHomeSession() {
     selection,
     folderCount: folders.length,
     scopedRecordCount: acrossFolderSearch
-      ? workspaceWideWorkflowsOrScoped(workspaceWorkflows, records).length
+      ? workspaceWideWorkflowsOrScoped(serverSearchItems, records).length
       : records.length,
     visibleCount: visible.length,
     workspaceWorkflowCount,
@@ -711,15 +728,19 @@ function WorkflowHomeSession() {
     }
     setPending("list");
     setProblem(null);
-    const folderList = await listWorkflowFolders(identity);
+    const folderList = await listWorkflowFolders(identity, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+    });
     if (!refreshGate.current.isCurrent(token)) {
       return;
     }
     if (!folderList.ok) {
       setProblem(folderList.problem);
       setFoldersReady(folderRailReady(false));
+      setFolderNext("");
     } else {
       setFolders(folderList.items);
+      setFolderNext(folderList.next);
       setFoldersReady(folderRailReady(true));
     }
     const intended = selectionOverride ?? intendedSelection;
@@ -739,15 +760,23 @@ function WorkflowHomeSession() {
       });
     }
     const listSelection = folderList.ok ? resolved : intended;
+    const searchText = debouncedQuery.trim();
+    const across = folderHomeListMode(searchText, searchInThisFolder) === "across-search";
+    const folderId = selectedFolderListFolderId(listSelection);
     let list = await listWorkflows(identity, {
-      folderId: selectedFolderListFolderId(listSelection),
+      folderId,
+      q: across ? undefined : searchText || undefined,
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
     });
     if (!refreshGate.current.isCurrent(token)) {
       return;
     }
     if (!list.ok && list.statusCode === 404 && resolved.kind === "folder") {
       replaceFolderQuery({ kind: "unfiled" }, { drop: true });
-      list = await listWorkflows(identity, { folderId: "unfiled" });
+      list = await listWorkflows(identity, {
+        folderId: "unfiled",
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      });
       if (!refreshGate.current.isCurrent(token)) {
         return;
       }
@@ -755,10 +784,22 @@ function WorkflowHomeSession() {
     if (!list.ok) {
       setPending(null);
       setWorkspaceWorkflows(null);
+      setServerSearchItems(null);
+      setPageNext("");
       setProblem(list.problem);
       return;
     }
     setRecords(list.items);
+    if (!across) {
+      setServerSearchItems(null);
+      setPageNext(list.next);
+      visiblePageRef.current = {
+        folderId,
+        q: searchText || undefined,
+        limit: list.limit || COLLECTION_PAGE_DEFAULT_LIMIT,
+        target: "records",
+      };
+    }
     const all = await listWorkflows(identity);
     if (!refreshGate.current.isCurrent(token)) {
       return;
@@ -767,12 +808,37 @@ function WorkflowHomeSession() {
       ? workspaceWideWorkflowsResult(true, all.items)
       : workspaceWideWorkflowsResult(false, []);
     setWorkspaceWorkflows(workspaceItems);
+    let searchItems: WorkflowRecord[] | null = null;
+    if (across) {
+      const searched = await listWorkflows(identity, {
+        q: searchText,
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      });
+      if (!refreshGate.current.isCurrent(token)) {
+        return;
+      }
+      if (!searched.ok) {
+        setPending(null);
+        setServerSearchItems(null);
+        setPageNext("");
+        setProblem(searched.problem);
+        return;
+      }
+      searchItems = searched.items;
+      setServerSearchItems(searched.items);
+      setPageNext(searched.next);
+      visiblePageRef.current = {
+        q: searchText,
+        limit: searched.limit || COLLECTION_PAGE_DEFAULT_LIMIT,
+        target: "search",
+      };
+    }
     extrasGate.current.begin();
     const metadataRecords = homeListMetadataRecords(
       list.items,
-      workspaceItems,
-      "",
-      false,
+      across ? searchItems : workspaceItems,
+      searchText,
+      searchInThisFolder,
     );
     extrasLoadedIds.current = new Set(metadataRecords.map((item) => item.id));
     const extras = await fetchHomeRowExtras(identity, metadataRecords, {
@@ -804,10 +870,12 @@ function WorkflowHomeSession() {
     canView,
     canViewActivation,
     identity,
+    debouncedQuery,
     intendedSelection,
     permissions,
     ready,
     replaceFolderQuery,
+    searchInThisFolder,
   ]);
 
   const startInlineRename = useCallback(
@@ -1090,6 +1158,68 @@ function WorkflowHomeSession() {
   }, [dropPreviousFolder, folderParam, replaceFolderQuery]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(filters.query);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [filters.query]);
+
+  const loadMoreWorkflows = useCallback(async () => {
+    if (!pageNext || !canView) {
+      return;
+    }
+    const token = refreshGate.current.begin();
+    setPending("list");
+    setProblem(null);
+    const query = visiblePageRef.current;
+    const result = await listWorkflows(identity, {
+      folderId: query.target === "records" ? query.folderId : undefined,
+      q: query.q,
+      limit: query.limit,
+      cursor: pageNext,
+    });
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
+    }
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    if (query.target === "search") {
+      setServerSearchItems((current) =>
+        appendCollectionItems(current ?? [], result.items),
+      );
+    } else {
+      setRecords((current) => appendCollectionItems(current, result.items));
+    }
+    setPageNext(result.next);
+  }, [canView, identity, pageNext]);
+
+  const loadMoreFolders = useCallback(async () => {
+    if (!folderNext || !canView) {
+      return;
+    }
+    const token = refreshGate.current.begin();
+    setPending("list");
+    setProblem(null);
+    const result = await listWorkflowFolders(identity, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: folderNext,
+    });
+    if (!refreshGate.current.isCurrent(token)) {
+      return;
+    }
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    setFolders((current) => appendCollectionItems(current, result.items));
+    setFolderNext(result.next);
+  }, [canView, folderNext, identity]);
+
+  useEffect(() => {
     const gate = refreshGate.current;
     const timer = window.setTimeout(() => {
       void refresh();
@@ -1106,7 +1236,7 @@ function WorkflowHomeSession() {
     }
     const needed = homeListMetadataRecords(
       records,
-      workspaceWorkflows,
+      acrossFolderSearch ? serverSearchItems : workspaceWorkflows,
       filters.query,
       searchInThisFolder,
     );
@@ -1167,6 +1297,7 @@ function WorkflowHomeSession() {
     permissions,
     records,
     searchInThisFolder,
+    serverSearchItems,
     workspaceWorkflows,
   ]);
 
@@ -2301,6 +2432,18 @@ function WorkflowHomeSession() {
           }}
         />
       )}
+      <CollectionLoadMore
+        next={pageNext}
+        pending={pending !== null}
+        onLoadMore={() => void loadMoreWorkflows()}
+        label="Load more workflows"
+      />
+      <CollectionLoadMore
+        next={folderNext}
+        pending={pending !== null}
+        onLoadMore={() => void loadMoreFolders()}
+        label="Load more folders"
+      />
       </div>
       </div>
       </div>

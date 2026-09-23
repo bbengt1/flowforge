@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { clearSession, setActiveSession } from "./session-store.ts";
+import { COLLECTION_PAGE_INVALID_DETAIL } from "./collection-page.ts";
 import { PROBLEM_JSON } from "./problem.ts";
 import { REQUEST_ID_HEADER } from "./request-id.ts";
 import type { DevIdentity } from "./identity-headers.ts";
@@ -133,6 +134,85 @@ describe("workflow client", () => {
     const filed = await listWorkflows(identity, { folderId });
     assert.equal(filed.ok, true);
     assert.equal(seen.url, `/api/v1/workflows?folderId=${folderId}`);
+  });
+
+  it("reads the page object and refuses a bad q without echoing it", async () => {
+    withSession();
+    const seen: { url?: string } = {};
+    globalThis.fetch = (async (input) => {
+      seen.url = String(input);
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              slug: "deploy",
+              name: "Deploy",
+              status: "draft",
+              draftRevision: 1,
+              draftDigest: "sha256:aaaa",
+              latestVersionNumber: 0,
+              createdAt: "2026-09-13T00:00:00Z",
+              updatedAt: "2026-09-13T00:00:00Z",
+              folderId: null,
+            },
+          ],
+          limit: 50,
+          cursor: "",
+          next: "wf-next",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const page = await listWorkflows(identity, {
+      folderId: "unfiled",
+      q: "Deploy",
+      limit: 50,
+    });
+    assert.equal(page.ok, true);
+    assert.match(seen.url ?? "", /folderId=unfiled/);
+    assert.match(seen.url ?? "", /q=Deploy/);
+    assert.match(seen.url ?? "", /limit=50/);
+    if (page.ok) {
+      assert.equal(page.items.length, 1);
+      assert.equal(page.next, "wf-next");
+      assert.equal(page.limit, 50);
+    }
+
+    const secret = "sk-sample";
+    const rejected = await listWorkflows(identity, { q: secret });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.equal(rejected.problem.detail, COLLECTION_PAGE_INVALID_DETAIL);
+      assert.equal(JSON.stringify(rejected.problem).includes(secret), false);
+    }
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:invalid-request",
+          title: "Invalid Request",
+          status: 400,
+          detail: "bad cursor wf-next-echo",
+          instance: "/api/v1/workflows?cursor=wf-next-echo&folderId=unfiled",
+          code: "invalid-request",
+          request_id: "req-page",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": PROBLEM_JSON,
+            [REQUEST_ID_HEADER]: "req-page",
+          },
+        },
+      )) as typeof fetch;
+    const scrubbed = await listWorkflows(identity, { cursor: "wf-next" });
+    assert.equal(scrubbed.ok, false);
+    if (!scrubbed.ok) {
+      assert.equal(scrubbed.problem.detail, COLLECTION_PAGE_INVALID_DETAIL);
+      assert.equal(scrubbed.problem.instance.includes("wf-next-echo"), false);
+    }
   });
 
   it("posts definitionYaml with CSRF and keeps invalid-workflow errors[]", async () => {

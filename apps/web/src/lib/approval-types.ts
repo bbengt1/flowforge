@@ -73,6 +73,10 @@ export type ApprovalListFilter = {
   workflowId?: string;
   workflowVersionId?: string;
   executionId?: string;
+  limit?: number;
+  cursor?: string;
+  /** Server substring: node id, node name, operation, status. Not the decision note. */
+  q?: string;
 };
 
 /** Read-only snapshot bound at request time. Server is the source of truth. */

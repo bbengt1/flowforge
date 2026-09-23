@@ -32,6 +32,9 @@ export type AlertListQuery = {
   resourceType?: string;
   resourceId?: string;
   limit?: number;
+  cursor?: string;
+  /** Server substring: kind, action, code, outcome. Not details. */
+  q?: string;
 };
 
 export type WorkspaceAuditQuery = {
@@ -39,6 +42,9 @@ export type WorkspaceAuditQuery = {
   resourceId?: string;
   action?: string;
   limit?: number;
+  cursor?: string;
+  /** Server substring: action, resource type. Not details. */
+  q?: string;
 };
 
 export type OperationalAlert = {

@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { listOpsConfig } from "@/lib/ops-config-client";
 import { descriptorForKind } from "@/lib/ops-config-contract";
 import type { KindDescriptor, OpsConfigKind, OpsConfigSummary } from "@/lib/ops-config-types";
@@ -36,6 +41,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
     () => false,
   );
   const [items, setItems] = useState<OpsConfigSummary[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [pending, setPending] = useState(false);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
@@ -47,15 +53,38 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
   async function refresh() {
     setPending(true);
     setProblem(null);
-    const result = await listOpsConfig(identity, kind);
+    const result = await listOpsConfig(identity, kind, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+    });
     setLastRequestId(result.requestId);
     setPending(false);
     if (!result.ok) {
       setProblem(result.problem);
       setItems([]);
+      setPageNext("");
       return;
     }
     setItems(result.items);
+    setPageNext(result.next);
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const result = await listOpsConfig(identity, kind, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(false);
+    if (!result.ok) {
+      setProblem(result.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, result.items));
+    setPageNext(result.next);
   }
 
   return (
@@ -143,6 +172,11 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
           ))}
         </ul>
       )}
+      <CollectionLoadMore
+        next={pageNext}
+        pending={pending}
+        onLoadMore={() => void loadMore()}
+      />
     </div>
   );
 }

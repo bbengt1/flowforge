@@ -121,7 +121,9 @@ describe("R5.1 credential vault find", () => {
     });
     assert.deepEqual(CREDENTIAL_VAULT_QUERY_KEYS, ["q", "type", "tag", "status"]);
     assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("secret"));
-    assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("q"));
+    assert.equal(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("q"), false);
+    assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("cursor"));
+    assert.ok(CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS.includes("type"));
     assert.equal(parseCredentialVaultQuery("type=not-a-type").type, "");
     assert.equal(parseCredentialVaultQuery("status=revoked").status, "");
     assert.equal(parseCredentialVaultQuery({ q: ["edge-ssh"] }).q, "edge-ssh");
@@ -154,9 +156,17 @@ describe("R5.1 credential vault find", () => {
         type: "token",
         status: "disabled",
       }),
-      credentialListPath(),
+      "/credentials?q=prod-k8s",
     );
-    assert.equal(credentialVaultListPath({ q: "prod" }), "/credentials");
+    assert.equal(credentialVaultListPath({ q: "prod" }), "/credentials?q=prod");
+    assert.equal(
+      credentialVaultListPath({ q: "sk-sample" }),
+      "/credentials",
+    );
+    assert.doesNotMatch(
+      credentialVaultListPath({ q: "sk-sample" }),
+      /sk-sample/,
+    );
     assert.equal(
       credentialVaultUsesExistingListParams({
         q: "prod",
@@ -279,6 +289,7 @@ describe("R5.1 credential vault find", () => {
     assert.equal(credentialVaultTypesUnchanged(), true);
     assert.equal(credentialVaultEmbedUnchanged(), true);
     assert.equal(CREDENTIAL_VAULT.noInventedListQueryParams, true);
+    assert.equal(CREDENTIAL_VAULT.displayNameSearchUsesQ, true);
     assert.equal(CREDENTIAL_VAULT.clientSideDisplayNameFilter, true);
     assert.equal(CREDENTIAL_VAULT.noNewApiRoutes, true);
     assert.equal(CREDENTIAL_VAULT.rbacFailClosed, true);

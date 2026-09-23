@@ -5,6 +5,12 @@
  * Collection is #116 `/schedules`.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
@@ -55,6 +61,9 @@ export type ScheduleTriggerListSuccess = {
   statusCode: number;
   requestId: string;
   items: ScheduleTriggerRecord[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type ScheduleTriggerMutationSuccess = {
@@ -84,8 +93,11 @@ function failure(result: {
   statusCode: number;
   requestId: string;
   problem: ProblemDetails;
-}): ScheduleTriggerClientFailure {
-  const code = String(result.problem.code ?? "").trim();
+}, collectionPage = false): ScheduleTriggerClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
+  const code = String(problem.code ?? "").trim();
   const forbidden =
     result.statusCode === 403 ||
     code === SCHEDULE_TRIGGER_PROBLEM_CODES.forbidden ||
@@ -94,7 +106,7 @@ function failure(result: {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
+    problem,
     forbidden,
   };
 }
@@ -209,14 +221,27 @@ export async function listScheduleTriggers(
   workflowId: string,
   catalog?: WorkflowCatalog | null,
   scheduleCatalog?: ScheduleTypeCatalog | null,
+  query: CollectionPageQuery = {},
 ): Promise<ScheduleTriggerListSuccess | ScheduleTriggerClientFailure> {
   if (!isResourceId(workflowId)) {
     return invalidWorkflowProblem("/schedules");
   }
-  const path = scheduleTriggerListPath(workflowId, catalog, scheduleCatalog);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(
+    scheduleTriggerListPath(workflowId, catalog, scheduleCatalog),
+    query,
+  );
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    const failed = failure(result);
+    const failed = failure(result, true);
     if (failed.forbidden) {
       failed.problem = {
         ...failed.problem,
@@ -230,6 +255,7 @@ export async function listScheduleTriggers(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseScheduleTriggerList(result.data, workflowId),
+    ...readCollectionPageFields(result.data),
   };
 }
 

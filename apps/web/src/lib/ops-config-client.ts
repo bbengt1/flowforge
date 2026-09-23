@@ -4,6 +4,12 @@
  * Session cookies + CSRF on mutations. credentials: include.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import {
@@ -64,6 +70,9 @@ export type ListConfigSuccess = {
   statusCode: number;
   requestId: string;
   items: OpsConfigSummary[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type RecordSuccess = {
@@ -94,6 +103,9 @@ export type VersionsSuccess = {
   statusCode: number;
   requestId: string;
   items: OpsConfigVersion[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type VersionSuccess = {
@@ -190,17 +202,28 @@ export async function getOpsConfigCatalog(
 export async function listOpsConfig(
   identity: DevIdentity,
   kind: OpsConfigKind,
+  query: CollectionPageQuery = {},
 ): Promise<ListConfigSuccess | OpsConfigClientFailure> {
-  const path = collectionPath(kind);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(collectionPath(kind), query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      conflict: false,
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseOpsConfigList(result.data).map((item) => ({ ...item, kind })),
+    ...readCollectionPageFields(result.data),
   };
 }
 
@@ -319,11 +342,21 @@ export async function listOpsConfigVersions(
   identity: DevIdentity,
   kind: OpsConfigKind,
   resourceId: string,
+  query: CollectionPageQuery = {},
 ): Promise<VersionsSuccess | OpsConfigClientFailure> {
-  const path = versionsPath(kind, resourceId);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(versionsPath(kind, resourceId), query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      conflict: false,
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const items = asItems(result.data)
     .map(parseOpsConfigVersion)
@@ -334,6 +367,7 @@ export async function listOpsConfigVersions(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items,
+    ...readCollectionPageFields(result.data),
   };
 }
 
@@ -552,13 +586,17 @@ function rejectHostIdentity(
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): OpsConfigClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
     problem: {
-      ...result.problem,
+      ...problem,
       errors: problemFieldErrors(result.problem),
     },
     conflict: result.problem.code === "conflict" || result.statusCode === 409,

@@ -66,4 +66,7 @@ export type PermissionMatrix = {
 
 export type ItemList<T> = {
   items: T[];
+  limit?: number;
+  cursor?: string;
+  next?: string;
 };

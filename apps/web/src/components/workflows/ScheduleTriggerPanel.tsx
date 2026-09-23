@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { publishedRunVersions } from "@/lib/execution-replay";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
@@ -84,6 +89,7 @@ export function ScheduleTriggerPanel({
   );
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [items, setItems] = useState<ScheduleTriggerRecord[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [draft, setDraft] = useState<ScheduleTriggerDraft>(() =>
     emptyScheduleTriggerDraft(seedDraftFromYaml(yaml)),
   );
@@ -103,7 +109,11 @@ export function ScheduleTriggerPanel({
       fetchWorkflowCatalog(identity),
       getScheduleCatalog(identity),
       listWorkflowVersions(identity, workflowId),
-      canView ? listScheduleTriggers(identity, workflowId) : Promise.resolve(null),
+      canView
+        ? listScheduleTriggers(identity, workflowId, null, null, {
+            limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+          })
+        : Promise.resolve(null),
     ]).then(([catalogResult, scheduleCatalogResult, versionResult, list]) => {
       if (cancelled) {
         return;
@@ -130,10 +140,12 @@ export function ScheduleTriggerPanel({
       }
       if (!list.ok) {
         setItems([]);
+        setPageNext("");
         setProblem(list.problem);
         return;
       }
       setItems(list.items);
+      setPageNext(list.next);
     });
     return () => {
       cancelled = true;
@@ -151,14 +163,39 @@ export function ScheduleTriggerPanel({
       workflowId,
       catalog,
       scheduleCatalog,
+      { limit: COLLECTION_PAGE_DEFAULT_LIMIT },
     );
     setPending(null);
     if (!list.ok) {
       setItems([]);
+      setPageNext("");
       setProblem(list.problem);
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
+  }
+
+  async function loadMore() {
+    if (!pageNext || !canView) {
+      return;
+    }
+    setPending("list");
+    setProblem(null);
+    const list = await listScheduleTriggers(
+      identity,
+      workflowId,
+      catalog,
+      scheduleCatalog,
+      { limit: COLLECTION_PAGE_DEFAULT_LIMIT, cursor: pageNext },
+    );
+    setPending(null);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
   }
 
   function patchDraft(patch: Partial<ScheduleTriggerDraft>) {
@@ -481,6 +518,12 @@ export function ScheduleTriggerPanel({
             ))}
           </ul>
         )}
+        <CollectionLoadMore
+          next={pageNext}
+          pending={pending !== null}
+          onLoadMore={() => void loadMore()}
+          label="Load more schedules"
+        />
       </div>
 
       {message ? (
