@@ -10,13 +10,13 @@ import (
 
 const resolveTimeout = 15 * time.Second
 
-// ResolveKeys loads the active data-encryption KEK.
+// ResolveKeys loads the active data-encryption KEK for the existing vault.
 //
-// A production-locked process that has any KEK source must unwrap it
-// with KMS. Plaintext CREDENTIAL_KEK remains valid only when the process
-// is not production-locked and KMS is unset. Partial KMS configuration
-// fails closed in every environment. The returned bytes are unwrapped
-// key material and must not be logged.
+// Production is KMS-wrapped only. If the KMS cannot unwrap the blob,
+// this returns an error and does not fall back to CREDENTIAL_KEK.
+// Local and dev may use that documented envelope stub only when
+// KMS_PROVIDER is unset. Partial KMS configuration fails closed in
+// every environment. The returned bytes must not be logged.
 func ResolveKeys(ctx context.Context, productionLocked bool) (Keys, error) {
 	if ctx == nil {
 		ctx = context.Background()

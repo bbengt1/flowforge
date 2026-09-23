@@ -70,8 +70,7 @@ func Open(productionLocked bool) (Provider, error) {
 }
 
 // Resolve unwraps the active KEK and the optional previous KEK.
-// A nil provider is reported as "KMS is not configured" so callers can
-// keep the local plaintext path.
+// It does not read CREDENTIAL_KEK. A failed unwrap is terminal.
 func Resolve(ctx context.Context, p Provider) (Material, error) {
 	if p == nil {
 		return Material{}, fmt.Errorf("%s is required", EnvProvider)

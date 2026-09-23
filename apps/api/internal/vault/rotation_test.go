@@ -82,6 +82,44 @@ func TestResolveKeysFailClosed(t *testing.T) {
 	}
 }
 
+func TestProductionUnreachableKMSDoesNotFallBackToLocalKEK(t *testing.T) {
+	local := make([]byte, 32)
+	for i := range local {
+		local[i] = byte(i + 4)
+	}
+	for _, name := range kms.EnvNames() {
+		t.Setenv(name, "")
+	}
+	blob, err := kms.EncodeBlob("vault", "flowforge", []byte("kms-ciphertext-not-the-kek"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvKEK, base64.StdEncoding.EncodeToString(local))
+	t.Setenv(EnvKEKFile, "")
+	t.Setenv(EnvKEKID, "env:CREDENTIAL_KEK")
+	t.Setenv(kms.EnvProvider, "vault")
+	t.Setenv(kms.EnvWrapped, blob)
+	t.Setenv("KMS_VAULT_ADDR", "https://127.0.0.1:1")
+	t.Setenv("KMS_VAULT_KEY_NAME", "flowforge")
+	t.Setenv("KMS_VAULT_TOKEN", "test-vault-token")
+
+	keys, err := ResolveKeys(context.Background(), true)
+	if err == nil || keys.Ready() {
+		t.Fatal("unreachable KMS must not fall back to the local KEK")
+	}
+	if bytes.Equal(keys.KEK, local) || bytes.Equal(keys.Previous, local) {
+		t.Fatal("local KEK was returned")
+	}
+	assertNoKEK(t, err.Error(), local)
+
+	t.Setenv(EnvKEK, "")
+	keys, err = ResolveKeys(context.Background(), true)
+	if err == nil || keys.Ready() {
+		t.Fatal("unreachable KMS must fail closed with no local key")
+	}
+	assertNoKEK(t, err.Error(), local)
+}
+
 func assertNoKEK(t *testing.T, text string, kek []byte) {
 	t.Helper()
 	for _, enc := range []string{

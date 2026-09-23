@@ -10,6 +10,17 @@ wrapped blob in `CREDENTIAL_KEK_WRAPPED`.
 Supported providers: AWS KMS (`aws`), Cloud KMS (`gcp`), Azure Key Vault
 (`azure`), HashiCorp Vault Transit (`vault`).
 
+## Architect lean
+
+- KMS-wrapped KEK only.
+- Online re-encrypt and rotation.
+- The existing vault stays display-name + UUID. No KEK or plaintext in
+  chrome, logs, or room. This is not a second vault.
+- Production fails closed when KMS is unreachable. It does not fall
+  back to `CREDENTIAL_KEK`.
+- Local and dev may use the documented envelope stub (`CREDENTIAL_KEK`
+  while `KMS_PROVIDER` is unset). Do not copy that stub to production.
+
 ## Hard lines
 
 - Do not log, paste into a ticket, or return the plaintext KEK or DEK.
@@ -20,8 +31,8 @@ Supported providers: AWS KMS (`aws`), Cloud KMS (`gcp`), Azure Key Vault
 - A production-locked process (`APP_ENV` empty or `production`, or
   `REQUIRE_TLS=true`) refuses plaintext `CREDENTIAL_KEK` /
   `CREDENTIAL_KEK_FILE`. Partial `KMS_*` configuration refuses to boot.
-- Compose (`APP_ENV=development`) may keep the documented local-only
-  plaintext KEK. Do not copy it here.
+- Compose (`APP_ENV=development`) may keep the documented local envelope
+  stub. Do not copy it here.
 
 ## What you store
 
